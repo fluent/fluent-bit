@@ -213,6 +213,7 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
 {
     struct flb_pgsql_config *ctx = out_context;
     flb_sds_t json;
+    char *tmp = NULL;
     PGresult *res = NULL;
     char *query = NULL;
     size_t str_len;
@@ -240,11 +241,27 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
                                            ctx->timestamp_key);
     if(json == NULL) {
         flb_errno();
-        flb_error("[]out_pgsql] Can't parse the msgpack into json");
+        flb_error("[out_pgsql] Can't parse the msgpack into json");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    str_len = 60 + flb_sds_len(json);
+    tmp = PQescapeLiteral(ctx->conn, json, flb_sds_len(json));
+    flb_sds_destroy(json);
+
+    if(!tmp) {
+        flb_errno();
+        flb_error("[out_pgsql] Can't escape json string: %s", json);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    json = flb_sds_create(tmp);
+    if(!json) {
+        flb_errno();
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    PQfreemem(tmp);
+
+    str_len = 60 + flb_sds_len(json) + flb_sds_len(ctx->db_table);
     query = flb_malloc(str_len);
 
     if (query == NULL) {
@@ -254,7 +271,7 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
     }
 
     snprintf(query, str_len,
-             "INSERT INTO %s SELECT * FROM json_array_elements('%s');",
+             "INSERT INTO %s SELECT * FROM json_array_elements(%s);",
              ctx->db_table, json);
 
     PQsendQuery(ctx->conn, query);
