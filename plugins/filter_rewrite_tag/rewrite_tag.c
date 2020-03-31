@@ -58,6 +58,13 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
                      ins->name);
     }
 
+    /* Set the storage type */
+    ret = flb_input_set_property(ins, "storage.type",
+                                 ctx->emitter_storage_type);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot set storage.type");
+    }
+
     /* Initialize emitter plugin */
     ret = flb_input_instance_init(ins, ctx->config);
     if (ret == -1) {
@@ -212,7 +219,8 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
             return -1;
         }
 
-        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s", ins->name);
+        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s",
+                             flb_filter_name(ins));
         if (!tmp) {
             flb_error("[filter rewrite_tag] cannot compose emitter_name");
             flb_sds_destroy(emitter_name);
@@ -227,6 +235,22 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     /* Set config_map properties in our local context */
     ret = flb_filter_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
+
+    /*
+     * Emitter Storage Type: the emitter input plugin to be created by default
+     * uses memory buffer, this option allows to define a filesystem mechanism
+     * for new records created (only if the main service is also filesystem
+     * enabled).
+     *
+     * On this code we just validate the input type: 'memory' or 'filesystem'.
+     */
+    tmp = ctx->emitter_storage_type;
+    if (strcasecmp(tmp, "memory") != 0 && strcasecmp(tmp, "filesystem") != 0) {
+        flb_plg_error(ins, "invalid 'emitter_storage.type' value. Only "
+                      "'memory' or 'filesystem' types are allowed");
         flb_free(ctx);
         return -1;
     }
@@ -421,6 +445,11 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "emitter_name", NULL,
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_name),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "emitter_storage.type", "memory",
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_storage_type),
      NULL
     },
 
