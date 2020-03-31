@@ -40,15 +40,15 @@
 static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
-    struct flb_split_entry *pattern;
+    struct flb_slist_entry *pattern;
 
     if (!ctx->exclude_list) {
         return FLB_FALSE;
     }
 
     mk_list_foreach(head, ctx->exclude_list) {
-        pattern = mk_list_entry(head, struct flb_split_entry, _head);
-        if (PathMatchSpecA(path, pattern->value)) {
+        pattern = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (PathMatchSpecA(path, pattern->str)) {
             return FLB_TRUE;
         }
     }
