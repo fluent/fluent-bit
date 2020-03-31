@@ -28,23 +28,31 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    struct flb_kafka *ctx = opaque;
+    /*
+     * we have an issue when using the 'opaque' reference, I have opened a
+     * ticket with librdkafka team:
+     *
+     * https://github.com/edenhill/librdkafka/issues/2789
+     *
+     * struct flb_kafka *ctx = opaque;
+     *
+     *
+     */
 
     if (rkmessage->err) {
-        flb_plg_warn(ctx->ins, "message delivery failed: %s",
-                     rd_kafka_err2str(rkmessage->err));
+        flb_warn("[out_kafka] message delivery failed: %s",
+                 rd_kafka_err2str(rkmessage->err));
     }
     else {
-        flb_plg_debug(ctx->ins, "message delivered (%zd bytes, "
-                      "partition %"PRId32")",
-                      rkmessage->len, rkmessage->partition);
+        flb_debug("[out_kafka] message delivered (%zd bytes, "
+                  "partition %"PRId32")",
+                  rkmessage->len, rkmessage->partition);
     }
 }
 
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
-
     /*
      * FIXME:
      *
