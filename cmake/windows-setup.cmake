@@ -70,6 +70,7 @@ set(FLB_OUT_KAFKA_REST         No)
 
 # FILTER plugins
 # ==============
+set(FLB_FILTER_DUPLICATE      Yes)
 set(FLB_FILTER_GREP           Yes)
 set(FLB_FILTER_MODIFY         Yes)
 set(FLB_FILTER_STDOUT         Yes)
