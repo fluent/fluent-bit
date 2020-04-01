@@ -85,6 +85,15 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
     int ret;
     int out_size;
     char *pack;
+    char *p;
+
+    /* clear embedded null bytes (for example GELF record separators */
+    if (conn->ctx->clear_nullbytes) {
+        while ((p = memchr(conn->buf_data, '\0', conn->buf_len))) {
+            flb_plg_trace(conn->ctx->ins, "clear null byte at position %d", p-conn->buf_data );
+            *p = ' ';
+        }
+    }
 
     ret = flb_pack_json_state(conn->buf_data, conn->buf_len,
                               &pack, &out_size, &conn->pack_state);

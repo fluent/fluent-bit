@@ -94,6 +94,13 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
         ctx->separator = flb_sds_create_len("\n", 1);
     }
 
+    tmp = flb_input_get_property("clear_nullbytes", ins);
+    if (tmp) {
+        ctx->clear_nullbytes = flb_utils_bool(tmp);
+    } else {
+        ctx->clear_nullbytes = FLB_FALSE;
+    }
+
     /* Listen interface (if not set, defaults to 0.0.0.0:5170) */
     flb_input_net_default_listener("0.0.0.0", 5170, ins);
     ctx->listen = ins->host.listen;

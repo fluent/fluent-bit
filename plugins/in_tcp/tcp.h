@@ -31,6 +31,7 @@
 struct flb_in_tcp_config {
     int server_fd;                  /* TCP server file descriptor  */
     int format;                     /* Data format */
+    int clear_nullbytes;            /* clear embedded null bytes   */
     size_t buffer_size;             /* Buffer size for each reader */
     size_t chunk_size;              /* Chunk allocation size       */
     char *listen;                   /* Listen interface            */
