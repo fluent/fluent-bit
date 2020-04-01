@@ -240,7 +240,7 @@ static int in_tail_init(struct flb_input_instance *in,
     ctx->coll_fd_scan = ret;
 
     /* Register callback to purge rotated files */
-    ret = flb_input_set_collector_time(in, flb_tail_file_rotated_purge,
+    ret = flb_input_set_collector_time(in, flb_tail_file_purge,
                                        ctx->rotate_wait, 0,
                                        config);
     if (ret == -1) {
