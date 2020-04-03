@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_input.h>
 
 #define FLB_RTAG_METRIC_EMITTED    200
+#define FLB_RTAG_MEM_BUF_LIMIT_DEFAULT  "10M"
 
 /* Rewrite rule  */
 struct rewrite_rule {

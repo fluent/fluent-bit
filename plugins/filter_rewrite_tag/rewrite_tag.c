@@ -458,7 +458,7 @@ static struct flb_config_map config_map[] = {
      NULL
     },
     {
-     FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", 0,
+     FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_RTAG_MEM_BUF_LIMIT_DEFAULT,
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_mem_buf_limit),
      "set a memory buffer limit to restrict memory usage of emitter"
     },
