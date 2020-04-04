@@ -354,6 +354,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         header_title = "debug";
         header_color = ANSI_YELLOW;
         break;
+    case FLB_LOG_IDEBUG:
+        header_title = "debug";
+        header_color = ANSI_CYAN;
+        break;
     case FLB_LOG_TRACE:
         header_title = "trace";
         header_color = ANSI_BLUE;

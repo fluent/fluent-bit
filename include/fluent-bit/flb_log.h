@@ -43,6 +43,8 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 #define FLB_LOG_TRACE   5
 #define FLB_LOG_HELP    6  /* unused by log level */
 
+#define FLB_LOG_IDEBUG  10
+
 /* Logging outputs */
 #define FLB_LOG_STDERR   0  /* send logs to STDERR         */
 #define FLB_LOG_FILE     1  /* write logs to a file        */
@@ -124,6 +126,9 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 #define flb_debug(fmt, ...)                                         \
     if (flb_log_check(FLB_LOG_DEBUG))                               \
         flb_log_print(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__)
+
+#define flb_idebug(fmt, ...)                                        \
+    flb_log_print(FLB_LOG_IDEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
 #ifdef FLB_HAVE_TRACE
 #define flb_trace(fmt, ...)                                             \
