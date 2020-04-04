@@ -392,6 +392,20 @@ int property_count(char *key, int len, struct mk_list *properties)
     return count;
 }
 
+/*
+ * If the property starts with '_debug.', it's an internal property for
+ * some component of Fluent Bit, not the plugin it self.
+ */
+static int is_internal_debug_property(char *prop_name)
+{
+    if (strncmp(prop_name, "_debug.", 7) == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+
 /* Validate that the incoming properties set by the caller are allowed by the plugin */
 int flb_config_map_properties_check(char *context_name,
                                     struct mk_list *in_properties,
@@ -400,6 +414,7 @@ int flb_config_map_properties_check(char *context_name,
     int len;
     int found;
     int count = 0;
+    int ret;
     flb_sds_t helper;
     struct flb_kv *kv;
     struct mk_list *head;
@@ -410,6 +425,13 @@ int flb_config_map_properties_check(char *context_name,
     mk_list_foreach(head, in_properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
         found = FLB_FALSE;
+
+
+        ret = is_internal_debug_property(kv->key);
+        if (ret == FLB_TRUE) {
+            /* Skip the config map */
+            continue;
+        }
 
         /* Lookup the key into the provided map */
         mk_list_foreach(m_head, map) {
