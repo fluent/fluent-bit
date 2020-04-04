@@ -58,6 +58,8 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
 endif()
 
+FLB_RT_TEST(FLB_OUT_TD           "http_callbacks.c")
+
 set(SYSTEMD_LIB, "")
 if(FLB_HAVE_SYSTEMD)
     set(SYSTEMD_LIB, "systemd")
