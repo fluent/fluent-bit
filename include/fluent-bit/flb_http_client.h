@@ -85,6 +85,17 @@ struct flb_http_proxy {
     const char *host;       /* Proxy Host */
 };
 
+/* HTTP Debug context */
+struct flb_http_debug {
+    /* HTTP request headers */
+    int debug_request_headers;          /* debug HTTP request headers   */
+    void (*cb_debug_request_headers);   /* callback to pass raw headers */
+
+    /* HTTP request payload */
+    int debug_request_payload;          /* debug HTTP request payload   */
+    int (*cb_debug_request_payload);
+};
+
 /* Set a request type */
 struct flb_http_client {
     /* Upstream connection */
@@ -114,6 +125,9 @@ struct flb_http_client {
 
     /* Response */
     struct flb_http_response resp;
+
+    /* Reference to Callback context */
+    void *cb_ctx;
 };
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
@@ -135,5 +149,6 @@ size_t flb_http_buffer_available(struct flb_http_client *c);
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size);
 int flb_http_strip_port_from_host(struct flb_http_client *c);
+int flb_http_client_debug_property_is_valid(char *key, char *val);
 
 #endif

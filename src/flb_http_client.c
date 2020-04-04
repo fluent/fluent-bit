@@ -38,6 +38,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <mbedtls/base64.h>
 
@@ -982,6 +984,14 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     c->header_buf[c->header_len++] = '\r';
     c->header_buf[c->header_len++] = '\n';
 
+    /* debug: request_headers callback */
+    flb_http_client_debug_cb(c, "_debug.http.request_headers");
+
+    /* debug: request_payload callback */
+    if (c->body_len > 0) {
+        flb_http_client_debug_cb(c, "_debug.http.request_payload");
+    }
+
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
@@ -1057,6 +1067,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         }
     }
 
+    flb_http_client_debug_cb(c, "_debug.http.response_headers");
+    if (c->resp.payload_size > 0) {
+        flb_http_client_debug_cb(c, "_debug.http.response_payload");
+    }
     return 0;
 }
 
