@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_http_client_debug.h>
 
 FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
 
@@ -148,6 +149,11 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     }
 #endif
 
+    /* destroy callback context */
+    if (ins->callback) {
+        flb_callback_destroy(ins->callback);
+    }
+
     /* destroy config map */
     if (ins->config_map) {
         flb_config_map_destroy(ins->config_map);
@@ -260,7 +266,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     instance->config = config;
     instance->log_level = -1;
-
     /*
      * Set mask_id: the mask_id is an unique number assigned to this
      * output instance that is used later to set in an 'unsigned 64
@@ -283,6 +288,11 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     snprintf(instance->name, sizeof(instance->name) - 1,
              "%s.%i", plugin->name, instance->id);
     instance->p = plugin;
+    instance->callback = flb_callback_create(instance->name);
+    if (!instance->callback) {
+        flb_free(instance);
+        return NULL;
+    }
 
     if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
         instance->context = NULL;
@@ -458,6 +468,24 @@ int flb_output_set_property(struct flb_output_instance *ins,
         }
         else {
             ins->retry_limit = 0;
+        }
+    }
+    else if (strncasecmp("_debug.http.", k, 12) == 0 && tmp) {
+        ret = flb_http_client_debug_property_is_valid((char *) k, tmp);
+        if (ret == FLB_TRUE) {
+            kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
+            if (!kv) {
+                if (tmp) {
+                    flb_sds_destroy(tmp);
+                }
+                return -1;
+            }
+            kv->val = tmp;
+        }
+        else {
+            flb_error("[config] invalid property '%s' on instance '%s'",
+                      k, flb_output_name(ins));
+            flb_sds_destroy(tmp);
         }
     }
 #ifdef FLB_HAVE_TLS
@@ -728,4 +756,13 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     /* Set flags */
     u->flags |= flags;
     return 0;
+}
+
+/*
+ * Helper function to set HTTP callbacks using the output instance 'callback'
+ * context.
+ */
+int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins)
+{
+    return flb_http_client_debug_setup(ins->callback, &ins->properties);
 }
