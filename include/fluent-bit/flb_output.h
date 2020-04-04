@@ -39,8 +39,10 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_http_client.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -214,6 +216,9 @@ struct flb_output_instance {
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
 #endif
+
+    /* Callbacks context */
+    struct flb_callback *callback;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -530,5 +535,6 @@ int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
 void flb_output_prepare();
+int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 
 #endif

@@ -43,6 +43,9 @@ set(src
   flb_sha512.c
   flb_plugin.c
   flb_gzip.c
+  flb_http_client.c
+  flb_http_client_debug.c
+  flb_callback.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -71,7 +74,6 @@ if(FLB_TLS)
     ${src}
     "flb_io_tls.c"
     "flb_oauth2.c"
-    "flb_http_client.c"
     )
 
   # Make sure our output targets links to the TLS library
