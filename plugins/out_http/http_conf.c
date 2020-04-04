@@ -76,6 +76,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         flb_free(protocol);
         flb_free(port);
         flb_free(uri);
+        uri = NULL;
     }
     else {
         flb_output_net_default("127.0.0.1", 80, ins);

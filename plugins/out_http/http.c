@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
@@ -37,6 +38,8 @@
 #include "http.h"
 #include "http_conf.h"
 
+#include <fluent-bit/flb_callback.h>
+
 static int cb_http_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
@@ -50,6 +53,12 @@ static int cb_http_init(struct flb_output_instance *ins,
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
 
     return 0;
 }
@@ -103,6 +112,12 @@ static int http_post(struct flb_out_http *ctx,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
+
+    /*
+     * Direct assignment of the callback context to the HTTP client context.
+     * This needs to be improved through a more clean API.
+     */
+    c->cb_ctx = ctx->ins->callback;
 
     /* Append headers */
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
