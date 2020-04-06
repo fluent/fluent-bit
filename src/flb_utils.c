@@ -813,6 +813,15 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
         }
     }
 
+    if (!port) {
+        if (strcmp(protocol, "http") == 0) {
+            port = flb_strdup("80");
+        }
+        else if (strcmp(protocol, "https") == 0) {
+            port = flb_strdup("443");
+        }
+    }
+
     *out_protocol = protocol;
     *out_host = host;
     *out_port = port;
