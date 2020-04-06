@@ -889,6 +889,13 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_callback_context(struct flb_http_client *c,
+                                  struct flb_callback *cb_ctx)
+{
+    c->cb_ctx = cb_ctx;
+    return 0;
+}
+
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd)
 {
