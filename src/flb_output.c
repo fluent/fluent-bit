@@ -470,6 +470,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->retry_limit = 0;
         }
     }
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
     else if (strncasecmp("_debug.http.", k, 12) == 0 && tmp) {
         ret = flb_http_client_debug_property_is_valid((char *) k, tmp);
         if (ret == FLB_TRUE) {
@@ -488,6 +489,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
             flb_sds_destroy(tmp);
         }
     }
+#endif
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
@@ -764,5 +766,9 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
  */
 int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins)
 {
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
     return flb_http_client_debug_setup(ins->callback, &ins->properties);
+#else
+    return 0;
+#endif
 }
