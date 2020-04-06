@@ -165,6 +165,9 @@ option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 
+# Debug callbacks
+option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
+
 # Enable all features
 if(FLB_ALL)
   # Global
@@ -202,11 +205,12 @@ if(FLB_ALL)
 endif()
 
 if(FLB_DEV)
-  set(FLB_DEBUG          On)
-  set(FLB_TRACE          On)
-  set(FLB_METRICS        On)
-  set(FLB_HTTP_SERVER    On)
-  set(FLB_TESTS_INTERNAL On)
+  set(FLB_DEBUG             On)
+  set(FLB_TRACE             On)
+  set(FLB_METRICS           On)
+  set(FLB_HTTP_SERVER       On)
+  set(FLB_HTTP_CLIENT_DEBUG On)
+  set(FLB_TESTS_INTERNAL    On)
 endif()
 
 # SSL/TLS: add encryption support
@@ -214,6 +218,9 @@ if(FLB_OUT_TD)
   set(FLB_TLS ON)
 endif()
 
+if(FLB_HTTP_CLIENT_DEBUG)
+  FLB_DEFINITION(FLB_HTTP_CLIENT_DEBUG)
+endif()
 
 # Set Fluent Bit dependency libraries path
 include(cmake/libraries.cmake)
