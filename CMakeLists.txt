@@ -219,7 +219,7 @@ if(FLB_OUT_TD)
 endif()
 
 if(FLB_HTTP_CLIENT_DEBUG)
-  FLB_DEFINITION(FLB_HTTP_CLIENT_DEBUG)
+  FLB_DEFINITION(FLB_HAVE_HTTP_CLIENT_DEBUG)
 endif()
 
 # Set Fluent Bit dependency libraries path
