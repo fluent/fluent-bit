@@ -44,7 +44,6 @@ set(src
   flb_plugin.c
   flb_gzip.c
   flb_http_client.c
-  flb_http_client_debug.c
   flb_callback.c
   )
 
@@ -102,6 +101,13 @@ if(FLB_SIGNV4 AND FLB_TLS)
   set(src
     ${src}
     "flb_signv4.c"
+    )
+endif()
+
+if(FLB_HTTP_CLIENT_DEBUG)
+  set(src
+    ${src}
+    "flb_http_client_debug.c"
     )
 endif()
 
