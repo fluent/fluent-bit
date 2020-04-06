@@ -398,9 +398,11 @@ int property_count(char *key, int len, struct mk_list *properties)
  */
 static int is_internal_debug_property(char *prop_name)
 {
-    if (strncmp(prop_name, "_debug.", 7) == 0) {
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    if (strncmp(prop_name, "_debug.http.", 12) == 0) {
         return FLB_TRUE;
     }
+#endif
 
     return FLB_FALSE;
 }
