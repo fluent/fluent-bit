@@ -288,8 +288,18 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
 
         /* Translate default value */
         if (m->def_value) {
+            /*
+             * Before to translate any value, make sure to disable the warning
+             * about unused variables. This might happen if a default value is an
+             * environment variable and the user is not using it (which is ok for
+             * that specific use case).
+             */
+            flb_env_warn_unused(config->env, FLB_FALSE);
+
+            /* Translate the value */
             env = flb_env_var_translate(config->env, m->def_value);
             new->def_value = env;
+            flb_env_warn_unused(config->env, FLB_TRUE);
         }
 
         new->flags = m->flags;
