@@ -225,7 +225,8 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
             if (s != buf) {
                 buf = s;
             }
-        } else {
+        }
+        else if (env->warn_unused == FLB_TRUE) {
             flb_warn("[env] variable ${%s} is used but not set", tmp);
         }
         i += (v_start - (value + i)) + v_len;
