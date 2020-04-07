@@ -22,5 +22,6 @@
 #define FLB_MP_H
 
 int flb_mp_count(const void *data, size_t bytes);
+void flb_mp_set_map_header_size(char *buf, int arr_size);
 
 #endif
