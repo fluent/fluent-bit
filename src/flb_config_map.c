@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_utils.h>
@@ -247,9 +248,11 @@ static flb_sds_t helper_map_options(struct mk_list *map)
  * In addition, for default values, we process them and populate the 'value' field with
  * proper data types.
  */
-struct mk_list *flb_config_map_create(struct flb_config_map *map)
+struct mk_list *flb_config_map_create(struct flb_config *config,
+                                      struct flb_config_map *map)
 {
     int ret;
+    flb_sds_t env;
     struct mk_list *tmp;
     struct mk_list *list;
     struct flb_config_map *new = NULL;
@@ -282,7 +285,13 @@ struct mk_list *flb_config_map_create(struct flb_config_map *map)
 
         new->type = m->type;
         new->name = flb_sds_create(m->name);
-        new->def_value = m->def_value;
+
+        /* Translate default value */
+        if (m->def_value) {
+            env = flb_env_var_translate(config->env, m->def_value);
+            new->def_value = env;
+        }
+
         new->flags = m->flags;
         new->set_property = m->set_property;
         new->offset = m->offset;
@@ -316,7 +325,7 @@ struct mk_list *flb_config_map_create(struct flb_config_map *map)
         }
 
         /* Assign value based on data type and multiple mode if set */
-        ret = translate_default_value(new, m->def_value);
+        ret = translate_default_value(new, new->def_value);
         if (ret == -1) {
             flb_config_map_destroy(list);
             return NULL;
@@ -365,6 +374,9 @@ void flb_config_map_destroy(struct mk_list *list)
         }
         else {
             destroy_map_val(map->type, &map->value);
+        }
+        if (map->def_value) {
+            flb_sds_destroy(map->def_value);
         }
         flb_sds_destroy(map->name);
         flb_free(map);
