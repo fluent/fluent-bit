@@ -399,7 +399,7 @@ int flb_filter_init_all(struct flb_config *config)
              * Create a dynamic version of the configmap that will be used by the specific
              * instance in question.
              */
-            config_map = flb_config_map_create(p->config_map);
+            config_map = flb_config_map_create(config, p->config_map);
             if (!config_map) {
                 flb_error("[filter] error loading config map for '%s' plugin",
                           p->name);
