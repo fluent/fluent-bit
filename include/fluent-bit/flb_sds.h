@@ -27,7 +27,7 @@
 #define FLB_SDS_H
 
 #include <fluent-bit/flb_info.h>
-
+#include <fluent-bit/flb_macros.h>
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
@@ -49,6 +49,15 @@ struct flb_sds {
 static inline size_t flb_sds_len(flb_sds_t s)
 {
     return (size_t) FLB_SDS_HEADER(s)->len;
+}
+
+static inline int flb_sds_is_empty(flb_sds_t s)
+{
+    if (flb_sds_len(s) == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
 
 static inline void flb_sds_len_set(flb_sds_t s, size_t len)
