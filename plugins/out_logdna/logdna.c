@@ -253,8 +253,8 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
     }
 
     /*
-     * Tags: LogDNA don't support empty spaces on tags, neither in the
-     * definition.
+     * Tags: this value is a linked list of values created by the config map
+     * reader.
      */
     if (ctx->tags) {
         /* For every tag, make sure no empty spaces exists */
@@ -285,37 +285,38 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
             }
         }
     }
-    else {
-        ctx->tags_formatted = flb_sds_create("");
-        if (!ctx->tags_formatted) {
-            logdna_config_destroy(ctx);
-            return NULL;
-        }
-    }
 
     /*
      * Hostname: if the hostname was not set manually, try to get it from the
      * environment variable.
+     *
+     * Note that hostname is populated by a config map, and config maps are
+     * immutable so we use an internal variable to do a final composition
+     * if required.
      */
     if (!ctx->hostname) {
+        tmp = NULL;
         hostname = (char *) flb_env_get(config->env, "HOSTNAME");
         if (hostname) {
-            ctx->hostname = flb_sds_create(hostname);
+            len = strlen(hostname);
+            ctx->_hostname = flb_sds_create(hostname);
         }
         else {
-            ctx->hostname = flb_sds_create("unknown");
+            ctx->_hostname = flb_sds_create("unknown");
         }
-
-        if (!ctx->hostname) {
+        if (!ctx->_hostname) {
             flb_free(ctx);
             return NULL;
         }
     }
+    else {
+        ctx->_hostname = flb_sds_create(ctx->hostname);
+    }
 
     /* Create Upstream connection context */
     upstream = flb_upstream_create(config,
-                                   FLB_LOGDNA_HOST,
-                                   FLB_LOGDNA_PORT,
+                                   ctx->logdna_host,
+                                   ctx->logdna_port,
                                    FLB_IO_TLS, (void *) &ins->tls);
     if (!upstream) {
         flb_free(ctx);
@@ -324,7 +325,7 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
     ctx->u = upstream;
 
     /* Set networking defaults */
-    flb_output_net_default(FLB_LOGDNA_HOST, FLB_LOGDNA_PORT, ins);
+    flb_output_net_default(FLB_LOGDNA_HOST, atoi(FLB_LOGDNA_PORT), ins);
     return ctx;
 }
 
@@ -392,7 +393,7 @@ static void cb_logdna_flush(const void *data, size_t bytes,
     }
     tmp = flb_sds_printf(&uri,
                          "/logs/ingest?hostname=%s&mac=%s&ip=%s&now=%lu&tags=%s",
-                         ctx->hostname,
+                         ctx->_hostname,
                          ctx->mac_addr,
                          ctx->ip_addr,
                          time(NULL),
@@ -407,7 +408,7 @@ static void cb_logdna_flush(const void *data, size_t bytes,
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, uri,
                         payload, flb_sds_len(payload),
-                        FLB_LOGDNA_HOST, FLB_LOGDNA_PORT,
+                        ctx->logdna_host, ctx->logdna_port,
                         NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
@@ -497,12 +498,27 @@ static int cb_logdna_exit(void *data, struct flb_config *config)
         return 0;
     }
 
+    if (ctx->_hostname) {
+        flb_sds_destroy(ctx->_hostname);
+    }
     logdna_config_destroy(ctx);
     return 0;
 }
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "logdna_host", FLB_LOGDNA_HOST,
+     0, FLB_TRUE, offsetof(struct flb_logdna, logdna_host),
+     "LogDNA Host address"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "logdna_port", FLB_LOGDNA_PORT,
+     0, FLB_TRUE, offsetof(struct flb_logdna, logdna_port),
+     "LogDNA TCP port"
+    },
+
     {
      FLB_CONFIG_MAP_STR, "api_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_logdna, api_key),
@@ -512,7 +528,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "hostname", NULL,
      0, FLB_TRUE, offsetof(struct flb_logdna, hostname),
-     "Server or device hostname"
+     "Local Server or device host name"
     },
 
     {
@@ -528,6 +544,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_CLIST, "tags", "",
+     0, FLB_TRUE, offsetof(struct flb_logdna, tags),
+     "Tags (optional)"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct flb_logdna, file),
      "Name of the monitored file (optional)"
@@ -537,12 +559,6 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "app", "Fluent Bit",
      0, FLB_TRUE, offsetof(struct flb_logdna, app),
      "Name of the application generating the data (optional)"
-    },
-
-    {
-     FLB_CONFIG_MAP_CLIST, "tags", NULL,
-     0, FLB_TRUE, offsetof(struct flb_logdna, tags),
-     "Tags (optional)"
     },
 
     /* EOF */
