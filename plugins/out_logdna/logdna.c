@@ -457,24 +457,24 @@ static void cb_logdna_flush(const void *data, size_t bytes,
         if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                              FLB_LOGDNA_HOST, FLB_LOGDNA_PORT, c->resp.status,
+                              ctx->logdna_host, ctx->logdna_port, c->resp.status,
                               c->resp.payload);
             }
             else {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                              FLB_LOGDNA_HOST, FLB_LOGDNA_PORT, c->resp.status);
+                              ctx->logdna_host, ctx->logdna_port, c->resp.status);
             }
             out_ret = FLB_RETRY;
         }
         else {
             if (c->resp.payload) {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             FLB_LOGDNA_HOST, FLB_LOGDNA_PORT,
+                             ctx->logdna_host, ctx->logdna_port,
                              c->resp.status, c->resp.payload);
             }
             else {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
-                             FLB_LOGDNA_HOST, FLB_LOGDNA_PORT,
+                             ctx->logdna_host, ctx->logdna_port,
                              c->resp.status);
             }
         }
