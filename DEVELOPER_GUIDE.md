@@ -4,19 +4,22 @@ Assuming you have some basic knowledge of C, this guide should help you understa
 changes to Fluent Bit.
 
 ### Table of Contents
+
 - [Libraries](#libraries)
-    - [Memory Management](#memory-management)
-    - [Strings](#strings)
-    - [HTTP Client](#http-client)
-    - [Linked Lists](#linked-lists)
-    - [Message Pack](#message-pack)
+  - [Memory Management](#memory-management)
+  - [Strings](#strings)
+  - [HTTP Client](#http-client)
+  - [Linked Lists](#linked-lists)
+  - [Message Pack](#message-pack)
 - [Concurrency](#concurrency)
 - [Plugin API](#plugin-api)
-    - [Input](#input)
-    - [Filter](#filter)
-    - [Output](#output)
+  - [Input](#input)
+  - [Filter](#filter)
+  - [Output](#output)
+- [Running Locally](#running-locally)
+  - [Docker](#docker)
 - [Testing](#testing)
-    - [Valgrind](#valgrind)
+  - [Valgrind](#valgrind)
 - [Need more help?](#need-more-help)
 
 ### Libraries
@@ -422,6 +425,105 @@ Output plugins are defined in [flb_output.h](https://github.com/fluent/fluent-bi
 
 The [stdout plugin](plugins/out_stdout) is very simple; review its code to understand how output plugins work.
 
+### Running Locally
+
+#### Docker
+
+You may wish to test a logging pipeline locally to observe how it deals with
+log messages. There is no need to setup your local environment for C development
+thanks to Docker. The following is a walk-through for running Fluent Bit and
+Elasticsearch locally which can serve as an example for testing other plugins locally.
+
+#### Docker Compose
+
+Use [Docker Compose](https://docs.docker.com/compose/) with the following `docker-compose.yaml`:
+
+```yaml
+version: "3.7"
+
+services:
+  fluent-bit:
+    image: fluent/fluent-bit
+    command:
+      - /fluent-bit/bin/fluent-bit
+      - -i
+      - dummy
+      - -p
+      - 'Dummy={"top": {".dotted": "value"}}'
+      - -o
+      - es
+      - -p
+      - "Host=elasticsearch"
+      - -p
+      - "Replace_Dots=On"
+    depends_on:
+      - elasticsearch
+  elasticsearch:
+    image: elasticsearch:7.6.2
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+```
+
+#### Without Docker Compose
+
+This is more involved but may be preferable to some.
+
+##### Create a docker network
+
+```sh
+docker network create example
+```
+
+##### Run Elasticsearch
+
+Download the elasticsearch image:
+
+```sh
+docker pull elasticsearch:7.6.2
+```
+
+In a terminal run elasticsearch in attached mode to view logs:
+
+```sh
+docker run -ti --rm --name elasticsearch \
+  --net example -p 9200:9200 -p 9300:9300 \
+  -e "discovery.type=single-node" elasticsearch:7.6.2
+```
+
+##### Run Fluent Bit
+
+Download the Fluent Bit image:
+
+```sh
+docker pull fluent/fluent-bit
+```
+
+In another terminal run elasticsearch in attached mode to view logs:
+
+```sh
+docker run --rm --net example -ti fluent/fluent-bit \
+ /fluent-bit/bin/fluent-bit -i dummy -p 'Dummy={"top": { ".dotted": "value"}}' \
+ -o es -p 'Host=elasticsearch.example' -p 'Replace_Dots=On'
+```
+
+#### View indexed logs
+
+To view indexed logs run:
+
+```sh
+curl "localhost:9200/_search?pretty" \
+  -H 'Content-Type: application/json' \
+  -d'{ "query": { "match_all": {} }}'
+```
+
+To "start fresh", delete the index by running:
+
+```sh
+curl -X DELETE "localhost:9200/fluent-bit?pretty"
+```
+
 ### Testing
 
 During development, you can build Fluent Bit as follows:
@@ -467,6 +569,10 @@ $ valgrind ./bin/flb-rt-your-test
 ```
 
 This will allow you to check for memory issues in code paths (ex error cases) which are hard to trigger through manual testing.
+
+#### Docker
+
+If running Fluent Bit locally on Docker is preferred
 
 ### Need more help?
 
