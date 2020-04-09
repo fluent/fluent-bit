@@ -1,0 +1,13 @@
+groups:
+  - name: fluent-bit
+    rules:
+      - alert: NoOutputBytesProcessed
+        expr: rate(fluentbit_output_proc_bytes_total[5m]) == 0
+        annotations:
+          message: |
+            Fluent Bit instance {{ $labels.instance }}'s output plugin {{ $labels.name }} has not processed any
+            bytes for at least 15 minutes.
+          summary: No Output Bytes Processed
+        for: 15m
+        labels:
+          severity: critical
