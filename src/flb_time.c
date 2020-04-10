@@ -89,6 +89,11 @@ double flb_time_to_double(struct flb_time *tm)
     return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
 }
 
+uint64_t flb_time_to_milliseconds(struct flb_time *tm)
+{
+
+}
+
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0,struct flb_time *result)
 {
