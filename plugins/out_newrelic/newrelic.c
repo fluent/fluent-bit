@@ -94,7 +94,7 @@ static int package_record(struct flb_time *ts, msgpack_object *map,
     /* Pack timestamp */
     msgpack_pack_str(mp_pck, 9);
     msgpack_pack_str_body(mp_pck, "timestamp", 9);
-    msgpack_pack_uint64(mp_pck, timestamp_ms / 1000);
+    msgpack_pack_uint64(mp_pck, timestamp_ms);
 
     /* Keep 'log' over 'message' */
     if (log >= 0) {
