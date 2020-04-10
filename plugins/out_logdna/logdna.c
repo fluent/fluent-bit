@@ -281,7 +281,8 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
             flb_sds_destroy(encoded);
 
             if (tag_entry->_head.next != ctx->tags) {
-                flb_sds_cat(ctx->tags_formatted, ",", 1);
+                tmp = flb_sds_cat(ctx->tags_formatted, ",", 1);
+                ctx->tags_formatted = tmp;
             }
         }
     }
