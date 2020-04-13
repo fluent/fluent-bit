@@ -200,15 +200,15 @@ REGISTER_OUT_PLUGIN("out_gelf")
 # =======
 REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
-REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_grep")
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
-  REGISTER_FILTER_PLUGIN("filter_parser")
-  REGISTER_FILTER_PLUGIN("filter_nest")
   REGISTER_FILTER_PLUGIN("filter_modify")
+  REGISTER_FILTER_PLUGIN("filter_nest")
+  REGISTER_FILTER_PLUGIN("filter_parser")
+  REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
 if(FLB_RECORD_ACCESSOR)
