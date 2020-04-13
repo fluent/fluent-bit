@@ -297,7 +297,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
+static int pack_result (struct flb_time *ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
                         char *data, size_t bytes)
 {
     int ret;
@@ -306,7 +306,6 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
     size_t off = 0;
     msgpack_object root;
     msgpack_unpacked result;
-    struct flb_time t;
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, data, bytes, &off);
@@ -334,8 +333,7 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
                 msgpack_pack_array(pck, 2);
 
                 /* timestamp: convert from double to Fluent Bit format */
-                flb_time_from_double(&t, ts);
-                flb_time_append_to_msgpack(&t, pck, 0);
+                flb_time_append_to_msgpack(ts, pck, 0);
 
                 /* Pack lua table */
                 msgpack_pack_object(pck, *(map+i));
@@ -363,9 +361,7 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* main array */
     msgpack_pack_array(pck, 2);
 
-    /* timestamp: convert from double to Fluent Bit format */
-    flb_time_from_double(&t, ts);
-    flb_time_append_to_msgpack(&t, pck, 0);
+    flb_time_append_to_msgpack(ts, pck, 0);
 
     /* Pack lua table */
     msgpack_sbuffer_write(sbuf, data, bytes);
@@ -391,6 +387,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
     msgpack_unpacked result;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    struct flb_time t_orig;
     struct flb_time t;
     struct lua_filter *ctx = filter_context;
     /* Lua return values */
@@ -413,6 +410,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&t, &result, &p);
+        t_orig = t;
         ts = flb_time_to_double(&t);
 
         /* Prepare function call, pass 3 arguments, expect 3 return values */
@@ -442,8 +440,15 @@ static int cb_lua_filter(const void *data, size_t bytes,
         else if (l_code == 0) { /* Keep record, repack */
             msgpack_pack_object(&tmp_pck, root);
         }
-        else if (l_code == 1) { /* Modified, pack new data */
-            ret = pack_result(l_timestamp, &tmp_pck, &tmp_sbuf,
+        else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
+            if (l_code == 1) {
+                flb_time_from_double(&t, l_timestamp);
+            }
+            else if(l_code == 2) {
+                /* Keep the timestamp */
+                t = t_orig;
+            }
+            ret = pack_result(&t, &tmp_pck, &tmp_sbuf,
                               data_sbuf.data, data_sbuf.size);
             if (ret == FLB_FALSE) {
                 flb_plg_error(ctx->ins, "invalid table returned at %s(), %s",
