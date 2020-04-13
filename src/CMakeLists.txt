@@ -201,6 +201,15 @@ endif()
 
 
 # Record Accessor
+# ---------------
+# Make sure it dependency is enabled
+if(FLB_RECORD_ACCESSOR AND NOT FLB_REGEX)
+  message(FATAL_ERROR
+    "FLB_RECORD_ACCESSOR depends on FLB_REGEX, "
+    "enable it with: -DFLB_REGEX=ON")
+endif()
+
+# Build record accessor files
 if(FLB_RECORD_ACCESSOR)
   set(src
     ${src}
