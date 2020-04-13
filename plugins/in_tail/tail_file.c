@@ -415,7 +415,6 @@ static int tag_compose(char *tag, struct flb_regex *tag_regex, char *fname,
 #else
 static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                        struct flb_tail_config *ctx)
-)
 #endif
 {
     int i;
