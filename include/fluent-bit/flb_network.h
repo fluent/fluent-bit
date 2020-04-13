@@ -22,6 +22,7 @@
 #define FLB_NETWORK_H
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_uri.h>
 
 /* Defines a host service and it properties */
