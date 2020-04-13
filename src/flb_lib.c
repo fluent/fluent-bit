@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_callback.h>
 
 #include <signal.h>
 #include <stdarg.h>
@@ -308,6 +309,19 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 
     va_end(va);
     return 0;
+}
+
+int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
+                            void (*cb)(char *, void *, void *))
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    return flb_callback_set(o_ins->callback, name, cb);
 }
 
 /* Set an filter interface property */

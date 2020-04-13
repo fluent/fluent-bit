@@ -18,10 +18,35 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_MP_H
-#define FLB_MP_H
+#ifndef FLB_OUT_LOGDNA_H
+#define FLB_OUT_LOGDNA_H
 
-int flb_mp_count(const void *data, size_t bytes);
-void flb_mp_set_map_header_size(char *buf, int arr_size);
+#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_upstream.h>
+
+#define FLB_LOGDNA_HOST      "logs.logdna.com"
+#define FLB_LOGDNA_PORT      "443"
+#define FLB_LOGDNA_CT        "Content-Type"
+#define FLB_LOGDNA_CT_JSON   "application/json; charset=UTF-8"
+
+struct flb_logdna {
+    /* Incoming Configuration Properties */
+    flb_sds_t logdna_host;
+    int       logdna_port;
+    flb_sds_t api_key;
+    flb_sds_t hostname;
+    flb_sds_t mac_addr;
+    flb_sds_t ip_addr;
+    flb_sds_t file;
+    flb_sds_t app;
+    struct mk_list *tags;
+
+    /* Internal */
+    flb_sds_t _hostname;
+    flb_sds_t tags_formatted;
+    struct flb_upstream *u;
+    struct flb_output_instance *ins;
+};
+
 
 #endif

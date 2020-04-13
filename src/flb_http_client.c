@@ -38,6 +38,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <mbedtls/base64.h>
 
@@ -887,6 +889,13 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_callback_context(struct flb_http_client *c,
+                                  struct flb_callback *cb_ctx)
+{
+    c->cb_ctx = cb_ctx;
+    return 0;
+}
+
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd)
 {
@@ -982,6 +991,16 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     c->header_buf[c->header_len++] = '\r';
     c->header_buf[c->header_len++] = '\n';
 
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    /* debug: request_headers callback */
+    flb_http_client_debug_cb(c, "_debug.http.request_headers");
+
+    /* debug: request_payload callback */
+    if (c->body_len > 0) {
+        flb_http_client_debug_cb(c, "_debug.http.request_payload");
+    }
+#endif
+
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
@@ -1056,6 +1075,13 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             return -1;
         }
     }
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    flb_http_client_debug_cb(c, "_debug.http.response_headers");
+    if (c->resp.payload_size > 0) {
+        flb_http_client_debug_cb(c, "_debug.http.response_payload");
+    }
+#endif
 
     return 0;
 }

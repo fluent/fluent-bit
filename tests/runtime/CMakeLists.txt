@@ -58,6 +58,12 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
 endif()
 
+
+# HTTP Client Debug (requires -DFLB_HTTP_CLIENT_DEBUG=On)
+if(FLB_HTTP_CLIENT_DEBUG)
+  FLB_RT_TEST(FLB_OUT_TD           "http_callbacks.c")
+endif()
+
 set(SYSTEMD_LIB, "")
 if(FLB_HAVE_SYSTEMD)
     set(SYSTEMD_LIB, "systemd")

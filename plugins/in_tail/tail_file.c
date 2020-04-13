@@ -415,7 +415,6 @@ static int tag_compose(char *tag, struct flb_regex *tag_regex, char *fname,
 #else
 static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                        struct flb_tail_config *ctx)
-)
 #endif
 {
     int i;
@@ -1201,8 +1200,39 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     return 0;
 }
 
-int flb_tail_file_rotated_purge(struct flb_input_instance *ins,
-                                struct flb_config *config, void *context)
+static int check_purge_deleted_file(struct flb_tail_config *ctx,
+                                    struct flb_tail_file *file)
+{
+    int ret;
+    struct stat st;
+
+    ret = fstat(file->fd, &st);
+    if (ret == -1) {
+        flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
+        flb_tail_file_remove(file);
+        return FLB_TRUE;
+    }
+
+    if (st.st_nlink == 0) {
+        flb_plg_debug(ctx->ins, "purge: monitored file has been deleted: %s",
+                      file->name);
+#ifdef FLB_HAVE_SQLDB
+        if (ctx->db) {
+            /* Remove file entry from the database */
+            flb_tail_db_file_delete(file, file->config);
+        }
+#endif
+        /* Remove file from the monitored list */
+        flb_tail_file_remove(file);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+/* Purge rotated and deleted files */
+int flb_tail_file_purge(struct flb_input_instance *ins,
+                        struct flb_config *config, void *context)
 {
     int count = 0;
     struct mk_list *tmp;
@@ -1211,6 +1241,7 @@ int flb_tail_file_rotated_purge(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = context;
     time_t now;
 
+    /* Rotated files */
     now = time(NULL);
     mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
@@ -1224,6 +1255,21 @@ int flb_tail_file_rotated_purge(struct flb_input_instance *ins,
             flb_tail_file_remove(file);
             count++;
         }
+    }
+
+    /*
+     * Deleted files: under high load scenarios, exists the chances that in
+     * our event loop we miss some notifications about a file. In order to
+     * sanitize our list of monitored files we will iterate all of them and check
+     * if they have been deleted or not.
+     */
+    mk_list_foreach_safe(head, tmp, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        check_purge_deleted_file(ctx, file);
+    }
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        check_purge_deleted_file(ctx, file);
     }
 
     return count;

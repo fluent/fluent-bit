@@ -18,28 +18,32 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ENV_H
-#define FLB_ENV_H
+#ifndef FLB_CALLBACK_H
+#define FLB_CALLBACK_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_sds.h>
 
-#define FLB_ENV_SIZE 64
-
-struct flb_env {
-    int warn_unused;        /* warn about unused environment variable */
-    struct flb_hash *ht;
+struct flb_callback_entry {
+    flb_sds_t name;
+    void (*cb)(char *, void *, void *);
+    struct mk_list _head;
 };
 
-static inline void flb_env_warn_unused(struct flb_env *env, int warn)
-{
-    env->warn_unused = warn;
-}
+struct flb_callback {
+    flb_sds_t name;             /* Context name */
+    struct flb_hash *ht;        /* Hash table */
+    struct mk_list entries;     /* List for callback entries */
+    struct flb_config *config;  /* Fluent Bit context */
+};
 
-struct flb_env *flb_env_create();
-void flb_env_destroy(struct flb_env *env);
-int flb_env_set(struct flb_env *env, const char *key, const char *val);
-const char *flb_env_get(struct flb_env *env, const char *key);
-flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value);
+struct flb_callback *flb_callback_create();
+void flb_callback_destroy(struct flb_callback *ctx);
+int flb_callback_set(struct flb_callback *ctx, char *name,
+                     void (*cb)(char *, void *, void *));
+
+int flb_callback_do(struct flb_callback *ctx, char *name, void *p1, void *p2);
+int flb_callback_exists(struct flb_callback *ctx, char *name);
 
 #endif

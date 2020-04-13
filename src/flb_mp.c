@@ -19,7 +19,12 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <msgpack.h>
 #include <mpack/mpack.h>
+
+/* don't do this at home */
+#define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
+#define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
 
 int flb_mp_count(const void *data, size_t bytes)
 {
@@ -34,4 +39,24 @@ int flb_mp_count(const void *data, size_t bytes)
 
     mpack_reader_destroy(&reader);
     return count;
+}
+
+/* Adjust a mspack header buffer size */
+void flb_mp_set_map_header_size(char *buf, int arr_size)
+{
+    uint8_t h;
+    char *tmp = buf;
+
+    h = tmp[0];
+    if (h >> 4 == 0x8) { /* 1000xxxx */
+        *tmp = (uint8_t) 0x8 << 4 | ((uint8_t) arr_size);
+    }
+    else if (h == 0xde) {
+        tmp++;
+        pack_uint16(tmp, arr_size);
+    }
+    else if (h == 0xdf) {
+        tmp++;
+        pack_uint32(tmp, arr_size);
+    }
 }

@@ -18,10 +18,14 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_MP_H
-#define FLB_MP_H
+#ifndef FLB_HTTP_CLIENT_DEBUG_H
+#define FLB_HTTP_CLIENT_DEBUG_H
 
-int flb_mp_count(const void *data, size_t bytes);
-void flb_mp_set_map_header_size(char *buf, int arr_size);
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_callback.h>
+
+int flb_http_client_debug_setup(struct flb_callback *cb_ctx,
+                                struct mk_list *props);
+int flb_http_client_debug_cb(struct flb_http_client *c, char *name);
 
 #endif
