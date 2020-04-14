@@ -160,7 +160,6 @@ if(FLB_PARSER)
   REGISTER_IN_PLUGIN("in_exec")
 endif()
 
-REGISTER_IN_PLUGIN("in_docker_events")
 REGISTER_IN_PLUGIN("in_tcp")
 REGISTER_IN_PLUGIN("in_mqtt")
 REGISTER_IN_PLUGIN("in_lib")
