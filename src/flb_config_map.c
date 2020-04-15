@@ -92,7 +92,7 @@ static struct mk_list *parse_string_map_to_list(struct flb_config_map *map, char
         ret = flb_slist_split_string(list, str, ',', max_split);
     }
     else if (type == FLB_CONFIG_MAP_SLIST) {
-        ret = flb_slist_split_string(list, str, ' ', max_split);
+        ret = flb_slist_split_tokens(list, str, max_split);
     }
 
     if (ret == -1) {
