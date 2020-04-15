@@ -176,8 +176,10 @@ static flb_sds_t token_retrieve(char **str)
     return out;
 }
 
-int flb_slist_split_tokens(struct mk_list *list, const char *str)
+int flb_slist_split_tokens(struct mk_list *list, const char *str, int max_split)
 {
+    int count = 0;
+    char *p;
     char *buf;
     flb_sds_t tmp = NULL;
 
@@ -185,6 +187,20 @@ int flb_slist_split_tokens(struct mk_list *list, const char *str)
     while ((tmp = token_retrieve(&buf))) {
         flb_slist_add_sds(list, tmp);
         if (!buf) {
+            break;
+        }
+        count++;
+
+        /* Append remaining string if we use a maximum number of tokens */
+        if (count >= max_split && max_split > 0) {
+            p = buf;
+            while (*p == ' ') {
+                p++;
+            }
+
+            if (*p) {
+                flb_slist_add(list, p);
+            }
             break;
         }
     }
