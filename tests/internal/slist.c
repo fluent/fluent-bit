@@ -138,7 +138,7 @@ void test_slist_split_tokens()
         "don't escape insi\\\"de q\\\"uoted strings\\\"";
 
     mk_list_init(&list);
-    flb_slist_split_tokens(&list, txt);
+    flb_slist_split_tokens(&list, txt, -1);
 
     token_check(&list,  0, "this");
     token_check(&list,  1, "is a tokens parser");
@@ -153,6 +153,17 @@ void test_slist_split_tokens()
     token_check(&list, 10, "strings\\\"");
 
     flb_slist_destroy(&list);
+
+    mk_list_init(&list);
+    flb_slist_split_string(&list, "aaa bbb ccc ddd eee", ' ', 3);
+    token_check(&list, 3, "ddd eee");
+    flb_slist_destroy(&list);
+
+    mk_list_init(&list);
+    flb_slist_split_tokens(&list, "aaa bbb ccc ddd eee", 3);
+    token_check(&list, 3, "ddd eee");
+    flb_slist_destroy(&list);
+
 }
 
 void test_bugs()
