@@ -21,7 +21,7 @@ set(UNIT_TESTS_FILES
 
 if(FLB_PARSER)
   set(UNIT_TESTS_FILES
-    ${UNIT_TESTS_FILTES}
+    ${UNIT_TESTS_FILES}
     parser.c
     )
 endif()
