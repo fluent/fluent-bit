@@ -89,6 +89,25 @@ double flb_time_to_double(struct flb_time *tm)
     return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
 }
 
+int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
+{
+    if (base == NULL || duration == NULL|| result == NULL) {
+        return -1;
+    }
+    result->tm.tv_sec  = base->tm.tv_sec  + duration->tm.tv_sec;
+    result->tm.tv_nsec = base->tm.tv_nsec + duration->tm.tv_nsec;
+
+    if (result->tm.tv_nsec > ONESEC_IN_NSEC) {
+        result->tm.tv_nsec -= ONESEC_IN_NSEC;
+        result->tm.tv_sec++;
+    } else if (result->tm.tv_nsec < 0) {
+        result->tm.tv_nsec += ONESEC_IN_NSEC;
+        result->tm.tv_sec--;
+    }
+
+    return 0;
+}
+
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0,struct flb_time *result)
 {
