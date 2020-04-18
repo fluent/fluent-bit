@@ -30,6 +30,12 @@ struct filter_parser {
     struct mk_list _head;
 };
 
+struct kv_array {
+    msgpack_object_kv** kv;
+    size_t              len;
+    int                 index;
+};
+
 struct filter_parser_ctx {
     char     *key_name;
     int    key_name_len;
