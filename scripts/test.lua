@@ -7,7 +7,7 @@
    - cb_replace => Replace record content with a new table
 
    The key inside each function is to do a proper handling of the
-   return values. Each function must return 4 values:
+   return values. Each function must return 3 values:
 
       return code, timestamp, record
 
