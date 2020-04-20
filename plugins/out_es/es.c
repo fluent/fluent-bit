@@ -37,6 +37,10 @@
 
 struct flb_output_plugin out_es_plugin;
 
+inline int es_pack_array_content(msgpack_packer *tmp_pck,
+                                 msgpack_object array,
+                                 struct flb_elasticsearch *ctx);
+
 #ifdef FLB_HAVE_AWS
 static flb_sds_t add_aws_auth(struct flb_http_client *c,
                               struct flb_elasticsearch *ctx)
@@ -145,12 +149,51 @@ static inline int es_pack_map_content(msgpack_packer *tmp_pck,
             msgpack_pack_map(tmp_pck, v->via.map.size);
             es_pack_map_content(tmp_pck, *v, ctx);
         }
+        /*
+         * The value can be any data type, if it's an array we need to
+         * pass it to es_pack_array_content.
+         */
+        else if (v->type == MSGPACK_OBJECT_ARRAY)
+        {
+          msgpack_pack_array(tmp_pck, v->via.array.size);
+          es_pack_array_content(tmp_pck, *v, ctx);
+        }
         else {
             msgpack_pack_object(tmp_pck, *v);
         }
     }
-
     return 0;
+}
+
+/*
+  * Iterate through the array and sanitize elements.
+  * Mutual recursion with es_pack_map_content.
+  */
+inline int es_pack_array_content(msgpack_packer *tmp_pck,
+                                 msgpack_object array,
+                                 struct flb_elasticsearch *ctx)
+{
+  msgpack_object *e;
+
+  for (int i = 0; i < array.via.array.size; i++)
+  {
+    e = &array.via.array.ptr[i];
+    if (e->type == MSGPACK_OBJECT_MAP)
+    {
+      msgpack_pack_map(tmp_pck, e->via.map.size);
+      es_pack_map_content(tmp_pck, *e, ctx);
+    }
+    else if (e->type == MSGPACK_OBJECT_ARRAY)
+    {
+      msgpack_pack_array(tmp_pck, e->via.array.size);
+      es_pack_array_content(tmp_pck, *e, ctx);
+    }
+    else
+    {
+      msgpack_pack_object(tmp_pck, *e);
+    }
+  }
+  return 0;
 }
 
 /*
