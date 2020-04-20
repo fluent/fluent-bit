@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 
@@ -15,6 +14,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     /* json parser */
     fuzz_config = flb_config_init();
     fuzz_parser = flb_parser_create("fuzzer", "json", NULL, NULL, 
+                                    NULL, NULL, MK_FALSE, NULL,
                                     NULL, NULL, MK_FALSE, NULL, 
                                     0, NULL, fuzz_config);
     flb_parser_do(fuzz_parser, (char*)data, size, 
@@ -29,4 +29,3 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
 
     return 0;
 }
-
