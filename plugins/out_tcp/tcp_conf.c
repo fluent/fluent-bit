@@ -42,6 +42,11 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+    
+    ret = flb_output_config_map_set(ins, (void *) ctx);	
+    if (ret == -1) {	
+        return -1;	
+    }	
 
     /* Set default network configuration if not set */
     flb_output_net_default("127.0.0.1", 5170, ins);
@@ -101,14 +106,6 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create("date");
-    }
     ctx->u = upstream;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
@@ -126,9 +123,6 @@ void flb_tcp_conf_destroy(struct flb_out_tcp *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
     flb_free(ctx);
     ctx = NULL;
 }
