@@ -110,25 +110,30 @@ static int cb_tcp_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-/* Configuration properties map */	
-static struct flb_config_map config_map[] = {	
-    {	
-     FLB_CONFIG_MAP_STR, "format", NULL,	
-     0, FLB_FALSE, 0,	
-     NULL	
-    },	
-    {	
-     FLB_CONFIG_MAP_STR, "json_date_format", NULL,	
-     0, FLB_FALSE, 0,	
-     NULL	
-    },	
-    {	
-     FLB_CONFIG_MAP_STR, "json_date_key", "date",	
-     0, FLB_TRUE, offsetof(struct flb_out_tcp, json_date_key),	
-     NULL	
-    },	
-    /* EOF */	
-    {0}	
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", "msgpack",
+     0, FLB_FALSE, 0,
+     "Specify the payload format, supported formats: msgpack, json, "
+     "json_lines or json_stream."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", "double",
+     0, FLB_FALSE, 0,
+     "Specify the format of the date, supported formats: double, iso8601 "
+     "(e.g: 2018-05-30T09:39:52.000681Z) and epoch."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_tcp, json_date_key),
+     "Specify the name of the date field in output."
+    },
+
+    /* EOF */
+    {0}
 };
 
 /* Plugin reference */
