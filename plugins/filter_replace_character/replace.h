@@ -21,8 +21,8 @@
 #define FLB_FILTER_REPLACE_H
 
 struct flb_filter_replace_char {
-    char find;
-    char replace;
+    char old;
+    char new;
 };
 
 #endif

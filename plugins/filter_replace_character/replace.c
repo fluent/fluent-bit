@@ -41,8 +41,8 @@ static int cb_replace_init(struct flb_filter_instance *f_ins,
     struct mk_list *head;
     struct flb_kv *kv;
     char *tmp;
-    char find;
-    char replace;
+    char old;
+    char new;
     (void) data;
 
     /* Iterate all filter properties */
@@ -50,23 +50,23 @@ static int cb_replace_init(struct flb_filter_instance *f_ins,
         kv = mk_list_entry(head, struct flb_kv, _head);
 
         // TODO: better names for these options...
-        if (strcasecmp(kv->key, "find") == 0) {
+        if (strcasecmp(kv->key, "old") == 0) {
             tmp = kv->val;
             if (strlen(tmp) != 1) {
-                flb_error("[filter_replace_character] 'find' should be a single"
+                flb_error("[filter_replace_character] 'old' should be a single"
                           " character");
                 return -1;
             }
-            find = tmp[0];
+            old = tmp[0];
         }
-        if (strcasecmp(kv->key, "replace") == 0) {
+        if (strcasecmp(kv->key, "new") == 0) {
             tmp = kv->val;
             if (strlen(tmp) != 1) {
-                flb_error("[filter_replace_character] 'replace' should be a "
+                flb_error("[filter_replace_character] 'new' should be a "
                           "single character");
                 return -1;
             }
-            replace = tmp[0];
+            new = tmp[0];
         }
     }
 
@@ -77,8 +77,8 @@ static int cb_replace_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ctx->find = find;
-    ctx->replace = replace;
+    ctx->old = old;
+    ctx->new = new;
 
     flb_filter_set_context(f_ins, ctx);
 
@@ -104,7 +104,7 @@ static int cb_replace_filter(const void *data, size_t bytes,
     msgpack_packer tmp_pck;
     msgpack_unpacked result;
     msgpack_object  *obj;
-    msgpack_object  key;
+    msgpack_object  *key;
     msgpack_object_kv *kv;
     char *key_str = NULL;
     size_t key_str_size = 0;
@@ -155,15 +155,15 @@ static int cb_replace_filter(const void *data, size_t bytes,
         kv = obj->via.map.ptr;
         for(i=0; i < obj->via.map.size; i++) {
             modify = FLB_FALSE;
-            key = (kv+i)->key
-            if (k->type == MSGPACK_OBJECT_BIN) {
-                key_str  = (char *) k->via.bin.ptr;
-                key_str_size = k->via.bin.size;
+            key = &(kv+i)->key;
+            if (key->type == MSGPACK_OBJECT_BIN) {
+                key_str  = (char *) key->via.bin.ptr;
+                key_str_size = key->via.bin.size;
                 modify = FLB_TRUE;
             }
-            else if (k->type == MSGPACK_OBJECT_STR) {
-                key_str  = (char *) k->via.str.ptr;
-                key_str_size = k->via.str.size;
+            else if (key->type == MSGPACK_OBJECT_STR) {
+                key_str  = (char *) key->via.str.ptr;
+                key_str_size = key->via.str.size;
                 modify = FLB_TRUE;
             }
             if (modify == FLB_TRUE) {
@@ -183,13 +183,13 @@ static int cb_replace_filter(const void *data, size_t bytes,
                 memcpy(key_buf, key_str, key_str_size);
                 key_buf[key_str_size] = '\0';
                 for (j=0; j<key_str_size; j++) {
-                    if (key_buf[j] == ctx->find) {
-                        key_buf[j] = ctx->replace;
+                    if (key_buf[j] == ctx->old) {
+                        key_buf[j] = ctx->new;
                     }
                 }
                 /* Append the new key */
-                msgpack_pack_str(tmp_pck, key_str_size);
-                msgpack_pack_str_body(tmp_pck, key_buf, key_str_size);
+                msgpack_pack_str(&tmp_pck, key_str_size);
+                msgpack_pack_str_body(&tmp_pck, key_buf, key_str_size);
             } else {
                 msgpack_pack_object(&tmp_pck, (kv+i)->key);
             }
@@ -223,7 +223,7 @@ static int cb_replace_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-struct flb_filter_plugin filter_aws_plugin = {
+struct flb_filter_plugin filter_replace_character_plugin = {
     .name         = "replace_character",
     .description  = "Replace characters in key names",
     .cb_init      = cb_replace_init,
