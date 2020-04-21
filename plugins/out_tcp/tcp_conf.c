@@ -42,11 +42,11 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
-    
-    ret = flb_output_config_map_set(ins, (void *) ctx);	
-    if (ret == -1) {	
-        return -1;	
-    }	
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        return NULL;
+    }
 
     /* Set default network configuration if not set */
     flb_output_net_default("127.0.0.1", 5170, ins);
@@ -107,6 +107,8 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     }
 
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
+
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
