@@ -55,7 +55,8 @@ static FLB_INLINE void flb_time_sleep(int ms, struct flb_config *config)
         return;
     }
 
-    ret = flb_sched_timer_cb_create(config, ms, flb_time_thread_wakeup, th);
+    ret = flb_sched_timer_cb_create(config, FLB_SCHED_TIMER_CB_ONESHOT,
+                                    ms, flb_time_thread_wakeup, th);
     if (ret == -1) {
         return;
     }
