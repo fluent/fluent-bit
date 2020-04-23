@@ -32,9 +32,10 @@
 #define FLB_SCHED_REQUEST_FRAME  10
 
 /* Timer types */
-#define FLB_SCHED_TIMER_REQUEST  1  /* timerfd             */
-#define FLB_SCHED_TIMER_FRAME    2  /* timer frame checker */
-#define FLB_SCHED_TIMER_CUSTOM   3  /* one-shot timer, custom needs */
+#define FLB_SCHED_TIMER_REQUEST     1  /* timerfd             */
+#define FLB_SCHED_TIMER_FRAME       2  /* timer frame checker */
+#define FLB_SCHED_TIMER_CB_ONESHOT  3  /* one-shot callback timer  */
+#define FLB_SCHED_TIMER_CB_PERM     4  /* permanent callback timer */
 
 /*
  * A sched timer struct belongs to an event triggered by the scheduler. This
@@ -129,8 +130,7 @@ int flb_sched_timer_destroy(struct flb_sched_timer *timer);
 
 int flb_sched_request_invalidate(struct flb_config *config, void *data);
 
-
-int flb_sched_timer_cb_create(struct flb_config *config, int ms,
+int flb_sched_timer_cb_create(struct flb_config *config, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
                               void *data);
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer);
