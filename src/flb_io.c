@@ -100,7 +100,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         hint.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_PASSIVE;
 
         ret = getaddrinfo(u->net.source_address, NULL, &hint, &res);
-        if (ret) {
+        if (ret == -1) {
             flb_errno();
             flb_error("[io] cannot parse source_address=%s",
                       u->net.source_address);
@@ -109,29 +109,30 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
         if (res->ai_family == AF_INET) {
             fd = flb_net_socket_create(AF_INET, FLB_FALSE);
-            if (fd == -1) {
-                flb_error("[io] could not create an IPv4 socket for "
-                          "source_address=%s", u->net.source_address);
-                return -1;
-            }
         }
         else if (res->ai_family == AF_INET6) {
             fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
-            if (fd == -1) {
-                flb_error("[io] could not create an IPv6 socket for "
-                          "source_address=%s", u->net.source_address);
-                return -1;
-            }
+        }
+        else {
+            flb_error("[io] could not create socket for "
+                      "source_address=%s, unknown ai_family",
+                      u->net.source_address);
+            freeaddrinfo(res);
+            return -1;
         }
 
         if (fd == -1) {
-            flb_error("[io] could not create socket for "
-                      "source_address=%s", u->net.source_address);
+            flb_error("[io] could not create an %s socket for "
+                      "source_address=%s",
+                      res->ai_family == AF_INET ? "IPv4": "IPv6",
+                      u->net.source_address);
+            freeaddrinfo(res);
             return -1;
         }
 
         /* Bind the address */
         memcpy(&addr, res->ai_addr, res->ai_addrlen);
+        freeaddrinfo(res);
         ret = bind(fd, (struct sockaddr *) &addr, sizeof(addr));
         if (ret == -1) {
             flb_errno();
