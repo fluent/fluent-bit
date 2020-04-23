@@ -525,8 +525,10 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     }
 
     /* Net properties */
-    ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
-                             &ins->net_setup);
+    if (ins->net_config_map) {
+        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+                                 &ins->net_setup);
+    }
     return ret;
 }
 
