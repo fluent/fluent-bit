@@ -46,7 +46,7 @@ struct flb_config_map upstream_net[] = {
     {
      FLB_CONFIG_MAP_TIME, "net.connect_timeout", "10s",
      0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout),
-     "Set maximum time allowed to establich a connection, this time "
+     "Set maximum time allowed to establish a connection, this time "
      "includes the TLS handshake"
     },
 
@@ -441,7 +441,7 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
             }
         }
 
-        /* Check every availale Keepalive connection */
+        /* Check every available Keepalive connection */
         mk_list_foreach(u_head, &u->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
