@@ -21,12 +21,52 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_tls.h>
 #include <fluent-bit/flb_utils.h>
+
+/* Config map for Upstream networking setup */
+struct flb_config_map upstream_net[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "net.keepalive", "true",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive),
+     "Enable or disable Keepalive support"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "net.keepalive_idle_timeout", "30s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive_idle_timeout),
+     "Set maximum time allowed for an idle Keepalive connection"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "net.connect_timeout", "10s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout),
+     "Set maximum time allowed to establich a connection, this time "
+     "includes the TLS handshake"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "net.source_address", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, source_address),
+     "Specify network address to bind for data traffic"
+    },
+
+    /* EOF */
+    {0}
+};
+
+struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
+{
+    struct mk_list *config_map;
+
+    config_map = flb_config_map_create(config, upstream_net);
+    return config_map;
+}
 
 /* Creates a new upstream context */
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
@@ -41,7 +81,15 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
         return NULL;
     }
 
+    /* Set default networking setup values */
+    flb_net_setup_init(&u->net);
+
     u->tcp_host      = flb_strdup(host);
+    if (!u->tcp_host) {
+        flb_free(u);
+        return NULL;
+    }
+
     u->tcp_port      = port;
     u->flags         = flags;
     u->evl           = config->evl;
@@ -127,8 +175,11 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
 static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 {
     int ret;
+    time_t now;
     struct flb_upstream_conn *conn;
     struct flb_thread *th = pthread_getspecific(flb_thread_key);
+
+    now = time(NULL);
 
     conn = flb_malloc(sizeof(struct flb_upstream_conn));
     if (!conn) {
@@ -137,14 +188,20 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     }
     conn->u             = u;
     conn->fd            = -1;
+    conn->net_error     = -1;
+
+    if (u->net.connect_timeout > 0) {
+        conn->ts_connect_timeout = now + u->net.connect_timeout;
+    }
+    else {
+        conn->ts_connect_timeout = -1;
+    }
+
 #ifdef FLB_HAVE_TLS
     conn->tls_session   = NULL;
-
-    /* TLS handshake */
-    conn->tls_handshake_start = -1;
-    conn->tls_handshake_timeout = -1;
 #endif
     conn->ts_created = time(NULL);
+    conn->ts_assigned = time(NULL);
     conn->ts_available = 0;
     conn->ka_count = 0;
 
@@ -166,6 +223,9 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
         flb_debug("[upstream] KA connection #%i to %s:%i is connected",
                   conn->fd, u->tcp_host, u->tcp_port);
     }
+
+    /* Invalidate timeout for connection */
+    conn->ts_connect_timeout = -1;
 
     return conn;
 }
@@ -226,13 +286,12 @@ int flb_upstream_destroy(struct flb_upstream *u)
 
 struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 {
-    time_t ts;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_upstream_conn *conn = NULL;
 
     /* On non Keepalive mode, always create a new TCP connection */
-    if ((u->flags & FLB_IO_TCP_KA) == 0) {
+    if (u->net.keepalive == FLB_FALSE) {
         return create_conn(u);
     }
 
@@ -241,28 +300,18 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
      * take a little of time to do some cleanup and assign a connection. If no
      * entries exists, just create a new one.
      */
-
-    ts = time(NULL);
     mk_list_foreach_safe(head, tmp, &u->av_queue) {
         conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-
-        /* Check if is time to destroy this connection */
-        if ((ts - conn->ts_created) > u->ka_timeout) {
-            flb_debug("[upstream] KA connection #%i to %s:%i timed out, closing.",
-                      conn->fd, u->tcp_host, u->tcp_port);
-            destroy_conn(conn);
-            conn = NULL;
-            continue;
-        }
 
         /* This connection works, let's move it to the busy queue */
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &u->busy_queue);
 
-        /* I/O Timeouts */
-        conn->tls_handshake_start = -1;
-        conn->tls_handshake_timeout = -1;
+        /* Reset errno */
+        conn->net_error = -1;
 
+        /* Connect timeout */
+        conn->ts_assigned = time(NULL);
         flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
                   conn->fd, u->tcp_host, u->tcp_port);
 
@@ -273,7 +322,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
          * proper event mask and reuse, there is no need to remove the socket from
          * the event loop and re-add it again.
          *
-         * So... just return the connection context.
+         * So just return the connection context.
          */
         return conn;
     }
@@ -305,23 +354,13 @@ static int cb_upstream_conn_ka_dropped(void *data)
 int flb_upstream_conn_release(struct flb_upstream_conn *conn)
 {
     int ret;
-    time_t ts;
     struct flb_upstream *u;
 
     /* Upstream context */
     u = conn->u;
 
     /* If this is a valid KA connection just recycle */
-    if (conn->u->flags & FLB_IO_TCP_KA) {
-        /* check keepalive timeout */
-        ts = time(NULL);
-        if ((ts - conn->ts_created) > conn->u->ka_timeout) {
-            /* this connection must be dropped */
-            flb_debug("[upstream] KA connection #%i to %s:%i timed out, closing.",
-                      conn->fd, conn->u->tcp_host, conn->u->tcp_port);
-            return destroy_conn(conn);
-        }
-
+    if (conn->u->net.keepalive == FLB_TRUE) {
         /*
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
@@ -362,20 +401,35 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
 int flb_upstream_conn_timeouts(struct flb_config *ctx)
 {
     time_t now;
+    int drop;
     struct mk_list *head;
     struct mk_list *u_head;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
 
     now = time(NULL);
+
+    /* Iterate all upstream contexts */
     mk_list_foreach(head, &ctx->upstreams) {
         u = mk_list_entry(head, struct flb_upstream, _head);
-#ifdef FLB_HAVE_TLS
-        /* Iterate every connection */
+
+        /* Iterate every busy connection */
         mk_list_foreach(u_head, &u->busy_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
-            if (u_conn->tls_handshake_timeout != -1 &&
-                u_conn->tls_handshake_timeout <= now) {
+
+            drop = FLB_FALSE;
+
+            /* Connect timeouts */
+            if (u->net.connect_timeout > 0 &&
+                u_conn->ts_connect_timeout > 0 &&
+                u_conn->ts_connect_timeout <= now) {
+                drop = FLB_TRUE;
+                flb_error("[upstream] connect to %s:%i timed out after "
+                          "%i seconds",
+                          u->tcp_host, u->tcp_port, u->net.connect_timeout);
+            }
+
+            if (drop == FLB_TRUE) {
                 /*
                  * Shutdown the connection, this is the safest way to indicate
                  * that the socket cannot longer work and any co-routine on
@@ -383,14 +437,20 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
                  * the error to it caller.
                  */
                 shutdown(u_conn->fd, SHUT_RDWR);
-
-                /* Notify the user */
-                flb_error("[upstream] TLS handshake to %s:%i timeout after "
-                          "%i seconds",
-                          u->tcp_host, u->tcp_port, u->tls->handshake_timeout);
+                u_conn->net_error = ETIMEDOUT;
             }
         }
-#endif
+
+        /* Check every availale Keepalive connection */
+        mk_list_foreach(u_head, &u->av_queue) {
+            u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
+            if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
+                shutdown(u_conn->fd, SHUT_RDWR);
+                flb_debug("[upstream] drop keepalive connection to %s:%i "
+                          "(keepalive idle timeout)",
+                          u->tcp_host, u->tcp_port);
+            }
+        }
     }
 
     return 0;
