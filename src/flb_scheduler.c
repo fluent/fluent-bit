@@ -381,11 +381,15 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 #endif
         schedule_request_promote(sched);
     }
-    else if (timer->type == FLB_SCHED_TIMER_CUSTOM) {
+    else if (timer->type == FLB_SCHED_TIMER_CB_ONESHOT) {
         consume_byte(timer->timer_fd);
         flb_sched_timer_cb_disable(timer);
         timer->cb(config, timer->data);
         flb_sched_timer_cb_destroy(timer);
+    }
+    else if (timer->type == FLB_SCHED_TIMER_CB_PERM) {
+        consume_byte(timer->timer_fd);
+        timer->cb(config, timer->data);
     }
 
     return 0;
@@ -398,7 +402,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
  *
  * use-case: invoke function A() after M milliseconds.
  */
-int flb_sched_timer_cb_create(struct flb_config *config, int ms,
+int flb_sched_timer_cb_create(struct flb_config *config, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
                               void *data)
 {
@@ -408,12 +412,17 @@ int flb_sched_timer_cb_create(struct flb_config *config, int ms,
     struct mk_event *event;
     struct flb_sched_timer *timer;
 
+    if (type != FLB_SCHED_TIMER_CB_ONESHOT && type != FLB_SCHED_TIMER_CB_PERM) {
+        flb_error("[sched] invalid callback timer type %i", type);
+        return -1;
+    }
+
     timer = flb_sched_timer_create(config->sched);
     if (!timer) {
         return -1;
     }
 
-    timer->type = FLB_SCHED_TIMER_CUSTOM;
+    timer->type = type;
     timer->data = data;
     timer->cb   = cb;
 
