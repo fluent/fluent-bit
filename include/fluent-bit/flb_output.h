@@ -52,7 +52,6 @@
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE   0
 #define FLB_OUTPUT_PLUGIN_PROXY  1
-#define FLB_OUTPUT_KA_TIMEOUT   30
 
 struct flb_output_instance;
 
