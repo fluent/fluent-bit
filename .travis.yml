@@ -79,7 +79,7 @@ script: |
   sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
   sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
   sudo usermod -a -G systemd-journal $(id -un)
-  sudo -E su -p travis -c "PATH=$PATH travis_wait 30 ci/do-ut"
+  travis_wait 30 sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
 addons:
   apt:
     sources:
