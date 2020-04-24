@@ -533,10 +533,6 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         ins->tls_key_passwd = tmp;
     }
-    else if (prop_key_check("tls.handshake_timeout", k, len) == 0 && tmp) {
-        ins->tls.handshake_timeout = atoi(tmp);
-        flb_sds_destroy(tmp);
-    }
 #endif
     else {
         /*
