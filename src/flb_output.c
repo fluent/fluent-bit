@@ -680,17 +680,18 @@ int flb_output_init_all(struct flb_config *config)
             }
         }
 
+        /* Get Upstream net_setup configmap */
+        ins->net_config_map = flb_upstream_get_config_map(config);
+        if (!ins->net_config_map) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+
         /*
          * Validate 'net.*' properties: if the plugin use the Upstream interface,
          * it might receive some networking settings.
          */
         if (mk_list_size(&ins->net_properties) > 0) {
-            ins->net_config_map = flb_upstream_get_config_map(config);
-            if (!ins->net_config_map) {
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-
             ret = flb_config_map_properties_check(ins->p->name,
                                                   &ins->net_properties,
                                                   ins->net_config_map);
