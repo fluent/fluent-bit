@@ -50,7 +50,9 @@ make -j $nparallel
 echo
 echo "Run unit tests for $FLB_OPT on $nparallel VCPU"
 echo
-ctest -j $nparallel --build-run-dir $PWD --output-on-failure
+
+# Run unit tests and wait until 20 minutes for completion
+travis_wait 20 ctest -j $nparallel --build-run-dir $PWD --output-on-failure
 res=$?
 
 if [[ "$FLB_OPT" =~ COVERAGE  ]]
