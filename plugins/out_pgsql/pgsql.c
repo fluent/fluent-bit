@@ -194,14 +194,6 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
 
     PQclear(res);
 
-    flb_info("[out_pgsql] switching postgresql connection "
-             "to non-blocking mode");
-    if(PQsetnonblocking(ctx->conn, 1) != 0) {
-        flb_error("[out_pgsql] non-blocking mode not set");
-        pgsql_conf_destroy(ctx);
-        return -1;
-    }
-
     return 0;
 }
 
@@ -213,10 +205,11 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
 {
     struct flb_pgsql_config *ctx = out_context;
     flb_sds_t json;
-    char *tmp = NULL;
+    char *escaped_json = NULL;
     PGresult *res = NULL;
     char *query = NULL;
     size_t str_len;
+    int ret;
 
     if(PQconsumeInput(ctx->conn) == 0 && PQisBusy(ctx->conn) == 1) {
         flb_debug("[out_pgsql] Some command may still be running");
@@ -245,21 +238,21 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    tmp = PQescapeLiteral(ctx->conn, json, flb_sds_len(json));
+    escaped_json = PQescapeLiteral(ctx->conn, json, flb_sds_len(json));
     flb_sds_destroy(json);
 
-    if(!tmp) {
+    if(!escaped_json) {
         flb_errno();
         flb_error("[out_pgsql] Can't escape json string: %s", json);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    json = flb_sds_create(tmp);
+    json = flb_sds_create(escaped_json);
     if(!json) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
-    PQfreemem(tmp);
+    PQfreemem(escaped_json);
 
     str_len = 60 + flb_sds_len(json) + flb_sds_len(ctx->db_table);
     query = flb_malloc(str_len);
@@ -274,19 +267,17 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
              "INSERT INTO %s SELECT * FROM json_array_elements(%s);",
              ctx->db_table, json);
 
-    PQsendQuery(ctx->conn, query);
+    res = PQexec(ctx->conn, query);
     flb_free(query);
     flb_sds_destroy(json);
 
     PQflush(ctx->conn);
 
-    if(PQisBusy(ctx->conn) == 0) {
-        res = PQgetResult(ctx->conn);
-        if(PQresultStatus(res) != PGRES_COMMAND_OK) {
-            flb_warn("[out_pgsql] %s", PQerrorMessage(ctx->conn));
-        }
-        PQclear(res);
+    if(PQresultStatus(res) != PGRES_COMMAND_OK) {
+        flb_warn("[out_pgsql] %s", PQerrorMessage(ctx->conn));
     }
+
+    PQclear(res);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
