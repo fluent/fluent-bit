@@ -290,6 +290,17 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
     struct mk_list *head;
     struct flb_upstream_conn *conn = NULL;
 
+    flb_trace("[upstream] get new connection for %s:%i, net setup:\n"
+              "net.connect_timeout        = %i seconds\n"
+              "net.source_address         = %s\n"
+              "net.keepalive              = %s\n"
+              "net.keepalive_idle_timeout = %i seconds",
+              u->tcp_host, u->tcp_port,
+              u->net.connect_timeout,
+              u->net.source_address ? u->net.source_address: "any",
+              u->net.keepalive ? "enabled": "disabled",
+              u->net.keepalive_idle_timeout);
+
     /* On non Keepalive mode, always create a new TCP connection */
     if (u->net.keepalive == FLB_FALSE) {
         return create_conn(u);
