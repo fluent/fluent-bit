@@ -154,35 +154,53 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             if (key.via.str.size == ctx->topic_key_len &&
                 strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
                 topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
-                                               val.via.str.size,
-                                               ctx);
-                /* Add topic on the fly to topiclist and use it */
+                                               val.via.str.size, ctx);
+                /* Add extracted topic on the fly to topiclist */
                 if (ctx->dynamic_topic) {
+                    /* Only if default topic is set and this topicname is not set for this message */
                     if (strncmp(topic->name, flb_kafka_topic_default(ctx)->name, val.via.str.size) == 0 &&
-                       (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
+                        (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
+                        if (strstr(val.via.str.ptr, ",")) {
+                            /* Don't allow commas in kafkatopic name */
+                            flb_warn("',' not allowed in dynamic_kafka topic names");
+                            continue;
+                        }
+                        if (val.via.str.size > 64) {
+                            /* Don't allow length of dynamic kafka topics > 64 */
+                            flb_warn(" dynamic kafka topic length > 64 not allowed");
+                            continue;
+                        }
                         dynamic_topic = flb_malloc(val.via.str.size + 1);
                         if (!dynamic_topic) {
+                            /* Use default topic */
                             flb_errno();
-                            /* in this case we use the default topic */
-                            break;
+                            continue;
                         }
                         strncpy(dynamic_topic, val.via.str.ptr, val.via.str.size);
                         dynamic_topic[val.via.str.size] = '\0';
-
-                        topics = flb_utils_split(dynamic_topic, ',', 1);
+                        topics = flb_utils_split(dynamic_topic, ',', 0);
+                        if (!topics) {
+                            /* Use the default topic */
+                            flb_errno();
+                            flb_free(dynamic_topic);
+                            continue;
+                        }
                         mk_list_foreach(head, topics) {
+                            /* Add the (one) found topicname to the topic configuration */
                             entry = mk_list_entry(head, struct flb_split_entry, _head);
                             topic = flb_kafka_topic_create(entry->value, ctx);
                             if (!topic) {
+                                /* Use default topic  */
                                 flb_error("[out_kafka] cannot register topic '%s'",
                                           entry->value);
+                                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
+                                                               val.via.str.size, ctx);
                             }
                             else {
                                 flb_info("[out_kafka] new topic added: %s", dynamic_topic);
-                                break;
                             }
-                        flb_free(dynamic_topic);
                         }
+                        flb_free(dynamic_topic);
                     }
                 }
             }
