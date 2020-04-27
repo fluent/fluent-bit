@@ -95,6 +95,13 @@ struct flb_upstream_conn {
     /* Socker */
     flb_sockfd_t fd;
 
+    /*
+     * Recycle: if the connection is keepalive, this flag is always on, but if
+     * the caller wants to drop the connection once is released, it can set
+     * recycle to false.
+     */
+    int recycle;
+
     /* Keepalive */
     int ka_count;        /* how many times this connection has been used */
 
@@ -141,6 +148,7 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
 
 int flb_upstream_destroy(struct flb_upstream *u);
 
+int flb_upstream_conn_recycle(struct flb_upstream_conn *conn, int val);
 struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u);
 int flb_upstream_conn_release(struct flb_upstream_conn *u_conn);
 int flb_upstream_conn_timeouts(struct flb_config *ctx);

@@ -205,6 +205,13 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->ts_available = 0;
     conn->ka_count = 0;
 
+    if (u->net.keepalive == FLB_TRUE) {
+        flb_upstream_conn_recycle(conn, FLB_TRUE);
+    }
+    else {
+        flb_upstream_conn_recycle(conn, FLB_FALSE);
+    }
+
     MK_EVENT_ZERO(&conn->event);
 
     /* Link new connection to the busy queue */
@@ -282,6 +289,16 @@ int flb_upstream_destroy(struct flb_upstream *u)
     flb_free(u);
 
     return 0;
+}
+
+/* Enable or disable 'recycle' flag for the connection */
+int flb_upstream_conn_recycle(struct flb_upstream_conn *conn, int val)
+{
+    if (val == FLB_TRUE || val == FLB_FALSE) {
+        conn->recycle = val;
+    }
+
+    return -1;
 }
 
 struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
@@ -371,7 +388,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
     u = conn->u;
 
     /* If this is a valid KA connection just recycle */
-    if (conn->u->net.keepalive == FLB_TRUE) {
+    if (conn->u->net.keepalive == FLB_TRUE && conn->recycle == FLB_TRUE) {
         /*
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
