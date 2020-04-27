@@ -62,6 +62,7 @@ struct flb_http_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
     int chunked_encoding;      /* Chunked transfer encoding ?   */
+    int connection_close;      /* connection: close ?           */
     long chunked_cur_size;
     long chunked_exp_size;     /* expected chunked size         */
     char *chunk_processed_end; /* Position to mark last chunk   */
@@ -141,6 +142,7 @@ int flb_http_add_header(struct flb_http_client *c,
                         const char *val, size_t val_len);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
+int flb_http_set_keepalive(struct flb_http_client *c);
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx);

@@ -155,7 +155,7 @@ static int check_chunked_encoding(struct flb_http_client *c)
     return FLB_HTTP_OK;
 }
 
-/* Check and set Content Length */
+/* Check response for a 'Content-Length' header */
 static int check_content_length(struct flb_http_client *c)
 {
     int ret;
@@ -188,6 +188,40 @@ static int check_content_length(struct flb_http_client *c)
 
     c->resp.content_length = atoi(tmp);
     return FLB_HTTP_OK;
+}
+
+/* Check response for a 'Connection' header */
+static int check_connection(struct flb_http_client *c)
+{
+    int ret;
+    int len;
+    const char *header;
+    char *buf;
+
+    ret = header_lookup(c, "Connection: ", 12,
+                        &header, &len);
+    if (ret == FLB_HTTP_NOT_FOUND) {
+        return FLB_HTTP_NOT_FOUND;
+    }
+
+    buf = flb_malloc(len + 1);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(buf, header, len);
+    buf[len] = '\0';
+
+    if (strncasecmp(buf, "close", 5) == 0) {
+        c->resp.connection_close = FLB_TRUE;
+    }
+    else if (strcasestr(buf, "keep-alive")) {
+        c->resp.connection_close = FLB_FALSE;
+    }
+    flb_free(buf);
+    return FLB_HTTP_OK;
+
 }
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -617,6 +651,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     /* Response */
     c->resp.content_length = -1;
+    c->resp.connection_close = -1;
 
     if ((flags & FLB_HTTP_10) == 0) {
         c->flags |= FLB_HTTP_11;
@@ -862,10 +897,10 @@ static void http_headers_destroy(struct flb_http_client *c)
     flb_kv_release(&c->headers);
 }
 
-static int flb_http_keepalive(struct flb_http_client *c)
+int flb_http_set_keepalive(struct flb_http_client *c)
 {
-    /* validate keepalive mode */
-    if ((c->flags & FLB_HTTP_KA) == 0) {
+    /* check if 'keepalive' mode is enabled in the Upstream connection */
+    if (c->u_conn->u->net.keepalive == FLB_FALSE) {
         return -1;
     }
 
@@ -973,9 +1008,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         return -1;
     }
 
-    /* Try to add keep alive header */
-    flb_http_keepalive(c);
-
     /* check enough space for the ending CRLF */
     if (header_available(c, crlf) != 0) {
         new_size = c->header_size + 2;
@@ -1073,6 +1105,23 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             flb_error("[http_client] broken connection to %s:%i ?",
                       c->u_conn->u->tcp_host, c->u_conn->u->tcp_port);
             return -1;
+        }
+    }
+
+    /* Check 'Connection' response header */
+    ret = check_connection(c);
+    if (ret == FLB_HTTP_OK) {
+        /*
+         * If the server replied that the connection will be closed
+         * and our Upstream connection is in keepalive mode, we must
+         * inactivate the connection.
+         */
+        if (c->resp.connection_close == FLB_TRUE) {
+            /* Do not recycle the connection (no more keepalive) */
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            flb_debug("[http_client] server %s:%i will close connection #%i",
+                      c->u_conn->u->tcp_host, c->u_conn->u->tcp_port,
+                      c->u_conn->fd);
         }
     }
 
