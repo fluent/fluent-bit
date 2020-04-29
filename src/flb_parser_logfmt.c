@@ -88,7 +88,7 @@ static int logfmt_parser(struct flb_parser *parser,
 
     while (c < end) {
         /* garbage */
-        while (!ident_byte[*c] && (c < end)) {
+        while ((c < end) && !ident_byte[*c]) {
             c++;
         }
         if (c == end) {
@@ -96,7 +96,7 @@ static int logfmt_parser(struct flb_parser *parser,
         }
         /* key */
         key = c;
-        while (ident_byte[*c] && (c < end)) {
+        while ((c < end) && ident_byte[*c]) {
             c++;
         }
         key_len = c - key;
