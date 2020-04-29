@@ -105,7 +105,7 @@ static int ltsv_parser(struct flb_parser *parser,
 
     while (c < end) {
         label = c;
-        while (ltvs_label[*c] && (c < end)) {
+        while ((c < end) && ltvs_label[*c]) {
             c++;
         }
         label_len = c - label;
@@ -120,7 +120,7 @@ static int ltsv_parser(struct flb_parser *parser,
 
         field = c;
         if (c != end) {
-            while (ltvs_field[*c] && (c < end)) {
+            while ((c < end) && ltvs_field[*c]) {
                 c++;
             }
         }
