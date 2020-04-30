@@ -158,12 +158,12 @@ static int configure(struct flb_dummy *ctx,
     ctx->base_timestamp = NULL;
     flb_time_zero(&dummy_time);
 
-    str = flb_input_get_property("dummy_sec", in);
+    str = flb_input_get_property("start_time_sec", in);
     if (str != NULL && (val = atoi(str)) >= 0) {
         dummy_time_enabled = FLB_TRUE;
         dummy_time.tm.tv_sec = val;
     }
-    str = flb_input_get_property("dummy_nsec", in);
+    str = flb_input_get_property("start_time_nsec", in);
     if (str != NULL && (val = atoi(str)) >= 0) {
         dummy_time_enabled = FLB_TRUE;
         dummy_time.tm.tv_nsec = val;
