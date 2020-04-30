@@ -116,6 +116,26 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
+#ifdef FLB_SYSTEM_WINDOWS
+        HANDLE h;
+        FILE_STANDARD_INFO info;
+
+        h = _get_osfhandle(file->fd);
+        if (GetFileInformationByHandleEx(h, FileStandardInfo,
+                                         &info, sizeof(info))) {
+            if (info.DeletePending) {
+                flb_plg_debug(ctx->ins, "file is to be delete: %s", file->name);
+#ifdef FLB_HAVE_SQLDB
+                if (ctx->db) {
+                    flb_tail_db_file_delete(file, ctx);
+                }
+#endif
+                flb_tail_file_remove(file);
+                continue;
+            }
+        }
+#endif
+
         /* Discover the current file name for the open file descriptor */
         name = flb_tail_file_name(file);
         if (!name) {
