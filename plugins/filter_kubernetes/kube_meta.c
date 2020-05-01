@@ -940,12 +940,37 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
     return 0;
 }
 
+/*
+ * Try sending a HTTP request to k8s's API endpoint.
+ * Return 0 on success.
+ *
+ * Since some platforms have unstable networking at boot time,
+ * we retry 9 times with 10 seconds delay.
+ */
+static int check_api_server(struct flb_kube *ctx)
+{
+    int ret;
+    int n = 9;
+    char *meta_buf;
+    size_t meta_size;
+
+    while (n--) {
+        ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
+                                  &meta_buf, &meta_size);
+        if (ret == 0) {
+            flb_free(meta_buf);
+            return 0;
+        }
+        flb_plg_debug(ctx->ins, "failed to connect. retry in 10s");
+        sleep(10);
+    }
+    return -1;
+}
+
 /* Initialize local context */
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int ret;
-    char *meta_buf;
-    size_t meta_size;
 
     if (ctx->dummy_meta == FLB_TRUE) {
         flb_plg_warn(ctx->ins, "using Dummy Metadata");
@@ -962,20 +987,14 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 
         /* Gather info from API server */
         flb_plg_info(ctx->ins, "testing connectivity with API server...");
-        ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
-                                  &meta_buf, &meta_size);
+
+        ret = check_api_server(ctx);
         if (ret == -1) {
-            if (!ctx->podname) {
-                flb_plg_warn(ctx->ins, "could not get meta for local POD");
-            }
-            else {
-                flb_plg_warn(ctx->ins, "could not get meta for POD %s",
+            flb_plg_warn(ctx->ins, "could not get meta for POD (name=%s)",
                          ctx->podname);
-            }
             return -1;
         }
         flb_plg_info(ctx->ins, "API server connectivity OK");
-        flb_free(meta_buf);
     }
     else {
         flb_plg_info(ctx->ins, "Fluent Bit not running in a POD");
