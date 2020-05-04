@@ -424,6 +424,9 @@ static int cb_lua_filter(const void *data, size_t bytes,
                 flb_plg_error(ctx->ins, "error code %d: %s",
                               ret, lua_tostring(ctx->lua->state, -1));
                 lua_pop(ctx->lua->state, 1);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_sbuffer_destroy(&data_sbuf);
+                msgpack_unpacked_destroy(&result);
                 return FLB_FILTER_NOTOUCH;
             }
         }
