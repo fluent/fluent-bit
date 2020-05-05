@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,8 +54,10 @@
 #define FLB_SP_ERROR        -1
 
 /* Command type */
-#define FLB_SP_SELECT        0
-#define FLB_SP_CREATE_STREAM 1
+#define FLB_SP_SELECT          0
+#define FLB_SP_CREATE_STREAM   1
+#define FLB_SP_CREATE_SNAPSHOT 2
+#define FLB_SP_FLUSH_SNAPSHOT  3
 
 /* Source type */
 #define FLB_SP_STREAM    0
@@ -175,6 +177,9 @@ struct flb_sp_cmd {
      */
     struct mk_list *tmp_subkeys;
 
+    /* Limit on the number of records returning */
+    int limit;
+
     /* Source of data */
     int source_type;               /* FLB_SP_STREAM or FLB_SP_TAG */
     flb_sds_t source_name;         /* Name after stream: or tag:  */
@@ -259,6 +264,8 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd);
 
 /* Stream */
 int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, const char *stream_name);
+int flb_sp_cmd_snapshot_new(struct flb_sp_cmd *cmd, const char *snapshot_name);
+int flb_sp_cmd_snapshot_flush_new(struct flb_sp_cmd *cmd, const char *snapshot_name);
 int flb_sp_cmd_stream_prop_add(struct flb_sp_cmd *cmd, const char *key, const char *val);
 void flb_sp_cmd_stream_prop_del(struct flb_sp_cmd_prop *prop);
 const char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, const char *key);
@@ -297,6 +304,8 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd);
 
 int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key);
 void flb_sp_cmd_gb_key_del(struct flb_sp_cmd_gb_key *key);
+
+void flb_sp_cmd_limit_add(struct flb_sp_cmd *cmd, int limit);
 
 /* Timeseries */
 int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, int func, struct flb_exp *param);

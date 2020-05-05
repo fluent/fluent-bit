@@ -99,7 +99,7 @@ static void cb_plugins(mk_request_t *request, void *data)
                  out_buf, flb_sds_len(out_buf), NULL);
     mk_http_done(request);
 
-    flb_free(out_buf);
+    flb_sds_destroy(out_buf);
 }
 
 /* Perform registration */

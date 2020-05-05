@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
@@ -34,15 +35,15 @@
 #include "in_exec.h"
 
 /* cb_collect callback */
-static int in_exec_collect(struct flb_input_instance *i_ins,
+static int in_exec_collect(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     int ret = -1;
     size_t str_len = 0;
     FILE *cmdp = NULL;
-    struct flb_in_exec_config *exec_config = in_context;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
+    struct flb_exec *ctx = in_context;
 
     /* variables for parser */
     int parser_ret = -1;
@@ -50,19 +51,19 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
     size_t out_size = 0;
     struct flb_time out_time;
 
-    cmdp = popen(exec_config->cmd, "r");
+    cmdp = popen(ctx->cmd, "r");
     if (cmdp == NULL) {
-        flb_debug("[in_exec] %s failed", exec_config->cmd);
+        flb_plg_debug(ctx->ins, "command %s failed", ctx->cmd);
         goto collect_end;
     }
 
-    if (exec_config->parser) {
-        while (fgets(exec_config->buf, exec_config->buf_size, cmdp) != NULL) {
-            str_len = strnlen(exec_config->buf, exec_config->buf_size);
-            exec_config->buf[str_len - 1] = '\0'; /* chomp */
+    if (ctx->parser) {
+        while (fgets(ctx->buf, ctx->buf_size, cmdp) != NULL) {
+            str_len = strnlen(ctx->buf, ctx->buf_size);
+            ctx->buf[str_len - 1] = '\0'; /* chomp */
 
             flb_time_get(&out_time);
-            parser_ret = flb_parser_do(exec_config->parser, exec_config->buf, str_len - 1,
+            parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
                                        &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
                 if (flb_time_to_double(&out_time) == 0.0) {
@@ -77,22 +78,22 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
                 flb_time_append_to_msgpack(&out_time, &mp_pck, 0);
                 msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
 
-                flb_input_chunk_append_raw(i_ins, NULL, 0,
+                flb_input_chunk_append_raw(ins, NULL, 0,
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);
             }
             else {
-                flb_trace("[in_exec] tried to parse '%s'", exec_config->buf);
-                flb_trace("[in_exec] buf_size %zu", exec_config->buf_size);
-                flb_error("[in_exec] parser returned an error");
+                flb_plg_trace(ctx->ins, "tried to parse '%s'", ctx->buf);
+                flb_plg_trace(ctx->ins, "buf_size %zu", ctx->buf_size);
+                flb_plg_error(ctx->ins, "parser returned an error");
             }
         }
     }
     else {
-        while (fgets(exec_config->buf, exec_config->buf_size, cmdp) != NULL) {
-            str_len = strnlen(exec_config->buf, exec_config->buf_size);
-            exec_config->buf[str_len - 1] = '\0'; /* chomp */
+        while (fgets(ctx->buf, ctx->buf_size, cmdp) != NULL) {
+            str_len = strnlen(ctx->buf, ctx->buf_size);
+            ctx->buf[str_len - 1] = '\0'; /* chomp */
 
             /* Initialize local msgpack buffer */
             msgpack_sbuffer_init(&mp_sbuf);
@@ -106,9 +107,9 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
             msgpack_pack_str_body(&mp_pck, "exec", 4);
             msgpack_pack_str(&mp_pck, str_len - 1);
             msgpack_pack_str_body(&mp_pck,
-                                  exec_config->buf, str_len - 1);
+                                  ctx->buf, str_len - 1);
 
-            flb_input_chunk_append_raw(i_ins, NULL, 0,
+            flb_input_chunk_append_raw(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
         }
@@ -125,7 +126,7 @@ static int in_exec_collect(struct flb_input_instance *i_ins,
 }
 
 /* read config file and*/
-static int in_exec_config_read(struct flb_in_exec_config *exec_config,
+static int in_exec_config_read(struct flb_exec *ctx,
                                struct flb_input_instance *in,
                                struct flb_config *config,
                                int *interval_sec,
@@ -141,27 +142,27 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
         flb_error("[in_exec] no input 'command' was given");
         return -1;
     }
-    exec_config->cmd = cmd;
+    ctx->cmd = cmd;
 
     pval = flb_input_get_property("parser", in);
     if (pval != NULL) {
-        exec_config->parser = flb_parser_get(pval, config);
-        if (exec_config->parser == NULL) {
+        ctx->parser = flb_parser_get(pval, config);
+        if (ctx->parser == NULL) {
             flb_error("[in_exec] requested parser '%s' not found", pval);
         }
     }
 
     pval = flb_input_get_property("buf_size", in);
     if (pval != NULL) {
-        exec_config->buf_size = (size_t) flb_utils_size_to_bytes(pval);
+        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
 
-        if (exec_config->buf_size == -1) {
+        if (ctx->buf_size == -1) {
             flb_error("[in_exec] buffer size '%s' is invalid", pval);
             return -1;
         }
     }
     else {
-        exec_config->buf_size = DEFAULT_BUF_SIZE;
+        ctx->buf_size = DEFAULT_BUF_SIZE;
     }
 
     /* interval settings */
@@ -193,46 +194,48 @@ static int in_exec_config_read(struct flb_in_exec_config *exec_config,
     return 0;
 }
 
-static void delete_exec_config(struct flb_in_exec_config *exec_config)
+static void delete_exec_config(struct flb_exec *ctx)
 {
-    if (exec_config) {
-        /* release buffer */
-        if (exec_config->buf != NULL) {
-            flb_free(exec_config->buf);
-        }
-        flb_free(exec_config);
+    if (!ctx) {
+        return;
     }
+
+    /* release buffer */
+    if (ctx->buf != NULL) {
+        flb_free(ctx->buf);
+    }
+    flb_free(ctx);
 }
 
 /* Initialize plugin */
 static int in_exec_init(struct flb_input_instance *in,
                         struct flb_config *config, void *data)
 {
-    struct flb_in_exec_config *exec_config = NULL;
+    struct flb_exec *ctx = NULL;
     int ret = -1;
     int interval_sec = 0;
     int interval_nsec = 0;
 
     /* Allocate space for the configuration */
-    exec_config = flb_malloc(sizeof(struct flb_in_exec_config));
-    if (exec_config == NULL) {
+    ctx = flb_malloc(sizeof(struct flb_exec));
+    if (!ctx) {
         return -1;
     }
-    exec_config->parser = NULL;
+    ctx->parser = NULL;
 
     /* Initialize exec config */
-    ret = in_exec_config_read(exec_config, in, config, &interval_sec, &interval_nsec);
+    ret = in_exec_config_read(ctx, in, config, &interval_sec, &interval_nsec);
     if (ret < 0) {
         goto init_error;
     }
 
-    exec_config->buf = flb_malloc(exec_config->buf_size);
-    if (exec_config->buf == NULL) {
+    ctx->buf = flb_malloc(ctx->buf_size);
+    if (ctx->buf == NULL) {
         flb_error("could not allocate exec buffer");
         goto init_error;
     }
 
-    flb_input_set_context(in, exec_config);
+    flb_input_set_context(in, ctx);
 
     ret = flb_input_set_collector_time(in,
                                        in_exec_collect,
@@ -246,7 +249,7 @@ static int in_exec_init(struct flb_input_instance *in,
     return 0;
 
   init_error:
-    delete_exec_config(exec_config);
+    delete_exec_config(ctx);
 
     return -1;
 }
@@ -254,9 +257,9 @@ static int in_exec_init(struct flb_input_instance *in,
 static int in_exec_exit(void *data, struct flb_config *config)
 {
     (void) *config;
-    struct flb_in_exec_config *exec_config = data;
+    struct flb_exec *ctx = data;
 
-    delete_exec_config(exec_config);
+    delete_exec_config(ctx);
     return 0;
 }
 

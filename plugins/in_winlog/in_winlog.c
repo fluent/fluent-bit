@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +19,11 @@
  */
 
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_sqldb.h>
 #include <sddl.h>
 #include "winlog.h"
 
@@ -47,12 +47,12 @@ struct flb_in_winlog_config {
     flb_pipefd_t coll_fd;
 
     /* Plugin input instance */
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 struct flb_input_plugin in_winlog_plugin;
 
-static int in_winlog_collect(struct flb_input_instance *i_ins,
+static int in_winlog_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context);
 
 static int in_winlog_init(struct flb_input_instance *in,
@@ -70,7 +70,7 @@ static int in_winlog_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-    ctx->i_ins = in;
+    ctx->ins = in;
 
     /* Collection time setting */
     ctx->interval_sec = DEFAULT_INTERVAL_SEC;
@@ -92,13 +92,13 @@ static int in_winlog_init(struct flb_input_instance *in,
     /* Open channels */
     tmp = flb_input_get_property("channels", in);
     if (!tmp) {
-        flb_debug("[in_winlog] no channel provided. listening to 'Application'");
+        flb_plg_debug(ctx->ins, "no channel provided. listening to 'Application'");
         tmp = "Application";
     }
 
     ctx->active_channel = winlog_open_all(tmp);
     if (!ctx->active_channel) {
-        flb_error("[in_winlog] failed to open channels");
+        flb_plg_error(ctx->ins, "failed to open channels");
         flb_free(ctx->buf);
         flb_free(ctx);
         return -1;
@@ -109,7 +109,7 @@ static int in_winlog_init(struct flb_input_instance *in,
     if (tmp) {
         ctx->db = flb_sqldb_open(tmp, in->name, config);
         if (!ctx->db) {
-            flb_error("[in_winlog] could not open/create database");
+            flb_plg_error(ctx->ins, "could not open/create database");
             winlog_close_all(ctx->active_channel);
             flb_free(ctx->buf);
             flb_free(ctx);
@@ -118,7 +118,7 @@ static int in_winlog_init(struct flb_input_instance *in,
 
         ret = flb_sqldb_query(ctx->db, SQL_CREATE_CHANNELS, NULL, NULL);
         if (ret != FLB_OK) {
-            flb_error("[in_winlog] could not create 'channels' table");
+            flb_plg_error(ctx->ins, "could not create 'channels' table");
             flb_sqldb_close(ctx->db);
             winlog_close_all(ctx->active_channel);
             flb_free(ctx->buf);
@@ -129,8 +129,8 @@ static int in_winlog_init(struct flb_input_instance *in,
         mk_list_foreach(head, ctx->active_channel) {
             ch = mk_list_entry(head, struct winlog_channel, _head);
             winlog_sqlite_load(ch, ctx->db);
-            flb_debug("[in_winlog] load channel<%s record=%u time=%u>",
-                      ch->name, ch->record_number, ch->time_written);
+            flb_plg_debug(ctx->ins, "load channel<%s record=%u time=%u>",
+                          ch->name, ch->record_number, ch->time_written);
         }
     }
 
@@ -144,14 +144,15 @@ static int in_winlog_init(struct flb_input_instance *in,
                                        ctx->interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_error("[in_winlog] could not set up a collector");
+        flb_plg_error(ctx->ins, "could not set up a collector");
     }
     ctx->coll_fd = ret;
 
     return 0;
 }
 
-static int in_winlog_pack_sid(msgpack_packer *ppck, PEVENTLOGRECORD evt)
+static int in_winlog_pack_sid(struct flb_in_winlog_config *ctx,
+                              msgpack_packer *ppck, PEVENTLOGRECORD evt)
 {
     int len;
     char *str;
@@ -164,7 +165,7 @@ static int in_winlog_pack_sid(msgpack_packer *ppck, PEVENTLOGRECORD evt)
     }
 
     if (!ConvertSidToStringSidA(sid, &str)) {
-        flb_error("[in_winlog] cannot pack sid (%i)", GetLastError());
+        flb_plg_error(ctx->ins, "cannot pack sid (%i)", GetLastError());
         msgpack_pack_str(ppck, 0);
         msgpack_pack_str_body(ppck, "", 0);
         return -1;
@@ -179,7 +180,7 @@ static int in_winlog_pack_sid(msgpack_packer *ppck, PEVENTLOGRECORD evt)
 }
 
 
-static int in_winlog_read_channel(struct flb_input_instance *i_ins,
+static int in_winlog_read_channel(struct flb_input_instance *ins,
                                   struct flb_in_winlog_config *ctx,
                                   struct winlog_channel *ch)
 {
@@ -196,14 +197,14 @@ static int in_winlog_read_channel(struct flb_input_instance *i_ins,
     msgpack_sbuffer mp_sbuf;
 
     if (winlog_read(ch, ctx->buf, ctx->bufsize, &read)) {
-        flb_error("[in_winlog] failed to read '%s'", ch->name);
+        flb_plg_error(ctx->ins, "failed to read '%s'", ch->name);
         return -1;
     }
     if (read == 0) {
-        flb_trace("[in_winlog] EOF reached on '%s'", ch->name);
+        flb_plg_trace(ctx->ins, "EOF reached on '%s'", ch->name);
         return 0;
     }
-    flb_debug("[in_winlog] read %u bytes from '%s'", read, ch->name);
+    flb_plg_debug(ctx->ins, "read %u bytes from '%s'", read, ch->name);
 
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -280,7 +281,7 @@ static int in_winlog_read_channel(struct flb_input_instance *i_ins,
         /* Sid */
         msgpack_pack_str(&mp_pck, 3);
         msgpack_pack_str_body(&mp_pck, "Sid", 3);
-        in_winlog_pack_sid(&mp_pck, evt);
+        in_winlog_pack_sid(ctx, &mp_pck, evt);
 
         /* Data */
         msgpack_pack_str(&mp_pck, 4);
@@ -292,18 +293,18 @@ static int in_winlog_read_channel(struct flb_input_instance *i_ins,
     }
 
     if (ctx->db) {
-        flb_debug("[in_winlog] save channel<%s record=%u time=%u>",
-                  ch->name, ch->record_number, ch->time_written);
+        flb_plg_debug(ctx->ins, "save channel<%s record=%u time=%u>",
+                      ch->name, ch->record_number, ch->time_written);
         winlog_sqlite_save(ch, ctx->db);
     }
 
-    flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     return 0;
 }
 
-static int in_winlog_collect(struct flb_input_instance *i_ins,
+static int in_winlog_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
     struct flb_in_winlog_config *ctx = in_context;
@@ -312,7 +313,7 @@ static int in_winlog_collect(struct flb_input_instance *i_ins,
 
     mk_list_foreach(head, ctx->active_channel) {
         ch = mk_list_entry(head, struct winlog_channel, _head);
-        in_winlog_read_channel(i_ins, ctx, ch);
+        in_winlog_read_channel(ins, ctx, ch);
     }
     return 0;
 }
@@ -320,21 +321,31 @@ static int in_winlog_collect(struct flb_input_instance *i_ins,
 static void in_winlog_pause(void *data, struct flb_config *config)
 {
     struct flb_in_winlog_config *ctx = data;
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void in_winlog_resume(void *data, struct flb_config *config)
 {
     struct flb_in_winlog_config *ctx = data;
-    flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_winlog_exit(void *data, struct flb_config *config)
 {
     struct flb_in_winlog_config *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
+
     winlog_close_all(ctx->active_channel);
+
+    if (ctx->db) {
+        flb_sqldb_close(ctx->db);
+    }
     flb_free(ctx->buf);
     flb_free(ctx);
+
     return 0;
 }
 

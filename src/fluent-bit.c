@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,8 @@
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_dump.h>
+#include <fluent-bit/flb_stacktrace.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
@@ -45,61 +47,7 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
 
-/* Libbacktrace support */
-#ifdef FLB_HAVE_LIBBACKTRACE
-#include <backtrace.h>
-#include <backtrace-supported.h>
 
-struct flb_stacktrace {
-    struct backtrace_state *state;
-    int error;
-    int line;
-};
-
-struct flb_stacktrace flb_st;
-
-static void flb_stacktrace_error_callback(void *data,
-                                          const char *msg, int errnum)
-{
-    struct flb_stacktrace *ctx = data;
-    fprintf(stderr, "ERROR: %s (%d)", msg, errnum);
-    ctx->error = 1;
-}
-
-static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
-                                         const char *filename, int lineno,
-                                         const char *function)
-{
-    struct flb_stacktrace *p = data;
-
-    fprintf(stdout, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
-            p->line,
-            (unsigned long) pc,
-            function == NULL ? "???" : function,
-            filename == NULL ? "???" : filename + sizeof(FLB_SOURCE_DIR),
-            lineno);
-    p->line++;
-    return 0;
-}
-
-static inline void flb_stacktrace_init(char *prog)
-{
-    memset(&flb_st, '\0', sizeof(struct flb_stacktrace));
-    flb_st.state = backtrace_create_state(prog,
-                                          BACKTRACE_SUPPORTS_THREADS,
-                                          flb_stacktrace_error_callback, NULL);
-}
-
-void flb_stacktrace_print()
-{
-    struct flb_stacktrace *ctx;
-
-    ctx = &flb_st;
-    backtrace_full(ctx->state, 3, flb_stacktrace_print_callback,
-                   flb_stacktrace_error_callback, ctx);
-}
-
-#endif
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -114,6 +62,25 @@ struct flb_config *config;
 #define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
 #define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
 #define s_get_key(a, b, c) (char *) get_key(a, b, c)
+
+static void flb_version()
+{
+    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
+    exit(EXIT_SUCCESS);
+}
+
+static void flb_banner()
+{
+    fprintf(stderr, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
+            ANSI_RESET);
+    fprintf(stderr, "* %sCopyright (C) 2019-2020 The Fluent Bit Authors%s\n",
+            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
+            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
+            "umbrella of Fluentd\n");
+    fprintf(stderr, "* https://fluentbit.io\n\n");
+}
 
 static void flb_help(int rc, struct flb_config *config)
 {
@@ -145,7 +112,10 @@ static void flb_help(int rc, struct flb_config *config)
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     printf("  -T, --sp-task=SQL\tdefine a stream processor task\n");
 #endif
-    printf("  -v, --verbose\t\tenable verbose mode\n");
+    printf("  -v, --verbose\t\tincrease logging verbosity (default: info)\n");
+#ifdef FLB_HAVE_TRACE
+    printf("  -vv\t\t\ttrace mode (available)\n");
+#endif
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
@@ -191,18 +161,194 @@ static void flb_help(int rc, struct flb_config *config)
     exit(rc);
 }
 
-static void flb_version()
+/*
+ * If the description is larger than the allowed 80 chars including left
+ * padding, split the content in multiple lines and align it properly.
+ */
+static void help_plugin_description(int left_padding, char *str)
 {
-    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
-    exit(EXIT_SUCCESS);
+    int len;
+    int max;
+    int line = 0;
+    char *c;
+    char *p;
+    char *end;
+    char fmt[32];
+
+    if (!str) {
+        printf("no description available\n");
+        return;
+    }
+
+    max = 80 - left_padding;
+    len = strlen(str);
+
+    if (len <= max) {
+        printf("%s\n", str);
+        return;
+    }
+
+    p = str;
+    len = strlen(str);
+    end = str + len;
+
+    while (p < end) {
+        if ((p + max) > end) {
+            c = end;
+        }
+        else {
+            c = p + max;
+            while (*c != ' ' && c > p) {
+                c--;
+            }
+        }
+
+        if (c == p) {
+            len = end - p;
+        }
+        else {
+            len = c - p;
+        }
+
+        snprintf(fmt, sizeof(fmt) - 1, "%%*s%%.%is\n", len);
+        if (line == 0) {
+            printf(fmt, 0, "", p);
+        }
+        else {
+            printf(fmt, left_padding, " ", p);
+        }
+        line++;
+        p += len + 1;
+    }
 }
 
-static void flb_banner()
+static void flb_help_plugin(int rc, struct flb_config *config, int type,
+                            struct flb_input_instance *in,
+                            struct flb_filter_instance *filter,
+                            struct flb_output_instance *out)
+
+
 {
-    fprintf(stderr, "%sFluent Bit v%s%s\n",
-            ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
-    fprintf(stderr, "%sCopyright (C) Treasure Data%s\n\n",
-            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    int max = 0;
+    int len;
+    char fmt[32];
+    char fmt_prf[32];
+    char def[32];
+    char *desc = NULL;
+    flb_sds_t tmp;
+    struct flb_config_map *opt = NULL;
+    struct flb_config_map *m = NULL;
+
+    flb_banner();
+
+    if (type == PLUGIN_INPUT) {
+        printf("%sHELP%s\n%s input plugin\n", ANSI_BOLD, ANSI_RESET,
+               in->p->name);
+        desc = in->p->description;
+        opt = m = in->p->config_map;
+    }
+    else if (type == PLUGIN_FILTER) {
+        printf("%sHELP%s\n%s filter plugin\n", ANSI_BOLD, ANSI_RESET,
+               filter->p->name);
+        desc = filter->p->description;
+        opt = m = filter->p->config_map;
+    }
+    else if (type == PLUGIN_OUTPUT) {
+        printf("%sHELP%s\n%s output plugin\n", ANSI_BOLD, ANSI_RESET,
+               out->p->name);
+        desc = out->p->description;
+        opt = m = out->p->config_map;
+    }
+
+    if (desc) {
+        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+    }
+
+    if (!opt) {
+        exit(rc);
+    }
+
+    printf(ANSI_BOLD "\nOPTIONS\n" ANSI_RESET);
+
+    /* Find the larger name, just for formatting purposes */
+    while (m && m->name) {
+        len = strlen(m->name);
+        if (len > max) {
+            max = len;
+        }
+        m++;
+    }
+    max += 2;
+
+    snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
+    snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
+    snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
+    m = opt;
+    while (m && m->name) {
+        if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
+            len = strlen(m->name);
+            tmp = flb_sds_create_size(len + 2);
+            flb_sds_printf(&tmp, "%sN", m->name);
+            printf(fmt_prf, tmp);
+            flb_sds_destroy(tmp);
+        }
+        else {
+            printf(fmt, m->name);
+        }
+
+        help_plugin_description(max, m->desc);
+        if (m->def_value) {
+            printf(def, max, " ", m->def_value);
+        }
+        else {
+            printf("%*s> type: ", max, " ");
+        }
+
+        if (m->type == FLB_CONFIG_MAP_STR) {
+            printf("string");
+        }
+        else if (m->type == FLB_CONFIG_MAP_INT) {
+            printf("integer");
+        }
+        else if (m->type == FLB_CONFIG_MAP_BOOL) {
+            printf("boolean");
+        }
+        else if(m->type == FLB_CONFIG_MAP_DOUBLE) {
+            printf("double");
+        }
+        else if (m->type == FLB_CONFIG_MAP_SIZE) {
+            printf("size");
+        }
+        else if (m->type == FLB_CONFIG_MAP_TIME) {
+            printf("time");
+        }
+        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_CLIST) {
+            len = flb_config_map_expected_values(m->type);
+            if (len == -1) {
+                printf("multiple comma delimited strings");
+            }
+            else {
+                printf("comma delimited strings (minimum %i)", len);
+            }
+        }
+        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_SLIST) {
+            len = flb_config_map_expected_values(m->type);
+            if (len == -1) {
+                printf("multiple space delimited strings");
+            }
+            else {
+                printf("space delimited strings (minimum %i)", len);
+            }
+        }
+        else if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
+            printf("prefixed string");
+        }
+
+        printf("\n\n");
+        m++;
+    }
+
+    exit(rc);
 }
 
 #define flb_print_signal(X) case X:                       \
@@ -217,9 +363,10 @@ static void flb_signal_handler(int signal)
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         flb_print_signal(SIGINT);
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
         flb_print_signal(SIGQUIT);
         flb_print_signal(SIGHUP);
+        flb_print_signal(SIGCONT);
 #endif
         flb_print_signal(SIGTERM);
         flb_print_signal(SIGSEGV);
@@ -228,7 +375,7 @@ static void flb_signal_handler(int signal)
     /* Signal handlers */
     switch (signal) {
     case SIGINT:
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
     case SIGQUIT:
     case SIGHUP:
 #endif
@@ -246,6 +393,11 @@ static void flb_signal_handler(int signal)
         flb_stacktrace_print();
 #endif
         abort();
+#ifndef FLB_SYSTEM_WINDOWS
+    case SIGCONT:
+        flb_dump(config);
+        break;
+#endif
     default:
         break;
     }
@@ -254,9 +406,10 @@ static void flb_signal_handler(int signal)
 static void flb_signal_init()
 {
     signal(SIGINT,  &flb_signal_handler);
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
     signal(SIGQUIT, &flb_signal_handler);
     signal(SIGHUP,  &flb_signal_handler);
+    signal(SIGCONT, &flb_signal_handler);
 #endif
     signal(SIGTERM, &flb_signal_handler);
     signal(SIGSEGV, &flb_signal_handler);
@@ -752,7 +905,13 @@ int main(int argc, char **argv)
             break;
 #endif
         case 'h':
-            flb_help(EXIT_SUCCESS, config);
+            if (last_plugin == -1) {
+                flb_help(EXIT_SUCCESS, config);
+            }
+            else {
+                flb_help_plugin(EXIT_SUCCESS, config,
+                                last_plugin, in, filter, out);
+            }
             break;
 #ifdef FLB_HAVE_HTTP_SERVER
         case 'H':
@@ -792,9 +951,14 @@ int main(int argc, char **argv)
     }
 #endif /* !FLB_HAVE_STATIC_CONF */
 
+    set_log_level_from_env(config);
+
     if (config->verbose != FLB_LOG_OFF) {
         flb_banner();
     }
+
+    /* Program name */
+    flb_config_set_program_name(config, argv[0]);
 
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF
@@ -839,7 +1003,8 @@ int main(int argc, char **argv)
         flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
     }
 
-    if (config->verbose == FLB_TRUE) {
+    /* debug or trace */
+    if (config->verbose >= FLB_LOG_DEBUG) {
         flb_utils_print_setup(config);
     }
 
@@ -850,10 +1015,14 @@ int main(int argc, char **argv)
     }
 #endif
 
+    /* Prepare pthread keys */
+    flb_thread_prepare();
+    flb_output_prepare();
+
     ret = flb_engine_start(config);
-    if (ret == -1) {
+    if (ret == -1 && config) {
         flb_engine_shutdown(config);
     }
 
-    return 0;
+    return ret;
 }

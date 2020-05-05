@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +30,7 @@
 #define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
+#define FLB_ES_DEFAULT_HTTP_MAX   "4096"
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -39,6 +40,12 @@ struct flb_elasticsearch {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    /* AWS Auth */
+#ifdef FLB_HAVE_SIGNV4
+    int has_aws_auth;
+    char *aws_region;
+#endif
 
     /* HTTP Client Setup */
     size_t buffer_size;
@@ -63,35 +70,32 @@ struct flb_elasticsearch {
     int current_time_index;
 
     /* prefix */
-    int logstash_prefix_len;
-    char *logstash_prefix;
+    flb_sds_t logstash_prefix;
 
     /* prefix key */
-    int logstash_prefix_key_len;
-    char *logstash_prefix_key;
+    flb_sds_t logstash_prefix_key;
 
     /* date format */
-    int logstash_dateformat_len;
-    char *logstash_dateformat;
+    flb_sds_t logstash_dateformat;
 
     /* time key */
-    int time_key_len;
-    char *time_key;
+    flb_sds_t time_key;
 
     /* time key format */
-    int time_key_format_len;
-    char *time_key_format;
+    flb_sds_t time_key_format;
 
     /* include_tag_key */
     int include_tag_key;
-    int tag_key_len;
-    char *tag_key;
+    flb_sds_t tag_key;
 
     /* Elasticsearch HTTP API */
     char uri[256];
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Plugin output instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif

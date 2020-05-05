@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_kv.h>
@@ -259,7 +260,7 @@ static char *extract_name(char *line, char *start)
     return NULL;
 }
 
-static char *get_container_name(char *id)
+static char *get_container_name(struct flb_docker *ctx, char *id)
 {
     char *container_name = NULL;
     char *config_file;
@@ -274,7 +275,7 @@ static char *get_container_name(char *id)
     f = fopen(config_file, "r");
     if (!f) {
         flb_errno();
-        flb_error("[in_docker] cannot open %s", config_file);
+        flb_plg_error(ctx->ins, "cannot open %s", config_file);
         flb_free(config_file);
         return NULL;
     }
@@ -296,7 +297,7 @@ static char *get_container_name(char *id)
 }
 
 /* Returns CPU metrics for docker id. */
-static cpu_snapshot *get_docker_cpu_snapshot(char *id)
+static cpu_snapshot *get_docker_cpu_snapshot(struct flb_docker *ctx, char *id)
 {
     int c;
     unsigned long cpu_used = 0;
@@ -312,14 +313,16 @@ static cpu_snapshot *get_docker_cpu_snapshot(char *id)
     f = fopen(usage_file, "r");
     if (!f) {
         flb_errno();
-        flb_error("[in_docker] error gathering CPU data from %s", usage_file);
+        flb_plg_error(ctx->ins, "error gathering CPU data from %s",
+                      usage_file);
         flb_free(usage_file);
         return NULL;
     }
 
     c = fscanf(f, "%ld", &cpu_used);
     if (c != 1) {
-        flb_error("[in_docker] error scanning used CPU value from %s", usage_file);
+        flb_plg_error(ctx->ins, "error scanning used CPU value from %s",
+                      usage_file);
         flb_free(usage_file);
         fclose(f);
         return NULL;
@@ -341,7 +344,7 @@ static cpu_snapshot *get_docker_cpu_snapshot(char *id)
 }
 
 /* Returns memory used by a docker in bytes. */
-static uint64_t get_docker_mem_used(char *id)
+static uint64_t get_docker_mem_used(struct flb_docker *ctx, char *id)
 {
     int c;
     char *usage_file = NULL;
@@ -356,14 +359,16 @@ static uint64_t get_docker_mem_used(char *id)
     f = fopen(usage_file, "r");
     if (!f) {
         flb_errno();
-        flb_error("[in_docker] cannot retrieve memory used from %s", usage_file);
+        flb_plg_error(ctx->ins, "cannot retrieve memory used from %s",
+                      usage_file);
         flb_free(usage_file);
         return 0;
     }
 
     c = fscanf(f, "%ld", &mem_used);
     if (c != 1) {
-        flb_error("[in_docker] cannot scan memory usage value from %s", usage_file);
+        flb_plg_error(ctx->ins, "cannot scan memory usage value from %s",
+                      usage_file);
         flb_free(usage_file);
         fclose(f);
         return 0;
@@ -382,25 +387,26 @@ static uint64_t get_docker_mem_limit(char *id)
     uint64_t mem_limit = 0;
     FILE *f;
 
-    if (limit_file != NULL) {
-        f = fopen(limit_file, "r");
-
-        if (!f) {
-            perror(limit_file);
-            return 0;
-        }
-
-        fscanf(f, "%ld", &mem_limit);
-
-        flb_free(limit_file);
-        fclose(f);
+    if (!limit_file) {
+        return 0;
     }
+
+    f = fopen(limit_file, "r");
+    if (!f) {
+        flb_errno();
+        flb_free(limit_file);
+        return 0;
+    }
+
+    fscanf(f, "%ld", &mem_limit);
+    flb_free(limit_file);
+    fclose(f);
 
     return mem_limit;
 }
 
 /* Get memory snapshot for a docker id. */
-static mem_snapshot *get_docker_mem_snapshot(char *id)
+static mem_snapshot *get_docker_mem_snapshot(struct flb_docker *ctx, char *id)
 {
     mem_snapshot *snapshot = NULL;
 
@@ -410,7 +416,7 @@ static mem_snapshot *get_docker_mem_snapshot(char *id)
         return NULL;
     }
 
-    snapshot->used = get_docker_mem_used(id);
+    snapshot->used = get_docker_mem_used(ctx, id);
     snapshot->limit = get_docker_mem_limit(id);
 
     return snapshot;
@@ -472,7 +478,7 @@ static bool is_exists(struct mk_list *list, char *id)
 }
 
 /* Returns dockers CPU/Memory metrics. */
-static struct mk_list *get_docker_stats(struct mk_list *dockers)
+static struct mk_list *get_docker_stats(struct flb_docker *ctx, struct mk_list *dockers)
 {
     docker_snapshot *snapshot;
     struct docker_info *docker;
@@ -493,9 +499,9 @@ static struct mk_list *get_docker_stats(struct mk_list *dockers)
     mk_list_foreach(head, dockers) {
         docker = mk_list_entry(head, docker_info, _head);
         snapshot = init_snapshot(docker->id);
-        snapshot->name = get_container_name(docker->id);
-        snapshot->cpu = get_docker_cpu_snapshot(docker->id);
-        snapshot->mem = get_docker_mem_snapshot(docker->id);
+        snapshot->name = get_container_name(ctx, docker->id);
+        snapshot->cpu = get_docker_cpu_snapshot(ctx, docker->id);
+        snapshot->mem = get_docker_mem_snapshot(ctx, docker->id);
         mk_list_add(&snapshot->_head, snapshots);
     }
 
@@ -535,7 +541,7 @@ static struct mk_list *get_ids_from_str(char *space_delimited_str)
 
 /* Initializes blacklist/whitelist.  */
 static void init_filter_lists(struct flb_input_instance *f_ins,
-                              struct flb_in_docker_config *ctx)
+                              struct flb_docker *ctx)
 {
     struct mk_list *head;
     struct flb_kv *kv;
@@ -557,7 +563,7 @@ static void init_filter_lists(struct flb_input_instance *f_ins,
 }
 
 /* Filters list of active dockers as per config. This returns a new list */
-static struct mk_list *apply_filters(struct flb_in_docker_config *ctx,
+static struct mk_list *apply_filters(struct flb_docker *ctx,
                                      struct mk_list *dockers)
 {
     struct mk_list *head;
@@ -613,17 +619,17 @@ static int cb_docker_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
 {
     int ret;
-    struct flb_in_docker_config *ctx;
+    struct flb_docker *ctx;
     const char *pval = NULL;
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = flb_calloc(1, sizeof(struct flb_in_docker_config));
+    ctx = flb_calloc(1, sizeof(struct flb_docker));
     if (!ctx) {
         flb_errno();
         return -1;
     }
-    ctx->i_ins = in;
+    ctx->ins = in;
 
     /* Collection time setting */
     pval = flb_input_get_property("interval_sec", in);
@@ -645,7 +651,7 @@ static int cb_docker_init(struct flb_input_instance *in,
                                        cb_docker_collect, ctx->interval_sec,
                                        ctx->interval_nsec, config);
     if (ret == -1) {
-        perror("[in_docker] Could not set collector for Docker input plugin");
+        flb_plg_error(ctx->ins, "Could not set collector for Docker input plugin");
         return -1;
     }
     ctx->coll_fd = ret;
@@ -762,13 +768,13 @@ static void free_docker_list(struct mk_list *dockers)
 }
 
 /* Callback to gather Docker CPU/Memory usage. */
-static int cb_docker_collect(struct flb_input_instance *i_ins,
+static int cb_docker_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
     struct mk_list *active;
     struct mk_list *filtered;
     struct mk_list *snaps;
-    struct flb_in_docker_config *ctx = in_context;
+    struct flb_docker *ctx = in_context;
     (void) config;
 
     /* Get current active dockers. */
@@ -781,14 +787,14 @@ static int cb_docker_collect(struct flb_input_instance *i_ins,
     }
 
     /* Get Mem/CPU stats of dockers. */
-    snaps = get_docker_stats(filtered);
+    snaps = get_docker_stats(ctx, filtered);
     if (!snaps) {
         free_docker_list(active);
         free_docker_list(filtered);
         return 0;
     }
 
-    flush_snapshots(i_ins, snaps);
+    flush_snapshots(ins, snaps);
 
     free_snapshots(snaps);
     free_docker_list(active);
@@ -802,20 +808,20 @@ static int cb_docker_collect(struct flb_input_instance *i_ins,
 
 static void cb_docker_pause(void *data, struct flb_config *config)
 {
-    struct flb_in_docker_config *ctx = data;
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+    struct flb_docker *ctx = data;
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void cb_docker_resume(void *data, struct flb_config *config)
 {
-    struct flb_in_docker_config *ctx = data;
-    flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
+    struct flb_docker *ctx = data;
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int cb_docker_exit(void *data, struct flb_config *config)
 {
     (void) *config;
-    struct flb_in_docker_config *ctx = data;
+    struct flb_docker *ctx = data;
 
     /* done */
     free_docker_list(ctx->whitelist);

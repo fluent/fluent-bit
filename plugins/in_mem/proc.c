@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -169,6 +169,11 @@ struct proc_task *proc_stat(pid_t pid, int page_size)
     /* Internal conversion */
     t->proc_rss    = (t->rss * page_size);
     t->proc_rss_hr = human_readable_size(t->proc_rss);
+    if ( t->proc_rss_hr == NULL ) {
+        flb_free(buf);
+        flb_free(t);
+        return NULL;
+    }
 
     flb_free(buf);
     return t;

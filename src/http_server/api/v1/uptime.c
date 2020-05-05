@@ -100,7 +100,7 @@ static void cb_uptime(mk_request_t *request, void *data)
     mk_http_send(request, out_buf, out_size, NULL);
     mk_http_done(request);
 
-    flb_free(out_buf);
+    flb_sds_destroy(out_buf);
 }
 
 /* Perform registration */

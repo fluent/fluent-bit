@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +36,7 @@ void cb_keys()
     struct flb_record_accessor *ra;
 
     printf("\n=== test ===");
-    ra = flb_ra_create("$aaa['a'] extra $bbb['b'] final access" );
+    ra = flb_ra_create("$aaa['a'] extra $bbb['b'] final access", FLB_TRUE);
     TEST_CHECK(ra != NULL);
     if (!ra) {
         exit(EXIT_FAILURE);
@@ -46,7 +46,7 @@ void cb_keys()
     flb_ra_destroy(ra);
 
     printf("\n=== test ===");
-    ra = flb_ra_create("$b['x']['y']");
+    ra = flb_ra_create("$b['x']['y']", FLB_TRUE);
     TEST_CHECK(ra != NULL);
     if (!ra) {
         exit(EXIT_FAILURE);
@@ -56,7 +56,7 @@ void cb_keys()
     flb_ra_destroy(ra);
 
     printf("\n=== test ===");
-    ra = flb_ra_create("$z");
+    ra = flb_ra_create("$z", FLB_TRUE);
     TEST_CHECK(ra != NULL);
     if (!ra) {
         exit(EXIT_FAILURE);
@@ -66,7 +66,7 @@ void cb_keys()
     flb_ra_destroy(ra);
 
     printf("\n=== test ===");
-    ra = flb_ra_create("abc");
+    ra = flb_ra_create("abc", FLB_TRUE);
     TEST_CHECK(ra != NULL);
     if (!ra) {
         exit(EXIT_FAILURE);
@@ -75,10 +75,10 @@ void cb_keys()
     flb_ra_dump(ra);
     flb_ra_destroy(ra);
 
-    ra = flb_ra_create("$abc['a'");
+    ra = flb_ra_create("$abc['a'", FLB_TRUE);
     TEST_CHECK(ra == NULL);
 
-    ra = flb_ra_create("");
+    ra = flb_ra_create("", FLB_TRUE);
     flb_ra_destroy(ra);
 }
 
@@ -127,7 +127,7 @@ void cb_translate()
         "k5 => 123456789 (int),k6 => nested (nested), "           \
         "k8 =>  (nothing), translated END";
 
-    ra = flb_ra_create(fmt);
+    ra = flb_ra_create(fmt, FLB_TRUE);
     TEST_CHECK(ra != NULL);
     if (!ra) {
         exit(EXIT_FAILURE);
@@ -139,7 +139,7 @@ void cb_translate()
     map = result.data;
 
     /* Do translation */
-    str = flb_ra_translate(ra, NULL, -1, map);
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
     TEST_CHECK(str != NULL);
     if (!str) {
         exit(EXIT_FAILURE);

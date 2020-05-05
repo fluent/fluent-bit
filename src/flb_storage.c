@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     char *checksum;
     struct flb_input_instance *in;
 
-    flb_info("[storage] initializing...");
+    flb_info("[storage] version=%s, initializing...", cio_version());
 
     if (cio->root_path) {
         flb_info("[storage] root path '%s'", cio->root_path);
@@ -65,16 +65,16 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
                   char *str)
 {
-    if (level == CIO_ERROR) {
+    if (level == CIO_LOG_ERROR) {
         flb_error("[storage] %s", str);
     }
-    else if (level == CIO_WARN) {
+    else if (level == CIO_LOG_WARN) {
         flb_warn("[storage] %s", str);
     }
-    else if (level == CIO_INFO) {
+    else if (level == CIO_LOG_INFO) {
         flb_info("[storage] %s", str);
     }
-    else if (level == CIO_DEBUG) {
+    else if (level == CIO_LOG_DEBUG) {
         flb_debug("[storage] %s", str);
     }
 
@@ -84,32 +84,16 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
-    int type;
-    const char *tmp;
     const char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
     /* storage config: get stream type */
-    tmp = flb_input_get_property("storage.type", in);
-    if (tmp) {
-        if (strcasecmp(tmp, "filesystem") == 0) {
-            type = CIO_STORE_FS;
-        }
-        else if (strcasecmp(tmp, "memory") == 0) {
-            type = CIO_STORE_MEM;
-        }
-        else {
-            flb_error("[storage] invalid type '%s' on instance %s",
-                      tmp, flb_input_name(in));;
-            return -1;
-        }
-    }
-    else {
-        type = CIO_STORE_MEM;
+    if (in->storage_type == -1) {
+        in->storage_type = CIO_STORE_MEM;
     }
 
-    if (type == CIO_STORE_FS && cio->root_path == NULL) {
+    if (in->storage_type == CIO_STORE_FS && cio->root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
                   "but no filesystem path was defined.",
                   flb_input_name(in));
@@ -127,7 +111,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
     name = flb_input_name(in);
 
     /* create stream for input instance */
-    stream = cio_stream_create(cio, name, type);
+    stream = cio_stream_create(cio, name, in->storage_type);
     if (!stream) {
         flb_error("[storage] cannot create stream for instance %s",
                   name);
@@ -137,7 +121,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
 
     si->stream = stream;
     si->cio = cio;
-    si->type = type;
+    si->type = in->storage_type;
     in->storage = si;
 
     return 0;
@@ -223,7 +207,7 @@ int flb_storage_create(struct flb_config *ctx)
     }
 
     /* Create chunkio context */
-    cio = cio_create(ctx->storage_path, log_cb, CIO_DEBUG, flags);
+    cio = cio_create(ctx->storage_path, log_cb, CIO_LOG_DEBUG, flags);
     if (!cio) {
         flb_error("[storage] error initializing storage engine");
         return -1;
@@ -290,9 +274,6 @@ void flb_storage_destroy(struct flb_config *ctx)
     }
 
     cio_destroy(cio);
-    if (ctx->storage_bl_mem_limit) {
-        flb_free(ctx->storage_bl_mem_limit);
-    }
 
     /* Delete references from input instances */
     storage_contexts_destroy(ctx);

@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{4BEBB59C-477B-4F7A-8AE8-4228D0861E54}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>librdkafka</RootNamespace>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.vcxproj" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Platform)'=='Win32'">
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);C:\OpenSSL-Win32\include</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86);C:\OpenSSL-Win32\lib\VC\static</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)'=='x64'">
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);C:\OpenSSL-Win64\include</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);C:\OpenSSL-Win64\lib\VC\static</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;LIBRDKAFKA_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalOptions>/J %(AdditionalOptions)</AdditionalOptions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies);libeay32MT.lib;ssleay32MT.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;LIBRDKAFKA_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalOptions>/J %(AdditionalOptions)</AdditionalOptions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies);libeay32MT.lib;ssleay32MT.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;LIBRDKAFKA_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalOptions>/SAFESEH:NO</AdditionalOptions>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies);libeay32MT.lib;ssleay32MT.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;LIBRDKAFKA_EXPORTS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies);libeay32MT.lib;ssleay32MT.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\crc32c.h" />
+    <ClInclude Include="..\src\queue.h" />
+    <ClInclude Include="..\src\rdatomic.h" />
+    <ClInclude Include="..\src\rdavg.h" />
+    <ClInclude Include="..\src\rdbuf.h" />
+    <ClInclude Include="..\src\rdendian.h" />
+    <ClInclude Include="..\src\rdfloat.h" />
+    <ClInclude Include="..\src\rdgz.h" />
+    <ClInclude Include="..\src\rdinterval.h" />
+    <ClInclude Include="..\src\rdkafka_admin.h" />
+    <ClInclude Include="..\src\rdkafka_assignor.h" />
+    <ClInclude Include="..\src\rdkafka_buf.h" />
+    <ClInclude Include="..\src\rdkafka_cgrp.h" />
+    <ClInclude Include="..\src\rdkafka_conf.h" />
+    <ClInclude Include="..\src\rdkafka_confval.h" />
+    <ClInclude Include="..\src\rdkafka_event.h" />
+    <ClInclude Include="..\src\rdkafka_feature.h" />
+    <ClInclude Include="..\src\rdkafka_lz4.h" />
+    <ClInclude Include="..\src\rdkafka_mock.h" />
+    <ClInclude Include="..\src\rdkafka_mock_int.h" />
+    <ClInclude Include="..\src\rdkafka_msgset.h" />
+    <ClInclude Include="..\src\rdkafka_op.h" />
+    <ClInclude Include="..\src\rdkafka_partition.h" />
+    <ClInclude Include="..\src\rdkafka_pattern.h" />
+    <ClInclude Include="..\src\rdkafka_queue.h" />
+    <ClInclude Include="..\src\rdkafka_request.h" />
+    <ClInclude Include="..\src\rdkafka_sasl.h" />
+    <ClInclude Include="..\src\rdkafka_sasl_int.h" />
+    <ClInclude Include="..\src\rdkafka_transport_int.h" />
+    <ClInclude Include="..\src\rdlist.h" />
+    <ClInclude Include="..\src\rdposix.h" />
+    <ClInclude Include="..\src\rd.h" />
+    <ClInclude Include="..\src\rdaddr.h" />
+    <ClInclude Include="..\src\rdcrc32.h" />
+    <ClInclude Include="..\src\rdkafka.h" />
+    <ClInclude Include="..\src\rdkafka_broker.h" />
+    <ClInclude Include="..\src\rdkafka_int.h" />
+    <ClInclude Include="..\src\rdkafka_msg.h" />
+    <ClInclude Include="..\src\rdkafka_offset.h" />
+    <ClInclude Include="..\src\rdkafka_proto.h" />
+    <ClInclude Include="..\src\rdkafka_timer.h" />
+    <ClInclude Include="..\src\rdkafka_topic.h" />
+    <ClInclude Include="..\src\rdkafka_transport.h" />
+    <ClInclude Include="..\src\rdkafka_ssl.h" />
+    <ClInclude Include="..\src\rdkafka_cert.h" />
+    <ClInclude Include="..\src\rdkafka_metadata.h" />
+    <ClInclude Include="..\src\rdkafka_interceptor.h" />
+    <ClInclude Include="..\src\rdkafka_plugin.h" />
+    <ClInclude Include="..\src\rdkafka_header.h" />
+    <ClInclude Include="..\src\rdlog.h" />
+    <ClInclude Include="..\src\rdstring.h" />
+    <ClInclude Include="..\src\rdrand.h" />
+    <ClInclude Include="..\src\rdsysqueue.h" />
+    <ClInclude Include="..\src\rdtime.h" />
+    <ClInclude Include="..\src\rdtypes.h" />
+    <ClInclude Include="..\src\rdregex.h" />
+    <ClInclude Include="..\src\rdunittest.h" />
+    <ClInclude Include="..\src\rdvarint.h" />
+    <ClInclude Include="..\src\snappy.h" />
+    <ClInclude Include="..\src\snappy_compat.h" />
+    <ClInclude Include="..\src\tinycthread.h" />
+    <ClInclude Include="..\src\tinycthread_extra.h" />
+    <ClInclude Include="..\src\rdwin32.h" />
+    <ClInclude Include="..\src\win32_config.h" />
+    <ClInclude Include="..\src\regexp.h" />
+    <ClInclude Include="..\src\rdavl.h" />
+    <ClInclude Include="..\src\rdports.h" />
+    <ClInclude Include="..\src\rddl.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\crc32c.c" />
+    <ClCompile Include="..\src\rdaddr.c" />
+    <ClCompile Include="..\src\rdbuf.c" />
+    <ClCompile Include="..\src\rdcrc32.c" />
+    <ClCompile Include="..\src\rdgz.c" />
+    <ClCompile Include="..\src\rdhdrhistogram.c" />
+    <ClCompile Include="..\src\rdkafka.c" />
+    <ClCompile Include="..\src\rdkafka_assignor.c" />
+    <ClCompile Include="..\src\rdkafka_broker.c" />
+    <ClCompile Include="..\src\rdkafka_cgrp.c" />
+    <ClCompile Include="..\src\rdkafka_conf.c" />
+    <ClCompile Include="..\src\rdkafka_event.c" />
+    <ClCompile Include="..\src\rdkafka_lz4.c" />
+    <ClCompile Include="..\src\rdkafka_msg.c" />
+    <ClCompile Include="..\src\rdkafka_msgset_reader.c" />
+    <ClCompile Include="..\src\rdkafka_msgset_writer.c" />
+    <ClCompile Include="..\src\rdkafka_offset.c" />
+    <ClCompile Include="..\src\rdkafka_op.c" />
+    <ClCompile Include="..\src\rdkafka_partition.c" />
+    <ClCompile Include="..\src\rdkafka_pattern.c" />
+    <ClCompile Include="..\src\rdkafka_queue.c" />
+    <ClCompile Include="..\src\rdkafka_range_assignor.c" />
+    <ClCompile Include="..\src\rdkafka_roundrobin_assignor.c" />
+    <ClCompile Include="..\src\rdkafka_request.c" />
+    <ClCompile Include="..\src\rdkafka_sasl.c" />
+    <ClCompile Include="..\src\rdkafka_sasl_win32.c" />
+    <ClCompile Include="..\src\rdkafka_sasl_plain.c" />
+    <ClCompile Include="..\src\rdkafka_sasl_scram.c" />
+    <ClCompile Include="..\src\rdkafka_sasl_oauthbearer.c" />
+    <ClCompile Include="..\src\rdkafka_subscription.c" />
+    <ClCompile Include="..\src\rdkafka_timer.c" />
+    <ClCompile Include="..\src\rdkafka_topic.c" />
+    <ClCompile Include="..\src\rdkafka_transport.c" />
+    <ClCompile Include="..\src\rdkafka_ssl.c" />
+    <ClCompile Include="..\src\rdkafka_cert.c" />
+    <ClCompile Include="..\src\rdkafka_buf.c" />
+    <ClCompile Include="..\src\rdkafka_feature.c" />
+    <ClCompile Include="..\src\rdkafka_metadata.c" />
+    <ClCompile Include="..\src\rdkafka_metadata_cache.c" />
+    <ClCompile Include="..\src\rdkafka_interceptor.c" />
+    <ClCompile Include="..\src\rdkafka_plugin.c" />
+    <ClCompile Include="..\src\rdkafka_header.c" />
+    <ClCompile Include="..\src\rdkafka_admin.c" />
+    <ClCompile Include="..\src\rdkafka_aux.c" />
+    <ClCompile Include="..\src\rdkafka_background.c" />
+    <ClCompile Include="..\src\rdkafka_idempotence.c" />
+    <ClCompile Include="..\src\rdkafka_zstd.c" />
+    <ClCompile Include="..\src\rdkafka_mock.c" />
+    <ClCompile Include="..\src\rdkafka_mock_handlers.c" />
+    <ClCompile Include="..\src\rdlist.c" />
+    <ClCompile Include="..\src\rdlog.c" />
+    <ClCompile Include="..\src\rdmurmur2.c" />
+    <ClCompile Include="..\src\rdstring.c" />
+    <ClCompile Include="..\src\rdrand.c" />
+    <ClCompile Include="..\src\rdregex.c" />
+    <ClCompile Include="..\src\rdunittest.c" />
+    <ClCompile Include="..\src\rdvarint.c" />
+    <ClCompile Include="..\src\snappy.c" />
+    <ClCompile Include="..\src\tinycthread.c" />
+    <ClCompile Include="..\src\tinycthread_extra.c" />
+    <ClCompile Include="..\src\regexp.c" />
+    <ClCompile Include="..\src\rdports.c" />
+    <ClCompile Include="..\src\rdavl.c" />
+    <ClCompile Include="..\src\xxhash.c" />
+    <ClCompile Include="..\src\lz4.c" />
+    <ClCompile Include="..\src\lz4frame.c" />
+    <ClCompile Include="..\src\lz4hc.c" />
+    <ClCompile Include="..\src\rddl.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\LICENSE..txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.win32" />
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="packages\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.targets" Condition="Exists('packages\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.targets')" />
+    <Import Project="packages\confluent.libzstd.redist.1.3.8-g9f9630f4-test1\build\native\confluent.libzstd.redist.targets" Condition="Exists('packages\confluent.libzstd.redist.1.3.8-g9f9630f4-test1\build\native\confluent.libzstd.redist.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Enable NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('packages\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.1.2.8.8\build\native\zlib.$(PlatformToolset).windesktop.msvcstl.dyn.rt-dyn.targets'))" />
+    <Error Condition="!Exists('packages\confluent.libzstd.redist.1.3.8-g9f9630f4-test1\build\native\confluent.libzstd.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\confluent.libzstd.redist.1.3.8-g9f9630f4-test1\build\native\confluent.libzstd.redist.targets'))" />
+  </Target>
+</Project>

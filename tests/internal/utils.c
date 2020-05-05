@@ -18,8 +18,10 @@ struct url_check {
 
 struct url_check url_checks[] = {
     {0, "https://fluentbit.io/something",
-     "https", "fluentbit.io", NULL, "/something"},
-    {0, "https://fluentbit.io", "https", "fluentbit.io", NULL, "/"},
+     "https", "fluentbit.io", "443", "/something"},
+    {0, "http://fluentbit.io/something",
+     "http", "fluentbit.io", "80", "/something"},
+    {0, "https://fluentbit.io", "https", "fluentbit.io", "443", "/"},
     {0, "https://fluentbit.io:1234/something",
     "https", "fluentbit.io", "1234", "/something"},
     {0, "https://fluentbit.io:1234", "https", "fluentbit.io", "1234", "/"},
@@ -110,8 +112,43 @@ void test_url_split()
     }
 }
 
+void test_write_str()
+{
+    char buf[10];
+    int size = sizeof(buf);
+    int off;
+    int ret;
+
+    off = 0;
+    ret = flb_utils_write_str(buf, &off, size, "a", 1);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK(memcmp(buf, "a", off) == 0);
+
+    off = 0;
+    ret = flb_utils_write_str(buf, &off, size, "\n", 1);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK(memcmp(buf, "\\n", off) == 0);
+
+    off = 0;
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK(memcmp(buf, "\\u3042", off) == 0);
+
+    // Truncated bytes
+    off = 0;
+    ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK(memcmp(buf, "\\u3042", off) == 0);
+
+    // Error: buffer too small
+    off = 0;
+    ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11);
+    TEST_CHECK(ret == FLB_FALSE);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
+    { "write_str", test_write_str },
     { 0 }
 };

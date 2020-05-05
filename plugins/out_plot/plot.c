@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,20 +18,20 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_time.h>
+#include <msgpack.h>
+
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_time.h>
-#include <msgpack.h>
-
-struct flb_plot_conf {
+struct flb_plot {
     const char *out_file;
-    const char *key_name;
-    int key_len;
+    flb_sds_t key;
+    struct flb_output_instance *ins;
 };
 
 static int cb_plot_init(struct flb_output_instance *ins,
@@ -41,29 +41,29 @@ static int cb_plot_init(struct flb_output_instance *ins,
     const char *tmp;
     (void) config;
     (void) data;
-    struct flb_plot_conf *conf;
+    struct flb_plot *ctx;
 
-    conf = flb_calloc(1, sizeof(struct flb_plot_conf));
-    if (!conf) {
+    ctx = flb_calloc(1, sizeof(struct flb_plot));
+    if (!ctx) {
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     /* Optional 'key' field to obtain the datapoint value */
     tmp = flb_output_get_property("key", ins);
     if (tmp) {
-        conf->key_name = tmp;
-        conf->key_len  = strlen(tmp);
+        ctx->key = flb_sds_create(tmp);
     }
 
     /* Optional output file name/path */
     tmp = flb_output_get_property("file", ins);
     if (tmp) {
-        conf->out_file = tmp;
+        ctx->out_file = tmp;
     }
 
     /* Set the context */
-    flb_output_set_context(ins, conf);
+    flb_output_set_context(ins, ctx);
 
     return 0;
 }
@@ -75,6 +75,7 @@ static void cb_plot_flush(const void *data, size_t bytes,
                           struct flb_config *config)
 {
     int i;
+    int written;
     int fd;
     struct flb_time atime;
     msgpack_unpacked result;
@@ -83,7 +84,7 @@ static void cb_plot_flush(const void *data, size_t bytes,
     msgpack_object *map;
     msgpack_object *key = NULL;
     msgpack_object *val = NULL;
-    struct flb_plot_conf *ctx = out_context;
+    struct flb_plot *ctx = out_context;
     (void) i_ins;
     (void) config;
 
@@ -99,7 +100,8 @@ static void cb_plot_flush(const void *data, size_t bytes,
     fd = open(out_file, O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (fd == -1) {
         flb_errno();
-        flb_warn("[out_plot] could not open %s, switching to STDOUT", out_file);
+        flb_plg_warn(ctx->ins, "could not open %s, switching to STDOUT",
+                     out_file);
         fd = STDOUT_FILENO;
     }
 
@@ -116,13 +118,14 @@ static void cb_plot_flush(const void *data, size_t bytes,
          * data that gets in can set the keys in different order (e.g: forward,
          * tcp, etc).
          */
-        if (ctx->key_name) {
+        if (ctx->key) {
             for (i = 0; i < map->via.map.size; i++) {
                 /* Get each key and compare */
                 key = &(map->via.map.ptr[i].key);
                 if (key->type == MSGPACK_OBJECT_BIN) {
-                    if (ctx->key_len == key->via.bin.size &&
-                        memcmp(key->via.bin.ptr, ctx->key_name, ctx->key_len) == 0) {
+                    if (flb_sds_len(ctx->key) == key->via.bin.size &&
+                        memcmp(key->via.bin.ptr, ctx->key,
+                               flb_sds_len(ctx->key)) == 0) {
                         val = &(map->via.map.ptr[i].val);
                         break;
                     }
@@ -130,8 +133,9 @@ static void cb_plot_flush(const void *data, size_t bytes,
                     val = NULL;
                 }
                 else if (key->type == MSGPACK_OBJECT_STR) {
-                    if (ctx->key_len == key->via.str.size &&
-                        memcmp(key->via.str.ptr, ctx->key_name, ctx->key_len) == 0) {
+                    if (flb_sds_len(ctx->key) == key->via.str.size &&
+                        memcmp(key->via.str.ptr, ctx->key,
+                               flb_sds_len(ctx->key)) == 0) {
                         val = &(map->via.map.ptr[i].val);
                         break;
                     }
@@ -151,29 +155,33 @@ static void cb_plot_flush(const void *data, size_t bytes,
         }
 
         if (!val) {
-            flb_error("[out_plot] unmatched key '%s'", ctx->key_name);
+            flb_plg_error(ctx->ins, "unmatched key '%s'", ctx->key);
             if (fd != STDOUT_FILENO) {
                 close(fd);
             }
+            msgpack_unpacked_destroy(&result);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
 
         if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-            dprintf(fd, "%f %" PRIu64 "\n",
-                    flb_time_to_double(&atime), val->via.u64);
+            written = dprintf(fd, "%f %" PRIu64 "\n",
+                              flb_time_to_double(&atime), val->via.u64);
         }
         else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            dprintf(fd, "%f %" PRId64 "\n",
-                    flb_time_to_double(&atime), val->via.i64);
+            written = dprintf(fd, "%f %" PRId64 "\n",
+                              flb_time_to_double(&atime), val->via.i64);
         }
         else if (val->type == MSGPACK_OBJECT_FLOAT) {
-            dprintf(fd, "%f %lf\n",
-                    flb_time_to_double(&atime), val->via.f64);
+            written = dprintf(fd, "%f %lf\n",
+                              flb_time_to_double(&atime), val->via.f64);
         }
         else {
-            flb_error("[out_plot] value must be integer, negative integer "
-                      "or float");
+            flb_plg_error(ctx->ins, "value must be integer, negative integer "
+                          "or float");
+            written = 0;
         }
+        flb_plg_debug(ctx->ins, "%i bytes written to file '%s'",
+                      written, out_file);
     }
     msgpack_unpacked_destroy(&result);
 
@@ -186,8 +194,9 @@ static void cb_plot_flush(const void *data, size_t bytes,
 
 static int cb_plot_exit(void *data, struct flb_config *config)
 {
-    struct flb_plot_conf *ctx = data;
+    struct flb_plot *ctx = data;
 
+    flb_sds_destroy(ctx->key);
     flb_free(ctx);
 
     return 0;

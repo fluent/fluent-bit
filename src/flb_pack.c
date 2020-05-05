@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -478,8 +478,8 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
         {
-            char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
+            char temp[512] = {0};
+            i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -162,6 +162,43 @@ ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
     }
 
     return ret;
+}
+
+int flb_regex_results_get(struct flb_regex_search *result, int i,
+                          ptrdiff_t *start, ptrdiff_t *end)
+{
+    OnigRegion *region;
+
+    region = (OnigRegion *) result->region;
+    if (!region) {
+        return -1;
+    }
+
+    if (i >= region->num_regs) {
+        return -1;
+    }
+
+    *start = region->beg[i];
+    *end = region->end[i];
+
+    return 0;
+}
+
+void flb_regex_results_release(struct flb_regex_search *result)
+{
+    onig_region_free(result->region, 1);
+}
+
+int flb_regex_results_size(struct flb_regex_search *result)
+{
+    OnigRegion *region;
+
+    region = (OnigRegion *) result->region;
+    if (!region) {
+        return -1;
+    }
+
+    return region->num_regs;
 }
 
 int flb_regex_match(struct flb_regex *r, unsigned char *str, size_t slen)

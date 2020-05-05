@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,20 +25,20 @@
 #include <fluent-bit/flb_input.h>
 
 struct flb_in_fw_config {
-    int server_fd;               /* TCP server file descriptor  */
-    size_t buffer_max_size;      /* Max Buffer size             */
-    size_t buffer_chunk_size;    /* Chunk allocation size       */
+    int server_fd;                  /* TCP server file descriptor  */
+    size_t buffer_max_size;         /* Max Buffer size             */
+    size_t buffer_chunk_size;       /* Chunk allocation size       */
 
     /* Network */
-    char *listen;                /* Listen interface            */
-    char *tcp_port;              /* TCP Port                    */
+    char *listen;                   /* Listen interface            */
+    char *tcp_port;                 /* TCP Port                    */
 
     /* Unix Socket (TCP only) */
-    char *unix_path;             /* Unix path for socket        */
+    char *unix_path;                /* Unix path for socket        */
 
-    struct mk_list connections;    /* List of active connections */
-    struct mk_event_loop *evl;     /* Event loop file descriptor */
-    struct flb_input_instance *in; /* Input plugin instace       */
+    struct mk_list connections;     /* List of active connections */
+    struct mk_event_loop *evl;      /* Event loop file descriptor */
+    struct flb_input_instance *ins; /* Input plugin instace       */
 };
 
 #endif

@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{BE4E1264-5D13-423D-8191-71F7041459E7}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>tests</RootNamespace>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.vcxproj" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+  </PropertyGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup>
+    <Link>
+      <SubSystem>Console</SubSystem>
+<AdditionalDependencies>librdkafka.lib;librdkafkacpp.lib;ws2_32.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(BuildOutputDir)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(SolutionDir)\..\src;$(SolutionDir)\..\src-cpp</AdditionalIncludeDirectories>
+      <ShowIncludes>false</ShowIncludes>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;_LIB;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(SolutionDir)\..\src;$(SolutionDir)\..\src-cpp</AdditionalIncludeDirectories>
+      <ShowIncludes>false</ShowIncludes>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_LIB;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(SolutionDir)\..\src;$(SolutionDir)\..\src-cpp</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_LIB;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(SolutionDir)\..\src;$(SolutionDir)\..\src-cpp</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\tests\0000-unittests.c" />
+    <ClCompile Include="..\..\tests\0001-multiobj.c" />
+    <ClCompile Include="..\..\tests\0002-unkpart.c" />
+    <ClCompile Include="..\..\tests\0003-msgmaxsize.c" />
+    <ClCompile Include="..\..\tests\0004-conf.c" />
+    <ClCompile Include="..\..\tests\0005-order.c" />
+    <ClCompile Include="..\..\tests\0006-symbols.c" />
+    <ClCompile Include="..\..\tests\0007-autotopic.c" />
+    <ClCompile Include="..\..\tests\0008-reqacks.c" />
+    <ClCompile Include="..\..\tests\0009-mock_cluster.c" />
+    <ClCompile Include="..\..\tests\0011-produce_batch.c" />
+    <ClCompile Include="..\..\tests\0012-produce_consume.c" />
+    <ClCompile Include="..\..\tests\0013-null-msgs.c" />
+    <ClCompile Include="..\..\tests\0014-reconsume-191.c" />
+    <ClCompile Include="..\..\tests\0015-offset_seeks.c" />
+    <ClCompile Include="..\..\tests\0017-compression.c" />
+    <ClCompile Include="..\..\tests\0018-cgrp_term.c" />
+    <ClCompile Include="..\..\tests\0019-list_groups.c" />
+    <ClCompile Include="..\..\tests\0020-destroy_hang.c" />
+    <ClCompile Include="..\..\tests\0021-rkt_destroy.c" />
+    <ClCompile Include="..\..\tests\0022-consume_batch.c" />
+    <ClCompile Include="..\..\tests\0025-timers.c" />
+    <ClCompile Include="..\..\tests\0026-consume_pause.c" />
+    <ClCompile Include="..\..\tests\0028-long_topicnames.c" />
+    <ClCompile Include="..\..\tests\0029-assign_offset.c" />
+    <ClCompile Include="..\..\tests\0030-offset_commit.c" />
+    <ClCompile Include="..\..\tests\0031-get_offsets.c" />
+    <ClCompile Include="..\..\tests\0033-regex_subscribe.c" />
+    <ClCompile Include="..\..\tests\0034-offset_reset.c" />
+    <ClCompile Include="..\..\tests\0035-api_version.c" />
+    <ClCompile Include="..\..\tests\0036-partial_fetch.c" />
+    <ClCompile Include="..\..\tests\0037-destroy_hang_local.c" />
+    <ClCompile Include="..\..\tests\0038-performance.c" />
+    <ClCompile Include="..\..\tests\0039-event.c" />
+    <ClCompile Include="..\..\tests\0040-io_event.c" />
+    <ClCompile Include="..\..\tests\0041-fetch_max_bytes.c" />
+    <ClCompile Include="..\..\tests\0042-many_topics.c" />
+    <ClCompile Include="..\..\tests\0043-no_connection.c" />
+    <ClCompile Include="..\..\tests\0044-partition_cnt.c" />
+    <ClCompile Include="..\..\tests\0045-subscribe_update.c" />
+    <ClCompile Include="..\..\tests\0046-rkt_cache.c" />
+    <ClCompile Include="..\..\tests\0047-partial_buf_tmout.c" />
+    <ClCompile Include="..\..\tests\0048-partitioner.c" />
+    <ClCompile Include="..\..\tests\0049-consume_conn_close.c" />
+    <ClCompile Include="..\..\tests\0050-subscribe_adds.c" />
+    <ClCompile Include="..\..\tests\0051-assign_adds.c" />
+    <ClCompile Include="..\..\tests\0052-msg_timestamps.c" />
+    <ClCompile Include="..\..\tests\0053-stats_cb.cpp" />
+    <ClCompile Include="..\..\tests\0054-offset_time.cpp" />
+    <ClCompile Include="..\..\tests\0055-producer_latency.c" />
+    <ClCompile Include="..\..\tests\0056-balanced_group_mt.c" />
+    <ClCompile Include="..\..\tests\0057-invalid_topic.cpp" />
+    <ClCompile Include="..\..\tests\0058-log.cpp" />
+    <ClCompile Include="..\..\tests\0059-bsearch.cpp" />
+    <ClCompile Include="..\..\tests\0060-op_prio.cpp" />
+    <ClCompile Include="..\..\tests\0061-consumer_lag.cpp" />
+    <ClCompile Include="..\..\tests\0062-stats_event.c" />
+    <ClCompile Include="..\..\tests\0063-clusterid.cpp" />
+    <ClCompile Include="..\..\tests\0064-interceptors.c" />
+    <ClCompile Include="..\..\tests\0065-yield.cpp" />
+    <ClCompile Include="..\..\tests\0066-plugins.cpp" />
+    <ClCompile Include="..\..\tests\0067-empty_topic.cpp" />
+    <ClCompile Include="..\..\tests\0068-produce_timeout.c" />
+    <ClCompile Include="..\..\tests\0069-consumer_add_parts.c" />
+    <ClCompile Include="..\..\tests\0070-null_empty.cpp" />
+    <ClCompile Include="..\..\tests\0072-headers_ut.c" />
+    <ClCompile Include="..\..\tests\0073-headers.c" />
+    <ClCompile Include="..\..\tests\0074-producev.c" />
+    <ClCompile Include="..\..\tests\0075-retry.c" />
+    <ClCompile Include="..\..\tests\0076-produce_retry.c" />
+    <ClCompile Include="..\..\tests\0077-compaction.c" />
+    <ClCompile Include="..\..\tests\0078-c_from_cpp.cpp" />
+    <ClCompile Include="..\..\tests\0079-fork.c" />
+    <ClCompile Include="..\..\tests\0080-admin_ut.c" />
+    <ClCompile Include="..\..\tests\0081-admin.c" />
+    <ClCompile Include="..\..\tests\0082-fetch_max_bytes.cpp" />
+    <ClCompile Include="..\..\tests\0083-cb_event.c" />
+    <ClCompile Include="..\..\tests\0084-destroy_flags.c" />
+    <ClCompile Include="..\..\tests\0085-headers.cpp" />
+    <ClCompile Include="..\..\tests\0086-purge.c" />
+    <ClCompile Include="..\..\tests\0088-produce_metadata_timeout.c" />
+    <ClCompile Include="..\..\tests\0089-max_poll_interval.c" />
+    <ClCompile Include="..\..\tests\0090-idempotence.c" />
+    <ClCompile Include="..\..\tests\0091-max_poll_interval_timeout.c" />
+    <ClCompile Include="..\..\tests\0092-mixed_msgver.c" />
+    <ClCompile Include="..\..\tests\0093-holb.c" />
+    <ClCompile Include="..\..\tests\0094-idempotence_msg_timeout.c" />
+    <ClCompile Include="..\..\tests\0095-all_brokers_down.cpp" />
+    <ClCompile Include="..\..\tests\0097-ssl_verify.cpp" />
+    <ClCompile Include="..\..\tests\0098-consumer-txn.cpp" />
+    <ClCompile Include="..\..\tests\0099-commit_metadata.c" />
+    <ClCompile Include="..\..\tests\0100-thread_interceptors.cpp" />
+    <ClCompile Include="..\..\tests\0101-fetch-from-follower.cpp" />
+    <ClCompile Include="..\..\tests\0102-static_group_rebalance.c" />
+    <ClCompile Include="..\..\tests\0104-fetch_from_follower_mock.c" />
+    <ClCompile Include="..\..\tests\8000-idle.cpp" />
+    <ClCompile Include="..\..\tests\test.c" />
+    <ClCompile Include="..\..\tests\testcpp.cpp" />
+    <ClCompile Include="..\..\tests\rusage.c" />
+    <ClCompile Include="..\..\src\tinycthread.c" />
+    <ClCompile Include="..\..\src\tinycthread_extra.c" />
+    <ClCompile Include="..\..\src\rdlist.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\tests\test.h" />
+    <ClInclude Include="..\..\tests\testcpp.h" />
+    <ClInclude Include="..\..\tests\testshared.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

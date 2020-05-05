@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,6 +65,7 @@ static inline void map_free_task_id(int id, struct flb_config *config)
     config->tasks_map[id].task = NULL;
 }
 
+
 void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
     int ret;
@@ -78,6 +79,37 @@ void flb_task_retry_destroy(struct flb_task_retry *retry)
 
     mk_list_del(&retry->_head);
     flb_free(retry);
+}
+
+/*
+ * For an existing task 'retry', re-schedule it. One of the use case of this function
+ * is when the engine dispatcher fails to bring the chunk up due to Chunk I/O
+ * configuration restrictions, the task needs to be re-scheduled.
+ */
+int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *config)
+{
+    int seconds;
+    struct flb_task *task;
+
+    task = retry->parent;
+    seconds = flb_sched_request_create(config, retry, retry->attemps);
+    if (seconds == -1) {
+        /*
+         * This is the worse case scenario: 'cannot re-schedule a retry'. If the Chunk
+         * resides only in memory, it will be lost.  */
+        flb_warn("[task] retry for task %i could not be re-scheduled", task->id);
+        flb_task_retry_destroy(retry);
+        if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+            flb_task_destroy(task, FLB_TRUE);
+        }
+        return -1;
+    }
+    else {
+        flb_info("[task] re-schedule retry=%p %i in the next %i seconds",
+                  retry, task->id, seconds);
+    }
+
+    return 0;
 }
 
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
@@ -96,7 +128,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
-            if (retry->attemps > o_ins->retry_limit && o_ins->retry_limit >= 0) {
+            if (retry->attemps >= o_ins->retry_limit && o_ins->retry_limit >= 0) {
                 flb_debug("[task] task_id=%i reached retry-attemps limit %i/%i",
                           task->id, retry->attemps, o_ins->retry_limit);
                 flb_task_retry_destroy(retry);
@@ -138,6 +170,40 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     flb_input_chunk_set_up_down(task->ic);
 
     return retry;
+}
+
+/*
+ * Return FLB_TRUE or FLB_FALSE if the chunk pointed by the task was
+ * created on this running instance or it comes from a chunk in the
+ * filesystem from a previous run.
+ */
+int flb_task_from_fs_storage(struct flb_task *task)
+{
+    struct flb_input_chunk *ic;
+
+    ic = (struct flb_input_chunk *) task->ic;
+    return ic->fs_backlog;
+}
+
+int flb_task_retry_count(struct flb_task *task, void *data)
+{
+    struct mk_list *head;
+    struct flb_task_retry *retry;
+    struct flb_output_instance *o_ins;
+    struct flb_output_thread *out_th;
+
+    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    o_ins = out_th->o_ins;
+
+    /* Delete 'retries' only associated with the output instance */
+    mk_list_foreach(head, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        if (retry->o_ins == o_ins) {
+            return retry->attemps;
+        }
+    }
+
+    return -1;
 }
 
 /* Check if a 'retry' context exists for a specific task, if so, cleanup */
@@ -198,6 +264,69 @@ static struct flb_task *task_alloc(struct flb_config *config)
     mk_list_init(&task->retries);
 
     return task;
+}
+
+/* Return the number of tasks with 'running status' */
+int flb_task_running_count(struct flb_config *config)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        count += mk_list_size(&ins->tasks);
+    }
+
+    return count;
+}
+
+int flb_task_running_print(struct flb_config *config)
+{
+    int count = 0;
+    flb_sds_t tmp;
+    flb_sds_t routes;
+    struct mk_list *head;
+    struct mk_list *t_head;
+    struct mk_list *r_head;
+    struct flb_task *task;
+    struct flb_task_route *route;
+    struct flb_input_instance *ins;
+
+    routes = flb_sds_create_size(256);
+    if (!routes) {
+        flb_error("[task] cannot allocate space to report pending tasks");
+        return -1;
+    }
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        count = mk_list_size(&ins->tasks);
+        flb_info("[task] %s/%s has %i pending task(s):",
+                 ins->p->name, flb_input_name(ins), count);
+        mk_list_foreach(t_head, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+
+            mk_list_foreach(r_head, &task->routes) {
+                route = mk_list_entry(r_head, struct flb_task_route, _head);
+                tmp = flb_sds_printf(&routes, "%s/%s ",
+                                     route->out->p->name,
+                                     flb_output_name(route->out));
+                if (!tmp) {
+                    flb_sds_destroy(routes);
+                    flb_error("[task] cannot print report for pending tasks");
+                    return -1;
+                }
+                routes = tmp;
+            }
+
+            flb_info("[task]   task_id=%i still running on route(s): %s",
+                     task->id, routes);
+            flb_sds_len_set(routes, 0);
+        }
+    }
+    flb_sds_destroy(routes);
+    return 0;
 }
 
 /* Create an engine task to handle the output plugin flushing work */

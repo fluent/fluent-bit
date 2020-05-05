@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,9 +24,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -56,7 +59,7 @@ static inline int consume_byte(int fd)
 }
 
 /* cb_collect callback */
-static int in_tail_collect_pending(struct flb_input_instance *i_ins,
+static int in_tail_collect_pending(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
 {
     int ret;
@@ -114,7 +117,7 @@ static int in_tail_collect_pending(struct flb_input_instance *i_ins,
 }
 
 /* cb_collect callback */
-static int in_tail_collect_static(struct flb_input_instance *i_ins,
+static int in_tail_collect_static(struct flb_input_instance *ins,
                                   struct flb_config *config, void *in_context)
 {
     int ret;
@@ -139,14 +142,14 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
             continue;
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
-                flb_info("[in_tail] file=%s ended, stop", file->name);
+                flb_plg_info(ctx->ins, "file=%s ended, stop", file->name);
                 flb_engine_exit(config);
             }
             /* Promote file to 'events' type handler */
-            flb_debug("[in_tail] file=%s promote to TAIL_EVENT", file->name);
+            flb_plg_debug(ctx->ins, "file=%s promote to TAIL_EVENT", file->name);
             ret = flb_tail_file_to_event(file);
             if (ret == -1) {
-                flb_debug("[in_tail] file=%s cannot promote, unregistering",
+                flb_plg_debug(ctx->ins, "file=%s cannot promote, unregistering",
                           file->name);
                 flb_tail_file_remove(file);
             }
@@ -160,6 +163,7 @@ static int in_tail_collect_static(struct flb_input_instance *i_ins,
      */
     if (active == 0) {
         consume_byte(ctx->ch_manager[0]);
+        ctx->ch_reads++;
     }
 
     return 0;
@@ -169,8 +173,9 @@ int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
     struct flb_tail_file *f = file;
+    struct flb_tail_config *ctx = f->config;
 
-    flb_debug("[in_tail] file=%s event", f->name);
+    flb_plg_debug(ctx->ins, "file=%s collect event", f->name);
 
     ret = flb_tail_file_chunk(f);
     switch (ret) {
@@ -198,7 +203,7 @@ static int in_tail_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-    ctx->i_ins = in;
+    ctx->ins = in;
 
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
@@ -209,7 +214,7 @@ static int in_tail_init(struct flb_input_instance *in,
 
     /* Scan path */
     flb_tail_scan(ctx->path, ctx);
-    flb_trace("[in_tail] path: %s", ctx->path);
+    flb_plg_trace(in, "scan path: %s", ctx->path);
 
     /* Set plugin context */
     flb_input_set_context(in, ctx);
@@ -235,7 +240,7 @@ static int in_tail_init(struct flb_input_instance *in,
     ctx->coll_fd_scan = ret;
 
     /* Register callback to purge rotated files */
-    ret = flb_input_set_collector_time(in, flb_tail_file_rotated_purge,
+    ret = flb_input_set_collector_time(in, flb_tail_file_purge,
                                        ctx->rotate_wait, 0,
                                        config);
     if (ret == -1) {
@@ -256,8 +261,8 @@ static int in_tail_init(struct flb_input_instance *in,
 
     if (ctx->multiline == FLB_TRUE && ctx->parser) {
         ctx->parser = NULL;
-        flb_warn("[in_tail] on multiline mode 'Parser' is not allowed "
-                 "(parser disabled)");
+        flb_plg_warn(in, "on multiline mode 'Parser' is not allowed "
+                     "(parser disabled)");
     }
 
     /* Register callback to process docker mode queued buffer */
@@ -292,11 +297,11 @@ static int in_tail_init(struct flb_input_instance *in,
 }
 
 /* Pre-run callback / before the event loop */
-static int in_tail_pre_run(struct flb_input_instance *i_ins,
+static int in_tail_pre_run(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     struct flb_tail_config *ctx = in_context;
-    (void) i_ins;
+    (void) ins;
 
     return tail_signal_manager(ctx);
 }
@@ -305,10 +310,6 @@ static int in_tail_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_tail_config *ctx = data;
-
-    if (ctx->exclude_list) {
-        flb_utils_split_free(ctx->exclude_list);
-    }
 
     flb_tail_file_remove_all(ctx);
     flb_tail_config_destroy(ctx);
@@ -325,15 +326,15 @@ static void in_tail_pause(void *data, struct flb_config *config)
      *
      * - static : static files lookup before promotion
      */
-    flb_input_collector_pause(ctx->coll_fd_static, ctx->i_ins);
-    flb_input_collector_pause(ctx->coll_fd_pending, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd_static, ctx->ins);
+    flb_input_collector_pause(ctx->coll_fd_pending, ctx->ins);
 
     if (ctx->docker_mode == FLB_TRUE) {
-        flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->i_ins);
+        flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->ins);
     }
 
     if (ctx->multiline == FLB_TRUE) {
-        flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->i_ins);
+        flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->ins);
     }
 
     /* Pause file system backend handlers */
@@ -344,20 +345,167 @@ static void in_tail_resume(void *data, struct flb_config *config)
 {
     struct flb_tail_config *ctx = data;
 
-    flb_input_collector_resume(ctx->coll_fd_static, ctx->i_ins);
-    flb_input_collector_resume(ctx->coll_fd_pending, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd_static, ctx->ins);
+    flb_input_collector_resume(ctx->coll_fd_pending, ctx->ins);
 
     if (ctx->docker_mode == FLB_TRUE) {
-        flb_input_collector_resume(ctx->coll_fd_dmode_flush, ctx->i_ins);
+        flb_input_collector_resume(ctx->coll_fd_dmode_flush, ctx->ins);
     }
 
     if (ctx->multiline == FLB_TRUE) {
-        flb_input_collector_resume(ctx->coll_fd_mult_flush, ctx->i_ins);
+        flb_input_collector_resume(ctx->coll_fd_mult_flush, ctx->ins);
     }
 
     /* Pause file system backend handlers */
     flb_tail_fs_resume(ctx);
 }
+
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path),
+     "pattern specifying log files or multiple ones through "
+     "the use of common wildcards."
+    },
+    {
+     FLB_CONFIG_MAP_CLIST, "exclude_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, exclude_list),
+     "Set one or multiple shell patterns separated by commas to exclude "
+     "files matching a certain criteria, e.g: 'exclude_path *.gz,*.zip'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "key", "log",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, key),
+     "when a message is unstructured (no parser applied), it's appended "
+     "as a string under the key name log. This option allows to define an "
+     "alternative name for that key."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "refresh_interval", "60",
+     0, FLB_FALSE, 0,
+     "interval to refresh the list of watched files expressed in seconds."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
+     "specify the number of extra time in seconds to monitor a file once is "
+     "rotated in case some pending data is flushed."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "docker_mode", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
+     "If enabled, the plugin will recombine split Docker log lines before "
+     "passing them to any parser as configured above. This mode cannot be "
+     "used at the same time as Multiline."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "docker_mode_flush", "4",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode_flush),
+     "wait period time in seconds to flush queued unfinished split lines."
+
+    },
+    {
+     FLB_CONFIG_MAP_STR, "path_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path_key),
+     "set the 'key' name where the name of monitored file will be appended."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "ignore_older", "0",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
+     "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
+     "hours, days) syntax. Default behavior is to read all records. Option "
+     "only available when a Parser is specified and it can parse the time "
+     "of a record."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_TAIL_CHUNK,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, buf_chunk_size),
+     "set the initial buffer size to read data from files. This value is "
+     "used too to increase buffer size."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_TAIL_CHUNK,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, buf_max_size),
+     "set the limit of the buffer size per monitored file. When a buffer "
+     "needs to be increased (e.g: very long lines), this value is used to "
+     "restrict how much the memory buffer can grow. If reading a file exceed "
+     "this limit, the file is removed from the monitored file list."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "skip_long_lines", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, skip_long_lines),
+     "if a monitored file reach it buffer capacity due to a very long line "
+     "(buffer_max_size), the default behavior is to stop monitoring that "
+     "file. This option alter that behavior and instruct Fluent Bit to skip "
+     "long lines and continue processing other lines that fits into the buffer."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "exit_on_eof", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
+     "exit Fluent Bit when reaching EOF on a monitored file."
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+     FLB_CONFIG_MAP_STR, "parser", NULL,
+     0, FLB_FALSE, 0,
+     "specify the parser name to process an unstructured message."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag_regex", NULL,
+     0, FLB_FALSE, 0,
+     "set a regex to extract fields from the file name and use them later to "
+     "compose the Tag."
+    },
+#endif
+
+#ifdef FLB_HAVE_SQLDB
+    {
+     FLB_CONFIG_MAP_STR, "db", NULL,
+     0, FLB_FALSE, 0,
+     "set a database file to keep track of monitored files and it offsets."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "db.sync", "full",
+     0, FLB_FALSE, 0,
+     "set a database sync method. values: extra, full, normal and off."
+    },
+#endif
+
+    /* Multiline Options */
+#ifdef FLB_HAVE_PARSER
+    {
+     FLB_CONFIG_MAP_BOOL, "multiline", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, multiline),
+     "if enabled, the plugin will try to discover multiline messages and use "
+     "the proper parsers to compose the outgoing messages. Note that when this "
+     "option is enabled the Parser option is not used."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "multiline_flush", FLB_TAIL_MULT_FLUSH,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, multiline_flush),
+     "wait period time in seconds to process queued multiline messages."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parser_firstline", NULL,
+     0, FLB_FALSE, 0,
+     "name of the parser that matches the beginning of a multiline message. "
+     "Note that the regular expression defined in the parser must include a "
+     "group name (named capture)."
+    },
+    {
+     FLB_CONFIG_MAP_STR_PREFIX, "parser_", NULL,
+     0, FLB_FALSE, 0,
+     "optional extra parser to interpret and structure multiline entries. This "
+     "option can be used to define multiple parsers, e.g: Parser_1 ab1, "
+     "Parser_2 ab2, Parser_N abN."
+    },
+
+#endif
+
+    /* EOF */
+    {0}
+};
 
 struct flb_input_plugin in_tail_plugin = {
     .name         = "tail",
@@ -369,5 +517,6 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_pause     = in_tail_pause,
     .cb_resume    = in_tail_resume,
     .cb_exit      = in_tail_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

@@ -32,7 +32,9 @@
 #include <mk_core/mk_string.h>
 #include <mk_core/mk_list.h>
 
-#ifdef _MSC_VER
+#ifdef _WIN32
+#include <Windows.h>
+#include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
 
@@ -238,7 +240,14 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             }
         }
         else {
-            mk_config_error(path, line, "Length of content has execeded limit");
+            /*
+             * If we don't find a break line, validate if we got an EOF or not. No EOF
+             * means that the incoming string is not finished so we must raise an
+             * exception.
+             */
+            if (!feof(f)) {
+                mk_config_error(path, line, "Length of content has exceeded limit");
+            }
         }
 
         /* Line number */
@@ -401,7 +410,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     return 0;
 }
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
 {
     int ret = -1;
@@ -449,11 +458,88 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
     return ret;
 }
 #else
-static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
+static int mk_rconf_read_glob(struct mk_rconf *conf, const char *path)
 {
-    mk_err("[config] wildcard is not supported on Windows");
-    mk_err("[config] path: %s", path);
-    return -1;
+    char *star, *p0, *p1;
+    char pattern[MAX_PATH];
+    char buf[MAX_PATH];
+    int ret;
+    struct stat st;
+    HANDLE h;
+    WIN32_FIND_DATA data;
+
+    if (strlen(path) > MAX_PATH - 1) {
+        return -1;
+    }
+
+    star = strchr(path, '*');
+    if (star == NULL) {
+        return -1;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *            0<-----|
+     */
+    p0 = star;
+    while (path <= p0 && *p0 != '\\') {
+        p0--;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *                   |---->1
+     */
+    p1 = star;
+    while (*p1 && *p1 != '\\') {
+        p1++;
+    }
+
+    memcpy(pattern, path, (p1 - path));
+    pattern[p1 - path] = '\0';
+
+    h = FindFirstFileA(pattern, &data);
+    if (h == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    do {
+        /* Ignore the current and parent dirs */
+        if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
+            continue;
+        }
+
+        /* Avoid an infinite loop */
+        if (strchr(data.cFileName, '*')) {
+            continue;
+        }
+
+        /* Create a path (prefix + filename + suffix) */
+        memcpy(buf, path, p0 - path + 1);
+        buf[p0 - path + 1] = '\0';
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, data.cFileName))) {
+            continue;
+        }
+        if (FAILED(StringCchCatA(buf, MAX_PATH, p1))) {
+            continue;
+        }
+
+        if (strchr(p1, '*')) {
+            mk_rconf_read_glob(conf, buf); /* recursive */
+            continue;
+        }
+
+        ret = stat(buf, &st);
+        if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
+            if (mk_rconf_read(conf, buf) < 0) {
+                return -1;
+            }
+        }
+    } while (FindNextFileA(h, &data) != 0);
+
+    FindClose(h);
+    return 0;
 }
 #endif
 

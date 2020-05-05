@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -138,7 +138,10 @@ struct flb_sp_task {
     struct flb_sp_cmd *cmd;  /* (SQL) commands */
 
     struct flb_sp_task_window window; /* task window */
-    struct mk_list _head;             /* link to parent list flb_sp->tasks */
+
+    void *snapshot;          /* snapshot pages for SNAPSHOT sream type */
+
+    struct mk_list _head;    /* link to parent list flb_sp->tasks */
 };
 
 struct flb_sp {
@@ -159,6 +162,7 @@ int flb_sp_test_do(struct flb_sp *sp, struct flb_sp_task *task,
 int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
                          size_t *out_size);
 
+int flb_sp_snapshot_create(struct flb_sp_task *task);
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                                        const char *query);
 int flb_sp_fd_event(int fd, struct flb_sp *sp);

@@ -44,7 +44,8 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
                                struct cio_chunk *ch,
                                int flags,
-                               size_t size);
+                               size_t size,
+                               int *err);
 void cio_file_close(struct cio_chunk *ch, int delete);
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size);

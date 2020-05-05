@@ -1,0 +1,114 @@
+{
+  "targets": {
+    "xenial-amd64": {
+
+      "buildenv": "xenial-amd64",
+      "builddeps": [
+        "build-essential",
+        "python",
+        "zlib1g-dev",
+        "libssl-dev",
+        "libsasl2-dev",
+        "libzstd-dev"
+      ],
+      "buildcmd": [
+        "./configure",
+          "make -j ${PARALLEL}",
+          "make -C tests build"
+      ],
+      "testcmd": [
+          "make -C tests run_local"
+      ],
+    },
+
+    "xenial-i386": {
+      "_comment": "including liblz4-dev here to verify that WITH_LZ4_EXT works",
+      "buildenv": "xenial-i386",
+      "builddeps": [
+        "build-essential",
+        "python",
+        "zlib1g-dev",
+        "libssl-dev",
+        "libsasl2-dev",
+        "liblz4-dev",
+        "libzstd-dev"
+      ],
+      "buildcmd": [
+        "./configure",
+        "make -j ${PARALLEL}",
+        "make -C tests build"
+      ],
+      "testcmd": [
+        "make -C tests run_local"
+      ],
+    },
+
+    "xenial-armhf": {
+
+      "buildenv": "xenial-armhf",
+      "builddeps": [
+        "build-essential",
+        "python",
+        "zlib1g-dev",
+        "libssl-dev",
+        "libsasl2-dev",
+        "libzstd-dev"
+      ],
+      "buildcmd": [
+        "./configure",
+        "make -j ${PARALLEL}",
+          "make -j ${PARALLEL} -C tests build",
+      ],
+      "testcmd": [
+        "cd tests",
+        "./run-test.sh -p1 -l",
+        "cd .."
+      ],
+    },
+
+    "stretch-mips": {
+
+      "buildenv": "stretch-mips",
+      "builddeps": [
+        "build-essential",
+        "python",
+        "zlib1g-dev",
+        "libssl-dev",
+        "libsasl2-dev",
+        "libzstd-dev"
+      ],
+      "buildcmd": [
+        "./configure",
+        "make -j ${PARALLEL}",
+          "make -j ${PARALLEL} -C tests build",
+      ],
+      "testcmd": [
+        "cd tests",
+        "./run-test.sh -p1 -l",
+        "cd .."
+      ],
+    },
+
+    "cmake-xenial-amd64": {
+
+      "buildenv": "xenial-amd64",
+      "builddeps": [
+        "build-essential",
+        "python",
+        "zlib1g-dev",
+        "libssl-dev",
+        "libsasl2-dev",
+        "cmake"
+      ],
+      "buildcmd": [
+        "cmake -H. -B_builds -DCMAKE_VERBOSE_MAKEFILE=ON -DCMAKE_BUILD_TYPE=Debug",
+        "cmake --build _builds",
+      ],
+      "testcmd": [
+        "cd _builds",
+        "ctest -VV -R RdKafkaTestBrokerLess"
+      ],
+    }
+  },
+  "artifacts": ["config.log", "Makefile.config", "config.h"]
+}

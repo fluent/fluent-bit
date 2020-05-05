@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,5 +39,6 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
 int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_file *file,
                             struct flb_tail_config *ctx);
-
+int flb_tail_db_file_delete(struct flb_tail_file *file,
+                            struct flb_tail_config *ctx);
 #endif

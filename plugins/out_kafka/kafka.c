@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -29,23 +28,42 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
+    struct flb_kafka *ctx = (struct flb_kafka *) opaque;
+
     if (rkmessage->err) {
-        flb_warn("[out_kafka] message delivery failed: %s",
-                 rd_kafka_err2str(rkmessage->err));
+        flb_plg_warn(ctx->ins, "message delivery failed: %s",
+                     rd_kafka_err2str(rkmessage->err));
     }
     else {
-        flb_debug("[out_kafka] message delivered (%zd bytes, "
-                  "partition %"PRId32")",
-                  rkmessage->len, rkmessage->partition);
+        flb_plg_debug(ctx->ins, "message delivered (%zd bytes, "
+                      "partition %"PRId32")",
+                      rkmessage->len, rkmessage->partition);
     }
 }
 
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
+    struct flb_kafka *ctx;
 
-    flb_error("[out_kafka] %s: %s",
-              rk ? rd_kafka_name(rk) : NULL, buf);
+    ctx = (struct flb_kafka *) rd_kafka_opaque(rk);
+
+    if (level <= FLB_KAFKA_LOG_ERR) {
+        flb_plg_error(ctx->ins, "%s: %s",
+                      rk ? rd_kafka_name(rk) : NULL, buf);
+    }
+    else if (level == FLB_KAFKA_LOG_WARNING) {
+        flb_plg_warn(ctx->ins, "%s: %s",
+                     rk ? rd_kafka_name(rk) : NULL, buf);
+    }
+    else if (level == FLB_KAFKA_LOG_NOTICE || level == FLB_KAFKA_LOG_INFO) {
+        flb_plg_info(ctx->ins, "%s: %s",
+                     rk ? rd_kafka_name(rk) : NULL, buf);
+    }
+    else if (level == FLB_KAFKA_LOG_DEBUG) {
+        flb_plg_debug(ctx->ins, "%s: %s",
+                      rk ? rd_kafka_name(rk) : NULL, buf);
+    }
 }
 
 static int cb_kafka_init(struct flb_output_instance *ins,
@@ -57,7 +75,7 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     /* Configuration */
     ctx = flb_kafka_conf_create(ins, config);
     if (!ctx) {
-        flb_error("[out_kafka] failed to initialize");
+        flb_plg_error(ins, "failed to initialize");
         return -1;
     }
 
@@ -75,6 +93,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int queue_full_retries = 0;
     char *out_buf;
     size_t out_size;
+    char *message_key = NULL;
+    size_t message_key_len = 0;
     struct flb_kafka_topic *topic = NULL;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -133,6 +153,15 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         msgpack_pack_object(&mp_pck, key);
         msgpack_pack_object(&mp_pck, val);
 
+        /* Lookup message key */
+        if (ctx->message_key_field && !message_key && val.type == MSGPACK_OBJECT_STR) {
+            if (key.via.str.size == ctx->message_key_field_len &&
+                    strncmp(key.via.str.ptr, ctx->message_key_field, ctx->message_key_field_len) == 0) {
+                message_key = (char *) val.via.str.ptr;
+                message_key_len = val.via.str.size;
+            }
+        }
+
         /* Lookup key/topic */
         if (ctx->topic_key && !topic && val.type == MSGPACK_OBJECT_STR) {
             if (key.via.str.size == ctx->topic_key_len &&
@@ -147,7 +176,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
         s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
         if (!s) {
-            flb_error("[out_kafka] error encoding to JSON");
+            flb_plg_error(ctx->ins, "error encoding to JSON");
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_ERROR;
         }
@@ -162,7 +191,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         s = flb_msgpack_raw_to_gelf(mp_sbuf.data, mp_sbuf.size,
                                     tm, &(ctx->gelf_fields));
         if (s == NULL) {
-            flb_error("[out_kafka] error encoding to GELF");
+            flb_plg_error(ctx->ins, "error encoding to GELF");
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_ERROR;
         }
@@ -170,11 +199,16 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_size = flb_sds_len(s);
     }
 
+    if (!message_key) {
+        message_key = ctx->message_key;
+        message_key_len = ctx->message_key_len;
+    }
+
     if (!topic) {
         topic = flb_kafka_topic_default(ctx);
     }
     if (!topic) {
-        flb_error("[out_kafka] no default topic found");
+        flb_plg_error(ctx->ins, "no default topic found");
         msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_ERROR;
     }
@@ -195,8 +229,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
                            out_buf, out_size,
-                           ctx->message_key, ctx->message_key_len,
-                           NULL);
+                           message_key, message_key_len,
+                           ctx);
     if (ret == -1) {
         fprintf(stderr,
                 "%% Failed to produce to topic %s: %s\n",
@@ -208,8 +242,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
          * otherwise let the caller to issue a main retry againt the engine.
          */
         if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
-            flb_warn("[out_kafka] internal queue is full, "
-                     "retrying in one second");
+            flb_plg_warn(ctx->ins, "internal queue is full, "
+                         "retrying in one second");
 
             /*
              * If the queue is full, first make sure to discard any further
@@ -236,8 +270,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         }
     }
     else {
-        flb_debug("[out_kafka] enqueued message (%zd bytes) for topic '%s'",
-                  out_size, rd_kafka_topic_name(topic->tp));
+        flb_plg_debug(ctx->ins, "enqueued message (%zd bytes) for topic '%s'",
+                      out_size, rd_kafka_topic_name(topic->tp));
     }
     ctx->blocked = FLB_FALSE;
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,11 +45,14 @@
     "INSERT INTO in_tail_files (name, offset, inode, created)"      \
     "  VALUES ('%s', %"PRIu64", %"PRIu64", %"PRIu64");"
 
-#define SQL_UPDATE_OFFSET                               \
+#define SQL_UPDATE_OFFSET                                           \
     "UPDATE in_tail_files set offset=%"PRIu64" WHERE id=%"PRId64";"
 
-#define SQL_ROTATE_FILE                         \
+#define SQL_ROTATE_FILE                                                 \
     "UPDATE in_tail_files set name='%s',rotated=1 WHERE id=%"PRId64";"
+
+#define SQL_DELETE_FILE                                                 \
+    "DELETE FROM in_tail_files WHERE id=%"PRId64";"
 
 #define SQL_PRAGMA_SYNC                         \
     "PRAGMA synchronous=%i;"

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,7 +75,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
-    char *meta_preload_cache_dir;
+    flb_sds_t meta_preload_cache_dir;
 
     /* Configuration proposed through Annotations (boolean) */
     int k8s_logging_parser;   /* allow to process a suggested parser ? */
@@ -101,8 +101,7 @@ struct flb_kube {
     int merge_log_trim;
 
     /* Log key, old merge_json_key (default 'log') */
-    int merge_log_key_len;
-    char *merge_log_key;
+    flb_sds_t merge_log_key;
 
     /* Keep original log key after successful parsing */
     int keep_log;
@@ -120,6 +119,9 @@ struct flb_kube {
     /* TLS CA certificate file */
     char *tls_ca_path;
     char *tls_ca_file;
+
+    /* TLS virtual host (optional), set by configmap */
+    flb_sds_t tls_vhost;
 
     /* Kubernetes Namespace */
     char *namespace;
@@ -142,6 +144,7 @@ struct flb_kube {
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;
+    struct flb_filter_instance *ins;
 };
 
 struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,
