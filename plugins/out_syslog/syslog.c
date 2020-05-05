@@ -846,13 +846,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     struct out_syslog_config *ctx = NULL;
 
     /* Set default network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-    if (ins->host.port == 0) {
-        ins->host.port = 514;
-    }
+    flb_output_net_default("127.0.0.1", 514, ins);
 
+    /* Create config context */
     ctx = out_syslog_config_create(ins, config);
     if (ctx == NULL) {
         flb_error("[out_syslog] Error configuring plugin");
@@ -904,17 +900,19 @@ static int cb_syslog_exit(void *data, struct flb_config *config)
 {
     struct out_syslog_config *ctx = data;
 
-    if (ctx == NULL)
+    if (ctx == NULL) {
         return 0;
+    }
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
-    if (ctx->fd >= 0) {
+
+    if (ctx->fd > 0) {
         close(ctx->fd);
     }
 
-    out_syslog_config_destroy (ctx);
+    out_syslog_config_destroy(ctx);
 
     return 0;
 }
@@ -922,7 +920,7 @@ static int cb_syslog_exit(void *data, struct flb_config *config)
 /* Plugin reference */
 struct flb_output_plugin out_syslog_plugin = {
     .name           = "syslog",
-    .description    = "Syslog Output",
+    .description    = "Syslog",
     .cb_init        = cb_syslog_init,
     .cb_pre_run     = NULL,
     .cb_flush       = cb_syslog_flush,
