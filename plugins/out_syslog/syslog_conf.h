@@ -27,7 +27,7 @@
 #define FLB_SYSLOG_RFC3164 0
 #define FLB_SYSLOG_RFC5424 1
 
-struct out_syslog_config {
+struct flb_syslog {
     flb_sockfd_t fd;
     struct flb_upstream *u;
     int mode;
@@ -45,8 +45,8 @@ struct out_syslog_config {
     flb_sds_t message_key;
 };
 
-struct out_syslog_config *out_syslog_config_create(struct flb_output_instance *ins,
-                                                   struct flb_config *config);
-void out_syslog_config_destroy (struct out_syslog_config *ctx);
+struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
+                                            struct flb_config *config);
+void flb_syslog_config_destroy(struct flb_syslog *ctx);
 
 #endif

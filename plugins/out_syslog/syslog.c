@@ -357,8 +357,8 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
     return *s;
 }
 
-static flb_sds_t msgpack_to_sd (flb_sds_t *s, const char *sd, int sd_len,
-                                msgpack_object *o)
+static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
+                               msgpack_object *o)
 {
     flb_sds_t tmp;
     int i;
@@ -405,7 +405,7 @@ static flb_sds_t msgpack_to_sd (flb_sds_t *s, const char *sd, int sd_len,
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
 
-            if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR){
+            if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
                 continue;
             }
 
@@ -500,7 +500,7 @@ static flb_sds_t msgpack_to_sd (flb_sds_t *s, const char *sd, int sd_len,
     return *s;
 }
 
-static int msgpack_to_syslog(struct out_syslog_config *ctx, msgpack_object *o,
+static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                              struct syslog_msg *msg)
 {
     int i,n;
@@ -681,7 +681,7 @@ static int msgpack_to_syslog(struct out_syslog_config *ctx, msgpack_object *o,
     return 0;
 }
 
-static flb_sds_t syslog_format(struct out_syslog_config *ctx, msgpack_object *o,
+static flb_sds_t syslog_format(struct flb_syslog *ctx, msgpack_object *o,
                                flb_sds_t *s, struct flb_time *tm)
 {
     struct syslog_msg msg;
@@ -757,7 +757,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
                    void *out_context,
                    struct flb_config *config)
 {
-    struct out_syslog_config *ctx = out_context;
+    struct flb_syslog *ctx = out_context;
     flb_sds_t s;
     flb_sds_t tmp;
     msgpack_unpacked result;
@@ -843,13 +843,13 @@ static void cb_syslog_flush(const void *data, size_t bytes,
 static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *config,
                           void *data)
 {
-    struct out_syslog_config *ctx = NULL;
+    struct flb_syslog *ctx = NULL;
 
     /* Set default network configuration */
     flb_output_net_default("127.0.0.1", 514, ins);
 
     /* Create config context */
-    ctx = out_syslog_config_create(ins, config);
+    ctx = flb_syslog_config_create(ins, config);
     if (ctx == NULL) {
         flb_error("[out_syslog] Error configuring plugin");
         return -1;
@@ -868,7 +868,7 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     if (ctx->mode == FLB_SYSLOG_UDP) {
         ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port);
         if (ctx->fd < 0) {
-            out_syslog_config_destroy (ctx);
+            flb_syslog_config_destroy(ctx);
             return -1;
         }
     }
@@ -886,7 +886,7 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         ctx->u = flb_upstream_create(config, ins->host.name, ins->host.port,
                                              io_flags, (void *) &ins->tls);
         if (!(ctx->u)) {
-            out_syslog_config_destroy (ctx);
+            flb_syslog_config_destroy(ctx);
             return -1;
         }
     }
@@ -898,7 +898,7 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
 
 static int cb_syslog_exit(void *data, struct flb_config *config)
 {
-    struct out_syslog_config *ctx = data;
+    struct flb_syslog *ctx = data;
 
     if (ctx == NULL) {
         return 0;
@@ -912,7 +912,7 @@ static int cb_syslog_exit(void *data, struct flb_config *config)
         close(ctx->fd);
     }
 
-    out_syslog_config_destroy(ctx);
+    flb_syslog_config_destroy(ctx);
 
     return 0;
 }
