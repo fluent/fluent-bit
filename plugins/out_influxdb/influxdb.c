@@ -284,10 +284,11 @@ static char *influxdb_format(const char *tag, int tag_len,
                 influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
                 goto error;
             }
-        }
+        } 
         else {
-            flb_plg_error(ctx->ins, "cannot send record, "
-                          "because all field is tagged in record");
+            flb_plg_warn(ctx->ins, "skip send record, "
+                         "since no record available "
+                         "or all fields are tagged in record");
             /* Following records maybe ok, so continue processing */
         }
 

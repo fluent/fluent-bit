@@ -388,7 +388,7 @@ static uint64_t get_docker_mem_limit(char *id)
     FILE *f;
 
     if (!limit_file) {
-        return 0;
+        return 0;      
     }
 
     f = fopen(limit_file, "r");
