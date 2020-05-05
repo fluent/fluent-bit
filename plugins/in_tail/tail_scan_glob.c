@@ -120,6 +120,7 @@ static inline int do_glob(const char *pattern, int flags,
     int ret;
     int new_flags;
     char *tmp = NULL;
+    int tmp_needs_free = FLB_FALSE;
     (void) not_used;
 
     /* Save current values */
@@ -142,6 +143,7 @@ static inline int do_glob(const char *pattern, int flags,
         if (tmp != pattern) {
             /* the path was expanded */
             pattern = tmp;
+            tmp_needs_free = FLB_TRUE;
         }
 
         /* remove unused flag */
@@ -155,7 +157,7 @@ static inline int do_glob(const char *pattern, int flags,
     /* remove temporary buffer, if allocated by expand_tilde above.
      * Note that this buffer is only used for libc implementations
      * that do not support the GLOB_TILDE flag, like musl. */
-    if (tmp != NULL && tmp != pattern) {
+    if ((tmp != NULL) && (tmp_needs_free == FLB_TRUE)) {
         flb_free(tmp);
     }
 
