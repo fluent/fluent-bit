@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,6 +68,8 @@ struct flb_input_plugin {
     /* Plugin Description */
     char *description;
 
+    struct flb_config_map *config_map;
+
     /* Initalization */
     int (*cb_init)    (struct flb_input_instance *, struct flb_config *, void *);
 
@@ -107,6 +109,8 @@ struct flb_input_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    void *instance;
+
     struct mk_list _head;
 };
 
@@ -130,6 +134,7 @@ struct flb_input_instance {
     int flags;
 
     int id;                              /* instance id                  */
+    int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int threaded;                        /* bool / Threaded instance ?   */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
@@ -163,6 +168,9 @@ struct flb_input_instance {
 
     /* Reference to struct flb_storage_input context */
     void *storage;
+
+    /* Type of storage: CIO_STORE_FS (filesystem) or CIO_STORE_MEM (memory) */
+    int storage_type;
 
     /*
      * Buffers counter: it count the total of memory used by fixed and dynamic
@@ -199,6 +207,8 @@ struct flb_input_instance {
      * some specific data from it caller.
      */
     void *data;
+
+    struct mk_list *config_map;          /* configuration map        */
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
@@ -454,53 +464,64 @@ static inline void FLB_INPUT_RETURN()
     flb_thread_return(th);
 }
 
+static inline int flb_input_config_map_set(struct flb_input_instance *ins,
+                                           void *context)
+{
+    return flb_config_map_set(&ins->properties, ins->config_map, context);
+}
+
 int flb_input_register_all(struct flb_config *config);
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          const char *input, void *data,
                                          int public_only);
-int flb_input_set_property(struct flb_input_instance *in,
+int flb_input_set_property(struct flb_input_instance *ins,
                            const char *k, const char *v);
-const char *flb_input_get_property(const char *key, struct flb_input_instance *i);
+const char *flb_input_get_property(const char *key,
+                                   struct flb_input_instance *ins);
 
 int flb_input_check(struct flb_config *config);
-void flb_input_set_context(struct flb_input_instance *in, void *context);
-int flb_input_channel_init(struct flb_input_instance *in);
+void flb_input_set_context(struct flb_input_instance *ins, void *context);
+int flb_input_channel_init(struct flb_input_instance *ins);
 
-int flb_input_collector_start(int coll_id, struct flb_input_instance *in);
+int flb_input_collector_start(int coll_id, struct flb_input_instance *ins);
 int flb_input_collectors_start(struct flb_config *config);
-int flb_input_collector_pause(int coll_id, struct flb_input_instance *in);
-int flb_input_collector_resume(int coll_id, struct flb_input_instance *in);
+int flb_input_collector_pause(int coll_id, struct flb_input_instance *ins);
+int flb_input_collector_resume(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config);
-int flb_input_set_collector_time(struct flb_input_instance *in,
+int flb_input_set_collector_time(struct flb_input_instance *ins,
                                  int (*cb_collect) (struct flb_input_instance *,
                                                     struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config);
-int flb_input_set_collector_event(struct flb_input_instance *in,
+int flb_input_set_collector_event(struct flb_input_instance *ins,
                                   int (*cb_collect) (struct flb_input_instance *,
                                                      struct flb_config *, void *),
                                   flb_pipefd_t fd,
                                   struct flb_config *config);
-int flb_input_set_collector_socket(struct flb_input_instance *in,
+int flb_input_set_collector_socket(struct flb_input_instance *ins,
                                    int (*cb_new_connection) (struct flb_input_instance *,
                                                              struct flb_config *,
                                                              void*),
                                    flb_pipefd_t fd,
                                    struct flb_config *config);
-int flb_input_collector_running(int coll_id, struct flb_input_instance *in);
-int flb_input_instance_init(struct flb_input_instance *in,
+int flb_input_collector_running(int coll_id, struct flb_input_instance *ins);
+int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config);
-void flb_input_instance_exit(struct flb_input_instance *in,
+void flb_input_instance_exit(struct flb_input_instance *ins,
                              struct flb_config *config);
-void flb_input_instance_free(struct flb_input_instance *in);
+void flb_input_instance_destroy(struct flb_input_instance *ins);
 
-void flb_input_initialize_all(struct flb_config *config);
+int flb_input_init_all(struct flb_config *config);
 void flb_input_pre_run_all(struct flb_config *config);
 void flb_input_exit_all(struct flb_config *config);
 
-void *flb_input_flush(struct flb_input_instance *i_ins, size_t *size);
+void *flb_input_flush(struct flb_input_instance *ins, size_t *size);
 int flb_input_pause_all(struct flb_config *config);
-const char *flb_input_name(struct flb_input_instance *in);
+const char *flb_input_name(struct flb_input_instance *ins);
+int flb_input_name_exists(const char *name, struct flb_config *config);
+
+void flb_input_net_default_listener(const char *listen, int port,
+                                    struct flb_input_instance *ins);
 
 #endif

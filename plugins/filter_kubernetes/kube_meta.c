@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,8 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_io.h>
@@ -29,7 +31,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <msgpack.h>
 
 #include "kube_conf.h"
@@ -42,12 +43,6 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY "initContainerStatuses"
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
-#define FLB_KUBE_META_CONTAINER_ID_PREFIX "docker://"
-#define FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN \
-    (sizeof(FLB_KUBE_META_CONTAINER_ID_PREFIX) - 1)
-#define FLB_KUBE_META_IMAGE_ID_PREFIX "docker-pullable://"
-#define FLB_KUBE_META_IMAGE_ID_PREFIX_LEN \
-    (sizeof(FLB_KUBE_META_IMAGE_ID_PREFIX) - 1)
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -108,14 +103,14 @@ static int get_local_pod_info(struct flb_kube *ctx)
          * If it fails, it's just informational, as likely the caller
          * wanted to connect using the Proxy instead from inside a POD.
          */
-        flb_warn("[filter_kube] cannot open %s", FLB_KUBE_NAMESPACE);
+        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_NAMESPACE);
         return FLB_FALSE;
     }
 
     /* If a namespace was recognized, a token is mandatory */
     ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
     if (ret == -1) {
-        flb_warn("[filter_kube] cannot open %s", FLB_KUBE_TOKEN);
+        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
     }
 
     /* Namespace */
@@ -217,7 +212,7 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         u_conn = flb_upstream_conn_get(ctx->upstream);
         if (!u_conn) {
-            flb_error("[filter_kube] upstream connection error");
+            flb_plg_error(ctx->ins, "upstream connection error");
             return -1;
         }
 
@@ -243,13 +238,14 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         /* Perform request */
         ret = flb_http_do(c, &b_sent);
-        flb_debug("[filter_kube] API Server (ns=%s, pod=%s) http_do=%i, HTTP Status: %i",
-                  namespace, podname, ret, c->resp.status);
+        flb_plg_debug(ctx->ins, "API Server (ns=%s, pod=%s) http_do=%i, "
+                      "HTTP Status: %i",
+                      namespace, podname, ret, c->resp.status);
 
         if (ret != 0 || c->resp.status != 200) {
             if (c->resp.payload_size > 0) {
-                flb_debug("[filter_kube] API Server response\n%s",
-                          c->resp.payload);
+                flb_plg_debug(ctx->ins, "API Server response\n%s",
+                              c->resp.payload);
             }
             flb_http_client_destroy(c);
             flb_upstream_conn_release(u_conn);
@@ -316,10 +312,51 @@ static void cb_results(const char *name, const char *value,
     return;
 }
 
+static int extract_hash(const char * im, int sz, const char ** out, int * outsz)
+{
+    char * colon = NULL;
+    char * slash = NULL;
+
+    *out = NULL;
+    *outsz = 0;
+
+    if (sz <= 1) {
+        return -1;
+    }
+
+    colon = memchr(im, ':', sz);
+
+    if (colon == NULL) {
+        return -1;
+    } else {
+        slash = colon;
+        while ((im + sz - slash + 1) > 0 && *(slash + 1) == '/') {
+            slash++;
+        }
+        if (slash == colon) {
+            slash = NULL;
+        }
+    }
+
+    if (slash == NULL && (im + sz - colon) > 0) {
+        *out = im;
+    }
+
+    if (slash != NULL && (colon - slash) < 0 && (im + sz - slash) > 0) {
+        *out = slash + 1;
+    }
+
+    if (*out) {
+        *outsz = im + sz - *out;
+        return 0;
+    }
+    return -1;
+}
+
 /*
  * As per Kubernetes Pod spec,
  * https://kubernetes.io/docs/concepts/workloads/pods/pod/, we look
- * for status.{initContainerStatuses, containerStatuses}.{containerID, imageID}
+ * for status.{initContainerStatuses, containerStatuses}.{containerID, imageID, image}
  * where status.{initContainerStatuses, containerStatus}.name == our container
  * name
  * status:
@@ -338,12 +375,17 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     msgpack_object k, v;
     int docker_id_len = 0;
     int container_hash_len = 0;
+    int container_image_len = 0;
     const char *container_hash;
     const char *docker_id;
+    const char *container_image;
+    const char *tmp;
+    int tmp_len = 0;
     int name_found = FLB_FALSE;
-    /* Process status/containerStatus map for docker_id, container_hash */
+    /* Process status/containerStatus map for docker_id, container_hash, container_image */
     for (i = 0;
-         (meta->docker_id_len == 0 || meta->container_hash_len == 0) &&
+         (meta->docker_id_len == 0 || meta->container_hash_len == 0 ||
+          meta->container_image_len == 0) &&
          i < status.via.map.size; i++) {
         k = status.via.map.ptr[i].key;
         if ((k.via.str.size == FLB_KUBE_META_CONTAINER_STATUSES_KEY_LEN &&
@@ -358,7 +400,8 @@ static void extract_container_hash(struct flb_kube_meta *meta,
             v = status.via.map.ptr[i].val;
             for (j = 0;
                  (meta->docker_id_len == 0 ||
-                  meta->container_hash_len == 0) && j < v.via.array.size;
+                  meta->container_hash_len == 0 ||
+                  meta->container_image_len == 0) && j < v.via.array.size;
                  j++) {
                 int l;
                 msgpack_object k1, k2;
@@ -366,7 +409,8 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                 k1 = v.via.array.ptr[j];
                 for (l = 0;
                      (meta->docker_id_len == 0 ||
-                      meta->container_hash_len == 0) &&
+                      meta->container_hash_len == 0 ||
+                      meta->container_image_len == 0) &&
                      l < k1.via.map.size; l++) {
                     k2 = k1.via.map.ptr[l].key;
                     v2 = k1.via.map.ptr[l].val.via.str;
@@ -386,17 +430,26 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                         !strncmp(k2.via.str.ptr,
                                  "containerID",
                                  k2.via.str.size)) {
-                        /* Strip "docker-pullable://" prefix */
-                        docker_id = v2.ptr + FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN;
-                        docker_id_len = v2.size - FLB_KUBE_META_CONTAINER_ID_PREFIX_LEN;
+                        if (extract_hash(v2.ptr, v2.size, &tmp, &tmp_len) == 0) {
+                            docker_id = tmp;
+                            docker_id_len = tmp_len;
+                        }
                     }
                     else if (k2.via.str.size == sizeof("imageID") - 1 &&
                               !strncmp(k2.via.str.ptr,
                                        "imageID",
                                        k2.via.str.size)) {
-                        /* Strip "docker-pullable://" prefix */
-                        container_hash = v2.ptr + FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
-                        container_hash_len = v2.size - FLB_KUBE_META_IMAGE_ID_PREFIX_LEN;
+                        if (extract_hash(v2.ptr, v2.size, &tmp, &tmp_len) == 0) {
+                            container_hash = tmp;
+                            container_hash_len = tmp_len;
+                        }
+                    }
+                    else if (k2.via.str.size == sizeof("image") - 1 &&
+                              !strncmp(k2.via.str.ptr,
+                                       "image",
+                                       k2.via.str.size)) {
+                        container_image = v2.ptr;
+                        container_image_len = v2.size;
                     }
                 }
                 if (name_found) {
@@ -409,6 +462,11 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                     if (docker_id_len && !meta->docker_id_len) {
                         meta->docker_id_len = docker_id_len;
                         meta->docker_id = flb_strndup(docker_id, docker_id_len);
+                        meta->fields++;
+                    }
+                    if (container_image_len && !meta->container_image_len) {
+                        meta->container_image_len = container_image_len;
+                        meta->container_image = flb_strndup(container_image, container_image_len);
                         meta->fields++;
                     }
                     return;
@@ -551,7 +609,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 }
             }
 
-            if ((!meta->container_hash || !meta->docker_id) && status_found) {
+            if ((!meta->container_hash || !meta->docker_id || !meta->container_image) && status_found) {
                 extract_container_hash(meta, status_val);
             }
         }
@@ -628,6 +686,13 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_pack_str(&mp_pck, meta->container_hash_len);
         msgpack_pack_str_body(&mp_pck, meta->container_hash,
                               meta->container_hash_len);
+    }
+    if (meta->container_image != NULL) {
+        msgpack_pack_str(&mp_pck, 15);
+        msgpack_pack_str_body(&mp_pck, "container_image", 15);
+        msgpack_pack_str(&mp_pck, meta->container_image_len);
+        msgpack_pack_str_body(&mp_pck, meta->container_image,
+                              meta->container_image_len);
     }
 
     /* Process configuration suggested through Annotations */
@@ -749,9 +814,9 @@ static inline int extract_meta(struct flb_kube *ctx,
          */
         kube_tag_len = flb_sds_len(ctx->kube_tag_prefix);
         if (kube_tag_len + 1 >= tag_len) {
-            flb_error("[filter_kube] incoming record tag (%s) is shorter "
-                      "than kube_tag_prefix value (%s)",
-                      tag, ctx->kube_tag_prefix);
+            flb_plg_error(ctx->ins, "incoming record tag (%s) is shorter "
+                          "than kube_tag_prefix value (%s), skip filter",
+                          tag, ctx->kube_tag_prefix);
             return -1;
         }
         kube_tag_str = tag + kube_tag_len;
@@ -760,7 +825,7 @@ static inline int extract_meta(struct flb_kube *ctx,
     }
 
     if (n <= 0) {
-        flb_warn("[filter_kube] invalid pattern for given tag %s", tag);
+        flb_plg_warn(ctx->ins, "invalid pattern for given tag %s", tag);
         return -1;
     }
 
@@ -848,7 +913,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
         }
         ctx->tls.context = flb_tls_context_new(ctx->tls_verify,
                                                ctx->tls_debug,
-                                               NULL, /* skip vhost */
+                                               ctx->tls_vhost,
                                                ctx->tls_ca_path,
                                                ctx->tls_ca_file,
                                                NULL, NULL, NULL);
@@ -883,7 +948,7 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     size_t meta_size;
 
     if (ctx->dummy_meta == FLB_TRUE) {
-        flb_warn("[filter_kube] using Dummy Metadata");
+        flb_plg_warn(ctx->ins, "using Dummy Metadata");
         return 0;
     }
 
@@ -893,28 +958,27 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     /* Gather local info */
     ret = get_local_pod_info(ctx);
     if (ret == FLB_TRUE) {
-        flb_info("[filter_kube] local POD info OK");
+        flb_plg_info(ctx->ins, "local POD info OK");
 
         /* Gather info from API server */
-        flb_info("[filter_kube] testing connectivity with API server...");
+        flb_plg_info(ctx->ins, "testing connectivity with API server...");
         ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
                                   &meta_buf, &meta_size);
         if (ret == -1) {
             if (!ctx->podname) {
-                flb_warn("[filter_kube] could not get meta for local POD");
+                flb_plg_warn(ctx->ins, "could not get meta for local POD");
             }
             else {
-                flb_warn("[filter_kube] could not get meta for POD %s",
+                flb_plg_warn(ctx->ins, "could not get meta for POD %s",
                          ctx->podname);
             }
             return -1;
         }
-        flb_info("[filter_kube] API server connectivity OK");
-
+        flb_plg_info(ctx->ins, "API server connectivity OK");
         flb_free(meta_buf);
     }
     else {
-        flb_info("[filter_kube] not running in a POD");
+        flb_plg_info(ctx->ins, "Fluent Bit not running in a POD");
     }
 
     return 0;
@@ -931,7 +995,11 @@ int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size)
 
     t = time(NULL);
     localtime_r(&t, &result);
+#ifdef FLB_SYSTEM_WINDOWS
+    asctime_s(stime, sizeof(stime), &result);
+#else
     asctime_r(&result, stime);
+#endif
     len = strlen(stime) - 1;
 
     msgpack_sbuffer_init(&mp_sbuf);
@@ -1055,6 +1123,11 @@ int flb_kube_meta_release(struct flb_kube_meta *meta)
 
     if (meta->container_hash) {
         flb_free(meta->container_hash);
+        r++;
+    }
+
+    if (meta->container_image) {
+        flb_free(meta->container_image);
         r++;
     }
 

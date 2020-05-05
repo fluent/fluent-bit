@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,15 +21,20 @@
 #ifndef FLB_IN_DUMMY_H
 #define FLB_IN_DUMMY_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+
 #define DEFAULT_DUMMY_MESSAGE "{\"message\":\"dummy\"}"
-struct flb_in_dummy_config {
+
+struct flb_dummy {
+    int samples;
+    int samples_count;
     char *dummy_message;
     int    dummy_message_len;
 
     char *ref_msgpack;
     size_t ref_msgpack_size;
+    struct flb_input_instance *ins;
 };
-
-extern struct flb_input_plugin in_dummy_plugin;
 
 #endif

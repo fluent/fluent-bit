@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -331,7 +331,8 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
 
     session = flb_tls_session_new(u->tls->context);
     if (!session) {
-        flb_error("[io_tls] could not create tls session");
+        flb_error("[io_tls] could not create TLS session for %s:%i",
+                  u->tcp_host, u->tcp_port);
         return -1;
     }
     if (!u->tls->context->vhost) {
@@ -363,7 +364,6 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
             flag = MK_EVENT_READ;
         }
         else {
-
         }
 
         /*
@@ -389,6 +389,7 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
         mk_event_del(u->evl, &u_conn->event);
     }
     flb_trace("[io_tls] connection OK");
+
     return 0;
 
  error:

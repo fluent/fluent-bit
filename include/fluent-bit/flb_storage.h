@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <chunkio/chunkio.h>
+#include <chunkio/cio_stats.h>
 
 #define FLB_STORAGE_BL_MEM_LIMIT   "5M"
 #define FLB_STORAGE_MAX_CHUNKS_UP  128

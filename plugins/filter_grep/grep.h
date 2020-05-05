@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,11 @@
 #ifndef FLB_FILTER_GREP_H
 #define FLB_FILTER_GREP_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_record_accessor.h>
+
 /* rule types */
 #define GREP_REGEX    1
 #define GREP_EXCLUDE  2
@@ -31,14 +36,15 @@
 
 struct grep_ctx {
     struct mk_list rules;
+    struct flb_filter_instance *ins;
 };
 
 struct grep_rule {
     int type;
-    int field_len;
-    char *field;
+    flb_sds_t field;
     char *regex_pattern;
     struct flb_regex *regex;
+    struct flb_record_accessor *ra;
     struct mk_list _head;
 };
 

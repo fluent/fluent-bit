@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -143,7 +143,6 @@ const char *flb_env_get(struct flb_env *env, const char *key)
     /* If it was not found, try to get it from the real environment */
     out_buf = getenv(key);
     if (!out_buf) {
-        flb_warn("[env] variable ${%s} is used but not set", key);
         return NULL;
     }
 
@@ -226,6 +225,9 @@ flb_sds_t flb_env_var_translate(struct flb_env *env, const char *value)
             if (s != buf) {
                 buf = s;
             }
+        }
+        else if (env->warn_unused == FLB_TRUE) {
+            flb_warn("[env] variable ${%s} is used but not set", tmp);
         }
         i += (v_start - (value + i)) + v_len;
     }

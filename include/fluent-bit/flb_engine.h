@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,6 +55,7 @@ int flb_engine_failed(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force);
 int flb_engine_exit(struct flb_config *config);
+int flb_engine_exit_status(struct flb_config *config, int status);
 int flb_engine_shutdown(struct flb_config *config);
 int flb_engine_destroy_tasks(struct mk_list *tasks);
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +18,10 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
-#define FLB_EXIT_FLUSH_COUNT 1
+#define FLB_EXIT_FLUSH_COUNT  "1"
 
 struct flb_exit {
     int is_running;
@@ -34,9 +34,9 @@ struct flb_exit {
 static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *config,
                         void *data)
 {
+    int ret;
     (void) config;
     (void) data;
-    const char *tmp;
     struct flb_exit *ctx;
 
     ctx = flb_malloc(sizeof(struct flb_exit));
@@ -47,12 +47,10 @@ static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *conf
     ctx->count = 0;
     ctx->is_running = FLB_TRUE;
 
-    tmp = flb_output_get_property("flush_count", ins);
-    if (tmp) {
-        ctx->flush_count = atoi(tmp);
-    }
-    else {
-        ctx->flush_count = FLB_EXIT_FLUSH_COUNT;
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
     }
 
     flb_output_set_context(ins, ctx);
@@ -88,11 +86,24 @@ static int cb_exit_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_INT, "flush_count", FLB_EXIT_FLUSH_COUNT,
+     0, FLB_TRUE, offsetof(struct flb_exit, flush_count),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_exit_plugin = {
     .name         = "exit",
     .description  = "Exit after a number of flushes (test purposes)",
     .cb_init      = cb_exit_init,
     .cb_flush     = cb_exit_flush,
     .cb_exit      = cb_exit_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +21,7 @@
 #ifndef FLB_OUT_KAFKA_CONFIG_H
 #define FLB_OUT_KAFKA_CONFIG_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 
 #include "rdkafka.h"
@@ -33,6 +32,16 @@
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
+
+/* rdkafka log levels based on syslog(3) */
+#define FLB_KAFKA_LOG_EMERG   0
+#define FLB_KAFKA_LOG_ALERT   1
+#define FLB_KAFKA_LOG_CRIT    2
+#define FLB_KAFKA_LOG_ERR     3
+#define FLB_KAFKA_LOG_WARNING 4
+#define FLB_KAFKA_LOG_NOTICE  5
+#define FLB_KAFKA_LOG_INFO    6
+#define FLB_KAFKA_LOG_DEBUG   7
 
 #define FLB_JSON_DATE_DOUBLE      0
 #define FLB_JSON_DATE_ISO8601     1
@@ -61,6 +70,9 @@ struct flb_kafka {
     int message_key_len;
     char *message_key;
 
+    int message_key_field_len;
+    char *message_key_field;
+
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;
 
@@ -82,6 +94,9 @@ struct flb_kafka {
     /* Internal */
     rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,

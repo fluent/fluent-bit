@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "splunk.h"
@@ -38,15 +38,10 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
-    /* Get network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup(FLB_SPLUNK_DEFAULT_HOST);
-    }
-
-    if (ins->host.port == 0) {
-        ins->host.port = FLB_SPLUNK_DEFAULT_PORT;
-    }
+    /* Set default network configuration */
+    flb_output_net_default(FLB_SPLUNK_DEFAULT_HOST, FLB_SPLUNK_DEFAULT_PORT, ins);
 
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
@@ -67,7 +62,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
                                    io_flags,
                                    &ins->tls);
     if (!upstream) {
-        flb_error("[out_splunk] cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_splunk_conf_destroy(ctx);
         return NULL;
     }
@@ -84,13 +79,13 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             ctx->auth_header = t;
         }
         else {
-            flb_error("[out_splunk] error on token generation");
+            flb_plg_error(ctx->ins, "error on token generation");
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
     }
     else {
-        flb_error("[out_splunk] no splunk_token configuration key defined");
+        flb_plg_error(ctx->ins, "no splunk_token configuration key defined");
         flb_splunk_conf_destroy(ctx);
         return NULL;
     }
@@ -98,8 +93,8 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     /* HTTP Auth */
     tmp = flb_output_get_property("http_user", ins);
     if (tmp && ctx->auth_header) {
-        flb_error("[out_splunk] splunk_token and http_user cannot be used at"
-                  " the same time");
+        flb_plg_error(ctx->ins, "splunk_token and http_user cannot be used at"
+                      " the same time");
         flb_splunk_conf_destroy(ctx);
         return NULL;
     }

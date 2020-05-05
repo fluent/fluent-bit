@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,6 @@
 struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
-    const char *listen;
     const char *buffer_size;
     const char *chunk_size;
     const char *p;
@@ -45,28 +44,11 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         config->unix_path = flb_strdup(p);
     }
     else {
-        /* Listen interface (if not set, defaults to 0.0.0.0) */
-        if (!i_ins->host.listen) {
-            listen = flb_input_get_property("listen", i_ins);
-            if (listen) {
-                config->listen = flb_strdup(listen);
-            }
-            else {
-                config->listen = flb_strdup("0.0.0.0");
-            }
-        }
-        else {
-            config->listen = flb_strdup(i_ins->host.listen);
-        }
-
-        /* Listener TCP Port */
-        if (i_ins->host.port == 0) {
-            config->tcp_port = flb_strdup("24224");
-        }
-        else {
-            snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
-            config->tcp_port = flb_strdup(tmp);
-        }
+        /* Listen interface (if not set, defaults to 0.0.0.0:24224) */
+        flb_input_net_default_listener("0.0.0.0", 24224, i_ins);
+        config->listen = i_ins->host.listen;
+        snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
+        config->tcp_port = flb_strdup(tmp);
     }
 
     /* Chunk size */
@@ -103,7 +85,6 @@ int fw_config_destroy(struct flb_in_fw_config *config)
         flb_free(config->unix_path);
     }
     else {
-        flb_free(config->listen);
         flb_free(config->tcp_port);
     }
     flb_free(config);
