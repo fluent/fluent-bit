@@ -178,6 +178,33 @@ static void flb_hash_evict_random(struct flb_hash *ht)
     }
 }
 
+static void flb_hash_evict_less_used(struct flb_hash *ht)
+{
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct flb_hash_entry *entry_less_used = NULL;
+
+    mk_list_foreach(head, &ht->entries) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        if (!entry_less_used) {
+            entry_less_used = entry;
+        }
+        else if (entry->hits < entry_less_used->hits) {
+            entry_less_used = entry;
+        }
+    }
+
+    flb_hash_entry_free(ht, entry_less_used);
+}
+
+static void flb_hash_evict_older(struct flb_hash *ht)
+{
+    struct flb_hash_entry *entry;
+
+    entry = mk_list_entry_first(&ht->entries, struct flb_hash_entry, _head_parent);
+    flb_hash_entry_free(ht, entry);
+}
+
 int flb_hash_add(struct flb_hash *ht,
                  const char *key, int key_len,
                  const char *val, size_t val_size)
@@ -196,15 +223,14 @@ int flb_hash_add(struct flb_hash *ht,
 
     /* Check capacity */
     if (ht->max_entries > 0 && ht->total_count >= ht->max_entries) {
-        /* FIXME: handle eviction mode */
         if (ht->evict_mode == FLB_HASH_EVICT_NONE) {
-
+            /* Do nothing */
         }
         else if (ht->evict_mode == FLB_HASH_EVICT_OLDER) {
-
+            flb_hash_evict_older(ht);
         }
         else if (ht->evict_mode == FLB_HASH_EVICT_LESS_USED) {
-
+            flb_hash_evict_less_used(ht);
         }
         else if (ht->evict_mode == FLB_HASH_EVICT_RANDOM) {
             flb_hash_evict_random(ht);
