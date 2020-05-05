@@ -259,3 +259,56 @@ int flb_unescape_string(const char *buf, int buf_len, char **unesc_buf)
     p[j] = '\0';
     return j;
 }
+
+
+/* mysql unquote */
+int flb_mysql_unquote_string(char *buf, int buf_len, char **unesc_buf)
+{
+    int i = 0;
+    int j = 0;
+    char *p;
+    char n;
+
+    p = *unesc_buf;
+    while (i < buf_len) {
+        if ((n = buf[i++]) != '\\') {
+            p[j++] = n;
+        } else if(i >= buf_len) {
+            p[j++] = n;
+        } else {
+            n = buf[i++];
+            switch(n) {
+            case 'n':
+                p[j++] = '\n';
+                break;
+            case 'r':
+                p[j++] = '\r';
+                break;
+            case 't':
+                p[j++] = '\t';
+                break;
+            case '\\':
+                p[j++] = '\\';
+                break;
+            case '\'':
+                p[j++] = '\'';
+                break;
+            case '\"':
+                p[j++] = '\"';
+                break;
+            case '0':
+                p[j++] = 0;
+                break;
+            case 'Z':
+                p[j++] = 0x1a;
+                break;
+            default:
+                p[j++] = '\\';
+                p[j++] = n;
+                break;
+            }
+        }
+    }
+    p[j] = '\0';
+    return j;
+}
