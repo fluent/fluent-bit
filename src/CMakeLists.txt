@@ -43,6 +43,8 @@ set(src
   flb_sha512.c
   flb_plugin.c
   flb_gzip.c
+  flb_http_client.c
+  flb_callback.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -71,7 +73,6 @@ if(FLB_TLS)
     ${src}
     "flb_io_tls.c"
     "flb_oauth2.c"
-    "flb_http_client.c"
     )
 
   # Make sure our output targets links to the TLS library
@@ -93,6 +94,20 @@ if(FLB_METRICS)
     ${src}
     "flb_metrics.c"
     "flb_metrics_exporter.c"
+    )
+endif()
+
+if(FLB_SIGNV4 AND FLB_TLS)
+  set(src
+    ${src}
+    "flb_signv4.c"
+    )
+endif()
+
+if(FLB_HTTP_CLIENT_DEBUG)
+  set(src
+    ${src}
+    "flb_http_client_debug.c"
     )
 endif()
 
@@ -186,6 +201,15 @@ endif()
 
 
 # Record Accessor
+# ---------------
+# Make sure it dependency is enabled
+if(FLB_RECORD_ACCESSOR AND NOT FLB_REGEX)
+  message(FATAL_ERROR
+    "FLB_RECORD_ACCESSOR depends on FLB_REGEX, "
+    "enable it with: -DFLB_REGEX=ON")
+endif()
+
+# Build record accessor files
 if(FLB_RECORD_ACCESSOR)
   set(src
     ${src}
@@ -298,8 +322,9 @@ endif()
 # Binary / Executable
 if(FLB_BINARY)
   find_package (Threads)
-  add_executable(fluent-bit-bin fluent-bit.c)
+  add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   add_sanitizers(fluent-bit-bin)
+
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
@@ -314,6 +339,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_BACKTRACE)
+    add_definitions(-DFLB_DUMP_STACKTRACE=1)
     target_link_libraries(fluent-bit-bin libbacktrace)
   endif()
 

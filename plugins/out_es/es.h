@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,13 +24,13 @@
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT       92000
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
-#define FLB_ES_DEFAULT_TYPE       "flb_type"
+#define FLB_ES_DEFAULT_TYPE       "_doc"
 #define FLB_ES_DEFAULT_PREFIX     "logstash"
 #define FLB_ES_DEFAULT_TIME_FMT   "%Y.%m.%d"
 #define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
-#define FLB_ES_DEFAULT_HTTP_MAX   "4K"
+#define FLB_ES_DEFAULT_HTTP_MAX   "4096"
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -40,6 +40,12 @@ struct flb_elasticsearch {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    /* AWS Auth */
+#ifdef FLB_HAVE_SIGNV4
+    int has_aws_auth;
+    char *aws_region;
+#endif
 
     /* HTTP Client Setup */
     size_t buffer_size;
@@ -87,6 +93,9 @@ struct flb_elasticsearch {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Plugin output instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif

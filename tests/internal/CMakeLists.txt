@@ -9,7 +9,6 @@ set(UNIT_TESTS_FILES
   sha512.c
   slist.c
   router.c
-  parser.c
   network.c
   unit_sizes.c
   hashtable.c
@@ -19,6 +18,13 @@ set(UNIT_TESTS_FILES
   gelf.c
   config_map.c
   )
+
+if(FLB_PARSER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    parser.c
+    )
+endif()
 
 if(FLB_STREAM_PROCESSOR)
   set(UNIT_TESTS_FILES
@@ -38,6 +44,13 @@ if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     metrics.c
+    )
+endif()
+
+if(FLB_SIGNV4)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    signv4.c
     )
 endif()
 

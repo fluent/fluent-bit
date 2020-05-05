@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,19 +18,19 @@
  *  limitations under the License.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <inttypes.h>
-#include <time.h>
-
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
 
 #include "out_flowcounter.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <inttypes.h>
+#include <time.h>
+
 
 #define PLUGIN_NAME "out_flowcounter"
 
@@ -77,11 +77,11 @@ static int configure(struct flb_flowcounter *ctx,
         }
     }
 
-    flb_debug("[%s]unit is \"%s\"",PLUGIN_NAME, ctx->unit);
+    flb_plg_debug(ctx->ins, "unit is \"%s\"", ctx->unit);
 
     /* initialize buffer */
     ctx->size  = (config->flush / ctx->tick) + 1;
-    flb_debug("[%s]buffer size=%d",PLUGIN_NAME, ctx->size);
+    flb_plg_debug(ctx->ins, "buffer size=%d", ctx->size);
 
     ctx->index = 0;
     ctx->buf = flb_malloc(sizeof(struct flb_out_fcount_buffer) * ctx->size);
@@ -137,6 +137,7 @@ static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *c
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -144,7 +145,12 @@ static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *c
         return -1;
     }
 
-    configure(ctx, ins, config);
+    ret = configure(ctx, ins, config);
+    if (ret < 0) {
+        flb_free(ctx);
+        return -1
+    }
+
     flb_output_set_context(ins, ctx);
 
     return 0;
@@ -203,7 +209,7 @@ static void out_fcount_flush(const void *data, size_t bytes,
         }
         t = tm.tm.tv_sec;
         if (time_is_valid(t, ctx) == FLB_FALSE) {
-            flb_warn("[%s] Out of range. Skip the record.", PLUGIN_NAME);
+            flb_plg_warn(ctx->ins, "out of range. Skip the record");
             continue;
         }
 

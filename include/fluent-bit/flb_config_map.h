@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,11 +27,13 @@
 #include <monkey/mk_core.h>
 
 /* Configuration types */
-#define FLB_CONFIG_MAP_STR      0    /* string */
-#define FLB_CONFIG_MAP_INT      1    /* integer */
-#define FLB_CONFIG_MAP_BOOL     2    /* boolean */
-#define FLB_CONFIG_MAP_DOUBLE   3    /* double */
-#define FLB_CONFIG_MAP_SIZE     4    /* string size to integer (e.g: 2M) */
+#define FLB_CONFIG_MAP_STR         0    /* string */
+#define FLB_CONFIG_MAP_STR_PREFIX  1    /* string that starts with  */
+#define FLB_CONFIG_MAP_INT         2    /* integer */
+#define FLB_CONFIG_MAP_BOOL        3    /* boolean */
+#define FLB_CONFIG_MAP_DOUBLE      4    /* double */
+#define FLB_CONFIG_MAP_SIZE        5    /* string size to integer (e.g: 2M) */
+#define FLB_CONFIG_MAP_TIME        6    /* string time to integer seconds (e.g: 2H) */
 
 #define FLB_CONFIG_MAP_CLIST    30   /* comma separated list of strings */
 #define FLB_CONFIG_MAP_CLIST_1  31   /* split up to 1 node  + remaining data */
@@ -65,7 +67,7 @@ struct flb_config_map {
     int type;                      /* type */
     flb_sds_t name;                /* property name */
     flb_sds_t def_value;           /* default value */
-    int flags;                     /* optoin flags (e.g: multiple entries allowed) */
+    int flags;                     /* option flags (e.g: multiple entries allowed) */
     int set_property;              /* set context property ? (use offset ?) */
     uintptr_t offset;              /* member offset */
     flb_sds_t desc;                /* description */
@@ -82,11 +84,26 @@ struct flb_config_map {
                                                               struct flb_config_map_val, \
                                                               _head))
 
+static inline int flb_config_map_mult_type(int type)
+{
+    if (type >= FLB_CONFIG_MAP_CLIST && type <= FLB_CONFIG_MAP_CLIST_4) {
+        return FLB_CONFIG_MAP_CLIST;
+    }
+
+    if (type >= FLB_CONFIG_MAP_SLIST && type <= FLB_CONFIG_MAP_SLIST_4) {
+        return FLB_CONFIG_MAP_SLIST;
+    }
+
+    return -1;
+}
+
 int flb_config_map_properties_check(char *context_name,
                                     struct mk_list *in_properties,
                                     struct mk_list *map);
-struct mk_list *flb_config_map_create(struct flb_config_map *map);
+struct mk_list *flb_config_map_create(struct flb_config *config,
+                                      struct flb_config_map *map);
 void flb_config_map_destroy(struct mk_list *list);
+int flb_config_map_expected_values(int type);
 int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context);
 
 #endif

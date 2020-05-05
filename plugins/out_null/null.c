@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 
 int cb_null_init(struct flb_output_instance *ins,
                  struct flb_config *config,
@@ -28,6 +28,7 @@ int cb_null_init(struct flb_output_instance *ins,
     (void) config;
     (void) data;
 
+    flb_output_set_context(ins, ins);
     return 0;
 }
 
@@ -41,10 +42,11 @@ void cb_null_flush(const void *data, size_t bytes,
     (void) bytes;
     (void) tag;
     (void) tag_len;
-    (void) i_ins;
     (void) out_context;
     (void) config;
+    struct flb_output_instance *ins = out_context;
 
+    flb_plg_debug(ins, "discarding %lu bytes", bytes);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

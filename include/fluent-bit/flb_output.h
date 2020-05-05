@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,8 +39,10 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_http_client.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -50,7 +52,6 @@
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE   0
 #define FLB_OUTPUT_PLUGIN_PROXY  1
-#define FLB_OUTPUT_KA_TIMEOUT   30
 
 struct flb_output_instance;
 
@@ -119,6 +120,7 @@ struct flb_output_plugin {
 struct flb_output_instance {
     uint64_t mask_id;                    /* internal bitmask for routing */
     int id;                              /* instance id                  */
+    int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
@@ -161,10 +163,6 @@ struct flb_output_instance {
      */
     struct flb_net_host host;
 
-    /* KeepAlive support for networking operations */
-    int keepalive;
-    int keepalive_timeout;
-
     /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
@@ -196,7 +194,7 @@ struct flb_output_instance {
      * through the command line arguments. This list is validated by the
      * plugin.
      */
-    struct mk_list  properties;
+    struct mk_list properties;
 
     /*
      * configuration map: a new API is landing on Fluent Bit v1.4 that allows
@@ -208,11 +206,19 @@ struct flb_output_instance {
      */
     struct mk_list *config_map;
 
+    /* General network options like timeouts and keepalive */
+    struct flb_net_setup net_setup;
+    struct mk_list *net_config_map;
+    struct mk_list net_properties;
+
     struct mk_list _head;                /* link to config->inputs       */
 
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
 #endif
+
+    /* Callbacks context */
+    struct flb_callback *callback;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -294,7 +300,7 @@ struct flb_libco_out_params {
     struct flb_thread *th;
 };
 
-struct flb_libco_out_params libco_param;
+extern FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
 
 static FLB_INLINE void output_params_set(struct flb_thread *th,
                               const void *data, size_t bytes,
@@ -303,31 +309,61 @@ static FLB_INLINE void output_params_set(struct flb_thread *th,
                               struct flb_output_plugin *out_plugin,
                               void *out_context, struct flb_config *config)
 {
-    /* Callback parameters in order */
-    libco_param.data        = data;
-    libco_param.bytes       = bytes;
-    libco_param.tag         = tag;
-    libco_param.tag_len     = tag_len;
-    libco_param.i_ins       = i_ins;
-    libco_param.out_context = out_context;
-    libco_param.config      = config;
-    libco_param.out_plugin  = out_plugin;
+    struct flb_libco_out_params *params;
 
-    libco_param.th = th;
+    params = (struct flb_libco_out_params *) FLB_TLS_GET(flb_libco_params);
+    if (!params) {
+        params = (struct flb_libco_out_params *)
+            flb_malloc(sizeof(struct flb_libco_out_params));
+        if (!params) {
+            flb_errno();
+            return;
+        }
+    }
+
+    /* Callback parameters in order */
+    params->data        = data;
+    params->bytes       = bytes;
+    params->tag         = tag;
+    params->tag_len     = tag_len;
+    params->i_ins       = i_ins;
+    params->out_context = out_context;
+    params->config      = config;
+    params->out_plugin  = out_plugin;
+    params->th          = th;
+
+    FLB_TLS_SET(flb_libco_params, params);
     co_switch(th->callee);
 }
 
 static FLB_INLINE void output_pre_cb_flush(void)
 {
-    const void *data                 = libco_param.data;
-    size_t bytes                     = libco_param.bytes;
-    const char *tag                  = libco_param.tag;
-    int tag_len                      = libco_param.tag_len;
-    struct flb_input_instance *i_ins = libco_param.i_ins;
-    struct flb_output_plugin *out_p  = libco_param.out_plugin;
-    void *out_context                = libco_param.out_context;
-    struct flb_config *config        = libco_param.config;
-    struct flb_thread *th            = libco_param.th;
+    const void *data;
+    size_t bytes;
+    const char *tag;
+    int tag_len;
+    struct flb_input_instance *i_ins;
+    struct flb_output_plugin *out_p;
+    void *out_context;
+    struct flb_config *config;
+    struct flb_thread *th;
+    struct flb_libco_out_params *params;
+
+    params = (struct flb_libco_out_params *) FLB_TLS_GET(flb_libco_params);
+    if (!params) {
+        flb_error("[output] no co-routines params defined, unexpected");
+        return;
+    }
+
+    data        = params->data;
+    bytes       = params->bytes;
+    tag         = params->tag;
+    tag_len     = params->tag_len;
+    i_ins       = params->i_ins;
+    out_p       = params->out_plugin;
+    out_context = params->out_context;
+    config      = params->config;
+    th          = params->th;
 
     /*
      * Until this point the th->callee already set the variables, so we
@@ -479,23 +515,39 @@ static inline void flb_output_return_do(int x)
 static inline int flb_output_config_map_set(struct flb_output_instance *ins,
                                             void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    int ret;
+
+    /* Process normal properties */
+    ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Net properties */
+    if (ins->net_config_map) {
+        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+                                 &ins->net_setup);
+    }
+    return ret;
 }
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data);
-
+const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
-const char *flb_output_get_property(const char *key, struct flb_output_instance *o_ins);
+const char *flb_output_get_property(const char *key, struct flb_output_instance *ins);
 void flb_output_net_default(const char *host, int port,
-                            struct flb_output_instance *o_ins);
+                            struct flb_output_instance *ins);
+const char *flb_output_name(struct flb_output_instance *ins);
 void flb_output_pre_run(struct flb_config *config);
 void flb_output_exit(struct flb_config *config);
 void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
-int flb_output_init(struct flb_config *config);
+int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
+void flb_output_prepare();
+int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
@@ -38,6 +38,8 @@
 #include "http.h"
 #include "http_conf.h"
 
+#include <fluent-bit/flb_callback.h>
+
 static int cb_http_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
@@ -51,6 +53,12 @@ static int cb_http_init(struct flb_output_instance *ins,
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
 
     return 0;
 }
@@ -77,8 +85,8 @@ static int http_post(struct flb_out_http *ctx,
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
-        flb_error("[out_http] no upstream connections available to %s:%i",
-                  u->tcp_host, u->tcp_port);
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
         return FLB_RETRY;
     }
 
@@ -91,7 +99,8 @@ static int http_post(struct flb_out_http *ctx,
         ret = flb_gzip_compress((void *) body, body_len,
                                 &payload_buf, &payload_size);
         if (ret == -1) {
-            flb_error("[out_http] cannot gzip payload, disabling compression");
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
         }
         else {
             compressed = FLB_TRUE;
@@ -103,6 +112,12 @@ static int http_post(struct flb_out_http *ctx,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
+
+    /*
+     * Direct assignment of the callback context to the HTTP client context.
+     * This needs to be improved through a more clean API.
+     */
+    c->cb_ctx = ctx->ins->callback;
 
     /* Append headers */
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
@@ -165,26 +180,26 @@ static int http_post(struct flb_out_http *ctx,
          *
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_error("[out_http] %s:%i, HTTP status=%i",
-                      ctx->host, ctx->port, c->resp.status);
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                          ctx->host, ctx->port, c->resp.status);
             out_ret = FLB_RETRY;
         }
         else {
             if (c->resp.payload) {
-                flb_info("[out_http] %s:%i, HTTP status=%i\n%s",
-                         ctx->host, ctx->port,
-                         c->resp.status, c->resp.payload);
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                             ctx->host, ctx->port,
+                             c->resp.status, c->resp.payload);
             }
             else {
-                flb_info("[out_http] %s:%i, HTTP status=%i",
-                         ctx->host, ctx->port,
-                         c->resp.status);
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                             ctx->host, ctx->port,
+                             c->resp.status);
             }
         }
     }
     else {
-        flb_error("[out_http] could not flush records to %s:%i (http_do=%i)",
-                  ctx->host, ctx->port, ret);
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
     }
 
@@ -246,7 +261,7 @@ static int http_gelf(struct flb_out_http *ctx,
 
         tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
         if (!tmp) {
-            flb_error("[out_http] error encoding to GELF");
+            flb_plg_error(ctx->ins, "error encoding to GELF");
             flb_sds_destroy(s);
             msgpack_unpacked_destroy(&result);
             return FLB_ERROR;
@@ -255,7 +270,7 @@ static int http_gelf(struct flb_out_http *ctx,
         /* Append new line */
         tmp = flb_sds_cat(s, "\n", 1);
         if (!tmp) {
-            flb_error("[out_http] error concatenating records");
+            flb_plg_error(ctx->ins, "error concatenating records");
             flb_sds_destroy(s);
             msgpack_unpacked_destroy(&result);
             return FLB_RETRY;
@@ -361,7 +376,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
-     0, FLB_FALSE, FLB_TRUE, offsetof(struct flb_out_http, uri),
+     0, FLB_TRUE, offsetof(struct flb_out_http, uri),
      NULL,
     },
 

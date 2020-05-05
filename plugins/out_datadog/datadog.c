@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +18,13 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_gzip.h>
 
 #include <msgpack.h>
 
@@ -253,7 +254,7 @@ static int datadog_format(const void *data, size_t bytes,
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
-        flb_error("[out_datadog] error formatting JSON payload");
+        flb_plg_error(ctx->ins, "error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
@@ -282,8 +283,11 @@ static void cb_datadog_flush(const void *data, size_t bytes,
 
     flb_sds_t payload_buf;
     size_t payload_size = 0;
+    void *final_payload_buf = NULL;
+    size_t final_payload_size = 0;
     size_t b_sent;
     int ret = FLB_ERROR;
+    int compressed = FLB_FALSE;
 
     /* Get upstream connection */
     upstream_conn = flb_upstream_conn_get(ctx->upstream);
@@ -298,11 +302,25 @@ static void cb_datadog_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
+    /* Should we compress the payload ? */
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) payload_buf, payload_size,
+                                &final_payload_buf, &final_payload_size);
+        if (ret == -1) {
+            flb_error("[out_http] cannot gzip payload, disabling compression");
+        } else {
+            compressed = FLB_TRUE;
+        }
+    } else {
+        final_payload_buf = payload_buf;
+        final_payload_size = payload_size;
+    }
+
     /* Create HTTP client context */
     client = flb_http_client(upstream_conn, FLB_HTTP_POST, ctx->uri,
-                             payload_buf, payload_size,
+                             final_payload_buf, final_payload_size,
                              ctx->host, ctx->port,
-                             NULL, 0);
+                             ctx->proxy, 0);
     if (!client) {
         flb_upstream_conn_release(upstream_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -312,36 +330,49 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     flb_http_add_header(client,
                         FLB_DATADOG_CONTENT_TYPE, sizeof(FLB_DATADOG_CONTENT_TYPE) - 1,
                         FLB_DATADOG_MIME_JSON, sizeof(FLB_DATADOG_MIME_JSON) - 1);
+
+    /* Content Encoding: gzip */
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(client);
+    }
     /* TODO: Append other headers if needed*/
 
     /* finaly send the query */
     ret = flb_http_do(client, &b_sent);
     if (ret == 0) {
         if (client->resp.status < 200 || client->resp.status > 205) {
-            flb_error("[out_datadog] %s%s:%i HTTP status=%i",
-                      ctx->scheme, ctx->host, ctx->port, client->resp.status);
+            flb_plg_error(ctx->ins, "%s%s:%i HTTP status=%i",
+                          ctx->scheme, ctx->host, ctx->port,
+                          client->resp.status);
             ret = FLB_RETRY;
         }
         else {
             if (client->resp.payload) {
-                flb_info("[out_datadog] %s%s, port=%i, HTTP status=%i payload=%s",
-                         ctx->scheme, ctx->host, ctx->port,
-                         client->resp.status, client->resp.payload);
+                flb_plg_info(ctx->ins, "%s%s, port=%i, HTTP status=%i payload=%s",
+                             ctx->scheme, ctx->host, ctx->port,
+                             client->resp.status, client->resp.payload);
             }
             else {
-                flb_info("[out_datadog] %s%s, port=%i, HTTP status=%i",
-                         ctx->scheme, ctx->host, ctx->port,
-                         client->resp.status);
+                flb_plg_info(ctx->ins, "%s%s, port=%i, HTTP status=%i",
+                             ctx->scheme, ctx->host, ctx->port,
+                             client->resp.status);
             }
             ret = FLB_OK;
         }
     }
     else {
-        flb_error("[out_datadog] could not flush records to %s:%i (http_do=%i)",
-                  ctx->host, ctx->port, ret);
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->host, ctx->port, ret);
         ret = FLB_RETRY;
     }
 
+    /*
+     * If the final_payload_buf buffer is different than payload_buf, means
+     * we generated a different payload and must be freed.
+     */
+    if (final_payload_buf != payload_buf) {
+        flb_free(final_payload_buf);
+    }
     /* Destroy HTTP client context */
     flb_sds_destroy(payload_buf);
     flb_http_client_destroy(client);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +45,8 @@ struct flb_tail_config {
     int ch_manager[2];         /* pipe: channel manager    */
     int ch_pending[2];         /* pipe: pending events     */
 #endif
+    int ch_reads;              /* count number if signal reads */
+    int ch_writes;             /* count number of signal writes */
 
     /* Buffer Config */
     size_t buf_chunk_size;     /* allocation chunks        */
@@ -72,12 +74,9 @@ struct flb_tail_config {
     int rotate_wait;           /* sec to wait on rotated files */
     int ignore_older;          /* ignore fields older than X seconds        */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
-    const char *path;          /* lookup path (glob)           */
-    const char *exclude_path;  /* exclude path                 */
-    const char *path_key;      /* key name of file path        */
-    int   path_key_len;        /* length of key name           */
-    char *key;                 /* key for unstructured record  */
-    int   key_len;             /* length of key ^              */
+    flb_sds_t path;            /* lookup path (glob)           */
+    flb_sds_t path_key;        /* key name of file path        */
+    flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
 
@@ -111,10 +110,10 @@ struct flb_tail_config {
     struct mk_list *exclude_list;
 
     /* Plugin input instance */
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
-struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *i_ins,
+struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                struct flb_config *config);
 int flb_tail_config_destroy(struct flb_tail_config *config);
 

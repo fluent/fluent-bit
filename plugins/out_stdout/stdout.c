@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_time.h>
@@ -44,6 +43,7 @@ static int cb_stdout_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -56,8 +56,8 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1) {
-            flb_error("[out_stdout] unrecognized 'format' option. "
-                      "Using 'msgpack'");
+            flb_plg_error(ctx->ins, "unrecognized 'format' option. "
+                          "Using 'msgpack'");
         }
         else {
             ctx->out_format = ret;
@@ -70,8 +70,8 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_error("[out_stdout] invalid json_date_format '%s'. "
-                      "Using 'double' type", tmp);
+            flb_plg_error(ctx->ins, "invalid json_date_format '%s'. "
+                          "Using 'double' type", tmp);
         }
         else {
             ctx->json_date_format = ret;
@@ -159,17 +159,17 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specifies the data format to be printed. Supported formats are msgpack json, json_lines and json_stream."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+    "Specifies the name of the date field in output."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
-     NULL
+    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
     },
 
     /* EOF */

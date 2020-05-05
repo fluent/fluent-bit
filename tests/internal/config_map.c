@@ -4,6 +4,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_map.h>
 
 #include "flb_tests_internal.h"
@@ -11,6 +12,8 @@
 struct context {
     /* Single values */
     int num_int;
+    size_t size;
+    time_t time;
     char boolean;
     double num_double;
     flb_sds_t string;
@@ -55,6 +58,25 @@ struct flb_config_map config_map[] = {
      NULL
     },
 
+    /* SIZE */
+    {
+     FLB_CONFIG_MAP_SIZE,
+     "test_size",
+     "2M",
+     0, FLB_TRUE, offsetof(struct context, size),
+     NULL
+    },
+
+    /* TIME */
+    {
+     FLB_CONFIG_MAP_TIME,
+     "test_time",
+     "2H",
+     0, FLB_TRUE, offsetof(struct context, time),
+     NULL
+    },
+
+    /* CSLIST */
     {
      FLB_CONFIG_MAP_CLIST,
      "test_clist",
@@ -136,6 +158,12 @@ void test_helper()
     struct context ctx;
     struct mk_list *map;
     struct mk_list prop;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
 
@@ -143,7 +171,7 @@ void test_helper()
     flb_kv_init(&prop);
     flb_kv_item_create(&prop, "bad", "property");
 
-    map = flb_config_map_create(config_map);
+    map = flb_config_map_create(config, config_map);
     TEST_CHECK(map != NULL);
 
     ret = flb_config_map_properties_check("test", &prop, map);
@@ -151,6 +179,8 @@ void test_helper()
 
     flb_config_map_destroy(map);
     flb_kv_release(&prop);
+
+    flb_config_exit(config);
 }
 
 void test_create()
@@ -160,11 +190,17 @@ void test_create()
     struct mk_list *map;
     struct mk_list properties;
     struct flb_slist_entry *e;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
     mk_list_init(&properties);
 
-    map = flb_config_map_create(config_map);
+    map = flb_config_map_create(config, config_map);
     TEST_CHECK(map != NULL);
 
     /* Populate default values only */
@@ -174,6 +210,8 @@ void test_create()
     TEST_CHECK(ctx.boolean == 1);
     TEST_CHECK(ctx.num_int == 123);
     TEST_CHECK(ctx.num_double == 0.12345);
+    TEST_CHECK(ctx.size == 2000000);
+    TEST_CHECK(ctx.time == 7200);
     TEST_CHECK(strcmp(ctx.string, "test") == 0);
     TEST_CHECK(flb_sds_len(ctx.string) == 4);
     TEST_CHECK(mk_list_size(ctx.list1) == 15);
@@ -182,6 +220,8 @@ void test_create()
     e = mk_list_entry_last(ctx.list2, struct flb_slist_entry, _head);
     TEST_CHECK(strcmp(e->str, "f   ghi jk l m n  o pqr   stuv xyz") == 0);
     flb_config_map_destroy(map);
+
+    flb_config_exit(config);
 }
 
 void test_override_defaults()
@@ -191,11 +231,17 @@ void test_override_defaults()
     struct mk_list *map;
     struct mk_list properties;
     struct flb_slist_entry *e;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
     mk_list_init(&properties);
 
-    map = flb_config_map_create(config_map);
+    map = flb_config_map_create(config, config_map);
     TEST_CHECK(map != NULL);
 
     /* Create a properties list that will override default values */
@@ -203,6 +249,8 @@ void test_override_defaults()
     flb_kv_item_create(&properties, "num_int", "321");
     flb_kv_item_create(&properties, "num_double", "0.54321");
     flb_kv_item_create(&properties, "string", "no test");
+    flb_kv_item_create(&properties, "test_time", "1H");
+    flb_kv_item_create(&properties, "test_size", "1M");
     flb_kv_item_create(&properties, "test_clist", "abc, def, ghi ,,,,jkl  ");
     flb_kv_item_create(&properties, "test_slist", "abc def ghi jkl m n o");
 
@@ -213,6 +261,8 @@ void test_override_defaults()
     TEST_CHECK(ctx.boolean == 0);
     TEST_CHECK(ctx.num_int == 321);
     TEST_CHECK(ctx.num_double == 0.54321);
+    TEST_CHECK(ctx.size == 1000000);
+    TEST_CHECK(ctx.time == 3600);
     TEST_CHECK(strcmp(ctx.string, "no test") == 0);
     TEST_CHECK(flb_sds_len(ctx.string) == 7);
     TEST_CHECK(mk_list_size(ctx.list1) == 4);
@@ -223,6 +273,8 @@ void test_override_defaults()
 
     flb_kv_release(&properties);
     flb_config_map_destroy(map);
+
+    flb_config_exit(config);
 }
 
 /* Check that single property raise an error if are set multiple times (dups) */
@@ -232,6 +284,12 @@ void test_no_multiple()
     struct context ctx;
     struct mk_list *map;
     struct mk_list prop;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
 
@@ -240,7 +298,7 @@ void test_no_multiple()
     flb_kv_item_create(&prop, "no_mult", "true");
     flb_kv_item_create(&prop, "no_mult", "false");
 
-    map = flb_config_map_create(config_map_mult);
+    map = flb_config_map_create(config, config_map_mult);
     TEST_CHECK(map != NULL);
 
     ret = flb_config_map_properties_check("test", &prop, map);
@@ -248,6 +306,8 @@ void test_no_multiple()
 
     flb_config_map_destroy(map);
     flb_kv_release(&prop);
+
+    flb_config_exit(config);
 }
 
 void test_multiple()
@@ -260,6 +320,12 @@ void test_multiple()
     struct mk_list prop;
     struct mk_list *head;
     struct flb_config_map_val *mv;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
 
@@ -272,9 +338,9 @@ void test_multiple()
     flb_kv_item_create(&prop, "mult_clist", "d, e, f");
     flb_kv_item_create(&prop, "mult_clist", "g, h, i");
 
-    flb_kv_item_create(&prop, "mult_slist", "d e f");
+    flb_kv_item_create(&prop, "mult_slist", "d e f g");
 
-    map = flb_config_map_create(config_map_mult);
+    map = flb_config_map_create(config, config_map_mult);
     TEST_CHECK(map != NULL);
 
     ret = flb_config_map_properties_check("test", &prop, map);
@@ -307,6 +373,7 @@ void test_multiple()
 
     flb_config_map_destroy(map);
     flb_kv_release(&prop);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {

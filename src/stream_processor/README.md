@@ -14,18 +14,28 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <record_keys> := <record_key> | <record_key>, <record_keys>
 <record_key>  := <exp> | <exp> AS <id>
 <exp>         := <key> | <fun>
-<fun>         := AVG(<key>) | SUM(<key>) | COUNT(<key>) | COUNT(*) | MIN(<key>) | MAX(<key>)
+<fun>         := AVG(<key>) | SUM(<key>) | COUNT(<key>) | COUNT(*) | MIN(<key>) | MAX(<key>) | <timeseries>
+<timeseries>  := FORECAST(<key>, <key>, <value>) | FORECAST_R(<key>, <key>, <value>, <value>)
 <source>      := STREAM:<id> | TAG:<id>
 <condition>   := <key> | <value> | <key> <relation> <value> | (<condition>)
                | NOT <condition> | <condition> AND <condition> | <condition> OR <condition>
                | @record.contains(<key>) | <id> IS NULL | <id> IS NOT NULL
 <key>         := <id> | <id><subkey-idx>
 <subkey-idx>  := [<id>] | <subkey-idx>[<id>]
-<relation>    := = | < | <= | > | >=
+<relation>    := = | != | <> | < | <= | > | >=
 <id>          := <letter> <characters>
 <characters>  := <letter> | <digit> | _ | <characters> <characters>
 <value>       := true | false | <integer> | <float> | '<string>'
 ```
+
+In addition to the aggregation functions, Stream Processor provides the following timeseries functions. `FORECAST` and `FORECAST_R` functions use simple linear regression algorithm as the forecasting method.
+
+### Timeseries Functions
+
+| name                     | description                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| FORECAST(x, y, n)        | forecasts the value of y at x + n (use RECORD_TAG() for x for time-based forecast). |
+| FORECAST_R(x, y, n, cap) | forecasts the value of x (max = cap) in which y will become n.                      |
 
 ### Time Functions
 

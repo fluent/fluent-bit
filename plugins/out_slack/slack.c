@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
@@ -47,6 +46,7 @@ static int cb_slack_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
@@ -60,29 +60,30 @@ static int cb_slack_init(struct flb_output_instance *ins,
 
     /* Validate if the slack webhook is defined */
     if (!ctx->webhook) {
-        flb_error("[out_slack] the 'webhook' address has not been defined");
+        flb_plg_error(ctx->ins, "the 'webhook' address has not been defined");
         return -1;
     }
 
     /* Split the address */
     ret = flb_utils_url_split(ctx->webhook, &protocol, &host, &port, &uri);
     if (ret == -1) {
-        flb_error("[out_slack] could not process 'webhook' address");
+        flb_plg_error(ctx->ins, "could not process 'webhook' address");
         return -1;
     }
 
     if (strcasecmp(protocol, "https") != 0) {
-        flb_error("[out_slack] invalid protocol '%s', we expected 'https'", protocol);
+        flb_plg_error(ctx->ins, "invalid protocol '%s', we expected 'https'",
+                      protocol);
         goto error;
     }
 
     if (!host) {
-        flb_error("[out_slack] invalid slack host");
+        flb_plg_error(ctx->ins, "invalid slack host");
         goto error;
     }
 
     if (!uri) {
-        flb_error("[out_slack] slack webhook uri has not been defined");
+        flb_plg_error(ctx->ins, "slack webhook uri has not been defined");
         goto error;
     }
 
@@ -102,7 +103,7 @@ static int cb_slack_init(struct flb_output_instance *ins,
                                  ctx->port,
                                  FLB_IO_TLS, (void *) &ins->tls);
     if (!ctx->u) {
-        flb_error("[out_slack] error creating upstream context");
+        flb_plg_error(ctx->ins, "error creating upstream context");
         goto error;
     }
 
@@ -184,7 +185,7 @@ static void cb_slack_flush(const void *data, size_t bytes,
 
         ret = msgpack_object_print_buffer(json + printed, size - printed, *p);
         if (ret < 0) {
-            flb_error("[out_slack] error formatting payload");
+            flb_plg_error(ctx->ins, "error formatting payload");
             flb_sds_destroy(json);
             msgpack_unpacked_destroy(&result);
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -242,26 +243,26 @@ static void cb_slack_flush(const void *data, size_t bytes,
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_error("[out_slack] %s:%i, HTTP status=%i",
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
                       ctx->host, ctx->port, c->resp.status);
             out_ret = FLB_RETRY;
         }
         else {
             if (c->resp.payload) {
-                flb_info("[out_slack] %s:%i, HTTP status=%i\n%s",
-                         ctx->host, ctx->port,
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                             ctx->host, ctx->port,
                          c->resp.status, c->resp.payload);
             }
             else {
-                flb_info("[out_slack] %s:%i, HTTP status=%i",
-                         ctx->host, ctx->port,
-                         c->resp.status);
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                             ctx->host, ctx->port,
+                             c->resp.status);
             }
         }
     }
     else {
-        flb_error("[out_slack] could not flush records to %s:%i (http_do=%i)",
-                  ctx->host, ctx->port, ret);
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
     }
 

@@ -193,7 +193,7 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
         dcolor = ANSI_YELLOW;
     }
 
-    if (ctx->log_level > CIO_INFO) {
+    if (ctx->log_level > CIO_LOG_INFO) {
         printf("%s[%s]%s %-60s => %s%s:%i%s\n",
                dcolor, dtitle, ANSI_RESET, str,
                dcolor, file, line, ANSI_RESET);
@@ -263,6 +263,7 @@ static int cb_cmd_stdin(struct cio_ctx *ctx, const char *stream,
 {
     int fd;
     int ret;
+    int err;
     int meta_len;
     size_t total = 0;
     ssize_t bytes;
@@ -278,7 +279,7 @@ static int cb_cmd_stdin(struct cio_ctx *ctx, const char *stream,
     }
 
     /* Open a file with a hint of 32KB */
-    ch = cio_chunk_open(ctx, st, fname, CIO_OPEN, 1024*32);
+    ch = cio_chunk_open(ctx, st, fname, CIO_OPEN, 1024*32, &err);
     if (!ch) {
         cio_log_error(ctx, "cannot create file");
         return -1;
@@ -367,6 +368,7 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
 {
     int i;
     int j;
+    int err;
     int meta_len = 0;
     int ret;
     uint64_t bytes = 0;
@@ -408,7 +410,7 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
     cio_timespec_get(&t1);
     for (i = 0; i < files; i++) {
         snprintf(tmp, sizeof(tmp), "perf-test-%04i.txt", i);
-        carr[i] = cio_chunk_open(ctx, stream, tmp, CIO_OPEN, in_size);
+        carr[i] = cio_chunk_open(ctx, stream, tmp, CIO_OPEN, in_size, &err);
         if (carr[i] == NULL) {
             continue;
         }
@@ -473,7 +475,7 @@ int main(int argc, char **argv)
     int cmd_stdin = CIO_FALSE;
     int cmd_list = CIO_FALSE;
     int cmd_perf = CIO_FALSE;
-    int verbose = CIO_WARN;
+    int verbose = CIO_LOG_WARN;
     int flags = 0;
     char *perf_file = NULL;
     char *fname = NULL;
@@ -498,13 +500,14 @@ int main(int argc, char **argv)
         {"perf-writes", required_argument, NULL, 'w'},
         {"perf-files" , required_argument, NULL, 'e'},
         {"verbose"    , no_argument      , NULL, 'v'},
+        {"version"    , no_argument      , NULL, 'V'},
         {"help"       , no_argument      , NULL, 'h'},
     };
 
     /* Initialize signals */
     cio_signal_init();
 
-    while ((opt = getopt_long(argc, argv, "Fklr:p:w:e:Sis:m:Mf:vh",
+    while ((opt = getopt_long(argc, argv, "Fklr:p:w:e:Sis:m:Mf:vVh",
                               long_opts, NULL)) != -1) {
         switch (opt) {
         case 'F':
@@ -550,6 +553,9 @@ int main(int argc, char **argv)
         case 'v':
             verbose++;
             break;
+        case 'V':
+            fprintf(stderr, "Chunk I/O v%s\n", cio_version());
+            exit(0);
         case 'h':
             cio_help(EXIT_SUCCESS);
             break;

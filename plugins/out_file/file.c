@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -44,6 +44,7 @@ struct flb_file_conf {
     const char *label_delimiter;
     const char *template;
     int  format;
+    struct flb_output_instance *ins;
 };
 
 static char *check_delimiter(const char *str)
@@ -82,7 +83,7 @@ static int cb_file_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
-
+    ctx->ins = ins;
     ctx->format = FLB_OUT_FILE_FMT_JSON; /* default */
     ctx->delimiter = NULL;
     ctx->label_delimiter = NULL;
@@ -118,7 +119,6 @@ static int cb_file_init(struct flb_output_instance *ins,
         }
         else if (!strcasecmp(tmp, "template")) {
             ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
-            ctx->template  = "{time} {message}";
         }
     }
 
@@ -193,7 +193,8 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
     return 0;
 }
 
-static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+static int template_output_write(struct flb_file_conf *ctx,
+                                 FILE *fp, struct flb_time *tm, msgpack_object *obj,
                                  const char *key, int size)
 {
     int i;
@@ -209,7 +210,7 @@ static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *
     }
 
     if (obj->type != MSGPACK_OBJECT_MAP) {
-        flb_error("[out_file] invalid object type (type=%i)", obj->type);
+        flb_plg_error(ctx->ins, "invalid object type (type=%i)", obj->type);
         return -1;
     }
 
@@ -267,7 +268,7 @@ static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
             key = inbrace + 1;
             keysize = pos - inbrace - 1;
 
-            if (template_output_write(fp, tm, obj, key, keysize)) {
+            if (template_output_write(ctx, fp, tm, obj, key, keysize)) {
                 fwrite(inbrace, 1, pos - inbrace + 1, fp);
             }
             inbrace = NULL;
@@ -456,7 +457,7 @@ static struct flb_config_map config_map[] = {
      NULL
     },
     {
-     FLB_CONFIG_MAP_STR, "template", NULL,
+     FLB_CONFIG_MAP_STR, "template", "{time} {message}",
      0, FLB_TRUE, offsetof(struct flb_file_conf, template),
      NULL
     },

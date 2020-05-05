@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_output.h>
+#include "./go.h"
 
 /*
  * These functions needs to be moved to a better place, still in
@@ -51,18 +52,6 @@
  *
  * 3. Plugin Initialization
  */
-
-struct flbgo_output_plugin {
-    char *name;
-    void *api;
-    void *o_ins;
-    struct flb_plugin_proxy_context *context;
-
-    int (*cb_init)();
-    int (*cb_flush)(const void *, size_t, const char *);
-    int (*cb_flush_ctx)(void *, const void *, size_t, char *);
-    int (*cb_exit)(void *);
-};
 /*------------------------EOF------------------------------------------------*/
 
 int proxy_go_register(struct flb_plugin_proxy *proxy,
@@ -97,6 +86,7 @@ int proxy_go_register(struct flb_plugin_proxy *proxy,
     plugin->cb_flush = flb_plugin_proxy_symbol(proxy, "FLBPluginFlush");
     plugin->cb_flush_ctx = flb_plugin_proxy_symbol(proxy, "FLBPluginFlushCtx");
     plugin->cb_exit  = flb_plugin_proxy_symbol(proxy, "FLBPluginExit");
+    plugin->cb_exit_ctx = flb_plugin_proxy_symbol(proxy, "FLBPluginExitCtx");
     plugin->name     = flb_strdup(def->name);
 
     /* This Go plugin context is an opaque data for the parent proxy */

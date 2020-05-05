@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,16 +29,16 @@
 #include <msgpack.h>
 
 struct flb_in_tcp_config {
-    int server_fd;                 /* TCP server file descriptor  */
-    int format;                    /* Data format */
-    size_t buffer_size;            /* Buffer size for each reader */
-    size_t chunk_size;             /* Chunk allocation size       */
-    char *listen;                  /* Listen interface            */
-    char *tcp_port;                /* TCP Port                    */
-    flb_sds_t separator;           /* String delimiter            */
-    struct mk_list connections;    /* List of active connections  */
-    struct mk_event_loop *evl;     /* Event loop file descriptor  */
-    struct flb_input_instance *in; /* Input plugin instace        */
+    int server_fd;                  /* TCP server file descriptor  */
+    int format;                     /* Data format */
+    size_t buffer_size;             /* Buffer size for each reader */
+    size_t chunk_size;              /* Chunk allocation size       */
+    char *listen;                   /* Listen interface            */
+    char *tcp_port;                 /* TCP Port                    */
+    flb_sds_t separator;            /* String delimiter            */
+    struct mk_list connections;     /* List of active connections  */
+    struct mk_event_loop *evl;      /* Event loop file descriptor  */
+    struct flb_input_instance *ins; /* Input plugin instace        */
 };
 
 #endif

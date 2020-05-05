@@ -1,0 +1,9 @@
+usr/include/*/rdkafka.h
+usr/include/*/rdkafkacpp.h
+usr/include/*/rdkafka_mock.h
+usr/lib/*/librdkafka.a
+usr/lib/*/librdkafka.so
+usr/lib/*/librdkafka++.a
+usr/lib/*/librdkafka++.so
+usr/lib/*/pkgconfig/rdkafka.pc
+usr/lib/*/pkgconfig/rdkafka++.pc

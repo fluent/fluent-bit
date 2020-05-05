@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -307,6 +307,10 @@ int flb_sched_request_destroy(struct flb_config *config,
 {
     struct flb_sched_timer *timer;
 
+    if (!req) {
+        return 0;
+    }
+
     mk_list_del(&req->_head);
 
     timer = req->timer;
@@ -364,11 +368,11 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
         req = timer->data;
         consume_byte(req->fd);
 
-        /* Destroy this scheduled request, it's not longer required */
-        flb_sched_request_destroy(config, req);
-
         /* Dispatch 'retry' */
         flb_engine_dispatch_retry(req->data, config);
+
+        /* Destroy this scheduled request, it's not longer required */
+        flb_sched_request_destroy(config, req);
     }
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
@@ -377,11 +381,15 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 #endif
         schedule_request_promote(sched);
     }
-    else if (timer->type == FLB_SCHED_TIMER_CUSTOM) {
+    else if (timer->type == FLB_SCHED_TIMER_CB_ONESHOT) {
         consume_byte(timer->timer_fd);
         flb_sched_timer_cb_disable(timer);
         timer->cb(config, timer->data);
         flb_sched_timer_cb_destroy(timer);
+    }
+    else if (timer->type == FLB_SCHED_TIMER_CB_PERM) {
+        consume_byte(timer->timer_fd);
+        timer->cb(config, timer->data);
     }
 
     return 0;
@@ -394,7 +402,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
  *
  * use-case: invoke function A() after M milliseconds.
  */
-int flb_sched_timer_cb_create(struct flb_config *config, int ms,
+int flb_sched_timer_cb_create(struct flb_config *config, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
                               void *data)
 {
@@ -404,12 +412,17 @@ int flb_sched_timer_cb_create(struct flb_config *config, int ms,
     struct mk_event *event;
     struct flb_sched_timer *timer;
 
+    if (type != FLB_SCHED_TIMER_CB_ONESHOT && type != FLB_SCHED_TIMER_CB_PERM) {
+        flb_error("[sched] invalid callback timer type %i", type);
+        return -1;
+    }
+
     timer = flb_sched_timer_create(config->sched);
     if (!timer) {
         return -1;
     }
 
-    timer->type = FLB_SCHED_TIMER_CUSTOM;
+    timer->type = type;
     timer->data = data;
     timer->cb   = cb;
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,8 +23,9 @@
  * based on Win32 API.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <sys/types.h>
@@ -39,15 +40,15 @@
 static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
-    struct flb_split_entry *pattern;
+    struct flb_slist_entry *pattern;
 
     if (!ctx->exclude_list) {
         return FLB_FALSE;
     }
 
     mk_list_foreach(head, ctx->exclude_list) {
-        pattern = mk_list_entry(head, struct flb_split_entry, _head);
-        if (PathMatchSpecA(path, pattern->value)) {
+        pattern = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (PathMatchSpecA(path, pattern->str)) {
             return FLB_TRUE;
         }
     }
@@ -55,26 +56,145 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
     return FLB_FALSE;
 }
 
-static int tail_exclude_generate(struct flb_tail_config *ctx)
+/*
+ * This function is a thin wrapper over flb_tail_file_append(),
+ * adding normalization and sanity checks on top of it.
+ */
+static int tail_register_file(const char *target, struct flb_tail_config *ctx)
 {
-    struct mk_list *list;
+    struct stat st;
+    char path[MAX_PATH];
 
-    /*
-     * The exclusion path might content multiple exclusion patterns, first
-     * let's split the content into a list.
-     */
-    list = flb_utils_split(ctx->exclude_path, ',', -1);
-    if (!list) {
+    if (_fullpath(path, target, MAX_PATH) == NULL) {
+        flb_plg_error(ctx->ins, "cannot get absolute path of %s", target);
         return -1;
     }
 
-    if (mk_list_is_empty(list) == 0) {
-        return 0;
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        return -1;
     }
 
-    /* We use the same list head returned by flb_utils_split() */
-    ctx->exclude_list = list;
-    return 0;
+    if (tail_is_excluded(path, ctx) == FLB_TRUE) {
+        flb_plg_trace(ctx->ins, "skip '%s' (excluded)", path);
+        return -1;
+    }
+
+    if (flb_tail_file_exists(path, ctx) == FLB_TRUE) {
+        return -1;
+    }
+
+    return flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
+}
+
+/*
+ * Perform patern match on the given path string. This function
+ * supports patterns with "nested" wildcards like below.
+ *
+ *     tail_scan_pattern("C:\fluent-bit\*\*.txt", ctx);
+ */
+static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
+{
+    char *star, *p0, *p1;
+    char pattern[MAX_PATH];
+    char buf[MAX_PATH];
+    int ret;
+    int n_added = 0;
+    HANDLE h;
+    WIN32_FIND_DATA data;
+
+    if (strlen(path) > MAX_PATH - 1) {
+        flb_plg_error(ctx->ins, "path too long '%s'");
+        return -1;
+    }
+
+    star = strchr(path, '*');
+    if (star == NULL) {
+        return -1;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *            0<-----|
+     */
+    p0 = star;
+    while (path <= p0 && *p0 != '\\') {
+        p0--;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *                   |---->1
+     */
+    p1 = star;
+    while (*p1 && *p1 != '\\') {
+        p1++;
+    }
+
+    memcpy(pattern, path, (p1 - path));
+    pattern[p1 - path] = '\0';
+
+    h = FindFirstFileA(pattern, &data);
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+
+    do {
+        /* Ignore the current and parent dirs */
+        if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
+            continue;
+        }
+
+        /* Avoid an infinite loop */
+        if (strchr(data.cFileName, '*')) {
+            continue;
+        }
+
+        /* Create a path (prefix + filename + suffix) */
+        memcpy(buf, path, p0 - path + 1);
+        buf[p0 - path + 1] = '\0';
+
+        if (strlen(buf) + strlen(data.cFileName) + strlen(p1) > MAX_PATH - 1) {
+            flb_plg_warn(ctx->ins, "'%s%s%s' is too long", buf, data.cFileName, p1);
+            continue;
+        }
+        strcat(buf, data.cFileName);
+        strcat(buf, p1);
+
+        if (strchr(p1, '*')) {
+            ret = tail_scan_pattern(buf, ctx); /* recursive */
+            if (ret >= 0) {
+                n_added += ret;
+            }
+            continue;
+        }
+
+        /* Try to register the target file */
+        ret = tail_register_file(buf, ctx);
+        if (ret == 0) {
+            n_added++;
+        }
+    } while (FindNextFileA(h, &data) != 0);
+
+    FindClose(h);
+    return n_added;
+}
+
+static int tail_do_scan(const char *path, struct flb_tail_config *ctx)
+{
+    int ret;
+    int n_added = 0;
+
+    if (strchr(path, '*')) {
+        return tail_scan_pattern(path, ctx);
+    }
+
+    /* No wildcard involved. Let's just handle the file... */
+    ret = tail_register_file(path, ctx);
+    if (ret == 0) {
+        n_added++;
+    }
+
+    return n_added;
 }
 
 static int tail_filepath(char *buf, int len, const char *basedir, const char *filename)
@@ -110,111 +230,28 @@ static int tail_filepath(char *buf, int len, const char *basedir, const char *fi
 
 int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
 {
-    HANDLE h;
-    WIN32_FIND_DATA found;
-    struct stat st;
-    char path[MAX_PATH];
-    int ret;
+    int n_added;
 
-    flb_debug("[in_tail] scanning path %s", pattern);
+    flb_plg_debug(ctx->ins, "scanning path %s", pattern);
 
-    if (ctx->exclude_path) {
-        tail_exclude_generate(ctx);
+    n_added = tail_do_scan(pattern, ctx);
+    if (n_added >= 0) {
+        flb_plg_debug(ctx->ins, "%i files found for '%s'", n_added, pattern);
     }
 
-    h = FindFirstFileA(pattern, &found);
-    if (h == INVALID_HANDLE_VALUE) {
-        switch (GetLastError()) {
-            case ERROR_FILE_NOT_FOUND:
-                flb_debug("[in_tail] NO matches for path: %s", pattern);
-                return 0;
-            default:
-                flb_error("[in_tail] Cannot read info from: %s", pattern);
-                return -1;
-        }
-    }
-
-    do {
-        /* WIN32_FIND_DATA.cFileName is just a file name, we need to
-         * construct a proper path by combining the original pattern.
-         */
-        ret = tail_filepath(path, MAX_PATH, pattern, found.cFileName);
-        if (ret) {
-            flb_error("[in_tail] fail to get a path for %s", found.cFileName);
-            continue;
-        }
-
-        ret = stat(path, &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-                flb_debug("[in_tail] excluded=%s", path);
-                continue;
-            }
-
-            flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
-        }
-    } while(FindNextFileA(h, &found));
-
-    FindClose(h);
     return 0;
 }
 
-int flb_tail_scan_callback(struct flb_input_instance *i_ins,
+int flb_tail_scan_callback(struct flb_input_instance *ins,
                            struct flb_config *config, void *context)
 {
-    HANDLE h;
-    WIN32_FIND_DATA found;
-    struct stat st;
-    struct flb_tail_config *ctx;
-    char path[MAX_PATH];
-    char *pattern;
-    int ret;
-    int count = 0;
+    struct flb_tail_config *ctx = (struct flb_tail_config *) context;
+    int n_added;
 
-    ctx = (struct flb_tail_config *) context;
-    pattern = ctx->path;
-
-    h = FindFirstFileA(pattern, &found);
-    if (h == INVALID_HANDLE_VALUE) {
-        switch (GetLastError()) {
-            case ERROR_FILE_NOT_FOUND:
-                return 0;
-            default:
-                flb_error("[in_tail] Cannot read info from: %s", pattern);
-                return -1;
-        }
-    }
-
-    do {
-        ret = tail_filepath(path, MAX_PATH, pattern, found.cFileName);
-        if (ret) {
-            flb_error("[in_tail] fail to get a path for %s", found.cFileName);
-            continue;
-        }
-
-        ret = stat(path, &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-                continue;
-            }
-            ret = flb_tail_file_exists(path, ctx);
-            if (ret == FLB_TRUE) {
-                continue;
-            }
-
-            flb_debug("[in_tail] append new file: %s", path);
-
-            flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
-
-            count++;
-        } else {
-            flb_debug("[in_tail] skip (invalid) entry=%s", path);
-        }
-    } while(FindNextFileA(h, &found));
-
-    FindClose(h);
-
-    if (count > 0) {
+    n_added = tail_do_scan(ctx->path, ctx);
+    if (n_added > 0) {
+        flb_plg_debug(ctx->ins, "%i new files found for '%s'",
+                      n_added, ctx->path);
         tail_signal_manager(ctx);
     }
 
