@@ -4,8 +4,11 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_sds.h>
 
 #include <time.h>
+#include <string.h>
 #include "flb_tests_internal.h"
 
 /* Parsers configuration */
@@ -21,6 +24,7 @@ struct tz_check {
     char *val;
     int diff;
 };
+
 
 struct tz_check tz_entries_ok[] = {
     {"+0000",       0},
@@ -402,10 +406,113 @@ void test_regex_parser_time_lookup()
     flb_config_exit(config);
 }
 
+static char *get_msgpack_map_key(void *buf, size_t buf_size, char *key) {
+    int i;
+    size_t off = 0;
+    int key_size;
+    char *ptr = NULL;
+    msgpack_unpacked result;
+    msgpack_object map;
+    msgpack_object k;
+    msgpack_object v;
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, buf, buf_size, &off);
+
+    map = result.data;
+
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&result);
+        return NULL;
+    }
+
+    key_size = strlen(key);
+
+
+    /* printf("map_size: %d\n", map.via.map.size); */
+
+    for (i = 0; i < map.via.map.size; i++) {
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+        /* printf("key(%.*s)(%d) == (%s)(%d)\n",  k.via.str.size, k.via.str.ptr, k.via.str.size, key, key_size); */
+        if (k.via.str.size == key_size && strncmp(key, (char *) k.via.str.ptr,  k.via.str.size) == 0) {
+            ptr =  flb_strndup(v.via.str.ptr, v.via.str.size);
+            break;
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    return ptr;
+}
+
+static int a_mysql_unquote_test(struct flb_parser *p, char *source, char *expected) {
+
+    int ret;
+    void *out_buf;
+    size_t out_size;
+    struct flb_time out_time;
+    char *val001;
+
+
+    ret = flb_parser_regex_do(p, source, strlen(source), &out_buf, &out_size, &out_time);
+
+    TEST_CHECK(ret != -1);
+    TEST_CHECK(out_buf != NULL);
+    if(ret < 0 || out_buf == NULL) return -1;
+
+    val001 = get_msgpack_map_key(out_buf, out_size, "key001");
+    if(!TEST_CHECK(val001 != NULL)) {
+        flb_free(out_buf);
+        return -1;
+    }
+
+    TEST_CHECK_(strcmp(val001,expected) == 0,  "source(%s) expected(%s) got(%s)", source, expected, val001);
+    flb_free(val001);
+    flb_free(out_buf);
+
+    return 1;
+}
+
+
+void test_mysql_unquoted()
+{
+    struct flb_parser *p;
+    struct flb_config *config;
+
+    config = flb_config_init();
+
+    /* Load parsers */
+    load_regex_parsers(config);
+
+    p = flb_parser_get("mysql_quoted_stuff", config);
+    TEST_CHECK(p != NULL);
+
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,plain",    "plain");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,''",       "");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'333'",    "333");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'\\n'",    "\n");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'\\r'",    "\r");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'\\''",    "'");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'\\\"'",   "\"");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'\\\\'",   "\\");
+    a_mysql_unquote_test(p,"2010-01-01 02:10:22,'abc\\nE\\\\'",   "abc\nE\\");
+
+    flb_parser_exit(config);
+    flb_config_exit(config);
+
+
+}
+
+
 TEST_LIST = {
     { "tzone_offset", test_parser_tzone_offset},
     { "time_lookup", test_parser_time_lookup},
     { "json_time_lookup", test_json_parser_time_lookup},
     { "regex_time_lookup", test_regex_parser_time_lookup},
+    { "mysql_unquoted" , test_mysql_unquoted },
     { 0 }
 };
