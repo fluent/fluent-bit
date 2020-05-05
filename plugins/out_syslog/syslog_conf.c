@@ -188,7 +188,5 @@ void out_syslog_config_destroy (struct out_syslog_config *ctx)
     flb_sds_destroy(ctx->message_key);
 
     flb_free(ctx->sd_key);
-
     flb_free(ctx);
 }
-
