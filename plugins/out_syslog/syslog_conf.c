@@ -23,16 +23,16 @@
 
 #include "syslog_conf.h"
 
-struct out_syslog_config *out_syslog_config_create(struct flb_output_instance *ins,
-                                                   struct flb_config *config)
+struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
+                                            struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_kv *prop;
     const char *tmp;
-    struct out_syslog_config *ctx = NULL;
+    struct flb_syslog *ctx = NULL;
 
     /* Allocate plugin context */
-    ctx = flb_calloc(1, sizeof(struct out_syslog_config));
+    ctx = flb_calloc(1, sizeof(struct flb_syslog));
     if (!ctx) {
         flb_error("[out_syslog] flb_calloc fail");
         return NULL;
@@ -173,11 +173,11 @@ struct out_syslog_config *out_syslog_config_create(struct flb_output_instance *i
     return ctx;
 
 clean:
-    out_syslog_config_destroy(ctx);
+    flb_syslog_config_destroy(ctx);
     return NULL;
 }
 
-void out_syslog_config_destroy (struct out_syslog_config *ctx)
+void flb_syslog_config_destroy(struct flb_syslog *ctx)
 {
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->facility_key);
