@@ -479,7 +479,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_FLOAT64:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
+            i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
