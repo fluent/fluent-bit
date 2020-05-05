@@ -17,8 +17,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_kv.h>
 
 #include "syslog_conf.h"
@@ -34,10 +33,10 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_syslog));
     if (!ctx) {
-        flb_error("[out_syslog] flb_calloc fail");
+        flb_errno();
         return NULL;
     }
-
+    ctx->ins = ins;
     ctx->mode = FLB_SYSLOG_UDP;
     ctx->format = FLB_SYSLOG_RFC5424;
     ctx->maxsize = -1;
@@ -55,7 +54,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
             ctx->mode = FLB_SYSLOG_UDP;
         }
         else {
-            flb_error("[out_syslog] Unknown syslog mode %s", tmp);
+            flb_plg_error(ctx->ins, "unknown syslog mode %s", tmp);
             goto clean;
         }
     }
@@ -75,7 +74,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->format = FLB_SYSLOG_RFC5424;
             }
             else {
-                flb_error("[out_syslog] Unknown syslog format %s", prop->val);
+                flb_plg_error(ctx->ins, "unknown syslog format %s", prop->val);
                 goto clean;
             }
         }
@@ -85,12 +84,12 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                     ctx->maxsize = atoi(prop->val);
                 }
                 else {
-                    flb_error("[out_syslog] syslog_maxsize must be > 0");
+                    flb_plg_error(ctx->ins, "syslog_maxsize must be > 0");
                     goto clean;
                 }
             }
             else {
-                flb_error("[out_syslog] syslog_maxsize already defined");
+                flb_plg_error(ctx->ins, "syslog_maxsize already defined");
                 goto clean;
             }
         }
@@ -99,7 +98,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->severity_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_severity_key already defined");
+                flb_plg_error(ctx->ins, "syslog_severity_key already defined");
                 goto clean;
             }
         }
@@ -108,7 +107,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->facility_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_facility_key already defined");
+                flb_plg_error(ctx->ins, "syslog_facility_key already defined");
                 goto clean;
             }
         }
@@ -117,7 +116,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->hostname_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_hostname_key already defined");
+                flb_plg_error(ctx->ins, "syslog_hostname_key already defined");
                 goto clean;
             }
         }
@@ -126,7 +125,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->appname_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_appname_key already defined");
+                flb_plg_error(ctx->ins, "syslog_appname_key already defined");
                 goto clean;
             }
         }
@@ -135,7 +134,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->procid_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_procid_key already defined");
+                flb_plg_error(ctx->ins, "syslog_procid_key already defined");
                 goto clean;
             }
         }
@@ -144,15 +143,15 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->msgid_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_msgid_key already defined");
+                flb_plg_error(ctx->ins, "syslog_msgid_key already defined");
                 goto clean;
             }
         }
         else if (!strcasecmp(prop->key, "syslog_sd_key")) {
             flb_sds_t *ftmp;
-            ftmp = realloc (ctx->sd_key, sizeof(flb_sds_t) * (ctx->nsd+1));
+            ftmp = flb_realloc(ctx->sd_key, sizeof(flb_sds_t) * (ctx->nsd+1));
             if (ftmp == NULL) {
-                flb_error("[out_syslog] realloc fail!");
+                flb_errno();
                 goto clean;
             }
             ctx->sd_key = ftmp;
@@ -164,7 +163,7 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 ctx->message_key = flb_sds_create(prop->val);
             }
             else {
-                flb_error("[out_syslog] syslog_message_key already defined");
+                flb_plg_error(ctx->ins, "syslog_message_key already defined");
                 goto clean;
             }
         }

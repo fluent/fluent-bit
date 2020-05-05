@@ -17,8 +17,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
@@ -600,8 +599,8 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                             }
                         }
                         if (!syslog_severity[i].name) {
-                             flb_warn("[out_syslog] invalid severity: '%.*s'",
-                                       val_len, val);
+                            flb_plg_warn(ctx->ins, "invalid severity: '%.*s'",
+                                         val_len, val);
                         }
                     }
                 }
@@ -620,9 +619,9 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                         msg->facility += (val[1]-'0');
                         if (!((msg->facility >= 0) &&
                               (msg->facility <=23))) {
-                             flb_warn("[out_syslog] invalid facility: '%.*s'",
-                                       val_len, val);
-                             msg->facility= -1;
+                            flb_plg_warn(ctx->ins, "invalid facility: '%.*s'",
+                                         val_len, val);
+                            msg->facility= -1;
                         }
                     }
                     else {
@@ -634,8 +633,8 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                             }
                         }
                         if (!syslog_facility[i].name) {
-                             flb_warn("[out_syslog] invalid facility: '%.*s'",
-                                       val_len, val);
+                            flb_plg_warn(ctx->ins, "invalid facility: '%.*s'",
+                                         val_len, val);
                         }
                     }
                 }
@@ -773,7 +772,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
     if (ctx->mode != FLB_SYSLOG_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
         if (!u_conn) {
-            flb_error("[out_syslog] no upstream connections available");
+            flb_plg_error(ctx->ins, "no upstream connections available");
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
@@ -825,7 +824,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
             }
         }
         else {
-            flb_error("[out_syslog] error formating message");
+            flb_plg_error(ctx->ins, "error formating message");
         }
     }
 
@@ -851,7 +850,7 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     /* Create config context */
     ctx = flb_syslog_config_create(ins, config);
     if (ctx == NULL) {
-        flb_error("[out_syslog] Error configuring plugin");
+        flb_plg_error(ins, "error configuring plugin");
         return -1;
     }
 
@@ -893,6 +892,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
+
+    flb_plg_info(ctx->ins, "setup done for %s:%i",
+                 ins->host.name, ins->host.port);
     return 0;
 }
 
