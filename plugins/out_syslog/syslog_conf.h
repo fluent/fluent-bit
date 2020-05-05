@@ -43,6 +43,7 @@ struct flb_syslog {
     int nsd;
     flb_sds_t *sd_key;
     flb_sds_t message_key;
+    struct flb_output_instance *ins;
 };
 
 struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
