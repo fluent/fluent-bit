@@ -564,7 +564,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                             NULL
                         };
                         for (i = 0; allowed_levels[i] != NULL; ++i) {
-                            if (!strncasecmp(val, allowed_levels[i], val_len)) {
+                            if (!strncasecmp(val, allowed_levels[i], strlen(allowed_levels[i]))) {
                                 v = &vtmp;
                                 v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
                                 v->via.u64 = (uint64_t)i;
