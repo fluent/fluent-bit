@@ -556,7 +556,12 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
-                    if (!(val_len == 1 && val[0] >= '0' && val[0] <= '7')) {
+                    if (val_len == 1 && val[0] >= '0' && val[0] <= '7') {
+                        v = &vtmp;
+                        v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                        v->via.u64 = (uint64_t)(val[0] - '0');
+                    }
+                    else {
                         int i;
                         char* allowed_levels[] = {
                             "emerg", "alert", "crit", "err",
