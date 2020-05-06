@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,6 +87,25 @@ int flb_time_msleep(uint32_t ms)
 double flb_time_to_double(struct flb_time *tm)
 {
     return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
+}
+
+int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
+{
+    if (base == NULL || duration == NULL|| result == NULL) {
+        return -1;
+    }
+    result->tm.tv_sec  = base->tm.tv_sec  + duration->tm.tv_sec;
+    result->tm.tv_nsec = base->tm.tv_nsec + duration->tm.tv_nsec;
+
+    if (result->tm.tv_nsec > ONESEC_IN_NSEC) {
+        result->tm.tv_nsec -= ONESEC_IN_NSEC;
+        result->tm.tv_sec++;
+    } else if (result->tm.tv_nsec < 0) {
+        result->tm.tv_nsec += ONESEC_IN_NSEC;
+        result->tm.tv_sec--;
+    }
+
+    return 0;
 }
 
 int flb_time_diff(struct flb_time *time1,

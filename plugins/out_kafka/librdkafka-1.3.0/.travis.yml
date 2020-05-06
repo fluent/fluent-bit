@@ -1,0 +1,76 @@
+language: c
+dist: trusty
+sudo: false
+cache: ccache
+env:
+ global:
+  - ARCH=x64
+matrix:
+ include:
+ - name: "Linux GCC: +centos +debian"
+   os: linux
+   compiler: gcc
+   env: ADDITIONAL_BUILDS="centos debian"
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+ - name: "Linux clang: +alpine"
+   os: linux
+   compiler: clang
+   env: ADDITIONAL_BUILDS="alpine"
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+ - name: "OSX GCC"
+   os: osx
+   compiler: gcc
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+ - name: "OSX clang: +static"
+   os: osx
+   compiler: clang
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest" --enable-static
+ - name: "Linux GCC: +integration-tests +copyright-check +doc-check"
+   os: linux
+   dist: xenial
+   compiler: gcc
+   env: NO_ARTIFACTS=y RUN_INTEGRATION_TESTS=y COPYRIGHT_CHECK=y DOC_CHECK=y
+   before_script:
+    - wget -O rapidjson-dev.deb https://launchpad.net/ubuntu/+archive/primary/+files/rapidjson-dev_1.1.0+dfsg2-3_all.deb
+    - sudo dpkg -i rapidjson-dev.deb
+    - sudo pip install -r tests/requirements.txt
+    - sudo apt update
+    - sudo apt install -y doxygen graphviz
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+
+install:
+ - ccache -s || echo "CCache is not available."
+ - rm -rf artifacts dest
+ - mkdir dest artifacts
+
+before_script:
+script:
+- make -j2 all examples check && make -j2 -C tests build
+- if [[ $RUN_INTEGRATION_TESTS != y ]]; then make -C tests run_local ; fi
+- make install
+- if [[ -z $NO_ARTIFACTS ]]; then (cd dest && tar cvzf ../artifacts/librdkafka-${CC}.tar.gz .) ; fi
+- for distro in $ADDITIONAL_BUILDS ; do packaging/tools/distro-build.sh $distro || exit 1 ; done
+- if [[ $COPYRIGHT_CHECK == y ]]; then make copyright-check ; fi
+- if [[ $DOC_CHECK == y ]]; then make docs ; fi
+- if [[ $RUN_INTEGRATION_TESTS == y ]]; then (cd tests && ./interactive_broker_version.py -c "make quick" 2.3.0) ; fi
+
+deploy:
+  provider: s3
+  access_key_id:
+    secure: "m8FQrFesK0xSS1wHo2S7cuWkpO7VB91dBmj1XIYLRXZSkbMpKBJATcFcHNbrAp3slEp7wLAnT7CHrQ4ccQi4H68Z7mjEwdq4VKRE+7zqJ/feK8MOFNeSHWLQzgwLUYlRlc9+tzLNwxMuL2ilWgdjKOArsUVHo9LEKNfQ3T6zCJU="
+  secret_access_key:
+    secure: "GE6O0gk5VRervntCKAmczfBdSOvbr9bouJ15H2rpcOgHi8KTDEjI/NS69eLiRRSHBCARtcRqN4wfgy+/dn7D1VklY8a1rAKu02wGjw+fq7k7GVSSmynR/aF619R4SIABsaAhNCwswXnLHuLlq8HFk5ulG3z8DUvYBczB45bWZfQ="
+  bucket: librdkafka-ci-packages
+  region: us-west-1
+  skip_cleanup: true
+  local-dir: artifacts
+  upload-dir: librdkafka/p-librdkafka__bld-travis__plat-${TRAVIS_OS_NAME}__arch-${ARCH}__tag-${TRAVIS_TAG}__sha-${TRAVIS_COMMIT}__bid-${TRAVIS_JOB_NUMBER}
+  on:
+    repo: edenhill/librdkafka
+    all_branches: true
+    tags: true
+    on: $NO_ARTIFACTS != y

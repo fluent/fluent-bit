@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +42,18 @@ static inline int flb_tail_file_name_cmp(char *name,
 #if defined(__linux__)
     return strcmp(name, file->name);
 #elif defined(FLB_SYSTEM_WINDOWS)
+    return _stricmp(name, file->name);
+#else
+    return strcmp(name, file->name);
+#endif
+}
+
+static inline int flb_tail_target_file_name_cmp(char *name,
+                                                struct flb_tail_file *file)
+{
+#if defined(__linux__) && defined(FLB_HAVE_INOTIFY)
+    return strcmp(name, file->name);
+#elif defined(FLB_SYSTEM_WINDOWS)
     return _stricmp(name, file->real_name);
 #else
     return strcmp(name, file->real_name);
@@ -58,8 +70,8 @@ void flb_tail_file_remove(struct flb_tail_file *file);
 int flb_tail_file_remove_all(struct flb_tail_config *ctx);
 char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);
-int flb_tail_file_rotated_purge(struct flb_input_instance *i_ins,
-                                struct flb_config *config, void *context);
+int flb_tail_file_purge(struct flb_input_instance *ins,
+                        struct flb_config *config, void *context);
 int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            struct flb_time *time, char **data,
                            size_t *data_size, struct flb_tail_file *file);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -79,20 +79,23 @@ struct flb_stackdriver {
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
 
+    /* plugin instance */
+    struct flb_output_instance *ins;
+
     /* Fluent Bit context */
     struct flb_config *config;
 };
 
 typedef enum {
-    EMERGENCY = 800,
-    ALERT     = 700,
-    CRITICAL  = 600,
-    ERROR     = 500,
-    WARNING   = 400,
-    NOTICE    = 300,
-    INFO      = 200,
-    DEBUG     = 100,
-    DEFAULT   = 0
+    FLB_STD_EMERGENCY = 800,
+    FLB_STD_ALERT     = 700,
+    FLB_STD_CRITICAL  = 600,
+    FLB_STD_ERROR     = 500,
+    FLB_STD_WARNING   = 400,
+    FLB_STD_NOTICE    = 300,
+    FLB_STD_INFO      = 200,
+    FLB_STD_DEBUG     = 100,
+    FLB_STD_DEFAULT   = 0
 } severity_t;
 
 #endif

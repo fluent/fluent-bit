@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,7 @@
 #define FLB_PARSER_DEC_JSON          0  /* decode_json()    */
 #define FLB_PARSER_DEC_ESCAPED       1  /* decode_escaped() */
 #define FLB_PARSER_DEC_ESCAPED_UTF8  2  /* decode_escaped_utf8() */
+#define FLB_PARSER_DEC_MYSQL_QUOTED  3  /* decode_mysql_quoted() */
 
 /* Decoder actions */
 #define FLB_PARSER_ACT_NONE     0

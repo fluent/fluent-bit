@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_unescape.h>
 
 #include <jsmn/jsmn.h>
@@ -40,7 +40,9 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int flb_bigquery_read_credentials_file(char *creds, struct flb_bigquery_oauth_credentials *ctx_creds)
+static int flb_bigquery_read_credentials_file(struct flb_bigquery *ctx,
+                                              char *creds,
+                                              struct flb_bigquery_oauth_credentials *ctx_creds)
 {
     int i;
     int ret;
@@ -61,22 +63,22 @@ static int flb_bigquery_read_credentials_file(char *creds, struct flb_bigquery_o
     ret = stat(creds, &st);
     if (ret == -1) {
         flb_errno();
-        flb_error("[out_bigquery] cannot open credentials file: %s",
-                  creds);
+        flb_plg_error(ctx->ins, "cannot open credentials file: %s",
+                      creds);
         return -1;
     }
 
     if (!S_ISREG(st.st_mode) && !S_ISLNK(st.st_mode)) {
-        flb_error("[out_bigquery] credentials file "
-                  "is not a valid file: %s", creds);
+        flb_plg_error(ctx->ins, "credentials file "
+                      "is not a valid file: %s", creds);
         return -1;
     }
 
     /* Read file content */
     buf = mk_file_to_buffer(creds);
     if (!buf) {
-        flb_error("[out_bigquery] error reading credentials file: %s",
-                  creds);
+        flb_plg_error(ctx->ins, "error reading credentials file: %s",
+                      creds);
         return -1;
     }
 
@@ -91,8 +93,8 @@ static int flb_bigquery_read_credentials_file(char *creds, struct flb_bigquery_o
 
     ret = jsmn_parse(&parser, buf, st.st_size, tokens, tok_size);
     if (ret <= 0) {
-        flb_error("[out_bigquery] invalid JSON credentials file: %s",
-                  creds);
+        flb_plg_error(ctx->ins, "invalid JSON credentials file: %s",
+                      creds);
         flb_free(buf);
         flb_free(tokens);
         return -1;
@@ -100,8 +102,8 @@ static int flb_bigquery_read_credentials_file(char *creds, struct flb_bigquery_o
 
     t = &tokens[0];
     if (t->type != JSMN_OBJECT) {
-        flb_error("[out_bigquery] invalid JSON map on file: %s",
-                  creds);
+        flb_plg_error(ctx->ins, "invalid JSON map on file: %s",
+                      creds);
         flb_free(buf);
         flb_free(tokens);
         return -1;
@@ -183,6 +185,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
     ctx->config = config;
 
     /* Lookup credentials file */
@@ -206,7 +209,9 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
 
     if (ctx->credentials_file) {
-        ret = flb_bigquery_read_credentials_file(ctx->credentials_file, ctx->oauth_credentials);
+        ret = flb_bigquery_read_credentials_file(ctx,
+                                                 ctx->credentials_file,
+                                                 ctx->oauth_credentials);
         if (ret != 0) {
             flb_bigquery_conf_destroy(ctx);
             return NULL;
@@ -243,13 +248,13 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         }
 
         if (!creds->client_email) {
-            flb_error("[out_bigquery] client_email is not defined");
+            flb_plg_error(ctx->ins, "client_email is not defined");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
 
         if (!creds->private_key) {
-            flb_error("[out_bigquery] private_key is not defined");
+            flb_plg_error(ctx->ins, "private_key is not defined");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
@@ -264,13 +269,15 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
        if (creds->project_id) {
             ctx->project_id = flb_sds_create(creds->project_id);
             if (!ctx->project_id) {
-                flb_error("[out_bigquery] failed extracting 'project_id' from credentials.");
+                flb_plg_error(ctx->ins,
+                              "failed extracting 'project_id' from credentials.");
                 flb_bigquery_conf_destroy(ctx);
                 return NULL;
             }
         }
         else {
-            flb_error("[out_bigquery] no 'project_id' configured or present in credentials.");
+            flb_plg_error(ctx->ins,
+                          "no 'project_id' configured or present in credentials.");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
@@ -282,7 +289,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         ctx->dataset_id = flb_sds_create(tmp);
     }
     else {
-        flb_error("[out_bigquery] property 'dataset_id' is not defined");
+        flb_plg_error(ctx->ins, "property 'dataset_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
     }
@@ -293,7 +300,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         ctx->table_id = flb_sds_create(tmp);
     }
     else {
-        flb_error("[out_bigquery] property 'table_id' is not defined");
+        flb_plg_error(ctx->ins, "property 'table_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
     }
@@ -310,8 +317,9 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
     ctx->uri = flb_sds_printf(&ctx->uri, FLB_BIGQUERY_RESOURCE_TEMPLATE,
                               ctx->project_id, ctx->dataset_id, ctx->table_id);
-    flb_info("[out_bigquery] project='%s' dataset='%s' table='%s'",
-             ctx->project_id, ctx->dataset_id, ctx->table_id);
+
+    flb_plg_info(ctx->ins, "project='%s' dataset='%s' table='%s'",
+                 ctx->project_id, ctx->dataset_id, ctx->table_id);
 
     return ctx;
 }

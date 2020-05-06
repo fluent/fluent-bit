@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +46,13 @@
 #define FLB_DIRCHAR '\\'
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define S_ISLNK(m) (0)  /* Windows doesn't support S_IFLNK */
+#define SHUT_RD   SD_RECEIVE
+#define SHUT_WR   SD_SEND
+#define SHUT_RDWR SD_BOTH
+
+/* monkey exposes a broken vsnprintf macro. Undo it  */
+#undef vsnprintf
 
 /*
  * Windows prefer to add an underscore to each POSIX function.

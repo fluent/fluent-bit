@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@
 #define FLB_RECORD_ACCESSOR_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_regex.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -30,11 +31,18 @@ struct flb_record_accessor {
     struct mk_list list;         /* List of parsed strings */
 };
 
-struct flb_record_accessor *flb_ra_create(char *str);
+struct flb_record_accessor *flb_ra_create(char *str, int translate_env);
 void flb_ra_destroy(struct flb_record_accessor *ra);
 void flb_ra_dump(struct flb_record_accessor *ra);
 flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
                            char *tag, int tag_len,
-                           msgpack_object map);
+                           msgpack_object map, struct flb_regex_search *result);
+int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
+                  char *str, int len);
+int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
+                       struct flb_regex *regex,
+                       struct flb_regex_search *result);
+struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
+                                             msgpack_object map);
 
 #endif

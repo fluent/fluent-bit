@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 
@@ -52,7 +51,8 @@ struct temp_info
 };
 
 /* Retrieve temperature(s) from the system (via /sys/class/thermal) */
-static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct temp_info *info, int n)
+static inline int proc_temperature(struct flb_in_thermal_config *ctx,
+                                   struct temp_info *info, int n)
 {
     int i, j;
     DIR *d;
@@ -98,10 +98,11 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
                 continue;
             }
 
-            if (f && fgets(info[i].type, IN_THERMAL_TYPE_LEN, f) && strlen(info[i].type)>1) {
-                 /* Remove trailing \n */
-                for (j=0; info[i].type[j]; ++j) {
-                    if (info[i].type[j]=='\n') {
+            if (f && fgets(info[i].type, IN_THERMAL_TYPE_LEN, f) &&
+                strlen(info[i].type) > 1) {
+                /* Remove trailing \n */
+                for (j = 0; info[i].type[j]; ++j) {
+                    if (info[i].type[j] == '\n') {
                         info[i].type[j] = 0;
                         break;
                     }
@@ -109,16 +110,20 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
                 fclose(f);
 
 #ifdef FLB_HAVE_REGEX
-                if (ctx->type_regex && !flb_regex_match(ctx->type_regex, (unsigned char *) info[i].type, strlen(info[i].type))) {
+                if (ctx->type_regex &&
+                    !flb_regex_match(ctx->type_regex,
+                                     (unsigned char *) info[i].type,
+                                     strlen(info[i].type))) {
                     continue;
                 }
 #endif
 
-                if (snprintf(filename, IN_THERMAL_FILENAME_LEN, "/sys/class/thermal/%s/temp", e->d_name)<=0) {
+                if (snprintf(filename, IN_THERMAL_FILENAME_LEN,
+                             "/sys/class/thermal/%s/temp", e->d_name) <= 0) {
                     continue;
                 }
                 f = fopen(filename, "r");
-                if (f && fscanf(f, "%d", &temp)==1) {
+                if (f && fscanf(f, "%d", &temp) == 1) {
                     info[i].temp = temp/1000.0;
                     ++i;
                 }
@@ -129,6 +134,7 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx, struct tem
             }
         }
     }
+
     closedir(d);
     return i;
 }
@@ -139,17 +145,17 @@ static int in_thermal_init(struct flb_input_instance *in,
 {
     int ret;
     struct flb_in_thermal_config *ctx;
-    (void) data;
     const char *pval = NULL;
     struct temp_info info[IN_THERMAL_N_MAX];
+    (void) data;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_in_thermal_config));
     if (!ctx) {
-        perror("calloc");
+        flb_errno();
         return -1;
     }
-    ctx->i_ins = in;
+    ctx->ins = in;
 
     /* Collection time setting */
     pval = flb_input_get_property("interval_sec", in);
@@ -180,7 +186,7 @@ static int in_thermal_init(struct flb_input_instance *in,
     if (pval) {
         ctx->name_regex = flb_regex_create(pval);
         if (!ctx->name_regex) {
-            flb_error("[in_thermal] invalid 'name_regex' config value");
+            flb_plg_error(ctx->ins, "invalid 'name_regex' config value");
         }
     }
 
@@ -189,14 +195,14 @@ static int in_thermal_init(struct flb_input_instance *in,
     if (pval) {
         ctx->type_regex = flb_regex_create(pval);
         if (!ctx->type_regex) {
-            flb_error("[in_thermal] invalid 'type_regex' config value");
+            flb_plg_error(ctx->ins, "invalid 'type_regex' config value");
         }
     }
 #endif
 
     ctx->prev_device_num = proc_temperature(ctx, info,  IN_THERMAL_N_MAX);
     if (!ctx->prev_device_num) {
-        flb_warn("[in_thermal] thermal device file not found");
+        flb_plg_warn(ctx->ins, "thermal device file not found");
     }
 
     /* Set the context */
@@ -209,7 +215,8 @@ static int in_thermal_init(struct flb_input_instance *in,
                                        ctx->interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_error("[in_thermal] Could not set collector for temperature input plugin");
+        flb_plg_error(ctx->ins,
+                      "Could not set collector for temperature input plugin");
         return -1;
     }
     ctx->coll_fd = ret;
@@ -232,8 +239,8 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
     /* Get the current temperature(s) */
     n = proc_temperature(ctx, info, IN_THERMAL_N_MAX);
     if (n != ctx->prev_device_num) {
-        flb_info("[in_thermal] the number of thermal devices changed %d -> %d",
-                 ctx->prev_device_num, n);
+        flb_plg_info(ctx->ins, "the number of thermal devices changed %d -> %d",
+                     ctx->prev_device_num, n);
     }
     ctx->prev_device_num = n;
     if (!n) {
@@ -247,7 +254,7 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
      * Store the new data into the MessagePack buffer
      */
 
-    for (i=0; i<n; ++i) {
+    for (i = 0; i < n; ++i) {
         msgpack_pack_array(&mp_pck, 2);
         flb_pack_time_now(&mp_pck);
         msgpack_pack_map(&mp_pck, 3);
@@ -266,7 +273,7 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
         msgpack_pack_str_body(&mp_pck, "temp", 4);
         msgpack_pack_double(&mp_pck, info[i].temp);
 
-        flb_trace("[in_thermal] %s temperature %0.2f", info[i].name, info[i].temp);
+        flb_plg_trace(ctx->ins, "%s temperature %0.2f", info[i].name, info[i].temp);
     }
 
     flb_input_chunk_append_raw(i_ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
@@ -278,13 +285,13 @@ int in_thermal_collect(struct flb_input_instance *i_ins,
 static void in_thermal_pause(void *data, struct flb_config *config)
 {
     struct flb_in_thermal_config *ctx = data;
-    flb_input_collector_pause(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void in_thermal_resume(void *data, struct flb_config *config)
 {
     struct flb_in_thermal_config *ctx = data;
-    flb_input_collector_resume(ctx->coll_fd, ctx->i_ins);
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_thermal_exit(void *data, struct flb_config *config)

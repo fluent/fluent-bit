@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,11 +18,13 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 
+#include "in_collectd.h"
 #include "typesdb.h"
 #include "typesdb_parser.h"
 
@@ -32,17 +34,18 @@
 
 
 /* Internal function to load from a single TypesDB */
-static int typesdb_load(struct mk_list *tdb, const char *path)
+static int typesdb_load(struct flb_in_collectd_config *ctx,
+                        struct mk_list *tdb, const char *path)
 {
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
         flb_errno();
-        flb_error("[in_collectd] failed to open '%s'", path);
+        flb_plg_error(ctx->ins, "failed to open '%s'", path);
         return -1;
     }
 
     if (typesdb_parse(tdb, fd)) {
-        flb_error("[in_collectd] failed to parse '%s'", path);
+        flb_plg_error(ctx->ins, "failed to parse '%s'", path);
         close(fd);
         return -1;
     }
@@ -56,7 +59,8 @@ static int typesdb_load(struct mk_list *tdb, const char *path)
  *
  * "paths" is a comma-separated list of file names.
  */
-struct mk_list *typesdb_load_all(const char *paths)
+struct mk_list *typesdb_load_all(struct flb_in_collectd_config *ctx,
+                                 const char *paths)
 {
     char *buf;
     char *state;
@@ -79,7 +83,7 @@ struct mk_list *typesdb_load_all(const char *paths)
 
     path = strtok_r(buf, ",", &state);
     while (path) {
-        if (typesdb_load(tdb, path)) {
+        if (typesdb_load(ctx, tdb, path)) {
             typesdb_destroy(tdb);
             flb_free(buf);
             return NULL;

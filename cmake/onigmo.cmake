@@ -8,7 +8,7 @@
 add_library(libonigmo STATIC IMPORTED GLOBAL)
 
 # Global Settings
-set(ONIGMO_SRC "${CMAKE_CURRENT_SOURCE_DIR}/lib/onigmo")
+set(ONIGMO_SRC "${PROJECT_SOURCE_DIR}/lib/onigmo")
 set(ONIGMO_DEST "${CMAKE_CURRENT_BINARY_DIR}")
 
 if(CMAKE_SIZEOF_VOID_P MATCHES 8)
@@ -28,7 +28,7 @@ ExternalProject_Add(onigmo
   CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -Os\ -g0\ -s\ -fno-stack-protector\ -fomit-frame-pointer\ -DNDEBUG\ -U_FORTIFY_SOURCE
   BUILD_COMMAND $(MAKE)
-  INSTALL_COMMAND $(MAKE) install)
+  INSTALL_COMMAND $(MAKE) DESTDIR= install)
 else()
 ExternalProject_Add(onigmo
   BUILD_IN_SOURCE TRUE
@@ -38,7 +38,7 @@ ExternalProject_Add(onigmo
   CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
   BUILD_COMMAND $(MAKE)
-  INSTALL_COMMAND $(MAKE) install)
+  INSTALL_COMMAND $(MAKE) DESTDIR= install)
 endif()
 
 # Onigmo (Windows)
@@ -48,10 +48,10 @@ if(MSVC)
     BUILD_IN_SOURCE TRUE
     EXCLUDE_FROM_ALL TRUE
     SOURCE_DIR ${ONIGMO_SRC}
-    CONFIGURE_COMMAND cmake -E copy win32/Makefile win32/config.h ${ONIGMO_SRC}
+    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E copy win32/Makefile win32/config.h ${ONIGMO_SRC}
     BUILD_COMMAND nmake ARCH=${ONIGMO_ARCH}
-    INSTALL_COMMAND cmake -E copy build_${ONIGMO_ARCH}/onigmo_s.lib ${ONIGMO_DEST}/lib/libonigmo.lib
-            COMMAND cmake -E copy onigmo.h ${ONIGMO_DEST}/include/)
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy build_${ONIGMO_ARCH}/onigmo_s.lib ${ONIGMO_DEST}/lib/libonigmo.lib
+            COMMAND ${CMAKE_COMMAND} -E copy onigmo.h ${ONIGMO_DEST}/include/)
 endif()
 
 # Hook the buld definition to 'libonigmo' target

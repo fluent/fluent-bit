@@ -35,6 +35,7 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
 {
     int len;
     int ret;
+    int err;
     char *path;
     DIR *dir;
     struct dirent *ent;
@@ -74,7 +75,7 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
         }
 
         /* register every directory as a stream */
-        cio_chunk_open(ctx, st, ent->d_name, CIO_OPEN_RD, 0);
+        cio_chunk_open(ctx, st, ent->d_name, CIO_OPEN_RD, 0, &err);
     }
 
     closedir(dir);

@@ -1,4 +1,6 @@
 %define api.pure full
+%name-prefix="flb_ra_"
+
 %parse-param { struct flb_ra_parser *rp };
 %parse-param { const char *str };
 %lex-param   { void *scanner }
@@ -17,10 +19,10 @@
 #include "ra_parser.h"
 #include "ra_lex.h"
 
-extern int yylex();
+extern int flb_ra_lex();
 
-void yyerror(struct flb_ra_parser *rp, const char *query, void *scanner,
-             const char *str)
+void flb_ra_error(struct flb_ra_parser *rp, const char *query, void *scanner,
+                  const char *str)
 {
     flb_error("[record accessor] %s at '%s'", str, query);
 }

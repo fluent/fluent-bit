@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,9 +18,11 @@
  *  limitations under the License.
  */
 
-#include <msgpack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
+#include <msgpack.h>
 
 #ifdef FLB_HAVE_UNIX_SOCKET
 #include <sys/socket.h>
@@ -73,22 +75,21 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
  * accept the connection and create a new FW instance which will wait for
  * MessagePack records.
  */
-static int in_fw_collect(struct flb_input_instance *i_ins,
+static int in_fw_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int fd;
-    struct flb_in_fw_config *ctx = in_context;
     struct fw_conn *conn;
-    (void) i_ins;
+    struct flb_in_fw_config *ctx = in_context;
 
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
     if (fd == -1) {
-        flb_error("[in_fw] could not accept new connection");
+        flb_plg_error(ins, "could not accept new connection");
         return -1;
     }
 
-    flb_trace("[in_fw] new TCP connection arrived FD=%i", fd);
+    flb_plg_trace(ins, "new TCP connection arrived FD=%i", fd);
     conn = fw_conn_add(fd, ctx);
     if (!conn) {
         return -1;
@@ -97,7 +98,7 @@ static int in_fw_collect(struct flb_input_instance *i_ins,
 }
 
 /* Initialize plugin */
-static int in_fw_init(struct flb_input_instance *in,
+static int in_fw_init(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
     int ret;
@@ -105,43 +106,44 @@ static int in_fw_init(struct flb_input_instance *in,
     (void) data;
 
     /* Allocate space for the configuration */
-    ctx = fw_config_init(in);
+    ctx = fw_config_init(ins);
     if (!ctx) {
         return -1;
     }
-    ctx->in = in;
+    ctx->ins = ins;
     mk_list_init(&ctx->connections);
 
     /* Set the context */
-    flb_input_set_context(in, ctx);
+    flb_input_set_context(ins, ctx);
 
     /* Unix Socket mode */
     if (ctx->unix_path) {
 #ifndef FLB_HAVE_UNIX_SOCKET
-        flb_error("[in_fw] unix address is not supported %s:%s. Aborting",
-            ctx->listen, ctx->tcp_port);
+        flb_plg_error(ctx->ins, "unix address is not supported %s:%s. Aborting",
+                      ctx->listen, ctx->tcp_port);
         fw_config_destroy(ctx);
         return -1;
 #else
         ret = fw_unix_create(ctx);
         if (ret != 0) {
-            flb_error("[in_fw] could not listen on unix://%s",
-                      ctx->unix_path);
+            flb_plg_error(ctx->ins, "could not listen on unix://%s",
+                          ctx->unix_path);
             fw_config_destroy(ctx);
             return -1;
         }
-        flb_info("[in_fw] listening on unix://%s", ctx->unix_path);
+        flb_plg_info(ctx->ins, "listening on unix://%s", ctx->unix_path);
 #endif
     }
     else {
         /* Create TCP server */
         ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
         if (ctx->server_fd > 0) {
-            flb_info("[in_fw] binding %s:%s", ctx->listen, ctx->tcp_port);
+            flb_plg_info(ctx->ins, "listening on %s:%s",
+                         ctx->listen, ctx->tcp_port);
         }
         else {
-            flb_error("[in_fw] could not bind address %s:%s. Aborting",
-                      ctx->listen, ctx->tcp_port);
+            flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
+                          ctx->listen, ctx->tcp_port);
             fw_config_destroy(ctx);
             return -1;
         }
@@ -151,12 +153,12 @@ static int in_fw_init(struct flb_input_instance *in,
     ctx->evl = config->evl;
 
     /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_socket(in,
+    ret = flb_input_set_collector_socket(ins,
                                          in_fw_collect,
                                          ctx->server_fd,
                                          config);
     if (ret == -1) {
-        flb_error("Could not set collector for IN_FW input plugin");
+        flb_plg_error(ctx->ins, "could not set collector for IN_FW input plugin");
         fw_config_destroy(ctx);
         return -1;
     }
@@ -164,7 +166,7 @@ static int in_fw_init(struct flb_input_instance *in,
     return 0;
 }
 
-int in_fw_exit(void *data, struct flb_config *config)
+static int in_fw_exit(void *data, struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;

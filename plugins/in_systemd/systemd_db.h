@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,17 +34,24 @@
     ");"
 
 #define SQL_GET_CURSOR \
-    "SELECT * FROM in_systemd_cursor;"
+    "SELECT * FROM in_systemd_cursor LIMIT 1;"
 
 #define SQL_INSERT_CURSOR                               \
     "INSERT INTO in_systemd_cursor (cursor, updated)"   \
     "  VALUES ('%s', %lu);"
 
+#define SQL_COUNT_CURSOR                        \
+    "SELECT COUNT(*) FROM in_systemd_cursor;"
+
 #define SQL_UPDATE_CURSOR \
     "UPDATE in_systemd_cursor SET cursor='%s', updated=%lu;"
 
+#define SQL_DELETE_DUPS                             \
+    "DELETE FROM in_systemd_cursor WHERE ROWID < "  \
+    "(SELECT MAX(ROWID) FROM in_systemd_cursor);"
+
 struct flb_sqldb *flb_systemd_db_open(const char *path,
-                                      struct flb_input_instance *in,
+                                      struct flb_input_instance *ins,
                                       struct flb_config *config);
 int flb_systemd_db_close(struct flb_sqldb *db);
 int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor);

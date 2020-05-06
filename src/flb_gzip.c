@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -92,7 +92,7 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     flush = Z_NO_FLUSH;
     while (1) {
         strm.next_out  = pb + strm.total_out;
-        strm.avail_out = out_size - (pb - (uint8_t *) out_data);
+        strm.avail_out = out_size - (pb - (uint8_t *) out_buf);
 
         if (strm.avail_in == 0) {
             flush = Z_FINISH;

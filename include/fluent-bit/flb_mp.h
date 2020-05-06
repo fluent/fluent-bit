@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,5 +22,6 @@
 #define FLB_MP_H
 
 int flb_mp_count(const void *data, size_t bytes);
+void flb_mp_set_map_header_size(char *buf, int arr_size);
 
 #endif

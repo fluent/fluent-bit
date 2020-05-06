@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_slist.h>
-
+#include <fluent-bit/flb_regex.h>
 #include <msgpack.h>
 
 /* Map msgpack object intp flb_ra_value representation */
@@ -71,17 +71,55 @@ static int msgpack_object_to_ra_value(msgpack_object o,
     return -1;
 }
 
+/* Return the entry position of key/val in the map */
+static int ra_key_val_id(flb_sds_t ckey, msgpack_object map)
+{
+    int i;
+    int map_size;
+    msgpack_object key;
+
+    map_size = map.via.map.size;
+    for (i = 0; i < map_size; i++) {
+        key = map.via.map.ptr[i].key;
+
+        if (key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        /* Compare by length and by key name */
+        if (flb_sds_cmp(ckey, key.via.str.ptr, key.via.str.size) != 0) {
+            continue;
+        }
+
+        return i;
+    }
+
+    return -1;
+}
+
+static int msgpack_object_strcmp(msgpack_object o, char *str, int len)
+{
+    if (o.type != MSGPACK_OBJECT_STR) {
+        return -1;
+    }
+
+    if (o.via.str.size != len) {
+        return -1;
+    }
+
+    return strncmp(o.via.str.ptr, str, len);
+}
+
 /* Lookup perfect match of sub-keys and map content */
-static int subkey_to_value(msgpack_object *map, struct mk_list *subkeys,
-                           struct flb_ra_value *result)
+static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
+                            msgpack_object **out)
 {
     int i = 0;
-    int ret;
     int levels;
     int matched = 0;
     msgpack_object *key_found = NULL;
     msgpack_object key;
-    msgpack_object val;
+    msgpack_object *val;
     msgpack_object cur_map;
     struct mk_list *head;
     struct flb_slist_entry *entry;
@@ -99,29 +137,24 @@ static int subkey_to_value(msgpack_object *map, struct mk_list *subkeys,
             break;
         }
 
-        /* Get map entry that matches entry name */
-        for (i = 0; i < cur_map.via.map.size; i++) {
-            key = cur_map.via.map.ptr[i].key;
-            val = cur_map.via.map.ptr[i].val;
-
-            /* A bit obvious, but it's better to validate data type */
-            if (key.type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-
-            /* Compare strings by length and content */
-            if (flb_sds_cmp(entry->str,
-                            (char *) key.via.str.ptr,
-                            key.via.str.size) != 0) {
-                key_found = NULL;
-                continue;
-            }
-
-            key_found = &key;
-            cur_map = val;
-            matched++;
-            break;
+        i = ra_key_val_id(entry->str, cur_map);
+        if (i == -1) {
+            key_found = NULL;
+            continue;
         }
+
+        key = cur_map.via.map.ptr[i].key;
+        val = &cur_map.via.map.ptr[i].val;
+
+        /* A bit obvious, but it's better to validate data type */
+        if (key.type != MSGPACK_OBJECT_STR) {
+            key_found = NULL;
+            continue;
+        }
+
+        key_found = &key;
+        cur_map = cur_map.via.map.ptr[i].val;
+        matched++;
 
         if (levels == matched) {
             break;
@@ -133,11 +166,7 @@ static int subkey_to_value(msgpack_object *map, struct mk_list *subkeys,
         return -1;
     }
 
-    ret = msgpack_object_to_ra_value(val, result);
-    if (ret == -1) {
-        return -1;
-    }
-
+    *out = (msgpack_object *) val;
     return 0;
 }
 
@@ -147,55 +176,142 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
 {
     int i;
     int ret;
-    int map_size;
-    msgpack_object key;
     msgpack_object val;
+    msgpack_object *out;
     struct flb_ra_value *result;
 
-    map_size = map.via.map.size;
-    for (i = 0; i < map_size; i++) {
-        key = map.via.map.ptr[i].key;
-        val = map.via.map.ptr[i].val;
-
-        /* Compare by length and by key name */
-        if (flb_sds_cmp(ckey, key.via.str.ptr, key.via.str.size) != 0) {
-            continue;
-        }
-
-        result = flb_calloc(1, sizeof(struct flb_ra_value));
-        if (!result) {
-          flb_errno();
-            return NULL;
-        }
-        result->o = val;
-
-        if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
-          ret = subkey_to_value(&val, subkeys, result);
-            if (ret == 0) {
-                return result;
-            }
-            else {
-                flb_free(result);
-                return NULL;
-            }
-        }
-        else {
-            ret = msgpack_object_to_ra_value(val, result);
-            if (ret == -1) {
-                flb_error("[ra key] cannot process key value");
-                flb_free(result);
-                return NULL;
-            }
-        }
-
-        return result;
+    /* Get the key position in the map */
+    i = ra_key_val_id(ckey, map);
+    if (i == -1) {
+        return NULL;
     }
 
-    /*
-     * NULL return means: failed memory allocation, an invalid value,
-     * or non-existing key.
-     */
-    return NULL;
+    /* Reference entries */
+    val = map.via.map.ptr[i].val;
+
+    /* Create the result context */
+    result = flb_calloc(1, sizeof(struct flb_ra_value));
+    if (!result) {
+        flb_errno();
+        return NULL;
+    }
+    result->o = val;
+
+    if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
+        ret = subkey_to_object(&val, subkeys, &out);
+        if (ret == 0) {
+            ret = msgpack_object_to_ra_value(*out, result);
+            if (ret == -1) {
+                flb_free(result);
+                return NULL;
+            }
+            return result;
+        }
+        else {
+            flb_free(result);
+            return NULL;
+        }
+    }
+    else {
+        ret = msgpack_object_to_ra_value(val, result);
+        if (ret == -1) {
+            flb_error("[ra key] cannot process key value");
+            flb_free(result);
+            return NULL;
+        }
+    }
+
+    return result;
+}
+
+int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
+                      struct mk_list *subkeys, char *str, int len)
+{
+    int i;
+    int ret;
+    msgpack_object val;
+    msgpack_object *out;
+
+    /* Get the key position in the map */
+    i = ra_key_val_id(ckey, map);
+    if (i == -1) {
+        return -1;
+    }
+
+    /* Reference map value */
+    val = map.via.map.ptr[i].val;
+
+    if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
+        ret = subkey_to_object(&val, subkeys, &out);
+        if (ret == 0) {
+            return msgpack_object_strcmp(*out, str, len);
+        }
+        else {
+            return -1;
+        }
+    }
+
+    return msgpack_object_strcmp(val, str, len);
+}
+
+int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
+                           struct mk_list *subkeys, struct flb_regex *regex,
+                           struct flb_regex_search *result)
+{
+    int i;
+    int ret;
+    msgpack_object val;
+    msgpack_object *out = NULL;
+
+    /* Get the key position in the map */
+    i = ra_key_val_id(ckey, map);
+    if (i == -1) {
+        return -1;
+    }
+
+    /* Reference map value */
+    val = map.via.map.ptr[i].val;
+
+    if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
+        ret = subkey_to_object(&val, subkeys, &out);
+        if (ret == 0) {
+            if (out->type != MSGPACK_OBJECT_STR) {
+                return -1;
+            }
+
+            if (result) {
+                /* Regex + capture mode */
+                return flb_regex_do(regex,
+                                    (char *) out->via.str.ptr,
+                                    out->via.str.size,
+                                    result);
+            }
+            else {
+                /* No capture */
+                return flb_regex_match(regex,
+                                       (unsigned char *) out->via.str.ptr,
+                                       out->via.str.size);
+            }
+        }
+        return -1;
+    }
+
+    if (val.type != MSGPACK_OBJECT_STR) {
+        return -1;
+    }
+
+    if (result) {
+        /* Regex + capture mode */
+        return flb_regex_do(regex, (char *) val.via.str.ptr, val.via.str.size,
+                            result);
+    }
+    else {
+        /* No capture */
+        return flb_regex_match(regex, (unsigned char *) val.via.str.ptr,
+                               val.via.str.size);
+    }
+
+    return -1;
 }
 
 void flb_ra_key_value_destroy(struct flb_ra_value *v)

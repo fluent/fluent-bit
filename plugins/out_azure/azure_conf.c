@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +18,11 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
+#include <mbedtls/base64.h>
+
 #include "azure.h"
 #include "azure_conf.h"
-
-#include <mbedtls/base64.h>
 
 struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
@@ -40,6 +41,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     /* config: 'customer_id' */
     cid = flb_output_get_property("customer_id", ins);
@@ -58,7 +60,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         ctx->shared_key = flb_sds_create(tmp);
     }
     else {
-        flb_error("[out_azure] property 'shared_key' is not defined");
+        flb_plg_error(ctx->ins, "property 'shared_key' is not defined");
         flb_azure_conf_destroy(ctx);
         return NULL;
     }
@@ -76,7 +78,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
                                 (unsigned char *) ctx->shared_key,
                                 flb_sds_len(ctx->shared_key));
     if (ret != 0) {
-        flb_error("[out_azure] error decoding shared_key");
+        flb_plg_error(ctx->ins, "error decoding shared_key");
         flb_azure_conf_destroy(ctx);
         return NULL;
     }
@@ -110,7 +112,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
 
     /* Validate hostname given by command line or 'Host' property */
     if (!ins->host.name && !cid) {
-        flb_error("[out_azure] property 'customer_id' is not defined");
+        flb_plg_error(ctx->ins, "property 'customer_id' is not defined");
         flb_free(ctx);
         return NULL;
     }
@@ -120,7 +122,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     if (!cid) {
         tmp = strchr(ins->host.name, '.');
         if (!tmp) {
-            flb_error("[out_azure] invalid hostname");
+            flb_plg_error(ctx->ins, "invalid hostname");
             flb_free(ctx);
             return NULL;
         }
@@ -175,7 +177,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
                                    FLB_IO_TLS,
                                    &ins->tls);
     if (!upstream) {
-        flb_error("[out_azure] cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_azure_conf_destroy(ctx);
         return NULL;
     }
@@ -192,12 +194,11 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     flb_sds_cat(ctx->uri, FLB_AZURE_API_VERSION,
                 sizeof(FLB_AZURE_API_VERSION) - 1);
 
-    flb_info("[out_azure] customer_id='%s' host='%s:%i'",
-             ctx->customer_id, ctx->host, ctx->port);
+    flb_plg_info(ctx->ins, "customer_id='%s' host='%s:%i'",
+                 ctx->customer_id, ctx->host, ctx->port);
 
     return ctx;
 }
-
 
 int flb_azure_conf_destroy(struct flb_azure *ctx)
 {
