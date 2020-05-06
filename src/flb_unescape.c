@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -122,21 +122,6 @@ static int u8_read_escape_sequence(const char *str, uint32_t *dest)
     return i;
 }
 
-static inline int is_json_escape(char c)
-{
-    return (
-            (c == '\"') || /* double-quote    */
-            (c == '\'') || /* single-quote    */
-            (c == '\\') || /* solidus         */
-            (c == 'n')  || /* new-line        */
-            (c == 'r')  || /* carriage return */
-            (c == 't')  || /* horizontal tab  */
-            (c == 'b')  || /* backspace       */
-            (c == 'f')  || /* form feed       */
-            (c == '/')     /* reverse-solidus */
-            );
-}
-
 int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
 {
     uint32_t ch;
@@ -152,42 +137,36 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
         next = in_buf + 1;
 
         if (*in_buf == '\\') {
-            if (is_json_escape(*next)) {
-                switch (*next) {
-                case '"':
-                    ch = '"';
-                    break;
-                case '\\':
-                    ch = '\\';
-                    break;
-                case '/':
-                    ch = '/';
-                    break;
-                case 'n':
-                    ch = '\n';
-                    break;
-                case 'a':
-                    ch = '\a';
-                    break;
-                case 'b':
-                    ch = '\b';
-                    break;
-                case 't':
-                    ch = '\t';
-                    break;
-                case 'v':
-                    ch = '\v';
-                    break;
-                case 'f':
-                    ch = '\f';
-                    break;
-                case 'r':
-                    ch = '\r';
-                    break;
-                }
-                esc_in = 2;
-            }
-            else {
+            esc_in = 2;
+            switch (*next) {
+            case '"':
+                ch = '"';
+                break;
+            case '\'':
+                ch = '\'';
+                break;
+            case '\\':
+                ch = '\\';
+                break;
+            case '/':
+                ch = '/';
+                break;
+            case 'n':
+                ch = '\n';
+                break;
+            case 'b':
+                ch = '\b';
+                break;
+            case 't':
+                ch = '\t';
+                break;
+            case 'f':
+                ch = '\f';
+                break;
+            case 'r':
+                ch = '\r';
+                break;
+            default:
                 esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
             }
         }
@@ -208,6 +187,9 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
         if (esc_out == 0) {
             out_buf[count_out] = ch;
             esc_out = 1;
+        }
+        else if (esc_out == 1) {
+            out_buf[count_out] = (char) temp[0];
         }
         else {
             memcpy(&out_buf[count_out], temp, esc_out);
@@ -273,6 +255,59 @@ int flb_unescape_string(const char *buf, int buf_len, char **unesc_buf)
             }
         }
         p[j++] = buf[i++];
+    }
+    p[j] = '\0';
+    return j;
+}
+
+
+/* mysql unquote */
+int flb_mysql_unquote_string(char *buf, int buf_len, char **unesc_buf)
+{
+    int i = 0;
+    int j = 0;
+    char *p;
+    char n;
+
+    p = *unesc_buf;
+    while (i < buf_len) {
+        if ((n = buf[i++]) != '\\') {
+            p[j++] = n;
+        } else if(i >= buf_len) {
+            p[j++] = n;
+        } else {
+            n = buf[i++];
+            switch(n) {
+            case 'n':
+                p[j++] = '\n';
+                break;
+            case 'r':
+                p[j++] = '\r';
+                break;
+            case 't':
+                p[j++] = '\t';
+                break;
+            case '\\':
+                p[j++] = '\\';
+                break;
+            case '\'':
+                p[j++] = '\'';
+                break;
+            case '\"':
+                p[j++] = '\"';
+                break;
+            case '0':
+                p[j++] = 0;
+                break;
+            case 'Z':
+                p[j++] = 0x1a;
+                break;
+            default:
+                p[j++] = '\\';
+                p[j++] = n;
+                break;
+            }
+        }
     }
     p[j] = '\0';
     return j;

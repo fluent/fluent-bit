@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
@@ -38,6 +38,8 @@
 #include "http.h"
 #include "http_conf.h"
 
+#include <fluent-bit/flb_callback.h>
+
 static int cb_http_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
@@ -51,6 +53,12 @@ static int cb_http_init(struct flb_output_instance *ins,
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
 
     return 0;
 }
@@ -68,16 +76,17 @@ static int http_post(struct flb_out_http *ctx,
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    struct mk_list *tmp;
     struct mk_list *head;
-    struct out_http_header *header;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
-        flb_error("[out_http] no upstream connections available to %s:%i",
-                  u->tcp_host, u->tcp_port);
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
         return FLB_RETRY;
     }
 
@@ -90,7 +99,8 @@ static int http_post(struct flb_out_http *ctx,
         ret = flb_gzip_compress((void *) body, body_len,
                                 &payload_buf, &payload_size);
         if (ret == -1) {
-            flb_error("[out_http] cannot gzip payload, disabling compression");
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
         }
         else {
             compressed = FLB_TRUE;
@@ -102,6 +112,12 @@ static int http_post(struct flb_out_http *ctx,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
+
+    /*
+     * Direct assignment of the callback context to the HTTP client context.
+     * This needs to be improved through a more clean API.
+     */
+    c->cb_ctx = ctx->ins->callback;
 
     /* Append headers */
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
@@ -124,9 +140,9 @@ static int http_post(struct flb_out_http *ctx,
 
     if (ctx->header_tag) {
         flb_http_add_header(c,
-                        ctx->header_tag,
-                        ctx->headertag_len,
-                        tag, tag_len);
+                            ctx->header_tag,
+                            flb_sds_len(ctx->header_tag),
+                            tag, tag_len);
     }
 
     /* Content Encoding: gzip */
@@ -141,14 +157,13 @@ static int http_post(struct flb_out_http *ctx,
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
 
-    mk_list_foreach_safe(head, tmp, &ctx->headers) {
-        header = mk_list_entry(head, struct out_http_header, _head);
         flb_http_add_header(c,
-                        header->key,
-                        header->key_len,
-                        header->val,
-                        header->val_len);
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
     }
 
     ret = flb_http_do(c, &b_sent);
@@ -165,26 +180,26 @@ static int http_post(struct flb_out_http *ctx,
          *
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_error("[out_http] %s:%i, HTTP status=%i",
-                      ctx->host, ctx->port, c->resp.status);
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                          ctx->host, ctx->port, c->resp.status);
             out_ret = FLB_RETRY;
         }
         else {
             if (c->resp.payload) {
-                flb_info("[out_http] %s:%i, HTTP status=%i\n%s",
-                         ctx->host, ctx->port,
-                         c->resp.status, c->resp.payload);
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                             ctx->host, ctx->port,
+                             c->resp.status, c->resp.payload);
             }
             else {
-                flb_info("[out_http] %s:%i, HTTP status=%i",
-                         ctx->host, ctx->port,
-                         c->resp.status);
+                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                             ctx->host, ctx->port,
+                             c->resp.status);
             }
         }
     }
     else {
-        flb_error("[out_http] could not flush records to %s:%i (http_do=%i)",
-                  ctx->host, ctx->port, ret);
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
     }
 
@@ -210,7 +225,7 @@ static int http_gelf(struct flb_out_http *ctx,
                      const char *tag, int tag_len)
 {
     flb_sds_t s;
-    flb_sds_t tmp;
+    flb_sds_t tmp = NULL;
     msgpack_unpacked result;
     size_t off = 0;
     size_t size = 0;
@@ -245,11 +260,8 @@ static int http_gelf(struct flb_out_http *ctx,
         map = root.via.array.ptr[1];
 
         tmp = flb_msgpack_to_gelf(&s, &map, &tm, &(ctx->gelf_fields));
-        if (tmp != NULL) {
-            s = tmp;
-        }
-        else {
-            flb_error("[out_http] error encoding to GELF");
+        if (!tmp) {
+            flb_plg_error(ctx->ins, "error encoding to GELF");
             flb_sds_destroy(s);
             msgpack_unpacked_destroy(&result);
             return FLB_ERROR;
@@ -257,15 +269,13 @@ static int http_gelf(struct flb_out_http *ctx,
 
         /* Append new line */
         tmp = flb_sds_cat(s, "\n", 1);
-        if (tmp != NULL) {
-            s = tmp;
-        }
-        else {
-            flb_error("[out_http] error concatenating records");
+        if (!tmp) {
+            flb_plg_error(ctx->ins, "error concatenating records");
             flb_sds_destroy(s);
             msgpack_unpacked_destroy(&result);
             return FLB_RETRY;
         }
+        s = tmp;
     }
 
     ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
@@ -317,13 +327,98 @@ static int cb_http_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "proxy", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, http_user),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "header_tag", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, header_tag),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_http, json_date_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_http, headers),
+     NULL,
+    },
+    {
+     FLB_CONFIG_MAP_STR, "uri", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, uri),
+     NULL,
+    },
+
+    /* Gelf Properties */
+    {
+     FLB_CONFIG_MAP_STR, "gelf_timestamp_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.timestamp_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_host_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.host_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_short_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.short_message_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_full_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.full_message_key),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "gelf_level_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_http_plugin = {
-    .name = "http",
+    .name        = "http",
     .description = "HTTP Output",
-    .cb_init = cb_http_init,
-    .cb_pre_run = NULL,
-    .cb_flush = cb_http_flush,
-    .cb_exit = cb_http_exit,
-    .flags = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .cb_init     = cb_http_init,
+    .cb_pre_run  = NULL,
+    .cb_flush    = cb_http_flush,
+    .cb_exit     = cb_http_exit,
+    .config_map  = config_map,
+    .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

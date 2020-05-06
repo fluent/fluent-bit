@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,11 +34,12 @@ struct flb_in_thermal_config {
     int coll_fd;                  /* collector id/fd                       */
     int interval_sec;             /* interval collection time (Second)     */
     int interval_nsec;            /* interval collection time (Nanosecond) */
+    int prev_device_num;          /* number of thermal devices             */
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *name_regex; /* optional filter by name */
     struct flb_regex *type_regex; /* optional filter by type */
 #endif
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 int in_thermal_pre_run(void *in_context, struct flb_config *config);

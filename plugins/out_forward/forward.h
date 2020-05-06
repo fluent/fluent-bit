@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,10 +45,13 @@ struct flb_forward_config {
 
     /* config */
     flb_sds_t shared_key;     /* shared key                   */
-    flb_sds_t self_hostname;  /* hotname used in certificate  */
+    flb_sds_t self_hostname;  /* hostname used in certificate  */
+    int empty_shared_key;     /* use an empty string as shared key */
     int require_ack_response; /* Require acknowledge for "chunk" */
     int send_options;         /* send options in messages */
 
+    const char *username;
+    const char *password;
 
     /* mbedTLS specifics */
     unsigned char shared_key_salt[16];
@@ -70,6 +73,16 @@ struct flb_forward {
     /* Upstream handler and config context for single mode (no HA) */
     struct flb_upstream *u;
     struct mk_list configs;
+    struct flb_output_instance *ins;
 };
 
+struct flb_forward_ping {
+    const char *nonce;
+    int nonce_len;
+    const char *auth;
+    int auth_len;
+    int keepalive;
+
+
+};
 #endif

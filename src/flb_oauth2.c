@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -208,6 +208,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     /* Create TLS context */
     ctx->tls.context = flb_tls_context_new(FLB_TRUE,  /* verify */
                                            -1,        /* debug */
+                                           NULL,      /* vhost */
                                            NULL,      /* ca_path */
                                            NULL,      /* ca_file */
                                            NULL,      /* crt_file */

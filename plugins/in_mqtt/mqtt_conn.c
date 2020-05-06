@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
@@ -34,6 +36,7 @@ int mqtt_conn_event(void *data)
     int available;
     struct mk_event *event;
     struct mqtt_conn *conn = data;
+    struct flb_in_mqtt_config *ctx = conn->ctx;
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
@@ -43,8 +46,8 @@ int mqtt_conn_event(void *data)
                      conn->buf + conn->buf_len, available);
         if (bytes > 0) {
             conn->buf_len += bytes;
-            flb_trace("[in_mqtt] [fd=%i] read()=%i bytes",
-                      conn->event.fd, bytes);
+            flb_plg_trace(ctx->ins, "[fd=%i] read()=%i bytes",
+                          conn->event.fd, bytes);
             ret = mqtt_prot_parser(conn);
             if (ret < 0) {
                 mqtt_conn_del(conn);
@@ -52,14 +55,15 @@ int mqtt_conn_event(void *data)
             }
         }
         else {
-            flb_trace("[in_mqtt] [fd=%i] closed connection",
+            flb_plg_debug(ctx->ins, "[fd=%i] connection closed",
                       conn->event.fd);
             mqtt_conn_del(conn);
         }
     }
     else if (event->mask & MK_EVENT_CLOSE) {
-        flb_trace("[in_mqtt] [fd=%i] hangup", event->fd);
+        flb_plg_debug(ctx->ins, "[fd=%i] hangup", event->fd);
     }
+
     return 0;
 }
 
@@ -95,7 +99,7 @@ struct mqtt_conn *mqtt_conn_add(int fd, struct flb_in_mqtt_config *ctx)
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
-        flb_error("[mqtt] could not register new connection");
+        flb_plg_error(ctx->ins, "could not register new connection");
         close(fd);
         flb_free(conn);
         return NULL;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +30,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
                                                    const char *port,
                                                    int tls, int tls_verify,
                                                    int tls_debug,
+                                                   const char *tls_vhost,
                                                    const char *tls_ca_path,
                                                    const char *tls_ca_file,
                                                    const char *tls_crt_file,
@@ -127,6 +128,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
     if (tls == FLB_TRUE) {
         node->tls.context = flb_tls_context_new(tls_verify,
                                                 tls_debug,
+                                                tls_vhost,
                                                 tls_ca_path,
                                                 tls_ca_file,
                                                 tls_crt_file,

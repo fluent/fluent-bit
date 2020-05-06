@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_callback.h>
 
 #include <signal.h>
 #include <stdarg.h>
@@ -102,6 +103,12 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
     return NULL;
 }
 
+void flb_init_env()
+{
+    flb_thread_prepare();
+    flb_output_prepare();
+}
+
 flb_ctx_t *flb_create()
 {
     int ret;
@@ -132,6 +139,7 @@ flb_ctx_t *flb_create()
         return NULL;
     }
     ctx->config = config;
+    ctx->status = FLB_LIB_NONE;
 
     /*
      * Initialize our pipe to send data to our worker, used
@@ -255,6 +263,7 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
         ret = flb_input_set_property(i_ins, key, value);
@@ -279,7 +288,6 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 
     o_ins = out_instance_get(ctx, ffd);
     if (!o_ins) {
-        printf("no instance ofund!\n");
         return -1;
     }
 
@@ -288,6 +296,7 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
 
@@ -300,6 +309,19 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 
     va_end(va);
     return 0;
+}
+
+int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
+                            void (*cb)(char *, void *, void *))
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    return flb_callback_set(o_ins->callback, name, cb);
 }
 
 /* Set an filter interface property */
@@ -321,6 +343,7 @@ int flb_filter_set(flb_ctx_t *ctx, int ffd, ...)
         value = va_arg(va, char *);
         if (!value) {
             /* Wrong parameter */
+            va_end(va);
             return -1;
         }
 
@@ -398,6 +421,12 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
     int ret;
     struct flb_input_instance *i_ins;
 
+
+    if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        flb_error("[lib] cannot push data, engine is not running");
+        return -1;
+    }
+
     i_ins = in_instance_get(ctx, ffd);
     if (!i_ins) {
         return -1;
@@ -444,7 +473,7 @@ int flb_start(flb_ctx_t *ctx)
     struct mk_event *event;
     struct flb_config *config;
 
-    pthread_once(&flb_lib_once, flb_thread_prepare);
+    pthread_once(&flb_lib_once, flb_init_env);
 
     config = ctx->config;
     ret = mk_utils_worker_spawn(flb_lib_worker, config, &tid);
@@ -459,15 +488,18 @@ int flb_start(flb_ctx_t *ctx)
         fd = event->fd;
         bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
+            ctx->status = FLB_LIB_ERROR;
             return -1;
         }
 
         if (val == FLB_ENGINE_STARTED) {
             flb_debug("[lib] backend started");
+            ctx->status = FLB_LIB_OK;
             break;
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_error("[lib] backend failed");
+            ctx->status = FLB_LIB_ERROR;
             return -1;
         }
     }
@@ -480,6 +512,10 @@ int flb_stop(flb_ctx_t *ctx)
 {
     int ret;
     pthread_t tid;
+
+    if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        return 0;
+    }
 
     if (!ctx->config) {
         return 0;

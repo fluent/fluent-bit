@@ -1,3 +1,5 @@
+.idea
+.DS_Store
 *~
 _book/
 lib/jemalloc
@@ -10,5 +12,6 @@ include/fluent-bit/flb_plugins.h
 include/fluent-bit/flb_version.h
 include/fluent-bit/conf/*.h
 init/fluent-bit.service
+lib/chunkio/include/chunkio/cio_version.h
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h

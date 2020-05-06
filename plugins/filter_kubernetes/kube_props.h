@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,12 +27,19 @@
 /* Property structure/array index */
 #define FLB_KUBE_PROPS_STDOUT_PARSER   0
 #define FLB_KUBE_PROPS_STDERR_PARSER   1
-#define FLB_KUBE_PROPS_EXCLUDE  2
+#define FLB_KUBE_PROPS_STDOUT_EXCLUDE  2
+#define FLB_KUBE_PROPS_STDERR_EXCLUDE  3
+#define FLB_KUBE_NUMBER_OF_PROPS       4
+
+#define FLB_KUBE_PROP_UNDEF 0
+#define FLB_KUBE_PROP_FALSE 1
+#define FLB_KUBE_PROP_TRUE 2
 
 struct flb_kube_props {
-    flb_sds_t stdout_parser; /* suggested parser for stdout, and stderr if not spec */
-    flb_sds_t stderr_parser; /* suggested parser for stderr-only */
-    int exclude;             /* bool: exclude logs ? */
+    flb_sds_t stdout_parser; /* suggested parser for stdout */
+    flb_sds_t stderr_parser; /* suggested parser for stderr */
+    int stdout_exclude;      /* bool: exclude stdout logs ? */
+    int stderr_exclude;      /* bool: exclude stderr logs ? */
 };
 
 #endif

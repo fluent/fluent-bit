@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -88,13 +88,6 @@ void *flb_realloc(void *ptr, const size_t size)
 {
     void *aux;
 
-    if (size == 0) {
-        if (ptr) {
-            free(ptr);
-        }
-        return NULL;
-    }
-
     aux = realloc(ptr, size);
     if (flb_unlikely(!aux && size)) {
         return NULL;
@@ -102,6 +95,28 @@ void *flb_realloc(void *ptr, const size_t size)
 
     return aux;
 }
+
+static inline ALLOCSZ_ATTR(2, 3)
+void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
+{
+    void *tmp;
+    void *p;
+    size_t diff;
+
+    tmp = flb_realloc(ptr, new_size);
+    if (!tmp) {
+        return NULL;
+    }
+
+    if (new_size > old_size) {
+        diff = new_size - old_size;
+        p = ((char *) tmp + old_size);
+        memset(p, 0, diff);
+    }
+
+    return tmp;
+}
+
 
 static inline void flb_free(void *ptr) {
     free(ptr);

@@ -104,7 +104,7 @@ static inline ssize_t cio_file_st_get_content_size(char *map, size_t size)
     }
 
     meta_len = cio_file_st_get_meta_len(map);
-    s = abs((size - CIO_FILE_HEADER_MIN) - meta_len);
+    s = (size - CIO_FILE_HEADER_MIN) - meta_len;
     if (s < size) {
         return s;
     }

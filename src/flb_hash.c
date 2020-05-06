@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -120,7 +120,6 @@ struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
     mk_list_init(&ht->entries);
     ht->evict_mode = evict_mode;
     ht->max_entries = max_entries;
-    ht->total_count = 0;
     ht->size = size;
     ht->total_count = 0;
     ht->table = flb_calloc(1, sizeof(struct flb_hash_table) * size);
@@ -179,6 +178,33 @@ static void flb_hash_evict_random(struct flb_hash *ht)
     }
 }
 
+static void flb_hash_evict_less_used(struct flb_hash *ht)
+{
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+    struct flb_hash_entry *entry_less_used = NULL;
+
+    mk_list_foreach(head, &ht->entries) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        if (!entry_less_used) {
+            entry_less_used = entry;
+        }
+        else if (entry->hits < entry_less_used->hits) {
+            entry_less_used = entry;
+        }
+    }
+
+    flb_hash_entry_free(ht, entry_less_used);
+}
+
+static void flb_hash_evict_older(struct flb_hash *ht)
+{
+    struct flb_hash_entry *entry;
+
+    entry = mk_list_entry_first(&ht->entries, struct flb_hash_entry, _head_parent);
+    flb_hash_entry_free(ht, entry);
+}
+
 int flb_hash_add(struct flb_hash *ht,
                  const char *key, int key_len,
                  const char *val, size_t val_size)
@@ -197,15 +223,14 @@ int flb_hash_add(struct flb_hash *ht,
 
     /* Check capacity */
     if (ht->max_entries > 0 && ht->total_count >= ht->max_entries) {
-        /* FIXME: handle eviction mode */
         if (ht->evict_mode == FLB_HASH_EVICT_NONE) {
-
+            /* Do nothing */
         }
         else if (ht->evict_mode == FLB_HASH_EVICT_OLDER) {
-
+            flb_hash_evict_older(ht);
         }
         else if (ht->evict_mode == FLB_HASH_EVICT_LESS_USED) {
-
+            flb_hash_evict_less_used(ht);
         }
         else if (ht->evict_mode == FLB_HASH_EVICT_RANDOM) {
             flb_hash_evict_random(ht);

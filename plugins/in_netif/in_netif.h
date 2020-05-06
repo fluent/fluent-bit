@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <unistd.h>
+
 #include <fluent-bit/flb_input.h>
 #include <msgpack.h>
 
@@ -58,8 +59,7 @@ struct flb_in_netif_config {
     int entry_len;
 
     int map_num;
+    struct flb_input_instance *ins;
 };
-
-extern struct flb_input_plugin in_netif_plugin;
 
 #endif /*FLB_IN_NETIF_H*/

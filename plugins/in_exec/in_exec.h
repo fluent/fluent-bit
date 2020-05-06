@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,8 @@
 #ifndef FLB_IN_EXEC_H
 #define FLB_IN_EXEC_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_utils.h>
@@ -31,13 +33,12 @@
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
 
-struct flb_in_exec_config {
+struct flb_exec {
     const char  *cmd;
     struct flb_parser  *parser;
     char *buf;
     size_t buf_size;
+    struct flb_input_instance *ins;
 };
-
-extern struct flb_input_plugin in_exec_plugin;
 
 #endif /* FLB_IN_EXEC_H */

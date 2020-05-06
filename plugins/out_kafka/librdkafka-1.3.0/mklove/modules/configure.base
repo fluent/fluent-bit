@@ -1,0 +1,2301 @@
+#!/bin/bash
+#
+#
+# mklove base configure module, implements the mklove configure framework
+#
+
+MKL_MODULES="base"
+MKL_CACHEVARS="CFLAGS LDFLAGS PKG_CONFIG_PATH"
+MKL_MKVARS=""
+MKL_DEFINES=""
+MKL_CHECKS=""
+MKL_LOAD_STACK=""
+
+MKL_IDNEXT=1
+
+# Default mklove directory to PWD/mklove
+[[ -z "$MKLOVE_DIR" ]] && MKLOVE_DIR="$PWD/mklove"
+
+MKL_OUTMK="$PWD/_mklout.mk"
+MKL_OUTH="$PWD/_mklout.h"
+MKL_OUTDBG="$PWD/config.log"
+
+MKL_GENERATORS="base:mkl_generate_late_vars"
+MKL_CLEANERS=""
+
+MKL_FAILS=""
+MKL_LATE_VARS=""
+
+MKL_OPTS_SET=""
+
+MKL_RED=""
+MKL_GREEN=""
+MKL_YELLOW=""
+MKL_BLUE=""
+MKL_CLR_RESET=""
+
+
+MKL_NO_DOWNLOAD=0
+MKL_INSTALL_DEPS=n
+MKL_SOURCE_DEPS_ONLY=n
+
+if [[ -z "$MKL_REPO_URL" ]]; then
+    MKL_REPO_URL="http://github.com/edenhill/mklove/raw/master"
+fi
+
+
+
+###########################################################################
+#
+# Variable types:
+#   env      - Standard environment variables.
+#   var      - mklove runtime variable, cached or not.
+#   mkvar    - Makefile variables, also sets runvar
+#   define   - config.h variables/defines
+#
+###########################################################################
+
+# Low level variable assignment
+# Arguments:
+#  variable name
+#  variable value
+function mkl_var0_set {
+    export "$1"="$2"
+}
+
+# Sets a runtime variable (only used during configure)
+# If "cache" is provided these variables are cached to config.cache.
+# Arguments:
+#  variable name
+#  variable value
+#  [ "cache" ]
+function mkl_var_set {
+    mkl_var0_set "$1" "$2"
+    if [[ $3 == "cache" ]]; then
+        if ! mkl_in_list "$MKL_CACHEVARS" "$1" ; then
+            MKL_CACHEVARS="$MKL_CACHEVARS $1"
+        fi
+    fi
+}
+
+# Unsets a mkl variable
+# Arguments:
+#  variable name
+function mkl_var_unset {
+    unset $1
+}
+
+# Appends to a mkl variable (space delimited)
+# Arguments:
+#  variable name
+#  variable value
+function mkl_var_append {
+    if [[ -z ${!1} ]]; then
+        mkl_var_set "$1" "$2"
+    else
+        mkl_var0_set "$1" "${!1} $2"
+    fi
+}
+
+
+# Prepends to a mkl variable (space delimited)
+# Arguments:
+#  variable name
+#  variable value
+function mkl_var_prepend {
+    if [[ -z ${!1} ]]; then
+        mkl_var_set "$1" "$2"
+    else
+        mkl_var0_set "$1" "$2 ${!1}"
+    fi
+}
+
+# Shift the first word off a variable.
+# Arguments:
+#  variable name
+function mkl_var_shift {
+    local n="${!1}"
+    mkl_var0_set "$1" "${n#* }"
+    return 0
+}
+
+
+# Returns the contents of mkl variable
+# Arguments:
+#  variable name
+function mkl_var_get {
+    echo "${!1}"
+}
+
+
+
+
+# Set environment variable (runtime)
+# These variables are not cached nor written to any of the output files,
+# its just simply a helper wrapper for standard envs.
+# Arguments:
+#  varname
+#  varvalue
+function mkl_env_set {
+    mkl_var0_set "$1" "$2"
+}
+
+# Append to environment variable
+# Arguments:
+#  varname
+#  varvalue
+#  [ separator (" ") ]
+function mkl_env_append {
+    local sep=" "
+    if [[ -z ${!1} ]]; then
+        mkl_env_set "$1" "$2"
+    else
+        [ ! -z ${3} ] && sep="$3"
+        mkl_var0_set "$1" "${!1}${sep}$2"
+    fi
+
+}
+
+# Prepend to environment variable
+# Arguments:
+#  varname
+#  varvalue
+#  [ separator (" ") ]
+function mkl_env_prepend {
+    local sep=" "
+    if [[ -z ${!1} ]]; then
+        mkl_env_set "$1" "$2"
+    else
+        [ ! -z ${3} ] && sep="$3"
+        mkl_var0_set "$1" "$2${sep}${!1}"
+    fi
+
+}
+
+
+
+
+# Set a make variable (Makefile.config)
+# Arguments:
+#  config name
+#  variable name
+#  value
+function mkl_mkvar_set {
+    if [[ ! -z $2 ]]; then
+        mkl_env_set "$2" "$3"
+        mkl_in_list "$MKL_MKVARS" "$2"|| mkl_env_append MKL_MKVARS $2
+    fi
+}
+
+
+# Prepends to a make variable (Makefile.config)
+# Arguments:
+#  config name
+#  variable name
+#  value
+#  [ separator (" ") ]
+function mkl_mkvar_prepend {
+    if [[ ! -z $2 ]]; then
+        mkl_env_prepend "$2" "$3" "$4"
+        mkl_in_list "$MKL_MKVARS" "$2"|| mkl_env_append MKL_MKVARS $2
+    fi
+}
+
+
+# Appends to a make variable (Makefile.config)
+# Arguments:
+#  config name
+#  variable name
+#  value
+#  [ separator (" ") ]
+function mkl_mkvar_append {
+    if [[ ! -z $2 ]]; then
+        mkl_env_append "$2" "$3" "$4"
+        mkl_in_list "$MKL_MKVARS" "$2"|| mkl_env_append MKL_MKVARS $2
+    fi
+}
+
+
+# Prepends to a make variable (Makefile.config)
+# Arguments:
+#  config name
+#  variable name
+#  value
+#  [ separator (" ") ]
+function mkl_mkvar_prepend {
+    if [[ ! -z $2 ]]; then
+        mkl_env_prepend "$2" "$3" "$4"
+        mkl_in_list "$MKL_MKVARS" "$2"|| mkl_env_append MKL_MKVARS $2
+    fi
+}
+
+# Return mkvar variable value
+# Arguments:
+#  variable name
+function mkl_mkvar_get {
+    [[ -z ${!1} ]] && return 1
+    echo ${!1}
+    return 0
+}
+
+
+
+# Defines a config header define (config.h)
+# Arguments:
+#  config name
+#  define name
+#  define value (optional, default: 1)
+#   if value starts with code: then no "" are added
+function mkl_define_set {
+
+    if [[ -z $2 ]]; then
+        return 0
+    fi
+
+    local stmt=""
+    local defid=
+    if [[ $2 = *\(* ]]; then
+        # macro
+        defid="def_${2%%(*}"
+    else
+        # define
+        defid="def_$2"
+    fi
+
+    [[ -z $1 ]] || stmt="// $1\n"
+
+    local val="$3"
+    if [[ -z "$val" ]]; then
+        val="$(mkl_def $2 1)"
+    fi
+
+    # Define as code, string or integer?
+    if [[ $val == code:* ]]; then
+        # Code block, copy verbatim without quotes, strip code: prefix
+        val=${val#code:}
+    elif [[ ! ( "$val" =~ ^[0-9]+([lL]?[lL][dDuU]?)?$ || \
+        "$val" =~ ^0x[0-9a-fA-F]+([lL]?[lL][dDuU]?)?$ ) ]]; then
+        # String: quote
+        val="\"$val\""
+    fi
+    # else: unquoted integer/hex
+
+    stmt="${stmt}#define $2 $val"
+    mkl_env_set "$defid" "$stmt"
+    mkl_env_append MKL_DEFINES "$defid"
+}
+
+
+
+
+
+# Sets "all" configuration variables, that is:
+# for name set: Makefile variable, config.h define
+# Will convert value "y"|"n" to 1|0 for config.h
+# Arguments:
+#  config name
+#  variable name
+#  value
+function mkl_allvar_set {
+    mkl_mkvar_set "$1" "$2" "$3"
+    local val=$3
+    if [[ $3 = "y" ]]; then
+        val=1
+    elif [[ $3 = "n" ]]; then
+        val=0
+    fi
+    mkl_define_set "$1" "$2" "$val"
+}
+
+
+###########################################################################
+#
+# Dependency installation, et.al.
+#
+#
+###########################################################################
+
+# Returns the local dependency directory.
+function mkl_depdir {
+    local dir="$MKLOVE_DIR/deps"
+    [[ -d $dir ]] || mkdir -p "$dir"
+    if ! grep -q ^deps$ "$MKLOVE_DIR/.gitignore" 2>/dev/null ; then
+        echo "deps" >> "$MKLOVE_DIR/.gitignore"
+    fi
+
+    echo "$dir"
+}
+
+# Returns the package's installation directory / DESTDIR.
+function mkl_dep_destdir {
+    echo "$(mkl_depdir)/dest/$1"
+}
+
+# Returns the package's source directory.
+function mkl_dep_srcdir {
+    echo "$(mkl_depdir)/src/$1"
+}
+
+
+# Get the static library file name(s) for a package.
+function mkl_lib_static_fnames {
+    local name=$1
+    mkl_meta_get $name "static" ""
+}
+
+
+# Returns true if previous ./configure ran a dep install for this package.
+function mkl_dep_install_cached {
+    local name=$1
+
+    if [[ -n $(mkl_var_get "MKL_STATUS_${1}_INSTALL") ]] ||
+           [[ -n $(mkl_var_get "MKL_STATUS_${1}_INSTALL_SRC") ]]; then
+        return 0 # true
+    else
+        return 1 # false
+    fi
+}
+
+# Install an external dependency using the platform's native
+# package manager.
+# Should only be called from mkl_dep_install
+#
+# Param 1: config name
+function mkl_dep_install_pkg {
+    local name=$1
+    local iname="${name}_INSTALL"
+    local retcode=1  # default to fail
+    local method="none"
+    local pkgs
+    local cmd
+
+    mkl_dbg "Attempting native install of dependency $name on $MKL_DISTRO with effective user $EUID"
+
+
+    # Try the platform specific installer first.
+    case ${MKL_DISTRO}-${EUID} in
+        debian-0|ubuntu-0)
+            method=apt
+            pkgs=$(mkl_meta_get $name deb)
+            cmd="apt install -y $pkgs"
+            ;;
+
+        centos-0|rhel-0|redhat-0|fedora-0)
+            method=yum
+            pkgs=$(mkl_meta_get $name rpm)
+            cmd="yum install -y $pkgs"
+            ;;
+
+        alpine-0)
+            method=apk
+            pkgs=$(mkl_meta_get $name apk)
+            cmd="apk add $pkgs"
+            ;;
+
+        osx-*)
+            method=brew
+            pkgs=$(mkl_meta_get $name brew)
+            cmd="brew install $pkgs"
+            ;;
+
+        *)
+            mkl_dbg "$name: No native installer set for $name on $MKL_DISTRO (euid $EUID)"
+            return 1
+            ;;
+    esac
+
+    if [[ -z $pkgs ]]; then
+        mkl_dbg "$name: No packages to install ($method)"
+        return 1
+    fi
+
+    mkl_check_begin --verb "installing dependencies ($cmd)" $iname "" no-cache "$name"
+    $cmd >>$MKL_OUTDBG 2>&1
+    retcode=$?
+
+    if [[ $retcode -eq 0 ]]; then
+        mkl_dbg "Native install of $name (using $method, $cmd) succeeded"
+        mkl_check_done "$iname" "" cont "using $method"
+        mkl_meta_set $name installed_with "$method"
+    elif [[ $method != "none" ]]; then
+        mkl_dbg "Native install of $name (using $method, $cmd) failed: retcode $retcode"
+        mkl_check_failed "$iname" "" cont "using $method"
+    fi
+
+    return $retcode
+}
+
+
+# Returns 0 (yes) if this dependency has a source builder, else 1 (no)
+function mkl_dep_has_builder {
+    local name=$1
+    local func="${name}_install_source"
+    mkl_func_exists $func
+}
+
+
+# Returns 0 (yes) if this dependency has a package installer, else 1 (no)
+function mkl_dep_has_installer {
+    local name=$1
+    if mkl_dep_has_builder "$name" || \
+            [[ -n $(mkl_meta_get $name deb) ]] || \
+            [[ -n $(mkl_meta_get $name rpm) ]] || \
+            [[ -n $(mkl_meta_get $name brew) ]] || \
+            [[ -n $(mkl_meta_get $name apk) ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+# Install an external dependency from source.
+#
+# The resulting libraries must be installed in $ddir/usr/lib (or lib64),
+# and include files in $ddir/usr/include.
+#
+# Any dependency installed from source will be linked statically
+# regardless of --enable-static, if the build produced static libraries.
+
+#
+# Param 1: config name
+function mkl_dep_install_source {
+    local name=$1
+    local iname="${name}_INSTALL_SRC"
+    local retcode=
+
+    local func="${name}_install_source"
+
+    if ! mkl_dep_has_builder $name ; then
+        mkl_dbg "No source builder for $name ($func) available"
+        return 1
+    fi
+
+    mkl_check_begin --verb "building dependency" $iname "" no-cache "$name"
+
+    # Create install directory / DESTDIR
+    local ddir=$(mkl_dep_destdir $name)
+    [[ -d $ddir ]] || mkdir -p "$ddir"
+
+    # Create and go to source directory
+    local sdir=$(mkl_dep_srcdir $name)
+    [[ -d $sdir ]] || mkdir -p "$sdir"
+    mkl_pushd "$sdir"
+
+    local ilog="${sdir}/_mkl_install.log"
+
+    # Build and install
+    mkl_dbg "Building $name from source in $sdir (func $func)"
+
+    $func $name "$ddir" >$ilog 2>&1
+    retcode=$?
+
+    mkl_popd # $sdir
+
+    if [[ $retcode -eq 0 ]]; then
+        mkl_dbg "Source install of $name succeeded"
+        mkl_check_done "$iname" "" cont "ok" "from source"
+        mkl_meta_set $name installed_with "source"
+    else
+        mkl_dbg "Source install of $name failed"
+        mkl_check_failed "$iname" "" disable "source installer failed (see $ilog)"
+        mkl_err "$name source build failed, see $ilog for details. Last 50 lines:"
+        tail -50 "$ilog"
+    fi
+
+    return $retcode
+}
+
+
+# Tries to resolve/find full paths to static libraries for a module,
+# using the provided scan dir path.
+# Any found libraries are set as STATIC_LIB_.. defines.
+#
+# Param 1: config name
+# Param 2: scandir
+#
+# Returns 0 if libraries were found, else 1.
+function mkl_resolve_static_libs {
+    local name="$1"
+    local scandir="$2"
+    local stlibfnames=$(mkl_lib_static_fnames $name)
+    local stlibvar="STATIC_LIB_${name}"
+
+    if [[ -z $stlibfnames || -n "${!stlibvar}" ]]; then
+        mkl_dbg "$name: not resolving static libraries (stlibfnames=$stlibfnames, $stlibvar=${!stlibvar})"
+        return 1
+    fi
+
+    local fname=
+    local stlibs=""
+    mkl_dbg "$name: resolving static libraries from $stlibfnames in $scandir"
+    for fname in $stlibfnames ; do
+        local stlib=$(find "${scandir}" -name "$fname" 2>/dev/null | head -1)
+        if [[ -n $stlib ]]; then
+            stlibs="${stlibs} $stlib"
+        fi
+    done
+
+    # Trim leading whitespaces
+    stlibs=${stlibs# }
+
+    if [[ -n $stlibs ]]; then
+        mkl_dbg "$name: $stlibvar: found static libs: $stlibs"
+        mkl_var_set $stlibvar "$stlibs" "cache"
+        return 0
+    else
+        mkl_dbg "$name: did not find any static libraries for $stlibfnames in ${scandir}"
+        return 1
+    fi
+}
+
+
+# Install an external dependecy
+#
+# Param 1: config name  (e.g zstd)
+function mkl_dep_install {
+    local name=$1
+    local retcode=
+
+    local ddir=$(mkl_dep_destdir $name)
+
+    if [[ $MKL_SOURCE_DEPS_ONLY != y ]] || ! mkl_dep_has_builder $name ; then
+        #
+        # Try native package manager first, or if no source builder
+        # is available for this dependency.
+        #
+        mkl_dep_install_pkg $name
+        retcode=$?
+
+        if [[ $retcode -eq 0 ]]; then
+            return $retcode
+        fi
+    fi
+
+    #
+    # Try source installer.
+    #
+    mkl_dep_install_source $name
+    retcode=$?
+
+    if [[ $retcode -ne 0 ]]; then
+        if [[ $MKL_SOURCE_DEPS_ONLY == y ]]; then
+            # Require dependencies, regardless of original action,
+            # if --source-deps-only is specified, to ensure
+            # that we do indeed link with the desired library.
+            mkl_fail "$name" "" fail "Failed to install dependency $name"
+        fi
+        return $retcode
+    fi
+
+    local ddir=$(mkl_dep_destdir $name)
+
+    # Find the static library(s), if any.
+    if ! mkl_resolve_static_libs "$name" "${ddir}/usr"; then
+        # No static libraries found, set up dynamic linker path
+        mkl_mkvar_prepend LDFLAGS LDFLAGS "-L${ddir}/usr/lib64 -L${ddir}/usr/lib"
+        mkl_mkvar_prepend PKG_CONFIG_PATH PKG_CONFIG_PATH "${ddir}/usr/lib/pkgconfig" ":"
+    fi
+
+    # Append the package's install path to compiler and linker flags.
+    mkl_dbg "$name: Adding install-deps paths ($ddir) to compiler and linker flags"
+    mkl_mkvar_prepend CFLAGS CFLAGS "-I${ddir}/usr/include"
+
+    return $retcode
+}
+
+
+
+###########################################################################
+#
+#
+# Check failure functionality
+#
+#
+###########################################################################
+
+
+# Summarize all fatal failures and then exits.
+function mkl_fail_summary {
+    echo "
+
+"
+
+    local pkg_cmd=""
+    local install_pkgs=""
+    mkl_err "###########################################################"
+    mkl_err "###                  Configure failed                   ###"
+    mkl_err "###########################################################"
+    mkl_err "### Accumulated failures:                               ###"
+    mkl_err "###########################################################"
+    local n
+    for n in $MKL_FAILS ; do
+        local conf=$(mkl_var_get MKL_FAIL__${n}__conf)
+        mkl_err  " $conf ($(mkl_var_get MKL_FAIL__${n}__define)) $(mkl_meta_get $conf name)"
+        if mkl_meta_exists $conf desc; then
+            mkl_err0 "      desc: $MKL_YELLOW$(mkl_meta_get $conf desc)$MKL_CLR_RESET"
+        fi
+        mkl_err0 "    module: $(mkl_var_get MKL_FAIL__${n}__module)"
+        mkl_err0 "    action: $(mkl_var_get MKL_FAIL__${n}__action)"
+        mkl_err0 "    reason:
+$(mkl_var_get MKL_FAIL__${n}__reason)
+"
+        # Dig up some metadata to assist the user
+        case $MKL_DISTRO in
+            debian|ubuntu)
+                local debs=$(mkl_meta_get $conf "deb")
+                pkg_cmd="sudo apt install -y"
+                if [[ ${#debs} > 0 ]]; then
+                    install_pkgs="$install_pkgs $debs"
+                fi
+                ;;
+            centos|rhel|redhat|fedora)
+                local rpms=$(mkl_meta_get $conf "rpm")
+                pkg_cmd="sudo yum install -y"
+                if [[ ${#rpms} > 0 ]]; then
+                    install_pkgs="$install_pkgs $rpms"
+                fi
+                ;;
+            alpine)
+                local apks=$(mkl_meta_get $conf "apk")
+                pkg_cmd="apk add "
+                if [[ ${#apks} > 0 ]]; then
+                    install_pkgs="$install_pkgs $apks"
+                fi
+                ;;
+            osx)
+                local pkgs=$(mkl_meta_get $conf "brew")
+                pkg_cmd="brew install"
+                if [[ ${#pkgs} > 0 ]]; then
+                    install_pkgs="$install_pkgs $pkgs"
+                fi
+                ;;
+        esac
+    done
+
+    if [[ ! -z $install_pkgs ]]; then
+        mkl_err "###########################################################"
+        mkl_err "### Installing the following packages might help:       ###"
+        mkl_err "###########################################################"
+        mkl_err0 "$pkg_cmd $install_pkgs"
+        mkl_err0 ""
+    fi
+    exit 1
+}
+
+
+# Checks if there were failures.
+# Returns 0 if there were no failures, else calls failure summary and exits.
+function mkl_check_fails {
+    if [[ ${#MKL_FAILS} = 0 ]]; then
+        return 0
+    fi
+    mkl_fail_summary
+}
+
+# A check has failed but we want to carry on (and we should!).
+# We fail it all later.
+# Arguments:
+#  config name
+#  define name
+#  action
+#  reason
+function mkl_fail {
+    local n="$(mkl_env_esc "$1")"
+    mkl_var_set "MKL_FAIL__${n}__conf" "$1"
+    mkl_var_set "MKL_FAIL__${n}__module" $MKL_MODULE
+    mkl_var_set "MKL_FAIL__${n}__define" $2
+    mkl_var_set "MKL_FAIL__${n}__action" "$3"
+    if [[ -z $(mkl_var_get "MKL_FAIL__${n}__reason") ]]; then
+        mkl_var_set "MKL_FAIL__${n}__reason" "$4"
+    else
+        mkl_var_append "MKL_FAIL__${n}__reason" "
+And also:
+$4"
+    fi
+    mkl_in_list "$MKL_FAILS" "$n" || mkl_var_append MKL_FAILS "$n"
+}
+
+
+# A check failed, handle it
+# Arguments:
+#  config name
+#  define name
+#  action (fail|disable|ignore|cont)
+#  reason
+function mkl_check_failed {
+    # Override action based on require directives, unless the action is
+    # set to cont (for fallthrough to sub-sequent tests).
+    local action="$3"
+    if [[ $3 != "cont" ]]; then
+        action=$(mkl_meta_get "MOD__$MKL_MODULE" "override_action" $3)
+    fi
+
+    # --fail-fatal option
+    [[ $MKL_FAILFATAL ]] && action="fail"
+
+    mkl_check_done "$1" "$2" "$action" "failed"
+    mkl_dbg "Check $1 ($2, action $action (originally $3)) failed: $4"
+
+
+    case $action in
+        fail)
+            # Check failed fatally, fail everything eventually
+            mkl_fail "$1" "$2" "$3" "$4"
+            return 1
+            ;;
+
+        disable)
+            # Check failed, disable
+            [[ ! -z $2 ]] && mkl_mkvar_set "$1" "$2" "n"
+            return 1
+            ;;
+        ignore)
+            # Check failed but we ignore the results and set it anyway.
+            [[ ! -z $2 ]] && mkl_define_set "$1" "$2" "1"
+            [[ ! -z $2 ]] && mkl_mkvar_set "$1" "$2" "y"
+            return 1
+            ;;
+        cont)
+            # Check failed but we ignore the results and do nothing.
+            return 0
+            ;;
+    esac
+}
+
+
+
+
+###########################################################################
+#
+#
+# Output generators
+#
+#
+###########################################################################
+
+# Generate late variables.
+# Late variables are those referenced in command line option defaults
+# but then never set by --option.
+function mkl_generate_late_vars {
+    local n
+    for n in $MKL_LATE_VARS ; do
+        local func=${n%:*}
+        local safeopt=${func#opt_}
+        local val=${n#*:}
+        if mkl_in_list "$MKL_OPTS_SET" "$safeopt" ; then
+            # Skip options set explicitly with --option
+            continue
+        fi
+        # Expand variable references "\$foo" by calling eval
+        # and pass it opt_... function.
+        $func "$(eval echo $val)"
+    done
+}
+
+# Generate output files.
+# Must be called following a succesful configure run.
+function mkl_generate {
+    local mf=
+    for mf in $MKL_GENERATORS ; do
+        MKL_MODULE=${mf%:*}
+        local func=${mf#*:}
+        $func || exit 1
+    done
+
+    # Generate a built-in options define based on WITH_..=y
+    local with_y=
+    for n in $MKL_MKVARS ; do
+        if [[ $n == WITH_* ]] && [[ ${!n} == y ]]; then
+            with_y="$with_y ${n#WITH_}"
+        fi
+    done
+    with_y="${with_y# }"
+
+    mkl_allvar_set "BUILT_WITH" "BUILT_WITH" "$with_y"
+
+    mkl_write_mk "# Automatically generated by $0 $*"
+    mkl_write_mk "# Config variables"
+    mkl_write_mk "#"
+    mkl_write_mk "# Generated by:"
+    mkl_write_mk "# $MKL_CONFIGURE_ARGS"
+    mkl_write_mk ""
+
+    # This variable is used by Makefile.base to avoid multiple inclusions.
+    mkl_write_mk "MKL_MAKEFILE_CONFIG=y"
+
+    # Export colors to Makefile.config
+    mkl_write_mk "MKL_RED=\t${MKL_RED}"
+    mkl_write_mk "MKL_GREEN=\t${MKL_GREEN}"
+    mkl_write_mk "MKL_YELLOW=\t${MKL_YELLOW}"
+    mkl_write_mk "MKL_BLUE=\t${MKL_BLUE}"
+    mkl_write_mk "MKL_CLR_RESET=\t${MKL_CLR_RESET}"
+
+    local n=
+    for n in $MKL_MKVARS ; do
+	# Some special variables should be prefixable by the caller, so
+	# define them in the makefile as appends.
+	local op="="
+	case $n in
+	    CFLAGS|CPPFLAGS|CXXFLAGS|LDFLAGS|LIBS)
+		op="+="
+		;;
+	esac
+        mkl_write_mk "$n$op\t${!n}"
+    done
+    mkl_write_mk "# End of config variables"
+
+    MKL_OUTMK_FINAL=Makefile.config
+    mv $MKL_OUTMK $MKL_OUTMK_FINAL
+
+    echo "Generated $MKL_OUTMK_FINAL"
+
+    # Generate config.h
+    mkl_write_h "// Automatically generated by $0 $*"
+    mkl_write_h "#ifndef _CONFIG_H_"
+    mkl_write_h "#define _CONFIG_H_"
+    for n in $MKL_DEFINES ; do
+        mkl_write_h "${!n}"
+    done
+    mkl_write_h "#endif /* _CONFIG_H_ */"
+
+    MKL_OUTH_FINAL=config.h
+    mv $MKL_OUTH $MKL_OUTH_FINAL
+
+    echo "Generated $MKL_OUTH_FINAL"
+}
+
+# Remove file noisily, if it exists
+function mkl_rm {
+    if [[ -f $fname ]]; then
+        echo "Removing $fname"
+        rm -f "$fname"
+    fi
+}
+
+# Remove files generated by configure
+function mkl_clean {
+    for fname in Makefile.config config.h config.cache config.log ; do
+        mkl_rm "$fname"
+    done
+
+    local mf=
+    for mf in $MKL_CLEANERS ; do
+        MKL_MODULE=${mf%:*}
+        local func=${mf#*:}
+        $func || exit 1
+    done
+
+}
+
+
+# Print summary of succesful configure run
+function mkl_summary {
+
+    echo "
+Configuration summary:"
+    local n=
+    for n in $MKL_MKVARS ; do
+        # Skip the boring booleans
+        if [[ $n == WITH_* || $n == WITHOUT_* || $n == HAVE_* || $n == def_* ]]; then
+            continue
+        fi
+        printf "  %-24s %s\n" "$n" "${!n}"
+    done
+}
+
+
+
+# Write to mk file
+# Argument:
+#  string ..
+function mkl_write_mk {
+    echo -e "$*" >> $MKL_OUTMK
+}
+
+# Write to header file
+# Argument:
+#  string ..
+function mkl_write_h {
+    echo -e "$*" >> $MKL_OUTH
+}
+
+
+
+###########################################################################
+#
+#
+# Logging and debugging
+#
+#
+###########################################################################
+
+# Debug print
+# Only visible on terminal if MKL_DEBUG is set.
+# Always written to config.log
+# Argument:
+#  string ..
+function mkl_dbg {
+    if [[ ! -z $MKL_DEBUG ]]; then
+        echo -e "${MKL_BLUE}DBG:$$: $*${MKL_CLR_RESET}" 1>&2
+    fi
+    echo "DBG $$: $*" >> $MKL_OUTDBG
+}
+
+# Error print (with color)
+# Always printed to terminal and config.log
+# Argument:
+#  string ..
+function mkl_err {
+    echo -e "${MKL_RED}$*${MKL_CLR_RESET}" 1>&2
+    echo "$*" >> $MKL_OUTDBG
+}
+
+# Same as mkl_err but without coloring
+# Argument:
+#  string ..
+function mkl_err0 {
+    echo -e "$*" 1>&2
+    echo "$*" >> $MKL_OUTDBG
+}
+
+# Standard print
+# Always printed to terminal and config.log
+# Argument:
+#  string ..
+function mkl_info {
+    echo -e "$*" 1>&2
+    echo -e "$*" >> $MKL_OUTDBG
+}
+
+
+
+
+
+
+
+###########################################################################
+#
+#
+# Misc helpers
+#
+#
+###########################################################################
+
+# Returns the absolute path (but not necesarily canonical) of the first argument
+function mkl_abspath {
+    echo $1 | sed -e "s|^\([^/]\)|$PWD/\1|"
+}
+
+# Returns true (0) if function $1 exists, else false (1)
+function mkl_func_exists {
+    declare -f "$1" > /dev/null
+    return $?
+}
+
+# Rename function.
+# Returns 0 on success or 1 if old function (origname) was not defined.
+# Arguments:
+#   origname
+#   newname
+function mkl_func_rename {
+    if ! mkl_func_exists $1 ; then
+        return 1
+    fi
+    local orig=$(declare -f $1)
+    local new="$2${orig#$1}"
+    eval "$new"
+    unset -f "$1"
+    return 0
+}
+
+
+# Push module function for later call by mklove.
+# The function is renamed to an internal name.
+# Arguments:
+#  list variable name
+#  module name
+#  function name
+function mkl_func_push {
+    local newfunc="__mkl__f_${2}_$(( MKL_IDNEXT++ ))"
+    if mkl_func_rename "$3" "$newfunc" ; then
+        mkl_var_append "$1" "$2:$newfunc"
+    fi
+}
+
+
+
+# Returns value, or the default string if value is empty.
+# Arguments:
+#  value
+#  default
+function mkl_def {
+    if [[ ! -z $1 ]]; then
+        echo $1
+    else
+        echo $2
+    fi
+}
+
+
+# Render a string (e.g., evaluate its $varrefs)
+# Arguments:
+#  string
+function mkl_render {
+    if [[ $* == *\$* ]]; then
+        eval "echo $*"
+    else
+        echo "$*"
+    fi
+}
+
+# Escape a string so that it becomes suitable for being an env variable.
+# This is a destructive operation and the original string cannot be restored.
+function mkl_env_esc {
+    echo $* | LC_ALL=C sed -e 's/[^a-zA-Z0-9_]/_/g'
+}
+
+# Convert arguments to upper case
+function mkl_upper {
+    echo "$*" | tr '[:lower:]' '[:upper:]'
+}
+
+# Convert arguments to lower case
+function mkl_lower {
+    echo "$*" | tr '[:upper:]' '[:lower:]'
+}
+
+
+# Checks if element is in list
+# Arguments:
+#   list
+#   element
+function mkl_in_list {
+    local n
+    for n in $1 ; do
+        [[ $n == $2 ]] && return 0
+    done
+    return 1
+}
+
+
+# Silent versions of pushd and popd
+function mkl_pushd {
+    pushd "$1" >/dev/null
+}
+
+function mkl_popd {
+    popd >/dev/null
+}
+
+
+###########################################################################
+#
+#
+# Cache functionality
+#
+#
+###########################################################################
+
+
+# Write cache file
+function mkl_cache_write {
+    [[ ! -z "$MKL_NOCACHE" ]] && return 0
+    echo "# mklove configure cache file generated at $(date)" > config.cache
+    for n in $MKL_CACHEVARS ; do
+        echo "$n=${!n}" >> config.cache
+    done
+    echo "Generated config.cache"
+}
+
+
+# Read cache file
+function mkl_cache_read {
+    [[ ! -z "$MKL_NOCACHE" ]] && return 0
+    [ -f config.cache ] || return 1
+
+    echo "using cache file config.cache"
+
+    local ORIG_IFS=$IFS
+    IFS="$IFS="
+    while read -r n v ; do
+        [[ -z $n || $n = \#* || -z $v ]] && continue
+        mkl_var_set $n $v cache
+    done < config.cache
+    IFS=$ORIG_IFS
+}
+
+
+###########################################################################
+#
+#
+# Config name meta data
+#
+#
+###########################################################################
+
+# Set metadata for config name
+# This metadata is used by mkl in various situations
+# Arguments:
+#   config name
+#   metadata key
+#   metadata value (appended)
+function mkl_meta_set {
+    local metaname="mkl__$1__$2"
+    eval "$metaname=\"\$$metaname $3\""
+}
+
+# Returns metadata for config name
+# Arguments:
+#   config name
+#   metadata key
+#   default (optional)
+function mkl_meta_get {
+    local metaname="mkl__$1__$2"
+    if [[ ! -z ${!metaname} ]]; then
+        echo ${!metaname}
+    else
+        echo "$3"
+    fi
+}
+
+# Checks if metadata exists
+# Arguments:
+#   config name
+#   metadata key
+function mkl_meta_exists {
+    local metaname="mkl__$1__$2"
+    if [[ ! -z ${!metaname} ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+
+
+
+###########################################################################
+#
+#
+# Check framework
+#
+#
+###########################################################################
+
+
+# Print that a check is beginning to run
+# Returns 0 if a cached result was used (do not continue with your tests),
+# else 1.
+#
+# If the check should not be cachable then specify argument 3 as "no-cache",
+# this is useful when a check not only checks but actually sets config
+# variables itself (which is not recommended, but desired sometimes).
+#
+# Arguments:
+#  [ --verb "verb.." ]  (replace "checking for")
+#  config name
+#  define name
+#  action  (fail,cont,disable or no-cache)
+#  [ display name ]
+function mkl_check_begin {
+    local verb="checking for"
+    if [[ $1 == "--verb" ]]; then
+        verb="$2"
+        shift
+        shift
+    fi
+
+    local name=$(mkl_meta_get $1 name "$4")
+    [[ -z $name ]] && name="$1"
+
+    echo -n "$verb $name..."
+    if [[ $3 != "no-cache" ]]; then
+        local status=$(mkl_var_get "MKL_STATUS_$1")
+        # Check cache (from previous run or this one).
+        # Only used cached value if the cached check succeeded:
+        # it is more likely that a failed check has been fixed than the other
+        # way around.
+        if [[ ! -z $status && ( $status = "ok" ) ]]; then
+            mkl_check_done "$1" "$2" "$3" $status "cached"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+
+# Calls the manual_checks function for the given module.
+# Use this for modules that provide check hooks that require
+# certain call ordering, such as dependent library checks.
+#
+# Param 1: module name
+# Param 2: action
+function mkl_check {
+    local modname=$1
+    local action=$2
+
+    local func="${modname}_manual_checks"
+    if ! mkl_func_exists "$func" ; then
+        mkl_fail "Check function for module $modname not found: missing mkl_require $modname ?"
+        return 1
+    fi
+
+    $func "$2"
+    return $?
+}
+
+
+# Print that a check is done
+# Arguments:
+#  config name
+#  define name
+#  action
+#  status (ok|failed)
+#  extra-info (optional)
+function mkl_check_done {
+    # Clean up configname to be a safe varname
+    local cname=${1//-/_}
+    mkl_var_set "MKL_STATUS_$cname" "$4" cache
+
+    mkl_dbg "Setting $1 ($cname) status to $4 (action $3)"
+
+    local extra=""
+    if [[ $4 = "failed" ]]; then
+        local clr=$MKL_YELLOW
+        extra=" ($3)"
+        case "$3" in
+            fail)
+                clr=$MKL_RED
+                ;;
+            cont)
+                extra=""
+                ;;
+        esac
+        echo -e " $clr$4$MKL_CLR_RESET${extra}"
+    else
+        [[ ! -z $2 ]] && mkl_define_set "$cname" "$2" "1"
+        [[ ! -z $2 ]] && mkl_mkvar_set  "$cname" "$2" "y"
+        [ ! -z "$5" ] && extra=" ($5)"
+        echo -e " $MKL_GREEN$4${MKL_CLR_RESET}$extra"
+    fi
+}
+
+
+# Perform configure check by compiling source snippet
+# Arguments:
+#  [--sub]             (run checker as a sub-check, not doing begin/fail/ok)
+#  [--ldflags="..." ]  (appended after "compiler arguments" below)
+#  config name
+#  define name
+#  action (fail|disable)
+#  compiler (CC|CXX)
+#  compiler arguments (optional "", example: "-lzookeeper")
+#  source snippet
+function mkl_compile_check {
+
+    local sub=0
+    if [[ $1 == --sub ]]; then
+        sub=1
+        shift
+    fi
+
+    local ldf=
+    if [[ $1 == --ldflags=* ]]; then
+        ldf=${1#*=}
+        shift
+    fi
+
+    if [[ $sub -eq 0 ]]; then
+        mkl_check_begin "$1" "$2" "$3" "$1 (by compile)" && return $?
+    fi
+
+    local cflags=
+
+    if [[ $4 = "CXX" ]]; then
+        local ext=cpp
+        cflags="$(mkl_mkvar_get CXXFLAGS)"
+    else
+        local ext=c
+        cflags="$(mkl_mkvar_get CFLAGS)"
+    fi
+
+    local srcfile=$(mktemp _mkltmpXXXXXX)
+    mv "$srcfile" "${srcfile}.$ext"
+    srcfile="$srcfile.$ext"
+    echo "$6" > $srcfile
+    echo "
+int main () { return 0; }
+" >> $srcfile
+
+    local cmd="${!4} $cflags $(mkl_mkvar_get CPPFLAGS) -Wall -Werror $srcfile -o ${srcfile}.o $ldf $(mkl_mkvar_get LDFLAGS) $5";
+    mkl_dbg "Compile check $1 ($2) (sub=$sub): $cmd"
+
+    local output
+    output=$($cmd 2>&1)
+
+    if [[ $? != 0 ]] ; then
+        mkl_dbg "compile check for $1 ($2) failed: $cmd: $output"
+        [[ $sub -eq 0 ]] &&  mkl_check_failed "$1" "$2" "$3" "compile check failed:
+CC: $4
+flags: $5
+$cmd:
+$output
+source: $6"
+        local ret=1
+    else
+        [[ $sub -eq 0 ]] && mkl_check_done "$1" "$2" "$3" "ok"
+        local ret=0
+    fi
+
+    # OSX XCode toolchain creates dSYM directories when -g is set,
+    # delete them specifically.
+    rm -rf "$srcfile" "${srcfile}.o" "$srcfile*dSYM"
+
+    return $ret
+}
+
+
+# Low-level: Try to link with a library.
+# Arguments:
+#  linker flags (e.g. "-lpthreads")
+function mkl_link_check0 {
+    local libs=$1
+    local srcfile=$(mktemp _mktmpXXXXXX)
+    echo "#include <stdio.h>
+int main () { FILE *fp = stderr; return fp ? 0 : 0; }" > ${srcfile}.c
+
+    local cmd="${CC} $(mkl_mkvar_get CFLAGS) $(mkl_mkvar_get LDFLAGS) -c ${srcfile}.c -o ${srcfile}_out $libs";
+    mkl_dbg "Link check for $1: $cmd"
+
+    local output
+    output=$($cmd 2>&1)
+    local retcode=$?
+
+    if [[ $retcode -ne 0 ]] ; then
+        mkl_dbg "Link check for $1 failed: $output"
+    fi
+
+    rm -f $srcfile*
+    return $retcode
+}
+
+
+# Try to link with a library.
+# Arguments:
+#  config name
+#  define name
+#  action (fail|disable)
+#  linker flags (e.g. "-lpthreads")
+function mkl_link_check {
+    mkl_check_begin "$1" "$2" "$3" "$1 (by linking)" && return $?
+
+    if mkl_link_check0 "$4" ; then
+        mkl_check_done "$1" "$2" "$3" "ok" "$4"
+        return 0
+    else
+        mkl_dbg "link check for $1 ($2) failed: $output"
+        mkl_check_failed "$1" "$2" "$3" "compile check failed:
+$output"
+        return 1
+    fi
+}
+
+
+
+# Tries to figure out if we can use a static library or not.
+#
+# WARNING: This function must not emit any stdout output other than the
+#          updated list of libs. Do not use any stdout-printing checker.
+#
+# Arguments:
+#  config name    (e.g., zstd)
+#  compiler flags (optional "", e.g: "-lzstd")
+# Returns/outputs:
+#  New list of compiler flags
+function mkl_lib_check_static {
+    local configname=$1
+    local libs=$2
+    local arfile_var=STATIC_LIB_${configname}
+    local stfnames=$(mkl_lib_static_fnames $configname)
+
+    mkl_dbg "$configname: Check for static library (libs $libs, arfile variable $arfile_var=${!arfile_var}, static filenames $stfnames)"
+
+    # If STATIC_LIB_<configname> specifies .a file(s) we use that instead.
+    if [[ -n ${!arfile_var} ]]; then
+        libs="${!arfile_var}"
+
+    elif [[ $WITH_STATIC_LINKING != y ]]; then
+        # Static linking not enabled
+        echo ""
+        return
+
+    elif [[ $HAS_LDFLAGS_STATIC == y ]] && [[ -n $stfnames ]]; then
+        local libname
+        local stlibs=
+        for libname in $stfnames; do
+            # Convert the static filename to a linker flag:
+            # libzstd.a -> -lzstd
+            libname=${libname#lib}
+            libname="-l${libname%.a}"
+            stlibs="${stlibs}${libname} "
+        done
+        libs="${LDFLAGS_STATIC} $stlibs ${LDFLAGS_DYNAMIC}"
+        mkl_dbg "$configname: after replacing libs: $libs"
+
+    elif [[ $libs == *-L* ]]; then
+        # Try to resolve full static paths using any -Lpaths in $libs
+        local lpath
+        for lpath in $libs; do
+            [[ $lpath == -L* ]] || continue
+
+            lpath="${lpath#-L}"
+            [[ -d $lpath ]] || continue
+
+            if mkl_resolve_static_libs "$configname" "$lpath"; then
+                break
+            fi
+        done
+
+        libs="${!arfile_var}"
+        mkl_dbg "$configname: after -L resolve, libs is $libs"
+
+    else
+        mkl_dbg "$configname: Neither $arfile_var=/path/to/libname.a specified nor static linker flags supported: static linking probably won't work"
+        libs=""
+    fi
+
+    if [[ -z $libs ]]; then
+        echo ""
+        return
+    fi
+
+    # Attempt to link a small program with these static libraries
+    mkl_dbg "$configname: verifying that linking \"$libs\" works"
+    if ! mkl_link_check0 "$libs" ; then
+        mkl_dbg "$configname: Could not use static libray flags: $libs"
+        echo ""
+        return
+    fi
+
+    mkl_allvar_set "$configname" "${configname}_STATIC" "y"
+
+    echo $libs
+}
+
+
+# Checks that the specified lib is available through a number of methods.
+# compiler flags are automatically appended to "LIBS" mkvar on success.
+#
+# If STATIC_LIB_<libname_without_-l> is set to the path of an <libname>.a file
+# it will be used instead of -l<libname>.
+#
+# <definename>_STATIC will be automatically defined (for both Makefile.config
+# and config.h) if the library is to be linked statically, or was installed
+# with a source dependency installer.
+#
+# Arguments:
+#  [--override-action=<action>]  (internal use, overrides action argument)
+#  [--libname=<lib>] (library name if different from config name, such as
+#                     when the libname includes a dash)
+#  config name (library name (for pkg-config))
+#  define name
+#  action (fail|disable|cont)
+#  compiler (CC|CXX)
+#  compiler flags (optional "", e.g: "-lyajl")
+#  source snippet
+function mkl_lib_check0 {
+
+    local override_action=
+    if [[ $1 == --override-action=* ]]; then
+        override_action=${1#*=}
+        shift
+    fi
+
+    local staticopt=$(mkl_meta_get $1 "static" "")
+
+    local libnameopt=
+    local libname=$1
+    if [[ $1 == --libname* ]]; then
+        libnameopt=$1
+        libname="${libnameopt#*=}"
+        shift
+    fi
+
+    local action=$3
+    if [[ -n $override_action ]]; then
+        action=$override_action
+    fi
+
+    # pkg-config result (0=ok)
+    local pkg_conf_failed=1
+    if [[ $WITH_PKGCONFIG == "y" ]]; then
+        # Let pkg-config populate CFLAGS, et.al.
+        # Return on success.
+        mkl_pkg_config_check $libnameopt "$1" "$2" cont "$4" "$6" && return $?
+    fi
+
+    local libs="$5"
+    local stlibs=$(mkl_lib_check_static $1 "$libs")
+    if [[ -n $stlibs ]]; then
+        libs=$stlibs
+    fi
+
+    if ! mkl_compile_check "$1" "$2" "$action" "$4" "$libs" "$6"; then
+        return 1
+    fi
+
+    if [[ -n $libs ]]; then
+        # Add libraries in reverse order to make sure inter-dependencies
+        # are resolved in the correct order.
+        # E.g., check for crypto and then ssl should result in -lssl -lcrypto
+        mkl_dbg "$1: from lib_check: LIBS: prepend $libs"
+        mkl_mkvar_prepend "$1" LIBS "$libs"
+    fi
+
+    return 0
+}
+
+
+# Wrapper for mkl_lib_check0 which attempts dependency installation
+# if --install-deps is specified.
+#
+# See mkl_lib_check0 for arguments and details.
+function mkl_lib_check {
+
+    local arg=
+    local name=
+
+    # Find config name parameter (first non-option (--...))
+    for arg in $* ; do
+        if [[ $arg == --* ]]; then
+            continue
+        fi
+        name=$arg
+        break
+    done
+
+    if [[ $MKL_INSTALL_DEPS != y ]] || ! mkl_dep_has_installer "$name" ; then
+        mkl_lib_check0 "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+        return $?
+    fi
+
+
+    # Automatic dependency installation mode:
+    # First pass is lib check with cont,
+    # if it fails, attempt dependency installation,
+    # and then make second with caller's fail-action.
+
+    local retcode=
+
+    # With --source-deps-only we want to make sure the dependency
+    # being used is in-fact from the dependency builder (if supported),
+    # rather than a system installed alternative, so skip the pre-check and
+    # go directly to dependency installation/build below.
+    if [[ $MKL_SOURCE_DEPS_ONLY != y ]] || ! mkl_dep_has_builder $1 ; then
+        mkl_lib_check0 --override-action=cont "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+        retcode=$?
+        if [[ $retcode -eq 0 ]]; then
+            # Successful on first pass
+            return $retcode
+        fi
+    else
+        mkl_dbg "$name: skipping dependency pre-check in favour of --source-deps-only"
+    fi
+
+    # Install dependency
+    if ! mkl_dep_install "$name" ; then
+        return 1
+    fi
+
+    # Second pass: check again, this time fail hard
+    mkl_lib_check0 --override-action=fail "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    return $?
+}
+
+
+
+# Check for library with pkg-config
+# Automatically sets CFLAGS and LIBS from pkg-config information.
+# Arguments:
+#  [--libname=<lib>] (library name if different from config name, such as
+#                     when the libname includes a dash)
+#  config name
+#  define name
+#  action (fail|disable|ignore|cont)
+#  compiler (CC|CXX)
+#  source snippet
+function mkl_pkg_config_check {
+
+    local libname=$1
+    if [[ $1 == --libname* ]]; then
+        libname="${libnameopt#*=}"
+        shift
+    fi
+
+    local cname="${1}_PKGCONFIG"
+    mkl_check_begin "$cname" "$2" "no-cache" "$1 (by pkg-config)" && return $?
+
+    local cflags=
+    local cmd="${PKG_CONFIG} --short-errors --cflags $libname"
+    mkl_dbg "pkg-config check $libname for CFLAGS ($2): $cmd"
+
+    cflags=$($cmd 2>&1)
+    if [[ $? != 0 ]]; then
+        mkl_dbg "'$cmd' failed: $cflags"
+        # Clear define name ($2): caller may have additional checks
+        mkl_check_failed "$cname" "" "$3" "'$cmd' failed:
+$cflags"
+        return 1
+    fi
+
+    if [[ $(mkl_meta_get $1 installed_with) == "source" && \
+              $WITH_STATIC_LINKING == y && \
+              $MKL_SOURCE_DEPS_ONLY == y ]]; then
+        # If attempting static linking and we're using source-only
+        # dependencies, then there is no need for pkg-config since
+        # the source installer will have set the required flags.
+        return 1
+    fi
+
+    local libs=
+    cmd="${PKG_CONFIG} --short-errors --libs $libname"
+    mkl_dbg "pkg-config check $libname for LIBS ($2): $cmd"
+    libs=$($cmd 2>&1)
+    if [[ $? != 0 ]]; then
+        mkl_dbg "${PKG_CONFIG} --libs $libname failed: $libs"
+        # Clear define name ($2): caller may have additional checks
+        mkl_check_failed "$cname" "" "$3" "pkg-config --libs failed"
+        return 1
+    fi
+
+    mkl_dbg "$1: from pkg-config: CFLAGS '$CFLAGS', LIBS '$LIBS'"
+
+    local snippet="$5"
+    if [[ -n $snippet ]]; then
+        mkl_dbg "$1: performing compile check using pkg-config info"
+
+        if ! mkl_compile_check --sub "$1" "$2" "no-cache" "$4" "$cflags $libs" "$snippet"; then
+            mkl_check_failed "$cname" "" "$3" "compile check failed"
+            return 1
+        fi
+    fi
+
+    mkl_mkvar_append $1 "CFLAGS" "$cflags"
+
+    local stlibs=$(mkl_lib_check_static $1 "$libs")
+    if [[ -n $stlibs ]]; then
+        libs=$stlibs
+    fi
+
+    mkl_dbg "$1: from pkg-config: LIBS: prepend $libs"
+    mkl_mkvar_prepend "$1" LIBS "$libs"
+
+    mkl_check_done "$1" "$2" "$3" "ok"
+
+    return 0
+}
+
+
+# Check that a command runs and exits succesfully.
+# Arguments:
+#  config name
+#  define name (optional, can be empty)
+#  action
+#  command
+function mkl_command_check {
+    mkl_check_begin "$1" "$2" "$3" "$1 (by command)" && return $?
+
+    local out=
+    out=$($4 2>&1)
+    if [[ $? != 0 ]]; then
+        mkl_dbg "$1: $2: $4 failed: $out"
+        mkl_check_failed "$1" "$2" "$3" "command '$4' failed:
+$out"
+        return 1
+    fi
+
+    mkl_check_done "$1" "$2" "$3" "ok"
+
+    return 0
+}
+
+
+# Check that a program is executable, but will not execute it.
+# Arguments:
+#  config name
+#  define name (optional, can be empty)
+#  action
+#  program name  (e.g, objdump)
+function mkl_prog_check {
+    mkl_check_begin --verb "checking executable" "$1" "$2" "$3" "$1" && return $?
+
+    local out=
+    out=$(command -v "$4" 2>&1)
+    if [[ $? != 0 ]]; then
+        mkl_dbg "$1: $2: $4 is not executable: $out"
+        mkl_check_failed "$1" "$2" "$3" "$4 is not executable"
+        return 1
+    fi
+
+    mkl_check_done "$1" "$2" "$3" "ok"
+
+    return 0
+}
+
+
+
+
+# Checks that the check for the given config name passed.
+# This does not behave like the other checks, if the given config name passed
+# its test then nothing is printed. Else the configure will fail.
+# Arguments:
+#  checked config name
+function mkl_config_check {
+    local status=$(mkl_var_get "MKL_STATUS_$1")
+    [[ $status = "ok" ]] && return 0
+    mkl_fail $1 "" "fail" "$MKL_MODULE requires $1"
+    return 1
+}
+
+
+# Checks that all provided config names are set.
+# Arguments:
+#  config name
+#  define name
+#  action
+#  check_config_name1
+#  check_config_name2..
+function mkl_config_check_all {
+    local cname=
+    local res="ok"
+    echo start this now for $1
+    for cname in ${@:4}; do
+        local st=$(mkl_var_get "MKL_STATUS_$cname")
+        [[ $status = "ok" ]] && continue
+        mkl_fail $1 $2 $3 "depends on $cname"
+        res="failed"
+    done
+
+    echo "try res $res"
+    mkl_check_done "$1" "$2" "$3" $res
+}
+
+
+# Check environment variable
+# Arguments:
+#  config name
+#  define name
+#  action
+#  environment variable
+function mkl_env_check {
+    mkl_check_begin "$1" "$2" "$3" "$1 (by env $4)" && return $?
+
+    if [[ -z ${!4} ]]; then
+        mkl_check_failed "$1" "$2" "$3" "environment variable $4 not set"
+        return 1
+    fi
+
+    mkl_check_done "$1" "$2" "$3" "ok" "${!4}"
+
+    return 0
+}
+
+
+# Run all checks
+function mkl_checks_run {
+    # Set up common variables
+    mkl_allvar_set "" MKL_APP_NAME $(mkl_meta_get description name)
+    mkl_allvar_set "" MKL_APP_DESC_ONELINE "$(mkl_meta_get description oneline)"
+
+    # Call checks functions in dependency order
+    local mf
+    for mf in $MKL_CHECKS ; do
+        MKL_MODULE=${mf%:*}
+        local func=${mf#*:}
+
+        if mkl_func_exists $func ; then
+            $func
+        else
+            mkl_err "Check function $func from $MKL_MODULE disappeared ($mf)"
+        fi
+        unset MKL_MODULE
+    done
+}
+
+
+# Check for color support in terminal.
+# If the terminal supports colors, the function will alter
+#  MKL_RED
+#  MKL_GREEN
+#  MKL_YELLOW
+#  MKL_BLUE
+#  MKL_CLR_RESET
+function mkl_check_terminal_color_support {
+    local use_color=false
+    local has_tput=false
+
+    if [[ -z ${TERM} ]]; then
+        # tput and dircolors require $TERM
+        mkl_dbg "\$TERM is not set! Cannot check for color support in terminal."
+        return 1
+    elif hash tput 2>/dev/null; then
+        has_tput=true
+        [[ $(tput colors 2>/dev/null) -ge 8 ]] && use_color=true
+        mkl_dbg "tput reports color support: ${use_color}"
+    elif hash dircolors 2>/dev/null; then
+        # Enable color support only on colorful terminals.
+        # dircolors --print-database uses its own built-in database
+        # instead of using /etc/DIR_COLORS. Try to use the external file
+        # first to take advantage of user additions.
+        local safe_term=${TERM//[^[:alnum:]]/?}
+        local match_lhs=""
+        [[ -f ~/.dir_colors   ]] && match_lhs="${match_lhs}$(<~/.dir_colors)"
+        [[ -f /etc/DIR_COLORS ]] && match_lhs="${match_lhs}$(</etc/DIR_COLORS)"
+        [[ -z ${match_lhs}    ]] && match_lhs=$(dircolors --print-database)
+        [[ $'\n'${match_lhs} == *$'\n'"TERM "${safe_term}* ]] && use_color=true
+        mkl_dbg "dircolors reports color support: ${use_color}"
+    fi
+
+    if ${use_color}; then
+        if ${has_tput}; then
+            # In theory, user could have set different escape sequences
+            # Because tput is available we can use it to query the right values ...
+            mkl_dbg "Using color escape sequences from tput"
+            MKL_RED=$(tput setaf 1)
+            MKL_GREEN=$(tput setaf 2)
+            MKL_YELLOW=$(tput setaf 3)
+            MKL_BLUE=$(tput setaf 4)
+            MKL_CLR_RESET=$(tput sgr0)
+        else
+            mkl_dbg "Using hard-code ANSI color escape sequences"
+            MKL_RED="\033[031m"
+            MKL_GREEN="\033[032m"
+            MKL_YELLOW="\033[033m"
+            MKL_BLUE="\033[034m"
+            MKL_CLR_RESET="\033[0m"
+        fi
+    else
+        mkl_dbg "Did not detect color support in \"$TERM\" terminal!"
+    fi
+
+    return 0
+}
+
+
+
+
+###########################################################################
+#
+#
+# Module functionality
+#
+#
+###########################################################################
+
+# Downloads module from repository.
+# Arguments:
+#  module name
+# Returns:
+#  module file name
+function mkl_module_download {
+    local modname="$1"
+    local url="$MKL_REPO_URL/modules/configure.$modname"
+    local tmpfile=""
+
+    fname="${MKLOVE_DIR}/modules/configure.$modname"
+
+    if [[ $url != http*://* ]]; then
+        # Local path, just copy file.
+        if [[ ! -f $url ]]; then
+            mkl_err "Module $modname not found at $url"
+            return 1
+        fi
+
+        if ! cp "$url" "$fname" ; then
+            mkl_err "Failed to copy $url to $fname"
+            return 1
+        fi
+
+        echo "$fname"
+        return 0
+    fi
+
+    # Download
+    mkl_info "${MKL_BLUE}downloading missing module $modname from $url${MKL_CLR_RESET}"
+
+    tmpfile=$(mktemp _mkltmpXXXXXX)
+    local out=
+    out=$(wget -nv -O "$tmpfile" "$url" 2>&1)
+
+    if [[ $? -ne 0 ]]; then
+        rm -f "$tmpfile"
+        mkl_err "Failed to download $modname:"
+        mkl_err0 $out
+        return 1
+    fi
+
+    # Move downloaded file into place replacing the old file.
+    mv "$tmpfile" "$fname" || return 1
+
+    # "Return" filename
+    echo "$fname"
+
+    return 0
+}
+
+
+# Load module by name or filename
+# Arguments:
+#   "require"|"try"
+#   filename
+# [ module arguments ]
+function mkl_module_load {
+    local try=$1
+    shift
+    local fname=$1
+    shift
+    local modname=${fname#*configure.}
+    local bypath=1
+
+    # Check if already loaded
+    if mkl_in_list "$MKL_MODULES" "$modname"; then
+        return 0
+    fi
+
+    if [[ $fname = $modname ]]; then
+        # Module specified by name, find the file.
+        bypath=0
+        for fname in configure.$modname \
+            ${MKLOVE_DIR}/modules/configure.$modname ; do
+            [[ -s $fname ]] && break
+        done
+    fi
+
+    # Calling module
+    local cmod=$MKL_MODULE
+    [[ -z $cmod ]] && cmod="base"
+
+    if [[ ! -s $fname ]]; then
+        # Attempt to download module, if permitted
+        if [[ $MKL_NO_DOWNLOAD != 0 || $bypath == 1 ]]; then
+            mkl_err "Module $modname not found at $fname (required by $cmod) and downloads disabled"
+            if [[ $try = "require" ]]; then
+                mkl_fail "$modname" "none" "fail" \
+                    "Module $modname not found (required by $cmod) and downloads disabled"
+            fi
+            return 1
+        fi
+
+        fname=$(mkl_module_download "$modname")
+        if [[ $? -ne 0 ]]; then
+            mkl_err "Module $modname not found (required by $cmod)"
+            if [[ $try = "require" ]]; then
+                mkl_fail "$modname" "none" "fail" \
+                    "Module $modname not found (required by $cmod)"
+                return 1
+            fi
+        fi
+
+        # Now downloaded, try loading the module again.
+        mkl_module_load $try "$fname" "$@"
+        return $?
+    fi
+
+    # Set current module
+    local save_MKL_MODULE=$MKL_MODULE
+    MKL_MODULE=$modname
+
+    mkl_dbg "Loading module $modname (required by $cmod) from $fname"
+
+    # Source module file (positional arguments are available to module)
+    source $fname
+
+    # Restore current module (might be recursive)
+    MKL_MODULE=$save_MKL_MODULE
+
+    # Add module to list of modules
+    mkl_var_append MKL_MODULES $modname
+
+    # Rename module's special functions so we can call them separetely later.
+    mkl_func_rename "options" "${modname}_options"
+    mkl_func_rename "install_source" "${modname}_install_source"
+    mkl_func_rename "manual_checks" "${modname}_manual_checks"
+    mkl_func_push MKL_CHECKS "$modname" "checks"
+    mkl_func_push MKL_GENERATORS "$modname" "generate"
+    mkl_func_push MKL_CLEANERS "$modname" "clean"
+}
+
+
+# Require and load module
+# Must only be called from module file outside any function.
+# Arguments:
+#  [ --try ]    Dont fail if module doesn't exist
+#  module1
+#  [ "must" "pass" ]
+#  [ module arguments ... ]
+function mkl_require {
+    local try="require"
+    if [[ $1 = "--try" ]]; then
+        local try="try"
+        shift
+    fi
+
+    local mod=$1
+    shift
+    local override_action=
+
+    # Check for cyclic dependencies
+    if mkl_in_list "$MKL_LOAD_STACK" "$mod"; then
+        mkl_err "Cyclic dependency detected while loading $mod module:"
+        local cmod=
+        local lmod=$mod
+        for cmod in $MKL_LOAD_STACK ; do
+            mkl_err "  $lmod required by $cmod"
+            lmod=$cmod
+        done
+        mkl_fail base "" fail "Cyclic dependency detected while loading module $mod"
+        return 1
+    fi
+
+    mkl_var_prepend MKL_LOAD_STACK "$mod"
+
+
+    if [[ "$1 $2" == "must pass" ]]; then
+        shift
+        shift
+        override_action="fail"
+    fi
+
+    if [[ ! -z $override_action ]]; then
+        mkl_meta_set "MOD__$mod" "override_action" "$override_action"
+    fi
+
+
+    mkl_module_load $try $mod "$@"
+    local ret=$?
+
+    mkl_var_shift MKL_LOAD_STACK
+
+    return $ret
+}
+
+
+
+###########################################################################
+#
+#
+# Usage options
+#
+#
+###########################################################################
+
+
+MKL_USAGE="Usage: ./configure [OPTIONS...]
+
+ mklove configure script - mklove, not autoconf
+ Copyright (c) 2014-2019 Magnus Edenhill - https://github.com/edenhill/mklove
+"
+
+function mkl_usage {
+    echo "$MKL_USAGE"
+    local name=$(mkl_meta_get description name)
+
+    if [[ ! -z ${name} ]]; then
+	echo " $name - $(mkl_meta_get description oneline)
+ $(mkl_meta_get description copyright)
+"
+    fi
+
+    local og
+    for og in $MKL_USAGE_GROUPS ; do
+        og="MKL_USAGE_GROUP__$og"
+        echo "${!og}"
+    done
+
+    echo "Honoured environment variables:
+  CC, CPP, CXX, CFLAGS, CPPFLAGS, CXXFLAGS, LDFLAGS, LIBS,
+  LD, NM, OBJDUMP, STRIP, PKG_CONFIG, PKG_CONFIG_PATH,
+  STATIC_LIB_<libname>=.../libname.a
+
+"
+
+}
+
+
+
+# Add usage option informative text
+# Arguments:
+#  text
+function mkl_usage_info {
+    MKL_USAGE="$MKL_USAGE
+$1"
+}
+
+
+# Add option to usage output
+# Arguments:
+#  option group ("Standard", "Cross-Compilation", etc..)
+#  variable name
+#  option ("--foo=feh")
+#  help
+#  default (optional)
+#  assignvalue (optional, default:"y")
+#  function block (optional)
+function mkl_option {
+    local optgroup=$1
+    local varname=$2
+
+    # Fixed width between option name and help in usage output
+    local pad="                                   "
+    if [[ ${#3} -lt ${#pad} ]]; then
+        pad=${pad:0:$(expr ${#pad} - ${#3})}
+    else
+        pad=""
+    fi
+
+    # Add to usage output
+    local optgroup_safe=$(mkl_env_esc $optgroup)
+    if ! mkl_in_list "$MKL_USAGE_GROUPS" "$optgroup_safe" ; then
+        mkl_env_append MKL_USAGE_GROUPS "$optgroup_safe"
+        mkl_env_set "MKL_USAGE_GROUP__$optgroup_safe" "$optgroup options:
+"
+    fi
+
+    local defstr=""
+    [[ ! -z $5 ]] && defstr=" [$5]"
+    mkl_env_append "MKL_USAGE_GROUP__$optgroup_safe" "  $3 $pad $4$defstr
+"
+
+    local optname="${3#--}"
+    local safeopt=
+    local optval=""
+    if [[ $3 == *=* ]]; then
+        optname="${optname%=*}"
+        optval="${3#*=}"
+    fi
+
+    safeopt=$(mkl_env_esc $optname)
+
+    mkl_meta_set "MKL_OPT_ARGS" "$safeopt" "$optval"
+
+    #
+    # Optional variable scoping by prefix: "env:", "mk:", "def:"
+    #
+    local setallvar="mkl_allvar_set ''"
+    local setmkvar="mkl_mkvar_set ''"
+
+    if [[ $varname = env:* ]]; then
+        # Set environment variable (during configure runtime only)
+        varname=${varname#*:}
+        setallvar=mkl_env_set
+        setmkvar=mkl_env_set
+    elif [[ $varname = mk:* ]]; then
+        # Set Makefile.config variable
+        varname=${varname#*:}
+        setallvar="mkl_mkvar_append ''"
+        setmkvar="mkl_mkvar_append ''"
+    elif [[ $varname = def:* ]]; then
+        # Set config.h define
+        varname=${varname#*:}
+        setallvar="mkl_define_set ''"
+        setmkvar="mkl_define_set ''"
+    fi
+
+
+    if [[ ! -z $7 ]]; then
+        # Function block specified.
+        eval "function opt_$safeopt { $7 }"
+    else
+    # Add default implementation of function simply setting the value.
+    # Application may override this by redefining the function after calling
+    # mkl_option.
+        if [[ $optval = "PATH" ]]; then
+        # PATH argument: make it an absolute path.
+        # Only set the make variable (not config.h)
+            eval "function opt_$safeopt { $setmkvar $varname \"\$(mkl_abspath \$(mkl_render \$1))\"; }"
+        else
+        # Standard argument: simply set the value
+            if [[ -z "$6" ]]; then
+                eval "function opt_$safeopt { $setallvar $varname \"\$1\"; }"
+            else
+                eval "function opt_$safeopt { $setallvar $varname \"$6\"; }"
+            fi
+        fi
+    fi
+
+    # If default value is provided and does not start with "$" (variable ref)
+    # then set it right away.
+    # $ variable refs are set after all checks have run during the
+    # generating step.
+    if [[ ${#5} != 0 ]] ; then
+        if [[ $5 = *\$* ]]; then
+            mkl_var_append "MKL_LATE_VARS" "opt_$safeopt:$5"
+        else
+            opt_$safeopt $5
+        fi
+    fi
+
+    if [[ ! -z $varname ]]; then
+        # Add variable to list
+        MKL_CONFVARS="$MKL_CONFVARS $varname"
+    fi
+
+}
+
+
+
+# Adds a toggle (--enable-X, --disable-X) option.
+# Arguments:
+#  option group   ("Standard", ..)
+#  variable name  (WITH_FOO)
+#  option         (--enable-foo)
+#  help           ("foo.." ("Enable" and "Disable" will be prepended))
+#  default        (y or n)
+
+function mkl_toggle_option {
+
+    # Add option argument
+    mkl_option "$1" "$2" "$3" "$4" "$5"
+
+    # Add corresponding "--disable-foo" option for "--enable-foo".
+    local disname="${3/--enable/--disable}"
+    local dishelp="${4/Enable/Disable}"
+    mkl_option "$1" "$2" "$disname" "$dishelp" "" "n"
+}
+
+# Adds a toggle (--enable-X, --disable-X) option with builtin checker.
+# This is the library version.
+# Arguments:
+#  option group   ("Standard", ..)
+#  config name    (foo, must be same as pkg-config name)
+#  variable name  (WITH_FOO)
+#  action         (fail or disable)
+#  option         (--enable-foo)
+#  help           (defaults to "Enable <config name>")
+#  linker flags   (-lfoo)
+#  default        (y or n)
+
+function mkl_toggle_option_lib {
+
+    local help="$6"
+    [[ -z "$help" ]] && help="Enable $2"
+
+    # Add option argument
+    mkl_option "$1" "$3" "$5" "$help" "$8"
+
+    # Add corresponding "--disable-foo" option for "--enable-foo".
+    local disname="${5/--enable/--disable}"
+    local dishelp="${help/Enable/Disable}"
+    mkl_option "$1" "$3" "$disname" "$dishelp" "" "n"
+
+    # Create checks
+    eval "function _tmp_func { mkl_lib_check \"$2\" \"$3\" \"$4\" CC \"$7\"; }"
+    mkl_func_push MKL_CHECKS "$MKL_MODULE" _tmp_func
+}
+
+
+
+
+

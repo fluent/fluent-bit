@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,10 +34,18 @@
 #define FLB_DATADOG_DD_MESSAGE_KEY    "message"
 #define FLB_DATADOG_DD_LOG_KEY        "log"
 
+#define FLB_DATADOG_REMAP_PROVIDER    "ecs"
+#define FLB_DATADOG_TAG_SEPERATOR     ","
+
 #define FLB_DATADOG_CONTENT_TYPE   "Content-Type"
 #define FLB_DATADOG_MIME_JSON      "application/json"
 
 struct flb_out_datadog {
+
+    /* Proxy */
+    const char *proxy;
+    char *proxy_host;
+    int proxy_port;
 
     /* Configuration */
     flb_sds_t scheme;
@@ -47,6 +55,7 @@ struct flb_out_datadog {
     flb_sds_t api_key;
     int include_tag_key;
     flb_sds_t tag_key;
+    bool remap;
 
     /* final result */
     flb_sds_t json_date_key;
@@ -56,8 +65,14 @@ struct flb_out_datadog {
     flb_sds_t dd_tags;
     flb_sds_t dd_message_key;
 
+    /* Compression mode (gzip) */
+    int compress_gzip;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *upstream;
+
+    /* Plugin instance reference */
+    struct flb_output_instance *ins;
 };
 
 #endif // FLB_OUT_DATADOG_H

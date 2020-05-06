@@ -26,10 +26,11 @@
 #define CIO_TRUE   !0
 
 /* debug levels */
-#define CIO_ERROR  1
-#define CIO_WARN   2
-#define CIO_INFO   3
-#define CIO_DEBUG  4
+#define CIO_LOG_ERROR  1
+#define CIO_LOG_WARN   2
+#define CIO_LOG_INFO   3
+#define CIO_LOG_DEBUG  4
+#define CIO_LOG_TRACE  5
 
 /* Storage backend */
 #define CIO_STORE_FS        0
@@ -41,13 +42,18 @@
 #define CIO_CHECKSUM        4   /* enable checksum verification (crc32) */
 #define CIO_FULL_SYNC       8   /* force sync to fs through MAP_SYNC */
 
+/* Return status */
+#define CIO_CORRUPTED      -3  /* Indicate that a chunk is corrupted */
+#define CIO_RETRY          -2  /* The operations needs to be retried */
+#define CIO_ERROR          -1  /* Generic error */
+#define CIO_OK              0  /* OK */
+
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
-int cio_page_size;
-
 struct cio_ctx {
     int flags;
+    int page_size;
     char *root_path;
 
     /* logging */
@@ -55,12 +61,18 @@ struct cio_ctx {
     void (*log_cb)(void *, int, const char *, int, const char *);
 
     /*
+     * Internal counters
+     */
+    size_t total_chunks;      /* Total number of registered chunks */
+    size_t total_chunks_up;   /* Total number of chunks 'up' in memory */
+
+    /*
      * maximum open 'file' chunks: this limit helps where there are many
      * chunks in the filesystem and you don't need all of them up in
      * memory. For short, it restrict the open number of files and
      * the amount of memory mapped.
      */
-    int max_chunks_up;
+    size_t max_chunks_up;
 
     /* streams */
     struct mk_list streams;
@@ -81,6 +93,7 @@ int cio_set_max_chunks_up(struct cio_ctx *ctx, int n);
 int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
 int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
 int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
+int cio_meta_size(struct cio_chunk *ch);
 
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 

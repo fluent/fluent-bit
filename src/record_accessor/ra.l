@@ -1,3 +1,4 @@
+%option prefix="flb_ra_"
 %option caseless
 %{
 #include <stdio.h>
@@ -57,6 +58,8 @@ static inline char *remove_dup_quotes(const char *s, size_t n)
 "$"                     |
 "["                     |
 "]"                     |
+"."                     |
+","                     |
 ";"                     { return yytext[0]; }
 \'                      return QUOTE;
 \n

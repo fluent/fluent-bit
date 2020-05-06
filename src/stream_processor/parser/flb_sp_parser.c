@@ -305,7 +305,6 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
     return key;
 }
 
-
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
                        const char *key_name, const char *key_alias)
 {
@@ -399,13 +398,13 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
     mk_list_init(cmd->tmp_params);
 
     /* Flex/Bison work */
-    yylex_init(&scanner);
-    buf = yy_scan_string(sql, scanner);
+    flb_sp_lex_init(&scanner);
+    buf = flb_sp__scan_string(sql, scanner);
 
-    ret = yyparse(cmd, sql, scanner);
+    ret = flb_sp_parse(cmd, sql, scanner);
 
-    yy_delete_buffer(buf, scanner);
-    yylex_destroy(scanner);
+    flb_sp__delete_buffer(buf, scanner);
+    flb_sp_lex_destroy(scanner);
 
     if (ret != 0) {
         flb_sp_cmd_destroy(cmd);
@@ -423,6 +422,42 @@ int flb_sp_cmd_stream_new(struct flb_sp_cmd *cmd, const char *stream_name)
     }
 
     cmd->type = FLB_SP_CREATE_STREAM;
+    return 0;
+}
+
+int flb_sp_cmd_snapshot_new(struct flb_sp_cmd *cmd, const char *snapshot_name)
+{
+    const char *tmp;
+
+    cmd->stream_name = flb_sds_create(snapshot_name);
+    if (!cmd->stream_name) {
+        return -1;
+    }
+
+    tmp = flb_sp_cmd_stream_prop_get(cmd, "tag");
+    if (!tmp) {
+        cmd->status = FLB_SP_ERROR;
+        flb_error("[sp] tag for snapshot is required. Add WITH(tag = <TAG>) to the snapshot %s",
+                  snapshot_name);
+        return -1;
+    }
+
+    cmd->type = FLB_SP_CREATE_SNAPSHOT;
+
+    return 0;
+}
+
+int flb_sp_cmd_snapshot_flush_new(struct flb_sp_cmd *cmd, const char *snapshot_name)
+{
+    cmd->stream_name = flb_sds_cat(flb_sds_create("__flush_"),
+                                   snapshot_name, strlen(snapshot_name));
+
+    if (!cmd->stream_name) {
+        return -1;
+    }
+
+    cmd->type = FLB_SP_FLUSH_SNAPSHOT;
+
     return 0;
 }
 
@@ -590,12 +625,14 @@ struct flb_exp *flb_sp_cmd_condition_key(struct flb_sp_cmd *cmd,
     key->name = flb_sds_create(identifier);
     mk_list_add(&key->_head, &cmd->cond_list);
 
-    ret = swap_tmp_subkeys(&key->subkeys, cmd);
-    if (ret == -1) {
-        flb_sds_destroy(key->name);
-        mk_list_del(&key->_head);
-        flb_free(key);
-        return NULL;
+    if (mk_list_size(cmd->tmp_subkeys) > 0) {
+        ret = swap_tmp_subkeys(&key->subkeys, cmd);
+        if (ret == -1) {
+            flb_sds_destroy(key->name);
+            mk_list_del(&key->_head);
+            flb_free(key);
+            return NULL;
+        }
     }
 
     return (struct flb_exp *) key;
@@ -731,7 +768,7 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
     int ret;
     struct flb_sp_cmd_gb_key *gb_key;
 
-    gb_key = flb_malloc(sizeof(struct flb_sp_cmd_gb_key));
+    gb_key = flb_calloc(1, sizeof(struct flb_sp_cmd_gb_key));
     if (!gb_key) {
         flb_errno();
         return -1;
@@ -742,17 +779,19 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
         flb_free(gb_key);
         return -1;
     }
-    gb_key->subkeys = NULL;
+
     gb_key->id = mk_list_size(&cmd->gb_keys);
     mk_list_add(&gb_key->_head, &cmd->gb_keys);
 
     /* Lookup for any subkeys in the temporal list */
-    ret = swap_tmp_subkeys(&gb_key->subkeys, cmd);
-    if (ret == -1) {
-        flb_sds_destroy(gb_key->name);
-        mk_list_del(&gb_key->_head);
-        flb_free(gb_key);
-        return -1;
+    if (mk_list_size(cmd->tmp_subkeys) > 0) {
+        ret = swap_tmp_subkeys(&gb_key->subkeys, cmd);
+        if (ret == -1) {
+            flb_sds_destroy(gb_key->name);
+            mk_list_del(&gb_key->_head);
+            flb_free(gb_key);
+            return -1;
+        }
     }
 
     return 0;
@@ -789,6 +828,11 @@ void flb_sp_cmd_condition_del(struct flb_sp_cmd *cmd)
         mk_list_del(&exp->_head);
         flb_free(exp);
     }
+}
+
+void flb_sp_cmd_limit_add(struct flb_sp_cmd *cmd, int limit)
+{
+    cmd->limit = limit;
 }
 
 /* Timeseries functions */
@@ -846,6 +890,7 @@ int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_al
             if (!ts) {
                 flb_errno();
                 cmd->status = FLB_SP_ERROR;
+                flb_sp_cmd_key_del(key);
                 return -1;
             }
             mk_list_init(&ts->params);

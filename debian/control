@@ -3,7 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Eduardo Silva <eduardo@treasure-data.com>
 Build-Depends: debhelper (>= 7.0.50~), cmake (>= 2.6)
-Standards-Version: 3.9.1
+Standards-Version: 4.3.0
 Homepage: http://fluentbit.io
 Vcs-Git: https://github.com/fluent/fluent-bit
 Vcs-Browser: https://github.com/fluent/fluent-bit

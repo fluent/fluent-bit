@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +34,7 @@ static int influxdb_escape(char *out, const char *str, int size, bool quote) {
     int i;
     for (i = 0; i < size; ++i) {
         char ch = str[i];
-        if (quote ? (ch == '"') : (isspace(ch) || ch == ',' || ch == '=')) {
+        if (quote ? (ch == '"' || ch == '\\') : (isspace(ch) || ch == ',' || ch == '=')) {
             out[out_size++] = '\\';
         } else if (ch == '\\') {
             out[out_size++] = '\\';

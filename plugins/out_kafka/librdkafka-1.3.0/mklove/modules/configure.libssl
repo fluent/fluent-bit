@@ -1,0 +1,110 @@
+#!/bin/bash
+#
+# libssl and libcrypto (OpenSSL or derivate) support, with installer.
+# Requires OpenSSL version v1.0.1 or later.
+#
+# Usage:
+#   mkl_require libssl
+#
+
+# And then call the following function from the correct place/order in checks:
+#   mkl_check libssl [<action>]
+#
+#
+# This module is a bit hacky since OpenSSL provides both libcrypto and libssl,
+# the latter depending on the former, but from a user perspective it is
+# SSL that is the feature, not crypto.
+
+mkl_toggle_option "Feature" ENABLE_SSL "--enable-ssl" "Enable SSL support" "y"
+
+
+function manual_checks {
+    local action=${1:-disable}
+
+    [[ $ENABLE_SSL == y ]] || return 0
+
+    if [[ $MKL_DISTRO == "osx" ]]; then
+        # Add brew's OpenSSL pkg-config path on OSX
+        # to avoid picking up the outdated system-provided openssl/libcrypto.
+        mkl_env_append PKG_CONFIG_PATH "/usr/local/opt/openssl/lib/pkgconfig" ":"
+    fi
+
+    # OpenSSL provides both libcrypto and libssl
+    if [[ $WITH_STATIC_LINKING != y ]]; then
+        # Debian's OpenSSL static libraries are broken.
+        mkl_meta_set "libcrypto" "deb" "libssl-dev"
+    fi
+    mkl_meta_set "libcrypto" "rpm" "openssl-devel"
+    mkl_meta_set "libcrypto" "brew" "openssl"
+    mkl_meta_set "libcrypto" "apk" "openssl-dev"
+    mkl_meta_set "libcrypto" "static" "libcrypto.a"
+
+    if ! mkl_lib_check "libcrypto" "" $action CC "-lcrypto" "
+#include <openssl/ssl.h>
+#include <openssl/evp.h>
+#if OPENSSL_VERSION_NUMBER < 0x1000100fL
+#error \"Requires OpenSSL version >= v1.0.1\"
+#endif"; then
+        return
+    fi
+
+
+    #
+    # libssl
+    #
+    mkl_meta_set "libssl" "static" "libssl.a"
+
+    if [[ $(mkl_meta_get "libcrypto" "installed_with") == "source" ]]; then
+        # Try to resolve the libssl.a static library path based on the
+        # libcrypto (openssl) install path.
+        mkl_resolve_static_libs "libssl" "$(mkl_dep_destdir libcrypto)"
+    fi
+
+    mkl_lib_check "libssl" "WITH_SSL" $action CC "-lssl -lcrypto" \
+                  "#include <openssl/ssl.h>
+#if OPENSSL_VERSION_NUMBER < 0x1000100fL
+#error \"Requires OpenSSL version >= v1.0.1\"
+#endif"
+}
+
+
+# No source installer on osx: rely on openssl from homebrew
+if [[ $MKL_DISTRO != osx ]]; then
+
+    # Install libcrypto/libssl from source tarball on linux.
+    #
+    # Param 1: name (libcrypto)
+    # Param 2: install-dir-prefix (e.g., DESTDIR)
+    # Param 2: version (optional)
+    function libcrypto_install_source {
+        local name=$1
+        local destdir=$2
+        local ver=1.0.2r
+
+        local conf_args="--openssldir=/usr/lib/ssl zlib shared"
+        if [[ $ver == 1.0.* ]]; then
+            extra_conf_args="${extra_conf_args} no-krb5"
+        fi
+
+        echo "### Installing $name $ver from source to $destdir"
+        if [[ ! -f config ]]; then
+            echo "### Downloading"
+            curl -sL https://www.openssl.org/source/openssl-${ver}.tar.gz | \
+                tar xzf - --strip-components 1
+        fi
+
+        if [[ ! -f config.log ]]; then
+            echo "### Configuring"
+            ./config --prefix="/usr" $conf_args || return $?
+            make -j clean
+        fi
+
+        echo "### Building"
+        make -j
+
+        echo "### Installing to $destdir"
+        make INSTALL_PREFIX="$destdir" install_sw
+
+        return $?
+    }
+fi

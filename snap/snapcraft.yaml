@@ -1,0 +1,45 @@
+name: fluent-bit
+base: core18
+version: '1.5.0'
+summary: High performance logs and stream processor
+description: |
+  Fluent Bit is a high performance log processor and stream processor for Linux.
+  It provides a flexible pluggable architecture to collect, enrich and deliver
+  logs or metrics to multiple databases or cloud providers.
+license: 'Apache-2.0'
+icon: fluent-bit.svg
+grade: 'devel'
+confinement: 'strict'
+
+apps:
+  fluent-bit:
+    command: bin/fluent-bit
+    daemon: simple
+
+parts:
+  fluent-bit:
+    source: https://github.com/fluent/fluent-bit
+    source-type: git
+    plugin: cmake
+    stage-packages:
+        - libsasl2-2
+        - libssl1.1
+        - libpq5
+    build-packages:
+        - g++
+        - make
+        - libsasl2-dev
+        - libsystemd-dev
+        - flex
+        - bison
+        - valgrind
+        - libssl-dev
+        - libpq5
+        - postgresql-server-dev-all
+    configflags:
+        - -DFLB_DEBUG=On
+        - -DFLB_OUT_KAFKA=On
+        - -DFLB_JEMALLOC=On
+        - -DFLB_EXAMPLES=OFF
+        - -DFLB_SHARED_LIB=Off
+        - -DFLB_OUT_PGSQL=On

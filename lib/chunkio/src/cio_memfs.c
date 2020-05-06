@@ -57,6 +57,10 @@ void cio_memfs_close(struct cio_chunk *ch)
 {
     struct cio_memfs *mf = ch->backend;
 
+    if (!mf) {
+        return;
+    }
+
     free(mf->name);
     free(mf->buf_data);
     free(mf->meta_data);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,10 +66,12 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             void *chunk)
 {
+#ifdef FLB_HAVE_METRICS
     int ret;
     int records;
     char *buf_data;
     size_t buf_size;
+#endif
     struct flb_input_chunk *ic;
 
     /* Create context for the input instance */
@@ -80,6 +82,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     }
 
     ic->busy = FLB_FALSE;
+    ic->fs_backlog = FLB_TRUE;
     ic->chunk = chunk;
     ic->in = in;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
@@ -87,7 +90,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 
 #ifdef FLB_HAVE_METRICS
     ret = cio_chunk_get_content(ic->chunk, &buf_data, &buf_size);
-    if (ret == -1) {
+    if (ret != CIO_OK) {
         flb_error("[input chunk] error retrieving content for metrics");
         return ic;
     }
@@ -106,8 +109,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                                                const char *tag, int tag_len)
 {
     int ret;
+    int err;
     int set_down = FLB_FALSE;
-    char name[256];
+    char name[64];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
     struct flb_input_chunk *ic;
@@ -119,10 +123,11 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 
     /* open/create target chunk file */
     chunk = cio_chunk_open(storage->cio, storage->stream, name,
-                           CIO_OPEN, FLB_INPUT_CHUNK_SIZE);
+                           CIO_OPEN, FLB_INPUT_CHUNK_SIZE, &err);
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
                   storage->stream, name);
+        flb_sds_destroy(name);
         return NULL;
     }
 
@@ -150,6 +155,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ret = cio_meta_write(chunk, (char *) tag, tag_len);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
+        flb_sds_destroy(name);
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
@@ -163,6 +169,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
     ic->busy = FLB_FALSE;
     ic->chunk = chunk;
+    ic->fs_backlog = FLB_FALSE;
     ic->in = in;
     ic->stream_off = 0;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
@@ -192,7 +199,7 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
     struct flb_input_chunk *ic = NULL;
 
     /* Try to find a current chunk context to append the data */
-    mk_list_foreach(head, &in->chunks) {
+    mk_list_foreach_r(head, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk)) {
             ic = NULL;
@@ -305,7 +312,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 static inline int flb_input_chunk_protect(struct flb_input_instance *i)
 {
     if (flb_input_chunk_is_overlimit(i) == FLB_TRUE) {
-        flb_debug("[input] %s paused (mem buf overlimit)",
+        flb_warn("[input] %s paused (mem buf overlimit)",
                  i->name);
         if (!flb_input_buf_paused(i)) {
             if (i->p->cb_pause) {
@@ -386,6 +393,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 {
     int ret;
     int set_down = FLB_FALSE;
+    int min;
     size_t size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
@@ -464,13 +472,15 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     size = cio_chunk_get_content_size(ic->chunk);
 
     /* Lock buffers where size > 2MB */
-    if (size > 2048000) {
+    if (size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
         cio_chunk_lock(ic->chunk);
     }
 
     /* Make sure the data was not filtered out and the buffer size is zero */
     if (size == 0) {
         flb_input_chunk_destroy(ic, FLB_TRUE);
+        flb_input_chunk_set_limits(in);
+        return 0;
     }
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     else if (in->config->stream_processor_ctx) {
@@ -518,7 +528,20 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
         si->type == CIO_STORE_FS) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
-            cio_chunk_down(ic->chunk);
+            /*
+             * If we are already over limit, a sub-sequent data ingestion
+             * might need a Chunk to write data in. As an optimization we
+             * will put this Chunk down ONLY IF it has less than 1% of
+             * it capacity as available space, otherwise keep it 'up' so
+             * it available space can be used.
+             */
+            size = cio_chunk_get_content_size(ic->chunk);
+
+            /* Do we have less than 1% available ? */
+            min = (FLB_INPUT_CHUNK_FS_MAX_SIZE * 0.01);
+            if (FLB_INPUT_CHUNK_FS_MAX_SIZE - size < min) {
+                cio_chunk_down(ic->chunk);
+            }
         }
         return 0;
     }
@@ -572,9 +595,29 @@ int flb_input_chunk_release_lock(struct flb_input_chunk *ic)
     return 0;
 }
 
+flb_sds_t flb_input_chunk_get_name(struct flb_input_chunk *ic)
+{
+    struct cio_chunk *ch;
+
+    ch = (struct cio_chunk *) ic->chunk;
+    return ch->name;
+}
+
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len)
 {
-    return cio_meta_read(ic->chunk, (char **) tag_buf, tag_len);
+    int len;
+    int ret;
+    char *buf;
+
+    ret = cio_meta_read(ic->chunk, &buf, &len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    *tag_len = len;
+    *tag_buf = buf;
+
+    return ret;
 
 }

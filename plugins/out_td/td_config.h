@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,22 +21,21 @@
 #ifndef FLB_TD_CONFIG_H
 #define FLB_TD_CONFIG_H
 
-#include <fluent-bit.h>
-#include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_output_plugin.h>
 
 #define FLB_TD_REGION_US    0
 #define FLB_TD_REGION_JP    1
 
-struct flb_out_td_config {
+struct flb_td {
     int fd;           /* Socket to destination/backend */
     int region;       /* TD Region end-point */
     const char *api;
     const char *db_name;
     const char *db_table;
-
     struct flb_upstream *u;
+    struct flb_output_instance *ins;
 };
 
-struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins);
+struct flb_td *td_config_init(struct flb_output_instance *ins);
 
 #endif

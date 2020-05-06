@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,14 +18,14 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -59,19 +59,19 @@ static void cb_tcp_flush(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret = FLB_ERROR;
-    struct flb_out_tcp *ctx = out_context;
     size_t bytes_sent;
     flb_sds_t json = NULL;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
+    struct flb_out_tcp *ctx = out_context;
     (void) i_ins;
 
     /* Get upstream context and connection */
     u = ctx->u;
     u_conn = flb_upstream_conn_get(u);
     if (!u_conn) {
-        flb_error("[out_tcp] no upstream connections available to %s:%i",
-                  u->tcp_host, u->tcp_port);
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -84,7 +84,7 @@ static void cb_tcp_flush(const void *data, size_t bytes,
                                                ctx->json_date_format,
                                                ctx->json_date_key);
         if (!json) {
-            flb_error("[out_tcp] error formatting JSON payload");
+            flb_plg_error(ctx->ins, "error formatting JSON payload");
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
@@ -110,6 +110,32 @@ static int cb_tcp_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", "msgpack",
+     0, FLB_FALSE, 0,
+     "Specify the payload format, supported formats: msgpack, json, "
+     "json_lines or json_stream."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", "double",
+     0, FLB_FALSE, 0,
+     "Specify the format of the date, supported formats: double, iso8601 "
+     "(e.g: 2018-05-30T09:39:52.000681Z) and epoch."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_tcp, json_date_key),
+     "Specify the name of the date field in output."
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_tcp_plugin = {
     .name           = "tcp",
@@ -117,5 +143,6 @@ struct flb_output_plugin out_tcp_plugin = {
     .cb_init        = cb_tcp_init,
     .cb_flush       = cb_tcp_flush,
     .cb_exit        = cb_tcp_exit,
+    .config_map     = config_map,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

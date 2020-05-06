@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_window.h>
 
 #include "flb_tests_internal.h"
@@ -302,6 +303,26 @@ static void cb_select_cond_null(int id, struct task_check *check,
     /* Expect 1 row */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 1);
+}
+
+static void cb_select_not_equal_1(int id, struct task_check *check,
+                                  char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
+}
+
+static void cb_select_not_equal_2(int id, struct task_check *check,
+                                  char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 2 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 2);
 }
 
 static void cb_select_aggr(int id, struct task_check *check,
@@ -587,30 +608,43 @@ struct task_check select_keys_checks[] = {
         "SELECT * FROM STREAM:FLB WHERE word3 IS NULL;",
         cb_select_cond_null
     },
+    {
+        6, 0, 0, 0,
+        "select_not_equal_1",
+        "SELECT * FROM STREAM:FLB WHERE bool != true;",
+        cb_select_not_equal_1
+    },
+    {
+        7, 0, 0, 0,
+        "select_not_equal_2",
+        "SELECT * FROM STREAM:FLB WHERE bytes <> 10;",
+        cb_select_not_equal_2
+    },
+
 
     /* Aggregation functions */
     {
-        6, 0, 0, 0,
+        8, 0, 0, 0,
         "select_aggr",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        7, 0, 0, 0,
+        9, 0, 0, 0,
         "select_aggr_coount",
         "SELECT COUNT(*) " \
         "FROM STREAM:FLB;",
         cb_select_aggr_count,
     },
     {
-        8, 0, 0, 0,
+        10, 0, 0, 0,
         "select_aggr_window_tumbling",
         "SELECT MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) FROM STREAM:FLB;",
         cb_select_aggr,
     },
     {
-        9, 0, 0, 0,
+        11, 0, 0, 0,
         "select_aggr_window_tumbling_groupby",
         "SELECT bool, MIN(id), MAX(id), COUNT(*), SUM(bytes), AVG(bytes) " \
         "FROM STREAM:FLB WHERE word3 IS NOT NULL GROUP BY bool;",
@@ -619,13 +653,13 @@ struct task_check select_keys_checks[] = {
 
     /* Time functions */
     {
-        10, 0, 0, 0,
+        12, 0, 0, 0,
         "func_time_now",
         "SELECT NOW(), NOW() as tnow FROM STREAM:FLB WHERE bytes > 10;",
         cb_func_time_now,
     },
     {
-        11, 0, 0, 0,
+        13, 0, 0, 0,
         "func_time_unix_timestamp",
         "SELECT UNIX_TIMESTAMP(), UNIX_TIMESTAMP() as ts " \
         "FROM STREAM:FLB WHERE bytes > 10;",
@@ -634,25 +668,25 @@ struct task_check select_keys_checks[] = {
 
     /* Stream selection using Tag rules */
     {
-        12, 0, 0, 0,
+        14, 0, 0, 0,
         "select_from_tag_error",
         "SELECT id FROM TAG:'no-matches' WHERE bytes > 10;",
         cb_select_tag_error,
     },
     {
-        13, 0, 0, 0,
+        15, 0, 0, 0,
         "select_from_tag",
         "SELECT id FROM TAG:'samples' WHERE bytes > 10;",
         cb_select_tag_ok,
     },
     {
-        14, 0, 0, 0,
+        16, 0, 0, 0,
         "@recond.contains",
         "SELECT id FROM TAG:'samples' WHERE bytes = 10 AND @record.contains(word2);",
         cb_record_contains,
     },
     {
-        15, 0, 0, 0,
+        17, 0, 0, 0,
         "@recond.contains",
         "SELECT id FROM TAG:'samples' WHERE @record.contains(x);",
         cb_record_not_contains,
@@ -787,6 +821,38 @@ static void cb_select_max_sub_keys(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
+static void cb_select_max_sub_keys_group_by(int id, struct task_check *check,
+                                            char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 105.5);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_max_sub_keys_group_by_2(int id, struct task_check *check,
+                                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 1 row */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 105.5);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
 static void cb_select_sub_record_contains(int id, struct task_check *check,
                                           char *buf, size_t size)
 {
@@ -857,7 +923,17 @@ struct task_check select_subkeys_checks[] = {
         "cb_select_max_sub_keys",
         "SELECT MAX(map['sub1']['sub3']) FROM STREAM:FLB WHERE "  \
         "map['sub1']['sub3'] > 0;",
-        cb_select_max_sub_keys}
+        cb_select_max_sub_keys},
+    {   10, 0, 0, 0,
+        "cb_select_max_sub_keys_group_by",
+        "SELECT SUM(map['sub1']['sub3']) FROM STREAM:FLB "  \
+        "GROUP BY map['mtype'];",
+        cb_select_max_sub_keys_group_by},
+    {   11, 0, 0, 0,
+        "cb_select_max_sub_keys_group_by",
+        "SELECT map['sub1']['stype'], map['mtype'], SUM(map['sub1']['sub3']) " \
+        "FROM STREAM:FLB GROUP BY map['mtype'], map['sub1']['stype'];",
+        cb_select_max_sub_keys_group_by_2}
 };
 
 /* Tests to check syntactically valid/semantically invalid queries */
@@ -1433,10 +1509,236 @@ static void test_window()
 #endif
 }
 
+
+/* Callback functions to perform checks over results */
+static void cb_snapshot_create(int id, struct task_check *check,
+                               char *buf, size_t size)
+{
+    int ret;
+
+    ret = mp_count_rows(buf, size);
+    /* Snapshot doesn't return anything */
+    TEST_CHECK(ret == 0);
+};
+
+static void cb_snapshot_purge(int id, struct task_check *check,
+                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 5 rows, as set in snapshot query */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 5);
+};
+
+static void cb_snapshot_purge_time(int id, struct task_check *check,
+                                   char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 5 rows, as set in snapshot query */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 11);
+};
+
+/* Tests for 'test_snapshot' */
+struct task_check snapshot_checks[][2] = {
+    {
+        {   // Snapshot
+            0, 0, 0, 0,
+            "snapshot_create",
+            "SELECT * FROM STREAM:FLB LIMIT 5;",
+            cb_snapshot_create
+        },
+        {   // Flush
+            1, 0, 0, 0,
+            "snapshot_purge",
+            "SELECT * FROM STREAM:FLB;",
+            cb_snapshot_purge
+        },
+    },
+    {
+        {  // Snapshot
+            2, 0, 5, 0,
+            "snapshot_create",
+            "SELECT * FROM STREAM:FLB;",
+            cb_snapshot_create
+        },
+        {  // Flush
+            3, 0, 0, 0,
+            "snapshot_purge",
+            "SELECT * FROM STREAM:FLB;",
+            cb_snapshot_purge_time
+        },
+    },
+};
+
+static void test_snapshot()
+{
+    int i;
+    int t;
+    int checks;
+    int ret;
+    char datafile[100];
+    char stream_name[100];
+    char window_val[3];
+    char *out_buf = NULL;
+    size_t out_size;
+    char *data_buf = NULL;
+    size_t data_size;
+    struct task_check *check;
+    struct task_check *check_flush;
+    struct flb_config *config;
+    struct flb_sp *sp;
+    struct flb_sp_task *task;
+    struct flb_sp_task *task_flush;
+
+#ifdef _WIN32
+    WSADATA wsa_data;
+#endif
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    if (!config) {
+        flb_errno();
+        return;
+    }
+#ifdef _WIN32
+    WSAStartup(0x0201, &wsa_data);
+#endif
+    mk_list_init(&config->inputs);
+    mk_list_init(&config->stream_processor_tasks);
+    config->evl = mk_event_loop_create(256);
+
+    sp = flb_sp_create(config);
+    if (!sp) {
+        flb_error("[sp test] cannot create stream processor context");
+        flb_free(config);
+        return;
+    }
+
+    ret = file_to_buf(DATA_SAMPLES, &data_buf, &data_size);
+    if (ret == -1) {
+        flb_error("[sp test] cannot open DATA_SAMPLES file %s", DATA_SAMPLES);
+        flb_free(config);
+        return;
+    }
+
+    /* Total number of checks for select_keys */
+    checks = (sizeof(snapshot_checks) / (sizeof(struct task_check) * 2));
+
+    /* Run every test */
+    for (i = 0; i < checks; i++) {
+        /* Snapshot Create */
+        check = (struct task_check *) &snapshot_checks[i][0];
+
+        task = flb_sp_task_create(sp, check->name, check->exec);
+        if (!task) {
+            flb_error("[sp test] wrong check '%s', fix it!", check->name);
+            continue;
+        }
+
+        snprintf(stream_name, 100, "%s-%d", "SNAPSHOT", i);
+        task->cmd->stream_name = flb_sds_create(stream_name);
+        task->cmd->type = FLB_SP_CREATE_SNAPSHOT;
+        if (check->window_val > 0) {
+            snprintf(window_val, 3, "%d", check->window_val);
+            flb_sp_cmd_stream_prop_add(task->cmd, "seconds", window_val);
+        }
+
+        if (flb_sp_snapshot_create(task) == -1) {
+            flb_error("[sp test] error initializing snapshot for check '%s'!", check->name);
+            continue;
+        }
+
+        out_buf = NULL;
+        out_size = 0;
+
+        /* Read 1.mp -> 5.mp message pack buffers created for window tests */
+        for (t = 0; t < 5; t++) {
+            sprintf(datafile, "%s%d.mp",
+                    DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
+
+            if (data_buf) {
+                flb_free(data_buf);
+                data_buf = NULL;
+            }
+
+            ret = file_to_buf(datafile, &data_buf, &data_size);
+            if (ret == -1) {
+                flb_error("[sp test] cannot open DATA_SAMPLES file %s", datafile);
+                flb_free(config);
+                return;
+            }
+
+            ret = flb_sp_test_do(sp, task,
+                                 "samples", 7,
+                                 data_buf, data_size,
+                                 &out_buf, &out_size);
+            if (ret == -1) {
+                flb_error("[sp test] error processing check '%s'", check->name);
+                flb_sp_task_destroy(task);
+                continue;
+            }
+        }
+
+        flb_sp_test_fd_event(task->window.fd, task, &out_buf, &out_size);
+
+        flb_info("[sp test] id=%i, SQL => '%s'", check->id, check->exec);
+        check->cb_check(check->id, check, out_buf, out_size);
+        flb_pack_print(out_buf, out_size);
+        flb_free(out_buf);
+
+        /* Snapshot flush */
+        check_flush = (struct task_check *) &snapshot_checks[i][1];
+
+        task_flush = flb_sp_task_create(sp, check_flush->name, check_flush->exec);
+        if (!task_flush) {
+            flb_error("[sp test] wrong check '%s', fix it!", check_flush->name);
+            continue;
+        }
+
+        snprintf(stream_name, 100, "%s-%d", "__flush_SNAPSHOT", i);
+        task_flush->cmd->stream_name = flb_sds_create(stream_name);
+        task_flush->cmd->type = FLB_SP_FLUSH_SNAPSHOT;
+
+        out_buf = NULL;
+        out_size = 0;
+
+        ret = flb_sp_test_do(sp, task_flush,
+                             "samples", 7,
+                             data_buf, data_size,
+                             &out_buf, &out_size);
+        if (ret == -1) {
+            flb_error("[sp test] error processing check '%s'", check_flush->name);
+            flb_sp_task_destroy(task_flush);
+            continue;
+        }
+
+        flb_sp_test_fd_event(task->window.fd, task_flush, &out_buf, &out_size);
+
+        flb_info("[sp test] id=%i, SQL => '%s'", check_flush->id, check_flush->exec);
+        check_flush->cb_check(check_flush->id, check_flush, out_buf, out_size);
+        flb_pack_print(out_buf, out_size);
+        flb_free(out_buf);
+
+        flb_free(data_buf);
+        data_buf = NULL;
+    }
+
+    flb_free(data_buf);
+    flb_sp_destroy(sp);
+    mk_event_loop_destroy(config->evl);
+    flb_free(config);
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
 TEST_LIST = {
     { "invalid_queries", invalid_queries},
     { "select_keys",     test_select_keys},
     { "select_subkeys",  test_select_subkeys},
     { "window",          test_window},
+    { "snapshot",        test_snapshot},
     { NULL }
 };

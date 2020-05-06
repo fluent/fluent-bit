@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,11 @@
 
 #include "kube_meta.h"
 #include "kube_props.h"
+
+#define FLB_KUBE_PROP_NO_STREAM 0
+#define FLB_KUBE_PROP_STREAM_STDOUT 1
+#define FLB_KUBE_PROP_STREAM_STDERR 2
+#define FLB_KUBE_PROP_STREAM_UNKNOWN 3
 
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
                       const char *prop, int prop_len,

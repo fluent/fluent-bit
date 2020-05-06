@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,9 +21,12 @@
 #ifndef FLB_SP_TIMESERIES_H
 #define FLB_SP_TIMESERIES_H
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/stream_processor/flb_sp_parser.h>
+
 #include <math.h>
 #include <float.h>
-#include <fluent-bit/stream_processor/flb_sp_parser.h>
 
 #define TIMESERIES_FUNCTIONS_SIZE 2
 
@@ -67,6 +70,10 @@ struct timeseries *cb_forecast_clone(struct timeseries *ts)
 
     forecast_c = (struct timeseries_forecast *)
                  flb_calloc(1, sizeof(struct timeseries_forecast));
+    if (!forecast_c) {
+        flb_errno();
+        return NULL;
+    }
 
     forecast_c->sigma_x = forecast->sigma_x;
     forecast_c->sigma_y = forecast->sigma_y;
@@ -90,21 +97,26 @@ void cb_forecast_add(struct timeseries *ts, struct flb_time *tm)
     switch (val->type) {
     /* Forecast values are always floating points */
     case FLB_SP_NUM_I64:
-        if (!forecast->offset)
-        {
+        if (!forecast->offset) {
             forecast->offset = flb_calloc(1, sizeof(double));
+            if (!forecast->offset) {
+                flb_errno();
+                return;
+            }
             *forecast->offset = (double) val->i64;
         }
 
         x = ((double) val->i64 - *forecast->offset);
         break;
     case FLB_SP_NUM_F64:
-        if (!forecast->offset)
-        {
+        if (!forecast->offset) {
             forecast->offset = flb_calloc(1, sizeof(double));
+            if (!forecast->offset) {
+                flb_errno();
+                return;
+            }
             *forecast->offset = val->f64;
         }
-
         x = val->f64 - *forecast->offset;
         break;
     default:
@@ -112,9 +124,12 @@ void cb_forecast_add(struct timeseries *ts, struct flb_time *tm)
         break;
     }
 
-    if (!forecast->latest_x)
-    {
+    if (!forecast->latest_x) {
         forecast->latest_x = flb_malloc(sizeof(double));
+        if (!forecast->latest_x) {
+            flb_errno();
+            return;
+        }
     }
 
     *forecast->latest_x = x;
@@ -272,7 +287,7 @@ void cb_forecast_r_calc(struct timeseries *ts, struct flb_sp_cmd_key *cmd_key,
             break;
         }
 
-        if (result < 0) {
+        if (result < 0 || result > maximum_x) {
             result = maximum_x;
         }
     }

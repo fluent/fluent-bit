@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,8 +17,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
@@ -109,8 +108,8 @@ static int gelf_send_udp_chunked(struct flb_out_gelf_config *ctx, void *msg,
         chunks++;
 
     if (chunks > 128) {
-        flb_error("[out_gelf] message too big: %zd bytes, too many chunks",
-                  msg_size);
+        flb_plg_error(ctx->ins, "message too big: %zd bytes, too many chunks",
+                      msg_size);
         return -1;
     }
 
@@ -202,11 +201,11 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
     return 0;
 }
 
-void cb_gelf_flush(const void *data, size_t bytes,
-                   const char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_gelf_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = out_context;
     flb_sds_t s;
@@ -226,7 +225,7 @@ void cb_gelf_flush(const void *data, size_t bytes,
     if (ctx->mode != FLB_GELF_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
         if (!u_conn) {
-            flb_error("[out_gelf] no upstream connections available");
+            flb_plg_error(ctx->ins, "no upstream connections available");
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
@@ -280,7 +279,7 @@ void cb_gelf_flush(const void *data, size_t bytes,
             }
         }
         else {
-            flb_error("[out_gelf] error encoding to GELF");
+            flb_plg_error(ctx->ins, "error encoding to GELF");
         }
 
         flb_sds_destroy(s);
@@ -295,22 +294,16 @@ void cb_gelf_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
-                 void *data)
+static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
+                        void *data)
 {
     int ret;
     int fd;
     const char *tmp;
     struct flb_out_gelf_config *ctx = NULL;
 
-
     /* Set default network configuration */
-    if (!ins->host.name) {
-        ins->host.name = flb_strdup("127.0.0.1");
-    }
-    if (ins->host.port == 0) {
-        ins->host.port = 12201;
-    }
+    flb_output_net_default("127.0.0.1", 12201, ins);
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_out_gelf_config));
@@ -318,6 +311,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     /* Config Mode */
     tmp = flb_output_get_property("mode", ins);
@@ -332,7 +326,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
             ctx->mode = FLB_GELF_UDP;
         }
         else {
-            flb_error("[out_gelf] Unknown gelf mode %s", tmp);
+            flb_plg_error(ctx->ins, "Unknown gelf mode %s", tmp);
             flb_free(ctx);
             return -1;
         }
@@ -413,7 +407,8 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
             flb_free(ctx);
             return -1;
         }
-    } else {
+    }
+    else {
         int io_flags = FLB_IO_TCP;
 
         if (ctx->mode == FLB_GELF_TLS) {
@@ -437,7 +432,7 @@ int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
     return 0;
 }
 
-int cb_gelf_exit(void *data, struct flb_config *config)
+static int cb_gelf_exit(void *data, struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = data;
 

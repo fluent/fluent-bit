@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Throttling
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,9 @@
 
 #ifndef FLB_FILTER_THROTTLE_H
 #define FLB_FILTER_THROTTLE_H
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
 
 /* actions */
 #define THROTTLE_RET_KEEP  0
@@ -39,6 +42,7 @@ struct flb_filter_throttle_ctx {
 
     /* internal */
     struct throttle_window *hash;
+    struct flb_filter_instance *ins;
 };
 
 struct ticker {

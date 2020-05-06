@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
 
@@ -28,35 +29,28 @@
 #include "kube_meta.h"
 #include "kube_property.h"
 
+#define FLB_KUBE_PROP_PARSER "parser"
+#define FLB_KUBE_PROP_PARSER_LEN (sizeof(FLB_KUBE_PROP_PARSER) - 1)
+#define FLB_KUBE_PROP_EXCLUDE "exclude"
+#define FLB_KUBE_PROP_EXCLUDE_LEN (sizeof(FLB_KUBE_PROP_EXCLUDE) - 1)
+
 static inline int prop_cmp(const char *key, size_t keylen,
                            const char *property, size_t proplen)
 {
-    return strncmp(key, property, keylen < proplen ? keylen : proplen) == 0;
+    return proplen >= keylen && strncmp(key, property, keylen) == 0;
 }
 
-static inline const char *strnchr(const char *s, char c, size_t len)
+static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta,
+                                    struct flb_kube *ctx)
 {
-    while (len > 0) {
-        if (*s == c) {
-            return s;
-        }
-        s++;
-        len--;
-    }
-    return 0;
-}
-
-static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta)
-{
-    flb_warn("[filter_kube] annotation '%s' not allowed "
-             "(ns='%s' pod_name='%s')",
-             prop, meta->namespace, meta->podname);
+    flb_plg_warn(ctx->ins, "annotation '%s' not allowed "
+                 "(ns='%s' pod_name='%s')",
+                 prop, meta->namespace, meta->podname);
 }
 
 /* Property: parser */
 static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
-                           const char *container, size_t container_len,
-                           const char *stream, size_t stream_len,
+                           int is_container_specific, int stream,
                            const char *val_buf, size_t val_len,
                            struct flb_kube_props *props)
 {
@@ -65,15 +59,8 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
 
     /* Parser property must be allowed by k8s-logging.parser */
     if (ctx->k8s_logging_parser == FLB_FALSE) {
-        prop_not_allowed("fluentbit.io/parser", meta);
+        prop_not_allowed("fluentbit.io/parser", meta, ctx);
         return -1;
-    }
-
-    /* If the parser is for a specific container, and this is not
-     * that container, bail out
-     */
-    if (container && strncmp(container, meta->container_name, container_len)) {
-        return 0;
     }
 
     /* Check the parser exists */
@@ -86,33 +73,43 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     /* Get parser context */
     parser = flb_parser_get(tmp, ctx->config);
     if (!parser) {
-        flb_warn("[filter_kube] annotation parser '%s' not found "
-                 "(ns='%s' pod_name='%s', container_name='%s')",
-                 tmp, meta->namespace, meta->podname, meta->container_name);
+        flb_plg_warn(ctx->ins, "annotation parser '%s' not found "
+                     "(ns='%s' pod_name='%s', container_name='%s')",
+                     tmp, meta->namespace, meta->podname, meta->container_name);
         flb_free(tmp);
         return -1;
     }
 
     /* Save the parser in the properties context */
-    if (!stream || prop_cmp("stdout", sizeof("stdout")-1, stream, stream_len)) {
+    if ((stream == FLB_KUBE_PROP_NO_STREAM ||
+         stream == FLB_KUBE_PROP_STREAM_STDOUT) &&
+        (is_container_specific == FLB_TRUE ||
+         props->stdout_parser == FLB_KUBE_PROP_UNDEF)) {
         props->stdout_parser = flb_sds_create(tmp);
     }
-    if (stream && prop_cmp("stderr", sizeof("stderr")-1, stream, stream_len)) {
+    if ((stream == FLB_KUBE_PROP_NO_STREAM ||
+         stream == FLB_KUBE_PROP_STREAM_STDERR) &&
+        (is_container_specific == FLB_TRUE ||
+         props->stderr_parser == FLB_KUBE_PROP_UNDEF)) {
         props->stderr_parser = flb_sds_create(tmp);
     }
+
     flb_free(tmp);
+
     return 0;
 }
 
 static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                            int is_container_specific, int stream,
                             const char *val_buf, size_t val_len,
                             struct flb_kube_props *props)
 {
     char *tmp;
+    int exclude;
 
     /* Exclude property must be allowed by k8s-logging.exclude */
     if (ctx->k8s_logging_exclude == FLB_FALSE) {
-        prop_not_allowed("fluentbit.io/exclude", meta);
+        prop_not_allowed("fluentbit.io/exclude", meta, ctx);
         return -1;
     }
 
@@ -123,56 +120,124 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
         return -1;
     }
 
+    exclude = flb_utils_bool(tmp) == FLB_TRUE ?
+              FLB_KUBE_PROP_TRUE : FLB_KUBE_PROP_FALSE;
+
     /* Save the exclude property in the context */
-    props->exclude = flb_utils_bool(tmp);
+    if ((stream == FLB_KUBE_PROP_NO_STREAM ||
+         stream == FLB_KUBE_PROP_STREAM_STDOUT) &&
+        (is_container_specific == FLB_TRUE ||
+         props->stdout_exclude == FLB_KUBE_PROP_UNDEF)) {
+        props->stdout_exclude = exclude;
+    }
+    if ((stream == FLB_KUBE_PROP_NO_STREAM ||
+         stream == FLB_KUBE_PROP_STREAM_STDERR) &&
+        (is_container_specific == FLB_TRUE ||
+         props->stderr_exclude == FLB_KUBE_PROP_UNDEF)) {
+        props->stderr_exclude = exclude;
+    }
+
     flb_free(tmp);
 
     return 0;
 }
-
-#define FLB_STDERR_PARSER_ANNOTATION   "parser_stderr"
-#define FLB_STDOUT_PARSER_ANNOTATION   "parser_stdout"
-#define FLB_UNIFIED_PARSER_ANNOTATION  "parser"
 
 int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
                       const char *prop, int prop_len,
                       const char *val_buf, size_t val_len,
                       struct flb_kube_props *props)
 {
-    // Parser can be:
-    //  fluentbit.io/parser: X
-    //  fluentbit.io/parser[-container]: X
-    //  fluentbit.io/parser_stdout[-container]: X
-    //  fluentbit.io/parser_stderr[-container: X
-    if (prop_cmp(FLB_UNIFIED_PARSER_ANNOTATION, sizeof(FLB_UNIFIED_PARSER_ANNOTATION)-1, prop, prop_len)) {
-        char *stream = 0;
-        const char *container = 0;
-        size_t stream_len =0;
-        size_t container_len = 0;
-        if (prop_cmp(FLB_STDOUT_PARSER_ANNOTATION, sizeof(FLB_STDOUT_PARSER_ANNOTATION)-1, prop, prop_len)) {
-            stream = "stdout";
-            stream_len = sizeof("stdout");
-        }
-        else if (prop_cmp(FLB_STDERR_PARSER_ANNOTATION, sizeof(FLB_STDERR_PARSER_ANNOTATION)-1, prop, prop_len)) {
-            stream = "stderr";
-            stream_len = sizeof("stderr");
-        }
-        // Now check if we have parser-container or just parser
-        container = strnchr(prop, '-', prop_len);
-        if (container) {
-            container++;
-            container_len = prop_len - (container - prop);
-        }
-        prop_set_parser(ctx, meta,
-                        container, container_len,
-                        stream, stream_len,
-                        val_buf, val_len, props);
+    /*
+     * Property can take the following forms:
+     *  <property> applies to streams stdout and stderr of every pod's containers
+     *  <property>-<container> applies to streams stdout and stderr of a specific pod's container
+     *  <property>_stdout applies to stream stdout of every pod's containers
+     *  <property>_stderr applies to stream stderr of every pod's containers
+     *  <property>_stdout-<container> applies to stream stdout of a specific pod's container
+     *  <property>_stderr-<container> applies to stream stderr of a specific pod's container
+     */
+    const char *cur = prop;
+    size_t len = prop_len;
+    const char *container = NULL;
+    size_t container_len = 0;
+    int stream = FLB_KUBE_PROP_NO_STREAM;
+    int (*function)(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                    int is_container_specific, int stream,
+                    const char *val_buf, size_t val_len,
+                    struct flb_kube_props *props);
+
+    if (prop_cmp(FLB_KUBE_PROP_PARSER, FLB_KUBE_PROP_PARSER_LEN, prop, prop_len)) {
+        function = prop_set_parser;
+        cur += FLB_KUBE_PROP_PARSER_LEN;
     }
-    else if (prop_cmp("exclude", sizeof("exclude")-1, prop, prop_len)) {
-        prop_set_exclude(ctx, meta, val_buf, val_len, props);
+    else if (prop_cmp(FLB_KUBE_PROP_EXCLUDE, FLB_KUBE_PROP_EXCLUDE_LEN, prop, prop_len)) {
+        function = prop_set_exclude;
+        cur += FLB_KUBE_PROP_EXCLUDE_LEN;
+    }
+    else {
+        flb_plg_warn(ctx->ins, "unknown annotation 'fluentbit.io/%.*s' "
+                     "(ns='%s' pod_name='%s')",
+                     prop_len, prop, meta->namespace, meta->podname);
+        return -1;
     }
 
-    return 0;
+    len = prop_len - (cur - prop);
+
+    if (prop_cmp("_", 1, cur, len)) {
+        cur++;
+        len--;
+
+        if (prop_cmp("stdout", sizeof("stdout") - 1, cur, len)) {
+            stream = FLB_KUBE_PROP_STREAM_STDOUT;
+            cur += sizeof("stdout") - 1;
+        }
+        else if (prop_cmp("stderr", sizeof("stderr") - 1, cur, len)) {
+            stream = FLB_KUBE_PROP_STREAM_STDERR;
+            cur += sizeof("stderr") - 1;
+        }
+        else {
+            flb_plg_warn(ctx->ins, "invalid stream in annotation "
+                         "'fluentbit.io/%.*s' (ns='%s' pod_name='%s')",
+                      prop_len, prop, meta->namespace, meta->podname);
+            return -1;
+        }
+
+        len = prop_len - (cur - prop);
+    }
+
+    if (prop_cmp("-", 1, cur, len)) {
+        cur++;
+        len--;
+
+        if (len == 0) {
+            flb_plg_warn(ctx->ins, "invalid container in annotation "
+                         "'fluentbit.io/%.*s' (ns='%s' pod_name='%s')",
+                      prop_len, prop, meta->namespace, meta->podname);
+            return -1;
+        }
+
+        container = cur;
+        container_len = len;
+        len = 0;
+    }
+
+    if (len > 0) {
+        flb_plg_warn(ctx->ins, "invalid annotation 'fluentbit.io/%.*s' "
+                     "(ns='%s' pod_name='%s')",
+                     prop_len, prop, meta->namespace, meta->podname);
+        return -1;
+    }
+
+    /* If the property is for a specific container, and this is not
+     * that container, bail out
+     */
+    if (container && strncmp(container, meta->container_name, container_len)) {
+        return 0;
+    }
+
+    return function(ctx, meta,
+                    (container ? FLB_TRUE : FLB_FALSE), stream,
+                    val_buf, val_len, props);
 }
 
 int flb_kube_prop_pack(struct flb_kube_props *props,
@@ -183,7 +248,7 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     msgpack_sbuffer sbuf;
 
     /* Number of fields in props structure */
-    size = 3;
+    size = FLB_KUBE_NUMBER_OF_PROPS;
 
     /* Create msgpack buffer */
     msgpack_sbuffer_init(&sbuf);
@@ -192,7 +257,7 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     /* Main array */
     msgpack_pack_array(&pck, size);
 
-    /* Index 0: FLB_KUBE_PROP_STDOUT_PARSER */
+    /* Index 0: FLB_KUBE_PROPS_STDOUT_PARSER */
     if (props->stdout_parser) {
         msgpack_pack_str(&pck, flb_sds_len(props->stdout_parser));
         msgpack_pack_str_body(&pck, props->stdout_parser, flb_sds_len(props->stdout_parser));
@@ -200,7 +265,8 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
     else {
         msgpack_pack_nil(&pck);
     }
-    /* Index 1: FLB_KUBE_PROP_STDERR_PARSER */
+
+    /* Index 1: FLB_KUBE_PROPS_STDERR_PARSER */
     if (props->stderr_parser) {
         msgpack_pack_str(&pck, flb_sds_len(props->stderr_parser));
         msgpack_pack_str_body(&pck, props->stderr_parser, flb_sds_len(props->stderr_parser));
@@ -209,8 +275,16 @@ int flb_kube_prop_pack(struct flb_kube_props *props,
         msgpack_pack_nil(&pck);
     }
 
-    /* Index 2: FLB_KUBE_PROP_EXCLUDE */
-    if (props->exclude == FLB_TRUE) {
+    /* Index 2: FLB_KUBE_PROPS_STDOUT_EXCLUDE */
+    if (props->stdout_exclude == FLB_KUBE_PROP_TRUE) {
+        msgpack_pack_true(&pck);
+    }
+    else {
+        msgpack_pack_false(&pck);
+    }
+
+    /* Index 3: FLB_KUBE_PROPS_STDERR_EXCLUDE */
+    if (props->stderr_exclude == FLB_KUBE_PROP_TRUE) {
         msgpack_pack_true(&pck);
     }
     else {
@@ -261,14 +335,13 @@ int flb_kube_prop_unpack(struct flb_kube_props *props,
         props->stderr_parser = flb_sds_create_len(o.via.str.ptr, o.via.str.size);
     }
 
-    /* Index 2: Exclude */
-    o = root.via.array.ptr[FLB_KUBE_PROPS_EXCLUDE];
-    if (o.via.boolean == FLB_TRUE) {
-        props->exclude = FLB_TRUE;
-    }
-    else {
-        props->exclude = FLB_FALSE;
-    }
+    /* Index 2: stdout_exclude */
+    o = root.via.array.ptr[FLB_KUBE_PROPS_STDOUT_EXCLUDE];
+    props->stdout_exclude = o.via.boolean;
+
+    /* Index 3: stderr_exclude */
+    o = root.via.array.ptr[FLB_KUBE_PROPS_STDERR_EXCLUDE];
+    props->stderr_exclude = o.via.boolean;
 
     msgpack_unpacked_destroy(&result);
     return 0;

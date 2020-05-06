@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,48 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_utils.h>
+
+/*
+ * Perform URI encoding for the given string. Always returns a new sds buffer,
+ * if it fails it returns NULL.
+ */
+flb_sds_t flb_uri_encode(const char *uri, size_t len)
+{
+    int i;
+    flb_sds_t buf = NULL;
+    flb_sds_t tmp = NULL;
+
+    buf = flb_sds_create_size(len * 2);
+    if (!buf) {
+        flb_error("[uri] cannot allocate buffer for URI encoding");
+        return NULL;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (flb_uri_to_encode(uri[i]) == FLB_TRUE) {
+            tmp = flb_sds_printf(&buf, "%%%02X", (unsigned char) *(uri + i));
+            if (!tmp) {
+                flb_error("[uri] error formatting special character");
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            continue;
+        }
+
+        /* Direct assignment, just copy the character */
+        if (buf) {
+            tmp = flb_sds_cat(buf, uri + i, 1);
+            if (!tmp) {
+                flb_error("[uri] error composing outgoing buffer");
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            buf = tmp;
+        }
+    }
+
+    return buf;
+}
 
 /* Retrieve a given field based on it expected position in the URI */
 struct flb_uri_field *flb_uri_get(struct flb_uri *uri, int pos)
@@ -69,7 +111,7 @@ struct flb_uri *flb_uri_create(const char *full_uri)
     p = ((char *) p) + sizeof(struct flb_uri);
     uri->map = p;
 
-    /* Initilize fields list */
+    /* Initialize fields list */
     mk_list_init(&uri->list);
     uri->count = 0;
 

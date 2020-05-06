@@ -1,0 +1,49 @@
+#cmakedefine01 WITHOUT_OPTIMIZATION
+#cmakedefine01 ENABLE_DEVEL
+#cmakedefine01 ENABLE_REFCNT_DEBUG
+#cmakedefine01 ENABLE_SHAREDPTR_DEBUG
+
+#cmakedefine01 HAVE_ATOMICS_32
+#cmakedefine01 HAVE_ATOMICS_32_SYNC
+
+#if (HAVE_ATOMICS_32)
+# if (HAVE_ATOMICS_32_SYNC)
+#  define ATOMIC_OP32(OP1,OP2,PTR,VAL) __sync_ ## OP1 ## _and_ ## OP2(PTR, VAL)
+# else
+#  define ATOMIC_OP32(OP1,OP2,PTR,VAL) __atomic_ ## OP1 ## _ ## OP2(PTR, VAL, __ATOMIC_SEQ_CST)
+# endif
+#endif
+
+#cmakedefine01 HAVE_ATOMICS_64
+#cmakedefine01 HAVE_ATOMICS_64_SYNC
+
+#if (HAVE_ATOMICS_64)
+# if (HAVE_ATOMICS_64_SYNC)
+#  define ATOMIC_OP64(OP1,OP2,PTR,VAL) __sync_ ## OP1 ## _and_ ## OP2(PTR, VAL)
+# else
+#  define ATOMIC_OP64(OP1,OP2,PTR,VAL) __atomic_ ## OP1 ## _ ## OP2(PTR, VAL, __ATOMIC_SEQ_CST)
+# endif
+#endif
+
+#cmakedefine01 WITH_PKGCONFIG
+#cmakedefine01 WITH_HDRHISTOGRAM
+#cmakedefine01 WITH_ZLIB
+#cmakedefine01 WITH_ZSTD
+#cmakedefine01 WITH_LIBDL
+#cmakedefine01 WITH_PLUGINS
+#define WITH_SNAPPY 1
+#define WITH_SOCKEM 1
+#cmakedefine01 WITH_SSL
+#cmakedefine01 WITH_SASL
+#cmakedefine01 WITH_SASL_SCRAM
+#cmakedefine01 WITH_SASL_OAUTHBEARER
+#cmakedefine01 WITH_SASL_CYRUS
+#cmakedefine01 WITH_LZ4_EXT
+#cmakedefine01 HAVE_REGEX
+#cmakedefine01 HAVE_STRNDUP
+#cmakedefine01 HAVE_PTHREAD_SETNAME_GNU
+#cmakedefine01 HAVE_PTHREAD_SETNAME_DARWIN
+#cmakedefine01 WITH_C11THREADS
+#cmakedefine01 WITH_CRC32C_HW
+#define SOLIB_EXT "${CMAKE_SHARED_LIBRARY_SUFFIX}"
+#define BUILT_WITH  "${BUILT_WITH}"

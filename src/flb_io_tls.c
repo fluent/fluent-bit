@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -119,20 +119,23 @@ static int flb_tls_load_system_cert(struct flb_tls_context *ctx)
 
 struct flb_tls_context *flb_tls_context_new(int verify,
                                             int debug,
-                                            char *ca_path,
-                                            char *ca_file, char *crt_file,
-                                            char *key_file, char *key_passwd)
+                                            const char *vhost,
+                                            const char *ca_path,
+                                            const char *ca_file, const char *crt_file,
+                                            const char *key_file, const char *key_passwd)
 {
     int ret;
     struct flb_tls_context *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_tls_context));
     if (!ctx) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
+
     ctx->verify    = verify;
     ctx->debug     = debug;
+    ctx->vhost     = (char *) vhost;
     ctx->certs_set = 0;
 
     mbedtls_entropy_init(&ctx->entropy);
@@ -306,6 +309,7 @@ struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)
 int flb_tls_session_destroy(struct flb_tls_session *session)
 {
     if (session) {
+        mbedtls_ssl_close_notify(&session->ssl);
         mbedtls_ssl_free(&session->ssl);
         mbedtls_ssl_config_free(&session->conf);
         flb_free(session);
@@ -327,10 +331,14 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
 
     session = flb_tls_session_new(u->tls->context);
     if (!session) {
-        flb_error("[io_tls] could not create tls session");
+        flb_error("[io_tls] could not create TLS session for %s:%i",
+                  u->tcp_host, u->tcp_port);
         return -1;
     }
-    mbedtls_ssl_set_hostname(&session->ssl,u->tcp_host);
+    if (!u->tls->context->vhost) {
+        u->tls->context->vhost = u->tcp_host;
+    }
+    mbedtls_ssl_set_hostname(&session->ssl, u->tls->context->vhost);
 
     /* Store session and mbedtls net context fd */
     u_conn->tls_session = session;
@@ -356,7 +364,6 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
             flag = MK_EVENT_READ;
         }
         else {
-
         }
 
         /*
@@ -382,6 +389,7 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
         mk_event_del(u->evl, &u_conn->event);
     }
     flb_trace("[io_tls] connection OK");
+
     return 0;
 
  error:

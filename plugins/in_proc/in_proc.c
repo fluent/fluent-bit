@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
@@ -99,7 +99,8 @@ struct flb_in_proc_mem_offset mem_linux[] = {
 
 
 
-static pid_t get_pid_from_procname_linux(const char* proc)
+static pid_t get_pid_from_procname_linux(struct flb_in_proc_config *ctx,
+                                         const char* proc)
 {
     pid_t ret = -1;
     glob_t glb;
@@ -116,16 +117,16 @@ static pid_t get_pid_from_procname_linux(const char* proc)
     if (ret_glb != 0) {
         switch(ret_glb){
         case GLOB_NOSPACE:
-            flb_warn("[%s] glob: no space", FLB_IN_PROC_NAME);
+            flb_plg_warn(ctx->ins, "glob: no space");
             break;
         case GLOB_NOMATCH:
-            flb_warn("[%s] glob: no match", FLB_IN_PROC_NAME);
+            flb_plg_warn(ctx->ins, "glob: no match");
             break;
         case GLOB_ABORTED:
-            flb_warn("[%s] glob: aborted", FLB_IN_PROC_NAME);
+            flb_plg_warn(ctx->ins, "glob: aborted");
             break;
         default:
-            flb_warn("[%s] glob: other error", FLB_IN_PROC_NAME);
+            flb_plg_warn(ctx->ins, "glob: other error");
         }
         return ret;
     }
@@ -355,7 +356,7 @@ static int update_mem_linux(struct flb_in_proc_config *ctx,
     fp = fopen(path, "r");
 
     if (fp == NULL) {
-        flb_error("[%s] %s open error",FLB_IN_PROC_NAME, path);
+        flb_plg_error(ctx->ins, "open error: %s", path);
         mem_linux_clear(mem_stat);
         return -1;
     }
@@ -414,7 +415,7 @@ static int update_fds_linux(struct flb_in_proc_config *ctx,
     dirp = opendir(path);
     if (dirp == NULL) {
         perror("opendir");
-        flb_error("[%s] opendir error %s",FLB_IN_PROC_NAME, path);
+        flb_plg_error(ctx->ins, "opendir error %s", path);
         return -1;
     }
 
@@ -437,7 +438,7 @@ static int in_proc_collect_linux(struct flb_input_instance *i_ins,
     struct flb_in_proc_mem_linux mem;
 
     if (ctx->proc_name != NULL){
-        ctx->pid = get_pid_from_procname_linux(ctx->proc_name);
+        ctx->pid = get_pid_from_procname_linux(ctx, ctx->proc_name);
         update_alive(ctx);
 
         if (ctx->mem == FLB_TRUE && ctx->alive == FLB_TRUE) {
@@ -463,7 +464,6 @@ static int in_proc_init(struct flb_input_instance *in,
                           struct flb_config *config, void *data)
 {
     int ret;
-
     struct flb_in_proc_config *ctx = NULL;
     (void) data;
 
@@ -478,11 +478,12 @@ static int in_proc_init(struct flb_input_instance *in,
     ctx->fds   = FLB_TRUE;
     ctx->proc_name = NULL;
     ctx->pid = -1;
+    ctx->ins = in;
 
     configure(ctx, in);
 
     if (ctx->proc_name == NULL) {
-        flb_error("[%s] \"proc_name\" is NULL", FLB_IN_PROC_NAME);
+        flb_plg_error(ctx->ins, "'proc_name' is not set");
         flb_free(ctx);
         return -1;
     }
@@ -497,7 +498,7 @@ static int in_proc_init(struct flb_input_instance *in,
                                        ctx->interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_error("Could not set collector for Proc input plugin");
+        flb_plg_error(ctx->ins, "could not set collector for Proc input plugin");
         flb_free(ctx);
         return -1;
     }
@@ -509,6 +510,10 @@ static int in_proc_exit(void *data, struct flb_config *config)
 {
     (void) *config;
     struct flb_in_proc_config *ctx = data;
+
+    if (!ctx) {
+        return 0;
+    }
 
     /* Destroy context */
     flb_free(ctx->proc_name);
