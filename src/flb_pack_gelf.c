@@ -562,22 +562,22 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                         v->via.u64 = (uint64_t)(val[0] - '0');
                     }
                     else {
-                        int i;
+                        int n;
                         char* allowed_levels[] = {
                             "emerg", "alert", "crit", "err",
                             "warning", "notice", "info", "debug",
                             NULL
                         };
-                        for (i = 0; allowed_levels[i] != NULL; ++i) {
-                            if (val_len == strlen(allowed_levels[i]) &&
-                                !strncasecmp(val, allowed_levels[i], val_len)) {
+                        for (n = 0; allowed_levels[n] != NULL; ++n) {
+                            if (val_len == strlen(allowed_levels[n]) &&
+                                !strncasecmp(val, allowed_levels[n], val_len)) {
                                 v = &vtmp;
                                 v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
-                                v->via.u64 = (uint64_t)i;
+                                v->via.u64 = (uint64_t)n;
                                 break;
                             }
                         }
-                        if (allowed_levels[i] == NULL) {
+                        if (allowed_levels[n] == NULL) {
                             flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
                                       "but should be in 0..7 or a syslog keyword", val_len, val);
                             return NULL;
