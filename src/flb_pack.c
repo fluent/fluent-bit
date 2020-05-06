@@ -1463,6 +1463,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
+            msgpack_object vtmp;
 
             if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
                 continue;
@@ -1506,35 +1507,29 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 key_len = 5;
                 if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         if ( v->via.u64 > 7 ) {
-                            flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", but should be in 0..7", v->via.u64);
+                            flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", but should be in 0..7  or a syslog keyword", v->via.u64);
                             return NULL;
                         }
-                } else if (v->type == MSGPACK_OBJECT_STR){
+                } else if (v->type == MSGPACK_OBJECT_STR)   {
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
                     if ( !(val_len == 1 && val[0] >= '0' && val[0] <= '7' )) {
-                        char* allowed_levels[] = {
-                            "emerg",
-                            "alert",
-                            "crit",
-                            "err",
-                            "warning",
-                            "notice",
-                            "info",
-                            "debug"
-                        };
-                        const size_t array_size = sizeof(allowed_levels) / sizeof(allowed_levels[0]);
                         int i;
-                        
-                        for (i = 0; i < array_size; ++i) {
-                            if (!strncmp(mk_string_tolower(val), allowed_levels[i], val_len)) {
+                        char* allowed_levels[] = {
+                            "emerg", "alert", "crit", "err",
+                            "warning", "notice", "info", "debug",
+                            NULL
+                        };
+                        for (i = 0; allowed_levels[i] != NULL; ++i) {
+                            if (!strncasecmp(val, allowed_levels[i], val_len)) {
+                                v = &vtmp;
                                 v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
                                 v->via.u64 = (uint64_t)i;
                                 break;
                             }
                         }
-                        if (i == array_size) {
-                            flb_error("[flb_msgpack_to_gelf] level is '%.*s', but should be in 0..7", val_len, val);
+                        if (allowed_levels[i] == NULL) {
+                            flb_error("[flb_msgpack_to_gelf] level is '%.*s', but should be in 0..7 or a syslog keyword", val_len, val);
                             return NULL;
                         }
                     }
