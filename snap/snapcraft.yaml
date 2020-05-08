@@ -7,13 +7,13 @@ description: |
   It provides a flexible pluggable architecture to collect, enrich and deliver
   logs or metrics to multiple databases or cloud providers.
 license: 'Apache-2.0'
-icon: fluent-bit.svg
-grade: 'devel'
+icon: ./fluent-bit.svg
+adopt-info: fluent-bit
 confinement: 'strict'
 
 apps:
   fluent-bit:
-    command: bin/fluent-bit
+    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
 
 parts:
   fluent-bit:
