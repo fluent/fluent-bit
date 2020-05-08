@@ -139,7 +139,7 @@ static int logfmt_parser(struct flb_parser *parser,
                 }
                 else {
                    value = c;
-                   while (ident_byte[*c] && (c < end)) {
+                   while ((c < end) && ident_byte[*c]) {
                       c++;
                    }
                    value_len = c - value;
