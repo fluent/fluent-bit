@@ -477,7 +477,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
 #ifdef FLB_HAVE_METRICS
     if (out_th->o_ins->metrics) {
         if (ret == FLB_OK) {
-            records = flb_mp_count(task->buf, task->size);
+            records = task->records;
             flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, records,
                             out_th->o_ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size,
