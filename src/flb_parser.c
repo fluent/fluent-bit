@@ -582,6 +582,9 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     if (time_key) {
         flb_sds_destroy(time_key);
     }
+    if (time_offset) {
+        flb_sds_destroy(time_offset);
+    }
     if (types_str) {
         flb_sds_destroy(types_str);
     }
