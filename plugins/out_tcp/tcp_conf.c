@@ -45,6 +45,7 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        flb_free(ctx);
         return NULL;
     }
 
