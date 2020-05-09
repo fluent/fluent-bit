@@ -968,8 +968,11 @@ int flb_http_basic_auth(struct flb_http_client *c,
     memcpy(p, user, len_u);
     p[len_u] = ':';
     len_out = len_u + 1;
-    memcpy(p + len_out, passwd, len_p);
-    len_out += len_p;
+
+    if (passwd) {
+        memcpy(p + len_out, passwd, len_p);
+        len_out += len_p;
+    }
     p[len_out] = '\0';
 
     memcpy(tmp, "Basic ", 6);
