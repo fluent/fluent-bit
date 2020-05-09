@@ -136,6 +136,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         ret = bind(fd, (struct sockaddr *) &addr, sizeof(addr));
         if (ret == -1) {
             flb_errno();
+            flb_socket_close(fd);
             flb_error("[io] could not bind source_address=%s",
                       u->net.source_address);
             return -1;
