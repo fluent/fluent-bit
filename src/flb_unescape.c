@@ -126,6 +126,7 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
 {
     uint32_t ch;
     char temp[4];
+    const char *end;
     const char *next;
 
     int count_out = 0;
@@ -133,10 +134,10 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
     int esc_in = 0;
     int esc_out = 0;
 
-    while (*in_buf && count_in < sz) {
+    end = in_buf + sz;
+    while (in_buf < end && *in_buf && count_in < sz) {
         next = in_buf + 1;
-
-        if (*in_buf == '\\') {
+        if (next < end && *in_buf == '\\') {
             esc_in = 2;
             switch (*next) {
             case '"':
