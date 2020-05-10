@@ -107,3 +107,5 @@ foreach(source_file ${UNIT_TESTS_FILES})
     set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
   endif()
 endforeach()
+
+add_subdirectory(fuzzers)
