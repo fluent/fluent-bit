@@ -86,7 +86,6 @@ void flb_filter_do(struct flb_input_chunk *ic,
     memcpy(ntag, tag, tag_len);
     ntag[tag_len] = '\0';
 
-
     work_data = (const char *) data;
     work_size = bytes;
 
@@ -118,7 +117,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
             /* Invoke the filter callback */
             ret = f_ins->p->cb_filter(work_data,      /* msgpack buffer   */
                                       work_size,      /* msgpack size     */
-                                      tag, tag_len,   /* input tag        */
+                                      ntag, tag_len,  /* input tag        */
                                       &out_buf,       /* new data         */
                                       &out_size,      /* new data size    */
                                       f_ins,          /* filter instance  */
