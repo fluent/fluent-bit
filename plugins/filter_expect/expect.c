@@ -327,7 +327,6 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                 flb_ra_key_value_destroy(val);
                 return FLB_FALSE;
             }
-            flb_ra_key_value_destroy(val);
         }
         else if (rule->type == FLB_EXP_KEY_VAL_NOT_NULL) {
             if (!val) {
@@ -351,7 +350,6 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                 flb_ra_key_value_destroy(val);
                 return FLB_FALSE;
             }
-            flb_ra_key_value_destroy(val);
         }
         else if (rule->type == FLB_EXP_KEY_VAL_EQ) {
             if (!val) {
@@ -378,8 +376,12 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map)
                     return FLB_FALSE;
                 }
             }
+        }
+
+        if (val) {
             flb_ra_key_value_destroy(val);
         }
+
         n++;
     }
 
