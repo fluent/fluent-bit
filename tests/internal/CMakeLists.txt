@@ -108,4 +108,6 @@ foreach(source_file ${UNIT_TESTS_FILES})
   endif()
 endforeach()
 
-add_subdirectory(fuzzers)
+if(FLB_TESTS_INTERNAL_FUZZ)
+  add_subdirectory(fuzzers)
+endif()
