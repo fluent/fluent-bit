@@ -885,9 +885,12 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     char *api_buf;
     size_t api_size;
 
-    get_api_server_info(ctx,
-                        meta->namespace, meta->podname,
-                        &api_buf, &api_size);
+    ret = get_api_server_info(ctx,
+                              meta->namespace, meta->podname,
+                              &api_buf, &api_size);
+    if (ret == -1) {
+        return -1;
+    }
 
     ret = merge_meta(meta, ctx,
                      api_buf, api_size,
