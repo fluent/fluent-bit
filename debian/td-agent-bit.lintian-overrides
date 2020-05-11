@@ -1,3 +1,4 @@
+td-agent-bit: embedded-library *
 td-agent-bit: package-name-doesnt-match-sonames libfluent-bit
 td-agent-bit: embedded-library opt/td-agent-bit/bin/td-agent-bit: mbedtls
 td-agent-bit: embedded-library opt/td-agent-bit/lib/x86_64-linux-gnu/libfluent-bit.so: mbedtls
