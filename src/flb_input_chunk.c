@@ -79,7 +79,6 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 {
 #ifdef FLB_HAVE_METRICS
     int ret;
-    int records;
     char *buf_data;
     size_t buf_size;
 #endif
@@ -411,10 +410,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     size_t size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
-
-#ifdef FLB_HAVE_METRICS
-    int records;
-#endif
 
     /* Check if the input plugin has been paused */
     if (flb_input_buf_paused(in) == FLB_TRUE) {
