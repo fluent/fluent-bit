@@ -223,10 +223,7 @@ endif()
 
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
-
-if(FLB_MAXMINDDB)
-  REGISTER_FILTER_PLUGIN("filter_geoip2")
-endif()
+REGISTER_FILTER_PLUGIN("filter_geoip2")
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)

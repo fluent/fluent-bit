@@ -2,13 +2,14 @@
 #
 # To enalbe libmaxminddb, include this file:
 #
-#    include(cmake/libmaxminddb.cmake)
+#    include(libmaxminddb.cmake)
 
+include(ExternalProject)
 add_library(libmaxminddb STATIC IMPORTED GLOBAL)
 
 # Global Settings
-set(LIBMAXMINDDB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/libmaxminddb-1.3.2)
-set(LIBMAXMINDDB_DEST ${CMAKE_CURRENT_BINARY_DIR})
+set(LIBMAXMINDDB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/libmaxminddb-1.3.2)
+set(LIBMAXMINDDB_DEST ${CMAKE_CURRENT_BINARY_DIR}/libmaxminddb-1.3.2)
 
 # libmaxminddb (UNIX)
 ExternalProject_Add(maxminddb
@@ -16,7 +17,7 @@ ExternalProject_Add(maxminddb
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${LIBMAXMINDDB_SRC}
   INSTALL_DIR ${LIBMAXMINDDB_DEST}
-  CONFIGURE_COMMAND ./configure --disable-shared --prefix=${LIBMAXMINDDB_DEST}
+  CONFIGURE_COMMAND ${LIBMAXMINDDB_SRC}/configure --disable-shared --prefix=${LIBMAXMINDDB_DEST}
   BUILD_COMMAND $(MAKE)
   INSTALL_COMMAND $(MAKE) install)
 
@@ -29,4 +30,3 @@ else()
 endif()
 
 set_target_properties(libmaxminddb PROPERTIES IMPORTED_LOCATION "${LIBMAXMINDDB_STATIC_LIB}")
-include_directories("${LIBMAXMINDDB_DEST}/include/")

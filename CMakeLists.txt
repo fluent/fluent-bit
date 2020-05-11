@@ -72,7 +72,6 @@ option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_SYSTEM_STRPTIME     "Use strptime in system libc"  Yes)
-option(FLB_MAXMINDDB           "Enable libmaxminddb"          Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
@@ -654,12 +653,6 @@ if(FLB_INOTIFY)
   if(FLB_HAVE_INOTIFY)
     FLB_DEFINITION(FLB_HAVE_INOTIFY)
   endif()
-endif()
-
-# libmaxminddb
-if(FLB_MAXMINDDB)
-  include(cmake/libmaxminddb.cmake)
-  FLB_DEFINITION(FLB_HAVE_MAXMINDDB)
 endif()
 
 configure_file(
