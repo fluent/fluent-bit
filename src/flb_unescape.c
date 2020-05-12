@@ -93,7 +93,7 @@ static int u8_read_escape_sequence(const char *str, uint32_t *dest)
         i = 0;
         do {
             digs[dno++] = str[i++];
-        } while (octal_digit(str[i]) && dno < 3);
+        } while (dno < 3 && octal_digit(str[i]));
         ch = strtol(digs, NULL, 8);
     }
     else if (str[0] == 'x') {
