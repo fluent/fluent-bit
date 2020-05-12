@@ -170,7 +170,7 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
                 ch = '\r';
                 break;
             default:
-                size = end - in_buf + 1;
+                size = end - in_buf - 1;
                 printf("size=>%i\n", size);
                 esc_in = u8_read_escape_sequence((in_buf + 1), size, &ch) + 1;
             }
