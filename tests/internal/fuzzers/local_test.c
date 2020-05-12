@@ -20,19 +20,27 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
 #include <monkey/mk_core.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 
 /* declare external function test */
 int LLVMFuzzerTestOneInput(unsigned char *data, size_t size);
 
 int main(int argc, char **argv)
 {
+    int i;
     int ret;
-    char *test;
+    FILE *fp;
+    char *buffer;
+    long bytes;
     struct stat st;
 
     if (argc < 2) {
@@ -48,17 +56,30 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    /* Load file into the 'test' buffer */
-    test = mk_file_to_buffer(argv[1]);
-    if (!test) {
-        flb_error("cannot open/read testcase '%s'", argv[1]);
-        exit(EXIT_FAILURE);
+    if (!(fp = fopen(argv[1], "rb"))) {
+        flb_errno();
+        flb_error("cannot fopen(2) testcase file '%s'", argv[1]);
+        return -1;
     }
 
-    /* Invoke the fuzzer entry-point function */
-    ret = LLVMFuzzerTestOneInput((unsigned char *) test, st.st_size);
-    flb_info("unit test return value: %i", ret);
+    buffer = flb_malloc(st.st_size);
+    if (!buffer) {
+        flb_errno();
+        return -1;
+    }
 
-    mk_mem_free(test);
+    bytes = fread(buffer, st.st_size, 1, fp);
+    if (bytes < 1) {
+        fclose(fp);
+        flb_free(buffer);
+        return -1;
+    }
+    fclose(fp);
+
+    /* Invoke the fuzzer entry-point function */
+    for (i = 0; i < 1; i++) {
+        ret = LLVMFuzzerTestOneInput((unsigned char *) buffer, st.st_size);
+    }
+    flb_free(buffer);
     return 0;
 }
