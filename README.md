@@ -1,4 +1,4 @@
-# ![logo](fluentbit_logo.png)
+a# ![logo](fluentbit_logo.png)
 
 Travis CI:
 [![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
