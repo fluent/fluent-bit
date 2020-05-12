@@ -115,7 +115,7 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
 
     /* Config: Text encoding other than UTF-8 */
-    tmp = flb_input_get_property("encoding", i_ins);
+    tmp = flb_input_get_property("encoding", ins);
     if (tmp) {
         ctx->encoding = flb_get_encoder(tmp);
         if (!ctx->encoding) {
