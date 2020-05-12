@@ -503,6 +503,13 @@ static struct flb_config_map config_map[] = {
 
 #endif
 
+    /* Encoding Options */
+    {
+     FLB_CONFIG_MAP_STR, "encoding", NULL,
+     0, FLB_FALSE, 0,
+     "Encoding"
+    },
+
     /* EOF */
     {0}
 };
