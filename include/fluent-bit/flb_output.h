@@ -52,7 +52,6 @@
 #define FLB_OUTPUT_NET          32  /* output address may set host and port */
 #define FLB_OUTPUT_PLUGIN_CORE   0
 #define FLB_OUTPUT_PLUGIN_PROXY  1
-#define FLB_OUTPUT_KA_TIMEOUT   30
 
 struct flb_output_instance;
 
@@ -164,10 +163,6 @@ struct flb_output_instance {
      */
     struct flb_net_host host;
 
-    /* KeepAlive support for networking operations */
-    int keepalive;
-    int keepalive_timeout;
-
     /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
@@ -199,7 +194,7 @@ struct flb_output_instance {
      * through the command line arguments. This list is validated by the
      * plugin.
      */
-    struct mk_list  properties;
+    struct mk_list properties;
 
     /*
      * configuration map: a new API is landing on Fluent Bit v1.4 that allows
@@ -210,6 +205,11 @@ struct flb_output_instance {
      * and merge the 'properties' (above) into the map.
      */
     struct mk_list *config_map;
+
+    /* General network options like timeouts and keepalive */
+    struct flb_net_setup net_setup;
+    struct mk_list *net_config_map;
+    struct mk_list net_properties;
 
     struct mk_list _head;                /* link to config->inputs       */
 
@@ -477,7 +477,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
 #ifdef FLB_HAVE_METRICS
     if (out_th->o_ins->metrics) {
         if (ret == FLB_OK) {
-            records = flb_mp_count(task->buf, task->size);
+            records = task->records;
             flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, records,
                             out_th->o_ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size,
@@ -515,7 +515,20 @@ static inline void flb_output_return_do(int x)
 static inline int flb_output_config_map_set(struct flb_output_instance *ins,
                                             void *context)
 {
-    return flb_config_map_set(&ins->properties, ins->config_map, context);
+    int ret;
+
+    /* Process normal properties */
+    ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Net properties */
+    if (ins->net_config_map) {
+        ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
+                                 &ins->net_setup);
+    }
+    return ret;
 }
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,

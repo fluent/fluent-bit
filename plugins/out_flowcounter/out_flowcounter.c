@@ -145,7 +145,12 @@ static int out_fcount_init(struct flb_output_instance *ins, struct flb_config *c
         return -1;
     }
 
-    configure(ctx, ins, config);
+    ret = configure(ctx, ins, config);
+    if (ret < 0) {
+        flb_free(ctx);
+        return -1;
+    }
+
     flb_output_set_context(ins, ctx);
 
     return 0;

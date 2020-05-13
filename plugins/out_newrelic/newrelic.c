@@ -384,9 +384,11 @@ static void cb_newrelic_flush(const void *data, size_t bytes,
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
-        flb_sds_destroy(payload);
         if (compressed == FLB_TRUE) {
             flb_free(payload_buf);
+        }
+        else {
+            flb_sds_destroy(payload);
         }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -398,9 +400,11 @@ static void cb_newrelic_flush(const void *data, size_t bytes,
                         NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
-        flb_sds_destroy(payload);
         if (compressed == FLB_TRUE) {
             flb_free(payload_buf);
+        }
+        else {
+            flb_sds_destroy(payload);
         }
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);

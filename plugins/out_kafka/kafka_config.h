@@ -91,6 +91,8 @@ struct flb_kafka {
      */
     int blocked;
 
+    int dynamic_topic;
+
     /* Internal */
     rd_kafka_t *producer;
     rd_kafka_conf_t *conf;

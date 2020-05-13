@@ -29,6 +29,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_strptime.h>
+#include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_str.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -391,20 +393,47 @@ static int proc_types_str(const char *types_str, struct flb_parser_types **types
     return i;
 }
 
+static flb_sds_t get_parser_key(char *key,
+                                struct flb_config *config,
+                                struct mk_rconf_section *section)
+{
+    char *tmp;
+    flb_sds_t val;
+
+    tmp = mk_rconf_section_get_key(section, key, MK_RCONF_STR);
+    if (!tmp) {
+        return NULL;
+    }
+
+    val = flb_env_var_translate(config->env, tmp);
+    flb_free(tmp);
+
+    if (!val) {
+        return NULL;
+    }
+
+    if (flb_sds_len(val) == 0) {
+        flb_sds_destroy(val);
+        return NULL;
+    }
+
+    return val;
+}
+
 /* Load parsers from a configuration file */
 int flb_parser_conf_file(const char *file, struct flb_config *config)
 {
     int ret;
     char tmp[PATH_MAX + 1];
     const char *cfg = NULL;
-    char *name;
-    char *format;
-    char *regex;
-    char *time_fmt;
-    char *time_key;
-    char *time_offset;
-    char *types_str;
-    char *str;
+    flb_sds_t name;
+    flb_sds_t format;
+    flb_sds_t regex;
+    flb_sds_t time_fmt;
+    flb_sds_t time_key;
+    flb_sds_t time_offset;
+    flb_sds_t types_str;
+    flb_sds_t tmp_str;
     int time_keep;
     int types_len;
     struct mk_rconf *fconf;
@@ -450,6 +479,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         time_key = NULL;
         time_offset = NULL;
         types_str = NULL;
+        tmp_str = NULL;
 
         section = mk_list_entry(head, struct mk_rconf_section, _head);
         if (strcasecmp(section->name, "PARSER") != 0) {
@@ -457,53 +487,47 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         }
 
         /* Name */
-        name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
+        name = get_parser_key("Name", config, section);
         if (!name) {
             flb_error("[parser] no parser 'name' found in file '%s'", cfg);
             goto fconf_error;
         }
 
         /* Format */
-        format = mk_rconf_section_get_key(section, "Format", MK_RCONF_STR);
+        format = get_parser_key("Format", config, section);
         if (!format) {
-            flb_error("[parser] no parser 'format' found for '%s' in file '%s'", name, cfg);
+            flb_error("[parser] no parser 'format' found for '%s' in file '%s'",
+                      name, cfg);
             goto fconf_error;
         }
 
-        /* Regex (if format is regex) */
-        regex = mk_rconf_section_get_key(section, "Regex", MK_RCONF_STR);
+        /* Regex (if 'format' == 'regex') */
+        regex = get_parser_key("Regex", config, section);
         if (!regex && strcmp(format, "regex") == 0) {
             flb_error("[parser] no parser 'regex' found for '%s' in file '%s", name, cfg);
             goto fconf_error;
         }
 
         /* Time_Format */
-        time_fmt = mk_rconf_section_get_key(section, "Time_Format",
-                                            MK_RCONF_STR);
+        time_fmt = get_parser_key("Time_Format", config, section);
 
         /* Time_Key */
-        time_key = mk_rconf_section_get_key(section, "Time_Key",
-                                            MK_RCONF_STR);
+        time_key = get_parser_key("Time_Key", config, section);
 
         /* Time_Keep */
-        str = mk_rconf_section_get_key(section, "Time_Keep",
-                                       MK_RCONF_STR);
-        if (str) {
-            time_keep = flb_utils_bool(str);
-            flb_free(str);
-        }
-        else {
-            time_keep = FLB_FALSE;
+        time_keep = FLB_FALSE;
+        tmp_str = get_parser_key("Time_Keep", config, section);
+        if (tmp_str) {
+            time_keep = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
         }
 
         /* Time_Offset (UTC offset) */
-        time_offset = mk_rconf_section_get_key(section, "Time_Offset",
-                                               MK_RCONF_STR);
+        time_offset = get_parser_key("Time_Offset", config, section);
 
         /* Types */
-        types_str = mk_rconf_section_get_key(section, "Types",
-                                            MK_RCONF_STR);
-        if (types_str != NULL) {
+        types_str = mk_rconf_section_get_key(section, "Types", MK_RCONF_STR);
+        if (types_str) {
             types_len = proc_types_str(types_str, &types);
         }
         else {
@@ -522,25 +546,24 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
 
         flb_debug("[parser] new parser registered: %s", name);
 
-        flb_free(name);
-        flb_free(format);
+        flb_sds_destroy(name);
+        flb_sds_destroy(format);
 
         if (regex) {
-            flb_free(regex);
+            flb_sds_destroy(regex);
         }
         if (time_fmt) {
-            flb_free(time_fmt);
+            flb_sds_destroy(time_fmt);
         }
         if (time_key) {
-            flb_free(time_key);
+            flb_sds_destroy(time_key);
         }
         if (time_offset) {
-            flb_free(time_offset);
+            flb_sds_destroy(time_offset);
         }
         if (types_str) {
-            flb_free(types_str);
+            flb_sds_destroy(types_str);
         }
-
         decoders = NULL;
     }
 
@@ -548,19 +571,22 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     return 0;
 
  fconf_error:
-    flb_free(name);
-    flb_free(format);
+    flb_sds_destroy(name);
+    flb_sds_destroy(format);
     if (regex) {
-        flb_free(regex);
+        flb_sds_destroy(regex);
     }
     if (time_fmt) {
-        flb_free(time_fmt);
+        flb_sds_destroy(time_fmt);
     }
     if (time_key) {
-        flb_free(time_key);
+        flb_sds_destroy(time_key);
+    }
+    if (time_offset) {
+        flb_sds_destroy(time_offset);
     }
     if (types_str) {
-        flb_free(types_str);
+        flb_sds_destroy(types_str);
     }
     if (decoders) {
         flb_parser_decoder_list_destroy(decoders);

@@ -289,12 +289,14 @@ int flb_tail_mult_process_content(time_t now,
          * will be possible.
          */
         ret = is_last_key_val_string(out_buf, out_size);
-        if (ret == FLB_TRUE) {
-            flb_tail_mult_process_first(now, out_buf, out_size, &out_time,
-                                        file, ctx);
-            return FLB_TAIL_MULT_MORE;
-        }
-        flb_free(out_buf);
+        if (ret == FLB_TRUE)
+            file->mult_firstline_append = FLB_TRUE;
+        else
+            file->mult_firstline_append = FLB_FALSE;
+
+        flb_tail_mult_process_first(now, out_buf, out_size, &out_time,
+                                    file, ctx);
+        return FLB_TAIL_MULT_MORE;
     }
 
     if (file->mult_skipping == FLB_TRUE) {
@@ -329,7 +331,7 @@ int flb_tail_mult_process_content(time_t now,
          * If no parser was found means the string log must be appended
          * to the last structured field.
          */
-        if (file->mult_firstline == FLB_TRUE) {
+        if (file->mult_firstline == FLB_TRUE && file->mult_firstline_append == FLB_TRUE) {
             flb_tail_mult_append_raw(buf, len, file, ctx);
         }
         else {

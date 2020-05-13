@@ -21,7 +21,7 @@ set(UNIT_TESTS_FILES
 
 if(FLB_PARSER)
   set(UNIT_TESTS_FILES
-    ${UNIT_TESTS_FILTES}
+    ${UNIT_TESTS_FILES}
     parser.c
     )
 endif()
@@ -107,3 +107,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
   endif()
 endforeach()
+
+if(FLB_TESTS_INTERNAL_FUZZ)
+  add_subdirectory(fuzzers)
+endif()

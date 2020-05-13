@@ -190,6 +190,7 @@ REGISTER_OUT_PLUGIN("out_slack")
 REGISTER_OUT_PLUGIN("out_splunk")
 REGISTER_OUT_PLUGIN("out_stackdriver")
 REGISTER_OUT_PLUGIN("out_stdout")
+REGISTER_OUT_PLUGIN("out_syslog")
 REGISTER_OUT_PLUGIN("out_tcp")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
@@ -198,6 +199,7 @@ REGISTER_OUT_PLUGIN("out_gelf")
 
 # FILTERS
 # =======
+REGISTER_FILTER_PLUGIN("filter_alter_size")
 REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_throttle")

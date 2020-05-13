@@ -88,6 +88,15 @@ int flb_engine_flush(struct flb_config *config,
     return 0;
 }
 
+static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
+{
+    (void) data;
+
+    /* Upstream connections timeouts handling */
+    flb_upstream_conn_timeouts(ctx);
+}
+
+
 static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 {
     int ret;
@@ -307,6 +316,7 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
         }
 #endif
 
+        /* Stream processor event ? */
 #ifdef FLB_HAVE_STREAM_PROCESSOR
         if (config->stream_processor_ctx) {
             ret = flb_sp_fd_event(fd, config->stream_processor_ctx);
@@ -519,6 +529,18 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
+    /*
+     * Sched a permanent callback triggered every 1.5 second to let other
+     * Fluent Bit components run tasks at that interval.
+     */
+    ret = flb_sched_timer_cb_create(config,
+                                    FLB_SCHED_TIMER_CB_PERM,
+                                    1500, cb_engine_sched_timer, config);
+    if (ret == -1) {
+        flb_error("[engine] could not schedule permanent callback");
+        return -1;
+    }
+
     /* Signal that we have started */
     flb_engine_started(config);
 
@@ -535,7 +557,10 @@ int flb_engine_start(struct flb_config *config)
                     event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
-                    config->shutdown_fd = mk_event_timeout_create(evl, config->grace, 0, event);
+                    config->shutdown_fd = mk_event_timeout_create(evl,
+                                                                  config->grace,
+                                                                  0,
+                                                                  event);
                     flb_warn("[engine] service will stop in %u seconds", config->grace);
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
@@ -592,7 +617,6 @@ int flb_engine_start(struct flb_config *config)
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
             flb_sched_timer_cleanup(config->sched);
-            flb_upstream_conn_timeouts(config);
         }
     }
 }

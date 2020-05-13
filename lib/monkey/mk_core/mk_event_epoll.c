@@ -166,20 +166,29 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
     int ret;
     int timer_fd;
     struct itimerspec its;
+    struct timespec now;
     struct mk_event *event;
 
     mk_bug(!data);
     memset(&its, '\0', sizeof(struct itimerspec));
 
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        mk_libc_error("clock_gettime");
+        return -1;
+	}
+
     /* expiration interval */
     its.it_interval.tv_sec  = sec;
     its.it_interval.tv_nsec = nsec;
 
-    /* initial expiration */
-    its.it_value.tv_sec  = time(NULL) + sec;
+    /*
+     * initial expiration: note that we don't use nanoseconds in the timer,
+     * feel free to send a Pull Request if you need it.
+     */
+    its.it_value.tv_sec  = now.tv_sec + sec;
     its.it_value.tv_nsec = 0;
 
-    timer_fd = timerfd_create(CLOCK_REALTIME, 0);
+    timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
     if (timer_fd == -1) {
         mk_libc_error("timerfd");
         return -1;

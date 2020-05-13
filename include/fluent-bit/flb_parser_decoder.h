@@ -33,6 +33,7 @@
 #define FLB_PARSER_DEC_JSON          0  /* decode_json()    */
 #define FLB_PARSER_DEC_ESCAPED       1  /* decode_escaped() */
 #define FLB_PARSER_DEC_ESCAPED_UTF8  2  /* decode_escaped_utf8() */
+#define FLB_PARSER_DEC_MYSQL_QUOTED  3  /* decode_mysql_quoted() */
 
 /* Decoder actions */
 #define FLB_PARSER_ACT_NONE     0

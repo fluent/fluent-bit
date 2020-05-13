@@ -100,6 +100,41 @@ static int decode_escaped_utf8(struct flb_parser_dec *dec,
     return 0;
 }
 
+static int decode_mysql_quoted(struct flb_parser_dec *dec,
+                               char *in_buf, size_t in_size,
+                               char **out_buf, size_t *out_size, int *out_type)
+{
+    int len;
+    if(in_size < 2) {
+        dec->buffer[0] = in_buf[0];
+        dec->buffer[1] = 0;
+        *out_buf = dec->buffer;
+        *out_size = in_size;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else if(in_buf[0] == '\'' && in_buf[in_size-1] == '\'') {
+        len = flb_mysql_unquote_string(in_buf+1, in_size-2, &dec->buffer);
+        *out_buf = dec->buffer;
+        *out_size = len;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else if(in_buf[0] == '\"' && in_buf[in_size-1] == '\"') {
+        len = flb_mysql_unquote_string(in_buf+1, in_size-2, &dec->buffer);
+        *out_buf = dec->buffer;
+        *out_size = len;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else {
+        memcpy(dec->buffer, in_buf, in_size);
+        dec->buffer[in_size] = 0;
+        *out_buf = dec->buffer;
+        *out_size = in_size;
+        *out_type = TYPE_OUT_STRING;
+    }
+
+    return 0;
+}
+
 static int merge_record_and_extra_keys(const char *in_buf, size_t in_size,
                                        const char *extra_buf, size_t extra_size,
                                        char **out_buf, size_t *out_size)
@@ -384,6 +419,11 @@ int flb_parser_decoder_do(struct mk_list *decoders,
                                      (char *) data_sds, flb_sds_len(data_sds),
                                      &dec_buf, &dec_size, &dec_type);
             }
+            else if (rule->backend == FLB_PARSER_DEC_MYSQL_QUOTED) {
+                ret = decode_mysql_quoted(dec,
+                                          (char *) data_sds, flb_sds_len(data_sds),
+                                          &dec_buf, &dec_size, &dec_type);
+            }
 
             /* Check decoder status */
             if (ret == -1) {
@@ -628,6 +668,9 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         }
         else if (strcasecmp(decoder->value, "escaped_utf8") == 0) {
             backend = FLB_PARSER_DEC_ESCAPED_UTF8;
+        }
+        else if (strcasecmp(decoder->value, "mysql_quoted") == 0) {
+            backend = FLB_PARSER_DEC_MYSQL_QUOTED;
         }
         else {
             flb_error("[parser] field decoder '%s' unknown", decoder->value);
