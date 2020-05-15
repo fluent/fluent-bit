@@ -3,7 +3,7 @@ project(chunk-io)
 
 set(CIO_VERSION_MAJOR  1)
 set(CIO_VERSION_MINOR  0)
-set(CIO_VERSION_PATCH  3)
+set(CIO_VERSION_PATCH  4)
 set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
 
 # CFLAGS
@@ -36,7 +36,7 @@ endif()
 
 # Force Option value
 macro(CIO_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
+  set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
 
 # Development/Test mode
