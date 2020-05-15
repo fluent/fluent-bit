@@ -85,6 +85,7 @@ struct cio_ctx *cio_create(const char *root_path,
                            void (*log_cb), int log_level, int flags);
 void cio_destroy(struct cio_ctx *ctx);
 int cio_load(struct cio_ctx *ctx);
+int cio_qsort(struct cio_ctx *ctx, int (*compar)(const void *, const void *));
 
 void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb));
 int cio_set_log_level(struct cio_ctx *ctx, int level);
