@@ -527,7 +527,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                 }
             }
 
-            if (out_buf[i] == '.' && i > 0) {
+            if (i > 0 && out_buf[i] == '.') {
                 if (out_buf[i - 1] == '.') {
                     drop_bytes(out_buf, buf_s, i, 1);
                     buf_s--;
