@@ -150,7 +150,7 @@ static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
             tmp = flb_sds_create_len(val, val_len);
             if (tmp) {
                 /* Unescape private key */
-                ctx->private_key = flb_sds_create_size(flb_sds_alloc(tmp));
+                ctx->private_key = flb_sds_create_size(val_len);
                 flb_unescape_string(tmp, flb_sds_len(tmp),
                                     &ctx->private_key);
                 flb_sds_destroy(tmp);
