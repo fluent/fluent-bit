@@ -252,4 +252,9 @@ void flb_dump(struct flb_config *ctx)
 
     /* Storage Layer */
     dump_storage(ctx);
+
+    /* Make sure to flush the stdout buffer in case output
+     * has been redirected to a file
+     */
+    fflush(stdout);
 }
