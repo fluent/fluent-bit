@@ -176,8 +176,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                 /* Add extracted topic on the fly to topiclist */
                 if (ctx->dynamic_topic) {
                     /* Only if default topic is set and this topicname is not set for this message */
-                    if (strncmp(topic->name, flb_kafka_topic_default(ctx)->name, val.via.str.size) == 0 &&
-                        (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
+                    if (strcmp(topic->name, flb_kafka_topic_default(ctx)->name) == 0 &&
+                        (strcmp(topic->name, val.via.str.ptr) != 0) ) {
                         if (strstr(val.via.str.ptr, ",")) {
                             /* Don't allow commas in kafkatopic name */
                             flb_warn("',' not allowed in dynamic_kafka topic names");
@@ -201,6 +201,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                             /* Use the default topic */
                             flb_errno();
                             flb_free(dynamic_topic);
+                            flb_utils_split_free(topics);
                             continue;
                         }
                         mk_list_foreach(head, topics) {
@@ -219,6 +220,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                             }
                         }
                         flb_free(dynamic_topic);
+                        flb_utils_split_free(topics);
                     }
                 }
             }
