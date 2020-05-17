@@ -187,7 +187,6 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
              "CREATE TABLE IF NOT EXISTS %s "
              "(tag varchar, time timestamp, data jsonb);",
              ctx->db_table);
-    flb_info("[out_pgsql] %s", query);
     res = PQexec(ctx->conn, query);
     flb_free(query);
 
