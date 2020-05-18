@@ -900,6 +900,31 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return ret;
 }
 
+/*
+ * Work around kubernetes/kubernetes/issues/78479 by waiting
+ * for DNS to start up.
+ */
+static int wait_for_dns(struct flb_kube *ctx)
+{
+    int i;
+    struct addrinfo *res;
+    struct addrinfo hints;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    for (i = 0; i < ctx->dns_retries; i++) {
+        if (getaddrinfo(ctx->api_host, NULL, &hints, &res) == 0) {
+            freeaddrinfo(res);
+            return 0;
+        }
+        flb_plg_info(ctx->ins, "Wait %i secs until DNS starts up (%i/%i)",
+                     ctx->dns_wait_time, i + 1, ctx->dns_retries);
+        sleep(ctx->dns_wait_time);
+    }
+    return -1;
+}
 
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
@@ -962,6 +987,13 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
 
         /* Gather info from API server */
         flb_plg_info(ctx->ins, "testing connectivity with API server...");
+
+        ret = wait_for_dns(ctx);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "could not resolve %s", ctx->api_host);
+            return -1;
+        }
+
         ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
                                   &meta_buf, &meta_size);
         if (ret == -1) {
