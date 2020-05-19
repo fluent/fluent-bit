@@ -49,7 +49,7 @@ static int validate_resource(const char *res)
         * Resource types
         * 'global', 'gce_instance', `generic_node', 'generic_task' are supported
     */
-    char *valid_resources[] = {
+    static const char *valid_resources[] = {
         "global",
         "gce_instance",
         "generic_node",
@@ -57,8 +57,8 @@ static int validate_resource(const char *res)
         NULL
     };
 
-    for(char **r = valid_resources; *r; ++r) {
-        if(strcasecmp(res, *r) == 0) {
+    for (const char **r = valid_resources; *r; ++r) {
+        if (strcasecmp(res, *r) == 0) {
             return 0;
         }
     }
@@ -197,9 +197,12 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 {
     int ret;
     const char *tmp;
+    static const char rlabel_prefix[] = "resource_label.";
+    static const size_t rlabel_prefix_len = sizeof(rlabel_prefix) - 1;
     struct flb_stackdriver *ctx;
     struct flb_kv *kv;
     struct mk_list *labels;
+
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -317,10 +320,10 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     */
     mk_list_foreach(labels, &ins->properties) {
         kv = mk_list_entry(labels, struct flb_kv, _head);
-        if (strncasecmp(kv->key, "label.", 6) == 0 &&
-            flb_sds_len(kv->key) > 6) {
+        if (strncasecmp(kv->key, rlabel_prefix, rlabel_prefix_len) == 0 &&
+            flb_sds_len(kv->key) > rlabel_prefix_len) {
                 /* Copy actual label back to kv key */
-                kv->key = flb_sds_create(kv->key + 6);
+                kv->key = flb_sds_create(kv->key + rlabel_prefix_len);
                 /* Create a new label value pair in list */
                 flb_kv_item_create(&ctx->resource_labels, kv->key, kv->val);
             }
