@@ -18,9 +18,12 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output_plugin.h>
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_unescape.h>
 
 #include <jsmn/jsmn.h>
@@ -43,7 +46,9 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
 static int validate_resource(const char *res)
 {
     if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0) {
+        strcasecmp(res, "gce_instance") != 0 &&
+        strcasecmp(res, "generic_node") != 0 &&
+        strcasecmp(res, "generic_task") != 0) {
         return -1;
     }
 
@@ -182,6 +187,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     int ret;
     const char *tmp;
     struct flb_stackdriver *ctx;
+    struct flb_kv *kv;
+    struct mk_list *labels;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -266,7 +273,17 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
-    /* Resource type (only 'global' and 'gce_instance' are supported) */
+    /* set metadata server url with default, then replace if spec'd in config */
+    ctx->metadata_server = FLB_STD_META_URL;
+    tmp = flb_output_get_property("metadata_server", ins);
+    if (tmp) {
+        ctx->metadata_server = flb_sds_create(tmp);
+    }
+
+    /*
+     * Resource type
+     * 'global', 'gce_instance', `generic_node', 'generic_task' are supported
+     */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
@@ -279,6 +296,38 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     else {
         ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
+    }
+
+    flb_kv_init(&ctx->labels);
+
+    /*
+     * Load monitored resource labels from config files.
+     * Will only use labels specified for a particular resource type at
+     * https://cloud.google.com/logging/docs/api/v2/resource-list
+    */
+    mk_list_foreach(labels, &ins->properties) {
+        kv = mk_list_entry(labels, struct flb_kv, _head);
+        if (strncasecmp(kv->key, "label.", 6) == 0 &&
+            flb_sds_len(kv->key) > 6) {
+                /* Get label name from config file label identifier*/
+                tmp = strtok(kv->key, ".");
+                /* Only needs do be done twice to get to the first '.' */
+                tmp = strtok(NULL, ".");
+                if (tmp == NULL || strncasecmp(tmp, "label", 5) == 0) {
+                    flb_plg_error(ctx->ins, "bad label '%s'",kv->key);
+                    flb_stackdriver_conf_destroy(ctx);
+                    return NULL;
+                }
+                /* Copy label back to kv */
+                kv->key = flb_sds_create(tmp);
+                /* Create a new label value pair in list */
+                flb_kv_item_create(&ctx->labels, kv->key, kv->val);
+            }
+    }
+
+    tmp = flb_kv_get_key_value("project_id", &ctx->labels);
+    if (tmp == NULL && ctx->project_id != NULL) {
+        flb_kv_item_create(&ctx->labels, "project_id", ctx->project_id);
     }
 
     tmp = flb_output_get_property("severity_key", ins);
@@ -304,17 +353,15 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->client_id);
     flb_sds_destroy(ctx->auth_uri);
     flb_sds_destroy(ctx->token_uri);
-    flb_sds_destroy(ctx->resource);
     flb_sds_destroy(ctx->severity_key);
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
     }
 
-    if (ctx->metadata_server_auth) {
-        flb_sds_destroy(ctx->zone);
-        flb_sds_destroy(ctx->instance_id);
-    }
+    flb_kv_release(&ctx->labels);
+
+    flb_sds_destroy(ctx->resource);
 
     if (ctx->metadata_u) {
         flb_upstream_destroy(ctx->metadata_u);

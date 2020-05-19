@@ -29,6 +29,9 @@
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
 
+/* GCE Metadata Server URL */
+#define FLB_STD_META_URL  "http://metadata.google.internal"
+
 /* Stackdriver Logging write scope */
 #define FLB_STD_SCOPE     "https://www.googleapis.com/auth/logging.write"
 
@@ -61,14 +64,22 @@ struct flb_stackdriver {
     flb_sds_t token_uri;
     bool metadata_server_auth;
 
-    /* metadata server (GCP specific, WIP) */
-    flb_sds_t zone;
-    flb_sds_t instance_id;
-    flb_sds_t instance_name;
+    /*
+     * Stackdriver monitored resource labels
+     * see: https://cloud.google.com/logging/docs/api/v2/resource-list
+     *
+     * project_id is reused from the parsed credentials file and present in all
+     * monitored resources.
+     */
+
+    struct mk_list labels;
 
     /* other */
     flb_sds_t resource;
     flb_sds_t severity_key;
+
+    /* metadata server url */
+    flb_sds_t metadata_server;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

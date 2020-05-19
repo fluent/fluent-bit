@@ -17,12 +17,14 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
-#include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_utils.h>
+
 
 #include <msgpack.h>
 
@@ -161,7 +163,7 @@ int gce_metadata_read_zone(struct flb_stackdriver *ctx)
         i++;
         j++;
     }
-    ctx->zone = flb_sds_create(zone);
+    flb_kv_item_create(&ctx->labels, "zone", zone);
     flb_sds_destroy(zone);
     flb_sds_destroy(payload);
 
@@ -180,7 +182,7 @@ int gce_metadata_read_project_id(struct flb_stackdriver *ctx)
         flb_sds_destroy(payload);
         return -1;
     }
-    ctx->project_id = flb_sds_create(payload);
+    flb_kv_item_create(&ctx->labels, "project_id", payload);
     flb_sds_destroy(payload);
     return 0;
 }
@@ -197,7 +199,7 @@ int gce_metadata_read_instance_id(struct flb_stackdriver *ctx)
         flb_sds_destroy(payload);
         return -1;
     }
-    ctx->instance_id = flb_sds_create(payload);
+    flb_kv_item_create(&ctx->labels, "project_id", payload);
     flb_sds_destroy(payload);
     return 0;
 }

@@ -18,12 +18,14 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output_plugin.h>
+
 #include <fluent-bit/flb_http_client.h>
-#include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <msgpack.h>
 
@@ -283,6 +285,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     int ret;
     int io_flags = FLB_IO_TLS;
     char *token;
+    const char *label;
     struct flb_stackdriver *ctx;
 
     /* Create config context */
@@ -303,7 +306,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
                                      io_flags, &ins->tls);
-    ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
+
+    ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
                                      FLB_IO_TCP, NULL);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
@@ -323,22 +327,68 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     if (!token) {
         flb_plg_warn(ctx->ins, "token retrieval failed");
     }
-    if (ctx->metadata_server_auth) {
+
+    label = flb_kv_get_key_value("project_id", &ctx->labels);
+    if (label == NULL) {
         ret = gce_metadata_read_project_id(ctx);
         if (ret == -1) {
+            flb_plg_error(ctx->ins, "get project_id failed");
+            return -1;
+        }
+    }
+
+    flb_plg_info(ctx->ins, "%s resource found", ctx->resource);
+
+    if (strncasecmp(ctx->resource, "gce_instance", 12) == 0) {
+        label = flb_kv_get_key_value("zone", &ctx->labels);
+        if (label == NULL) {
+            ret = gce_metadata_read_zone(ctx);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "get zone for gce_instance failed");
+                return -1;
+            }
+        }
+
+        label = flb_kv_get_key_value("instance_id", &ctx->labels);
+        if (label == NULL) {
+            ret = gce_metadata_read_instance_id(ctx);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "get instace_id for gce_instance failed");
+                return -1;
+            }
+        }
+    } else if (strncasecmp(ctx->resource, "generic_", 8) == 0) {
+        label = flb_kv_get_key_value("location", &ctx->labels);
+        if (label == NULL) {
+            flb_plg_error(ctx->ins, "get location for generic_node/task failed");
             return -1;
         }
 
-        ret = gce_metadata_read_zone(ctx);
-        if (ret == -1) {
+        label = flb_kv_get_key_value("namespace", &ctx->labels);
+        if (label == NULL) {
+            flb_plg_error(ctx->ins, "get namespace for generic_node/task failed");
             return -1;
         }
 
-        ret = gce_metadata_read_instance_id(ctx);
-        if (ret == -1) {
-            return -1;
-        }
+        if (strncasecmp(ctx->resource, "generic_node", 12) == 0) {;
+            label = flb_kv_get_key_value("node_id", &ctx->labels);
+            if (label == NULL) {
+                flb_plg_error(ctx->ins, "get node_id for generic_node failed");
+                return -1;
+            }
+        } else {
+            label = flb_kv_get_key_value("job", &ctx->labels);
+            if (label == NULL) {
+                flb_plg_error(ctx->ins, "get job for generic_task failed");
+                return -1;
+            }
 
+            label = flb_kv_get_key_value("task_id", &ctx->labels);
+            if (label == NULL) {
+                flb_plg_error(ctx->ins, "get task_id for generic_task failed");
+                return -1;
+            }
+        }
     }
     return 0;
 }
@@ -456,6 +506,8 @@ static int stackdriver_format(const void *data, size_t bytes,
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
+    struct flb_kv *kv;
+    struct mk_list *label;
     severity_t severity;
     msgpack_object *obj;
     msgpack_unpacked result;
@@ -494,35 +546,22 @@ static int stackdriver_format(const void *data, size_t bytes,
     msgpack_pack_str(&mp_pck, 6);
     msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-    if (strcmp(ctx->resource, "global") == 0) {
-      /* global resource has field project_id */
-      msgpack_pack_map(&mp_pck, 1);
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
-    }
-    else if (strcmp(ctx->resource, "gce_instance") == 0) {
-      /* gce_instance resource has fields project_id, zone, instance_id */
-      msgpack_pack_map(&mp_pck, 3);
-
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
-
-      msgpack_pack_str(&mp_pck, 4);
-      msgpack_pack_str_body(&mp_pck, "zone", 4);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-      msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
-
-      msgpack_pack_str(&mp_pck, 11);
-      msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->instance_id, flb_sds_len(ctx->instance_id));
+    /*
+     * Iterate through the defined labels for this resource.
+     *
+     * global       - project_id
+     * gce_instance - project_id, instance_id, zone
+     * generic_node - project_id, location, namespace, node_id
+     * generic_task - project_id, location, namespace, job, task_id
+     */
+    msgpack_pack_map(&mp_pck, mk_list_size(&ctx->labels));
+    mk_list_foreach(label, &ctx->labels) {
+        kv = mk_list_entry(label, struct flb_kv, _head);
+        msgpack_pack_str(&mp_pck, flb_sds_len(kv->key));
+        msgpack_pack_str_body(&mp_pck, kv->key, flb_sds_len(kv->key));
+        msgpack_pack_str(&mp_pck, flb_sds_len(kv->val));
+        msgpack_pack_str_body(&mp_pck,
+                              kv->val, flb_sds_len(kv->val));
     }
 
     msgpack_pack_str(&mp_pck, 7);
