@@ -74,7 +74,6 @@ struct flb_stackdriver {
      * project_id is reused from the parsed credentials file and present in all
      * monitored resources.
      */
-
     struct mk_list resource_labels;
 
     /* other */

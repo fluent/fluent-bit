@@ -45,10 +45,7 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
 
 static int validate_resource(const char *res)
 {
-    /*
-        * Resource types
-        * 'global', 'gce_instance', `generic_node', 'generic_task' are supported
-    */
+    /* Supported monitored resource types */
     static const char *valid_resources[] = {
         "global",
         "gce_instance",
@@ -315,24 +312,25 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
      * Labels that don't match for a particular resource type will be
      * rejected by the API.
      *
-     * For a list of valid labels, see:
+     * For a list of valid labels per resource, see:
      * https://cloud.google.com/logging/docs/api/v2/resource-list
     */
     mk_list_foreach(labels, &ins->properties) {
         kv = mk_list_entry(labels, struct flb_kv, _head);
-        if (strncasecmp(kv->key, rlabel_prefix, rlabel_prefix_len) == 0 &&
+        if (flb_sds_cmp(kv->key, rlabel_prefix, rlabel_prefix_len) == 0 &&
             flb_sds_len(kv->key) > rlabel_prefix_len) {
                 /* Copy actual label back to kv key */
                 kv->key = flb_sds_create(kv->key + rlabel_prefix_len);
                 /* Create a new label value pair in list */
                 flb_kv_item_create(&ctx->resource_labels, kv->key, kv->val);
-            }
+        }
     }
 
-    tmp = flb_kv_get_key_value("project_id", &ctx->resource_labels);
-    if (!tmp && ctx->project_id) {
-        flb_kv_item_create(&ctx->resource_labels, "project_id", ctx->project_id);
-    }
+    /*
+     * Sets project_id label if the project_id was set from a credentials file.
+     * If it was not, it will be retrieved from the gce metadata server later.
+     */
+    flb_kv_item_create(&ctx->resource_labels, "project_id", ctx->project_id);
 
     tmp = flb_output_get_property("severity_key", ins);
     if (tmp) {

@@ -17,10 +17,10 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_oauth2.h>
-#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
