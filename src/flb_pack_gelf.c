@@ -496,6 +496,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
+            msgpack_object vtmp; // used when converting level value from string to int
 
             if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
                 continue;
@@ -548,17 +549,39 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     if ( v->via.u64 > 7 ) {
                         flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
-                                  "but should be in 0..7", v->via.u64);
+                                  "but should be in 0..7 or a syslog keyword", v->via.u64);
                         return NULL;
                     }
                 }
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
-                    if (val_len != 1 || val[0] < '0' || val[0] > '7') {
-                        flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
-                                  "but should be in 0..7", val_len, val);
-                        return NULL;
+                    if (val_len == 1 && val[0] >= '0' && val[0] <= '7') {
+                        v = &vtmp;
+                        v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                        v->via.u64 = (uint64_t)(val[0] - '0');
+                    }
+                    else {
+                        int n;
+                        char* allowed_levels[] = {
+                            "emerg", "alert", "crit", "err",
+                            "warning", "notice", "info", "debug",
+                            NULL
+                        };
+                        for (n = 0; allowed_levels[n] != NULL; ++n) {
+                            if (val_len == strlen(allowed_levels[n]) &&
+                                !strncasecmp(val, allowed_levels[n], val_len)) {
+                                v = &vtmp;
+                                v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                                v->via.u64 = (uint64_t)n;
+                                break;
+                            }
+                        }
+                        if (allowed_levels[n] == NULL) {
+                            flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
+                                      "but should be in 0..7 or a syslog keyword", val_len, val);
+                            return NULL;
+                        }
                     }
                 }
             }

@@ -23,6 +23,52 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_storage.h>
 
+static int sort_chunk_cmp(const void *a_arg, const void *b_arg)
+{
+    char *p;
+    struct cio_chunk *chunk_a = *(struct cio_chunk **) a_arg;
+    struct cio_chunk *chunk_b = *(struct cio_chunk **) b_arg;
+    struct timespec tm_a;
+    struct timespec tm_b;
+
+    /* Scan Chunk A */
+    p = strchr(chunk_a->name, '-');
+    if (!p) {
+        return -1;
+    }
+    p++;
+
+    sscanf(p, "%lu.%lu.flb", &tm_a.tv_sec, &tm_a.tv_nsec);
+
+    /* Scan Chunk B */
+    p = strchr(chunk_b->name, '-');
+    if (!p) {
+        return -1;
+    }
+    p++;
+    sscanf(p, "%lu.%lu.flb", &tm_b.tv_sec, &tm_b.tv_nsec);
+
+    /* Compare */
+    if (tm_a.tv_sec != tm_b.tv_sec) {
+        if (tm_a.tv_sec > tm_b.tv_sec) {
+            return 1;
+        }
+        else {
+            return -1;
+        }
+    }
+    else {
+        if (tm_a.tv_nsec > tm_b.tv_nsec) {
+            return 1;
+        }
+        else if (tm_a.tv_nsec < tm_b.tv_nsec) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 {
     char *sync;
@@ -228,6 +274,9 @@ int flb_storage_create(struct flb_config *ctx)
         cio_destroy(ctx->cio);
         return -1;
     }
+
+    /* Sort chunks */
+    cio_qsort(ctx->cio, sort_chunk_cmp);
 
     /*
      * If we have a filesystem storage path, create an instance of the
