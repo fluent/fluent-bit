@@ -45,14 +45,25 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
 
 static int validate_resource(const char *res)
 {
-    if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0 &&
-        strcasecmp(res, "generic_node") != 0 &&
-        strcasecmp(res, "generic_task") != 0) {
-        return -1;
+    /*
+        * Resource types
+        * 'global', 'gce_instance', `generic_node', 'generic_task' are supported
+    */
+    char *valid_resources[] = {
+        "global",
+        "gce_instance",
+        "generic_node",
+        "generic_task",
+        NULL
+    };
+
+    for(char **r = valid_resources; *r; ++r) {
+        if(strcasecmp(res, *r) == 0) {
+            return 0;
+        }
     }
 
-    return 0;
+    return -1;
 }
 
 static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
@@ -274,16 +285,12 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     /* set metadata server url with default, then replace if spec'd in config */
-    ctx->metadata_server = FLB_STD_META_URL;
+    ctx->metadata_server = flb_sds_create(FLB_STD_META_URL);
     tmp = flb_output_get_property("metadata_server", ins);
     if (tmp) {
         ctx->metadata_server = flb_sds_create(tmp);
     }
 
-    /*
-     * Resource type
-     * 'global', 'gce_instance', `generic_node', 'generic_task' are supported
-     */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
@@ -298,36 +305,30 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
     }
 
-    flb_kv_init(&ctx->labels);
+    flb_kv_init(&ctx->resource_labels);
 
     /*
      * Load monitored resource labels from config files.
-     * Will only use labels specified for a particular resource type at
+     * Labels that don't match for a particular resource type will be
+     * rejected by the API.
+     *
+     * For a list of valid labels, see:
      * https://cloud.google.com/logging/docs/api/v2/resource-list
     */
     mk_list_foreach(labels, &ins->properties) {
         kv = mk_list_entry(labels, struct flb_kv, _head);
         if (strncasecmp(kv->key, "label.", 6) == 0 &&
             flb_sds_len(kv->key) > 6) {
-                /* Get label name from config file label identifier*/
-                tmp = strtok(kv->key, ".");
-                /* Only needs do be done twice to get to the first '.' */
-                tmp = strtok(NULL, ".");
-                if (tmp == NULL || strncasecmp(tmp, "label", 5) == 0) {
-                    flb_plg_error(ctx->ins, "bad label '%s'",kv->key);
-                    flb_stackdriver_conf_destroy(ctx);
-                    return NULL;
-                }
-                /* Copy label back to kv */
-                kv->key = flb_sds_create(tmp);
+                /* Copy actual label back to kv key */
+                kv->key = flb_sds_create(kv->key + 6);
                 /* Create a new label value pair in list */
-                flb_kv_item_create(&ctx->labels, kv->key, kv->val);
+                flb_kv_item_create(&ctx->resource_labels, kv->key, kv->val);
             }
     }
 
-    tmp = flb_kv_get_key_value("project_id", &ctx->labels);
-    if (tmp == NULL && ctx->project_id != NULL) {
-        flb_kv_item_create(&ctx->labels, "project_id", ctx->project_id);
+    tmp = flb_kv_get_key_value("project_id", &ctx->resource_labels);
+    if (!tmp && ctx->project_id) {
+        flb_kv_item_create(&ctx->resource_labels, "project_id", ctx->project_id);
     }
 
     tmp = flb_output_get_property("severity_key", ins);
@@ -359,9 +360,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_oauth2_destroy(ctx->o);
     }
 
-    flb_kv_release(&ctx->labels);
+    flb_kv_release(&ctx->resource_labels);
 
     flb_sds_destroy(ctx->resource);
+    flb_sds_destroy(ctx->metadata_server);
 
     if (ctx->metadata_u) {
         flb_upstream_destroy(ctx->metadata_u);

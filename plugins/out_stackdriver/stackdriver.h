@@ -64,6 +64,9 @@ struct flb_stackdriver {
     flb_sds_t token_uri;
     bool metadata_server_auth;
 
+    /* metadata server url */
+    flb_sds_t metadata_server;
+
     /*
      * Stackdriver monitored resource labels
      * see: https://cloud.google.com/logging/docs/api/v2/resource-list
@@ -72,14 +75,11 @@ struct flb_stackdriver {
      * monitored resources.
      */
 
-    struct mk_list labels;
+    struct mk_list resource_labels;
 
     /* other */
     flb_sds_t resource;
     flb_sds_t severity_key;
-
-    /* metadata server url */
-    flb_sds_t metadata_server;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

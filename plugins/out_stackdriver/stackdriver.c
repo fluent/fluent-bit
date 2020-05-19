@@ -328,7 +328,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         flb_plg_warn(ctx->ins, "token retrieval failed");
     }
 
-    label = flb_kv_get_key_value("project_id", &ctx->labels);
+    label = flb_kv_get_key_value("project_id", &ctx->resource_labels);
     if (label == NULL) {
         ret = gce_metadata_read_project_id(ctx);
         if (ret == -1) {
@@ -340,7 +340,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     flb_plg_info(ctx->ins, "%s resource found", ctx->resource);
 
     if (strncasecmp(ctx->resource, "gce_instance", 12) == 0) {
-        label = flb_kv_get_key_value("zone", &ctx->labels);
+        label = flb_kv_get_key_value("zone", &ctx->resource_labels);
         if (label == NULL) {
             ret = gce_metadata_read_zone(ctx);
             if (ret == -1) {
@@ -349,7 +349,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
             }
         }
 
-        label = flb_kv_get_key_value("instance_id", &ctx->labels);
+        label = flb_kv_get_key_value("instance_id", &ctx->resource_labels);
         if (label == NULL) {
             ret = gce_metadata_read_instance_id(ctx);
             if (ret == -1) {
@@ -358,32 +358,32 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
             }
         }
     } else if (strncasecmp(ctx->resource, "generic_", 8) == 0) {
-        label = flb_kv_get_key_value("location", &ctx->labels);
+        label = flb_kv_get_key_value("location", &ctx->resource_labels);
         if (label == NULL) {
             flb_plg_error(ctx->ins, "get location for generic_node/task failed");
             return -1;
         }
 
-        label = flb_kv_get_key_value("namespace", &ctx->labels);
+        label = flb_kv_get_key_value("namespace", &ctx->resource_labels);
         if (label == NULL) {
             flb_plg_error(ctx->ins, "get namespace for generic_node/task failed");
             return -1;
         }
 
         if (strncasecmp(ctx->resource, "generic_node", 12) == 0) {;
-            label = flb_kv_get_key_value("node_id", &ctx->labels);
+            label = flb_kv_get_key_value("node_id", &ctx->resource_labels);
             if (label == NULL) {
                 flb_plg_error(ctx->ins, "get node_id for generic_node failed");
                 return -1;
             }
         } else {
-            label = flb_kv_get_key_value("job", &ctx->labels);
+            label = flb_kv_get_key_value("job", &ctx->resource_labels);
             if (label == NULL) {
                 flb_plg_error(ctx->ins, "get job for generic_task failed");
                 return -1;
             }
 
-            label = flb_kv_get_key_value("task_id", &ctx->labels);
+            label = flb_kv_get_key_value("task_id", &ctx->resource_labels);
             if (label == NULL) {
                 flb_plg_error(ctx->ins, "get task_id for generic_task failed");
                 return -1;
@@ -554,8 +554,8 @@ static int stackdriver_format(const void *data, size_t bytes,
      * generic_node - project_id, location, namespace, node_id
      * generic_task - project_id, location, namespace, job, task_id
      */
-    msgpack_pack_map(&mp_pck, mk_list_size(&ctx->labels));
-    mk_list_foreach(label, &ctx->labels) {
+    msgpack_pack_map(&mp_pck, mk_list_size(&ctx->resource_labels));
+    mk_list_foreach(label, &ctx->resource_labels) {
         kv = mk_list_entry(label, struct flb_kv, _head);
         msgpack_pack_str(&mp_pck, flb_sds_len(kv->key));
         msgpack_pack_str_body(&mp_pck, kv->key, flb_sds_len(kv->key));

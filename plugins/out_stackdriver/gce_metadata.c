@@ -163,7 +163,7 @@ int gce_metadata_read_zone(struct flb_stackdriver *ctx)
         i++;
         j++;
     }
-    flb_kv_item_create(&ctx->labels, "zone", zone);
+    flb_kv_item_create(&ctx->resource_labels, "zone", zone);
     flb_sds_destroy(zone);
     flb_sds_destroy(payload);
 
@@ -182,7 +182,7 @@ int gce_metadata_read_project_id(struct flb_stackdriver *ctx)
         flb_sds_destroy(payload);
         return -1;
     }
-    flb_kv_item_create(&ctx->labels, "project_id", payload);
+    flb_kv_item_create(&ctx->resource_labels, "project_id", payload);
     flb_sds_destroy(payload);
     return 0;
 }
@@ -199,7 +199,7 @@ int gce_metadata_read_instance_id(struct flb_stackdriver *ctx)
         flb_sds_destroy(payload);
         return -1;
     }
-    flb_kv_item_create(&ctx->labels, "project_id", payload);
+    flb_kv_item_create(&ctx->resource_labels, "project_id", payload);
     flb_sds_destroy(payload);
     return 0;
 }
