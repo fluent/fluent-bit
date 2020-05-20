@@ -140,6 +140,9 @@ struct flb_kube {
     char *auth;
     size_t auth_len;
 
+    int dns_retries;
+    int dns_wait_time;
+
     struct flb_tls tls;
     struct flb_config *config;
     struct flb_hash *hash_table;
