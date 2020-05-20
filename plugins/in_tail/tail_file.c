@@ -516,7 +516,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
 
         /* Sanitize buffer */
         for (i = 0; i < buf_s; i++) {
-            if (out_buf[i] == '/') {
+            if (out_buf[i] == '/' || out_buf[i] == '\\' || out_buf[i] == ':') {
                 if (i > 0) {
                     out_buf[i] = '.';
                 }
