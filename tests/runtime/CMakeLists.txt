@@ -28,6 +28,7 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_HEAD          "in_head.c")
   FLB_RT_TEST(FLB_IN_DUMMY         "in_dummy.c")
   FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
+  FLB_RT_TEST(FLB_IN_TAIL          "in_tail.c")
 endif()
 
 # Filter Plugins
