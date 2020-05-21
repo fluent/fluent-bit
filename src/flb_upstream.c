@@ -388,7 +388,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
     u = conn->u;
 
     /* If this is a valid KA connection just recycle */
-    if (conn->u->net.keepalive == FLB_TRUE && conn->recycle == FLB_TRUE) {
+    if (conn->u->net.keepalive == FLB_TRUE && conn->recycle == FLB_TRUE && conn->fd > -1) {
         /*
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
