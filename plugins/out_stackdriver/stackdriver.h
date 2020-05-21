@@ -49,6 +49,19 @@
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
 
+/* Holds a resource label and its value */
+struct flb_std_label {
+    const char *label;
+    flb_sds_t value;
+};
+
+/* Holds all information about a resource */
+struct flb_std_resource {
+    const char *type;
+    struct flb_std_label labels[10];
+    bool metadata_enabled;
+};
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -67,18 +80,12 @@ struct flb_stackdriver {
     /* metadata server url */
     flb_sds_t metadata_server;
 
-    /*
-     * Stackdriver monitored resource labels
-     * see: https://cloud.google.com/logging/docs/api/v2/resource-list
-     *
-     * project_id is reused from the parsed credentials file and present in all
-     * monitored resources.
-     */
-    struct mk_list resource_labels;
-
-    /* other */
-    flb_sds_t resource;
     flb_sds_t severity_key;
+
+    /*
+     * A Stackdriver monitored resource and its labels
+     */
+    struct flb_std_resource *resource;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

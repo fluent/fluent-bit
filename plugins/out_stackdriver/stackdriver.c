@@ -34,6 +34,59 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
 
+/* Validate resource labels against required labels for a monitored resource */
+static int validate_resource_labels(struct flb_stackdriver *ctx)
+{
+    int i = 0;
+    int m_cnt = 0;
+    int ret = 0;
+
+    while(ctx->resource->labels[i].label != NULL) {
+        flb_plg_debug(ctx->ins,
+            "Validating label %s", ctx->resource->labels[i].label);
+            if (ctx->resource->labels[i].value == NULL) {
+                if (strncmp(ctx->resource->labels[i].label, "project_id", 10) == 0 &&
+                    ctx->project_id != NULL) {
+                    ctx->resource->labels[i].value = flb_sds_create(ctx->project_id);
+                    ++m_cnt;
+                }
+            else if (ctx->resource->metadata_enabled) {
+                flb_plg_debug(ctx->ins, "Metadata server enabled");
+                if (strncmp(ctx->resource->labels[i].label, "project_id", 10) == 0) {
+                    ret = gce_metadata_read_project_id(ctx);
+                }
+                if (strncmp(ctx->resource->labels[i].label, "zone", 4) == 0) {
+                    ret = gce_metadata_read_zone(ctx);
+                }
+                if (strncmp(ctx->resource->labels[i].label, "instance_id", 11) == 0) {
+                    ret = gce_metadata_read_instance_id(ctx);
+                }
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins,
+                        "Get %s from metadata server failed",
+                        ctx->resource->labels[i].label);
+                        ++m_cnt;
+                }
+                else {
+                    flb_plg_debug(ctx->ins,
+                        "Get %s from metadata server succeeded",
+                        ctx->resource->labels[i].label);
+                }
+            }
+            else {
+                flb_plg_error(ctx->ins, "Missing required label %s",
+                    ctx->resource->labels[i].label);
+                ++m_cnt;
+            }
+        }
+        ++i;
+    }
+
+    if (m_cnt > 0) {
+        return -1;
+    }
+    return 0;
+}
 /*
  * Base64 Encoding in JWT must:
  *
@@ -281,10 +334,8 @@ static char *get_google_token(struct flb_stackdriver *ctx)
 static int cb_stackdriver_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
-    int ret;
     int io_flags = FLB_IO_TLS;
     char *token;
-    const char *label;
     struct flb_stackdriver *ctx;
 
     /* Create config context */
@@ -327,70 +378,12 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         flb_plg_warn(ctx->ins, "token retrieval failed");
     }
 
-    label = flb_kv_get_key_value("project_id", &ctx->resource_labels);
-    if (label == NULL) {
-        ret = gce_metadata_read_project_id(ctx);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "get project_id failed");
-            return -1;
-        }
+    flb_plg_info(ctx->ins, "%s resource found", ctx->resource->type);
+
+    if (validate_resource_labels(ctx) != 0) {
+        return -1;
     }
 
-    flb_plg_info(ctx->ins, "%s resource found", ctx->resource);
-
-    if (flb_sds_cmp(ctx->resource, "gce_instance", 12) == 0) {
-        label = flb_kv_get_key_value("zone", &ctx->resource_labels);
-        if (label == NULL) {
-            ret = gce_metadata_read_zone(ctx);
-            if (ret == -1) {
-                flb_plg_error(ctx->ins, "get zone for gce_instance failed");
-                return -1;
-            }
-        }
-
-        label = flb_kv_get_key_value("instance_id", &ctx->resource_labels);
-        if (label == NULL) {
-            ret = gce_metadata_read_instance_id(ctx);
-            if (ret == -1) {
-                flb_plg_error(ctx->ins, "get instance_id for gce_instance failed");
-                return -1;
-            }
-        }
-    }
-    else if (flb_sds_cmp(ctx->resource, "generic_", 8) == 0) {
-        label = flb_kv_get_key_value("location", &ctx->resource_labels);
-        if (label == NULL) {
-            flb_plg_error(ctx->ins, "get location for generic_node/task failed");
-            return -1;
-        }
-
-        label = flb_kv_get_key_value("namespace", &ctx->resource_labels);
-        if (label == NULL) {
-            flb_plg_error(ctx->ins, "get namespace for generic_node/task failed");
-            return -1;
-        }
-
-        if (flb_sds_cmp(ctx->resource, "generic_node", 12) == 0) {;
-            label = flb_kv_get_key_value("node_id", &ctx->resource_labels);
-            if (label == NULL) {
-                flb_plg_error(ctx->ins, "get node_id for generic_node failed");
-                return -1;
-            }
-        }
-        else {
-            label = flb_kv_get_key_value("job", &ctx->resource_labels);
-            if (label == NULL) {
-                flb_plg_error(ctx->ins, "get job for generic_task failed");
-                return -1;
-            }
-
-            label = flb_kv_get_key_value("task_id", &ctx->resource_labels);
-            if (label == NULL) {
-                flb_plg_error(ctx->ins, "get task_id for generic_task failed");
-                return -1;
-            }
-        }
-    }
     return 0;
 }
 
@@ -499,6 +492,7 @@ static int stackdriver_format(const void *data, size_t bytes,
                               char **out_data, size_t *out_size,
                               struct flb_stackdriver *ctx)
 {
+    int i;
     int len;
     int array_size = 0;
     size_t s;
@@ -507,8 +501,6 @@ static int stackdriver_format(const void *data, size_t bytes,
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
-    struct flb_kv *kv;
-    struct mk_list *label;
     severity_t severity;
     msgpack_object *obj;
     msgpack_unpacked result;
@@ -540,23 +532,28 @@ static int stackdriver_format(const void *data, size_t bytes,
     /* type */
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "type", 4);
-    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource));
-    msgpack_pack_str_body(&mp_pck, ctx->resource,
-                          flb_sds_len(ctx->resource));
+    msgpack_pack_str(&mp_pck, strlen(ctx->resource->type));
+    msgpack_pack_str_body(&mp_pck, ctx->resource->type,
+                          strlen(ctx->resource->type));
 
     msgpack_pack_str(&mp_pck, 6);
     msgpack_pack_str_body(&mp_pck, "labels", 6);
 
+    /* We have to divide by 2 due to the label/value pairs doubling the size */
+    msgpack_pack_map(&mp_pck,
+        (sizeof(ctx->resource->labels)/sizeof(ctx->resource->labels[0])) / 2);
     /*
      * Iterate through the defined labels for this resource.
      */
-    msgpack_pack_map(&mp_pck, mk_list_size(&ctx->resource_labels));
-    mk_list_foreach(label, &ctx->resource_labels) {
-        kv = mk_list_entry(label, struct flb_kv, _head);
-        msgpack_pack_str(&mp_pck, flb_sds_len(kv->key));
-        msgpack_pack_str_body(&mp_pck, kv->key, flb_sds_len(kv->key));
-        msgpack_pack_str(&mp_pck, flb_sds_len(kv->val));
-        msgpack_pack_str_body(&mp_pck, kv->val, flb_sds_len(kv->val));
+    i = 0;
+    while(ctx->resource->labels[i].label != NULL) {
+        msgpack_pack_str(&mp_pck, strlen(ctx->resource->labels[i].label));
+        msgpack_pack_str_body(&mp_pck, ctx->resource->labels[i].label,
+            strlen(ctx->resource->labels[i].label));
+        msgpack_pack_str(&mp_pck, strlen(ctx->resource->labels[i].value));
+        msgpack_pack_str_body(&mp_pck, ctx->resource->labels[i].value,
+            strlen(ctx->resource->labels[i].value));
+        ++i;
     }
 
     msgpack_pack_str(&mp_pck, 7);
@@ -715,6 +712,7 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
         if (c->resp.status == 200) {
             ret_code = FLB_OK;
+            flb_plg_debug(ctx->ins, "request returned:\n%s", c->resp.payload);
         }
         else {
             if (c->resp.payload_size > 0) {

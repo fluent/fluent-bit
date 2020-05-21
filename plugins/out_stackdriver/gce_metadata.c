@@ -163,7 +163,7 @@ int gce_metadata_read_zone(struct flb_stackdriver *ctx)
         i++;
         j++;
     }
-    flb_kv_item_create(&ctx->resource_labels, "zone", zone);
+    set_resource_label("zone", zone, ctx);
     flb_sds_destroy(zone);
     flb_sds_destroy(payload);
 
@@ -182,7 +182,8 @@ int gce_metadata_read_project_id(struct flb_stackdriver *ctx)
         flb_sds_destroy(payload);
         return -1;
     }
-    flb_kv_item_create(&ctx->resource_labels, "project_id", payload);
+    ctx->project_id = flb_sds_create(payload);
+    set_resource_label("project_id", payload, ctx);
     flb_sds_destroy(payload);
     return 0;
 }
@@ -198,8 +199,8 @@ int gce_metadata_read_instance_id(struct flb_stackdriver *ctx)
         flb_plg_error(ctx->ins, "can't fetch instance id from the metadata server");
         flb_sds_destroy(payload);
         return -1;
-    }
-    flb_kv_item_create(&ctx->resource_labels, "project_id", payload);
+    };
+    set_resource_label("instance_id", payload, ctx);
     flb_sds_destroy(payload);
     return 0;
 }

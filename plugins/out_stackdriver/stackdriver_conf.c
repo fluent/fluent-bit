@@ -18,11 +18,11 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_kv.h>
-#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_unescape.h>
 
@@ -34,6 +34,44 @@
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 
+/*
+ * The valid Stackdriver monitored resources Fluent Bit can process.
+ *
+ * This also contains the valid labels for those resources, and
+ * a way to store the value to those labels.
+ *
+ * For more info see: https://cloud.google.com/logging/docs/api/v2/resource-list
+ * Any resource labels not specified here will be dropped.
+ */
+struct flb_std_resource valid_resources[] = {
+    {"global", {
+        {"project_id", NULL},
+        {NULL}
+    }, true},
+    {"gce_instance", {
+        {"project_id", NULL},
+        {"zone", NULL},
+        {"instance_id", NULL},
+        {NULL},
+    }, true},
+    {"generic_node", {
+        {"project_id", NULL},
+        {"location", NULL},
+        {"namespace", NULL},
+        {"node_id", NULL},
+        {NULL}
+    }, false},
+    {"generic_task", {
+        {"project_id", NULL},
+        {"location", NULL},
+        {"namespace", NULL},
+        {"job", NULL},
+        {"task_id", NULL},
+        {NULL}
+    }, false},
+    {NULL},
+};
+
 static inline int key_cmp(const char *str, int len, const char *cmp) {
 
     if (strlen(cmp) != len) {
@@ -43,23 +81,38 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int validate_resource(const char *res)
+static int validate_resource(const char *res, struct flb_stackdriver *ctx)
 {
-    /* Supported monitored resource types */
-    static const char *valid_resources[] = {
-        "global",
-        "gce_instance",
-        "generic_node",
-        "generic_task",
-        NULL
-    };
-
-    for (const char **r = valid_resources; *r; ++r) {
-        if (strcasecmp(res, *r) == 0) {
+    int i = 0;
+    if (res == NULL) {
+        flb_plg_debug(ctx->ins, "Setting resource as global");
+        ctx->resource = &valid_resources[0];
+        return 0;
+    }
+    while(valid_resources[i].type != NULL) {
+        if (strncmp(valid_resources[i].type, res, strlen(res)) == 0) {
+            flb_plg_debug(ctx->ins,
+                "Setting resource as %s", valid_resources[i].type);
+            ctx->resource = &valid_resources[i];
             return 0;
         }
+        ++i;
     }
+    return -1;
+}
 
+int set_resource_label(const char *key, const char *val, struct flb_stackdriver *ctx)
+{
+    int i = 0;
+    while (ctx->resource->labels[i].label != NULL) {
+        if (strncmp(ctx->resource->labels[i].label, key, strlen(key)) == 0) {
+            flb_plg_debug(ctx->ins,
+                "Setting label %s: %s", ctx->resource->labels[i].label, val);
+            ctx->resource->labels[i].value = flb_sds_create(val);
+            return 0;
+        }
+        ++i;
+    }
     return -1;
 }
 
@@ -192,13 +245,15 @@ static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
 struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *ins,
                                               struct flb_config *config)
 {
+    bool seen_project_id;
+    int i;
     int ret;
     const char *tmp;
+    flb_sds_t key;
     static const char rlabel_prefix[] = "resource_label.";
-    static const size_t rlabel_prefix_len = sizeof(rlabel_prefix) - 1;
     struct flb_stackdriver *ctx;
-    struct flb_kv *kv;
-    struct mk_list *labels;
+    // struct flb_kv *kv;
+    // struct mk_list *label;
 
 
     /* Allocate config context */
@@ -292,45 +347,43 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     tmp = flb_output_get_property("resource", ins);
-    if (tmp) {
-        if (validate_resource(tmp) != 0) {
-            flb_plg_error(ctx->ins, "unsupported resource type '%s'",
-                          tmp);
-            flb_stackdriver_conf_destroy(ctx);
-            return NULL;
-        }
-        ctx->resource = flb_sds_create(tmp);
+    if (validate_resource(tmp, ctx) != 0) {
+        flb_plg_error(ctx->ins, "unsupported resource type '%s'", tmp);
+        flb_stackdriver_conf_destroy(ctx);
+        return NULL;
     }
-    else {
-        ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
-    }
-
-    flb_kv_init(&ctx->resource_labels);
 
     /*
      * Load monitored resource labels from config files.
-     * Labels that don't match for a particular resource type will be
-     * rejected by the API.
-     *
-     * For a list of valid labels per resource, see:
-     * https://cloud.google.com/logging/docs/api/v2/resource-list
-    */
-    mk_list_foreach(labels, &ins->properties) {
-        kv = mk_list_entry(labels, struct flb_kv, _head);
-        if (flb_sds_cmp(kv->key, rlabel_prefix, rlabel_prefix_len) == 0 &&
-            flb_sds_len(kv->key) > rlabel_prefix_len) {
-                /* Copy actual label back to kv key */
-                kv->key = flb_sds_create(kv->key + rlabel_prefix_len);
-                /* Create a new label value pair in list */
-                flb_kv_item_create(&ctx->resource_labels, kv->key, kv->val);
+     *  Labels that don't match for a particular resource type will be
+     *  dropped since they will silently be rejected by the API anyway.
+     */
+    seen_project_id = false;
+    i = 0;
+    while(ctx->resource->labels[i].label != NULL) {
+        key = flb_sds_create(rlabel_prefix);
+        key = flb_sds_cat(key, ctx->resource->labels[i].label, strlen(ctx->resource->labels[i].label));
+        flb_plg_debug(ctx->ins, "key = %s", key);
+        tmp = flb_output_get_property(key, ins);
+        if (tmp) {
+            ctx->resource->labels[i].value = flb_sds_create(tmp);
+            flb_plg_debug(ctx->ins,
+                "Added label %s: %s", ctx->resource->labels[i].label, tmp);
         }
+        flb_sds_destroy(key);
+        ++i;
     }
 
     /*
-     * Sets project_id label if the project_id was set from a credentials file.
-     * If it was not, it will be retrieved from the gce metadata server later.
-     */
-    flb_kv_item_create(&ctx->resource_labels, "project_id", ctx->project_id);
+    * Sets project_id label if it was not overridden in the conf file.
+    * If it was not set in the conf file or credential file it will be
+    * retrieved from the gce metadata server later.
+    */
+    if (!seen_project_id && ctx->project_id) {
+        set_resource_label("project_id", ctx->project_id, ctx);
+        flb_plg_debug(ctx->ins,
+            "Added label %s: %s", "project_id", ctx->project_id);
+    }
 
     tmp = flb_output_get_property("severity_key", ins);
     if (tmp) {
@@ -342,6 +395,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 
 int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 {
+    int i = 0;
     if (!ctx) {
         return -1;
     }
@@ -357,13 +411,15 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->severity_key);
 
+    while (ctx->resource->labels[i].label != NULL) {
+        flb_sds_destroy(ctx->resource->labels[i].value);
+        ++i;
+    }
+
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
     }
 
-    flb_kv_release(&ctx->resource_labels);
-
-    flb_sds_destroy(ctx->resource);
     flb_sds_destroy(ctx->metadata_server);
 
     if (ctx->metadata_u) {

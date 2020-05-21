@@ -23,6 +23,7 @@
 
 #include "stackdriver.h"
 
+int set_resource_label(const char *key, const char *val, struct flb_stackdriver *ctx);
 struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config);
 int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx);
