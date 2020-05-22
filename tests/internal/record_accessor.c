@@ -185,7 +185,7 @@ void cb_dots_subkeys()
     }
 
     /* Formatter */
-    fmt = "$kubernetes['annotations']['fluentbit.io/tag']";
+    fmt = flb_sds_create("$kubernetes['annotations']['fluentbit.io/tag']");
 
     fmt_out = "thetag";
 
