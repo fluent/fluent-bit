@@ -212,6 +212,7 @@ void cb_dots_subkeys()
     printf("== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
 
     flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
     flb_ra_destroy(ra);
     flb_free(out_buf);
     msgpack_unpacked_destroy(&result);
