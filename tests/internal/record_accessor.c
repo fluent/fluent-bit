@@ -185,8 +185,7 @@ void cb_dots_subkeys()
     }
 
     /* Formatter */
-    fmt = "$kubernetes['annotations']['fluentbit.io/tag']";
-
+    fmt = flb_sds_create("$kubernetes['annotations']['fluentbit.io/tag']");
     fmt_out = "thetag";
 
     ra = flb_ra_create(fmt, FLB_FALSE);
@@ -212,6 +211,7 @@ void cb_dots_subkeys()
     printf("== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
 
     flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
     flb_ra_destroy(ra);
     flb_free(out_buf);
     msgpack_unpacked_destroy(&result);
