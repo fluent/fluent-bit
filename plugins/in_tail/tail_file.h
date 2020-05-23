@@ -26,6 +26,7 @@
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_encoder.h>
 
 #include "tail.h"
 #include "tail_fs.h"
@@ -75,8 +76,8 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
 int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            struct flb_time *time, char **data,
                            size_t *data_size, struct flb_tail_file *file);
-int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+int flb_tail_file_pack_line(flb_encoder encoder, const char *module,
+                            msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file);
-
 #endif

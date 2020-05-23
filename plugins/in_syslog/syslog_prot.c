@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_encoder.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
@@ -97,7 +98,7 @@ int syslog_prot_process(struct syslog_conn *conn)
         }
 
         /* Process the string */
-        ret = flb_parser_do(ctx->parser, p, len,
+        ret = flb_parser_do_encode_utf8(ctx->encoding, "in_syslog", ctx->parser, p, len,
                             &out_buf, &out_size, &out_time);
         if (ret >= 0) {
             pack_line(ctx, &out_time, out_buf, out_size);
@@ -131,7 +132,7 @@ int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
     size_t out_size;
     struct flb_time out_time = {0};
 
-    ret = flb_parser_do(ctx->parser, buf, size,
+    ret = flb_parser_do_encode_utf8(ctx->encoding, "in_syslog", ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
     if (ret >= 0) {
         if (flb_time_to_double(&out_time) == 0) {

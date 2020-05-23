@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_encoder.h>
 #include <fluent-bit/flb_kv.h>
 
 #include "tail_config.h"
@@ -130,7 +131,7 @@ static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     flb_time_get(&out_time);
 
-    flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time, data, data_size, file);
+    flb_tail_file_pack_line(NULL, "in_tail", &mp_sbuf, &mp_pck, &out_time, data, data_size, file);
     flb_input_chunk_append_raw(ctx->ins,
                                file->tag_buf,
                                file->tag_len,
@@ -278,7 +279,7 @@ int flb_tail_mult_process_content(time_t now,
     msgpack_unpacked result;
 
     /* Always check if this line is the beginning of a new multiline message */
-    ret = flb_parser_do(ctx->mult_parser_firstline,
+    ret = flb_parser_do_encode_utf8(ctx->encoding, "in_tail", ctx->mult_parser_firstline,
                         buf, len,
                         &out_buf, &out_size, &out_time);
     if (ret >= 0) {
