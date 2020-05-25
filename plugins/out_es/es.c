@@ -37,7 +37,7 @@
 
 struct flb_output_plugin out_es_plugin;
 
-inline int es_pack_array_content(msgpack_packer *tmp_pck,
+static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
                                  struct flb_elasticsearch *ctx);
 
@@ -71,9 +71,9 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 }
 #endif /* FLB_HAVE_AWS */
 
-static inline int es_pack_map_content(msgpack_packer *tmp_pck,
-                                      msgpack_object map,
-                                      struct flb_elasticsearch *ctx)
+static int es_pack_map_content(msgpack_packer *tmp_pck,
+                               msgpack_object map,
+                               struct flb_elasticsearch *ctx)
 {
     int i;
     char *ptr_key = NULL;
@@ -169,7 +169,7 @@ static inline int es_pack_map_content(msgpack_packer *tmp_pck,
   * Iterate through the array and sanitize elements.
   * Mutual recursion with es_pack_map_content.
   */
-inline int es_pack_array_content(msgpack_packer *tmp_pck,
+static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
                                  struct flb_elasticsearch *ctx)
 {
