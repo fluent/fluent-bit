@@ -39,6 +39,7 @@
 #endif
 
 struct flb_file_conf {
+    const char *out_path;
     const char *out_file;
     const char *delimiter;
     const char *label_delimiter;
@@ -315,7 +316,7 @@ static void cb_file_flush(const void *data, size_t bytes,
     size_t last_off = 0;
     size_t alloc_size = 0;
     size_t total;
-    const char *out_file;
+    char out_file[PATH_MAX];
     char *buf;
     char *tag_buf;
     msgpack_object *obj;
@@ -324,12 +325,24 @@ static void cb_file_flush(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
-    /* Set the right output */
-    if (!ctx->out_file) {
-        out_file = tag;
+    /* Set the right output file */
+    if (ctx->out_path) {
+        if (ctx->out_file) {
+            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+                     ctx->out_path, ctx->out_file);
+        }
+        else {
+            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+                     ctx->out_path, tag);
+        }
     }
     else {
-        out_file = ctx->out_file;
+        if (ctx->out_file) {
+            snprintf(out_file, PATH_MAX - 1, "%s", ctx->out_file);
+        }
+        else {
+            snprintf(out_file, PATH_MAX - 1, "%s", tag);
+        }
     }
 
     /* Open output file with default name as the Tag */
@@ -438,6 +451,11 @@ static int cb_file_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_file_conf, out_path),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
      NULL
     },
