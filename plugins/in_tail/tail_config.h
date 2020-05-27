@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_sqldb.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -84,6 +85,7 @@ struct flb_tail_config {
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     int db_sync;
+    sqlite3_stmt *stmt_offset;
 #endif
 
     /* Parser / Format */

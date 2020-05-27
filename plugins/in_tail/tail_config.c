@@ -28,6 +28,7 @@
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
+#include "tail_sql.h"
 #include "tail_dockermode.h"
 
 #ifdef FLB_HAVE_PARSER
@@ -233,6 +234,20 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         ctx->db = flb_tail_db_open(tmp, ins, ctx, config);
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database");
+        }
+    }
+
+    /* Prepare Statement */
+    if (ctx->db) {
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_UPDATE_OFFSET,
+                                 -1,
+                                 &ctx->stmt_offset,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
         }
     }
 #endif
