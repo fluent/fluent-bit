@@ -37,11 +37,11 @@
 /* Validate resource labels against required labels for a monitored resource */
 static int validate_resource_labels(struct flb_stackdriver *ctx)
 {
-    int i = 0;
+    int i;
     int m_cnt = 0;
     int ret = 0;
 
-    while(ctx->resource->labels[i].label != NULL) {
+    for (i = 0; i < ctx->resource->label_cnt; ++i) {
         flb_plg_debug(ctx->ins,
             "Validating label %s", ctx->resource->labels[i].label);
             if (ctx->resource->labels[i].value == NULL) {
@@ -50,36 +50,42 @@ static int validate_resource_labels(struct flb_stackdriver *ctx)
                     ctx->resource->labels[i].value = flb_sds_create(ctx->project_id);
                     ++m_cnt;
                 }
-            else if (ctx->resource->metadata_enabled) {
-                flb_plg_debug(ctx->ins, "Metadata server enabled");
-                if (strncmp(ctx->resource->labels[i].label, "project_id", 10) == 0) {
-                    ret = gce_metadata_read_project_id(ctx);
-                }
-                if (strncmp(ctx->resource->labels[i].label, "zone", 4) == 0) {
-                    ret = gce_metadata_read_zone(ctx);
-                }
-                if (strncmp(ctx->resource->labels[i].label, "instance_id", 11) == 0) {
-                    ret = gce_metadata_read_instance_id(ctx);
-                }
-                if (ret == -1) {
-                    flb_plg_error(ctx->ins,
-                        "Get %s from metadata server failed",
-                        ctx->resource->labels[i].label);
-                        ++m_cnt;
+                else if (ctx->resource->metadata_enabled) {
+                    flb_plg_debug(ctx->ins, "Metadata server enabled");
+                    if (strncmp(ctx->resource->labels[i].label, "project_id", 10) == 0) {
+                        ret = gce_metadata_read_project_id(ctx);
+                    }
+                    if (strncmp(ctx->resource->labels[i].label, "zone", 4) == 0) {
+                        ret = gce_metadata_read_zone(ctx);
+                    }
+                    if (strncmp(ctx->resource->labels[i].label, "instance_id", 11) == 0) {
+                        ret = gce_metadata_read_instance_id(ctx);
+                    }
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins,
+                            "Get %s from metadata server failed",
+                            ctx->resource->labels[i].label);
+                            ++m_cnt;
+                    }
+                    else {
+                        flb_plg_debug(ctx->ins,
+                            "Get %s from metadata server succeeded: %s",
+                            ctx->resource->labels[i].label,
+                            ctx->resource->labels[i].value);
+                    }
                 }
                 else {
-                    flb_plg_debug(ctx->ins,
-                        "Get %s from metadata server succeeded",
+                    flb_plg_error(ctx->ins, "Missing required label %s",
                         ctx->resource->labels[i].label);
+                    ++m_cnt;
                 }
             }
             else {
-                flb_plg_error(ctx->ins, "Missing required label %s",
-                    ctx->resource->labels[i].label);
-                ++m_cnt;
+                flb_plg_debug(ctx->ins,
+                    "Label %s is validated: %s",
+                    ctx->resource->labels[i].label,
+                    ctx->resource->labels[i].value);
             }
-        }
-        ++i;
     }
 
     if (m_cnt > 0) {
@@ -540,20 +546,17 @@ static int stackdriver_format(const void *data, size_t bytes,
     msgpack_pack_str_body(&mp_pck, "labels", 6);
 
     /* We have to divide by 2 due to the label/value pairs doubling the size */
-    msgpack_pack_map(&mp_pck,
-        (sizeof(ctx->resource->labels)/sizeof(ctx->resource->labels[0])) / 2);
+    msgpack_pack_map(&mp_pck, ctx->resource->label_cnt);
     /*
      * Iterate through the defined labels for this resource.
      */
-    i = 0;
-    while(ctx->resource->labels[i].label != NULL) {
+    for (i = 0; i < ctx->resource->label_cnt; ++i) {
         msgpack_pack_str(&mp_pck, strlen(ctx->resource->labels[i].label));
         msgpack_pack_str_body(&mp_pck, ctx->resource->labels[i].label,
             strlen(ctx->resource->labels[i].label));
-        msgpack_pack_str(&mp_pck, strlen(ctx->resource->labels[i].value));
+        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->resource->labels[i].value));
         msgpack_pack_str_body(&mp_pck, ctx->resource->labels[i].value,
-            strlen(ctx->resource->labels[i].value));
-        ++i;
+            flb_sds_len(ctx->resource->labels[i].value));
     }
 
     msgpack_pack_str(&mp_pck, 7);

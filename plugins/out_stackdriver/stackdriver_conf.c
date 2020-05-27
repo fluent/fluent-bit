@@ -47,20 +47,20 @@ struct flb_std_resource valid_resources[] = {
     {"global", {
         {"project_id", NULL},
         {NULL}
-    }, true},
+    }, 1, true},
     {"gce_instance", {
         {"project_id", NULL},
         {"zone", NULL},
         {"instance_id", NULL},
         {NULL},
-    }, true},
+    }, 3, true},
     {"generic_node", {
         {"project_id", NULL},
         {"location", NULL},
         {"namespace", NULL},
         {"node_id", NULL},
         {NULL}
-    }, false},
+    }, 4, false},
     {"generic_task", {
         {"project_id", NULL},
         {"location", NULL},
@@ -68,7 +68,7 @@ struct flb_std_resource valid_resources[] = {
         {"job", NULL},
         {"task_id", NULL},
         {NULL}
-    }, false},
+    }, 4, false},
     {NULL},
 };
 
@@ -81,7 +81,7 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int validate_resource(const char *res, struct flb_stackdriver *ctx)
+static int set_resource(const char *res, struct flb_stackdriver *ctx)
 {
     int i = 0;
     if (res == NULL) {
@@ -103,15 +103,14 @@ static int validate_resource(const char *res, struct flb_stackdriver *ctx)
 
 int set_resource_label(const char *key, const char *val, struct flb_stackdriver *ctx)
 {
-    int i = 0;
-    while (ctx->resource->labels[i].label != NULL) {
+    int i;
+    for (i = 0; i < ctx->resource->label_cnt; ++i) {
         if (strncmp(ctx->resource->labels[i].label, key, strlen(key)) == 0) {
             flb_plg_debug(ctx->ins,
                 "Setting label %s: %s", ctx->resource->labels[i].label, val);
             ctx->resource->labels[i].value = flb_sds_create(val);
             return 0;
         }
-        ++i;
     }
     return -1;
 }
@@ -252,8 +251,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     flb_sds_t key;
     static const char rlabel_prefix[] = "resource_label.";
     struct flb_stackdriver *ctx;
-    // struct flb_kv *kv;
-    // struct mk_list *label;
 
 
     /* Allocate config context */
@@ -347,7 +344,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     tmp = flb_output_get_property("resource", ins);
-    if (validate_resource(tmp, ctx) != 0) {
+    if (set_resource(tmp, ctx) != 0) {
         flb_plg_error(ctx->ins, "unsupported resource type '%s'", tmp);
         flb_stackdriver_conf_destroy(ctx);
         return NULL;
@@ -359,8 +356,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
      *  dropped since they will silently be rejected by the API anyway.
      */
     seen_project_id = false;
-    i = 0;
-    while(ctx->resource->labels[i].label != NULL) {
+    for (i = 0; i < ctx->resource->label_cnt; ++i) {
         key = flb_sds_create(rlabel_prefix);
         key = flb_sds_cat(key, ctx->resource->labels[i].label, strlen(ctx->resource->labels[i].label));
         flb_plg_debug(ctx->ins, "key = %s", key);
@@ -368,10 +364,11 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         if (tmp) {
             ctx->resource->labels[i].value = flb_sds_create(tmp);
             flb_plg_debug(ctx->ins,
-                "Added label %s: %s", ctx->resource->labels[i].label, tmp);
+                "Added label %s: %s",
+                ctx->resource->labels[i].label,
+                ctx->resource->labels[i].value);
         }
         flb_sds_destroy(key);
-        ++i;
     }
 
     /*
@@ -395,7 +392,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 
 int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 {
-    int i = 0;
+    int i;
+
     if (!ctx) {
         return -1;
     }
@@ -411,9 +409,8 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->severity_key);
 
-    while (ctx->resource->labels[i].label != NULL) {
+    for (i = 0; i < ctx->resource->label_cnt; ++i) {
         flb_sds_destroy(ctx->resource->labels[i].value);
-        ++i;
     }
 
     if (ctx->o) {

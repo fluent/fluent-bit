@@ -59,6 +59,7 @@ struct flb_std_label {
 struct flb_std_resource {
     const char *type;
     struct flb_std_label labels[10];
+    size_t label_cnt;
     bool metadata_enabled;
 };
 
