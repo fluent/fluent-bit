@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#define _GNU_SOURCE
+
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
@@ -25,11 +27,110 @@
 #include "syslog.h"
 #include "syslog_conn.h"
 
+#include <msgpack.h>
 #include <string.h>
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
+}
+
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define DYNAMIC_TAG_MAX 128
+
+// find and fill the value by msgpack format, e.g. \xA5ident\xA7my-appX...
+// https://github.com/msgpack/msgpack/blob/master/spec.md#str-format-family
+static int fill_field_value(char const *data, size_t const data_size, char const *name, char *out_val, char const *out_limit) {
+    int i;
+    int val_len = -1;
+    int matched;
+    size_t off = 0;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_object map;
+    msgpack_unpacked result;
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, data, data_size, &off);
+
+    map = result.data;
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        flb_warn("[in_syslog] Wrong object type of field '%s': was %d, expected map", name, map.type);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    matched = -1;
+    for (i = 0; i < map.via.map.size; i++) {
+        k = map.via.map.ptr[i].key;
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (strncmp(name, k.via.str.ptr, k.via.str.size) == 0) {
+            /* we have a match, stop the check */
+            matched = i;
+            break;
+        }
+    }
+    
+    /* No matches, no need to continue */
+    if (matched == -1) {
+        flb_warn("[in_syslog] field '%s' missing in syslog parser definition", name);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    v = map.via.map.ptr[i].val;
+    if (v.type != MSGPACK_OBJECT_STR) {
+        flb_warn("[in_syslog] field '%s' is not a string", name);
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+    val_len = MIN(v.via.str.size, out_limit - out_val);
+    strncpy(out_val, v.via.str.ptr, val_len);
+    
+    msgpack_unpacked_destroy(&result);
+    return val_len;
+}
+
+static int tag_compose(char *tag, char *data, size_t data_size, char *out_tag, size_t out_tag_max) {
+    enum { FIELD_IDENT, FIELD_MSGID }; // first * is <ident>, second * is <msgid>
+    char *in = tag;
+    char *in_end = tag + strlen(tag);
+    char *out = out_tag;
+    char *out_limit = out_tag + out_tag_max - 1;
+    int next_field = FIELD_IDENT;
+    while (in < in_end && out < out_limit) {
+        char *e = strchr(in, '*');
+        if (e == NULL) {
+            e = in_end;
+        }
+        int len = e - in;
+        if (len > 0) {
+            memcpy(out, in, len);
+            in += len;
+            out += len;
+        }
+        if (*in == '*') {
+            int field_len = 0;
+            switch (next_field) {
+            case FIELD_IDENT:
+                field_len = fill_field_value(data, data_size, "ident", out, out_limit);
+                break;
+            case FIELD_MSGID:
+                field_len = fill_field_value(data, data_size, "msgid", out, out_limit);
+                break;
+            }
+            if (field_len > 0) {
+                out += field_len;
+            }
+            next_field++;
+            in++;
+        }
+    }
+    *out = '\0';
+    return out - out_tag;
 }
 
 static inline int pack_line(struct flb_syslog *ctx,
@@ -46,7 +147,13 @@ static inline int pack_line(struct flb_syslog *ctx,
     flb_time_append_to_msgpack(time, &mp_pck, 0);
     msgpack_sbuffer_write(&mp_sbuf, data, data_size);
 
-    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    if (ctx->dynamic_tag) {
+        char tag[DYNAMIC_TAG_MAX];
+        int tag_len = tag_compose(ctx->ins->tag, data, data_size, tag, DYNAMIC_TAG_MAX);
+        flb_input_chunk_append_raw(ctx->ins, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
+    } else {
+        flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
