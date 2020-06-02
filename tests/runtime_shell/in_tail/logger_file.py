@@ -3,6 +3,7 @@
 import sys
 import uuid
 import time
+import signal
 import logging
 from argparse import ArgumentParser
 from logging.handlers import RotatingFileHandler
@@ -14,6 +15,7 @@ class LoggerManager:
         self.max_bytes = (args.size * 1000)
         self.backup = args.backup
         self.lines = args.lines
+        self.delay = args.delay
         self.threads = []
 
         # Create a thread for every writer
@@ -41,13 +43,22 @@ class LoggerManager:
         i = 0
         while i < self.lines:
             logger.debug(rnd)
-            time.sleep(0.0001)
+            if self.delay > 0.0:
+                time.sleep(self.delay / 1000.0)
             i = i + 1
 
+def signal_handler(sig, frame):
+    print("stopping logger")
+    sys.exit(0)
+
 if __name__ == '__main__':
+    signal.signal(signal.SIGINT, signal_handler)
+
     # Define arguments
     parser = ArgumentParser()
     parser.add_argument("-b", "--backup", dest="backup", default=50, type=int)
+    parser.add_argument("-d", "--delay", dest="delay", default=0.1, type=float,
+                        help="milliseconds delay between line writes")
     parser.add_argument("-l", "--lines", dest="lines", default=1000, type=int)
     parser.add_argument("-f", "--file", dest="filenames", action='append', required=True,
                         help="write logs to FILE", metavar="FILE")
