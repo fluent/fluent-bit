@@ -323,8 +323,10 @@ int flb_sched_request_destroy(struct flb_config *config,
      */
     flb_sched_timer_invalidate(timer);
 
+#ifndef FLB_SYSTEM_WINDOWS
     /* Close pipe after invalidating timer */
     flb_pipe_close(req->fd);
+#endif
 
     /* Remove request */
     flb_free(req);
