@@ -48,10 +48,10 @@ if(MSVC)
     BUILD_IN_SOURCE TRUE
     EXCLUDE_FROM_ALL TRUE
     SOURCE_DIR ${ONIGMO_SRC}
-    CONFIGURE_COMMAND cmake -E copy win32/Makefile win32/config.h ${ONIGMO_SRC}
+    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E copy win32/Makefile win32/config.h ${ONIGMO_SRC}
     BUILD_COMMAND nmake ARCH=${ONIGMO_ARCH}
-    INSTALL_COMMAND cmake -E copy build_${ONIGMO_ARCH}/onigmo_s.lib ${ONIGMO_DEST}/lib/libonigmo.lib
-            COMMAND cmake -E copy onigmo.h ${ONIGMO_DEST}/include/)
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy build_${ONIGMO_ARCH}/onigmo_s.lib ${ONIGMO_DEST}/lib/libonigmo.lib
+            COMMAND ${CMAKE_COMMAND} -E copy onigmo.h ${ONIGMO_DEST}/include/)
 endif()
 
 # Hook the buld definition to 'libonigmo' target

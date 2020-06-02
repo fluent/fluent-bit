@@ -1,8 +1,10 @@
 #!/usr/bin/make -f
 
+export DH_VERBOSE=1
+
 %:
 	dh $@ --buildsystem=cmake
 
 override_dh_auto_configure:
 
-	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/opt/td-agent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/etc/ -DFLB_ALL=ON -DFLB_TD=1 -DFLB_WITHOUT_EXAMPLES=On -DFLB_HTTP_SERVER=On -DFLB_OUT_KAFKA=On
+	dh_auto_configure -- -DFLB_ALL=ON -DFLB_TD=1 -DFLB_WITHOUT_EXAMPLES=On -DFLB_HTTP_SERVER=On -DFLB_OUT_KAFKA=On

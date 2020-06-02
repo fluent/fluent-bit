@@ -240,7 +240,7 @@ static int in_tail_init(struct flb_input_instance *in,
     ctx->coll_fd_scan = ret;
 
     /* Register callback to purge rotated files */
-    ret = flb_input_set_collector_time(in, flb_tail_file_rotated_purge,
+    ret = flb_input_set_collector_time(in, flb_tail_file_purge,
                                        ctx->rotate_wait, 0,
                                        config);
     if (ret == -1) {
@@ -311,10 +311,6 @@ static int in_tail_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_tail_config *ctx = data;
 
-    if (ctx->exclude_list) {
-        flb_utils_split_free(ctx->exclude_list);
-    }
-
     flb_tail_file_remove_all(ctx);
     flb_tail_config_destroy(ctx);
 
@@ -374,7 +370,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_CLIST, "exclude_path", NULL,
-     0, FLB_FALSE, offsetof(struct flb_tail_config, exclude_list),
+     0, FLB_TRUE, offsetof(struct flb_tail_config, exclude_list),
      "Set one or multiple shell patterns separated by commas to exclude "
      "files matching a certain criteria, e.g: 'exclude_path *.gz,*.zip'"
     },
@@ -410,8 +406,8 @@ static struct flb_config_map config_map[] = {
 
     },
     {
-     FLB_CONFIG_MAP_BOOL, "path_key", NULL,
-     0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
+     FLB_CONFIG_MAP_STR, "path_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path_key),
      "set the 'key' name where the name of monitored file will be appended."
     },
     {

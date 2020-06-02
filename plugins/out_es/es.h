@@ -24,7 +24,7 @@
 #define FLB_ES_DEFAULT_HOST       "127.0.0.1"
 #define FLB_ES_DEFAULT_PORT       92000
 #define FLB_ES_DEFAULT_INDEX      "fluent-bit"
-#define FLB_ES_DEFAULT_TYPE       "flb_type"
+#define FLB_ES_DEFAULT_TYPE       "_doc"
 #define FLB_ES_DEFAULT_PREFIX     "logstash"
 #define FLB_ES_DEFAULT_TIME_FMT   "%Y.%m.%d"
 #define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"

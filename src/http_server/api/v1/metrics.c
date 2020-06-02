@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
+#include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
@@ -33,6 +34,8 @@
 #include <sys/time.h>
 
 #define PROMETHEUS_HEADER "text/plain; version=0.0.4"
+
+#define null_check(x) do { if (!x) { goto error; } else {sds = x;} } while (0)
 
 pthread_key_t hs_metrics_key;
 
@@ -167,6 +170,34 @@ int is_same_metric(char *s1, char *s2) {
   return 1;
 }
 
+/* derive HELP text from metricname */
+/* if help text length > 128, increase init memory for metric_helptxt */
+flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
+{
+   if (strstr(metric_name, "input_bytes")) {
+        return flb_sds_cat(*metric_helptxt, " Number of input bytes.\n", 24);
+    } else if (strstr(metric_name, "input_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of input records.\n", 26);
+    } else if (strstr(metric_name, "output_bytes")) {
+        return flb_sds_cat(*metric_helptxt, " Number of output bytes.\n", 25);
+    } else if (strstr(metric_name, "output_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of output records.\n", 27);
+    } else if (strstr(metric_name, "output_errors")) {
+        return flb_sds_cat(*metric_helptxt, " Number of output errors.\n", 26);
+    } else if (strstr(metric_name, "output_retries_failed")) {
+        return flb_sds_cat(*metric_helptxt, " Number of output retries failed.\n", 34);
+    } else if (strstr(metric_name, "output_retries")) {
+        return flb_sds_cat(*metric_helptxt, " Number of output retries.\n", 27);
+    } else if (strstr(metric_name, "output_proc_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of processed output records.\n", 37);
+    } else if (strstr(metric_name, "output_proc_bytes")) {
+        return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
+    }
+    else {
+        return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
+    }
+}
+
 /* API: expose metrics in Prometheus format /api/v1/metrics/prometheus */
 void cb_metrics_prometheus(mk_request_t *request, void *data)
 {
@@ -181,6 +212,9 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     long now;
     flb_sds_t sds;
     flb_sds_t sds_metric;
+    flb_sds_t tmp_sds;
+    struct flb_sds *metric_helptxt_head;
+    flb_sds_t metric_helptxt;
     size_t off = 0;
     struct flb_hs_buf *buf;
     msgpack_unpacked result;
@@ -211,6 +245,16 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
         buf->users--;
         return;
     }
+
+    /* length of HELP text */
+    metric_helptxt = flb_sds_create_size(128);
+    if (!metric_helptxt) {
+        mk_http_status(request, 500);
+        mk_http_done(request);
+        buf->users--;
+        return;
+    }
+    metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
 
     /* current time */
     gettimeofday(&tp, NULL);
@@ -298,24 +342,56 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     /*  Sort metrics in alphabetic order, so we can group them later. */
     qsort(metrics_arr, num_metrics, sizeof(char *), string_cmp);
 
-    /* When a new metric starts add TYPE annotation. */
-    sds = flb_sds_cat(sds, "# TYPE ", 7);
-    sds = flb_sds_cat(sds, metrics_arr[0], extract_metric_name_end_position(metrics_arr[0]));
-    sds = flb_sds_cat(sds, " counter\n", 9);
+    /* When a new metric starts add HELP and TYPE annotation. */
+    tmp_sds = flb_sds_cat(sds, "# HELP ", 7);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, metrics_arr[0], extract_metric_name_end_position(metrics_arr[0]));
+    null_check(tmp_sds);
+    if (!metrics_help_txt(metrics_arr[0], &metric_helptxt)) {
+        goto error;
+    }
+    tmp_sds = flb_sds_cat(sds, metric_helptxt, metric_helptxt_head->len);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "# TYPE ", 7);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, metrics_arr[0], extract_metric_name_end_position(metrics_arr[0]));
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, " counter\n", 9);
+    null_check(tmp_sds);
+
     for (i = 0; i < num_metrics; i++) {
-        sds = flb_sds_cat(sds, metrics_arr[i], strlen(metrics_arr[i]));
+        tmp_sds = flb_sds_cat(sds, metrics_arr[i], strlen(metrics_arr[i]));
+        null_check(tmp_sds);
         if ((i != num_metrics - 1) && (is_same_metric(metrics_arr[i], metrics_arr[i+1]) == 0)) {
-            sds = flb_sds_cat(sds, "# TYPE ", 7);
-            sds = flb_sds_cat(sds, metrics_arr[i+1], extract_metric_name_end_position(metrics_arr[i+1]));
-            sds = flb_sds_cat(sds, " counter\n", 9);
+            tmp_sds = flb_sds_cat(sds, "# HELP ", 7);
+            null_check(tmp_sds);
+            tmp_sds = flb_sds_cat(sds, metrics_arr[i+1], extract_metric_name_end_position(metrics_arr[i+1]));
+            null_check(tmp_sds);
+            metric_helptxt_head->len = 0;
+            if (!metrics_help_txt(metrics_arr[i+1], &metric_helptxt)) {
+                goto error;
+            }
+            tmp_sds = flb_sds_cat(sds, metric_helptxt, metric_helptxt_head->len);
+            null_check(tmp_sds);
+            tmp_sds = flb_sds_cat(sds, "# TYPE ", 7);
+            null_check(tmp_sds);
+            tmp_sds = flb_sds_cat(sds, metrics_arr[i+1], extract_metric_name_end_position(metrics_arr[i+1]));
+            null_check(tmp_sds);
+            tmp_sds = flb_sds_cat(sds, " counter\n", 9);
+            null_check(tmp_sds);
         }
     }
-
     /* Attach process_start_time_seconds metric. */
-    sds = flb_sds_cat(sds, "# TYPE process_start_time_seconds gauge\n", 40);
-    sds = flb_sds_cat(sds, "process_start_time_seconds ", 27);
-    sds = flb_sds_cat(sds, start_time_str, start_time_len);
-    sds = flb_sds_cat(sds, "\n", 1);
+    tmp_sds = flb_sds_cat(sds, "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.\n", 89);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "# TYPE process_start_time_seconds gauge\n", 40);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "process_start_time_seconds ", 27);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, start_time_str, start_time_len);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "\n", 1);
+    null_check(tmp_sds);
 
     msgpack_unpacked_destroy(&result);
     buf->users--;
@@ -330,6 +406,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     }
     flb_free(metrics_arr);
     flb_sds_destroy(sds);
+    flb_sds_destroy(metric_helptxt);
 
     mk_http_done(request);
     return;
@@ -344,6 +421,7 @@ error:
     }
     flb_free(metrics_arr);
     flb_sds_destroy(sds);
+    flb_sds_destroy(metric_helptxt);
     msgpack_unpacked_destroy(&result);
 }
 

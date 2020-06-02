@@ -1,0 +1,45 @@
+# Fluent Bit Code Owners
+# ----------------------
+# The following file list the code owners or responsibles for code
+# review on different components or extensions of Fluent Bit, applicable for
+# any original code author (not only maintainers).
+#
+# NOTE: if you are a original code author and you are not listed here, please
+# open a PR with the proper modification :)
+
+# Global Owners
+# -------------
+*                        @edsiper @fujimotos @koleini
+
+# Build System & Portability
+# --------------------------
+/CMakeLists.txt          @fujimotos
+/cmake/                  @fujimotos
+
+# Core: Signv4
+# ------------
+/src/flb_signv4.c        @pettitwesley
+
+# Core: Stream Processor
+# ----------------
+/src/stream_processor/   @koleini
+
+# Input Plugins
+# -------------
+/plugins/in_collectd     @fujimotos
+/plugins/in_docker       @ashutoshdhundhara
+/plugins/in_dummy        @nokute78
+/plugins/in_netif        @nokute78
+/plugins/in_statsd       @fujimotos
+/plugins/in_thermal      @nokute78
+/plugins/in_winlog       @fujimotos
+
+# Filter Plugins
+# --------------
+/plugins/filter_aws      @pettitwesley
+
+# Output Plugins
+# --------------
+/plugins/out_datadog     @clamoriniere
+/plugins/out_es          @pettitwesley @edsiper
+/plugins/out_pgsql       @sxd

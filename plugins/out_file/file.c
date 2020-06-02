@@ -119,7 +119,6 @@ static int cb_file_init(struct flb_output_instance *ins,
         }
         else if (!strcasecmp(tmp, "template")) {
             ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
-            ctx->template  = "{time} {message}";
         }
     }
 
@@ -458,7 +457,7 @@ static struct flb_config_map config_map[] = {
      NULL
     },
     {
-     FLB_CONFIG_MAP_STR, "template", NULL,
+     FLB_CONFIG_MAP_STR, "template", "{time} {message}",
      0, FLB_TRUE, offsetof(struct flb_file_conf, template),
      NULL
     },

@@ -22,7 +22,24 @@
 #define FLB_NETWORK_H
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_uri.h>
+
+/* Network connection setup */
+struct flb_net_setup {
+    /* enable/disable keepalive support */
+    int keepalive;
+
+    /* max time in seconds that a keepalive connection can be idle */
+    int keepalive_idle_timeout;
+
+    /* max time in seconds to wait for a established connection */
+    int connect_timeout;
+
+    /* network interface to bind and use to send data */
+    flb_sds_t source_address;
+};
 
 /* Defines a host service and it properties */
 struct flb_net_host {
@@ -39,11 +56,13 @@ struct flb_net_host {
 #endif
 
 /* Generic functions */
+void flb_net_setup_init(struct flb_net_setup *net);
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* TCP options */
 int flb_net_socket_reset(flb_sockfd_t fd);
 int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
+int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 

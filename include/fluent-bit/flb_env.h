@@ -27,8 +27,14 @@
 #define FLB_ENV_SIZE 64
 
 struct flb_env {
+    int warn_unused;        /* warn about unused environment variable */
     struct flb_hash *ht;
 };
+
+static inline void flb_env_warn_unused(struct flb_env *env, int warn)
+{
+    env->warn_unused = warn;
+}
 
 struct flb_env *flb_env_create();
 void flb_env_destroy(struct flb_env *env);

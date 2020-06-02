@@ -70,56 +70,189 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     int ret;
     int err;
     int error = 0;
+    int async = FLB_FALSE;
     uint32_t mask;
     char so_error_buf[256];
-    flb_sockfd_t fd;
+    fd_set wait_set;
+    flb_sockfd_t fd = -1;
     socklen_t len = sizeof(error);
+    struct timeval timeout;
     struct flb_upstream *u = u_conn->u;
+    struct sockaddr_storage addr;
+    struct addrinfo hint;
+    struct addrinfo *res = NULL;
 
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
     }
 
-    /* Create the socket */
-    if (u_conn->u->flags & FLB_IO_IPV6) {
-        fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+    /*
+     * If the net.source_address was set, we need to determinate the address
+     * type (for socket type creation) and bind it.
+     *
+     * Note that this routine overrides the behavior of the 'ipv6' configuration
+     * property.
+     */
+    if (u->net.source_address) {
+        memset(&hint, '\0', sizeof hint);
+
+        hint.ai_family = PF_UNSPEC;
+        hint.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_PASSIVE;
+
+        ret = getaddrinfo(u->net.source_address, NULL, &hint, &res);
+        if (ret == -1) {
+            flb_errno();
+            flb_error("[io] cannot parse source_address=%s",
+                      u->net.source_address);
+            return -1;
+        }
+
+        if (res->ai_family == AF_INET) {
+            fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+        }
+        else if (res->ai_family == AF_INET6) {
+            fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+        }
+        else {
+            flb_error("[io] could not create socket for "
+                      "source_address=%s, unknown ai_family",
+                      u->net.source_address);
+            freeaddrinfo(res);
+            return -1;
+        }
+
+        if (fd == -1) {
+            flb_error("[io] could not create an %s socket for "
+                      "source_address=%s",
+                      res->ai_family == AF_INET ? "IPv4": "IPv6",
+                      u->net.source_address);
+            freeaddrinfo(res);
+            return -1;
+        }
+
+        /* Bind the address */
+        memcpy(&addr, res->ai_addr, res->ai_addrlen);
+        freeaddrinfo(res);
+        ret = bind(fd, (struct sockaddr *) &addr, sizeof(addr));
+        if (ret == -1) {
+            flb_errno();
+            flb_socket_close(fd);
+            flb_error("[io] could not bind source_address=%s",
+                      u->net.source_address);
+            return -1;
+        }
     }
     else {
-        fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+        /* Create the socket */
+        if (u_conn->u->flags & FLB_IO_IPV6) {
+            fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+        }
+        else {
+            fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+        }
+        if (fd == -1) {
+            flb_error("[io] could not create socket");
+            return -1;
+        }
     }
-    if (fd == -1) {
-        flb_error("[io] could not create socket");
-        return -1;
-    }
+
     u_conn->fd = fd;
     u_conn->event.fd = fd;
 
+    /* Disable Nagle's algorithm */
+    flb_net_socket_tcp_nodelay(fd);
+
     /*
-     * If we use co-routines flushing method, make sure socket
-     * operations are asynchronous
+     * If the socket is asynchronous or we need a timeout for connect(2) on a
+     * blocking socket set the 'async' flag,
      */
-    if (u->flags & FLB_IO_ASYNC) {
+    if ((u->flags & FLB_IO_ASYNC) || u->net.connect_timeout > 0) {
+        async = FLB_TRUE;
         flb_net_socket_nonblocking(u_conn->fd);
     }
-
-    flb_net_socket_tcp_nodelay(fd);
 
     /* Start the connection */
     ret = flb_net_tcp_fd_connect(fd, u->tcp_host, u->tcp_port);
     if (ret == -1) {
-        /* In blocking mode connect() fails right away */
-        if ((u->flags & FLB_IO_ASYNC) == 0) {
+        /*
+         * We got an exception, depending on the blocking mode we must
+         * check the 'errno' status of the socket.
+         *
+         * If no asynchronous mode was set, just fail right away.
+         */
+        if (async == FLB_FALSE) {
+            flb_errno();
+            flb_error("[io] TCP failed connecting to: %s:%i",
+                      u->tcp_host, u->tcp_port);
             flb_socket_close(fd);
             return -1;
         }
 
+        /*
+         * If the asynchronous mode is enabled and the connection is still in
+         * progress, check under which condition the non-blocking socket was
+         * set, the options are:
+         *
+         *  1. Native asynchronous socket connection set by the caller
+         *  2. Blocking socket that needs a timeout for connect(2)
+         */
         err = flb_socket_error(fd);
-        if (FLB_EINPROGRESS(err)) {
-            flb_trace("[upstream] connection in process");
-        }
-        else {
+        if (!FLB_EINPROGRESS(err)) {
+            flb_errno();
+            flb_error("[io] TCP failed connecting to: %s:%i",
+                      u->tcp_host, u->tcp_port);
             flb_socket_close(fd);
             return -1;
+        }
+
+        /* FYI: The connection is in progress... */
+        flb_trace("[io] connection in process to %s:%i",
+                  u->tcp_host, u->tcp_port);
+
+        /*
+         * Timeout for blocking socket. Check if the 'original' socket
+         * mode is 'blocking'
+         */
+        if ((u->flags & FLB_IO_ASYNC) == 0) {
+            /*
+             * Prepare a timeout using select(2): we could use our own
+             * event loop mechanism for this, but it will require an
+             * extra file descriptor, the select(2) call is straightforward
+             * for this use case.
+             */
+            FD_ZERO(&wait_set);
+            FD_SET(u_conn->fd, &wait_set);
+
+            /* Wait 'connect_timeout' seconds for an event */
+            timeout.tv_sec = u->net.connect_timeout;
+            timeout.tv_usec = 0;
+            ret = select(u_conn->fd + 1, NULL, &wait_set, NULL, &timeout);
+            if (ret == 0) {
+                /* Timeout */
+                flb_error("[io] TCP connect timeout after %i seconds to: "
+                          "%s:%i",
+                          u->net.connect_timeout,
+                          u->tcp_host, u->tcp_port);
+                flb_socket_close(fd);
+                return -1;
+            }
+            else if (ret < 0) {
+                /* Generic error */
+                flb_errno();
+                flb_error("[io] TCP failed connecting to: %s:%i",
+                          u->tcp_host, u->tcp_port);
+                flb_socket_close(fd);
+                return -1;
+            }
+
+            /*
+             * No exception, the connection succeeded, return the normal
+             * blocking mode to the socket.
+             */
+            flb_net_socket_blocking(u_conn->fd);
+
+            /* Finalize last steps for connection like TLS and return */
+            goto connected;
         }
 
         MK_EVENT_ZERO(&u_conn->event);
@@ -163,7 +296,16 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                 return -1;
             }
 
+            /* Check the exception */
             if (error != 0) {
+                /*
+                 * The upstream connection might want to override the
+                 * exception (mostly used for local timeouts: ETIMEDOUT.
+                 */
+                if (u_conn->net_error > 0) {
+                    error = u_conn->net_error;
+                }
+
                 /* Connection is broken, not much to do here */
                 strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
                 flb_error("[io] TCP connection failed: %s:%i (%s)",
@@ -179,6 +321,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
             return -1;
         }
     }
+
+connected:
 
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */

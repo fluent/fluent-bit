@@ -34,6 +34,9 @@ struct flb_dummy {
 
     char *ref_msgpack;
     size_t ref_msgpack_size;
+
+    struct flb_time *dummy_timestamp;
+    struct flb_time *base_timestamp;
     struct flb_input_instance *ins;
 };
 

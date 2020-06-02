@@ -88,7 +88,7 @@ static int logfmt_parser(struct flb_parser *parser,
 
     while (c < end) {
         /* garbage */
-        while (!ident_byte[*c] && (c < end)) {
+        while ((c < end) && !ident_byte[*c]) {
             c++;
         }
         if (c == end) {
@@ -96,14 +96,19 @@ static int logfmt_parser(struct flb_parser *parser,
         }
         /* key */
         key = c;
-        while (ident_byte[*c] && (c < end)) {
+        while ((c < end) && ident_byte[*c]) {
             c++;
         }
+        if (c == end) {
+            break;
+        }
+
         key_len = c - key;
         /* value */
         value_len = 0;
         value_str = FLB_FALSE;
         value_escape =  FLB_FALSE;
+
         if (*c == '=') {
             c++;
             if (c < end) {
@@ -134,7 +139,7 @@ static int logfmt_parser(struct flb_parser *parser,
                 }
                 else {
                    value = c;
-                   while (ident_byte[*c] && (c < end)) {
+                   while ((c < end) && ident_byte[*c]) {
                       c++;
                    }
                    value_len = c - value;

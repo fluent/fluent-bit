@@ -44,6 +44,14 @@
 #define SOL_TCP IPPROTO_TCP
 #endif
 
+void flb_net_setup_init(struct flb_net_setup *net)
+{
+    net->keepalive = FLB_TRUE;
+    net->keepalive_idle_timeout = 30;
+    net->connect_timeout = 10;
+    net->source_address = NULL;
+}
+
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
 {
     int len;
@@ -135,6 +143,21 @@ int flb_net_socket_nonblocking(flb_sockfd_t fd)
     if (ioctlsocket(fd, FIONBIO, &on) != 0) {
 #else
     if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1) {
+#endif
+        perror("fcntl");
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_net_socket_blocking(flb_sockfd_t fd)
+{
+#ifdef _WIN32
+    unsigned long off = 0;
+    if (ioctlsocket(fd, FIONBIO, &off) != 0) {
+#else
+    if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK) == -1) {
 #endif
         perror("fcntl");
         return -1;

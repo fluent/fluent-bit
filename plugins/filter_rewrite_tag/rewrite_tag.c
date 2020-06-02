@@ -58,6 +58,18 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
                      ins->name);
     }
 
+    /* Set the emitter_mem_buf_limit */
+    if(ctx->emitter_mem_buf_limit > 0) {
+        ins->mem_buf_limit = ctx->emitter_mem_buf_limit;
+    }
+
+    /* Set the storage type */
+    ret = flb_input_set_property(ins, "storage.type",
+                                 ctx->emitter_storage_type);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot set storage.type");
+    }
+
     /* Initialize emitter plugin */
     ret = flb_input_instance_init(ins, ctx->config);
     if (ret == -1) {
@@ -179,6 +191,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
 {
     int ret;
     flb_sds_t tmp;
+    flb_sds_t emitter_name = NULL;
     struct flb_rewrite_tag *ctx;
     (void) data;
 
@@ -192,6 +205,38 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     ctx->config = config;
     mk_list_init(&ctx->rules);
 
+    /*
+     * Emitter name: every rewrite_tag instance needs an emitter input plugin,
+     * with that one is able to emit records. We use a unique instance so we
+     * can use the metrics interface.
+     *
+     * If not set, we define an emitter name
+     *
+     * Validate if the emitter_name has been set before to check with the
+     * config map. If is not set, do a manual set of the property, so we let the
+     * config map handle the memory allocation.
+     */
+    tmp = (char *) flb_filter_get_property("emitter_name", ins);
+    if (!tmp) {
+        emitter_name = flb_sds_create_size(64);
+        if (!emitter_name) {
+            flb_free(ctx);
+            return -1;
+        }
+
+        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s",
+                             flb_filter_name(ins));
+        if (!tmp) {
+            flb_error("[filter rewrite_tag] cannot compose emitter_name");
+            flb_sds_destroy(emitter_name);
+            flb_free(ctx);
+            return -1;
+        }
+
+        flb_filter_set_property(ins, "emitter_name", emitter_name);
+        flb_sds_destroy(emitter_name);
+    }
+
     /* Set config_map properties in our local context */
     ret = flb_filter_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -199,26 +244,24 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
         return -1;
     }
 
+    /*
+     * Emitter Storage Type: the emitter input plugin to be created by default
+     * uses memory buffer, this option allows to define a filesystem mechanism
+     * for new records created (only if the main service is also filesystem
+     * enabled).
+     *
+     * On this code we just validate the input type: 'memory' or 'filesystem'.
+     */
+    tmp = ctx->emitter_storage_type;
+    if (strcasecmp(tmp, "memory") != 0 && strcasecmp(tmp, "filesystem") != 0) {
+        flb_plg_error(ins, "invalid 'emitter_storage.type' value. Only "
+                      "'memory' or 'filesystem' types are allowed");
+        flb_free(ctx);
+        return -1;
+    }
+
     /* Set plugin context */
     flb_filter_set_context(ins, ctx);
-
-    /*
-     * Emitter name: every rewrite_tag instance needs an emitter input plugin, with
-     * that one is able to emit records. We use a unique instance so we can use
-     * the metrics interface.
-     *
-     * If not set, we define an emitter name
-     */
-    if (!ctx->emitter_name) {
-        ctx->emitter_name = flb_sds_create_size(64);
-        tmp = flb_sds_printf(&ctx->emitter_name, "emitter_for_%s", ins->name);
-        if (!tmp) {
-            flb_error("[filter rewrite_tag] cannot compose emitter_name");
-            flb_free(ctx);
-            return -1;
-        }
-        ctx->emitter_name = tmp;
-    }
 
     /* Process the configuration */
     ret = process_config(ctx);
@@ -408,6 +451,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "emitter_name", NULL,
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_name),
      NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "emitter_storage.type", "memory",
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_storage_type),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_RTAG_MEM_BUF_LIMIT_DEFAULT,
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_mem_buf_limit),
+     "set a memory buffer limit to restrict memory usage of emitter"
     },
     /* EOF */
     {0}

@@ -1222,9 +1222,7 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
                       "%d elements", records_in, map.via.map.size);
 
         // * * Record array item 2/2
-        msgpack_pack_map(packer, map.via.map.size);
-        map_pack_each(packer, &map);
-
+        msgpack_pack_object(packer, map);
     }
 
     msgpack_unpacked_destroy(&unpacked);

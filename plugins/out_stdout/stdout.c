@@ -159,17 +159,17 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specifies the data format to be printed. Supported formats are msgpack json, json_lines and json_stream."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+    "Specifies the name of the date field in output."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
-     NULL
+    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
     },
 
     /* EOF */

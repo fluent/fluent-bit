@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -109,6 +110,32 @@ static int cb_tcp_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", "msgpack",
+     0, FLB_FALSE, 0,
+     "Specify the payload format, supported formats: msgpack, json, "
+     "json_lines or json_stream."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", "double",
+     0, FLB_FALSE, 0,
+     "Specify the format of the date, supported formats: double, iso8601 "
+     "(e.g: 2018-05-30T09:39:52.000681Z) and epoch."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_tcp, json_date_key),
+     "Specify the name of the date field in output."
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_tcp_plugin = {
     .name           = "tcp",
@@ -116,5 +143,6 @@ struct flb_output_plugin out_tcp_plugin = {
     .cb_init        = cb_tcp_init,
     .cb_flush       = cb_tcp_flush,
     .cb_exit        = cb_tcp_exit,
+    .config_map     = config_map,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

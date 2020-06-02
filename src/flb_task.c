@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
@@ -375,6 +376,10 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->i_ins  = i_ins;
     task->ic     = ic;
     mk_list_add(&task->_head, &i_ins->tasks);
+
+#ifdef FLB_HAVE_METRICS
+    task->records = ((struct flb_input_chunk *) ic)->total_records;
+#endif
 
     /* Find matching routes for the incoming tag */
     mk_list_foreach(o_head, &config->outputs) {

@@ -38,6 +38,8 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <mbedtls/base64.h>
 
@@ -153,7 +155,7 @@ static int check_chunked_encoding(struct flb_http_client *c)
     return FLB_HTTP_OK;
 }
 
-/* Check and set Content Length */
+/* Check response for a 'Content-Length' header */
 static int check_content_length(struct flb_http_client *c)
 {
     int ret;
@@ -186,6 +188,40 @@ static int check_content_length(struct flb_http_client *c)
 
     c->resp.content_length = atoi(tmp);
     return FLB_HTTP_OK;
+}
+
+/* Check response for a 'Connection' header */
+static int check_connection(struct flb_http_client *c)
+{
+    int ret;
+    int len;
+    const char *header;
+    char *buf;
+
+    ret = header_lookup(c, "Connection: ", 12,
+                        &header, &len);
+    if (ret == FLB_HTTP_NOT_FOUND) {
+        return FLB_HTTP_NOT_FOUND;
+    }
+
+    buf = flb_malloc(len + 1);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(buf, header, len);
+    buf[len] = '\0';
+
+    if (strncasecmp(buf, "close", 5) == 0) {
+        c->resp.connection_close = FLB_TRUE;
+    }
+    else if (strcasestr(buf, "keep-alive")) {
+        c->resp.connection_close = FLB_FALSE;
+    }
+    flb_free(buf);
+    return FLB_HTTP_OK;
+
 }
 
 static inline void consume_bytes(char *buf, int bytes, int length)
@@ -615,6 +651,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     /* Response */
     c->resp.content_length = -1;
+    c->resp.connection_close = -1;
 
     if ((flags & FLB_HTTP_10) == 0) {
         c->flags |= FLB_HTTP_11;
@@ -860,10 +897,10 @@ static void http_headers_destroy(struct flb_http_client *c)
     flb_kv_release(&c->headers);
 }
 
-static int flb_http_keepalive(struct flb_http_client *c)
+int flb_http_set_keepalive(struct flb_http_client *c)
 {
-    /* validate keepalive mode */
-    if ((c->flags & FLB_HTTP_KA) == 0) {
+    /* check if 'keepalive' mode is enabled in the Upstream connection */
+    if (c->u_conn->u->net.keepalive == FLB_FALSE) {
         return -1;
     }
 
@@ -887,6 +924,13 @@ int flb_http_set_content_encoding_gzip(struct flb_http_client *c)
     return ret;
 }
 
+int flb_http_set_callback_context(struct flb_http_client *c,
+                                  struct flb_callback *cb_ctx)
+{
+    c->cb_ctx = cb_ctx;
+    return 0;
+}
+
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd)
 {
@@ -907,7 +951,13 @@ int flb_http_basic_auth(struct flb_http_client *c,
      */
 
     len_u = strlen(user);
-    len_p = strlen(passwd);
+
+    if (passwd) {
+        len_p = strlen(passwd);
+    }
+    else {
+        len_p = 0;
+    }
 
     p = flb_malloc(len_u + len_p + 2);
     if (!p) {
@@ -918,8 +968,11 @@ int flb_http_basic_auth(struct flb_http_client *c,
     memcpy(p, user, len_u);
     p[len_u] = ':';
     len_out = len_u + 1;
-    memcpy(p + len_out, passwd, len_p);
-    len_out += len_p;
+
+    if (passwd) {
+        memcpy(p + len_out, passwd, len_p);
+        len_out += len_p;
+    }
     p[len_out] = '\0';
 
     memcpy(tmp, "Basic ", 6);
@@ -958,9 +1011,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         return -1;
     }
 
-    /* Try to add keep alive header */
-    flb_http_keepalive(c);
-
     /* check enough space for the ending CRLF */
     if (header_available(c, crlf) != 0) {
         new_size = c->header_size + 2;
@@ -975,6 +1025,16 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     /* Append the ending header CRLF */
     c->header_buf[c->header_len++] = '\r';
     c->header_buf[c->header_len++] = '\n';
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    /* debug: request_headers callback */
+    flb_http_client_debug_cb(c, "_debug.http.request_headers");
+
+    /* debug: request_payload callback */
+    if (c->body_len > 0) {
+        flb_http_client_debug_cb(c, "_debug.http.request_payload");
+    }
+#endif
 
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
@@ -1050,6 +1110,30 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
             return -1;
         }
     }
+
+    /* Check 'Connection' response header */
+    ret = check_connection(c);
+    if (ret == FLB_HTTP_OK) {
+        /*
+         * If the server replied that the connection will be closed
+         * and our Upstream connection is in keepalive mode, we must
+         * inactivate the connection.
+         */
+        if (c->resp.connection_close == FLB_TRUE) {
+            /* Do not recycle the connection (no more keepalive) */
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
+            flb_debug("[http_client] server %s:%i will close connection #%i",
+                      c->u_conn->u->tcp_host, c->u_conn->u->tcp_port,
+                      c->u_conn->fd);
+        }
+    }
+
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    flb_http_client_debug_cb(c, "_debug.http.response_headers");
+    if (c->resp.payload_size > 0) {
+        flb_http_client_debug_cb(c, "_debug.http.response_payload");
+    }
+#endif
 
     return 0;
 }

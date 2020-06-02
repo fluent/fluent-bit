@@ -43,6 +43,8 @@ set(src
   flb_sha512.c
   flb_plugin.c
   flb_gzip.c
+  flb_http_client.c
+  flb_callback.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -71,7 +73,6 @@ if(FLB_TLS)
     ${src}
     "flb_io_tls.c"
     "flb_oauth2.c"
-    "flb_http_client.c"
     )
 
   # Make sure our output targets links to the TLS library
@@ -100,6 +101,13 @@ if(FLB_SIGNV4 AND FLB_TLS)
   set(src
     ${src}
     "flb_signv4.c"
+    )
+endif()
+
+if(FLB_HTTP_CLIENT_DEBUG)
+  set(src
+    ${src}
+    "flb_http_client_debug.c"
     )
 endif()
 
@@ -193,6 +201,15 @@ endif()
 
 
 # Record Accessor
+# ---------------
+# Make sure it dependency is enabled
+if(FLB_RECORD_ACCESSOR AND NOT FLB_REGEX)
+  message(FATAL_ERROR
+    "FLB_RECORD_ACCESSOR depends on FLB_REGEX, "
+    "enable it with: -DFLB_REGEX=ON")
+endif()
+
+# Build record accessor files
 if(FLB_RECORD_ACCESSOR)
   set(src
     ${src}
