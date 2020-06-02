@@ -121,6 +121,17 @@ void flb_aws_credentials_destroy(struct flb_aws_credentials *creds);
  */
 void flb_aws_provider_destroy(struct flb_aws_provider *provider);
 
+/*
+ * The standard chain provider; client code should use this provider by default
+ */
+struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
+                                                            *config,
+                                                            struct flb_tls *tls,
+                                                            char *region,
+                                                            char *proxy,
+                                                            struct
+                                                            flb_aws_client_generator
+                                                            *generator);
 
 /*
  * A provider that uses OIDC tokens provided by kubernetes to obtain
