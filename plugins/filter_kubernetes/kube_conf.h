@@ -59,7 +59,11 @@
  * Default expected Kubernetes tag prefix, this is used mostly when source
  * data comes from in_tail with custom tags like: kube.service.*
  */
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_KUBE_TAG_PREFIX "kube.c.var.log.containers."
+#else
 #define FLB_KUBE_TAG_PREFIX "kube.var.log.containers."
+#endif
 
 struct kube_meta;
 
