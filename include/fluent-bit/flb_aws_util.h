@@ -28,7 +28,7 @@
 #define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
 #define AWS_SERVICE_ENDPOINT_BASE_LEN          15
 
-#define FLB_AWS_CREDENTIAL_REFRESH_LIMIT       300
+#define FLB_AWS_CREDENTIAL_REFRESH_LIMIT       60
 
 /*
  * The AWS HTTP Client is a wrapper around the Fluent Bit's http library.
@@ -91,7 +91,7 @@ struct flb_aws_client {
      size_t static_headers_len;
 
     /*
-     * If an API responds with 400, we refresh creds and retry.
+     * If an API responds with auth error, we refresh creds and retry.
      * For safety, credential refresh can only happen once per
      * FLB_AWS_CREDENTIAL_REFRESH_LIMIT.
      */
