@@ -82,6 +82,7 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
                                                size_t dynamic_headers_len)
 {
     struct flb_http_client *c = NULL;
+    flb_sds_t error = NULL;
 
     //TODO: Need to think more about the retry strategy.
 
@@ -89,19 +90,31 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
                    dynamic_headers, dynamic_headers_len);
 
     /*
-     * 400 or 403 could indicate an issue with credentials- so we force a
-     * refresh on the provider. For safety a refresh can be performed only once
+     * 400 or 403 could indicate an issue with credentials- so we check for auth
+     * specific error messages and then force a refresh on the provider.
+     * For safety a refresh can be performed only once
      * per FLB_AWS_CREDENTIAL_REFRESH_LIMIT.
      *
-     * Refresh requires async to be enabled
      */
-    if (aws_client->upstream->flags & FLB_IO_ASYNC) {
-        if (c && (c->resp.status == 400 || c->resp.status == 403)) {
-            if (aws_client->has_auth && time(NULL) > aws_client->refresh_limit) {
-                aws_client->refresh_limit = time(NULL)
-                                            + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
-                aws_client->provider->provider_vtable->refresh(aws_client->provider);
-            }
+    if (c && (c->resp.status == 400 || c->resp.status == 403)) {
+        error = flb_aws_error(c->resp.payload, c->resp.payload_size);
+        if (error != NULL) {
+            if (strcmp(error, "ExpiredToken") == 0 ||
+                strcmp(error, "AccessDeniedException") == 0 ||
+                strcmp(error, "IncompleteSignature") == 0 ||
+                strcmp(error, "MissingAuthenticationToken") == 0 ||
+                strcmp(error, "InvalidClientTokenId") == 0 ||
+                strcmp(error, "UnrecognizedClientException") == 0) {
+                    if (aws_client->has_auth && time(NULL) >
+                        aws_client->refresh_limit) {
+
+                        aws_client->refresh_limit = time(NULL)
+                                                    + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
+                        aws_client->provider->provider_vtable->
+                                              refresh(aws_client->provider);
+                    }
+                }
+            flb_sds_destroy(error);
         }
     }
 
