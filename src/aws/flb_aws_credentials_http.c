@@ -490,8 +490,6 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
         i++;
     }
 
-    flb_free(tokens);
-
     if (creds->access_key_id == NULL) {
         flb_error("[aws_credentials] Missing %s field in http"
                   "credentials response", AWS_HTTP_RESPONSE_ACCESS_KEY);
@@ -510,6 +508,7 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
         goto error;
     }
 
+    flb_free(tokens);
     return creds;
 
 error:
