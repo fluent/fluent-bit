@@ -30,6 +30,9 @@
 /* Refresh creds if they will expire in 5 min or less */
 #define FLB_AWS_REFRESH_WINDOW         300
 
+/* 5 second timeout for credential related http requests */
+#define FLB_AWS_CREDENTIAL_NET_TIMEOUT 5
+
 /*
  * A structure that wraps the sensitive data needed to sign an AWS request
  */

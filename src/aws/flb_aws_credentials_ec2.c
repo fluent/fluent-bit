@@ -214,6 +214,8 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
         return NULL;
     }
 
+    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+
     implementation->client = generator->create();
     if (!implementation->client) {
         flb_aws_provider_destroy(provider);
