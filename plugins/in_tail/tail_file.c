@@ -995,7 +995,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
         ret = lstat(file->name, &st);
         if (ret == -1) {
             /* Broken link or missing file */
-            if (errno = ENOENT) {
+            if (errno == ENOENT) {
                 flb_plg_info(ctx->ins, "inode=%lu link_rotated: %s",
                              file->link_inode, file->name);
                 return FLB_TRUE;
