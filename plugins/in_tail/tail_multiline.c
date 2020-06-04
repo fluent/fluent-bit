@@ -253,9 +253,19 @@ static inline int is_last_key_val_string(char *buf, size_t size)
     }
 
     root = result.data;
-    v = root.via.map.ptr[root.via.map.size - 1].val;
-    if (v.type == MSGPACK_OBJECT_STR) {
-        ret = FLB_TRUE;
+    if (root.type != MSGPACK_OBJECT_MAP) {
+        ret = FLB_FALSE;
+    }
+    else {
+        if (root.via.map.size == 0) {
+            ret = FLB_FALSE;
+        }
+        else {
+            v = root.via.map.ptr[root.via.map.size - 1].val;
+            if (v.type == MSGPACK_OBJECT_STR) {
+                ret = FLB_TRUE;
+            }
+        }
     }
 
     msgpack_unpacked_destroy(&result);
