@@ -93,7 +93,7 @@ static struct flb_expect_rule *rule_create(struct flb_expect *ctx,
         rule->ra = flb_ra_create(key->str, FLB_TRUE);
         if (!rule->ra) {
             flb_plg_error(ctx->ins, "error processing accessor key '%s'",
-                          key);
+                          key->str);
             flb_slist_destroy(list);
             flb_free(list);
             flb_free(rule);
