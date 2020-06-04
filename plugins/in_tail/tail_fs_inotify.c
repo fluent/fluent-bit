@@ -313,18 +313,11 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
      * 6. conflict: inotify_add_watch() receives the path 'a.log',
      */
 
-    //if (flb_tail_file_is_rotated(ctx, file) == FLB_TRUE) {
-    //    flb_plg_info(ctx->ins, "inode=%lu delayed rotation 2", file->inode);
-    //    flb_tail_file_rotated(file);
-    //}
-
     name = flb_tail_file_name(file);
     if (!name) {
         flb_plg_error(ctx->ins, "inode=%lu cannot get real filename for inotify",
                       file->inode);
     }
-
-    flb_plg_info(ctx->ins, "fs_add() to monitor file name=%s", name);
 
     /* Register or update the flags */
     watch_fd = inotify_add_watch(ctx->fd_notify, name, flags);

@@ -285,6 +285,7 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
 #ifdef FLB_HAVE_SQLDB
     if (config->db != NULL) {
+        sqlite3_finalize(config->stmt_offset);
         flb_tail_db_close(config->db);
     }
 #endif
