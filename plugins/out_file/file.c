@@ -349,6 +349,7 @@ static void cb_file_flush(const void *data, size_t bytes,
     fp = fopen(out_file, "ab+");
     if (fp == NULL) {
         flb_errno();
+        flb_plg_error(ctx->ins, "error opening: %s", out_file);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
