@@ -39,25 +39,64 @@
 static inline int flb_tail_file_name_cmp(char *name,
                                         struct flb_tail_file *file)
 {
+    int ret;
+    char *a;
+    char *b;
+    char *a_base;
+    char *b_base;
+
+    a = flb_strdup(name);
+    b = flb_strdup(file->name);
+
+    a_base = basename(a);
+    b_base = basename(b);
+    struct flb_tail_config *ctx = file->config;
+
+    flb_plg_info(ctx->ins, "a_base=%s b_base=%s", a_base, b_base);
+
 #if defined(__linux__)
-    return strcmp(name, file->name);
+    ret = strcmp(name, file->name);
 #elif defined(FLB_SYSTEM_WINDOWS)
-    return _stricmp(name, file->name);
+    ret = _stricmp(name, file->name);
 #else
-    return strcmp(name, file->name);
+    ret = strcmp(name, file->name);
 #endif
+
+    flb_free(a);
+    flb_free(b);
+    return ret;
 }
 
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {
+    int ret;
+    char *name_a = NULL;
+    char *name_b = NULL;
+    char *base_a;
+    char *base_b;
+
+    name_a = flb_strdup(name);
+    base_a = basename(name_a);
+
 #if defined(__linux__) && defined(FLB_HAVE_INOTIFY)
-    return strcmp(name, file->name);
+    name_b = flb_strdup(file->name);
+    base_b = basename(name_b);
+    ret = strcmp(base_a, base_b);
 #elif defined(FLB_SYSTEM_WINDOWS)
-    return _stricmp(name, file->real_name);
+    name_b = flb_strdup(file->real_name);
+    base_b = basename(name_b);
+    ret = _stricmp(base_a, base_b);
 #else
-    return strcmp(name, file->real_name);
+    name_b = flb_strdup(file->real_name);
+    base_b = basename(name_b);
+    ret = strcmp(base_a, base_b);
 #endif
+
+    flb_free(name_a);
+    flb_free(name_b);
+
+    return ret;
 }
 
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file);
@@ -65,10 +104,11 @@ int flb_tail_file_to_event(struct flb_tail_file *file);
 int flb_tail_file_chunk(struct flb_tail_file *file);
 int flb_tail_file_append(char *path, struct stat *st, int mode,
                          struct flb_tail_config *ctx);
-int flb_tail_file_exists(char *f, struct flb_tail_config *ctx);
 void flb_tail_file_remove(struct flb_tail_file *file);
 int flb_tail_file_remove_all(struct flb_tail_config *ctx);
 char *flb_tail_file_name(struct flb_tail_file *file);
+int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
+                             struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);
 int flb_tail_file_purge(struct flb_input_instance *ins,
                         struct flb_config *config, void *context);
