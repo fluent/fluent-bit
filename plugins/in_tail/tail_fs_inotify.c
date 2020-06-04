@@ -213,13 +213,6 @@ static int tail_fs_event(struct flb_input_instance *ins,
          * read(2) operation, that might kill performance. Just let's
          * wait a second and do a good job.
          */
-        if (file->offset < st.st_size) {
-            file->pending_bytes = (st.st_size - file->offset);
-            //tail_signal_pending(ctx);
-        }
-        else {
-            file->pending_bytes = 0;
-        }
         tail_signal_pending(ctx);
     }
     else {
