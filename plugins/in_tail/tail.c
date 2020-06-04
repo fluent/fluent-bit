@@ -132,7 +132,6 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
-    struct stat st;
 
     /* Do a data chunk collection for each file */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
@@ -223,7 +222,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
 static int in_tail_watcher_callback(struct flb_input_instance *ins,
                                     struct flb_config *config, void *context)
 {
-    int ret;
+    int ret = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = context;

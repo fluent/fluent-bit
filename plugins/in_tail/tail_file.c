@@ -472,7 +472,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                 else {
                     flb_plg_error(ctx->ins,
                                   "missing closing angle bracket in tag %s "
-                                  "at position %i", tag, beg - tag);
+                                  "at position %lu", tag, beg - tag);
                     flb_hash_destroy(ht);
                     return -1;
                 }
@@ -949,10 +949,15 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
 #endif
 
-        fstat(file->fd, &st);
-        file->size = st.st_size;
-        file->pending_bytes = (st.st_size - file->offset);
-
+        ret = fstat(file->fd, &st);
+        if (ret == -1) {
+            flb_errno();
+            return FLB_TAIL_ERROR;
+        }
+        else {
+            file->size = st.st_size;
+            file->pending_bytes = (st.st_size - file->offset);
+        }
         /* Data was consumed but likely some bytes still remain */
         return FLB_TAIL_OK;
     }
@@ -1296,6 +1301,7 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
 int flb_tail_file_purge(struct flb_input_instance *ins,
                         struct flb_config *config, void *context)
 {
+    int ret;
     int count = 0;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -1309,15 +1315,23 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
         if ((file->rotated + ctx->rotate_wait) <= now) {
-            fstat(file->fd, &st);
-            flb_plg_debug(ctx->ins,
-                          "inode=%lu purge rotated file %s (offset=%lu / size = %lu)",
-                          file->inode, file->name, file->offset, st.st_size);
-            if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
-                flb_plg_warn(ctx->ins, "purged rotated file while data "
-                             "ingestion is paused, consider increasing "
-                             "rotate_wait");
+            ret = fstat(file->fd, &st);
+            if (ret == 0) {
+                flb_plg_debug(ctx->ins,
+                              "inode=%lu purge rotated file %s (offset=%lu / size = %lu)",
+                              file->inode, file->name, file->offset, st.st_size);
+                if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
+                    flb_plg_warn(ctx->ins, "purged rotated file while data "
+                                 "ingestion is paused, consider increasing "
+                                 "rotate_wait");
+                }
             }
+            else {
+                flb_plg_debug(ctx->ins,
+                              "inode=%lu purge rotated file %s (offset=%lu)",
+                              file->inode, file->name, file->offset);
+            }
+
             flb_tail_file_remove(file);
             count++;
         }
