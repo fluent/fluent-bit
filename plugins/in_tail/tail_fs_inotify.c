@@ -43,7 +43,6 @@ static int debug_event_mask(struct flb_tail_config *ctx,
                             struct flb_tail_file *file,
                             uint32_t mask)
 {
-    int len;
     flb_sds_t buf;
 
     /* Only enter this function if debug mode is allowed */
@@ -85,6 +84,75 @@ static int debug_event_mask(struct flb_tail_config *ctx,
     flb_sds_destroy(buf);
 
     return 0;
+}
+
+static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
+{
+    int flags;
+    int watch_fd;
+    char *name;
+    struct flb_tail_config *ctx = file->config;
+
+    /*
+     * If there is no watcher associated, we only want to monitor events if
+     * this file is rotated to somewhere. Note at this point we are polling
+     * lines from the file and once we reach EOF (and a watch_fd exists),
+     * we update the flags to receive notifications.
+     */
+    flags = IN_ATTRIB | IN_IGNORED | IN_MODIFY | IN_Q_OVERFLOW;
+
+    if (check_rotated == FLB_TRUE) {
+        flags |= IN_MOVE_SELF;
+    }
+
+    /*
+     * Double check real name of the file associated to the inode:
+     *
+     * Inotify interface in the Kernel uses the inode number as a real reference
+     * for the file we have opened. If for some reason the file we are pointing
+     * out in file->name has been rotated and not been updated, we might not add
+     * the watch to the real file we aim to.
+     *
+     * A case like this can generate the issue:
+     *
+     * 1. inode=1 : file a.log is being watched
+     * 2. inode=1 : file a.log is rotated to a.log.1, but notification not
+     *              delivered yet.
+     * 3. inode=2 : new file 'a.log' is created
+     * 4. inode=2 : the scan_path routine discover the new 'a.log' file
+     * 5. inode=2 : add an inotify watcher for 'a.log'
+     * 6. conflict: inotify_add_watch() receives the path 'a.log',
+     */
+
+    name = flb_tail_file_name(file);
+    if (!name) {
+        flb_plg_error(ctx->ins, "inode=%lu cannot get real filename for inotify",
+                      file->inode);
+        return -1;
+    }
+
+    /* Register or update the flags */
+    watch_fd = inotify_add_watch(ctx->fd_notify, name, flags);
+    flb_free(name);
+
+    if (watch_fd == -1) {
+        flb_errno();
+        if (errno == ENOSPC) {
+            flb_plg_error(ctx->ins, "inotify: The user limit on the total "
+                          "number of inotify watches was reached or the kernel "
+                          "failed to allocate a needed resource (ENOSPC)");
+        }
+        return -1;
+    }
+    file->watch_fd = watch_fd;
+    flb_info("inotify_fs_add(): inode=%lu watch_fd=%i name=%s",
+             file->inode, watch_fd, file->name);
+    return 0;
+}
+
+static int flb_tail_fs_add_rotated(struct flb_tail_file *file)
+{
+    return tail_fs_add(file, FLB_FALSE);
 }
 
 static int tail_fs_event(struct flb_input_instance *ins,
@@ -260,152 +328,19 @@ void flb_tail_fs_resume(struct flb_tail_config *ctx)
     flb_input_collector_resume(ctx->coll_fd_fs1, ctx->ins);
 }
 
-static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
-{
-    int ret;
-    int flags;
-    int watch_fd;
-    char *name;
-    struct stat st;
-    struct flb_tail_config *ctx = file->config;
-
-    if (file->watch_fd != -1) {
-        flb_plg_info(ctx->ins, "watch_fd=%i already exists!", file->watch_fd);
-        sleep(2);
-        assert(file->watch_fd == -1);
-    }
-
-    /*
-     * If there is no watcher associated, we only want to monitor events if
-     * this file is rotated to somewhere. Note at this point we are polling
-     * lines from the file and once we reach EOF (and a watch_fd exists),
-     * we update the flags to receive notifications.
-     */
-    flags = IN_ATTRIB | IN_IGNORED | IN_MODIFY | IN_Q_OVERFLOW;
-
-    if (check_rotated == FLB_TRUE) {
-        flags |= IN_MOVE_SELF;
-    }
-
-    /*
-     * Double check real name of the file associated to the inode:
-     *
-     * Inotify interface in the Kernel uses the inode number as a real reference
-     * for the file we have opened. If for some reason the file we are pointing
-     * out in file->name has been rotated and not been updated, we might not add
-     * the watch to the real file we aim to.
-     *
-     * A case like this can generate the issue:
-     *
-     * 1. inode=1 : file a.log is being watched
-     * 2. inode=1 : file a.log is rotated to a.log.1, but notification not
-     *              delivered yet.
-     * 3. inode=2 : new file 'a.log' is created
-     * 4. inode=2 : the scan_path routine discover the new 'a.log' file
-     * 5. inode=2 : add an inotify watcher for 'a.log'
-     * 6. conflict: inotify_add_watch() receives the path 'a.log',
-     */
-
-    name = flb_tail_file_name(file);
-    if (!name) {
-        flb_plg_error(ctx->ins, "inode=%lu cannot get real filename for inotify",
-                      file->inode);
-    }
-
-    /* Register or update the flags */
-    watch_fd = inotify_add_watch(ctx->fd_notify, name, flags);
-    flb_free(name);
-
-    if (watch_fd == -1) {
-        flb_errno();
-        if (errno == ENOSPC) {
-            flb_plg_error(ctx->ins, "inotify: The user limit on the total "
-                          "number of inotify watches was reached or the kernel "
-                          "failed to allocate a needed resource (ENOSPC)");
-        }
-        return -1;
-    }
-    file->watch_fd = watch_fd;
-    flb_info("inotify_fs_add(): inode=%lu watch_fd=%i name=%s",
-             file->inode, watch_fd, file->name);
-    return 0;
-}
-
 int flb_tail_fs_add(struct flb_tail_file *file)
 {
     int ret;
-    char *old_name;
-    char *new_name;
-    struct mk_list *head;
-    struct flb_tail_file *f = NULL;
     struct flb_tail_config *ctx = file->config;
 
     ret = tail_fs_add(file, FLB_TRUE);
-
-    /* Iterate static list */
-    mk_list_foreach(head, &ctx->files_static) {
-        f = mk_list_entry(head, struct flb_tail_file, _head);
-        if (f == file) {
-            f = NULL;
-            continue;
-        }
-
-        if (file->watch_fd == f->watch_fd) {
-            break;
-        }
-        f = NULL;
-    }
-
-    if (f) {
-        old_name = flb_tail_file_name(f);
-        new_name = flb_tail_file_name(file);
-        flb_plg_info(ctx->ins,
-                     "static fd_add: assigned watch_fd=%i is duplicated:\n "
-                     "previous inode: %lu previous name: %s | real: %s\n"
-                     "new inode     : %lu new name     : %s | real: %s\n",
-                     file->watch_fd,
-                     f->inode, f->name, old_name,
-                     file->inode, file->name, new_name);
-        sleep(2);
-        exit(1);
-    }
-    f = NULL;
-
-    /* Iterate dynamic list */
-    mk_list_foreach(head, &ctx->files_event) {
-        f = mk_list_entry(head, struct flb_tail_file, _head);
-        if (f == file) {
-            f = NULL;
-            continue;
-        }
-
-        if (file->watch_fd == f->watch_fd) {
-            break;
-        }
-        f = NULL;
-    }
-
-    if (f) {
-        old_name = flb_tail_file_name(f);
-        new_name = flb_tail_file_name(file);
-
-        flb_plg_info(ctx->ins,
-                     "event fd_add: assigned watch_fd=%i is duplicated\n"
-                     "previous inode: %lu previous name: %s | real: %s\n"
-                     "new inode     : %lu new name     : %s | real: %s\n",
-                     file->watch_fd,
-                     f->inode, f->name, old_name,
-                     file->inode, file->name, new_name);
-        sleep(2);
-        exit(1);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "inode=%lu cannot register file %s",
+                      file->inode, file->name);
+        return -1;
     }
 
     return 0;
-}
-
-int flb_tail_fs_add_rotated(struct flb_tail_file *file)
-{
-    return tail_fs_add(file, FLB_FALSE);
 }
 
 int flb_tail_fs_remove(struct flb_tail_file *file)
