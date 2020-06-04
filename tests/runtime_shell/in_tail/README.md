@@ -28,13 +28,13 @@ Running the script ```test_rotation.sh``` will run every test listed above, to r
 
 Run the logger tool that creates 5 different files, write 100000 messages to each one while rotating at 256KB.
 
-This test enable the database backend for Tail so it also helps to validate expected entries into the 'in_tail_files' table. 
+This test enable the database backend for Tail so it also helps to validate expected entries into the 'in_tail_files' table.
 
 **Configuration File**
 
 ```conf/normal_rotation.conf```
 
-###2. Single Static Rotation
+### 2. Single Static Rotation
 
 **Unit**
 
@@ -42,13 +42,13 @@ This test enable the database backend for Tail so it also helps to validate expe
 
 **Description**
 
-Run the logger tool that creates 1 big file and let Fluent Bit process it in the static mode, before to promote it to 'events' and it gets rotated. 
+Run the logger tool that creates 1 big file and let Fluent Bit process it in the static mode, before to promote it to 'events' and it gets rotated.
 
 **Configuration File**
 
 ```conf/single_static_rotation.conf```
 
-###3. Truncate
+### 3. Truncate
 
 **Unit**
 
@@ -62,7 +62,7 @@ Run the logger tool that creates 1 big file and let Fluent Bit process it in the
 > Truncate the original log file to zero size in place after creating a copy,
 > instead of moving the old log file and optionally creating a new one.  It
 > can be used when some program cannot  be told  to  close its logfile and
-> thus might continue writing (appending) to the previous log file forever.   
+> thus might continue writing (appending) to the previous log file forever.
 >
 > Note that there is a very  small  time  slice between copying the file and
 > truncating it, so some logging data might be lost.   When  this  option is
@@ -76,7 +76,7 @@ processed.
 
 ```conf/truncate_rotation.conf```
 
-###4. Rotate Link
+### 4. Rotate Link
 
 **Unit**
 
@@ -91,13 +91,13 @@ This test checks that a monitored link, upon rotation, keeps the proper offset a
  - file with data:  data.log
  - monitored link:  test.log
 
- Check the behavior upon the following rotation: test.log -> test.log.1 
+ Check the behavior upon the following rotation: test.log -> test.log.1
 
 **Configuration File**
 
 ```conf/rotate_link.conf```
 
-###5. Truncate Link 
+### 5. Truncate Link
 
 **Unit**
 
@@ -110,4 +110,3 @@ Test a link that gets a truncation and Fluent Bit properly use the new offset
 **Configuration File**
 
 ```conf/truncate_link.conf```
-
