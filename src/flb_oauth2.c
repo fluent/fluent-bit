@@ -352,7 +352,7 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     /* Issue request */
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[oauth2] cannot issue request, http_do=%i, ret");
+        flb_warn("[oauth2] cannot issue request, http_do=%i", ret);
     }
     else {
         flb_info("[oauth2] HTTP Status=%i", c->resp.status);
