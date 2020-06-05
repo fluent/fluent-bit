@@ -27,8 +27,15 @@
 
 #include "es.h"
 
-struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
-                                             struct flb_config *config);
-int flb_es_conf_destroy(struct flb_elasticsearch *ctx);
+
+int es_config_ha(const char *upstream_file,
+                        struct flb_elasticsearch *ctx,
+                        struct flb_config *config);
+
+int es_config_simple(struct flb_output_instance *ins,
+                          struct flb_elasticsearch *ctx,
+                          struct flb_config *config);
+
+int flb_es_conf_destroy(struct flb_elasticsearch_config *ec);
 
 #endif
