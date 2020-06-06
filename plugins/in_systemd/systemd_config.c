@@ -54,6 +54,9 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         return NULL;
     }
     ctx->ins = ins;
+#ifdef FLB_HAVE_SQLDB
+    ctx->db_sync = -1;
+#endif
 
     /* Create the channel manager */
     ret = pipe(ctx->ch_manager);
@@ -111,14 +114,35 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 
 #ifdef FLB_HAVE_SQLDB
+    /* Database options (needs to be set before the context) */
+    tmp = flb_input_get_property("db.sync", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "extra") == 0) {
+            ctx->db_sync = 3;
+        }
+        else if (strcasecmp(tmp, "full") == 0) {
+            ctx->db_sync = 2;
+            }
+        else if (strcasecmp(tmp, "normal") == 0) {
+            ctx->db_sync = 1;
+        }
+        else if (strcasecmp(tmp, "off") == 0) {
+            ctx->db_sync = 0;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid database 'db.sync' value");
+        }
+    }
+
     /* Database file */
     tmp = flb_input_get_property("db", ins);
     if (tmp) {
-        ctx->db = flb_systemd_db_open(tmp, ins, config);
+        ctx->db = flb_systemd_db_open(tmp, ins, ctx, config);
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database '%s'", tmp);
         }
     }
+
 #endif
 
     /* Max number of fields per record/entry */

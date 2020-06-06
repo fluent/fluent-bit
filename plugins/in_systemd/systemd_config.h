@@ -63,6 +63,7 @@ struct flb_systemd_config {
 
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
+    int db_sync;
     sqlite3_stmt *stmt_cursor;
 #endif
     struct flb_input_instance *ins;

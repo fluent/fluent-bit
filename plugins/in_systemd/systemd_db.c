@@ -84,9 +84,11 @@ static void flb_systemd_db_sanitize(struct flb_sqldb *db,
 
 struct flb_sqldb *flb_systemd_db_open(const char *path,
                                       struct flb_input_instance *ins,
+                                      struct flb_systemd_config *ctx,
                                       struct flb_config *config)
 {
     int ret;
+    char tmp[64];
     struct flb_sqldb *db;
 
     /* Open/create the database */
@@ -101,6 +103,17 @@ struct flb_sqldb *flb_systemd_db_open(const char *path,
         flb_plg_error(ins, "db: could not create 'cursor' table");
         flb_sqldb_close(db);
         return NULL;
+    }
+
+    if (ctx->db_sync >= 0) {
+        snprintf(tmp, sizeof(tmp) - 1, SQL_PRAGMA_SYNC,
+                 ctx->db_sync);
+        ret = flb_sqldb_query(db, tmp, NULL, NULL);
+        if (ret != FLB_OK) {
+            flb_plg_error(ctx->ins, "db could not set pragma 'sync'");
+            flb_sqldb_close(db);
+            return NULL;
+        }
     }
 
     flb_systemd_db_sanitize(db, ins);

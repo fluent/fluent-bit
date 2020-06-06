@@ -50,8 +50,12 @@
     "DELETE FROM in_systemd_cursor WHERE ROWID < "  \
     "(SELECT MAX(ROWID) FROM in_systemd_cursor);"
 
+#define SQL_PRAGMA_SYNC                         \
+    "PRAGMA synchronous=%i;"
+
 struct flb_sqldb *flb_systemd_db_open(const char *path,
                                       struct flb_input_instance *ins,
+                                      struct flb_systemd_config *ctx,
                                       struct flb_config *config);
 int flb_systemd_db_close(struct flb_sqldb *db);
 int flb_systemd_db_init_cursor(struct flb_systemd_config *ctx, const char *cursor);
