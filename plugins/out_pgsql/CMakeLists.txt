@@ -1,5 +1,6 @@
 set(src
   pgsql.c
+  pgsql_connections.c
   )
 
 FLB_PLUGIN(out_pgsql "${src}" "")
