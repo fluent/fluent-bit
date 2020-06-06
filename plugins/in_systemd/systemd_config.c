@@ -198,12 +198,25 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
                       "jump to the end of journal and skip %d last entries", ret);
     }
     else {
-        sd_journal_seek_head(ctx->j);
+        ret = sd_journal_seek_head(ctx->j);
     }
 
 #ifdef FLB_HAVE_SQLDB
     /* Check if we have a cursor in our database */
     if (ctx->db) {
+        /* Initialize prepared statement */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_UPDATE_CURSOR,
+                                 -1,
+                                 &ctx->stmt_cursor,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_systemd_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* Get current cursor */
         cursor = flb_systemd_db_get_cursor(ctx);
         if (cursor) {
             ret = sd_journal_seek_cursor(ctx->j, cursor);
@@ -217,6 +230,14 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
                 flb_plg_warn(ctx->ins, "seek_cursor failed");
             }
             flb_free(cursor);
+        }
+        else {
+            /* Insert the first row */
+            cursor = NULL;
+            flb_systemd_db_init_cursor(ctx, cursor);
+            if (cursor) {
+                flb_free(cursor);
+            }
         }
     }
 #endif
@@ -249,6 +270,7 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
 
 #ifdef FLB_HAVE_SQLDB
     if (ctx->db) {
+        sqlite3_finalize(ctx->stmt_cursor);
         flb_systemd_db_close(ctx->db);
     }
 #endif

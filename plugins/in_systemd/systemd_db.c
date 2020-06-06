@@ -114,7 +114,7 @@ int flb_systemd_db_close(struct flb_sqldb *db)
     return 0;
 }
 
-int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor)
+int flb_systemd_db_init_cursor(struct flb_systemd_config *ctx, const char *cursor)
 {
     int ret;
     char query[PATH_MAX];
@@ -138,14 +138,23 @@ int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor
         return 0;
     }
 
-    /* Register the cursor */
-    flb_free(qs.cursor);
-    snprintf(query, sizeof(query) - 1,
-             SQL_UPDATE_CURSOR,
-             cursor, time(NULL));
-    ret = flb_sqldb_query(ctx->db,
-                          query, NULL, NULL);
-    if (ret == FLB_ERROR) {
+    return -1;
+}
+
+int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor)
+{
+    int ret;
+
+    /* Bind parameters */
+    sqlite3_bind_text(ctx->stmt_cursor, 1, (char *) cursor, -1, 0);
+    sqlite3_bind_int64(ctx->stmt_cursor, 2, time(NULL));
+
+    ret = sqlite3_step(ctx->stmt_cursor);
+
+    sqlite3_clear_bindings(ctx->stmt_cursor);
+    sqlite3_reset(ctx->stmt_cursor);
+
+    if (ret != SQLITE_DONE) {
         return -1;
     }
     return 0;

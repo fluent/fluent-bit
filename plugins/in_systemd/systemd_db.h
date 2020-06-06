@@ -43,8 +43,8 @@
 #define SQL_COUNT_CURSOR                        \
     "SELECT COUNT(*) FROM in_systemd_cursor;"
 
-#define SQL_UPDATE_CURSOR \
-    "UPDATE in_systemd_cursor SET cursor='%s', updated=%lu;"
+#define SQL_UPDATE_CURSOR                                               \
+    "UPDATE in_systemd_cursor SET cursor=@cursor, updated=@updated;"
 
 #define SQL_DELETE_DUPS                             \
     "DELETE FROM in_systemd_cursor WHERE ROWID < "  \
@@ -54,6 +54,7 @@ struct flb_sqldb *flb_systemd_db_open(const char *path,
                                       struct flb_input_instance *ins,
                                       struct flb_config *config);
 int flb_systemd_db_close(struct flb_sqldb *db);
+int flb_systemd_db_init_cursor(struct flb_systemd_config *ctx, const char *cursor);
 int flb_systemd_db_set_cursor(struct flb_systemd_config *ctx, const char *cursor);
 char *flb_systemd_db_get_cursor(struct flb_systemd_config *ctx);
 
