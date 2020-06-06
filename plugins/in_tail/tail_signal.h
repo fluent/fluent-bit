@@ -63,7 +63,11 @@ static inline int tail_signal_pending(struct flb_tail_config *ctx)
 
     /* Insert a dummy event into the 'pending' channel */
     n = flb_pipe_w(ctx->ch_pending[1], &val, sizeof(val));
-    /* If we get EAGAIN, it simply means pending channel is full. As notification is already pending, it's safe to ignore. */
+
+    /*
+     * If we get EAGAIN, it simply means pending channel is full. As
+     * notification is already pending, it's safe to ignore.
+     */
     if (n == -1 && !FLB_PIPE_WOULDBLOCK()) {
         flb_errno();
         return -1;

@@ -73,15 +73,18 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     /* Iterate promoted event files with pending bytes */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->pending_bytes <= 0) {
-            continue;
-        }
 
         /* Gather current file size */
         ret = fstat(file->fd, &st);
         if (ret == -1) {
             flb_errno();
             flb_tail_file_remove(file);
+            continue;
+        }
+        file->size = st.st_size;
+        file->pending_bytes = (file->size - file->offset);
+
+        if (file->pending_bytes <= 0) {
             continue;
         }
 
@@ -122,6 +125,9 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
 {
     int ret;
     int active = 0;
+    int pre_size;
+    int pos_size;
+    int alter_size = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
@@ -130,28 +136,72 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     /* Do a data chunk collection for each file */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
+
         ret = flb_tail_file_chunk(file);
         switch (ret) {
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
+            flb_plg_debug(ctx->ins, "inode=%lu collect static ERROR",
+                          file->inode);
             flb_tail_file_remove(file);
             break;
         case FLB_TAIL_OK:
         case FLB_TAIL_BUSY:
             active++;
-            continue;
+            break;
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
-                flb_plg_info(ctx->ins, "file=%s ended, stop", file->name);
+                flb_plg_info(ctx->ins, "inode=%lu file=%s ended, stop",
+                             file->inode, file->name);
                 flb_engine_exit(config);
             }
             /* Promote file to 'events' type handler */
-            flb_plg_debug(ctx->ins, "file=%s promote to TAIL_EVENT", file->name);
+            flb_plg_debug(ctx->ins, "inode=%lu file=%s promote to TAIL_EVENT",
+                          file->inode, file->name);
+
+            /*
+             * When promoting a file from 'static' to 'event' mode, the promoter
+             * will check if the file has been rotated while it was being
+             * processed on this function, if so, it will try to check for the
+             * following condition:
+             *
+             *   "discover a new possible file created due to rotation"
+             *
+             * If the condition above is met, a new file entry will be added to
+             * the list that we are processing and a 'new signal' will be send
+             * to the signal manager. But the signal manager will trigger the
+             * message only if no pending messages exists (to avoid queue size
+             * exhaustion).
+             *
+             * All good, but there is a corner case where if no 'active' files
+             * exists, the signal will be read and this function will not be
+             * called again and since the signal did not triggered the
+             * message, the 'new file' enqueued by the nested function
+             * might stay in stale mode (note that altering the length of this
+             * list will not be reflected yet)
+             *
+             * To fix the corner case, we use a variable called 'alter_size'
+             * that determinate if the size of the list keeps the same after
+             * a rotation, so it means: a new file was added.
+             *
+             * We use 'alter_size' as a helper in the conditional below to know
+             * when to stop processing the static list.
+             */
+            if (alter_size == 0) {
+                pre_size = mk_list_size(&ctx->files_static);
+            }
             ret = flb_tail_file_to_event(file);
             if (ret == -1) {
                 flb_plg_debug(ctx->ins, "file=%s cannot promote, unregistering",
-                          file->name);
+                              file->name);
                 flb_tail_file_remove(file);
+            }
+
+            if (alter_size == 0) {
+                pos_size = mk_list_size(&ctx->files_static);
+                if (pre_size == pos_size) {
+                    alter_size++;
+                }
             }
             break;
         }
@@ -161,7 +211,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
      * If there are no more active static handlers, we consume the 'byte' that
      * triggered this event so this is not longer called again.
      */
-    if (active == 0) {
+    if (active == 0 && alter_size == 0) {
         consume_byte(ctx->ch_manager[0]);
         ctx->ch_reads++;
     }
@@ -169,13 +219,46 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     return 0;
 }
 
+static int in_tail_watcher_callback(struct flb_input_instance *ins,
+                                    struct flb_config *config, void *context)
+{
+    int ret = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_tail_config *ctx = context;
+    struct flb_tail_file *file;
+    (void) config;
+
+#ifndef _MSC_VER
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (file->is_link == FLB_TRUE) {
+            ret = flb_tail_file_is_rotated(ctx, file);
+            if (ret == FLB_FALSE) {
+                continue;
+            }
+
+            /* The symbolic link name has been rotated */
+            flb_tail_file_rotated(file);
+        }
+    }
+
+#endif
+    return ret;
+}
+
 int in_tail_collect_event(void *file, struct flb_config *config)
 {
     int ret;
+    struct stat st;
     struct flb_tail_file *f = file;
     struct flb_tail_config *ctx = f->config;
 
-    flb_plg_debug(ctx->ins, "file=%s collect event", f->name);
+    ret = fstat(f->fd, &st);
+    if (ret == -1) {
+        flb_tail_file_remove(f);
+        return 0;
+    }
 
     ret = flb_tail_file_chunk(f);
     switch (ret) {
@@ -228,7 +311,7 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->coll_fd_static = ret;
 
-    /* Register re-scan */
+    /* Register re-scan: time managed by 'refresh_interval' property */
     ret = flb_input_set_collector_time(in, flb_tail_scan_callback,
                                        ctx->refresh_interval_sec,
                                        ctx->refresh_interval_nsec,
@@ -238,6 +321,16 @@ static int in_tail_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->coll_fd_scan = ret;
+
+    /* Register watcher, interval managed by 'watcher_interval' property */
+    ret = flb_input_set_collector_time(in, in_tail_watcher_callback,
+                                       ctx->watcher_interval, 0,
+                                       config);
+    if (ret == -1) {
+        flb_tail_config_destroy(ctx);
+        return -1;
+    }
+    ctx->coll_fd_watcher = ret;
 
     /* Register callback to purge rotated files */
     ret = flb_input_set_collector_time(in, flb_tail_file_purge,
@@ -385,6 +478,10 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "refresh_interval", "60",
      0, FLB_FALSE, 0,
      "interval to refresh the list of watched files expressed in seconds."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "watcher_interval", "2s",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
     },
     {
      FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,

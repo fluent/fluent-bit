@@ -786,6 +786,22 @@ static struct flb_config_map config_map[] = {
      "use 'dummy' metadata, do not talk to API server"
     },
 
+    /*
+     * Poll DNS status to mitigate unreliable network issues.
+     * See fluent/fluent-bit/2144.
+     */
+    {
+     FLB_CONFIG_MAP_INT, "dns_retries", "6",
+     0, FLB_TRUE, offsetof(struct flb_kube, dns_retries),
+     "dns lookup retries N times until the network start working"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "dns_wait_time", "30",
+     0, FLB_TRUE, offsetof(struct flb_kube, dns_wait_time),
+     "dns interval between network status checks"
+    },
+
     /* EOF */
     {0}
 };

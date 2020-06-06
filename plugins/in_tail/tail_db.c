@@ -105,10 +105,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     uint64_t created;
 
     /* Check if the file exists */
-    snprintf(query, sizeof(query) - 1,
-             SQL_GET_FILE,
-             file->name, (uint64_t) file->inode);
-
+    snprintf(query, sizeof(query) - 1, SQL_GET_FILE, (uint64_t) file->inode);
     memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
                           query, cb_file_check, &qs);
@@ -134,22 +131,25 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     return 0;
 }
 
-/* Update offset */
+/* Update Offset v2 */
 int flb_tail_db_file_offset(struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {
     int ret;
-    char query[PATH_MAX];
 
-    snprintf(query, sizeof(query) - 1,
-             SQL_UPDATE_OFFSET,
-             (uint64_t) file->offset, file->db_id);
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_offset, 1, file->offset);
+    sqlite3_bind_int64(ctx->stmt_offset, 2, file->db_id);
 
-    ret = flb_sqldb_query(ctx->db,
-                          query, NULL, NULL);
-    if (ret == FLB_ERROR) {
+    ret = sqlite3_step(ctx->stmt_offset);
+
+    sqlite3_clear_bindings(ctx->stmt_offset);
+    sqlite3_reset(ctx->stmt_offset);
+
+    if (ret != SQLITE_DONE) {
         return -1;
     }
+
     return 0;
 }
 
@@ -162,12 +162,10 @@ int flb_tail_db_file_rotate(const char *new_name,
     char query[PATH_MAX];
     struct query_status qs = {0};
 
-    /* Check if the file exists */
     snprintf(query, sizeof(query) - 1,
              SQL_ROTATE_FILE,
              new_name, file->db_id);
 
-    memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
                           query, cb_file_check, &qs);
     if (ret != FLB_OK) {

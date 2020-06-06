@@ -53,7 +53,7 @@ void flb_test_file_json_invalid(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "Path", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -98,7 +98,7 @@ void flb_test_file_json_long(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "Path", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -144,7 +144,7 @@ void flb_test_file_json_small(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "Path", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -190,8 +190,8 @@ void flb_test_file_format_csv(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "Path", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "Format", "csv", NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "format", "csv", NULL);
     flb_output_set(ctx, out_ffd, "delimiter", "comma", NULL);
 
     ret = flb_start(ctx);
@@ -238,8 +238,8 @@ void flb_test_file_format_ltsv(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "Path", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "Format", "ltsv", NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "format", "ltsv", NULL);
     flb_output_set(ctx, out_ffd, "delimiter", "tab", NULL);
     flb_output_set(ctx, out_ffd, "label_delimiter", "comma", NULL);
 
@@ -287,8 +287,8 @@ void flb_test_file_format_invalid(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "Path", TEST_LOGFILE, NULL);
-    flb_output_set(ctx, out_ffd, "Format", "xxx", NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "format", "xxx", NULL);
     flb_output_set(ctx, out_ffd, "delimiter", "yyy", NULL);
     flb_output_set(ctx, out_ffd, "label_delimiter", "zzz", NULL);
 

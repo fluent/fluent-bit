@@ -236,14 +236,26 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
             }
 
             /* Append file to list */
-            flb_tail_file_append(globbuf.gl_pathv[i], &st,
-                                 FLB_TAIL_STATIC, ctx);
-            count++;
+            ret = flb_tail_file_append(globbuf.gl_pathv[i], &st,
+                                       FLB_TAIL_STATIC, ctx);
+            if (ret == 0) {
+                flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %li",
+                              globbuf.gl_pathv[i], st.st_ino);
+                count++;
+            }
+            else {
+                flb_plg_debug(ctx->ins, "scan_blog add(): dismissed: %s, inode %li",
+                              globbuf.gl_pathv[i], st.st_ino);
+            }
         }
         else {
             flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
                           globbuf.gl_pathv[i]);
         }
+    }
+
+    if (count > 0) {
+        tail_signal_manager(ctx);
     }
 
     globfree(&globbuf);
@@ -257,66 +269,14 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
 int flb_tail_scan_callback(struct flb_input_instance *ins,
                            struct flb_config *config, void *context)
 {
-    int i;
     int ret;
-    int count = 0;
-    glob_t globbuf;
-    struct stat st;
     struct flb_tail_config *ctx = context;
     (void) config;
 
-    /* Scan the path */
-    ret = do_glob(ctx->path, GLOB_TILDE, NULL, &globbuf);
-    if (ret != 0) {
-        switch (ret) {
-        case GLOB_NOSPACE:
-            flb_plg_error(ctx->ins, "no memory space available");
-            return -1;
-        case GLOB_ABORTED:
-            flb_plg_error(ctx->ins, "read error (GLOB_ABORTED");
-            return -1;
-        case GLOB_NOMATCH:
-            return 0;
-        }
+    ret = flb_tail_scan(ctx->path, ctx);
+    if (ret > 0) {
+        flb_plg_debug(ins, "scan_callback() added %i entries", ret);
     }
 
-    /* For every entry found, check if is already registered or not */
-    for (i = 0; i < globbuf.gl_pathc; i++) {
-        ret = stat(globbuf.gl_pathv[i], &st);
-        if (ret == 0 && S_ISREG(st.st_mode)) {
-            /* Check if this file is blacklisted */
-            if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
-                continue;
-            }
-
-            ret = flb_tail_file_exists(globbuf.gl_pathv[i], ctx);
-            if (ret == FLB_TRUE) {
-                continue;
-            }
-
-            /* Append file to list */
-            if (flb_tail_file_append(globbuf.gl_pathv[i], &st,
-                                     FLB_TAIL_STATIC, ctx)) {
-                continue;
-            }
-
-            flb_plg_debug(ctx->ins, "append new file: %s", globbuf.gl_pathv[i]);
-
-            count++;
-        }
-        else {
-            flb_plg_debug(ctx->ins, "skip (invalid) entry=%s", globbuf.gl_pathv[i]);
-        }
-    }
-
-    if (globbuf.gl_pathc > 0) {
-        globfree(&globbuf);
-    }
-
-
-    if (count > 0) {
-        tail_signal_manager(ctx);
-    }
-
-    return 0;
+    return ret;
 }

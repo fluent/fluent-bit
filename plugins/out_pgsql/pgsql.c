@@ -208,6 +208,7 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
              ctx->db_table);
     flb_plg_trace(ctx->ins, "%s", query);
     res = PQexec(ctx->conn_current->conn, query);
+
     flb_free(query);
 
     if(PQresultStatus(res) != PGRES_COMMAND_OK) {
