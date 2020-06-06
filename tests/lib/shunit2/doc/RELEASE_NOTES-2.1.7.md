@@ -44,7 +44,10 @@ unbound variables cannot be caught. (See `shunit_test_misc.sh`)
 
 ## Tested Platforms
 
-Continuous integration testing is provided by [Travis CI][TravisCI].
+Continuous integration testing is provided by
+[Travis CI](https://travis-ci.org/).
+
+https://travis-ci.org/github/kward/shunit2
 
 Tested OSes:
 
@@ -60,3 +63,4 @@ Tested shells:
 - ksh
 - pdksh
 - zsh
+

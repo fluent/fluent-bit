@@ -32,7 +32,6 @@
 struct flb_tail_file {
     /* Inotify */
     int watch_fd;
-
     /* file lookup info */
     int fd;
     off_t size;
@@ -42,6 +41,8 @@ struct flb_tail_file {
     uint64_t inode;
 #else
     ino_t inode;
+    ino_t link_inode;
+    int   is_link;
 #endif
     char *name;                 /* target file name given by scan routine */
 #if !defined(__linux) || !defined(FLB_HAVE_INOTIFY)

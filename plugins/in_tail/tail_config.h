@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_sqldb.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -55,6 +56,7 @@ struct flb_tail_config {
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
+    int coll_fd_watcher;
     int coll_fd_rotated;
     int coll_fd_pending;
     int coll_fd_dmode_flush;
@@ -72,6 +74,7 @@ struct flb_tail_config {
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
     int rotate_wait;           /* sec to wait on rotated files */
+    int watcher_interval;      /* watcher interval             */
     int ignore_older;          /* ignore fields older than X seconds        */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     flb_sds_t path;            /* lookup path (glob)           */
@@ -84,6 +87,7 @@ struct flb_tail_config {
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     int db_sync;
+    sqlite3_stmt *stmt_offset;
 #endif
 
     /* Parser / Format */

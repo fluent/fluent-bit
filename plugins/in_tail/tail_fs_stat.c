@@ -116,6 +116,35 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
+        /* Check if the file was truncated */
+        if (file->offset > st.st_size) {
+            offset = lseek(file->fd, 0, SEEK_SET);
+            if (offset == -1) {
+                flb_errno();
+                return -1;
+            }
+
+            flb_plg_debug(ctx->ins, "file truncated %s", file->name);
+            file->offset = offset;
+            file->buf_len = 0;
+            memcpy(&fst->st, &st, sizeof(struct stat));
+
+#ifdef FLB_HAVE_SQLDB
+            /* Update offset in database file */
+            if (ctx->db) {
+                flb_tail_db_file_offset(file, ctx);
+            }
+#endif
+        }
+
+        if (file->offset < st.st_size) {
+            file->pending_bytes = (st.st_size - file->offset);
+            tail_signal_pending(ctx);
+        }
+        else {
+            file->pending_bytes = 0;
+        }
+
 #ifdef FLB_SYSTEM_WINDOWS
         HANDLE h;
         FILE_STANDARD_INFO info;
@@ -153,39 +182,11 @@ static int tail_fs_check(struct flb_input_instance *ins,
          * flb_tail_file_name_cmp. If applicable, it compares to the underlying
          * real_name of the file.
          */
-        if (flb_tail_target_file_name_cmp(name, file) != 0) {
+        if (flb_tail_file_is_rotated(ctx, file) == FLB_TRUE) {
             flb_tail_file_rotated(file);
         }
         flb_free(name);
 
-        /* Check if the file was truncated */
-        if (file->offset > st.st_size) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
-                return -1;
-            }
-
-            flb_plg_debug(ctx->ins, "file truncated %s", file->name);
-            file->offset = offset;
-            file->buf_len = 0;
-            memcpy(&fst->st, &st, sizeof(struct stat));
-
-#ifdef FLB_HAVE_SQLDB
-            /* Update offset in database file */
-            if (ctx->db) {
-                flb_tail_db_file_offset(file, ctx);
-            }
-#endif
-        }
-
-        if (file->offset < st.st_size) {
-            file->pending_bytes = (st.st_size - file->offset);
-            tail_signal_pending(ctx);
-        }
-        else {
-            file->pending_bytes = 0;
-        }
     }
 
     return 0;

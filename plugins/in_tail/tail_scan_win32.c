@@ -79,10 +79,6 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
         return -1;
     }
 
-    if (flb_tail_file_exists(path, ctx) == FLB_TRUE) {
-        return -1;
-    }
-
     return flb_tail_file_append(path, &st, FLB_TAIL_STATIC, ctx);
 }
 

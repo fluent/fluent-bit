@@ -137,7 +137,6 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
                   storage->stream, name);
-        flb_sds_destroy(name);
         return NULL;
     }
 

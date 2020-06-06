@@ -526,7 +526,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         time_offset = get_parser_key("Time_Offset", config, section);
 
         /* Types */
-        types_str = mk_rconf_section_get_key(section, "Types", MK_RCONF_STR);
+        types_str = get_parser_key("Types", config, section);
         if (types_str) {
             types_len = proc_types_str(types_str, &types);
         }
