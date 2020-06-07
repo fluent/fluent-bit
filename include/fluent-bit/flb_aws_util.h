@@ -153,6 +153,11 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
 int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
                      flb_sds_t *metadata, size_t *metadata_len);
 
+/*
+ * Checks if a JSON response contains an AWS Auth
+ */
+int flb_aws_is_auth_error(char *error);
+
 
 #endif
 #endif /* FLB_HAVE_AWS */
