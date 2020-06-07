@@ -99,12 +99,7 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
     if (c && (c->resp.status == 400 || c->resp.status == 403)) {
         error = flb_aws_error(c->resp.payload, c->resp.payload_size);
         if (error != NULL) {
-            if (strcmp(error, "ExpiredToken") == 0 ||
-                strcmp(error, "AccessDeniedException") == 0 ||
-                strcmp(error, "IncompleteSignature") == 0 ||
-                strcmp(error, "MissingAuthenticationToken") == 0 ||
-                strcmp(error, "InvalidClientTokenId") == 0 ||
-                strcmp(error, "UnrecognizedClientException") == 0) {
+            if (flb_aws_is_auth_error(error) == FLB_TRUE) {
                     if (aws_client->has_auth && time(NULL) >
                         aws_client->refresh_limit) {
 
@@ -157,6 +152,20 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
         }
         flb_free(aws_client);
     }
+}
+
+int flb_aws_is_auth_error(char *error)
+{
+    if (strcmp(error, "ExpiredToken") == 0 ||
+        strcmp(error, "AccessDeniedException") == 0 ||
+        strcmp(error, "IncompleteSignature") == 0 ||
+        strcmp(error, "MissingAuthenticationToken") == 0 ||
+        strcmp(error, "InvalidClientTokenId") == 0 ||
+        strcmp(error, "UnrecognizedClientException") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
