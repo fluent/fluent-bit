@@ -14,6 +14,12 @@ cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
                      -D FLB_WITHOUT_flb-it-network=On `
                      -D FLB_WITHOUT_flb-it-pack=On `
                      -D FLB_WITHOUT_flb-it-signv4=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_ec2=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_http=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_profile=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_sts=On `
+                     -D FLB_WITHOUT_flb-it-aws_util=On `
                      ../
 
 # COMPILE
