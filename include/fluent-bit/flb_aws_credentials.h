@@ -53,6 +53,15 @@ struct flb_aws_provider;
 typedef struct flb_aws_credentials*(flb_aws_provider_get_credentials_fn)
                                    (struct flb_aws_provider *provider);
 
+
+/*
+ * "Initializes the provider". Used in the standard chain to determine which
+ * provider is valid in the current environment. Init is similar to refresh,
+ * except all log messages are printed as debug (so that the user does not get
+ * confusing error messages when 'testing' a provider to see if its available).
+ */
+typedef int(flb_aws_provider_init_fn)(struct flb_aws_provider *provider);
+
 /*
  * Force a refesh of cached credentials. If client code receives a response
  * from AWS indicating that the credentials are expired or invalid,
@@ -88,6 +97,7 @@ typedef void(flb_aws_provider_async_fn)(struct flb_aws_provider *provider);
  */
 struct flb_aws_provider_vtable {
     flb_aws_provider_get_credentials_fn *get_credentials;
+    flb_aws_provider_init_fn *init;
     flb_aws_provider_refresh_fn *refresh;
     flb_aws_provider_destroy_fn *destroy;
     flb_aws_provider_sync_fn *sync;

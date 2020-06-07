@@ -96,6 +96,9 @@ struct flb_aws_client {
      * FLB_AWS_CREDENTIAL_REFRESH_LIMIT.
      */
     time_t refresh_limit;
+
+    /* Send all log messages as debug; used in AWS Cred Providers on init */
+    int debug_only;
 };
 
 /*

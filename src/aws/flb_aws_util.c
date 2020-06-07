@@ -134,6 +134,7 @@ struct flb_aws_client *flb_aws_client_create()
         return NULL;
     }
     client->client_vtable = &client_vtable;
+    client->debug_only = FLB_FALSE;
     return client;
 }
 
@@ -174,7 +175,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
 
     u_conn = flb_upstream_conn_get(aws_client->upstream);
     if (!u_conn) {
-        flb_error("[aws_client] connection initialization error");
+        if (aws_client->debug_only == FLB_TRUE) {
+            flb_debug("[aws_client] connection initialization error");
+        }
+        else {
+            flb_error("[aws_client] connection initialization error");
+        }
         return NULL;
     }
 
@@ -185,7 +191,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                         aws_client->proxy, aws_client->flags);
 
     if (!c) {
-        flb_error("[aws_client] could not initialize request");
+        if (aws_client->debug_only == FLB_TRUE) {
+            flb_debug("[aws_client] could not initialize request");
+        }
+        else {
+            flb_error("[aws_client] could not initialize request");
+        }
         goto error;
     }
 
@@ -193,7 +204,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     ret = flb_http_add_header(c, "User-Agent", 10,
                               "aws-fluent-bit-plugin", 21);
     if (ret < 0) {
-        flb_error("[aws_client] failed to add header to request");
+        if (aws_client->debug_only == FLB_TRUE) {
+            flb_debug("[aws_client] failed to add header to request");
+        }
+        else {
+            flb_error("[aws_client] failed to add header to request");
+        }
         goto error;
     }
 
@@ -204,7 +220,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    header.key, header.key_len,
                                    header.val, header.val_len);
         if (ret < 0) {
-            flb_error("[aws_client] failed to add header to request");
+            if (aws_client->debug_only == FLB_TRUE) {
+                flb_debug("[aws_client] failed to add header to request");
+            }
+            else {
+                flb_error("[aws_client] failed to add header to request");
+            }
             goto error;
         }
     }
@@ -215,7 +236,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    header.key, header.key_len,
                                    header.val, header.val_len);
         if (ret < 0) {
-            flb_error("[aws_client] failed to add header to request");
+            if (aws_client->debug_only == FLB_TRUE) {
+                flb_debug("[aws_client] failed to add header to request");
+            }
+            else {
+                flb_error("[aws_client] failed to add header to request");
+            }
             goto error;
         }
     }
@@ -225,7 +251,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                   aws_client->region, aws_client->service,
                                   aws_client->provider);
         if (!signature) {
-            flb_error("[aws_client] could not sign request");
+            if (aws_client->debug_only == FLB_TRUE) {
+                flb_debug("[aws_client] could not sign request");
+            }
+            else {
+                flb_error("[aws_client] could not sign request");
+            }
             goto error;
         }
     }
