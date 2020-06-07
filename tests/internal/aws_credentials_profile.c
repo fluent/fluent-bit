@@ -10,6 +10,9 @@
 #define TEST_CREDENTIALS_FILE  FLB_TESTS_DATA_PATH "/data/aws_credentials/\
 shared_credentials_file.ini"
 
+#define TEST_CREDENTIALS_NODEFAULT  FLB_TESTS_DATA_PATH "/data/aws_credentials/\
+shared_credentials_file_nodefault.ini"
+
 /* these credentials look real but are not */
 #define AKID_DEFAULT_PROFILE  "ASIASDMPIJWXJAXT3O3T"
 #define SKID_DEFAULT_PROFILE  "EAUBpd/APPT4Nfi4DWY3gnt5TU/4T49laqS5zh8W"
@@ -336,11 +339,53 @@ static void test_profile_missing()
     TEST_CHECK(unset_profile_env() == 0);
 }
 
+static void test_profile_nodefault()
+{
+    struct flb_aws_provider *provider;
+    struct flb_aws_credentials*creds;
+    int ret;
+
+    TEST_CHECK(unset_profile_env() == 0);
+
+    /* set environment */
+    ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_NODEFAULT, 1);
+    if (ret < 0) {
+        flb_errno();
+        return;
+    }
+
+    provider = flb_profile_provider_create();
+    if (!provider) {
+        flb_errno();
+        return;
+    }
+
+    /* repeated calls to get credentials should return the same set */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_CHECK(creds == NULL);
+
+    flb_aws_credentials_destroy(creds);
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_CHECK(creds == NULL);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* refresh should return -1 (failure) */
+    ret = provider->provider_vtable->refresh(provider);
+    TEST_CHECK(ret < 0);
+
+    flb_aws_provider_destroy(provider);
+
+    TEST_CHECK(unset_profile_env() == 0);
+}
+
 TEST_LIST = {
     { "test_profile_default" , test_profile_default},
     { "test_profile_non_default" , test_profile_non_default},
     { "test_profile_no_space" , test_profile_no_space},
     { "test_profile_weird_whitespace" , test_profile_weird_whitespace},
     { "test_profile_missing" , test_profile_missing},
+    { "test_profile_nodefault" , test_profile_nodefault},
     { 0 }
 };
