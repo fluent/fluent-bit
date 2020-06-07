@@ -43,11 +43,13 @@
 
 /* Declarations */
 struct flb_aws_provider_profile;
-static int get_profile(struct flb_aws_provider_profile *implementation);
-static int parse_file(char *buf, char *profile, struct flb_aws_credentials *creds);
-static flb_sds_t parse_property_value(char *s);
+static int get_profile(struct flb_aws_provider_profile *implementation,
+                       int debug_only);
+static int parse_file(char *buf, char *profile, struct flb_aws_credentials *creds,
+                      int debug_only);
+static flb_sds_t parse_property_value(char *s, int debug_only);
 static char *parse_property_line(char *line);
-static int has_profile(char *line, char* profile);
+static int has_profile(char *line, char* profile, int debug_only);
 static int is_profile_line(char *line);
 
 /*
@@ -71,7 +73,7 @@ struct flb_aws_credentials *get_credentials_fn_profile(struct flb_aws_provider
               "AWS Profile %s", implementation->profile);
 
     if (!implementation->creds) {
-        ret = get_profile(implementation);
+        ret = get_profile(implementation, FLB_FALSE);
         if (ret < 0) {
             flb_error("[aws_credentials] Failed to retrieve credentials for "
                       "AWS Profile %s", implementation->profile);
@@ -121,7 +123,14 @@ int refresh_fn_profile(struct flb_aws_provider *provider)
 {
     struct flb_aws_provider_profile *implementation = provider->implementation;
     flb_debug("[aws_credentials] Refresh called on the profile provider");
-    return get_profile(implementation);
+    return get_profile(implementation, FLB_FALSE);
+}
+
+int init_fn_profile(struct flb_aws_provider *provider)
+{
+    struct flb_aws_provider_profile *implementation = provider->implementation;
+    flb_debug("[aws_credentials] Init called on the profile provider");
+    return get_profile(implementation, FLB_TRUE);
 }
 
 /*
@@ -164,6 +173,7 @@ void destroy_fn_profile(struct flb_aws_provider *provider)
 
 static struct flb_aws_provider_vtable profile_provider_vtable = {
     .get_credentials = get_credentials_fn_profile,
+    .init = init_fn_profile,
     .refresh = refresh_fn_profile,
     .destroy = destroy_fn_profile,
     .sync = sync_fn_profile,
@@ -273,11 +283,17 @@ static int is_profile_line(char *line) {
 }
 
 /* Called on lines that have is_profile_line == True */
-static int has_profile(char *line, char* profile) {
+static int has_profile(char *line, char* profile, int debug_only) {
     char *end_bracket = strchr(line, ']');
     if (!end_bracket) {
-        flb_warn("[aws_credentials] Profile header has no ending bracket:\n %s",
-                 line);
+        if (debug_only) {
+            flb_debug("[aws_credentials] Profile header has no ending bracket:\n %s",
+                     line);
+        }
+        else {
+            flb_warn("[aws_credentials] Profile header has no ending bracket:\n %s",
+                     line);
+        }
         return FLB_FALSE;
     }
     *end_bracket = '\0';
@@ -323,7 +339,7 @@ static char *parse_property_line(char *line) {
 }
 
 /* called on the rest of a line after parse_property_line is called */
-static flb_sds_t parse_property_value(char *s) {
+static flb_sds_t parse_property_value(char *s, int debug_only) {
     int len = strlen(s);
     int i = 0;
     char *val = NULL;
@@ -339,8 +355,14 @@ static flb_sds_t parse_property_value(char *s) {
     }
 
     if (!val) {
-        flb_error("[aws_credentials] Could not parse credential value from"
-                  "%s", s);
+        if (debug_only == FLB_TRUE) {
+            flb_debug("[aws_credentials] Could not parse credential value from"
+                      "%s", s);
+        }
+        else {
+            flb_error("[aws_credentials] Could not parse credential value from"
+                      "%s", s);
+        }
     }
 
     prop = flb_sds_create(val);
@@ -356,7 +378,8 @@ static flb_sds_t parse_property_value(char *s) {
  * Parses a shared credentials file.
  * Expects the contents of 'creds' to be initialized to NULL (i.e use calloc).
  */
-static int parse_file(char *buf, char *profile, struct flb_aws_credentials *creds)
+static int parse_file(char *buf, char *profile, struct flb_aws_credentials *creds,
+                      int debug_only)
 {
     char *line;
     char *line_end;
@@ -376,20 +399,23 @@ static int parse_file(char *buf, char *profile, struct flb_aws_credentials *cred
             if (found_profile == FLB_TRUE) {
                 break;
             }
-            if (has_profile(line, profile)) {
+            if (has_profile(line, profile, debug_only)) {
                 found_profile = FLB_TRUE;
             }
         } else {
             prop_val = parse_property_line(line);
             if (prop_val && found_profile == FLB_TRUE) {
                 if (strcmp(line, ACCESS_KEY_PROPERTY_NAME) == 0) {
-                    creds->access_key_id = parse_property_value(prop_val);
+                    creds->access_key_id = parse_property_value(prop_val,
+                                                                debug_only);
                 }
                 if (strcmp(line, SECRET_KEY_PROPERTY_NAME) == 0) {
-                    creds->secret_access_key = parse_property_value(prop_val);
+                    creds->secret_access_key = parse_property_value(prop_val,
+                                                                    debug_only);
                 }
                 if (strcmp(line, SESSION_TOKEN_PROPERTY_NAME) == 0) {
-                    creds->session_token = parse_property_value(prop_val);
+                    creds->session_token = parse_property_value(prop_val,
+                                                                debug_only);
                 }
             }
         }
@@ -405,13 +431,21 @@ static int parse_file(char *buf, char *profile, struct flb_aws_credentials *cred
     if (creds->access_key_id && creds->secret_access_key) {
         return 0;
     }
-    flb_error("[aws_credentials] %s and %s keys not parsed in shared "
-              "credentials file for profile %s.", ACCESS_KEY_PROPERTY_NAME,
-              SECRET_KEY_PROPERTY_NAME, profile);
+    if (debug_only == FLB_TRUE) {
+        flb_debug("[aws_credentials] %s and %s keys not parsed in shared "
+                  "credentials file for profile %s.", ACCESS_KEY_PROPERTY_NAME,
+                  SECRET_KEY_PROPERTY_NAME, profile);
+    }
+    else {
+        flb_error("[aws_credentials] %s and %s keys not parsed in shared "
+                  "credentials file for profile %s.", ACCESS_KEY_PROPERTY_NAME,
+                  SECRET_KEY_PROPERTY_NAME, profile);
+    }
     return -1;
 }
 
-static int get_profile(struct flb_aws_provider_profile *implementation)
+static int get_profile(struct flb_aws_provider_profile *implementation,
+                       int debug_only)
 {
     struct flb_aws_credentials *creds = NULL;
     int ret;
@@ -428,18 +462,31 @@ static int get_profile(struct flb_aws_provider_profile *implementation)
 
     ret = flb_read_file(implementation->path, &buf, &size);
     if (ret < 0) {
-        flb_error("[aws_credentials] Could not read shared credentials file %s",
-                  implementation->path);
+        if (debug_only == FLB_TRUE) {
+            flb_debug("[aws_credentials] Could not read shared credentials file %s",
+                      implementation->path);
+        }
+        else {
+            flb_error("[aws_credentials] Could not read shared credentials file %s",
+                      implementation->path);
+        }
         goto error;
     }
 
-    ret = parse_file(buf, implementation->profile, creds);
+    ret = parse_file(buf, implementation->profile, creds, debug_only);
     flb_free(buf);
 
     if (ret < 0) {
-        flb_error("[aws_credentials] Could not parse shared credentials file: "
-                  "valid profile with name '%s' not found",
-                  implementation->profile);
+        if (debug_only == FLB_TRUE) {
+            flb_debug("[aws_credentials] Could not parse shared credentials file: "
+                      "valid profile with name '%s' not found",
+                      implementation->profile);
+        }
+        else {
+            flb_error("[aws_credentials] Could not parse shared credentials file: "
+                      "valid profile with name '%s' not found",
+                      implementation->profile);
+        }
         goto error;
     }
 

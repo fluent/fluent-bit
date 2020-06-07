@@ -116,6 +116,32 @@ struct flb_aws_credentials *get_credentials_fn_standard_chain(struct
     return NULL;
 }
 
+int init_fn_standard_chain(struct flb_aws_provider *provider)
+{
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    int ret = -1;
+
+    if (try_lock_provider(provider)) {
+        /* find the first provider that indicates successful init */
+        mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+            sub_provider = mk_list_entry(head,
+                                         struct flb_aws_provider,
+                                         _head);
+            ret = sub_provider->provider_vtable->init(sub_provider);
+            if (ret >= 0) {
+                implementation->sub_provider = sub_provider;
+                break;
+            }
+        }
+        unlock_provider(provider);
+    }
+
+    return ret;
+}
+
 /*
  * Client code should only call refresh if there has been an
  * error from the AWS APIs indicating creds are expired/invalid.
@@ -201,6 +227,7 @@ void destroy_fn_standard_chain(struct flb_aws_provider *provider) {
 
 static struct flb_aws_provider_vtable standard_chain_provider_vtable = {
     .get_credentials = get_credentials_fn_standard_chain,
+    .init = init_fn_standard_chain,
     .refresh = refresh_fn_standard_chain,
     .destroy = destroy_fn_standard_chain,
     .sync = sync_fn_standard_chain,
@@ -373,6 +400,14 @@ int refresh_fn_environment(struct flb_aws_provider *provider)
     return refresh_env(provider);
 }
 
+int init_fn_environment(struct flb_aws_provider *provider)
+{
+    flb_debug("[aws_credentials] Init called on the env provider");
+
+    return refresh_env(provider);
+}
+
+
 /*
  * sync and async are no-ops for the env provider because it does not make
  * network IO calls
@@ -394,6 +429,7 @@ void destroy_fn_environment(struct flb_aws_provider *provider) {
 
 static struct flb_aws_provider_vtable environment_provider_vtable = {
     .get_credentials = get_credentials_fn_environment,
+    .init = init_fn_environment,
     .refresh = refresh_fn_environment,
     .destroy = destroy_fn_environment,
     .sync = sync_fn_environment,

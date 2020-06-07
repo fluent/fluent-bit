@@ -149,6 +149,23 @@ int refresh_fn_http(struct flb_aws_provider *provider) {
     return ret;
 }
 
+int init_fn_http(struct flb_aws_provider *provider) {
+    struct flb_aws_provider_http *implementation = provider->implementation;
+    int ret = -1;
+    flb_debug("[aws_credentials] Init called on the http provider");
+
+    implementation->client->debug_only = FLB_TRUE;
+
+    if (try_lock_provider(provider)) {
+        ret = http_credentials_request(implementation);
+        unlock_provider(provider);
+    }
+
+    implementation->client->debug_only = FLB_FALSE;
+
+    return ret;
+}
+
 void sync_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
 
@@ -194,6 +211,7 @@ void destroy_fn_http(struct flb_aws_provider *provider) {
 
 static struct flb_aws_provider_vtable http_provider_vtable = {
     .get_credentials = get_credentials_fn_http,
+    .init = init_fn_http,
     .refresh = refresh_fn_http,
     .destroy = destroy_fn_http,
     .sync = sync_fn_http,

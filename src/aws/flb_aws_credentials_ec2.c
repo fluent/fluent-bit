@@ -135,6 +135,22 @@ int refresh_fn_ec2(struct flb_aws_provider *provider) {
     return ret;
 }
 
+int init_fn_ec2(struct flb_aws_provider *provider) {
+    struct flb_aws_provider_ec2 *implementation = provider->implementation;
+    int ret = -1;
+
+    implementation->client->debug_only = FLB_TRUE;
+
+    flb_debug("[aws_credentials] Init called on the EC2 IMDS provider");
+    if (try_lock_provider(provider)) {
+        ret = get_creds_ec2(implementation);
+        unlock_provider(provider);
+    }
+
+    implementation->client->debug_only = FLB_FALSE;
+    return ret;
+}
+
 void sync_fn_ec2(struct flb_aws_provider *provider) {
     struct flb_aws_provider_ec2 *implementation = provider->implementation;
 
@@ -172,6 +188,7 @@ void destroy_fn_ec2(struct flb_aws_provider *provider) {
 
 static struct flb_aws_provider_vtable ec2_provider_vtable = {
     .get_credentials = get_credentials_fn_ec2,
+    .init = init_fn_ec2,
     .refresh = refresh_fn_ec2,
     .destroy = destroy_fn_ec2,
     .sync = sync_fn_ec2,
@@ -209,8 +226,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_aws_provider_destroy(provider);
-        flb_error("[aws_credentials] EC2 IMDS: connection initialization "
-                  "error");
+        flb_debug("[aws_credentials] unable to connect to EC2 IMDS.");
         return NULL;
     }
 

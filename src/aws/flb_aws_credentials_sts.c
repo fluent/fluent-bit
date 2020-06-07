@@ -171,6 +171,25 @@ int refresh_fn_sts(struct flb_aws_provider *provider) {
     return ret;
 }
 
+int init_fn_sts(struct flb_aws_provider *provider) {
+    int ret = -1;
+    struct flb_aws_provider_sts *implementation = provider->implementation;
+
+    flb_debug("[aws_credentials] Init called on the STS provider");
+
+    implementation->sts_client->debug_only = FLB_TRUE;
+
+    if (try_lock_provider(provider)) {
+        ret = sts_assume_role_request(implementation->sts_client,
+                                      &implementation->creds, implementation->uri,
+                                      &implementation->next_refresh);
+        unlock_provider(provider);
+    }
+
+    implementation->sts_client->debug_only = FLB_FALSE;
+    return ret;
+}
+
 void sync_fn_sts(struct flb_aws_provider *provider) {
     struct flb_aws_provider_sts *implementation = provider->implementation;
 
@@ -216,6 +235,7 @@ void destroy_fn_sts(struct flb_aws_provider *provider) {
 
 static struct flb_aws_provider_vtable sts_provider_vtable = {
     .get_credentials = get_credentials_fn_sts,
+    .init = init_fn_sts,
     .refresh = refresh_fn_sts,
     .destroy = destroy_fn_sts,
     .sync = sync_fn_sts,
@@ -404,13 +424,29 @@ error:
 
 int refresh_fn_eks(struct flb_aws_provider *provider) {
     int ret = -1;
-    struct flb_aws_provider_eks *implementation = provider->
-                                                          implementation;
+    struct flb_aws_provider_eks *implementation = provider->implementation;
+
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
     if (try_lock_provider(provider)) {
         ret = assume_with_web_identity(implementation);
         unlock_provider(provider);
     }
+    return ret;
+}
+
+int init_fn_eks(struct flb_aws_provider *provider) {
+    int ret = -1;
+    struct flb_aws_provider_eks *implementation = provider->implementation;
+
+    implementation->sts_client->debug_only = FLB_TRUE;
+
+    flb_debug("[aws_credentials] Init called on the EKS provider");
+    if (try_lock_provider(provider)) {
+        ret = assume_with_web_identity(implementation);
+        unlock_provider(provider);
+    }
+
+    implementation->sts_client->debug_only = FLB_FALSE;
     return ret;
 }
 
@@ -456,6 +492,7 @@ void destroy_fn_eks(struct flb_aws_provider *provider) {
 
 static struct flb_aws_provider_vtable eks_provider_vtable = {
     .get_credentials = get_credentials_fn_eks,
+    .init = init_fn_eks,
     .refresh = refresh_fn_eks,
     .destroy = destroy_fn_eks,
     .sync = sync_fn_eks,
@@ -646,11 +683,16 @@ static int assume_with_web_identity(struct flb_aws_provider_eks
     char *web_token = NULL;
     size_t web_token_size;
     char *uri = NULL;
+    int init_mode = implementation->sts_client->debug_only;
 
     ret = flb_read_file(implementation->token_file, &web_token,
                         &web_token_size);
     if (ret < 0) {
-        flb_error("[aws_credentials] Could not read web identify token file");
+        if (init_mode == FLB_TRUE) {
+            flb_debug("[aws_credentials] Could not read web identify token file");
+        } else {
+            flb_error("[aws_credentials] Could not read web identify token file");
+        }
         return -1;
     }
 
@@ -678,6 +720,7 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
     struct flb_aws_credentials *credentials = NULL;
     struct flb_http_client *c = NULL;
     flb_sds_t error_type;
+    int init_mode = sts_client->debug_only;
 
     flb_debug("[aws_credentials] Calling STS..");
 
@@ -687,7 +730,12 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
     if (c && c->resp.status == 200) {
         credentials = flb_parse_sts_resp(c->resp.payload, &expiration);
         if (!credentials) {
-            flb_error("[aws_credentials] Failed to parse response from STS");
+            if (init_mode == FLB_TRUE) {
+                flb_debug("[aws_credentials] Failed to parse response from STS");
+            }
+            else {
+                flb_error("[aws_credentials] Failed to parse response from STS");
+            }
             flb_http_client_destroy(c);
             return -1;
         }
@@ -705,7 +753,12 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
     if (c && c->resp.payload_size > 0) {
         error_type = flb_aws_error(c->resp.payload, c->resp.payload_size);
         if (error_type) {
-            flb_error("[aws_credentials] STS API responded with %s", error_type);
+            if (init_mode == FLB_TRUE) {
+                flb_debug("[aws_credentials] STS API responded with %s", error_type);
+            }
+            else {
+                flb_error("[aws_credentials] STS API responded with %s", error_type);
+            }
         } else {
             flb_debug("[aws_credentials] STS raw response: \n%s",
                       c->resp.payload);
@@ -715,7 +768,12 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
     if (c) {
         flb_http_client_destroy(c);
     }
-    flb_error("[aws_credentials] STS assume role request failed");
+    if (init_mode == FLB_TRUE) {
+        flb_debug("[aws_credentials] STS assume role request failed");
+    }
+    else {
+        flb_error("[aws_credentials] STS assume role request failed");
+    }
     return -1;
 
 }
@@ -731,7 +789,7 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
  * </Credentials>
  */
 struct flb_aws_credentials *flb_parse_sts_resp(char *response,
-                                                    time_t *expiration)
+                                               time_t *expiration)
 {
     struct flb_aws_credentials *creds = NULL;
     char *cred_node;
