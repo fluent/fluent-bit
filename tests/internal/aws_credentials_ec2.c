@@ -268,6 +268,8 @@ static void test_ec2_provider_v1()
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     provider = flb_ec2_provider_create(config, generator_in_test());
 
     if (!provider) {
@@ -326,6 +328,8 @@ static void test_ec2_provider_error_case()
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     provider = flb_ec2_provider_create(config, generator_in_test_error_case());
 
     if (!provider) {
@@ -361,6 +365,8 @@ static void test_ec2_provider_malformed_case()
         flb_errno();
         return;
     }
+
+    mk_list_init(&config->upstreams);
 
     provider = flb_ec2_provider_create(config, generator_malformed());
 

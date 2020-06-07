@@ -408,6 +408,8 @@ static void test_eks_provider() {
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     /* set env vars */
     ret = setenv(ROLE_ARN_ENV_VAR, "arn:aws:iam::123456789012:role/test1", 1);
     if (ret < 0) {
@@ -481,6 +483,8 @@ static void test_eks_provider_random_session_name() {
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     /* set env vars - session name is not set */
     unsetenv_eks();
     ret = setenv(ROLE_ARN_ENV_VAR,
@@ -552,6 +556,8 @@ static void test_eks_provider_unexpected_api_response() {
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     unsetenv_eks();
     ret = setenv(ROLE_ARN_ENV_VAR, "arn:aws:iam::123456789012:role/"
                  "unexpected_api_response", 1);
@@ -604,6 +610,8 @@ static void test_eks_provider_api_error() {
         flb_errno();
         return;
     }
+
+    mk_list_init(&config->upstreams);
 
     unsetenv_eks();
     ret = setenv(ROLE_ARN_ENV_VAR, "arn:aws:iam::123456789012:role/apierror",
@@ -658,6 +666,8 @@ static void test_sts_provider() {
         flb_errno();
         return;
     }
+
+    mk_list_init(&config->upstreams);
 
     /* use the env provider as the base provider */
     /* set environment */
@@ -746,6 +756,8 @@ static void test_sts_provider_api_error() {
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     /* use the env provider as the base provider */
     /* set environment */
     ret = setenv(AWS_ACCESS_KEY_ID, "base_akid", 1);
@@ -817,6 +829,8 @@ static void test_sts_provider_unexpected_api_response() {
         flb_errno();
         return;
     }
+
+    mk_list_init(&config->upstreams);
 
     /* use the env provider as the base provider */
     /* set environment */
