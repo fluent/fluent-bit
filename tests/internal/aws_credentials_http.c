@@ -187,6 +187,8 @@ static void test_http_provider()
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     host = flb_sds_create("127.0.0.1");
     if (!host) {
         flb_errno();
@@ -261,6 +263,8 @@ static void test_http_provider_error_case()
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     host = flb_sds_create("127.0.0.1");
     if (!host) {
         flb_errno();
@@ -318,6 +322,8 @@ static void test_http_provider_malformed_response()
         flb_errno();
         return;
     }
+
+    mk_list_init(&config->upstreams);
 
     host = flb_sds_create("127.0.0.1");
     if (!host) {

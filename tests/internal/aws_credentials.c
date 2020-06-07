@@ -273,6 +273,8 @@ static void test_standard_chain_provider()
         return;
     }
 
+    mk_list_init(&config->upstreams);
+
     provider = flb_standard_chain_provider_create(config, NULL, "us-west-2",
                                                   NULL,
                                                   flb_aws_client_generator());
