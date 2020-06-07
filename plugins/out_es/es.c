@@ -37,7 +37,7 @@
 
 struct flb_output_plugin out_es_plugin;
 
-#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
 static flb_sds_t add_aws_auth(struct flb_http_client *c,
                               struct flb_elasticsearch *ctx)
 {
@@ -53,18 +53,19 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
         return NULL;
     }
 
-    /* User agent for AWS tools must start with "aws-" */
+    /* AWS Fluent Bit user agent */
     flb_http_add_header(c, "User-Agent", 10, "aws-fluent-bit-plugin", 21);
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
-                              ctx->aws_region, "es", ctx->aws_provider);
+                              ctx->aws_region, "es",
+                              ctx->aws_provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
         return NULL;
     }
     return signature;
 }
-#endif /* FLB_HAVE_SIGNV4 */
+#endif /* FLB_HAVE_AWS */
 
 static inline int es_pack_map_content(msgpack_packer *tmp_pck,
                                       msgpack_object map,
@@ -622,7 +623,7 @@ static void cb_es_flush(const void *data, size_t bytes,
 
     flb_http_buffer_size(c, ctx->buffer_size);
 
-#ifndef FLB_HAVE_SIGNV4
+#ifndef FLB_HAVE_AWS
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 #endif
 
@@ -632,7 +633,7 @@ static void cb_es_flush(const void *data, size_t bytes,
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
-#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
     if (ctx->has_aws_auth == FLB_TRUE) {
         signature = add_aws_auth(c, ctx);
         if (!signature) {
@@ -745,16 +746,26 @@ static struct flb_config_map config_map[] = {
     },
 
     /* AWS Authentication */
-#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
     {
      FLB_CONFIG_MAP_BOOL, "aws_auth", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, has_aws_auth),
-     NULL
+     "Enable AWS Sigv4 Authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "aws_region", "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_region),
-     NULL
+     "AWS Region of your Amazon ElasticSearch Service cluster"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_role_arn", "",
+     0, FLB_FALSE, 0,
+     "AWS IAM Role to assume to put records to your Amazon ES cluster"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_external_id", "",
+     0, FLB_FALSE, 0,
+     "External ID for the AWS IAM Role specified with `aws_role_arn`"
     },
 #endif
 
