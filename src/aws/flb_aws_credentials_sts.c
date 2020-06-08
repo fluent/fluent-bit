@@ -177,6 +177,10 @@ int init_fn_sts(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Init called on the STS provider");
 
+    /* Call Init on the base provider first */
+    implementation->base_provider->provider_vtable->
+                                   init(implementation->base_provider);
+
     implementation->sts_client->debug_only = FLB_TRUE;
 
     if (try_lock_provider(provider)) {
