@@ -28,14 +28,14 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <shlwapi.h>
 
 #include "tail.h"
 #include "tail_file.h"
 #include "tail_signal.h"
 #include "tail_config.h"
+
+#include "win32.h"
 
 static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 {

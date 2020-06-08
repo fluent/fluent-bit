@@ -31,6 +31,10 @@
 #include "tail_config.h"
 #include "tail_signal.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
+#endif
+
 struct fs_stat {
     /* last time check */
     time_t checked;
@@ -145,25 +149,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
             file->pending_bytes = 0;
         }
 
-#ifdef FLB_SYSTEM_WINDOWS
-        HANDLE h;
-        FILE_STANDARD_INFO info;
-
-        h = _get_osfhandle(file->fd);
-        if (GetFileInformationByHandleEx(h, FileStandardInfo,
-                                         &info, sizeof(info))) {
-            if (info.DeletePending) {
-                flb_plg_debug(ctx->ins, "file is to be delete: %s", file->name);
-#ifdef FLB_HAVE_SQLDB
-                if (ctx->db) {
-                    flb_tail_db_file_delete(file, ctx);
-                }
-#endif
-                flb_tail_file_remove(file);
-                continue;
-            }
-        }
-#endif
 
         /* Discover the current file name for the open file descriptor */
         name = flb_tail_file_name(file);

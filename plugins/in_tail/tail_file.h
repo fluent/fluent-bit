@@ -32,6 +32,10 @@
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
+#endif
+
 #ifdef FLB_HAVE_REGEX
 #define FLB_HASH_TABLE_SIZE 50
 #endif
