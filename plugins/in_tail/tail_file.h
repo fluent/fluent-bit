@@ -52,7 +52,7 @@ static inline int flb_tail_file_name_cmp(char *name,
     a = flb_strdup(name);
     b = flb_strdup(file->name);
 
-    a_base = basename(a);
+    a_base = flb_strdup(basename(a));
     b_base = basename(b);
     struct flb_tail_config *ctx = file->config;
 
@@ -68,6 +68,7 @@ static inline int flb_tail_file_name_cmp(char *name,
 
     flb_free(a);
     flb_free(b);
+    flb_free(a_base);
     return ret;
 }
 
@@ -81,7 +82,7 @@ static inline int flb_tail_target_file_name_cmp(char *name,
     char *base_b;
 
     name_a = flb_strdup(name);
-    base_a = basename(name_a);
+    base_a = flb_strdup(basename(name_a));
 
 #if defined(__linux__) && defined(FLB_HAVE_INOTIFY)
     name_b = flb_strdup(file->name);
@@ -99,6 +100,7 @@ static inline int flb_tail_target_file_name_cmp(char *name,
 
     flb_free(name_a);
     flb_free(name_b);
+    flb_free(base_a);
 
     return ret;
 }
