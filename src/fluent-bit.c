@@ -54,6 +54,7 @@
 #endif
 
 struct flb_config *config;
+struct flb_stacktrace flb_st;
 
 #define PLUGIN_INPUT    0
 #define PLUGIN_OUTPUT   1
