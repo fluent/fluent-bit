@@ -38,6 +38,7 @@ set(src
   flb_upstream_node.c
   flb_router.c
   flb_worker.c
+  flb_thread.c
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
