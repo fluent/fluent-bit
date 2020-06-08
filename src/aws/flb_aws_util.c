@@ -42,6 +42,7 @@ char *flb_aws_endpoint(char* service, char* region)
     char *endpoint = NULL;
     size_t len = AWS_SERVICE_ENDPOINT_BASE_LEN;
     int is_cn = FLB_FALSE;
+    int bytes;
 
 
     /* In the China regions, ".cn" is appended to the URL */
@@ -56,18 +57,24 @@ char *flb_aws_endpoint(char* service, char* region)
 
     len += strlen(service);
     len += strlen(region);
-    len ++; /* null byte */
+    len++; /* null byte */
 
-    endpoint = flb_malloc(sizeof(char) * len);
+    endpoint = flb_malloc(len);
     if (!endpoint) {
         flb_errno();
         return NULL;
     }
 
-    snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region);
+    bytes = snprintf(endpoint, len, AWS_SERVICE_ENDPOINT_FORMAT, service, region);
+    if (bytes < 0) {
+        flb_errno();
+        flb_free(endpoint);
+        return NULL;
+    }
 
     if (is_cn) {
-        strncat(endpoint, ".cn", 3);
+        memcpy(endpoint + bytes, ".cn", 3);
+        endpoint[bytes + 3] = '\0';
     }
 
     return endpoint;
