@@ -138,6 +138,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 | [file](https://docs.fluentbit.io/manual/pipeline/outputs/file) | File | Flush records to a file. |
 | [flowcounter](https://docs.fluentbit.io/manual/pipeline/outputs/flowcounter) | FlowCounter | Count records. |
 | [forward](https://docs.fluentbit.io/manual/pipeline/outputs/forward) | Forward | Fluentd forward protocol. |
+| [gelf](https://docs.fluentbit.io/manual/pipeline/outputs/gelf) | GELF | Flush records to Graylog |
 | [http](https://docs.fluentbit.io/manual/pipeline/outputs/http) | HTTP | Flush records to an HTTP end point. |
 | [influxdb](https://docs.fluentbit.io/manual/pipeline/outputs/influxdb) | InfluxDB | Flush records to InfluxDB time series database. |
 | [kafka](https://docs.fluentbit.io/manual/pipeline/outputs/kafka) | Apache Kafka | Flush records to Apache Kafka |
