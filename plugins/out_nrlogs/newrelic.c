@@ -543,8 +543,8 @@ static struct flb_config_map config_map[] = {
 };
 
 /* Plugin reference */
-struct flb_output_plugin out_newrelic_plugin = {
-    .name        = "newrelic",
+struct flb_output_plugin out_nrlogs_plugin = {
+    .name        = "nrlogs",
     .description = "New Relic",
     .cb_init     = cb_newrelic_init,
     .cb_flush    = cb_newrelic_flush,
