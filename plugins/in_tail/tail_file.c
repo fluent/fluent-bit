@@ -41,54 +41,14 @@
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
-#ifdef _MSC_VER
-static int get_inode(int fd, uint64_t *inode, struct flb_tail_config *ctx)
-{
-    HANDLE h;
-    BY_HANDLE_FILE_INFORMATION info;
-
-    h = _get_osfhandle(fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        flb_plg_error(ctx->ins, "cannot convert fd:%i into HANDLE", fd);
-        return -1;
-    }
-
-    if (GetFileInformationByHandle(h, &info) == 0) {
-        flb_plg_error(ctx->ins, "cannot get file info for fd:%i", fd);
-        return -1;
-    }
-    *inode = (uint64_t) info.nFileIndexHigh;
-    *inode = *inode << 32 | info.nFileIndexLow;
-    return 0;
-}
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
 #endif
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
 }
-
-#ifdef _MSC_VER
-/*
- * Open a file for reading. We need to use CreateFileA() instead of
- * open(2) to avoid automatic file locking.
- */
-static int open_file(const char *path)
-{
-    HANDLE h;
-    h = CreateFileA(path,
-                    GENERIC_READ,
-                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                    NULL,           /* lpSecurityAttributes */
-                    OPEN_EXISTING,  /* dwCreationDisposition */
-                    0,              /* dwFlagsAndAttributes */
-                    NULL);          /* hTemplateFile */
-    if (h == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-    return _open_osfhandle((intptr_t) h, _O_RDONLY);
-}
-#endif
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            const char *key, size_t key_len,
@@ -600,11 +560,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-#ifdef _MSC_VER
-    fd = open_file(path);
-#else
     fd = open(path, O_RDONLY);
-#endif
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
@@ -622,7 +578,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->fd        = fd;
 
     /* On non-windows environments check if the original path is a link */
-#ifndef _MSC_VER
     struct stat lst;
     ret = lstat(path, &lst);
     if (ret == 0) {
@@ -631,7 +586,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
             file->link_inode = lst.st_ino;
         }
     }
-#endif
 
     /*
      * Duplicate string into 'file' structure, the called function
@@ -650,13 +604,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
-#ifdef _MSC_VER
-    if (get_inode(fd, &file->inode, ctx)) {
-        goto error;
-    }
-#else
     file->inode     = st->st_ino;
-#endif
     file->offset    = 0;
     file->size      = st->st_size;
     file->buf_len   = 0;
