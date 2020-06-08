@@ -362,7 +362,7 @@ struct flb_libco_in_params {
     struct flb_thread *th;
 };
 
-struct flb_libco_in_params libco_in_param;
+extern struct flb_libco_in_params libco_in_param;
 
 static FLB_INLINE void input_params_set(struct flb_thread *th,
                              struct flb_input_collector *coll,
