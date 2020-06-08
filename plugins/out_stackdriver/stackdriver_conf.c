@@ -43,7 +43,10 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
 static int validate_resource(const char *res)
 {
     if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0) {
+        strcasecmp(res, "gce_instance") != 0 &&
+        strcasecmp(res, "k8s_container") != 0 &&
+        strcasecmp(res, "k8s_node") &&
+        strcasecmp(res, "k8s_pod")) {
         return -1;
     }
 
@@ -266,7 +269,14 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
-    /* Resource type (only 'global' and 'gce_instance' are supported) */
+    /* 
+    * Supported resource types:
+    * 'global'
+    * 'gce_instance'
+    * 'k8s_pod'
+    * 'k8s_node'
+    * 'k8s_container'
+    */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         if (validate_resource(tmp) != 0) {
@@ -286,6 +296,33 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->severity_key = flb_sds_create(tmp);
     }
 
+    if (flb_sds_cmp(ctx->resource, "k8s_container", 
+                    flb_sds_len(ctx->resource)) == 0 || 
+        flb_sds_cmp(ctx->resource, "k8s_node", 
+                    flb_sds_len(ctx->resource)) == 0 ||
+        flb_sds_cmp(ctx->resource, "k8s_pod", 
+                    flb_sds_len(ctx->resource)) == 0) {
+        
+        ctx->k8s_resource_type = FLB_TRUE;
+
+        tmp = flb_output_get_property("k8s_cluster_name", ins);
+        if (tmp) {
+            ctx->cluster_name = flb_sds_create(tmp);
+        }
+
+        tmp = flb_output_get_property("k8s_cluster_location", ins);
+        if (tmp) {
+            ctx->cluster_location = flb_sds_create(tmp);
+        }
+
+        if (!ctx->cluster_name || !ctx->cluster_location) {
+            flb_plg_error(ctx->ins, "missing k8s_cluster_name "
+                          "or k8s_cluster_location in configuration");
+            flb_stackdriver_conf_destroy(ctx);
+            return NULL;
+        }
+    } 
+
     return ctx;
 }
 
@@ -293,6 +330,15 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 {
     if (!ctx) {
         return -1;
+    }
+
+    if (ctx->k8s_resource_type){
+        flb_sds_destroy(ctx->namespace_name);
+        flb_sds_destroy(ctx->pod_name);
+        flb_sds_destroy(ctx->container_name);
+        flb_sds_destroy(ctx->node_name);
+        flb_sds_destroy(ctx->cluster_name);
+        flb_sds_destroy(ctx->cluster_location);
     }
 
     flb_sds_destroy(ctx->credentials_file);
