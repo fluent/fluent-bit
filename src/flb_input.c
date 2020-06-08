@@ -35,6 +35,8 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_kv.h>
 
+struct flb_libco_in_params libco_in_param;
+
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
 static int check_protocol(const char *prot, const char *output)
