@@ -252,7 +252,6 @@ int in_tail_collect_event(void *file, struct flb_config *config)
     int ret;
     struct stat st;
     struct flb_tail_file *f = file;
-    struct flb_tail_config *ctx = f->config;
 
     ret = fstat(f->fd, &st);
     if (ret == -1) {
