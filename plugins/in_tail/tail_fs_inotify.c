@@ -58,7 +58,7 @@ static int debug_event_mask(struct flb_tail_config *ctx,
 
     /* Print info into sds */
     if (file) {
-        flb_sds_printf(&buf, "inode=%lu events: ", file->inode);
+        flb_sds_printf(&buf, "inode=%"PRIu64" events: ", file->inode);
     }
     else {
         flb_sds_printf(&buf, "events: ");
@@ -126,7 +126,7 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
 
     name = flb_tail_file_name(file);
     if (!name) {
-        flb_plg_error(ctx->ins, "inode=%lu cannot get real filename for inotify",
+        flb_plg_error(ctx->ins, "inode=%"PRIu64" cannot get real filename for inotify",
                       file->inode);
         return -1;
     }
@@ -145,7 +145,7 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
         return -1;
     }
     file->watch_fd = watch_fd;
-    flb_info("inotify_fs_add(): inode=%lu watch_fd=%i name=%s",
+    flb_info("inotify_fs_add(): inode=%"PRIu64" watch_fd=%i name=%s",
              file->inode, watch_fd, file->name);
     return 0;
 }
@@ -191,14 +191,14 @@ static int tail_fs_event(struct flb_input_instance *ins,
     debug_event_mask(ctx, file, ev.mask);
 
     if (ev.mask & IN_IGNORED) {
-        flb_plg_debug(ctx->ins, "inode=%lu watch_fd=%i IN_IGNORED",
+        flb_plg_debug(ctx->ins, "inode=%"PRIu64" watch_fd=%i IN_IGNORED",
                       file->inode, ev.wd);
         return -1;
     }
 
     /* Check file rotation (only if it has not been rotated before) */
     if (ev.mask & IN_MOVE_SELF && file->rotated == 0) {
-        flb_plg_debug(ins, "inode=%lu rotated IN_MOVE SELF '%s'",
+        flb_plg_debug(ins, "inode=%"PRIu64" rotated IN_MOVE SELF '%s'",
                       file->inode, file->name);
 
         /* A rotated file must be re-registered */
@@ -209,7 +209,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
 
     ret = fstat(file->fd, &st);
     if (ret == -1) {
-        flb_plg_debug(ins, "inode=%lu error stat(2) %s, removing",
+        flb_plg_debug(ins, "inode=%"PRIu64" error stat(2) %s, removing",
                       file->inode, file->name);
         flb_tail_file_remove(file);
         return 0;
@@ -221,7 +221,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
     if (ev.mask & IN_ATTRIB) {
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
-            flb_plg_debug(ins, "inode=%lu file has been deleted: %s",
+            flb_plg_debug(ins, "inode=%"PRIu64" file has been deleted: %s",
                           file->inode, file->name);
 
 #ifdef FLB_HAVE_SQLDB
@@ -250,7 +250,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
                 return -1;
             }
 
-            flb_plg_debug(ctx->ins, "inode=%lu file truncated %s",
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" file truncated %s",
                           file->inode, file->name);
             file->offset = offset;
             file->buf_len = 0;
@@ -335,7 +335,7 @@ int flb_tail_fs_add(struct flb_tail_file *file)
 
     ret = tail_fs_add(file, FLB_TRUE);
     if (ret == -1) {
-        flb_plg_error(ctx->ins, "inode=%lu cannot register file %s",
+        flb_plg_error(ctx->ins, "inode=%"PRIu64" cannot register file %s",
                       file->inode, file->name);
         return -1;
     }
@@ -349,7 +349,7 @@ int flb_tail_fs_remove(struct flb_tail_file *file)
         return 0;
     }
 
-    flb_info("inotify_fs_remove(): inode=%lu watch_fd=%i",
+    flb_info("inotify_fs_remove(): inode=%"PRIu64" watch_fd=%i",
              file->inode, file->watch_fd);
 
     inotify_rm_watch(file->config->fd_notify, file->watch_fd);
