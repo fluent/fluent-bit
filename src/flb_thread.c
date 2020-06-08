@@ -18,32 +18,7 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_THREAD_H
-#define FLB_THREAD_H
-
-/* Required by OSX */
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE
-#endif
-
-#ifndef _DEFAULT_SOURCE
-#define _DEFAULT_SOURCE
-#endif
-
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_thread.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-extern FLB_EXPORT pthread_key_t flb_thread_key;
-
-/* Use 'libco' backend for co-routines handling */
-#include <fluent-bit/flb_thread_libco.h>
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* !FLB_THREAD_H */
+pthread_key_t flb_thread_key;
