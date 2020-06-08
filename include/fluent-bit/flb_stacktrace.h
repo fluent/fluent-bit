@@ -34,7 +34,7 @@ struct flb_stacktrace {
     int line;
 };
 
-struct flb_stacktrace flb_st;
+extern struct flb_stacktrace flb_st;
 
 static void flb_stacktrace_error_callback(void *data,
                                           const char *msg, int errnum)
