@@ -82,7 +82,6 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
                                                size_t dynamic_headers_len)
 {
     struct flb_http_client *c = NULL;
-    flb_sds_t error = NULL;
 
     //TODO: Need to think more about the retry strategy.
 
@@ -97,19 +96,14 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
      *
      */
     if (c && (c->resp.status == 400 || c->resp.status == 403)) {
-        error = flb_aws_error(c->resp.payload, c->resp.payload_size);
-        if (error != NULL) {
-            if (flb_aws_is_auth_error(error) == FLB_TRUE) {
-                    if (aws_client->has_auth && time(NULL) >
-                        aws_client->refresh_limit) {
-
-                        aws_client->refresh_limit = time(NULL)
-                                                    + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
-                        aws_client->provider->provider_vtable->
-                                              refresh(aws_client->provider);
-                    }
-                }
-            flb_sds_destroy(error);
+        if (aws_client->has_auth && time(NULL) > aws_client->refresh_limit) {
+            if (flb_aws_is_auth_error(c->resp.payload, c->resp.payload_size)
+                == FLB_TRUE) {
+                aws_client->refresh_limit = time(NULL)
+                                            + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
+                aws_client->provider->provider_vtable->
+                                          refresh(aws_client->provider);
+            }
         }
     }
 
@@ -122,8 +116,7 @@ static struct flb_aws_client_vtable client_vtable = {
 
 struct flb_aws_client *flb_aws_client_create()
 {
-    struct flb_aws_client *client = flb_calloc(1,
-                                                sizeof(struct flb_aws_client));
+    struct flb_aws_client *client = flb_calloc(1, sizeof(struct flb_aws_client));
     if (!client) {
         flb_errno();
         return NULL;
@@ -154,15 +147,27 @@ void flb_aws_client_destroy(struct flb_aws_client *aws_client)
     }
 }
 
-int flb_aws_is_auth_error(char *error)
+int flb_aws_is_auth_error(char *payload, size_t payload_size)
 {
-    if (strcmp(error, "ExpiredToken") == 0 ||
-        strcmp(error, "AccessDeniedException") == 0 ||
-        strcmp(error, "IncompleteSignature") == 0 ||
-        strcmp(error, "MissingAuthenticationToken") == 0 ||
-        strcmp(error, "InvalidClientTokenId") == 0 ||
-        strcmp(error, "UnrecognizedClientException") == 0) {
+    flb_sds_t error = NULL;
+
+    /* Fluent Bit calls the STS API which returns XML */
+    if (strcasestr(payload, "InvalidClientTokenId") != NULL) {
         return FLB_TRUE;
+    }
+
+    /* Most APIs we use return JSON */
+    error = flb_aws_error(payload, payload_size);
+    if (error != NULL) {
+        if (strcmp(error, "ExpiredToken") == 0 ||
+            strcmp(error, "AccessDeniedException") == 0 ||
+            strcmp(error, "IncompleteSignature") == 0 ||
+            strcmp(error, "MissingAuthenticationToken") == 0 ||
+            strcmp(error, "InvalidClientTokenId") == 0 ||
+            strcmp(error, "UnrecognizedClientException") == 0) {
+            return FLB_TRUE;
+        }
+        flb_sds_destroy(error);
     }
 
     return FLB_FALSE;

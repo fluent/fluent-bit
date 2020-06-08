@@ -154,9 +154,9 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
                      flb_sds_t *metadata, size_t *metadata_len);
 
 /*
- * Checks if a JSON response contains an AWS Auth
+ * Checks if a response contains an AWS Auth error
  */
-int flb_aws_is_auth_error(char *error);
+int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
 
 #endif
