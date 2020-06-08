@@ -150,7 +150,7 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     MK_TRACE("[FD %i] Epoll, remove from QUEUE_FD=%i, ret=%i",
              event->fd, ctx->efd, ret);
     if (ret < 0) {
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
         mk_libc_warn("epoll_ctl");
 #endif
     }

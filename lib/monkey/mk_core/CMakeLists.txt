@@ -138,7 +138,3 @@ target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   target_link_libraries(mk_core event)
 endif()
-
-if(NOT MK_SYSTEM_MALLOC)
-  target_link_libraries(mk_core libjemalloc)
-endif()

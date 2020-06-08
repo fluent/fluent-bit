@@ -31,8 +31,6 @@ extern time_t monkey_init_time;
 extern mk_ptr_t log_current_time;
 extern mk_ptr_t headers_preset;
 
-pthread_t mk_clock_tid;
-
 #define MK_CLOCK_GMT_DATEFORMAT "Date: %a, %d %b %Y %H:%M:%S GMT\r\n"
 #define HEADER_PRESET_SIZE 128
 #define HEADER_TIME_BUFFER_SIZE 64
