@@ -136,7 +136,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                            CIO_OPEN, FLB_INPUT_CHUNK_SIZE, &err);
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
-                  storage->stream, name);
+                  storage->stream->name, name);
         return NULL;
     }
 
