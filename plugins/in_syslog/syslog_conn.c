@@ -34,7 +34,7 @@ int syslog_conn_event(void *data)
     int ret;
     int bytes;
     int available;
-    int size;
+    size_t size;
     char *tmp;
     struct mk_event *event;
     struct syslog_conn *conn = data;
@@ -58,7 +58,7 @@ int syslog_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zd -> %zd",
                           event->fd, conn->buf_size, size);
 
             conn->buf_data = tmp;
