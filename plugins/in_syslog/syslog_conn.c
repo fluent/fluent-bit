@@ -69,7 +69,7 @@ int syslog_conn_event(void *data)
         bytes = read(conn->fd,
                      conn->buf_data + conn->buf_len, available);
         if (bytes > 0) {
-            flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+            flb_plg_trace(ctx->ins, "read()=%i pre_len=%zu now_len=%zu",
                           bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
             conn->buf_data[conn->buf_len] = '\0';
