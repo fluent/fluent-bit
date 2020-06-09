@@ -333,7 +333,7 @@ static int in_head_config_read(struct flb_in_head_config *ctx,
         }
     }
 
-    flb_plg_debug(ctx->ins, "buf_size=%d path=%s",
+    flb_plg_debug(ctx->ins, "buf_size=%zu path=%s",
                   ctx->buf_size, ctx->filepath);
     flb_plg_debug(ctx->ins, "interval_sec=%d interval_nsec=%d",
                   ctx->interval_sec, ctx->interval_nsec);
