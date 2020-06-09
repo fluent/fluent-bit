@@ -619,6 +619,8 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
 
     ret = cio_meta_read(ic->chunk, &buf, &len);
     if (ret == -1) {
+        *tag_len = -1;
+        *tag_buf = NULL;
         return -1;
     }
 
