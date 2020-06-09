@@ -280,7 +280,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 
     /* No keepalive connection available, create a new one */
     if (!conn) {
-        return create_conn(u);
+        conn = create_conn(u);
     }
 
     return conn;
