@@ -744,7 +744,7 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
             ret = collector_start(coll, in->config);
             if (ret == -1) {
                 flb_error("[input] error starting collector #%i: %s",
-                          in->name);
+                          coll_id, in->name);
             }
             return ret;
         }
