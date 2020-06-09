@@ -35,7 +35,7 @@ test_normal_rotation() {
                 ".headers off" ".width 20" "SELECT inode FROM in_tail_files" > \
                 $1/$2.inodes
 
-        rows=`cat $1/$2.inodes | wc -l`
+        rows=`cat $1/$2.inodes | wc -l | tr -d -C '[0-9]'`
         if [ $rows != "1" ]; then
             echo "> database file $1/$2 contains $rows rows, inodes:"
             cat $1/$2.inodes
@@ -181,13 +181,13 @@ test_truncate() {
 
         # Get the last size of the 'a.log' file and check we have the same value
         # in the database
-        offset=`stat -c %s $TEST_DIR/a.log`
+        offset=`wc -c < $TEST_DIR/a.log`
 
         sqlite3 $1/$2 -batch \
                 ".headers off" "SELECT inode FROM in_tail_files WHERE offset=$offset" > \
                 $1/$2.offset
 
-        rows=`cat $1/$2.offset | wc -l`
+        rows=`cat $1/$2.offset | wc -l | tr -d -C '[0-9]'`
         if [ $rows != "1" ]; then
             echo "> invalid database content:"
             cat $1/$2.offset
@@ -275,13 +275,13 @@ test_rotate_link() {
 
         # Get the last size of the file pointed by 'a.log.1' and check we have the
         # same value in the database
-        offset=`stat -L -c %s $TEST_DIR/a.log.1`
+        offset=`wc -c < $TEST_DIR/a.log.1`
 
         sqlite3 $1/$2 -batch \
                 ".headers off" "SELECT inode FROM in_tail_files WHERE offset=$offset \
                                   AND rotated=1" > $1/$2.offset
 
-        rows=`cat $1/$2.offset | wc -l`
+        rows=`cat $1/$2.offset | wc -l | tr -d -C '[0-9]'`
         if [ $rows != "1" ]; then
             echo "> invalid database content:"
             cat $1/$2.offset
@@ -298,7 +298,7 @@ test_rotate_link() {
                 ".headers off" "SELECT inode FROM in_tail_files WHERE offset=$offset \
                                   AND rotated=1" > $1/$2.offset
 
-        rows=`cat $1/$2.offset | wc -l`
+        rows=`cat $1/$2.offset | wc -l | tr -d -C '[0-9]'`
         if [ $rows != "0" ]; then
             echo "> invalid database content:"
             cat $1/$2.offset
@@ -342,7 +342,7 @@ test_rotate_link() {
     python logger_file.py -l 200 -s 200000 -b 100 -d 0 -f $TEST_DIR/a.log.1
 
     # Count number of processed lines
-    sleep 2
+    sleep 3
     write_lines=300
     read_lines=`cat $TEST_DIR/a | wc -l`
 
@@ -379,13 +379,13 @@ test_truncate_link() {
 
         # Get the last size of the 'a.log' file and check we have the same value
         # in the database
-        offset=`stat -c %s $TEST_DIR/a.log`
+        offset=`wc -c < $TEST_DIR/a.log`
 
         sqlite3 $1/$2 -batch \
                 ".headers off" "SELECT inode FROM in_tail_files WHERE offset=$offset" > \
                 $1/$2.offset
 
-        rows=`cat $1/$2.offset | wc -l`
+        rows=`cat $1/$2.offset | wc -l | tr -d -C '[0-9]'`
         if [ $rows != "1" ]; then
             echo "> invalid database content:"
             cat $1/$2.offset
