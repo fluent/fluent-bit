@@ -909,7 +909,11 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     }
     else if (bytes == 0) {
         /* We reached the end of file, let's wait for some incoming data */
-        fstat(file->fd, &st);
+        ret = fstat(file->fd, &st);
+        if (ret == -1) {
+            flb_errno();
+            return FLB_TAIL_ERROR;
+        }
         file->size = st.st_size;
         file->pending_bytes = (st.st_size - file->offset);
 
