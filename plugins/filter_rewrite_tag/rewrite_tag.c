@@ -163,7 +163,7 @@ static int process_config(struct flb_rewrite_tag *ctx)
         rule->ra_tag = flb_ra_create(entry->str, FLB_FALSE);
 
         if (!rule->ra_tag) {
-            flb_plg_error(ctx->ins, "could not compose tag", entry->str);
+            flb_plg_error(ctx->ins, "could not compose tag: %s", entry->str);
             flb_ra_destroy(rule->ra_key);
             flb_regex_destroy(rule->regex);
             flb_free(rule);
