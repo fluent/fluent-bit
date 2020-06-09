@@ -966,12 +966,9 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
         }
         else {
             /* The file name is there, check if the same that we have */
-            if (st.st_ino == file->link_inode) {
-                return FLB_FALSE;
+            if (st.st_ino != file->link_inode) {
+                return FLB_TRUE;
             }
-
-            /* no rotation */
-            return FLB_TRUE;
         }
     }
 
