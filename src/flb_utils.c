@@ -154,7 +154,7 @@ int flb_utils_set_daemon(struct flb_config *config)
 	}
 
     /* Our last STDOUT messages */
-    flb_info("switching to background mode (PID=%lu)", getpid());
+    flb_info("switching to background mode (PID=%ld)", (long) getpid());
 
     fclose(stderr);
     fclose(stdout);
