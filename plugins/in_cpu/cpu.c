@@ -197,7 +197,7 @@ static inline double proc_cpu_pid_load(struct flb_cpu *ctx,
     }
 
     if (fgets(line, sizeof(line) - 1, f) == NULL) {
-        flb_plg_error(ctx->ins, "cannot read process %lu stats", pid);
+        flb_plg_error(ctx->ins, "cannot read process %ld stats", (long) pid);
         fclose(f);
         return -1;
     }
