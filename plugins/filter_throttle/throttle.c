@@ -82,7 +82,7 @@ void *time_ticker(void *args)
 
         if (t->ctx->print_status) {
             flb_plg_info(ctx->ins,
-                         "%i: limit is %0.2f per %s with window size of %i, "
+                         "%ld: limit is %0.2f per %s with window size of %i, "
                          "current rate is: %i per interval",
                          timestamp, t->ctx->max_rate, t->ctx->slide_interval,
                          t->ctx->window_size,
