@@ -230,7 +230,7 @@ static void flb_tls_debug(void *ctx, int level,
 {
     (void) level;
 
-    flb_debug("[io_tls] %s %04d: %.*s", file + sizeof(FLB_SOURCE_DIR) - 1,
+    flb_debug("[io_tls] %s %04lu: %.*s", file + sizeof(FLB_SOURCE_DIR) - 1,
               line, strlen(str), str);
 }
 
