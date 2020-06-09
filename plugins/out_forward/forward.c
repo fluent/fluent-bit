@@ -1129,7 +1129,7 @@ static void cb_forward_flush(const void *data, size_t bytes,
 
     flb_upstream_conn_release(u_conn);
 
-    flb_plg_trace(ctx->ins, "ended write()=%d bytes", total);
+    flb_plg_trace(ctx->ins, "ended write()=%zu bytes", total);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
