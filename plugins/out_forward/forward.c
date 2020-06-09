@@ -552,7 +552,7 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
 
     if(ack_len != chunk_len) {
         flb_plg_error(ctx->ins,
-                      "ack: ack len does not match ack(%d)(%.*s) chunk(%d)(%.*s)",
+                      "ack: ack len does not match ack(%ld)(%.*s) chunk(%d)(%.*s)",
                       ack_len, ack_len, ack,
                       chunk_len, chunk_len, chunk);
         goto error;
