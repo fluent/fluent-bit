@@ -189,6 +189,12 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             continue;
         }
 
+        /* Validate outgoing Tag information */
+        if (!tag_buf || tag_len <= 0) {
+            flb_input_chunk_release_lock(ic);
+            continue;
+        }
+
         /* Create a task */
         task = flb_task_create(id, buf_data, buf_size,
                                ic->in, ic,
