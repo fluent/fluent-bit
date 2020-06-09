@@ -46,7 +46,7 @@ int syslog_conn_event(void *data)
         if (available < 1) {
             if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
                 flb_plg_debug(ctx->ins,
-                              "fd=%i incoming data exceed limit (%i bytes)",
+                              "fd=%i incoming data exceed limit (%zd bytes)",
                               event->fd, (ctx->buffer_max_size));
                 syslog_conn_del(conn);
                 return -1;
