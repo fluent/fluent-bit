@@ -164,7 +164,6 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ret = cio_meta_write(chunk, (char *) tag, tag_len);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
-        flb_sds_destroy(name);
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
