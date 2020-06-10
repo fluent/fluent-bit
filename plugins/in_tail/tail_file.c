@@ -764,9 +764,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_free(file->buf_data);
     flb_free(file->name);
-#if !defined(__linux__) || !defined(FLB_HAVE_INOTIFY)
     flb_free(file->real_name);
-#endif
 
 #ifdef FLB_HAVE_METRICS
     flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1, ctx->ins->metrics);
@@ -1134,7 +1132,6 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
     }
     file->name_len = strlen(file->name);
 
-#if !defined(__linux__) || !defined(FLB_HAVE_INOTIFY)
     if (file->real_name) {
         flb_free(file->real_name);
     }
@@ -1145,7 +1142,6 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
         file->name = NULL;
         return -1;
     }
-#endif
 
     return 0;
 }
