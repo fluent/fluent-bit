@@ -40,63 +40,56 @@
 #define FLB_HASH_TABLE_SIZE 50
 #endif
 
-static inline int flb_tail_file_name_cmp(char *name,
-                                        struct flb_tail_file *file)
-{
-    int ret;
-    char *a;
-    char *b;
-    char *a_base;
-    char *b_base;
-
-    a = flb_strdup(name);
-    b = flb_strdup(file->name);
-
-    a_base = flb_strdup(basename(a));
-    b_base = basename(b);
-    struct flb_tail_config *ctx = file->config;
-
-    flb_plg_info(ctx->ins, "a_base=%s b_base=%s", a_base, b_base);
-
-#if defined(__linux__)
-    ret = strcmp(name, file->name);
-#elif defined(FLB_SYSTEM_WINDOWS)
-    ret = _stricmp(name, file->name);
-#else
-    ret = strcmp(name, file->name);
-#endif
-
-    flb_free(a);
-    flb_free(b);
-    flb_free(a_base);
-    return ret;
-}
-
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {
     int ret;
     char *name_a = NULL;
     char *name_b = NULL;
-    char *base_a;
-    char *base_b;
+    char *base_a = NULL;
+    char *base_b = NULL;
 
     name_a = flb_strdup(name);
+    if (!name_a) {
+        flb_errno();
+        ret = -1;
+        goto out;
+    }
+
     base_a = flb_strdup(basename(name_a));
+    if (!base_a) {
+        flb_errno();
+        ret = -1;
+        goto out;
+    }
 
 #if defined(FLB_SYSTEM_WINDOWS)
     name_b = flb_strdup(file->real_name);
+    if (!name_b) {
+        flb_errno();
+        ret = -1;
+        goto out;
+    }
+
     base_b = basename(name_b);
     ret = _stricmp(base_a, base_b);
 #else
     name_b = flb_strdup(file->real_name);
+    if (!name_b) {
+        flb_errno();
+        ret = -1;
+        goto out;
+    }
     base_b = basename(name_b);
     ret = strcmp(base_a, base_b);
 #endif
 
+ out:
     flb_free(name_a);
     flb_free(name_b);
     flb_free(base_a);
+
+    /* FYI: 'base_b' never points to a new allocation, no flb_free is needed */
 
     return ret;
 }
