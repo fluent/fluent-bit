@@ -41,54 +41,14 @@
 #include "tail_multiline.h"
 #include "tail_scan.h"
 
-#ifdef _MSC_VER
-static int get_inode(int fd, uint64_t *inode, struct flb_tail_config *ctx)
-{
-    HANDLE h;
-    BY_HANDLE_FILE_INFORMATION info;
-
-    h = _get_osfhandle(fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        flb_plg_error(ctx->ins, "cannot convert fd:%i into HANDLE", fd);
-        return -1;
-    }
-
-    if (GetFileInformationByHandle(h, &info) == 0) {
-        flb_plg_error(ctx->ins, "cannot get file info for fd:%i", fd);
-        return -1;
-    }
-    *inode = (uint64_t) info.nFileIndexHigh;
-    *inode = *inode << 32 | info.nFileIndexLow;
-    return 0;
-}
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
 #endif
 
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
 }
-
-#ifdef _MSC_VER
-/*
- * Open a file for reading. We need to use CreateFileA() instead of
- * open(2) to avoid automatic file locking.
- */
-static int open_file(const char *path)
-{
-    HANDLE h;
-    h = CreateFileA(path,
-                    GENERIC_READ,
-                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                    NULL,           /* lpSecurityAttributes */
-                    OPEN_EXISTING,  /* dwCreationDisposition */
-                    0,              /* dwFlagsAndAttributes */
-                    NULL);          /* hTemplateFile */
-    if (h == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-    return _open_osfhandle((intptr_t) h, _O_RDONLY);
-}
-#endif
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            const char *key, size_t key_len,
@@ -600,11 +560,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-#ifdef _MSC_VER
-    fd = open_file(path);
-#else
     fd = open(path, O_RDONLY);
-#endif
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
@@ -622,7 +578,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->fd        = fd;
 
     /* On non-windows environments check if the original path is a link */
-#ifndef _MSC_VER
     struct stat lst;
     ret = lstat(path, &lst);
     if (ret == 0) {
@@ -631,7 +586,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
             file->link_inode = lst.st_ino;
         }
     }
-#endif
 
     /*
      * Duplicate string into 'file' structure, the called function
@@ -650,13 +604,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto error;
     }
 
-#ifdef _MSC_VER
-    if (get_inode(fd, &file->inode, ctx)) {
-        goto error;
-    }
-#else
     file->inode     = st->st_ino;
-#endif
     file->offset    = 0;
     file->size      = st->st_size;
     file->buf_len   = 0;
@@ -750,7 +698,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     /* Seek if required */
     if (file->offset > 0) {
-        flb_plg_debug(ctx->ins, "inode=%lu appended file following on offset=%lu",
+        flb_plg_debug(ctx->ins, "inode=%"PRIu64" appended file following on offset=%lu",
                       file->inode, file->offset);
         offset = lseek(file->fd, file->offset, SEEK_SET);
         if (offset == -1) {
@@ -766,7 +714,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->ins->metrics);
 #endif
 
-    flb_plg_debug(ctx->ins, "inode=%lu appended as %s", file->inode, path);
+    flb_plg_debug(ctx->ins, "inode=%"PRIu64" appended as %s", file->inode, path);
     return 0;
 
 error:
@@ -790,7 +738,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     ctx = file->config;
 
-    flb_plg_debug(ctx->ins, "inode=%lu removing file name %s",
+    flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
     if (file->rotated > 0) {
@@ -817,9 +765,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 
     flb_free(file->buf_data);
     flb_free(file->name);
-#if !defined(__linux__) || !defined(FLB_HAVE_INOTIFY)
     flb_free(file->real_name);
-#endif
 
 #ifdef FLB_HAVE_METRICS
     flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1, ctx->ins->metrics);
@@ -931,7 +877,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
          */
         ret = process_content(file, &processed_bytes);
         if (ret < 0) {
-            flb_plg_debug(ctx->ins, "inode=%lu file=%s process content ERROR",
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s process content ERROR",
                           file->inode, file->name);
             return FLB_TAIL_ERROR;
         }
@@ -996,41 +942,36 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
     }
 
     /* Check if the 'original monitored file' is a link and rotated */
-#ifndef _MSC_VER
     if (file->is_link == FLB_TRUE) {
         ret = lstat(file->name, &st);
         if (ret == -1) {
             /* Broken link or missing file */
             if (errno == ENOENT) {
-                flb_plg_info(ctx->ins, "inode=%lu link_rotated: %s",
+                flb_plg_info(ctx->ins, "inode=%"PRIu64" link_rotated: %s",
                              file->link_inode, file->name);
                 return FLB_TRUE;
             }
             else {
                 flb_errno();
                 flb_plg_error(ctx->ins,
-                              "link_inode=%lu cannot detect if file: %s",
+                              "link_inode=%"PRIu64" cannot detect if file: %s",
                               file->link_inode, file->name);
                 return -1;
             }
         }
         else {
             /* The file name is there, check if the same that we have */
-            if (st.st_ino == file->link_inode) {
-                return FLB_FALSE;
+            if (st.st_ino != file->link_inode) {
+                return FLB_TRUE;
             }
-
-            /* no rotation */
-            return FLB_TRUE;
         }
     }
-#endif
 
     /* Retrieve the real file name, operating system lookup */
     name = flb_tail_file_name(file);
     if (!name) {
         flb_plg_error(ctx->ins,
-                      "inode=%lu cannot detect if file was rotated: %s",
+                      "inode=%"PRIu64" cannot detect if file was rotated: %s",
                       file->inode, file->name);
         return -1;
     }
@@ -1051,7 +992,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
         return FLB_FALSE;
     }
 
-    flb_plg_debug(ctx->ins, "inode=%lu rotated: %s => %s",
+    flb_plg_debug(ctx->ins, "inode=%"PRIu64" rotated: %s => %s",
                   file->inode, file->name, name);
 
     flb_free(name);
@@ -1188,7 +1129,6 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
     }
     file->name_len = strlen(file->name);
 
-#if !defined(__linux__) || !defined(FLB_HAVE_INOTIFY)
     if (file->real_name) {
         flb_free(file->real_name);
     }
@@ -1199,7 +1139,6 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
         file->name = NULL;
         return -1;
     }
-#endif
 
     return 0;
 }
@@ -1219,13 +1158,13 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
         return -1;
     }
 
-    flb_plg_debug(ctx->ins, "inode=%lu rotated %s -> %s",
+    flb_plg_debug(ctx->ins, "inode=%"PRIu64" rotated %s -> %s",
                   file->inode, file->name, name);
 
     /* Update local file entry */
     tmp = file->name;
     flb_tail_file_name_dup(name, file);
-    flb_plg_info(ctx->ins, "inode=%lu handle rotation(): %s => %s",
+    flb_plg_info(ctx->ins, "inode=%"PRIu64" handle rotation(): %s => %s",
                  file->inode, tmp, file->name);
     if (file->rotated == 0) {
         file->rotated = time(NULL);
@@ -1318,7 +1257,8 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
             ret = fstat(file->fd, &st);
             if (ret == 0) {
                 flb_plg_debug(ctx->ins,
-                              "inode=%lu purge rotated file %s (offset=%lu / size = %lu)",
+                              "inode=%"PRIu64" purge rotated file %s " \
+                              "(offset=%lu / size = %"PRIu64")",
                               file->inode, file->name, file->offset, st.st_size);
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
                     flb_plg_warn(ctx->ins, "purged rotated file while data "
@@ -1328,7 +1268,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
             }
             else {
                 flb_plg_debug(ctx->ins,
-                              "inode=%lu purge rotated file %s (offset=%lu)",
+                              "inode=%"PRIu64" purge rotated file %s (offset=%lu)",
                               file->inode, file->name, file->offset);
             }
 

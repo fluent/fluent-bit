@@ -141,7 +141,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
         switch (ret) {
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
-            flb_plg_debug(ctx->ins, "inode=%lu collect static ERROR",
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" collect static ERROR",
                           file->inode);
             flb_tail_file_remove(file);
             break;
@@ -151,12 +151,12 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             break;
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
-                flb_plg_info(ctx->ins, "inode=%lu file=%s ended, stop",
+                flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
                 flb_engine_exit(config);
             }
             /* Promote file to 'events' type handler */
-            flb_plg_debug(ctx->ins, "inode=%lu file=%s promote to TAIL_EVENT",
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s promote to TAIL_EVENT",
                           file->inode, file->name);
 
             /*

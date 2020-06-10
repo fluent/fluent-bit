@@ -32,6 +32,10 @@
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
+#endif
+
 #ifdef FLB_HAVE_REGEX
 #define FLB_HASH_TABLE_SIZE 50
 #endif
@@ -48,7 +52,7 @@ static inline int flb_tail_file_name_cmp(char *name,
     a = flb_strdup(name);
     b = flb_strdup(file->name);
 
-    a_base = basename(a);
+    a_base = flb_strdup(basename(a));
     b_base = basename(b);
     struct flb_tail_config *ctx = file->config;
 
@@ -64,6 +68,7 @@ static inline int flb_tail_file_name_cmp(char *name,
 
     flb_free(a);
     flb_free(b);
+    flb_free(a_base);
     return ret;
 }
 
@@ -77,13 +82,9 @@ static inline int flb_tail_target_file_name_cmp(char *name,
     char *base_b;
 
     name_a = flb_strdup(name);
-    base_a = basename(name_a);
+    base_a = flb_strdup(basename(name_a));
 
-#if defined(__linux__) && defined(FLB_HAVE_INOTIFY)
-    name_b = flb_strdup(file->name);
-    base_b = basename(name_b);
-    ret = strcmp(base_a, base_b);
-#elif defined(FLB_SYSTEM_WINDOWS)
+#if defined(FLB_SYSTEM_WINDOWS)
     name_b = flb_strdup(file->real_name);
     base_b = basename(name_b);
     ret = _stricmp(base_a, base_b);
@@ -95,6 +96,7 @@ static inline int flb_tail_target_file_name_cmp(char *name,
 
     flb_free(name_a);
     flb_free(name_b);
+    flb_free(base_a);
 
     return ret;
 }
