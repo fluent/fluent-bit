@@ -84,11 +84,7 @@ static inline int flb_tail_target_file_name_cmp(char *name,
     name_a = flb_strdup(name);
     base_a = flb_strdup(basename(name_a));
 
-#if defined(__linux__) && defined(FLB_HAVE_INOTIFY)
-    name_b = flb_strdup(file->name);
-    base_b = basename(name_b);
-    ret = strcmp(base_a, base_b);
-#elif defined(FLB_SYSTEM_WINDOWS)
+#if defined(FLB_SYSTEM_WINDOWS)
     name_b = flb_strdup(file->real_name);
     base_b = basename(name_b);
     ret = _stricmp(base_a, base_b);
