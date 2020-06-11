@@ -38,6 +38,7 @@ set(src
   flb_upstream_node.c
   flb_router.c
   flb_worker.c
+  flb_thread.c
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
@@ -108,6 +109,18 @@ if(FLB_HTTP_CLIENT_DEBUG)
   set(src
     ${src}
     "flb_http_client_debug.c"
+     )
+endif()
+
+if(FLB_AWS)
+  set(src
+    ${src}
+    "aws/flb_aws_util.c"
+    "aws/flb_aws_credentials.c"
+    "aws/flb_aws_credentials_sts.c"
+    "aws/flb_aws_credentials_ec2.c"
+    "aws/flb_aws_credentials_http.c"
+    "aws/flb_aws_credentials_profile.c"
     )
 endif()
 

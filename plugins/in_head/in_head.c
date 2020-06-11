@@ -124,7 +124,7 @@ static int single_value_per_record(struct flb_input_instance *i_ins,
         read_bytes(ctx);
     }
 
-    flb_plg_trace(ctx->ins, "%s read_len=%d buf_size=%d", __FUNCTION__,
+    flb_plg_trace(ctx->ins, "%s read_len=%zd buf_size=%zu", __FUNCTION__,
                   ctx->buf_len, ctx->buf_size);
 
     if (ctx->add_path == FLB_TRUE) {
@@ -333,7 +333,7 @@ static int in_head_config_read(struct flb_in_head_config *ctx,
         }
     }
 
-    flb_plg_debug(ctx->ins, "buf_size=%d path=%s",
+    flb_plg_debug(ctx->ins, "buf_size=%zu path=%s",
                   ctx->buf_size, ctx->filepath);
     flb_plg_debug(ctx->ins, "interval_sec=%d interval_nsec=%d",
                   ctx->interval_sec, ctx->interval_nsec);
@@ -385,8 +385,8 @@ static int in_head_init(struct flb_input_instance *in,
         goto init_error;
     }
 
-    flb_plg_trace(ctx->ins, "%s read_len=%d buf_size=%d", __FUNCTION__, ctx->buf_len,
-                  ctx->buf_size);
+    flb_plg_trace(ctx->ins, "%s read_len=%zd buf_size=%zu", __FUNCTION__,
+                  ctx->buf_len, ctx->buf_size);
 
     flb_input_set_context(in, ctx);
 

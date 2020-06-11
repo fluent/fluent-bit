@@ -481,7 +481,7 @@ static void cb_logdna_flush(const void *data, size_t bytes,
         }
     }
     else {
-        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+        flb_plg_error(ctx->ins, "could not flush records to %s:%s (http_do=%i)",
                       FLB_LOGDNA_HOST, FLB_LOGDNA_PORT, ret);
         out_ret = FLB_RETRY;
     }

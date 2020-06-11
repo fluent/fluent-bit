@@ -40,7 +40,8 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
     if (ret == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "emitter_name '%s' already exists");
+        flb_plg_error(ctx->ins, "emitter_name '%s' already exists",
+                      ctx->emitter_name);
         return -1;
     }
 
@@ -140,8 +141,8 @@ static int process_config(struct flb_rewrite_tag *ctx)
         entry = flb_slist_entry_get(val->val.list, 0);
         rule->ra_key = flb_ra_create(entry->str, FLB_FALSE);
         if (!rule->ra_key) {
-            flb_error("[filter_rewrite_tag] invalid record accessor key? '%s'",
-                      entry->str);
+            flb_plg_error(ctx->ins, "invalid record accessor key ? '%s'",
+                          entry->str);
             flb_free(rule);
             return -1;
         }
@@ -150,8 +151,8 @@ static int process_config(struct flb_rewrite_tag *ctx)
         entry = flb_slist_entry_get(val->val.list, 1);
         rule->regex = flb_regex_create(entry->str);
         if (!rule->regex) {
-            flb_error("[filter_rewrite_tag] could not compile regex pattern '%s'",
-                      entry->str);
+            flb_plg_error(ctx->ins, "could not compile regex pattern '%s'",
+                          entry->str);
             flb_ra_destroy(rule->ra_key);
             flb_free(rule);
             return -1;
@@ -162,7 +163,7 @@ static int process_config(struct flb_rewrite_tag *ctx)
         rule->ra_tag = flb_ra_create(entry->str, FLB_FALSE);
 
         if (!rule->ra_tag) {
-            flb_error("[filter_rewrite_tag] could not compose tag", entry->str);
+            flb_plg_error(ctx->ins, "could not compose tag: %s", entry->str);
             flb_ra_destroy(rule->ra_key);
             flb_regex_destroy(rule->regex);
             flb_free(rule);
@@ -178,7 +179,7 @@ static int process_config(struct flb_rewrite_tag *ctx)
     }
 
     if (mk_list_size(&ctx->rules) == 0) {
-        flb_warn("[filter_rewrite_tag] no rules have defined");
+        flb_plg_warn(ctx->ins, "no rules have defined");
         return 0;
     }
 

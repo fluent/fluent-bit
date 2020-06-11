@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_aws_credentials.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -143,6 +144,18 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                 return NULL;
             }
             ctx->aws_region = (char *) tmp;
+
+            ctx->aws_provider = flb_aws_env_provider_create();
+            if (!ctx->aws_provider) {
+                flb_errno();
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
+
+            /* initialize provider in sync mode */
+            ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
+            ctx->aws_provider->provider_vtable->get_credentials(ctx->
+                                                                aws_provider);
         }
     }
 #endif
@@ -158,6 +171,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->aws_provider) {
+        flb_aws_provider_destroy(ctx->aws_provider);
     }
     flb_free(ctx);
 

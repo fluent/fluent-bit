@@ -89,7 +89,7 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
     int ret;
     struct mk_event_ctx *ctx;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
     mk_bug(!data);
 #endif
 

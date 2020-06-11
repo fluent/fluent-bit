@@ -357,7 +357,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 
     /* No keepalive connection available, create a new one */
     if (!conn) {
-        return create_conn(u);
+        conn = create_conn(u);
     }
 
     return conn;
@@ -402,6 +402,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
          * notified if the 'available keepalive connection' gets disconnected by
          * the remote endpoint we need to add it again.
          */
+        MK_EVENT_NEW(&conn->event);
         conn->event.handler = cb_upstream_conn_ka_dropped;
         conn->event.data    = &conn;
 

@@ -230,8 +230,8 @@ static void flb_tls_debug(void *ctx, int level,
 {
     (void) level;
 
-    flb_debug("[io_tls] %s %04d: %.*s", file + sizeof(FLB_SOURCE_DIR) - 1,
-              line, strlen(str), str);
+    flb_debug("[io_tls] %s %04i: %s", file + sizeof(FLB_SOURCE_DIR) - 1,
+              line, str);
 }
 
 struct flb_tls_session *flb_tls_session_new(struct flb_tls_context *ctx)

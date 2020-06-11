@@ -27,9 +27,6 @@
 #include <monkey/mk_vhost.h>
 #include <monkey/mk_tls.h>
 
-pthread_key_t mk_utils_error_key;
-
-
 /* This function is called when a thread is created */
 void mk_cache_worker_init()
 {

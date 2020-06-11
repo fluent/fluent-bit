@@ -151,7 +151,7 @@ int mk_socket_open(char *path, int async)
             return socket_fd;
         }
         else {
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
             mk_libc_error("connect");
 #endif
             close(socket_fd);

@@ -32,21 +32,16 @@
 struct flb_tail_file {
     /* Inotify */
     int watch_fd;
-
     /* file lookup info */
     int fd;
     off_t size;
     off_t offset;
     off_t last_line;
-#ifdef _MSC_VER
-    uint64_t inode;
-#else
-    ino_t inode;
-#endif
+    uint64_t  inode;
+    uint64_t  link_inode;
+    int   is_link;
     char *name;                 /* target file name given by scan routine */
-#if !defined(__linux) || !defined(FLB_HAVE_INOTIFY)
     char *real_name;            /* real file name in the file system */
-#endif
     size_t name_len;
     time_t rotated;
     off_t pending_bytes;

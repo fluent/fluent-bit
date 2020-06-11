@@ -197,7 +197,7 @@ static inline double proc_cpu_pid_load(struct flb_cpu *ctx,
     }
 
     if (fgets(line, sizeof(line) - 1, f) == NULL) {
-        flb_plg_error(ctx->ins, "cannot read process %lu stats", pid);
+        flb_plg_error(ctx->ins, "cannot read process %ld stats", (long) pid);
         fclose(f);
         return -1;
     }
@@ -549,12 +549,18 @@ static int cb_cpu_init(struct flb_input_instance *in,
     }
 
     /* Get CPU load, ready to be updated once fired the calc callback */
-    ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
+    if (ctx->pid > 0) {
+        ret = proc_cpu_pid_load(ctx, ctx->pid, &ctx->cstats);
+    }
+    else {
+        ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
+    }
     if (ret != 0) {
         flb_error("[cpu] Could not obtain CPU data");
         flb_free(ctx);
         return -1;
     }
+
     ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
 
     /* Set the context */

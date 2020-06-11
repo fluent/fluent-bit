@@ -89,7 +89,8 @@ int window_add(struct throttle_window *tw, long timestamp, int val) {
 
     for (i=0; i < tw->size; i++ ) {
         sum += tw->table[i].counter;
-        flb_debug("timestamp: %i, value: %i", tw->table[i].timestamp, tw->table[i].counter);
+        flb_debug("timestamp: %ld, value: %ld",
+                  tw->table[i].timestamp, tw->table[i].counter);
     }
     tw->total = sum;
     flb_debug("total: %i", tw->total);

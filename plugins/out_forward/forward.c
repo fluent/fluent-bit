@@ -550,11 +550,11 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
         goto error;
     }
 
-    if(ack_len != chunk_len) {
+    if (ack_len != chunk_len) {
         flb_plg_error(ctx->ins,
-                      "ack: ack len does not match ack(%d)(%.*s) chunk(%d)(%.*s)",
-                      ack_len, ack_len, ack,
-                      chunk_len, chunk_len, chunk);
+                      "ack: ack len does not match ack(%ld)(%.*s) chunk(%d)(%.*s)",
+                      ack_len, (int) ack_len, ack,
+                      chunk_len, (int) chunk_len, chunk);
         goto error;
     }
 
@@ -1129,7 +1129,7 @@ static void cb_forward_flush(const void *data, size_t bytes,
 
     flb_upstream_conn_release(u_conn);
 
-    flb_plg_trace(ctx->ins, "ended write()=%d bytes", total);
+    flb_plg_trace(ctx->ins, "ended write()=%zu bytes", total);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

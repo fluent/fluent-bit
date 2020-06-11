@@ -34,7 +34,7 @@ int syslog_conn_event(void *data)
     int ret;
     int bytes;
     int available;
-    int size;
+    size_t size;
     char *tmp;
     struct mk_event *event;
     struct syslog_conn *conn = data;
@@ -46,7 +46,7 @@ int syslog_conn_event(void *data)
         if (available < 1) {
             if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
                 flb_plg_debug(ctx->ins,
-                              "fd=%i incoming data exceed limit (%i bytes)",
+                              "fd=%i incoming data exceed limit (%zd bytes)",
                               event->fd, (ctx->buffer_max_size));
                 syslog_conn_del(conn);
                 return -1;
@@ -58,7 +58,7 @@ int syslog_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zd -> %zd",
                           event->fd, conn->buf_size, size);
 
             conn->buf_data = tmp;
@@ -69,7 +69,7 @@ int syslog_conn_event(void *data)
         bytes = read(conn->fd,
                      conn->buf_data + conn->buf_len, available);
         if (bytes > 0) {
-            flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+            flb_plg_trace(ctx->ins, "read()=%i pre_len=%zu now_len=%zu",
                           bytes, conn->buf_len, conn->buf_len + bytes);
             conn->buf_len += bytes;
             conn->buf_data[conn->buf_len] = '\0';

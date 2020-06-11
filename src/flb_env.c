@@ -146,6 +146,10 @@ const char *flb_env_get(struct flb_env *env, const char *key)
         return NULL;
     }
 
+    if (strlen(out_buf) == 0) {
+        return NULL;
+    }
+
     return out_buf;
 }
 

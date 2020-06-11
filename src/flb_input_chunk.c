@@ -136,8 +136,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                            CIO_OPEN, FLB_INPUT_CHUNK_SIZE, &err);
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
-                  storage->stream, name);
-        flb_sds_destroy(name);
+                  storage->stream->name, name);
         return NULL;
     }
 
@@ -165,7 +164,6 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ret = cio_meta_write(chunk, (char *) tag, tag_len);
     if (ret == -1) {
         flb_error("[input chunk] could not write metadata");
-        flb_sds_destroy(name);
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
@@ -620,6 +618,8 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
 
     ret = cio_meta_read(ic->chunk, &buf, &len);
     if (ret == -1) {
+        *tag_len = -1;
+        *tag_buf = NULL;
         return -1;
     }
 
