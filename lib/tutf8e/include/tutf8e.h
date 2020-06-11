@@ -4,44 +4,35 @@
 
 #include <stddef.h>  /* size_t */
 #include <stdint.h>  /* uint16_t */
-
-/* Internal API */
-
-extern int tutf8e_string_length(const uint16_t *table, const char *i, size_t *ilen, size_t *olen);
-extern int tutf8e_string_encode(const uint16_t *table, const char *i, char *o, size_t *olen);
-
-extern int tutf8e_buffer_length(const uint16_t *table, const char *i, size_t ilen, size_t *olen);
-extern int tutf8e_buffer_encode(const uint16_t *table, const char *i, size_t ilen, char *o, size_t *olen);
+#include <string.h>
 
 /* Generic API */
 
 typedef void *TUTF8encoder;
 
+extern int tutf8e_string_length(const TUTF8encoder encoder, const char *input, size_t *ilen, size_t *olen, uint32_t flags);
+extern int tutf8e_string_encode(const TUTF8encoder encoder, const char *input, char *output, size_t *olen, uint32_t flags);
+extern int tutf8e_buffer_length(const TUTF8encoder encoder, const char *input, size_t ilen, size_t *olen, uint32_t flags);
+extern int tutf8e_buffer_encode(const TUTF8encoder encoder, const char *input, size_t ilen, char *output, size_t *olen, uint32_t flags);
+
 extern TUTF8encoder tutf8e_encoder(const char *encoding);
+extern uint32_t tutf8e_encoder_flag(const char *string_flag);
 
-#define TUTF8E_OK      0 /* Success                    */
-#define TUTF8E_INVALID 1 /* Invalid input character    */
-#define TUTF8E_TOOLONG 2 /* Insufficient output buffer */
+#define TUTF8E_OK       1 /* Sucesss : changed          */
+#define TUTF8E_SAME     0 /* Success : no change        */
+#define TUTF8E_INVALID -1 /* Invalid input character    */
+#define TUTF8E_TOOLONG -2 /* Insufficient output buffer */
 
-static inline int tutf8e_encoder_string_length(const TUTF8encoder encoder, const char *i, size_t *ilen, size_t *olen)
-{
-  return tutf8e_string_length((const uint16_t *) encoder, i, ilen, olen);
-}
 
-static inline int tutf8e_encoder_string_encode(const TUTF8encoder encoder, const char *i, char *o, size_t *olen)
-{
-  return tutf8e_string_encode((const uint16_t *) encoder, i, o, olen);
-}
 
-static inline int tutf8e_encoder_buffer_length(const TUTF8encoder encoder, const char *i, size_t ilen, size_t *length)
-{
-  return tutf8e_buffer_length((const uint16_t *) encoder, i, ilen, length);
-}
+#define TUTF8E_FLAG_INV_KEEP         0    /* illegal char: keep, just use as unicode codepoint  */
+#define TUTF8E_FLAG_INV_FAIL         1    /* illegal char: fail on invalid char */
+#define TUTF8E_FLAG_INV_IGNORE       2    /* illegal char: skip/ignore invalid char */
+#define TUTF8E_FLAG_INV_REPLACEMENT  3    /* illegal char: convert to replacement character  */
+#define TUTF8E_FLAG_INV_QUESTION     4    /* illegal char: convert to '?' */
+#define TUTF8E_FLAG_INV_COPY         5    /* illegal char: just copy byte */
 
-static inline int tutf8e_encoder_buffer_encode(const TUTF8encoder encoder, const char *i, size_t ilen, char *o, size_t *olen)
-{
-  return tutf8e_buffer_encode((const uint16_t *) encoder, i, ilen, o, olen);
-}
+#define TUTF8E_FLAG_INV_MASK      0x07    /* illegal char mask */
 
 /* Supported encoders */
 

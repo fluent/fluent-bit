@@ -3,120 +3,203 @@
 
 #include <string.h>
 
-/* Determine the input length and UTF8 encoded length of NUL-terminated input string */
-/* return TUTF8E_INVALID if input character is not convertable                       */
-/* return TUTF8E_OK for success                                                      */
 
-int tutf8e_string_length(const uint16_t *table, const char *input, size_t *ilen, size_t *olen)
+uint32_t tutf8e_encoder_flag(const char *string_flag)
 {
+  if(string_flag == NULL || *string_flag == 0) {
+    return 0;
+  }
+  switch(*string_flag) {
+  case 'f':
+    if(!strcmp(string_flag,"fail")) {
+      return TUTF8E_FLAG_INV_FAIL;
+    }
+    break;
+
+  case 'i':
+    if(!strcmp(string_flag,"ignore")) {
+      return TUTF8E_FLAG_INV_IGNORE;
+    }
+    break;
+
+  case 'k':
+    if(!strcmp(string_flag,"keep")) {
+      return TUTF8E_FLAG_INV_KEEP;
+    }
+    break;
+
+  case 'r':
+    if(!strcmp(string_flag,"replacement")) {
+      return TUTF8E_FLAG_INV_REPLACEMENT;
+    }
+    break;
+
+  case 'q':
+    if(!strcmp(string_flag,"question")) {
+      return TUTF8E_FLAG_INV_QUESTION;
+    }
+    break;
+  default:
+    break;
+  }
+  return (uint32_t)(-1);
+}
+
+/* Determine the input length and UTF8 encoded length of NUL-terminated input string */
+/* return TUTF8E_INVALID if input character is not convertable  TUTF8E_FLAG_INV_FAIL */
+/* return TUTF8E_SAME    if string doesn't need changes */
+/* return TUTF8E_OK      if string changes   */
+
+
+int tutf8e_string_length(const TUTF8encoder encoder, const char *input, size_t *ilen, size_t *olen, uint32_t flags)
+{
+  const uint16_t *table = (uint16_t *) encoder;
   const unsigned char *i;
-  for (i = (const unsigned char *) input; *i; ++i, (*ilen)++) {
+  int changed = 0;
+  int len = 0;
+  for (i = (const unsigned char *) input; *i; ++i) {
     const uint16_t c = table[*i];
+
     if (c<0x80) {
-      *olen += 1;
+      len++;
+      if(c != *i) changed++;
       continue;
     }
+    changed++;
     if (c<0x800) {
-      *olen += 2;
+      len += 2;
       continue;
     }
     if (c<0xffff) {
-      *olen += 3;
+      len += 3;
       continue;
     }
-    return TUTF8E_INVALID;
+    switch(flags & TUTF8E_FLAG_INV_MASK) {
+    case TUTF8E_FLAG_INV_KEEP        : len += *i <= 0x80 ? 1 : 2; break;
+    case TUTF8E_FLAG_INV_FAIL        : return  TUTF8E_INVALID;
+    case TUTF8E_FLAG_INV_IGNORE      : break;
+    case TUTF8E_FLAG_INV_REPLACEMENT : len += 3; break;
+    case TUTF8E_FLAG_INV_QUESTION    : len++; break;
+    case TUTF8E_FLAG_INV_COPY        : len++; break;
+    }
   }
-  return TUTF8E_OK;
+  *ilen = (char*)i- (char *)input;
+  *olen = len;
+  return changed ? TUTF8E_OK : TUTF8E_SAME;
 }
+
 
 /* UTF8 encode the given input string and table                */
 /* olen input is output buffer size, output is encoded length  */
-/* return TUTF8E_TOOLONG if output buffer insuficient          */
-/* return TUTF8E_INVALID if input character is not convertable */
-/* return TUTF8E_OK for success                                */
 
-int tutf8e_string_encode(const uint16_t *table, const char *i, char *o, size_t *olen)
+/* return TUTF8E_INVALID if input character is not convertable */
+/* return >= 0  : length of encoded string */
+
+int tutf8e_string_encode(const TUTF8encoder encoder, const char *input, char *output, size_t *olen, uint32_t flags)
 {
   int ret;
   size_t ilen = 0;
   size_t length = 0;
-  if (!(ret = tutf8e_string_length(table, i, &ilen, &length)))
-  {
-    if (length+1 > *olen) return TUTF8E_TOOLONG;
-    if (!(ret = tutf8e_buffer_encode(table, i, ilen, o, olen)))
-    {
-      o[length] = 0;
-      return TUTF8E_OK;
-    }
+
+  if ((ret = tutf8e_string_length(encoder, input, &ilen, &length, flags)) < 0) {
+    return ret;
   }
-  return ret;
+
+  if (length+1 > *olen) return TUTF8E_TOOLONG;
+
+  if ((ret = tutf8e_buffer_encode(encoder, input, ilen, output, olen, flags)) < 0) {
+    return ret;
+  }
+
+  output[*olen] = 0;
+
+  return TUTF8E_OK;
 }
 
 /* Determine the length of the UTF8 encoding of given input string and table */
 /* return TUTF8E_INVALID if input character is not convertable               */
-/* return TUTF8E_OK for success                                              */
+/* return TUTF8E_SAME    if string doesn't need change                       */
+/* return TUTF8E_OK      if string changes                                   */
 
-int tutf8e_buffer_length(const uint16_t *table, const char *input, size_t ilen, size_t *length)
+int tutf8e_buffer_length(const TUTF8encoder encoder, const char *input, size_t ilen, size_t *olen, uint32_t flags)
 {
+  const uint16_t *table = (uint16_t *) encoder;
   const unsigned char *i;
+  int changed = 0;
+  int len = 0;
   for (i = (const unsigned char *) input; ilen; ++i, --ilen) {
     const uint16_t c = table[*i];
     if (c<0x80) {
-      ++*length;
+      len++;
+      if(c != *i) changed++;
       continue;
     }
+    changed++;
     if (c<0x800) {
-      *length += 2;
+      len += 2;
       continue;
     }
     if (c<0xffff) {
-      *length += 3;
+      len += 3;
       continue;
     }
-    return TUTF8E_INVALID;
+    switch(flags & TUTF8E_FLAG_INV_MASK) {
+    case TUTF8E_FLAG_INV_KEEP        : len += *i <= 0x80 ? 1 : 2; break;
+    case TUTF8E_FLAG_INV_FAIL        : return  TUTF8E_INVALID;
+    case TUTF8E_FLAG_INV_IGNORE      : break;
+    case TUTF8E_FLAG_INV_REPLACEMENT : len += 3; break;
+    case TUTF8E_FLAG_INV_QUESTION    : len++; break;
+    case TUTF8E_FLAG_INV_COPY        : len++; break;
+    }
   }
-  return TUTF8E_OK;
+  *olen = len;
+  return changed ? TUTF8E_OK : TUTF8E_SAME;
 }
 
 /* UTF8 encode the given input string and table                */
 /* olen input is output buffer size, output is encoded length  */
-/* return TUTF8E_TOOLONG if output buffer insuficient          */
 /* return TUTF8E_INVALID if input character is not convertable */
-/* return TUTF8E_OK for success                                */
+/* return >= 0 size of encoded string                          */
 
-int tutf8e_buffer_encode(const uint16_t *table, const char *input, size_t ilen, char *output, size_t *olen)
+int tutf8e_buffer_encode(const TUTF8encoder encoder, const char *input, size_t ilen, char *output, size_t *olen, uint32_t flags)
 {
-  size_t left = *olen;
+  const uint16_t *table = (uint16_t *) encoder;
   unsigned char *o = (unsigned char *) output;
   const unsigned char *i;
+
+
   for (i = (const unsigned char *) input; ilen; ++i, --ilen) {
-    const uint16_t c = table[*i];
+    uint16_t c = table[*i];
+
+    if(c == 0xffff) {
+      switch(flags & TUTF8E_FLAG_INV_MASK) {
+      case TUTF8E_FLAG_INV_KEEP        : c = *i; break;
+      case TUTF8E_FLAG_INV_FAIL        : return TUTF8E_INVALID;
+      case TUTF8E_FLAG_INV_IGNORE      : continue;
+      case TUTF8E_FLAG_INV_REPLACEMENT : c = (uint16_t) 0xFFFD ; break;
+      case TUTF8E_FLAG_INV_QUESTION    : c = (uint16_t) '?'    ; break;
+      case TUTF8E_FLAG_INV_COPY        : *(o++) = *i;  continue;
+      }
+    }
+
     if (c<0x80) {
-      if (left<1) return TUTF8E_TOOLONG;
       *(o++) = c;
-      left -= 1;
       continue;
     }
     if (c<0x800) {
-      if (left<2) return TUTF8E_TOOLONG;
       *(o++) = 0xc0 | (c>>6);
       *(o++) = 0x80 | (c&0x3f);
-      left -= 2;
       continue;
     }
-    if (c<0xffff) {
-      if (left<3) return TUTF8E_TOOLONG;
-      *(o++) = 0xe0 | (c>>12);
-      *(o++) = 0x80 | ((c>>6)&0x3f);
-      *(o++) = 0x80 | (c&0x3f);
-      left -= 3;
-      continue;
-    }
-    return TUTF8E_INVALID;
+    *(o++) = 0xe0 | (c>>12);
+    *(o++) = 0x80 | ((c>>6)&0x3f);
+    *(o++) = 0x80 | (c&0x3f);
   }
-  *olen -= left;
+  *olen = (char*) o - output;
   return TUTF8E_OK;
 }
+
+
 
 const uint16_t tutf8e_iso_8859_1_utf8[256] =
 {
@@ -625,30 +708,67 @@ const TUTF8encoder tutf8e_encoder_windows_1258 = (TUTF8encoder) tutf8e_windows_1
 
 TUTF8encoder tutf8e_encoder(const char *encoding)
 {
-  if (!strcmp(encoding, "iso-8859-1")) return tutf8e_encoder_iso_8859_1;
-  if (!strcmp(encoding, "iso-8859-10")) return tutf8e_encoder_iso_8859_10;
-  if (!strcmp(encoding, "iso-8859-11")) return tutf8e_encoder_iso_8859_11;
-  if (!strcmp(encoding, "iso-8859-13")) return tutf8e_encoder_iso_8859_13;
-  if (!strcmp(encoding, "iso-8859-14")) return tutf8e_encoder_iso_8859_14;
-  if (!strcmp(encoding, "iso-8859-15")) return tutf8e_encoder_iso_8859_15;
-  if (!strcmp(encoding, "iso-8859-16")) return tutf8e_encoder_iso_8859_16;
-  if (!strcmp(encoding, "iso-8859-2")) return tutf8e_encoder_iso_8859_2;
-  if (!strcmp(encoding, "iso-8859-3")) return tutf8e_encoder_iso_8859_3;
-  if (!strcmp(encoding, "iso-8859-4")) return tutf8e_encoder_iso_8859_4;
-  if (!strcmp(encoding, "iso-8859-5")) return tutf8e_encoder_iso_8859_5;
-  if (!strcmp(encoding, "iso-8859-6")) return tutf8e_encoder_iso_8859_6;
-  if (!strcmp(encoding, "iso-8859-7")) return tutf8e_encoder_iso_8859_7;
-  if (!strcmp(encoding, "iso-8859-8")) return tutf8e_encoder_iso_8859_8;
-  if (!strcmp(encoding, "iso-8859-9")) return tutf8e_encoder_iso_8859_9;
-  if (!strcmp(encoding, "windows-1250")) return tutf8e_encoder_windows_1250;
-  if (!strcmp(encoding, "windows-1251")) return tutf8e_encoder_windows_1251;
-  if (!strcmp(encoding, "windows-1252")) return tutf8e_encoder_windows_1252;
-  if (!strcmp(encoding, "windows-1253")) return tutf8e_encoder_windows_1253;
-  if (!strcmp(encoding, "windows-1254")) return tutf8e_encoder_windows_1254;
-  if (!strcmp(encoding, "windows-1255")) return tutf8e_encoder_windows_1255;
-  if (!strcmp(encoding, "windows-1256")) return tutf8e_encoder_windows_1256;
-  if (!strcmp(encoding, "windows-1257")) return tutf8e_encoder_windows_1257;
-  if (!strcmp(encoding, "windows-1258")) return tutf8e_encoder_windows_1258;
+  char last;
+  int slen = strlen(encoding);
+  if(slen == 0) return NULL;
+  last = encoding[slen-1];
+  switch(last) {
+    case '1':
+    if (slen == 10 && !memcmp(encoding, "iso-8859-1", 10)) return tutf8e_encoder_iso_8859_1;
+    if (slen == 11 && !memcmp(encoding, "iso-8859-11", 11)) return tutf8e_encoder_iso_8859_11;
+    if (slen == 12 && !memcmp(encoding, "windows-1251", 12)) return tutf8e_encoder_windows_1251;
+    break;
 
+    case '0':
+    if (slen == 11 && !memcmp(encoding, "iso-8859-10", 11)) return tutf8e_encoder_iso_8859_10;
+    if (slen == 12 && !memcmp(encoding, "windows-1250", 12)) return tutf8e_encoder_windows_1250;
+    break;
+
+    case '3':
+    if (slen == 11 && !memcmp(encoding, "iso-8859-13", 11)) return tutf8e_encoder_iso_8859_13;
+    if (slen == 10 && !memcmp(encoding, "iso-8859-3", 10)) return tutf8e_encoder_iso_8859_3;
+    if (slen == 12 && !memcmp(encoding, "windows-1253", 12)) return tutf8e_encoder_windows_1253;
+    break;
+
+    case '4':
+    if (slen == 11 && !memcmp(encoding, "iso-8859-14", 11)) return tutf8e_encoder_iso_8859_14;
+    if (slen == 10 && !memcmp(encoding, "iso-8859-4", 10)) return tutf8e_encoder_iso_8859_4;
+    if (slen == 12 && !memcmp(encoding, "windows-1254", 12)) return tutf8e_encoder_windows_1254;
+    break;
+
+    case '5':
+    if (slen == 11 && !memcmp(encoding, "iso-8859-15", 11)) return tutf8e_encoder_iso_8859_15;
+    if (slen == 10 && !memcmp(encoding, "iso-8859-5", 10)) return tutf8e_encoder_iso_8859_5;
+    if (slen == 12 && !memcmp(encoding, "windows-1255", 12)) return tutf8e_encoder_windows_1255;
+    break;
+
+    case '6':
+    if (slen == 11 && !memcmp(encoding, "iso-8859-16", 11)) return tutf8e_encoder_iso_8859_16;
+    if (slen == 10 && !memcmp(encoding, "iso-8859-6", 10)) return tutf8e_encoder_iso_8859_6;
+    if (slen == 12 && !memcmp(encoding, "windows-1256", 12)) return tutf8e_encoder_windows_1256;
+    break;
+
+    case '2':
+    if (slen == 10 && !memcmp(encoding, "iso-8859-2", 10)) return tutf8e_encoder_iso_8859_2;
+    if (slen == 12 && !memcmp(encoding, "windows-1252", 12)) return tutf8e_encoder_windows_1252;
+    break;
+
+    case '7':
+    if (slen == 10 && !memcmp(encoding, "iso-8859-7", 10)) return tutf8e_encoder_iso_8859_7;
+    if (slen == 12 && !memcmp(encoding, "windows-1257", 12)) return tutf8e_encoder_windows_1257;
+    break;
+
+    case '8':
+    if (slen == 10 && !memcmp(encoding, "iso-8859-8", 10)) return tutf8e_encoder_iso_8859_8;
+    if (slen == 12 && !memcmp(encoding, "windows-1258", 12)) return tutf8e_encoder_windows_1258;
+    break;
+
+    case '9':
+    if (slen == 10 && !memcmp(encoding, "iso-8859-9", 10)) return tutf8e_encoder_iso_8859_9;
+    break;
+
+    default: break;
+
+  }
   return NULL;
 }

@@ -9,7 +9,10 @@ int main(int argc, char *argv[])
   int pass = 0;
   int fail = 0;
   int ret;
-  size_t ilen, olen;
+  size_t ilen;
+  size_t olen;
+  size_t xlen;
+  size_t ylen;
   char buffer[1024];
 
   static const char english[] = {
@@ -166,247 +169,537 @@ int main(int argc, char *argv[])
     0x21, 0x00,
   };
 
+  /* test length function */
+  xlen = strlen(english);
+  ylen = strlen(englishUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_1, english, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) english : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) english : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) english : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) english : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(finnish);
+  ylen = strlen(finnishUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_1, finnish, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) finnish : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) finnish : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) finnish : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) finnish : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(czech);
+  ylen = strlen(czechUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_2, czech, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) czech : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) czech : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) czech : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) czech : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(turkish);
+  ylen = strlen(turkishUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_3, turkish, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) turkish : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) turkish : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) turkish : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) turkish : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(estonian);
+  ylen = strlen(estonianUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_4, estonian, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) estonian : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) estonian : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) estonian : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) estonian : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(russian);
+  ylen = strlen(russianUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_5, russian, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) russian : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) russian : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) russian : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) russian : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(greek);
+  ylen = strlen(greekUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_7, greek, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) greek : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) greek : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) greek : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) greek : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(hebrew);
+  ylen = strlen(hebrewUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_8, hebrew, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) hebrew : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) hebrew : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) hebrew : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) hebrew : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(turkish2);
+  ylen = strlen(turkish2UTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_9, turkish2, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) turkish2 : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) turkish2 : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) turkish2 : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) turkish2 : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(swedish);
+  ylen = strlen(swedishUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_10, swedish, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) swedish : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) swedish : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) swedish : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) swedish : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(thai);
+  ylen = strlen(thaiUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_11, thai, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) thai : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) thai : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) thai : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) thai : ok\n");
+    pass++;
+  }
+
+  xlen = strlen(polish);
+  ylen = strlen(polishUTF8);
+  olen = sizeof(buffer);
+  ret = tutf8e_string_length(tutf8e_encoder_iso_8859_13, polish, &ilen, &olen, 0);
+  if (ret < 0) {
+    printf("(length test) polish : got error %d\n", ret);
+    fail++;
+  } else if(xlen != ilen) {
+    printf("(length test) polish : ilen wrong %ld != %ld\n", ilen , xlen);
+    fail++;
+  } else if(ylen != olen){
+    printf("(length test) polish : olen wrong %ld != %ld\n", olen , ylen);
+    fail++;
+  } else {
+    printf("(length test) polish : ok\n");
+    pass++;
+  }
+
+
   /* string encode to UTF8 */
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_1, english, buffer, &olen);
-  if (!ret && !strcmp(buffer, englishUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_1, english, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, englishUTF8)) {
+    printf("(string test) : ok : english : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode english test\n");
+    printf("(string test) Failed to encode english test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_1, finnish, buffer, &olen);
-  if (!ret && !strcmp(buffer, finnishUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_1, finnish, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, finnishUTF8)) {
+    printf("(string test) : ok : finnish : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode finnish test\n");
+    printf("(string test) Failed to encode finnish test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_2, czech, buffer, &olen);
-  if (!ret && !strcmp(buffer, czechUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_2, czech, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, czechUTF8)) {
+    printf("(string test) : ok : czech : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode czech test\n");
+    printf("(string test) Failed to encode czech test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_3, turkish, buffer, &olen);
-  if (!ret && !strcmp(buffer, turkishUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_3, turkish, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, turkishUTF8)) {
+    printf("(string test) : ok : turkish : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode turkish test\n");
+    printf("(string test) Failed to encode turkish test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_4, estonian, buffer, &olen);
-  if (!ret && !strcmp(buffer, estonianUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_4, estonian, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, estonianUTF8)) {
+    printf("(string test) : ok : estonian : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode estonian test\n");
+    printf("(string test) Failed to encode estonian test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_5, russian, buffer, &olen);
-  if (!ret && !strcmp(buffer, russianUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_5, russian, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, russianUTF8)) {
+    printf("(string test) : ok : russian : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode russian test\n");
+    printf("(string test) Failed to encode russian test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_7, greek, buffer, &olen);
-  if (!ret && !strcmp(buffer, greekUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_7, greek, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, greekUTF8)) {
+    printf("(string test) : ok : greek : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode greek test\n");
+    printf("(string test) Failed to encode greek test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_8, hebrew, buffer, &olen);
-  if (!ret && !strcmp(buffer, hebrewUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_8, hebrew, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, hebrewUTF8)) {
+    printf("(string test) : ok : hebrew : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode hebrew test\n");
+    printf("(string test) Failed to encode hebrew test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_9, turkish2, buffer, &olen);
-  if (!ret && !strcmp(buffer, turkish2UTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_9, turkish2, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, turkish2UTF8)) {
+    printf("(string test) : ok : turkish2 : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode turkish2 test\n");
+    printf("(string test) Failed to encode turkish2 test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_10, swedish, buffer, &olen);
-  if (!ret && !strcmp(buffer, swedishUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_10, swedish, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, swedishUTF8)) {
+    printf("(string test) : ok : swedish : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode swedish test\n");
+    printf("(string test) Failed to encode swedish test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_11, thai, buffer, &olen);
-  if (!ret && !strcmp(buffer, thaiUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_11, thai, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, thaiUTF8)) {
+    printf("(string test) : ok : thai : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode thai test\n");
+    printf("(string test) Failed to encode thai test\n");
     fail++;
   }
 
   olen = sizeof(buffer);
-  ret = tutf8e_encoder_string_encode(tutf8e_encoder_iso_8859_13, polish, buffer, &olen);
-  if (!ret && !strcmp(buffer, polishUTF8)) {
-    printf("%s\n", buffer);
+  ret = tutf8e_string_encode(tutf8e_encoder_iso_8859_13, polish, buffer, &olen, 0);
+  if (ret >= 0 && !strcmp(buffer, polishUTF8)) {
+    printf("(string test) : ok : polish : %s\n", buffer);
     pass++;
   } else {
-    printf("Failed to encode polish test\n");
+    printf("(string test) Failed to encode polish test\n");
     fail++;
   }
 
 
   /* buffer encode to UTF8 */
   ilen = strlen(english);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_1, english, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(englishUTF8) && !strncmp(buffer, englishUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode english test\n");
+  xlen = strlen(englishUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_1, english, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode english test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode english test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, englishUTF8, olen)) {
+    printf("(buffer test) Failed to encode english test : output diffs=(%s) expect(%s)\n", buffer, englishUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok english\n");
+    pass++;
   }
 
   ilen = strlen(finnish);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_1, finnish, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(finnishUTF8) && !strncmp(buffer, finnishUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode finnish test\n");
+  xlen = strlen(finnishUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_1, finnish, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode finnish test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode finnish test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, finnishUTF8, olen)) {
+    printf("(buffer test) Failed to encode finnish test : output diffs=(%s) expect(%s)\n", buffer, finnishUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok finnish\n");
+    pass++;
   }
 
   ilen = strlen(czech);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_2, czech, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(czechUTF8) && !strncmp(buffer, czechUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode czech test\n");
+  xlen = strlen(czechUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_2, czech, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode czech test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode czech test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, czechUTF8, olen)) {
+    printf("(buffer test) Failed to encode czech test : output diffs=(%s) expect(%s)\n", buffer, czechUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok czech\n");
+    pass++;
   }
 
   ilen = strlen(turkish);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_3, turkish, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(turkishUTF8) && !strncmp(buffer, turkishUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode turkish test\n");
+  xlen = strlen(turkishUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_3, turkish, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode turkish test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode turkish test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, turkishUTF8, olen)) {
+    printf("(buffer test) Failed to encode turkish test : output diffs=(%s) expect(%s)\n", buffer, turkishUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok turkish\n");
+    pass++;
   }
 
   ilen = strlen(estonian);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_4, estonian, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(estonianUTF8) && !strncmp(buffer, estonianUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode estonian test\n");
+  xlen = strlen(estonianUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_4, estonian, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode estonian test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode estonian test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, estonianUTF8, olen)) {
+    printf("(buffer test) Failed to encode estonian test : output diffs=(%s) expect(%s)\n", buffer, estonianUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok estonian\n");
+    pass++;
   }
 
   ilen = strlen(russian);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_5, russian, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(russianUTF8) && !strncmp(buffer, russianUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode russian test\n");
+  xlen = strlen(russianUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_5, russian, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode russian test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode russian test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, russianUTF8, olen)) {
+    printf("(buffer test) Failed to encode russian test : output diffs=(%s) expect(%s)\n", buffer, russianUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok russian\n");
+    pass++;
   }
 
   ilen = strlen(greek);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_7, greek, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(greekUTF8) && !strncmp(buffer, greekUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode greek test\n");
+  xlen = strlen(greekUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_7, greek, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode greek test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode greek test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, greekUTF8, olen)) {
+    printf("(buffer test) Failed to encode greek test : output diffs=(%s) expect(%s)\n", buffer, greekUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok greek\n");
+    pass++;
   }
 
   ilen = strlen(hebrew);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_8, hebrew, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(hebrewUTF8) && !strncmp(buffer, hebrewUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode hebrew test\n");
+  xlen = strlen(hebrewUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_8, hebrew, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode hebrew test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode hebrew test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, hebrewUTF8, olen)) {
+    printf("(buffer test) Failed to encode hebrew test : output diffs=(%s) expect(%s)\n", buffer, hebrewUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok hebrew\n");
+    pass++;
   }
 
   ilen = strlen(turkish2);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_9, turkish2, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(turkish2UTF8) && !strncmp(buffer, turkish2UTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode turkish2 test\n");
+  xlen = strlen(turkish2UTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_9, turkish2, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode turkish2 test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode turkish2 test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, turkish2UTF8, olen)) {
+    printf("(buffer test) Failed to encode turkish2 test : output diffs=(%s) expect(%s)\n", buffer, turkish2UTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok turkish2\n");
+    pass++;
   }
 
   ilen = strlen(swedish);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_10, swedish, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(swedishUTF8) && !strncmp(buffer, swedishUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode swedish test\n");
+  xlen = strlen(swedishUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_10, swedish, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode swedish test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode swedish test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, swedishUTF8, olen)) {
+    printf("(buffer test) Failed to encode swedish test : output diffs=(%s) expect(%s)\n", buffer, swedishUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok swedish\n");
+    pass++;
   }
 
   ilen = strlen(thai);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_11, thai, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(thaiUTF8) && !strncmp(buffer, thaiUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode thai test\n");
+  xlen = strlen(thaiUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_11, thai, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode thai test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode thai test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, thaiUTF8, olen)) {
+    printf("(buffer test) Failed to encode thai test : output diffs=(%s) expect(%s)\n", buffer, thaiUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok thai\n");
+    pass++;
   }
 
   ilen = strlen(polish);
-  olen = sizeof(buffer);
-  ret = tutf8e_encoder_buffer_encode(tutf8e_encoder_iso_8859_13, polish, ilen, buffer, &olen);
-  if (!ret && (olen+1)==sizeof(polishUTF8) && !strncmp(buffer, polishUTF8, olen)) {
-    pass++;
-  } else {
-    printf("Failed to encode polish test\n");
+  xlen = strlen(polishUTF8);
+  ret = tutf8e_buffer_encode(tutf8e_encoder_iso_8859_13, polish, ilen, buffer, &olen, 0);
+  if (ret < 0)  {
+    printf("(buffer test) Failed to encode polish test : ret(%d)\n", ret);
+  } else if (olen != xlen)  {
+    printf("(buffer test) Failed to encode polish test : length diff : %ld != %ld\n", olen, xlen);
     fail++;
+  } else if (strncmp(buffer, polishUTF8, olen)) {
+    printf("(buffer test) Failed to encode polish test : output diffs=(%s) expect(%s)\n", buffer, polishUTF8);
+    fail++;
+  } else {
+    printf("(buffer test) ok polish\n");
+    pass++;
   }
 
   printf("%d passed, %d failed tests\n", pass, fail);
