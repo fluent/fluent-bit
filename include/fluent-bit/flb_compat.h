@@ -78,6 +78,15 @@ static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
     return result;
 }
 
+static inline char *ctime_r(const time_t *timep, char *result)
+{
+    char *tmp = ctime(timep);
+    if (tmp == NULL) {
+        return NULL;
+    }
+    return strcpy(result, tmp);
+}
+
 /*
  * We can't just define localtime_r here, since mk_core/mk_utils.c is
  * exposing a symbol with the same name inadvertently.
