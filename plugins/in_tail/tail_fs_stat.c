@@ -78,8 +78,9 @@ static int tail_fs_event(struct flb_input_instance *ins,
     return 0;
 }
 
-static int tail_fs_check(struct flb_input_instance *ins,
-                         struct flb_config *config, void *in_context)
+static int tail_fs_check_files(struct flb_input_instance *ins,
+                               struct flb_config *config, void *in_context, 
+                               bool event_files)
 {
     int ret;
     off_t offset;
@@ -90,9 +91,17 @@ static int tail_fs_check(struct flb_input_instance *ins,
     struct flb_tail_file *file = NULL;
     struct fs_stat *fst;
     struct stat st;
+    struct mk_list *list;
+    if(event_files == true)
+    {
+        list = &ctx->files_event;
+    }
+    else
+    {
+        list = &ctx->files_static;
+    }
 
-    /* Lookup watched file */
-    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+    mk_list_foreach_safe(head, tmp, list) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         fst = file->fs_backend;
 
@@ -105,7 +114,10 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
-            flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
+            if(event_files == true)
+                flb_plg_info(ctx->ins, "file has been deleted: %s", file->name);
+            else
+                flb_plg_info(ctx->ins, "static file has been deleted: %s", file->name); 
 #ifdef FLB_HAVE_SQLDB
             if (ctx->db) {
                 /* Remove file entry from the database */
@@ -124,12 +136,25 @@ static int tail_fs_check(struct flb_input_instance *ins,
         if (GetFileInformationByHandleEx(h, FileStandardInfo,
                                          &info, sizeof(info))) {
             if (info.DeletePending) {
-                flb_plg_debug(ctx->ins, "file is to be delete: %s", file->name);
+                if(event_files == true)
+                    flb_plg_info(ctx->ins, "file is to be delete: %s", file->name);
+                else
+                    flb_plg_info(ctx->ins, "static file is to be delete: %s", file->name);
 #ifdef FLB_HAVE_SQLDB
                 if (ctx->db) {
+                    if(event_files == true)
+                        flb_plg_info(ctx->ins, "file is to be delete in SQLDB: %s", file->name);
+                    else
+                        flb_plg_info(ctx->ins, "static file is to be delete in SQLDB: %s", file->name);
+
                     flb_tail_db_file_delete(file, ctx);
                 }
 #endif
+                if(event_files == true)
+                    flb_plg_info(ctx->ins, "file deleting: %s", file->name);
+                else
+                    flb_plg_info(ctx->ins, "static file deleting: %s", file->name);
+
                 flb_tail_file_remove(file);
                 continue;
             }
@@ -191,6 +216,24 @@ static int tail_fs_check(struct flb_input_instance *ins,
     return 0;
 }
 
+static int tail_fs_check(struct flb_input_instance *ins,
+                         struct flb_config *config, void *in_context)
+{
+    int ret1 = tail_fs_check_files(ins, config, in_context, true);
+    if (ret1 != 0)
+    {
+        return ret1;
+    }
+#ifdef FLB_SYSTEM_WINDOWS
+    int ret2 = tail_fs_check_files(ins, config, in_context, false);
+    if (ret2 != 0)
+    {
+        return ret2;
+    }
+#endif
+    return 0;
+}
+
 /* File System events based on stat(2) */
 int flb_tail_fs_init(struct flb_input_instance *in,
                      struct flb_tail_config *ctx, struct flb_config *config)
@@ -219,13 +262,17 @@ int flb_tail_fs_init(struct flb_input_instance *in,
 void flb_tail_fs_pause(struct flb_tail_config *ctx)
 {
     flb_input_collector_pause(ctx->coll_fd_fs1, ctx->ins);
+#ifndef FLB_SYSTEM_WINDOWS
     flb_input_collector_pause(ctx->coll_fd_fs2, ctx->ins);
+#endif
 }
 
 void flb_tail_fs_resume(struct flb_tail_config *ctx)
 {
     flb_input_collector_resume(ctx->coll_fd_fs1, ctx->ins);
+#ifndef FLB_SYSTEM_WINDOWS
     flb_input_collector_resume(ctx->coll_fd_fs2, ctx->ins);
+#endif
 }
 
 int flb_tail_fs_add(struct flb_tail_file *file)
