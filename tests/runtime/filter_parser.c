@@ -509,11 +509,97 @@ void flb_test_filter_parser_preserve_original_field()
     flb_destroy(ctx);
 }
 
+// https://github.com/fluent/fluent-bit/issues/2250
+void flb_test_filter_parser_first_matched_when_mutilple_parser()
+{
+    int ret;
+    int bytes;
+    char *p, *output, *expected;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_parser *parser;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = callback_test;
+    cb.data = NULL;
+
+    ctx = flb_create();
+
+    /* Configure service */
+    flb_service_set(ctx, "Flush", "1", "Grace" "1", "Log_Level", "debug", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "Tag", "test",
+                  NULL);
+
+    /* Parser */
+    parser = flb_parser_create("one", "regex", "^(?<one>.+?)$",
+                               NULL, NULL, NULL, MK_FALSE, NULL, 0,
+                               NULL, ctx->config);
+    TEST_CHECK(parser != NULL);
+
+    parser = flb_parser_create("two", "regex", "^(?<two>.+?)$",
+                               NULL, NULL, NULL, MK_FALSE, NULL, 0,
+                               NULL, ctx->config);
+    TEST_CHECK(parser != NULL);
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "test",
+                         "Key_Name", "data",
+                         "Parser", "one",
+                         "Parser", "two",
+                         "Reserve_Data", "On",
+                         "Preserve_Key", "On",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data */
+    p = "[1,{\"data\":\"hoge\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    sleep(1); /* waiting flush */
+    output = get_output(); /* 1sec passed, data should be flushed */
+    TEST_CHECK_(output != NULL, "Expected output to not be NULL");
+    if (output != NULL) {
+        /* check extra data was not preserved */
+        expected = "\"one\":\"hoge\",\"data\":\"hoge\"";
+        TEST_CHECK_(strstr(output, expected) != NULL, "Expected output to contain key one , got '%s'", output);
+        free(output);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+
 TEST_LIST = {
     {"filter_parser_extract_fields", flb_test_filter_parser_extract_fields },
     {"filter_parser_reserve_data_off", flb_test_filter_parser_reserve_data_off },
     {"filter_parser_handle_time_key", flb_test_filter_parser_handle_time_key },
     {"filter_parser_ignore_malformed_time", flb_test_filter_parser_ignore_malformed_time },
     {"filter_parser_preserve_original_field", flb_test_filter_parser_preserve_original_field },
+    {"filter_parser_first_matched_when_multiple_parser", flb_test_filter_parser_first_matched_when_mutilple_parser },
     {NULL, NULL}
 };
+
