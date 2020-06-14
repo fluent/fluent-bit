@@ -582,6 +582,10 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                         }
                     }
                 }
+                else {
+                    flb_error("[flb_msgpack_to_gelf] level must be a non-negative integer or a string");
+                    return NULL;
+                }
             }
             else if ((key_len == full_message_key_len) &&
                      !strncmp(key, full_message_key, full_message_key_len)) {
