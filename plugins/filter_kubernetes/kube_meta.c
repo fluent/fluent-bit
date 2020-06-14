@@ -218,7 +218,7 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         ret = snprintf(uri, sizeof(uri) - 1,
                        FLB_KUBE_API_FMT,
-                       namespace, podname);
+                       ctx->api_path, namespace, podname);
         if (ret == -1) {
             flb_upstream_conn_release(u_conn);
             return -1;

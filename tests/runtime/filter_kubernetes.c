@@ -33,6 +33,7 @@ char kube_test_id[64];
 #define KUBE_IP          "127.0.0.1"
 #define KUBE_PORT        "8002"
 #define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
+#define LOG_LEVEL        "error"
 #define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
 
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
@@ -182,7 +183,7 @@ exit:
     return 0;
 }
 
-static void kube_test(const char *target, int type, const char *suffix, int nExpected, ...)
+static void kube_test(const char *target, int type, const char *suffix, int nExpected, const char *url, ...)
 {
     int ret;
     int in_ffd;
@@ -210,7 +211,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     ret = flb_service_set(ctx.flb,
                           "Flush", "1",
                           "Grace", "1",
-                          "Log_Level", "error",
+                          "Log_Level", LOG_LEVEL,
                           "Parsers_File", DPATH "/parsers.conf",
                           NULL);
     TEST_CHECK_(ret == 0, "setting service options");
@@ -247,13 +248,13 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     TEST_CHECK_(filter_ffd >= 0, "initialising filter");
     ret = flb_filter_set(ctx.flb, filter_ffd,
                          "Match", "kube.*",
-                         "Kube_Url", KUBE_URL,
+                         "Kube_URL", url,
                          "Kube_Meta_Preload_Cache_Dir", DPATH "/meta",
                          NULL);
     TEST_CHECK_(ret == 0, "setting filter options");
 
     /* Iterate number of arguments for filter_kubernetes additional options */
-    va_start(va, nExpected);
+    va_start(va, url);
     while ((key = va_arg(va, char *))) {
         value = va_arg(va, char *);
         if (!value) {
@@ -339,7 +340,8 @@ exit:
 }
 
 #define flb_test_core(target, suffix, nExpected) \
-    kube_test("core/" target, KUBE_TAIL, suffix, nExpected, NULL);
+    kube_test("core/" target, KUBE_TAIL, suffix, nExpected, \
+              KUBE_URL, NULL);
 
 static void flb_test_core_base()
 {
@@ -362,12 +364,12 @@ static void flb_test_core_unescaping_json()
 }
 
 #define flb_test_options_merge_log_enabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               NULL); \
 
 #define flb_test_options_merge_log_disabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               NULL); \
 
 static void flb_test_options_merge_log_enabled_text()
@@ -391,12 +393,12 @@ static void flb_test_options_merge_log_disabled_json()
 }
 
 #define flb_test_options_merge_log_trim_enabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               NULL); \
 
 #define flb_test_options_merge_log_trim_disabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               "Merge_Log_Trim", "Off", \
               NULL); \
@@ -412,7 +414,7 @@ static void flb_test_options_merge_log_trim_disabled_json()
 }
 
 #define flb_test_options_merge_log_key(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               "Merge_Log_Key", "merge-log-key", \
               NULL); \
@@ -423,12 +425,12 @@ static void flb_test_options_merge_log_key_json()
 }
 
 #define flb_test_options_keep_log_enabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               NULL); \
 
 #define flb_test_options_keep_log_disabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               "Keep_Log", "Off", \
               NULL); \
@@ -444,7 +446,7 @@ static void flb_test_options_keep_log_disabled_json()
 }
 
 #define flb_test_options_k8s_logging_parser_disabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               NULL); \
 
@@ -459,7 +461,7 @@ static void flb_test_options_k8s_logging_parser_disabled_text_stderr()
 }
 
 #define flb_test_options_k8s_logging_exclude_disabled(target, suffix, nExpected) \
-    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("options/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "Merge_Log", "On", \
               NULL); \
 
@@ -474,7 +476,7 @@ static void flb_test_options_k8s_logging_exclude_disabled_text_stderr()
 }
 
 #define flb_test_annotations(target, suffix, nExpected) \
-    kube_test("annotations/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("annotations/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "K8s-Logging.Parser", "On", \
               "K8s-Logging.Exclude", "On", \
               NULL); \
@@ -485,7 +487,7 @@ static void flb_test_annotations_invalid_text()
 }
 
 #define flb_test_annotations_parser(target, suffix, nExpected) \
-    kube_test("annotations-parser/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("annotations-parser/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "K8s-Logging.Parser", "On", \
               "Merge_Log", "On", \
               "Keep_Log", "Off", \
@@ -642,7 +644,7 @@ static void flb_test_annotations_parser_multiple_2_container_5_stderr()
 }
 
 #define flb_test_annotations_exclude(target, suffix, nExpected) \
-    kube_test("annotations-exclude/" target, KUBE_TAIL, suffix, nExpected, \
+    kube_test("annotations-exclude/" target, KUBE_TAIL, suffix, nExpected, KUBE_URL, \
               "K8s-Logging.Exclude", "On", \
               NULL); \
 
@@ -919,15 +921,48 @@ static void flb_test_systemd_logs()
         }
         sd_journal_close(journal);
 
-        kube_test("kairosdb-914055854-b63vq", KUBE_SYSTEMD, NULL, 1,
+        kube_test("kairosdb-914055854-b63vq", KUBE_SYSTEMD, NULL, 1, KUBE_URL, 
                   "Merge_Log", "On",
                   NULL);
     }
 }
 #endif
 
+/* Used to repeat flb_test_core_base() with various Kube_URL settings. This just
+ * verifies that the URL is processed without error but during development you
+ * can set LOG_LEVEL above to "debug" to verify other details in log messages.
+ */
+#define flb_test_kube_url(url) \
+    kube_test("core/core_base_fluent-bit", KUBE_TAIL, NULL, 1, url, NULL);
+
+static void flb_test_kube_url_default_port_and_path()
+{
+    flb_test_kube_url("http://default.port.and.path");
+}
+
+static void flb_test_kube_url_with_port()
+{
+    flb_test_kube_url("http://with.port:8002/proxy_path");
+}
+
+static void flb_test_kube_url_default_port_proxy_at_root()
+{
+    flb_test_kube_url("http://default.port.proxy.at.root/")
+}
+
+static void flb_test_kube_url_rancher_cluster()
+{
+    flb_test_kube_url("http://rancher/k8s/clusters/c-45ab6/api/v1/");
+}
+
+/* Start with the tests where developers may be waiting to see output. First core_base then
+ * the kube_url tests (defined last) then continue with core and the rest. */
 TEST_LIST = {
     {"kube_core_base", flb_test_core_base},
+    {"kube_url_default_port_and_path", flb_test_kube_url_default_port_and_path},
+    {"kube_url_with_port", flb_test_kube_url_with_port},
+    {"kube_url_default_port_proxy_at_root", flb_test_kube_url_default_port_proxy_at_root},
+    {"kube_url_rancher_cluster", flb_test_kube_url_rancher_cluster},
     {"kube_core_no_meta", flb_test_core_no_meta},
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},

@@ -675,11 +675,11 @@ static struct flb_config_map config_map[] = {
      "keep original log content if it was successfully parsed and merged"
     },
 
-    /* Full Kubernetes API server URL */
+    /* Kubernetes API endpoint URL */
     {
      FLB_CONFIG_MAP_STR, "kube_url", "https://kubernetes.default.svc",
      0, FLB_FALSE, 0,
-     "Kubernetes API server URL"
+     "Kubernetes API endpoint URL (path defaulting to /api/v1)"
     },
 
     /*

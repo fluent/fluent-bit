@@ -76,9 +76,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", ins);
     if (!url) {
-        ctx->api_host = flb_strdup(FLB_API_HOST);
-        ctx->api_port = FLB_API_PORT;
-        ctx->api_https = FLB_API_TLS;
+        ctx->api_host = flb_strdup(FLB_KUBE_API_HOST);
+        ctx->api_port = FLB_KUBE_API_PORT;
+        ctx->api_https = FLB_KUBE_API_TLS;
+        ctx->api_path = flb_strdup(FLB_KUBE_API_PATH);
     }
     else {
         tmp = url;
@@ -106,15 +107,40 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
             ctx->api_port = atoi(tmp);
         }
         else {
-            ctx->api_host = flb_strdup(p);
-            ctx->api_port = FLB_API_PORT;
+            tmp = strchr(p, '/');
+            if (tmp) {
+                ctx->api_host = flb_strndup(p, tmp - p);
+            }
+            else {
+                ctx->api_host = flb_strdup(p);
+            }
+            ctx->api_port = ctx->api_https ? 443 : 80;
+        }
+        /* Get optional API path or use default for backward compatibility */
+        tmp = strchr(p, '/');
+        if (tmp) {
+            off = strlen(tmp);
+            /* Remove trailing / if present e.g. if the API is proxied at root on some host
+             * then you can prevent the path defaulting to '/api/v1' by specifying '/'.
+             * It should be removed anyway because it will be added when used. */
+            if (tmp[off - 1] == '/') {
+                off--;
+            }
+            ctx->api_path = flb_strndup(tmp, off);
+        }
+        else {
+            ctx->api_path = flb_strdup(FLB_KUBE_API_PATH);
         }
     }
 
     snprintf(ctx->kube_url, sizeof(ctx->kube_url) - 1,
-             "%s://%s:%i",
+             "%s://%s:%i%s",
              ctx->api_https ? "https" : "http",
-             ctx->api_host, ctx->api_port);
+             ctx->api_host, ctx->api_port,
+             ctx->api_path);
+    /* ctx->kube_url may not be used but a debug message enables us to see
+     * if the above works (until unit tests somehow check that). */
+    flb_plg_debug(ctx->ins, "Kube API endpoint %s/", ctx->kube_url);
 
     ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
                                       FLB_HASH_TABLE_SIZE,
@@ -177,6 +203,7 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
     flb_free(ctx->api_host);
+    flb_free(ctx->api_path);
     flb_free(ctx->token);
     flb_free(ctx->namespace);
     flb_free(ctx->podname);

@@ -50,10 +50,11 @@
  */
 #define FLB_MERGE_BUF_SIZE  2048  /* 2KB */
 
-/* Kubernetes API server info */
-#define FLB_API_HOST  "kubernetes.default.svc"
-#define FLB_API_PORT  443
-#define FLB_API_TLS   FLB_TRUE
+/* Kubernetes API default endpoint info */
+#define FLB_KUBE_API_HOST  "kubernetes.default.svc"
+#define FLB_KUBE_API_PORT  443
+#define FLB_KUBE_API_TLS   FLB_TRUE
+#define FLB_KUBE_API_PATH  "/api/v1"
 
 /*
  * Default expected Kubernetes tag prefix, this is used mostly when source
@@ -73,6 +74,7 @@ struct flb_kube {
     char *api_host;
     int api_port;
     int api_https;
+    char *api_path;
     int use_journal;
     int labels;
     int annotations;
