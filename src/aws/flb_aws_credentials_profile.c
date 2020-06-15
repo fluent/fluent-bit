@@ -29,7 +29,6 @@
 
  #include <sys/types.h>
  #include <sys/stat.h>
- #include <unistd.h>
  #include <ctype.h>
 
 #define ACCESS_KEY_PROPERTY_NAME            "aws_access_key_id"
