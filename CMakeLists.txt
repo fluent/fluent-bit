@@ -20,6 +20,10 @@ if (MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
   add_compile_options(/MT)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+  # Generate PDB files
+  set(CMAKE_C_FLAGS "$(CMAKE_C_FLAGS) /Zi")
+  set(CMAKE_EXE_LINKER_FLAGS "$(CMAKE_EXE_LINKER_FLAGS) /Debug")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
