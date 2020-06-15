@@ -27,6 +27,7 @@ RUN apt-get update && \
     bison
 
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
+RUN chmod 777 /fluent-bit/log
 COPY . /tmp/src/
 RUN rm -rf /tmp/src/build/*
 
