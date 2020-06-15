@@ -297,6 +297,13 @@ if(FLB_SHARED_LIB)
     target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   endif()
 
+  if (MSVC)
+    set_target_properties(fluent-bit-shared
+      PROPERTIES PDB_NAME fluent-bit.dll)
+    target_link_options(fluent-bit-shared
+      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-shared>)
+  endif()
+
   # Library install routines
   install(TARGETS fluent-bit-shared
     LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
@@ -350,6 +357,14 @@ if(FLB_BINARY)
     OUTPUT_NAME ${FLB_OUT_NAME}
     ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
+
+  # Include PDB file (if available)
+  if (MSVC)
+    target_link_options(fluent-bit-bin
+      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-bin>)
+    install(FILES $<TARGET_PDB_FILE:fluent-bit-bin>
+      DESTINATION "${FLB_INSTALL_BINDIR}")
+  endif()
 
   # Detect init system, install upstart, systemd or init.d script
   if(IS_DIRECTORY /lib/systemd/system)
