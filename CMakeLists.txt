@@ -19,6 +19,10 @@ endif()
 if (MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+  # Generate a PDB file.
+  set(CMAKE_C_FLAGS "$(CMAKE_C_FLAGS) /Zi")
+  set(CMAKE_EXE_LINKER_FLAGS "$(CMAKE_EXE_LINKER_FLAGS) /Debug /Zf")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()

@@ -334,6 +334,13 @@ if(FLB_BINARY)
     ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
 
+  # Include PDB file (if available)
+  if (MSVC)
+    install(FILES $<TARGET_PDB_FILE:fluent-bit-bin>
+      DESTINATION "${FLB_INSTALL_BINDIR}"
+      OPTIONAL)
+  endif()
+
   # Detect init system, install upstart, systemd or init.d script
   if(IS_DIRECTORY /lib/systemd/system)
     set(FLB_SYSTEMD_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.service")
