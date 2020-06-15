@@ -17,9 +17,21 @@ endif()
 
 # Update CFLAGS
 if (MSVC)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
-  add_compile_options(/MT)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+  # Use custom CFLAGS for MSVC
+  #
+  #   /W3 ...... Show up to 'production quality' msgs.
+  #   /Zi ...... Generate pdb files.
+  #   /MT ...... Static link C runtimes.
+  #
+  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /W3 /O2 /Zi")
+  set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_BUILD_TYPE None)
+
+  # Use add_compile_options() to set /MT since Visual Studio
+  # Generator does not notice /MT in CMAKE_C_FLAGS.
+  add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
