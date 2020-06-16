@@ -126,7 +126,6 @@ static void test_run_formatter(struct flb_config *config,
 static int tasks_start(struct flb_input_instance *in,
                        struct flb_config *config)
 {
-    int ret;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
