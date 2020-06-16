@@ -90,15 +90,51 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     return 0;
 }
 
+static void test_run_formatter(struct flb_config *config,
+                               struct flb_input_instance *i_ins,
+                               struct flb_output_instance *o_ins,
+                               struct flb_task *task)
+{
+    int ret;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_test_out_formatter *otf;
+
+    otf = &o_ins->test_formatter;
+
+    /* Invoke the output plugin formatter test callback */
+    ret = otf->callback(config,
+                        i_ins,
+                        o_ins->context,
+                        task->tag, task->tag_len,
+                        task->buf, task->size,
+                        &out_buf, &out_size);
+
+    /* Call the runtime test callback checker */
+    if (otf->rt_out_callback) {
+        otf->rt_out_callback(otf->rt_ctx,
+                             otf->rt_ffd,
+                             ret,
+                             out_buf, out_size,
+                             otf->rt_data);
+    }
+    else {
+        flb_free(out_buf);
+    }
+}
+
 static int tasks_start(struct flb_input_instance *in,
                        struct flb_config *config)
 {
+    int ret;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
+    struct mk_list *r_tmp;
     struct flb_task *task;
     struct flb_thread *th;
     struct flb_task_route *route;
+    struct flb_output_instance *out;
 
     /* At this point the input instance should have some tasks linked */
     mk_list_foreach_safe(head, tmp, &in->tasks) {
@@ -111,8 +147,25 @@ static int tasks_start(struct flb_input_instance *in,
         task->status = FLB_TASK_RUNNING;
 
         /* A task contain one or more routes */
-        mk_list_foreach(r_head, &task->routes) {
+        mk_list_foreach_safe(r_head, r_tmp, &task->routes) {
             route = mk_list_entry(r_head, struct flb_task_route, _head);
+
+            /*
+             * Test mode: if the output plugin is in test mode, just invoke
+             * the proper test function and continue;
+             */
+            out = route->out;
+            if (out->test_mode == FLB_TRUE &&
+                out->p->test_formatter.callback != NULL) {
+
+                /* Run the formatter test */
+                test_run_formatter(config, in, out, task);
+
+                /* Remove the route */
+                mk_list_del(&route->_head);
+                flb_free(route);
+                continue;
+            }
 
             /*
              * We have the Task and the Route, created a thread context for the
@@ -216,5 +269,21 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
 
     /* Start the new enqueued Tasks */
     tasks_start(in, config);
+
+    /*
+     * Tasks cleanup: if some tasks are associated to output plugins running
+     * in test mode, they must be cleaned up since they do not longer contains
+     * an outgoing route.
+     */
+    mk_list_foreach_safe(head, tmp, &in->tasks) {
+        task = mk_list_entry(head, struct flb_task, _head);
+        if (task->users == 0 &&
+            mk_list_size(&task->retries) == 0 &&
+            mk_list_size(&task->routes) == 0) {
+            flb_info("[task] cleanup test task");
+            flb_task_destroy(task, FLB_TRUE);
+        }
+    }
+
     return 0;
 }
