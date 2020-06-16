@@ -6,23 +6,24 @@ platform:
   - Win32
   - x64
 
+environment:
+  vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Community'
+
 configuration:
   - Release
 
 install:
-  - if %PLATFORM%==x86 (set MSYS2_MSYSTEM=MINGW32) else set MSYS2_MSYSTEM=MINGW64
-  - if %PLATFORM%==x86 (set MSYS2_PREFIX=C:\msys64\mingw32) else set MSYS2_PREFIX=C:\msys64\mingw64
   - cmd: set PATH=%MSYS2_PREFIX%\bin;C:\msys64\usr\bin;%PATH%
   - cmd: C:\msys64\usr\bin\pacman -Su --noconfirm bison flex
 
 before_build:
-  - cmd: if "%platform%"=="Win32" set msvc=Visual Studio 15 2017
-  - cmd: if "%platform%"=="x64"   set msvc=Visual Studio 15 2017 Win64
+  - if %PLATFORM%==Win32 call "%vspath%\VC\Auxiliary\Build\vcvars32.bat"
+  - if %PLATFORM%==x64   call "%vspatH%\VC\Auxiliary\Build\vcvars64.bat"
 
 build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
-  - cpack -C "%configuration%"
+  - cpack
 
 artifacts:
   - path: build/td-agent-bit-*.exe
