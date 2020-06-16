@@ -94,6 +94,9 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
         perror("bytes");
         return -1;
     }
+    if (msg.size > sizeof(msg.msg)) {
+        return -1;
+    }
     log_push(&msg, log);
 
     return bytes;
