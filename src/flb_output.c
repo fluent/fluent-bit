@@ -272,6 +272,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     instance->config = config;
     instance->log_level = -1;
+    instance->test_mode = FLB_FALSE;
+
     /*
      * Set mask_id: the mask_id is an unique number assigned to this
      * output instance that is used later to set in an 'unsigned 64
@@ -368,6 +370,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
     mk_list_add(&instance->_head, &config->outputs);
+
+    /* Tests */
+    instance->test_formatter.callback = plugin->test_formatter.callback;
 
     return instance;
 }
