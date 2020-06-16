@@ -54,9 +54,12 @@ FLB_EXPORT int flb_output(flb_ctx_t *ctx, const char *output, void *data);
 FLB_EXPORT int flb_filter(flb_ctx_t *ctx, const char *filter, void *data);
 FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
+FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                                   void (*out_callback) (void *, int, int,
+                                                         void *, size_t, void *),
+                                   void *data);
 FLB_EXPORT int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
                                        void (*cb)(char *, void *, void *));
-
 FLB_EXPORT int flb_filter_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_service_set(flb_ctx_t *ctx, ...);
 FLB_EXPORT int  flb_lib_free(void *data);

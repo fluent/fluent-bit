@@ -324,6 +324,37 @@ int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
     return flb_callback_set(o_ins->callback, name, cb);
 }
 
+int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                        void (*out_callback) (void *, int, int, void *, size_t, void *),
+                        void *data)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the output instance in 'test' mode, so no real
+     * flush callback is invoked, only the desired implemented test.
+     */
+
+    /* Formatter test */
+    if (strcmp(test_name, "formatter") == 0) {
+        o_ins->test_mode = FLB_TRUE;
+        o_ins->test_formatter.rt_ctx = ctx;
+        o_ins->test_formatter.rt_ffd = ffd;
+        o_ins->test_formatter.rt_out_callback = out_callback;
+        o_ins->test_formatter.rt_data = data;
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
+}
+
 /* Set an filter interface property */
 int flb_filter_set(flb_ctx_t *ctx, int ffd, ...)
 {
