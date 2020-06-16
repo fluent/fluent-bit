@@ -1,9 +1,8 @@
 cd build
 
 # CACHE GENERATION
-cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
-                     -DCIO_BACKEND_FILESYSTEM=Off `
-                     -DFLB_TESTS_INTERNAL=On `
+cmake -G "NMake Makefiles" `
+                     -D FLB_TESTS_INTERNAL=On `
                      -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
                      -D FLB_WITHOUT_flb-rt-out_td=On `
                      -D FLB_WITHOUT_flb-rt-out_forward=On `
@@ -17,7 +16,7 @@ cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
                      ../
 
 # COMPILE
-cmake --build . --config "$ENV:configuration"
+cmake --build .
 
 # RUNNING TESTS
-ctest -C "$ENV:configuration" --build-run-dir $PWD --output-on-failure
+ctest --build-run-dir $PWD --output-on-failure
