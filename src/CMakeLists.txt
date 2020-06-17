@@ -335,7 +335,11 @@ endif()
 # Binary / Executable
 if(FLB_BINARY)
   find_package (Threads)
-  add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
+  if (FLB_SYSTEM_WINDOWS)
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c)
+  else()
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
+  endif()
   add_sanitizers(fluent-bit-bin)
 
 
