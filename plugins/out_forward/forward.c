@@ -593,6 +593,7 @@ static void forward_config_destroy(struct flb_forward_config *fc)
 {
     flb_sds_destroy(fc->shared_key);
     flb_sds_destroy(fc->self_hostname);
+    flb_sds_destroy(fc->tag);
     flb_free(fc);
 }
 
@@ -702,6 +703,15 @@ static int forward_config_ha(const char *upstream_file,
             if(fc->require_ack_response) {
                 fc->send_options = FLB_TRUE;
             }
+        }
+
+        /* Tag Overwrite */
+        tmp = flb_upstream_node_get_property("tag", node);
+        if (tmp) {
+            fc->tag = flb_sds_create(tmp);
+        }
+        else {
+            fc->tag = NULL;
         }
 
         /* Initialize and validate forward_config context */
@@ -832,6 +842,15 @@ static int forward_config_simple(struct flb_forward *ctx,
         if(fc->require_ack_response) {
             fc->send_options = FLB_TRUE;
         }
+    }
+
+    /* Tag Overwrite */
+    tmp = flb_output_get_property("tag", ins);
+    if (tmp) {
+        fc->tag = flb_sds_create(tmp);
+    }
+    else {
+        fc->tag = NULL;
     }
 
     /* Initialize and validate forward_config context */
@@ -1025,8 +1044,15 @@ static void cb_forward_flush(const void *data, size_t bytes,
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
-    msgpack_pack_str(&mp_pck, tag_len);
-    msgpack_pack_str_body(&mp_pck, tag, tag_len);
+    if (fc->tag) {
+        const int len = strlen(fc->tag);
+ 
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, fc->tag, len);
+    } else {
+        msgpack_pack_str(&mp_pck, tag_len);
+        msgpack_pack_str_body(&mp_pck, tag, tag_len);
+    }
     msgpack_pack_array(&mp_pck, entries);
 
     /* Get a TCP connection instance */
@@ -1176,6 +1202,11 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "upstream", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag", NULL,
      0, FLB_FALSE, 0,
      NULL
     },
