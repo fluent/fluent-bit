@@ -89,7 +89,7 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
      * under the PIPE_BUF limit (4KB on Linux) and our messages are always 1KB,
      * we can trust we will always get a full message on each read(2).
      */
-    bytes = flb_pipe_r(fd, &msg, sizeof(struct log_message));
+    bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
     if (bytes <= 0) {
         perror("bytes");
         return -1;
@@ -415,7 +415,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     w = flb_worker_get();
     if (w) {
-        int n = flb_pipe_w(w->log[1], &msg, sizeof(msg));
+        int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
             perror("write");
         }
