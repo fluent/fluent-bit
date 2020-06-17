@@ -129,6 +129,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
                 flb_time_msleep(50);
                 continue;
             }
+            return -1;
         }
         else if (bytes == 0) {
             /* Broken pipe ? */
@@ -160,6 +161,7 @@ ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
                 flb_time_msleep(50);
                 continue;
             }
+            return -1;
         }
         else if (bytes == 0) {
             /* Broken pipe ? */
