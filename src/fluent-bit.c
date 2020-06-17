@@ -53,6 +53,11 @@
 #include <mcheck.h>
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+extern int win32_main(int, char**);
+extern void win32_started(void);
+#endif
+
 struct flb_config *config;
 
 #define PLUGIN_INPUT    0
@@ -725,7 +730,7 @@ flb_service_conf_end:
     return ret;
 }
 
-int main(int argc, char **argv)
+int flb_main(int argc, char **argv)
 {
     int opt;
     int ret;
@@ -1019,10 +1024,23 @@ int main(int argc, char **argv)
     flb_thread_prepare();
     flb_output_prepare();
 
+#ifdef FLB_SYSTEM_WINDOWS
+    win32_started();
+#endif
+
     ret = flb_engine_start(config);
     if (ret == -1 && config) {
         flb_engine_shutdown(config);
     }
 
     return ret;
+}
+
+int main(int argc, char **argv)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return win32_main(argc, argv);
+#else
+    return flb_main(argc, argv);
+#endif
 }
