@@ -1046,7 +1046,7 @@ static void cb_forward_flush(const void *data, size_t bytes,
     msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
     if (fc->tag) {
         const int len = strlen(fc->tag);
- 
+
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, fc->tag, len);
     } else {
@@ -1163,52 +1163,52 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "time_as_integer", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, time_as_integer),
-     NULL
+     "Set timestamp in integer format (compat mode for old Fluentd v0.12)"
     },
     {
      FLB_CONFIG_MAP_STR, "shared_key", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Shared key for authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "self_hostname", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Hostname"
     },
     {
      FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, empty_shared_key),
-     NULL
+     "Set an empty shared key for authentication"
     },
     {
      FLB_CONFIG_MAP_BOOL, "send_options", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, send_options),
-     NULL
+     "Send 'forward protocol options' to remote endpoint"
     },
     {
      FLB_CONFIG_MAP_BOOL, "require_ack_response", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, require_ack_response),
-     NULL
+     "Require that remote endpoint confirms data reception"
     },
     {
      FLB_CONFIG_MAP_STR, "username", "",
      0, FLB_TRUE, offsetof(struct flb_forward_config, username),
-     NULL
+     "Username for authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "password", "",
      0, FLB_TRUE, offsetof(struct flb_forward_config, password),
-     NULL
+     "Password for authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "upstream", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Path to 'upstream' configuration file (define multiple nodes)"
     },
     {
      FLB_CONFIG_MAP_STR, "tag", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set a custom Tag for the outgoing records"
     },
     /* EOF */
     {0}
