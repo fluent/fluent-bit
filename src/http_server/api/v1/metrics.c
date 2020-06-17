@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_version.h>
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
@@ -392,6 +393,25 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, "\n", 1);
     null_check(tmp_sds);
+
+    /* Attach fluentbit_build_info metric. */
+    tmp_sds = flb_sds_cat(sds, "# HELP fluentbit_build_info Build version information.\n", 55);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "# TYPE fluentbit_build_info gauge\n", 34);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "fluentbit_build_info{version=\"", 30);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, FLB_VERSION_STR, sizeof(FLB_VERSION_STR) - 1);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "\",edition=\"", 11);
+    null_check(tmp_sds);
+#ifdef FLB_ENTERPRISE
+    tmp_sds = flb_sds_cat(sds, "Enterprise\"} 1\n", 15);
+    null_check(tmp_sds);
+#else
+    tmp_sds = flb_sds_cat(sds, "Community\"} 1\n", 14);
+    null_check(tmp_sds);
+#endif
 
     msgpack_unpacked_destroy(&result);
     buf->users--;
