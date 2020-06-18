@@ -19,12 +19,12 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
 
 /* Map msgpack object intp flb_ra_value representation */
@@ -117,43 +117,61 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
     int i = 0;
     int levels;
     int matched = 0;
-    msgpack_object *key_found = NULL;
+    msgpack_object *found = NULL;
     msgpack_object key;
     msgpack_object *val;
-    msgpack_object cur_map;
+    msgpack_object cur;
     struct mk_list *head;
-    struct flb_slist_entry *entry;
+    struct flb_ra_subentry *entry;
 
     /* Expected number of map levels in the map */
     levels = mk_list_size(subkeys);
 
-    cur_map = *map;
+    cur = *map;
 
     mk_list_foreach(head, subkeys) {
-        /* Key expected key entry */
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        /* expected entry */
+        entry = mk_list_entry(head, struct flb_ra_subentry, _head);
 
-        if (cur_map.type != MSGPACK_OBJECT_MAP) {
+        /* Array Handling */
+        if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
+            /* check the current msgpack object is an array */
+            if (cur.type != MSGPACK_OBJECT_ARRAY) {
+                return -1;
+            }
+
+            /* Index limit */
+            if (cur.via.array.size < entry->array_id + 1) {
+                return -1;
+            }
+
+            cur = cur.via.array.ptr[entry->array_id];
+            goto next;
+        }
+
+        if (cur.type != MSGPACK_OBJECT_MAP) {
             break;
         }
 
-        i = ra_key_val_id(entry->str, cur_map);
+        i = ra_key_val_id(entry->str, cur);
         if (i == -1) {
-            key_found = NULL;
+            found = NULL;
             continue;
         }
 
-        key = cur_map.via.map.ptr[i].key;
-        val = &cur_map.via.map.ptr[i].val;
+        key = cur.via.map.ptr[i].key;
+        val = &cur.via.map.ptr[i].val;
 
         /* A bit obvious, but it's better to validate data type */
         if (key.type != MSGPACK_OBJECT_STR) {
-            key_found = NULL;
+            found = NULL;
             continue;
         }
 
-        key_found = &key;
-        cur_map = cur_map.via.map.ptr[i].val;
+        found = &key;
+        cur = cur.via.map.ptr[i].val;
+
+    next:
         matched++;
 
         if (levels == matched) {
@@ -162,7 +180,7 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
     }
 
     /* No matches */
-    if (!key_found || (matched > 0 && levels != matched)) {
+    if (!found || (matched > 0 && levels != matched)) {
         return -1;
     }
 
@@ -197,7 +215,8 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     }
     result->o = val;
 
-    if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
+    if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
+        && subkeys != NULL) {
         ret = subkey_to_object(&val, subkeys, &out);
         if (ret == 0) {
             ret = msgpack_object_to_ra_value(*out, result);
@@ -241,7 +260,8 @@ int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
     /* Reference map value */
     val = map.via.map.ptr[i].val;
 
-    if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
+    if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
+        && subkeys != NULL) {
         ret = subkey_to_object(&val, subkeys, &out);
         if (ret == 0) {
             return msgpack_object_strcmp(*out, str, len);
@@ -272,7 +292,8 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
     /* Reference map value */
     val = map.via.map.ptr[i].val;
 
-    if (val.type == MSGPACK_OBJECT_MAP && subkeys != NULL) {
+    if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
+        && subkeys != NULL) {
         ret = subkey_to_object(&val, subkeys, &out);
         if (ret == 0) {
             if (out->type != MSGPACK_OBJECT_STR) {
