@@ -461,7 +461,7 @@ void flb_aws_credentials_destroy(struct flb_aws_credentials *creds)
         if (creds->secret_access_key) {
             flb_sds_destroy(creds->secret_access_key);
         }
-        if (creds->secret_access_key) {
+        if (creds->session_token) {
             flb_sds_destroy(creds->session_token);
         }
 
