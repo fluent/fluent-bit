@@ -668,9 +668,6 @@ error:
     if (random_data) {
         flb_free(random_data);
     }
-    if (session_name) {
-        flb_free(session_name);
-    }
     return NULL;
 }
 
