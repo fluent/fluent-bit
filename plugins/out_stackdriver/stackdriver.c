@@ -360,12 +360,12 @@ static struct mk_list *parse_local_resource_id_to_list(char *str, char *type)
     return list;
 }
 
-/*
-*    process_local_resource_id():
-*  - extract the value from "logging.googleapis.com/local_resource_id" field
-*  - use extracted value to assign the label keys for different resource types
-*    that are specified in the configuration of stackdriver_out plugin
-*/
+/* 
+ *    process_local_resource_id():
+ *  - extract the value from "logging.googleapis.com/local_resource_id" field
+ *  - use extracted value to assign the label keys for different resource types
+ *    that are specified in the configuration of stackdriver_out plugin
+ */
 static int process_local_resource_id(const void *data, size_t bytes,
                                      struct flb_stackdriver *ctx, char *type)
 {
@@ -530,6 +530,36 @@ static int process_local_resource_id(const void *data, size_t bytes,
         flb_sds_destroy(ctx->pod_name);
     }
     return -1;
+}
+
+/*
+ * parse_labels
+ * - Iterate throught the original payload (obj) and find out the entry that matches
+ *   the labels_key 
+ * - Used to convert all labels under labels_key to root-level `labels` field
+ */
+static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
+{
+    int i;
+    int len;
+    msgpack_object_kv *kv = NULL;
+
+    if (!obj || obj->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    len = flb_sds_len(ctx->labels_key);
+    for (i = 0; i < obj->via.map.size; i++) {
+        kv = &obj->via.map.ptr[i];
+        if (flb_sds_casecmp(ctx->labels_key, kv->key.via.str.ptr, len) == 0) {
+            /* only the first matching entry will be returned */
+            return &kv->val;
+        }
+    }
+
+    flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload", 
+                  ctx->labels_key);
+    return NULL;
 }
 
 static int cb_stackdriver_init(struct flb_output_instance *ins,
@@ -731,8 +761,9 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
-static int pack_json_payload(int operation_extracted, int operation_extra_size,
-                             msgpack_packer *mp_pck, msgpack_object *obj)
+static int pack_json_payload(int operation_extracted, int operation_extra_size, 
+                             msgpack_packer* mp_pck, msgpack_object *obj,
+                             struct flb_stackdriver *ctx)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
     int i, j;
@@ -755,8 +786,9 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
      */
     flb_sds_t to_be_removed[] =
     {
-        local_resource_id_key
-        /* more special fields are required to be added: labels .. */
+        local_resource_id_key,
+        ctx->labels_key
+        /* more special fields are required to be added */
     };
 
     if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
@@ -836,6 +868,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     flb_sds_destroy(local_resource_id_key);
     return 0;
 }
+
 static int stackdriver_format(struct flb_config *config,
                               struct flb_input_instance *ins,
                               void *plugin_context,
@@ -858,6 +891,7 @@ static int stackdriver_format(struct flb_config *config,
     struct tm tm;
     struct flb_time tms;
     msgpack_object *obj;
+    msgpack_object *labels_ptr;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -1097,6 +1131,8 @@ static int stackdriver_format(struct flb_config *config,
          * Pack entry
          *
          * {
+         *  "severity": "...",
+         *  "labels": "...",
          *  "logName": "...",
          *  "jsonPayload": {...},
          *  "timestamp": "..."
@@ -1123,6 +1159,20 @@ static int stackdriver_format(struct flb_config *config,
             entry_size += 1;
         }
 
+        /* Extract labels */
+        labels_ptr = parse_labels(ctx, obj);
+        if (labels_ptr != NULL) {
+            if (labels_ptr->type != MSGPACK_OBJECT_MAP) {
+                flb_plg_error(ctx->ins, "the type of labels should be map");
+                flb_sds_destroy(operation_id);
+                flb_sds_destroy(operation_producer);
+                msgpack_unpacked_destroy(&result);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+            entry_size += 1;
+        }
+
         msgpack_pack_map(&mp_pck, entry_size);
 
         /* Add severity into the log entry */
@@ -1138,6 +1188,13 @@ static int stackdriver_format(struct flb_config *config,
                                 &operation_first, &operation_last, &mp_pck);
         }
 
+        /* labels */
+        if (labels_ptr != NULL) {
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "labels", 6);
+            msgpack_pack_object(&mp_pck, *labels_ptr);
+        }
+        
         /* Clean up id and producer if operation extracted */
         flb_sds_destroy(operation_id);
         flb_sds_destroy(operation_producer);
@@ -1145,7 +1202,7 @@ static int stackdriver_format(struct flb_config *config,
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-        pack_json_payload(operation_extracted, operation_extra_size, &mp_pck, obj);
+        pack_json_payload(operation_extracted, operation_extra_size, &mp_pck, obj, ctx);
 
         /* avoid modifying the original tag */
         newtag = tag;

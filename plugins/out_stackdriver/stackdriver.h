@@ -48,6 +48,7 @@
 
 #define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
 #define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
+#define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
 #define LEN_LOCAL_RESOURCE_ID_KEY 40
 
 #define K8S_CONTAINER "k8s_container"
@@ -89,6 +90,8 @@ struct flb_stackdriver {
     flb_sds_t container_name;
     flb_sds_t node_name;
     bool k8s_resource_type;
+    
+    flb_sds_t labels_key;
 
     /* other */
     flb_sds_t resource;
