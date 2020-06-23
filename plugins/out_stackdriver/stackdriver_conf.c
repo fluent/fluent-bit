@@ -321,7 +321,15 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             flb_stackdriver_conf_destroy(ctx);
             return NULL;
         }
-    } 
+    }
+    
+    tmp = flb_output_get_property("labels_key", ins);
+    if (tmp) {
+        ctx->labels_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->labels_key = flb_sds_create(DEFAULT_LABELS_KEY);
+    }
 
     return ctx;
 }
@@ -352,6 +360,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->resource);
     flb_sds_destroy(ctx->severity_key);
+    flb_sds_destroy(ctx->labels_key);
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
