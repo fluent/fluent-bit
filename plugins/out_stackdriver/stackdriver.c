@@ -277,6 +277,119 @@ static char *get_google_token(struct flb_stackdriver *ctx)
     return ctx->o->access_token;
 }
 
+/*
+* parse_labels
+* - Iterate throught the original payload (obj) and find out the entry that matches the labels_key 
+* - Convert all labels under labels_key to root-level `labels` field
+*/
+static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
+{
+    int i;
+    int len;
+    msgpack_object_kv *kv = NULL;
+
+    if (!obj || obj->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
+    len = flb_sds_len(ctx->labels_key);
+    for (i = 0; i < obj->via.map.size; i++) {
+        kv = &obj->via.map.ptr[i];
+        if (kv->key.via.str.size == len &&
+            strncasecmp(kv->key.via.str.ptr, ctx->labels_key, len) == 0) {
+            if (kv->val.type != MSGPACK_OBJECT_MAP) {
+                flb_plg_warn(ctx->ins, "the type of labels should be map");
+            }
+            return &kv->val;
+        }
+    }
+
+    flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload", 
+                  ctx->labels_key);
+    return NULL;
+}
+
+/* using packer mp_pck to pack obj except some special elements */
+static int pack_object_except(msgpack_object *obj, msgpack_packer mp_pck, 
+                              struct flb_stackdriver *ctx)
+{
+    int i, j;
+    int map_size;
+    int new_map_size;
+    int key_size;
+    int len;
+    int len_to_be_removed;
+    char* removed;
+    int key_not_found;
+    msgpack_object_kv *kv = NULL;
+
+    /*
+     * array of elements that need to be removed from payload 
+     * more elements are required to be added here: labels, operations ...
+     */
+    char* to_be_removed[] = 
+    {
+        ctx->labels_key
+    };
+
+    if (!obj) {
+        return -1;
+    }
+
+    map_size = obj->via.map.size;
+    new_map_size = map_size;
+    len_to_be_removed = sizeof(to_be_removed) / sizeof(to_be_removed[0]);
+    for (i = 0; i < map_size; i++) {
+        kv = &obj->via.map.ptr[i];
+        len = kv->key.via.str.size;
+        for (j = 0; j < len_to_be_removed; j++) {
+            removed = to_be_removed[j];
+            /* 
+             * check length of key to avoid partial matching
+             * e.g. labels key = labels && kv->key = labelss
+             */
+            if (strlen(removed) == len &&
+                strncasecmp(kv->key.via.str.ptr, removed, len) == 0) {
+                new_map_size -= 1;
+                break;
+            }
+        }
+    }
+
+    /* pack the original obj */ 
+    if (new_map_size == map_size) {
+        msgpack_pack_object(&mp_pck, *obj);
+        return 0;
+    }
+
+    msgpack_pack_map(&mp_pck, new_map_size);
+
+    for (i = 0; i < map_size; ++i) {
+        key_not_found = 1;
+        kv = &obj->via.map.ptr[i];
+        len = kv->key.via.str.size;
+        key_size = kv->key.via.str.size;
+        for (j = 0; j < len_to_be_removed; j++) {
+            removed = to_be_removed[j];
+            if (strlen(removed) == len &&
+                strncasecmp(kv->key.via.str.ptr, removed, len) == 0) {
+                key_not_found = 0;
+                flb_plg_debug(ctx->ins,
+                    "entry %s has been removed from payload", removed);
+                break;
+            }
+        }
+
+        if (key_not_found) {
+            msgpack_pack_str(&mp_pck, key_size);
+            msgpack_pack_str_body(&mp_pck, kv->key.via.str.ptr, key_size);
+            msgpack_pack_object(&mp_pck, kv->val);
+        }
+    }
+
+    return 0;
+}
+
 static int cb_stackdriver_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
 {
@@ -454,7 +567,9 @@ static int stackdriver_format(struct flb_config *config,
                               void **out_data, size_t *out_size)
 {
     int len;
+    int ret;
     int array_size = 0;
+    int num_pack;
     size_t s;
     size_t off = 0;
     char path[PATH_MAX];
@@ -463,6 +578,7 @@ static int stackdriver_format(struct flb_config *config,
     struct flb_time tms;
     severity_t severity;
     msgpack_object *obj;
+    msgpack_object *labels_ptr;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -543,31 +659,51 @@ static int stackdriver_format(struct flb_config *config,
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
+        num_pack = 3;
         /*
          * Pack entry
          *
          * {
+         *  "labels": "...",
          *  "logName": "...",
          *  "jsonPayload": {...},
          *  "timestamp": "..."
          * }
          */
+        labels_ptr = parse_labels(ctx, obj);
+        if (labels_ptr != NULL) {
+            num_pack += 1;
+        }
+
         if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             /* additional field for severity */
-            msgpack_pack_map(&mp_pck, 4);
+            num_pack += 1;
+            msgpack_pack_map(&mp_pck, num_pack);
             msgpack_pack_str(&mp_pck, 8);
             msgpack_pack_str_body(&mp_pck, "severity", 8);
             msgpack_pack_int(&mp_pck, severity);
         }
         else {
-            msgpack_pack_map(&mp_pck, 3);
+            msgpack_pack_map(&mp_pck, num_pack);
+        }
+
+        /* labels */
+        if (labels_ptr != NULL) {
+            msgpack_pack_str(&mp_pck, 6);
+            msgpack_pack_str_body(&mp_pck, "labels", 6);
+            msgpack_pack_object(&mp_pck, *labels_ptr);
         }
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-        msgpack_pack_object(&mp_pck, *obj);
+        ret = pack_object_except(obj, mp_pck, ctx);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "error formatting jsonPayload");
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
 
         /* logName */
         len = snprintf(path, sizeof(path) - 1,

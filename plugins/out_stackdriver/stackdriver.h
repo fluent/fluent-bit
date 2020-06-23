@@ -46,6 +46,8 @@
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
 
+#define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -65,6 +67,8 @@ struct flb_stackdriver {
     flb_sds_t zone;
     flb_sds_t instance_id;
     flb_sds_t instance_name;
+
+    flb_sds_t labels_key;
 
     /* other */
     flb_sds_t resource;
