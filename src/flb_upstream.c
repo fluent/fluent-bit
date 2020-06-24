@@ -260,8 +260,10 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
         mk_list_add(&conn->_head, &u->busy_queue);
 
         /* I/O Timeouts */
+#ifdef FLB_HAVE_TLS
         conn->tls_handshake_start = -1;
         conn->tls_handshake_timeout = -1;
+#endif
 
         flb_debug("[upstream] KA connection #%i to %s:%i has been assigned (recycled)",
                   conn->fd, u->tcp_host, u->tcp_port);
