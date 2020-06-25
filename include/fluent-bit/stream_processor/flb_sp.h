@@ -167,6 +167,7 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                                        const char *query);
 int flb_sp_fd_event(int fd, struct flb_sp *sp);
 void flb_sp_task_destroy(struct flb_sp_task *task);
+void groupby_nums_destroy(struct aggr_num *groupby_nums, int size);
 void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
                               struct aggr_node *aggr_node);
 
