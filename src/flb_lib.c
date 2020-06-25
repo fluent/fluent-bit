@@ -326,7 +326,8 @@ int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
 
 int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                         void (*out_callback) (void *, int, int, void *, size_t, void *),
-                        void *data)
+                        void *out_callback_data,
+                        void *test_ctx)
 {
     struct flb_output_instance *o_ins;
 
@@ -346,7 +347,8 @@ int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
         o_ins->test_formatter.rt_ctx = ctx;
         o_ins->test_formatter.rt_ffd = ffd;
         o_ins->test_formatter.rt_out_callback = out_callback;
-        o_ins->test_formatter.rt_data = data;
+        o_ins->test_formatter.rt_data = out_callback_data;
+        o_ins->test_formatter.flush_ctx = test_ctx;
     }
     else {
         return -1;
