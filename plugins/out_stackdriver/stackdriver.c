@@ -800,6 +800,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
 static int stackdriver_format(struct flb_config *config,
                               struct flb_input_instance *ins,
                               void *plugin_context,
+                              void *flush_ctx,
                               const char *tag, int tag_len,
                               const void *data, size_t bytes,
                               void **out_data, size_t *out_size)
@@ -1185,7 +1186,7 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 
     /* Reformat msgpack to stackdriver JSON payload */
     ret = stackdriver_format(config, i_ins,
-                             ctx,
+                             ctx, NULL,
                              tag, tag_len,
                              data, bytes,
                              &out_buf, &out_size);
