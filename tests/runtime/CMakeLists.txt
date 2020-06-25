@@ -57,6 +57,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_STDOUT       "out_stdout.c")
   FLB_RT_TEST(FLB_OUT_STACKDRIVER  "out_stackdriver.c")
   FLB_RT_TEST(FLB_OUT_TD           "out_td.c")
+
 endif()
 
 

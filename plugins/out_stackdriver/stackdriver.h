@@ -46,6 +46,8 @@
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
 
+#define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
