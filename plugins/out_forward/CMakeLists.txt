@@ -1,5 +1,6 @@
 set(src
-  ../../src/flb_network.c
-  forward.c)
+  forward.c
+  forward_format.c
+  )
 
 FLB_PLUGIN(out_forward "${src}" "")
