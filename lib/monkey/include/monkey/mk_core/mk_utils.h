@@ -27,10 +27,6 @@
 
 #include "mk_pthread.h"
 
-time_t mk_core_init_time;
-char *env_trace_filter;
-pthread_mutex_t mutex_trace;
-
 /* Trace definitions */
 #ifdef TRACE
 
@@ -61,7 +57,7 @@ int mk_utils_print_errno(int n);
 
 /* Thread key to hold a re-entrant buffer for strerror formatting */
 #define MK_UTILS_ERROR_SIZE          128
-pthread_key_t mk_utils_error_key;
+extern pthread_key_t mk_utils_error_key;
 
 /* Windows don't have strerror_r, instead it have strerror_s */
 #ifdef _WIN32

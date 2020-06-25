@@ -26,15 +26,18 @@
 #define _XOPEN_SOURCE
 #endif
 
-#ifndef _BSD_SOURCE
-#define _BSD_SOURCE
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
 #endif
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_macros.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern FLB_EXPORT pthread_key_t flb_thread_key;
 
 /* Use 'libco' backend for co-routines handling */
 #include <fluent-bit/flb_thread_libco.h>

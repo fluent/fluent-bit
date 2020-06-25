@@ -434,7 +434,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
 
-    flb_plg_trace(ctx->ins, "flushing bytes %d", bytes);
+    flb_plg_trace(ctx->ins, "flushing bytes %zu", bytes);
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);

@@ -32,7 +32,7 @@ void flb_ra_parser_dump(struct flb_ra_parser *rp)
 {
     struct mk_list *head;
     struct flb_ra_key *key;
-    struct flb_slist_entry *entry;
+    struct flb_ra_subentry *entry;
 
     key = rp->key;
     if (rp->type == FLB_RA_PARSER_STRING) {
@@ -54,23 +54,73 @@ void flb_ra_parser_dump(struct flb_ra_parser *rp)
         if (rp->key) {
             printf("key name   : %s\n", key->name);
             mk_list_foreach(head, key->subkeys) {
-                entry = mk_list_entry(head, struct flb_slist_entry, _head);
-                printf(" - subkey  : %s\n", entry->str);
+                entry = mk_list_entry(head, struct flb_ra_subentry, _head);
+                if (entry->type == FLB_RA_PARSER_STRING) {
+                    printf(" - subkey  : %s\n", entry->str);
+                }
+                else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
+                    printf(" - array id: %i\n", entry->array_id);
+                }
             }
         }
     }
 }
 
-int flb_ra_parser_subkey_add(struct flb_ra_parser *rp, char *key)
+static void ra_parser_subentry_destroy_all(struct mk_list *list)
 {
-    int ret;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_ra_subentry *entry;
 
-    ret = flb_slist_add(rp->slist, (const char *) key);
-    if (ret == -1) {
+    mk_list_foreach_safe(head, tmp, list) {
+        entry = mk_list_entry(head, struct flb_ra_subentry, _head);
+        mk_list_del(&entry->_head);
+        if (entry->type == FLB_RA_PARSER_STRING) {
+            flb_sds_destroy(entry->str);
+        }
+        flb_free(entry);
+    }
+}
+
+int flb_ra_parser_subentry_add_string(struct flb_ra_parser *rp, char *key)
+{
+    struct flb_ra_subentry *entry;
+
+    entry = flb_malloc(sizeof(struct flb_ra_subentry));
+    if (!entry) {
+        flb_errno();
         return -1;
     }
+
+    entry->type = FLB_RA_PARSER_STRING;
+    entry->str = flb_sds_create(key);
+    if (!entry->str) {
+        flb_errno();
+        flb_free(entry);
+        return -1;
+    }
+    mk_list_add(&entry->_head, rp->slist);
+
     return 0;
 }
+
+int flb_ra_parser_subentry_add_array_id(struct flb_ra_parser *rp, int id)
+{
+    struct flb_ra_subentry *entry;
+
+    entry = flb_malloc(sizeof(struct flb_ra_subentry));
+    if (!entry) {
+        flb_errno();
+        return -1;
+    }
+
+    entry->type = FLB_RA_PARSER_ARRAY_ID;
+    entry->array_id = id;
+    mk_list_add(&entry->_head, rp->slist);
+
+    return 0;
+}
+
 
 struct flb_ra_key *flb_ra_parser_key_add(struct flb_ra_parser *rp, char *key)
 {
@@ -91,6 +141,26 @@ struct flb_ra_key *flb_ra_parser_key_add(struct flb_ra_parser *rp, char *key)
     k->subkeys = NULL;
 
     return k;
+}
+
+struct flb_ra_array *flb_ra_parser_array_add(struct flb_ra_parser *rp, int index)
+{
+    struct flb_ra_array *arr;
+
+    if (index < 0) {
+        return NULL;
+    }
+
+    arr = flb_malloc(sizeof(struct flb_ra_array));
+    if (!arr) {
+        flb_errno();
+        return NULL;
+    }
+
+    arr->index = index;
+    arr->subkeys = NULL;
+
+    return arr;
 }
 
 struct flb_ra_key *flb_ra_parser_string_add(struct flb_ra_parser *rp,
@@ -268,13 +338,13 @@ void flb_ra_parser_destroy(struct flb_ra_parser *rp)
     if (key) {
         flb_sds_destroy(key->name);
         if (key->subkeys) {
-            flb_slist_destroy(key->subkeys);
+            ra_parser_subentry_destroy_all(key->subkeys);
             flb_free(key->subkeys);
         }
         flb_free(rp->key);
     }
     if (rp->slist) {
-        flb_slist_destroy(rp->slist);
+        ra_parser_subentry_destroy_all(rp->slist);
         flb_free(rp->slist);
     }
     flb_free(rp);

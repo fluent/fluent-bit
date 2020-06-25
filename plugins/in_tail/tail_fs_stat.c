@@ -31,6 +31,10 @@
 #include "tail_config.h"
 #include "tail_signal.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
+#endif
+
 struct fs_stat {
     /* last time check */
     time_t checked;
@@ -116,48 +120,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
-#ifdef FLB_SYSTEM_WINDOWS
-        HANDLE h;
-        FILE_STANDARD_INFO info;
-
-        h = _get_osfhandle(file->fd);
-        if (GetFileInformationByHandleEx(h, FileStandardInfo,
-                                         &info, sizeof(info))) {
-            if (info.DeletePending) {
-                flb_plg_debug(ctx->ins, "file is to be delete: %s", file->name);
-#ifdef FLB_HAVE_SQLDB
-                if (ctx->db) {
-                    flb_tail_db_file_delete(file, ctx);
-                }
-#endif
-                flb_tail_file_remove(file);
-                continue;
-            }
-        }
-#endif
-
-        /* Discover the current file name for the open file descriptor */
-        name = flb_tail_file_name(file);
-        if (!name) {
-            flb_plg_debug(ctx->ins, "could not resolve %s, removing", file->name);
-            flb_tail_file_remove(file);
-            continue;
-        }
-
-        /*
-         * Check if file still exists. This method requires explicity that the
-         * user is using an absolute path, otherwise we will be rotating the
-         * wrong file.
-         *
-         * flb_tail_target_file_name_cmp is a deeper compare than
-         * flb_tail_file_name_cmp. If applicable, it compares to the underlying
-         * real_name of the file.
-         */
-        if (flb_tail_target_file_name_cmp(name, file) != 0) {
-            flb_tail_file_rotated(file);
-        }
-        flb_free(name);
-
         /* Check if the file was truncated */
         if (file->offset > st.st_size) {
             offset = lseek(file->fd, 0, SEEK_SET);
@@ -186,6 +148,30 @@ static int tail_fs_check(struct flb_input_instance *ins,
         else {
             file->pending_bytes = 0;
         }
+
+
+        /* Discover the current file name for the open file descriptor */
+        name = flb_tail_file_name(file);
+        if (!name) {
+            flb_plg_debug(ctx->ins, "could not resolve %s, removing", file->name);
+            flb_tail_file_remove(file);
+            continue;
+        }
+
+        /*
+         * Check if file still exists. This method requires explicity that the
+         * user is using an absolute path, otherwise we will be rotating the
+         * wrong file.
+         *
+         * flb_tail_target_file_name_cmp is a deeper compare than
+         * flb_tail_file_name_cmp. If applicable, it compares to the underlying
+         * real_name of the file.
+         */
+        if (flb_tail_file_is_rotated(ctx, file) == FLB_TRUE) {
+            flb_tail_file_rotated(file);
+        }
+        flb_free(name);
+
     }
 
     return 0;

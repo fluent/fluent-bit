@@ -48,7 +48,6 @@
 #include <fluent-bit/flb_parser.h>
 
 
-
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
 #endif
@@ -59,6 +58,10 @@ extern void win32_started(void);
 #endif
 
 struct flb_config *config;
+
+#ifdef FLB_HAVE_LIBBACKTRACE
+struct flb_stacktrace flb_st;
+#endif
 
 #define PLUGIN_INPUT    0
 #define PLUGIN_OUTPUT   1
@@ -395,7 +398,7 @@ static void flb_signal_handler(int signal)
         break;
     case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
-        flb_stacktrace_print();
+        flb_stacktrace_print(&flb_st);
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
@@ -745,7 +748,7 @@ int flb_main(int argc, char **argv)
     struct flb_filter_instance *filter = NULL;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
-    flb_stacktrace_init(argv[0]);
+    flb_stacktrace_init(argv[0], &flb_st);
 #endif
 
     /* Setup long-options */

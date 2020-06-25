@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
@@ -77,10 +76,10 @@ static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
 /*
  * Supported data
  *
- * ${X}                         => environment variable
- * $key, $key[x], $key[x][y][z] => record key value
- * $0, $1,..$9                  => regex id
- * $X()                         => built-in function
+ * ${X}                               => environment variable
+ * $key, $key['x'], $key['x'][N]['z'] => record key value or array index
+ * $0, $1,..$9                        => regex id
+ * $X()                               => built-in function
  */
 static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
 {
@@ -299,7 +298,6 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         return NULL;
     }
     mk_list_init(&ra->list);
-    flb_slist_create(&ra->list);
 
     /*
      * The buffer needs to processed where we create a list of parts, basically
@@ -327,6 +325,9 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         }
     }
     ra->size_hint = hint + 128;
+
+    flb_ra_dump(ra);
+
     return ra;
 }
 

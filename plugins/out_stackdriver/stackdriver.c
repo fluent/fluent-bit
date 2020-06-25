@@ -318,11 +318,14 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     ctx->u->flags &= ~FLB_IO_ASYNC;
     ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
 
-    /* Retrieve oauth2 token */
-    token = get_google_token(ctx);
-    if (!token) {
-        flb_plg_warn(ctx->ins, "token retrieval failed");
+    if (ins->test_mode == FLB_FALSE) {
+        /* Retrieve oauth2 token */
+        token = get_google_token(ctx);
+        if (!token) {
+            flb_plg_warn(ctx->ins, "token retrieval failed");
+        }
     }
+
     if (ctx->metadata_server_auth) {
         ret = gce_metadata_read_project_id(ctx);
         if (ret == -1) {
@@ -443,10 +446,12 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
-static int stackdriver_format(const void *data, size_t bytes,
-                              const char *tag, size_t tag_len,
-                              char **out_data, size_t *out_size,
-                              struct flb_stackdriver *ctx)
+static int stackdriver_format(struct flb_config *config,
+                              struct flb_input_instance *ins,
+                              void *plugin_context,
+                              const char *tag, int tag_len,
+                              const void *data, size_t bytes,
+                              void **out_data, size_t *out_size)
 {
     int len;
     int array_size = 0;
@@ -462,6 +467,7 @@ static int stackdriver_format(const void *data, size_t bytes,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
+    struct flb_stackdriver *ctx = plugin_context;
 
     /* Count number of records */
     array_size = flb_mp_count(data, bytes);
@@ -629,6 +635,8 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     char *token;
     flb_sds_t payload_buf;
     size_t payload_size;
+    void *out_buf;
+    size_t out_size;
     struct flb_stackdriver *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
@@ -640,12 +648,18 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     }
 
     /* Reformat msgpack to stackdriver JSON payload */
-    ret = stackdriver_format(data, bytes, tag, tag_len,
-                             &payload_buf, &payload_size, ctx);
+    ret = stackdriver_format(config, i_ins,
+                             ctx,
+                             tag, tag_len,
+                             data, bytes,
+                             &out_buf, &out_size);
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
+
+    payload_buf = (flb_sds_t) out_buf;
+    payload_size = out_size;
 
     /* Get or renew Token */
     token = get_google_token(ctx);
@@ -723,6 +737,9 @@ struct flb_output_plugin out_stackdriver_plugin = {
     .cb_init      = cb_stackdriver_init,
     .cb_flush     = cb_stackdriver_flush,
     .cb_exit      = cb_stackdriver_exit,
+
+    /* Test */
+    .test_formatter.callback = stackdriver_format,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,

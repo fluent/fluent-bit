@@ -2657,7 +2657,7 @@ int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
         else if (fd == task->window.fd_hop) {
             sp_process_hopping_slot(tag, tag_len, task);
         }
-
     }
+
     return 0;
 }

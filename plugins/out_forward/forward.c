@@ -550,11 +550,11 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
         goto error;
     }
 
-    if(ack_len != chunk_len) {
+    if (ack_len != chunk_len) {
         flb_plg_error(ctx->ins,
-                      "ack: ack len does not match ack(%d)(%.*s) chunk(%d)(%.*s)",
-                      ack_len, ack_len, ack,
-                      chunk_len, chunk_len, chunk);
+                      "ack: ack len does not match ack(%ld)(%.*s) chunk(%d)(%.*s)",
+                      ack_len, (int) ack_len, ack,
+                      chunk_len, (int) chunk_len, chunk);
         goto error;
     }
 
@@ -589,10 +589,113 @@ static int forward_config_init(struct flb_forward_config *fc,
     return 0;
 }
 
+static flb_sds_t config_get_property(char *prop,
+                                     struct flb_upstream_node *node,
+                                     struct flb_forward *ctx)
+{
+    if (node) {
+        return (flb_sds_t) flb_upstream_node_get_property(prop, node);
+    }
+    else {
+        return (flb_sds_t) flb_output_get_property(prop, ctx->ins);
+    }
+}
+
+static int config_set_properties(struct flb_upstream_node *node,
+                                 struct flb_forward_config *fc,
+                                 struct flb_forward *ctx)
+{
+    flb_sds_t tmp;
+
+    /* Shared Key */
+    tmp = config_get_property("empty_shared_key", node, ctx);
+    if (tmp && flb_utils_bool(tmp)) {
+        fc->empty_shared_key = FLB_TRUE;
+    }
+    else {
+        fc->empty_shared_key = FLB_FALSE;
+    }
+
+    tmp = config_get_property("shared_key", node, ctx);
+    if (fc->empty_shared_key) {
+        fc->shared_key = flb_sds_create("");
+    }
+    else if (tmp) {
+        fc->shared_key = flb_sds_create(tmp);
+    }
+    else {
+        fc->shared_key = NULL;
+    }
+
+    tmp = config_get_property("username", node, ctx);
+    if (tmp) {
+        fc->username = tmp;
+    }
+    else {
+        fc->username = "";
+    }
+
+    tmp = config_get_property("password", node, ctx);
+    if (tmp) {
+        fc->password = tmp;
+    }
+    else {
+        fc->password = "";
+    }
+
+    /* Self Hostname */
+    tmp = config_get_property("self_hostname", node, ctx);
+    if (tmp) {
+        fc->self_hostname = flb_sds_create(tmp);
+    }
+    else {
+        fc->self_hostname = flb_sds_create("localhost");
+    }
+
+    /* Backward compatible timing mode */
+    tmp = config_get_property("time_as_integer", node, ctx);
+    if (tmp) {
+        fc->time_as_integer = flb_utils_bool(tmp);
+    }
+    else {
+        fc->time_as_integer = FLB_FALSE;
+    }
+
+    fc->require_ack_response = FLB_FALSE;
+    fc->send_options = FLB_FALSE;
+
+    /* send always options (with size) */
+    tmp = config_get_property("send_options", node, ctx);
+    if (tmp) {
+        fc->send_options = flb_utils_bool(tmp);
+    }
+
+    /* require ack response  (implies send_options) */
+    tmp = config_get_property("require_ack_response", node, ctx);
+    if (tmp) {
+        fc->require_ack_response = flb_utils_bool(tmp);
+        if (fc->require_ack_response) {
+            fc->send_options = FLB_TRUE;
+        }
+    }
+
+    /* Tag Overwrite */
+    tmp = config_get_property("tag", node, ctx);
+    if (tmp) {
+        fc->tag = flb_sds_create(tmp);
+    }
+    else {
+        fc->tag = NULL;
+    }
+
+    return 0;
+}
+
 static void forward_config_destroy(struct flb_forward_config *fc)
 {
     flb_sds_destroy(fc->shared_key);
     flb_sds_destroy(fc->self_hostname);
+    flb_sds_destroy(fc->tag);
     flb_free(fc);
 }
 
@@ -632,77 +735,8 @@ static int forward_config_ha(const char *upstream_file,
             fc->secured = FLB_TRUE;
         }
 
-        /* Shared key */
-        tmp = flb_upstream_node_get_property("empty_shared_key", node);
-        if (tmp && flb_utils_bool(tmp)) {
-            fc->empty_shared_key = FLB_TRUE;
-        }
-        else {
-            fc->empty_shared_key = FLB_FALSE;
-        }
-
-        tmp = flb_upstream_node_get_property("shared_key", node);
-        if (fc->empty_shared_key == FLB_TRUE) {
-            fc->shared_key = flb_sds_create("");
-        }
-        else if (tmp) {
-            fc->shared_key = flb_sds_create(tmp);
-        }
-        else {
-            fc->shared_key = NULL;
-        }
-
-        tmp = flb_upstream_node_get_property("username", node);
-        if (tmp) {
-            fc->username = tmp;
-        }
-        else {
-            fc->username = "";
-        }
-
-        tmp = flb_upstream_node_get_property("password", node);
-        if (tmp) {
-            fc->password = tmp;
-        }
-        else {
-            fc->password = "";
-        }
-
-        /* Self Hostname (Shared key) */
-        tmp = flb_upstream_node_get_property("self_hostname", node);
-        if (tmp) {
-            fc->self_hostname = flb_sds_create(tmp);
-        }
-        else {
-            fc->self_hostname = flb_sds_create("localhost");
-        }
-
-        /* Time_as_Integer */
-        tmp = flb_upstream_node_get_property("time_as_integer", node);
-        if (tmp) {
-            fc->time_as_integer = flb_utils_bool(tmp);
-        }
-        else {
-            fc->time_as_integer = FLB_FALSE;
-        }
-
-        fc->require_ack_response = FLB_FALSE;
-        fc->send_options = FLB_FALSE;
-
-        /* send always options (with size) */
-        tmp = flb_upstream_node_get_property("send_options", node);
-        if (tmp) {
-            fc->send_options = flb_utils_bool(tmp);
-        }
-
-        /* require ack response  (implies send_options) */
-        tmp = flb_upstream_node_get_property("require_ack_response", node);
-        if (tmp) {
-            fc->require_ack_response = flb_utils_bool(tmp);
-            if(fc->require_ack_response) {
-                fc->send_options = FLB_TRUE;
-            }
-        }
+        /* Read properties into 'fc' context */
+        config_set_properties(node, fc, ctx);
 
         /* Initialize and validate forward_config context */
         ret = forward_config_init(fc, ctx);
@@ -726,7 +760,6 @@ static int forward_config_simple(struct flb_forward *ctx,
 {
     int ret;
     int io_flags;
-    const char *tmp;
     struct flb_forward_config *fc = NULL;
     struct flb_upstream *upstream;
 
@@ -736,6 +769,7 @@ static int forward_config_simple(struct flb_forward *ctx,
     /* Configuration context */
     fc = flb_calloc(1, sizeof(struct flb_forward_config));
     if (!fc) {
+        flb_errno();
         return -1;
     }
     fc->secured = FLB_FALSE;
@@ -777,62 +811,8 @@ static int forward_config_simple(struct flb_forward *ctx,
     ctx->u = upstream;
     flb_output_upstream_set(ctx->u, ins);
 
-    /* Shared Key */
-    tmp = flb_output_get_property("empty_shared_key", ins);
-    if (tmp && flb_utils_bool(tmp)) {
-        fc->empty_shared_key = FLB_TRUE;
-    }
-
-    tmp = flb_output_get_property("shared_key", ins);
-    if (fc->empty_shared_key) {
-        fc->shared_key = flb_sds_create("");
-    }
-    else if (tmp) {
-        fc->shared_key = flb_sds_create(tmp);
-    }
-    else {
-        fc->shared_key = NULL;
-    }
-
-    tmp = flb_output_get_property("username", ins);
-    if (tmp) {
-        fc->username = tmp;
-    }
-
-    tmp = flb_output_get_property("password", ins);
-    if (tmp) {
-        fc->password = tmp;
-    }
-
-    /* Self Hostname */
-    tmp = flb_output_get_property("self_hostname", ins);
-    if (tmp) {
-        fc->self_hostname = flb_sds_create(tmp);
-    }
-    else {
-        fc->self_hostname = flb_sds_create("localhost");
-    }
-
-    /* Backward compatible timing mode */
-    tmp = flb_output_get_property("time_as_integer", ins);
-    if (tmp) {
-        fc->time_as_integer = flb_utils_bool(tmp);
-    }
-
-    /* send always options (with size) */
-    tmp = flb_output_get_property("send_options", ins);
-    if (tmp) {
-        fc->send_options = flb_utils_bool(tmp);
-    }
-
-    /* require ack response  (implies send_options) */
-    tmp = flb_output_get_property("require_ack_response", ins);
-    if (tmp) {
-        fc->require_ack_response = flb_utils_bool(tmp);
-        if(fc->require_ack_response) {
-            fc->send_options = FLB_TRUE;
-        }
-    }
+    /* Read properties into 'fc' context */
+    config_set_properties(NULL, fc, ctx);
 
     /* Initialize and validate forward_config context */
     ret = forward_config_init(fc, ctx);
@@ -1025,8 +1005,16 @@ static void cb_forward_flush(const void *data, size_t bytes,
 
     /* Output: root array */
     msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
-    msgpack_pack_str(&mp_pck, tag_len);
-    msgpack_pack_str_body(&mp_pck, tag, tag_len);
+    if (fc->tag) {
+        const int len = strlen(fc->tag);
+
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, fc->tag, len);
+    }
+    else {
+        msgpack_pack_str(&mp_pck, tag_len);
+        msgpack_pack_str_body(&mp_pck, tag, tag_len);
+    }
     msgpack_pack_array(&mp_pck, entries);
 
     /* Get a TCP connection instance */
@@ -1129,7 +1117,7 @@ static void cb_forward_flush(const void *data, size_t bytes,
 
     flb_upstream_conn_release(u_conn);
 
-    flb_plg_trace(ctx->ins, "ended write()=%d bytes", total);
+    flb_plg_trace(ctx->ins, "ended write()=%zu bytes", total);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
@@ -1137,47 +1125,52 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "time_as_integer", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, time_as_integer),
-     NULL
+     "Set timestamp in integer format (compat mode for old Fluentd v0.12)"
     },
     {
      FLB_CONFIG_MAP_STR, "shared_key", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Shared key for authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "self_hostname", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Hostname"
     },
     {
      FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, empty_shared_key),
-     NULL
+     "Set an empty shared key for authentication"
     },
     {
      FLB_CONFIG_MAP_BOOL, "send_options", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, send_options),
-     NULL
+     "Send 'forward protocol options' to remote endpoint"
     },
     {
      FLB_CONFIG_MAP_BOOL, "require_ack_response", "false",
      0, FLB_TRUE, offsetof(struct flb_forward_config, require_ack_response),
-     NULL
+     "Require that remote endpoint confirms data reception"
     },
     {
      FLB_CONFIG_MAP_STR, "username", "",
      0, FLB_TRUE, offsetof(struct flb_forward_config, username),
-     NULL
+     "Username for authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "password", "",
      0, FLB_TRUE, offsetof(struct flb_forward_config, password),
-     NULL
+     "Password for authentication"
     },
     {
      FLB_CONFIG_MAP_STR, "upstream", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Path to 'upstream' configuration file (define multiple nodes)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag", NULL,
+     0, FLB_FALSE, 0,
+     "Set a custom Tag for the outgoing records"
     },
     /* EOF */
     {0}

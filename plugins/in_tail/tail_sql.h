@@ -38,15 +38,14 @@
     "  rotated INTEGER DEFAULT 0"                                       \
     ");"
 
-#define SQL_GET_FILE "SELECT * from in_tail_files WHERE name='%s'"  \
-    " AND inode=%"PRIu64";"
+#define SQL_GET_FILE "SELECT * from in_tail_files WHERE inode=%"PRIu64";"
 
 #define SQL_INSERT_FILE                                             \
     "INSERT INTO in_tail_files (name, offset, inode, created)"      \
     "  VALUES ('%s', %"PRIu64", %"PRIu64", %"PRIu64");"
 
-#define SQL_UPDATE_OFFSET                                           \
-    "UPDATE in_tail_files set offset=%"PRIu64" WHERE id=%"PRId64";"
+#define SQL_UPDATE_OFFSET                                   \
+    "UPDATE in_tail_files set offset=@offset WHERE id=@id;"
 
 #define SQL_ROTATE_FILE                                                 \
     "UPDATE in_tail_files set name='%s',rotated=1 WHERE id=%"PRId64";"

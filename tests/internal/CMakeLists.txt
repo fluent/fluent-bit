@@ -54,6 +54,18 @@ if(FLB_SIGNV4)
     )
 endif()
 
+if(FLB_AWS)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    aws_util.c
+    aws_credentials.c
+    aws_credentials_ec2.c
+    aws_credentials_sts.c
+    aws_credentials_http.c
+    aws_credentials_profile.c
+    )
+endif()
+
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json

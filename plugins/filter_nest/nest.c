@@ -490,14 +490,14 @@ static inline int apply_nesting_rules(msgpack_packer *packer,
     size_t items_to_nest = map_count_fn(&map, ctx, &is_kv_to_nest);
 
     if (items_to_nest == 0) {
-        flb_plg_debug(ctx->ins, "Nest : No match found for %s", ctx->prefix);
+        flb_plg_debug(ctx->ins, "no match found for %s", ctx->prefix);
         return 0;
     }
 
     size_t toplevel_items = (map.via.map.size - items_to_nest + 1);
 
-    flb_plg_debug(ctx->ins, "Nest : Outer map size is %d, will be %d, nested "
-                  "map size will be %d",
+    flb_plg_debug(ctx->ins, "outer map size is %d, will be %lu, nested "
+                  "map size will be %lu",
                   map.via.map.size, toplevel_items, items_to_nest);
 
     /* Record array init(2) */

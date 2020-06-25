@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_record_accessor.h>
 
 #ifdef FLB_HAVE_TLS
 #include <mbedtls/entropy.h>
@@ -44,11 +45,12 @@ struct flb_forward_config {
     int time_as_integer;      /* Use backward compatible timestamp ? */
 
     /* config */
-    flb_sds_t shared_key;     /* shared key                   */
-    flb_sds_t self_hostname;  /* hostname used in certificate  */
-    int empty_shared_key;     /* use an empty string as shared key */
-    int require_ack_response; /* Require acknowledge for "chunk" */
-    int send_options;         /* send options in messages */
+    flb_sds_t shared_key;        /* shared key                   */
+    flb_sds_t self_hostname;     /* hostname used in certificate  */
+    flb_sds_t tag;               /* Overwrite tag on forward */
+    int empty_shared_key;        /* use an empty string as shared key */
+    int require_ack_response;    /* Require acknowledge for "chunk" */
+    int send_options;            /* send options in messages */
 
     const char *username;
     const char *password;
@@ -60,6 +62,7 @@ struct flb_forward_config {
     mbedtls_ctr_drbg_context tls_ctr_drbg;
 #endif
 
+    struct flb_record_accessor *ra_tag; /* Record accessor for Tag */
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
 
@@ -82,7 +85,6 @@ struct flb_forward_ping {
     const char *auth;
     int auth_len;
     int keepalive;
-
-
 };
+
 #endif

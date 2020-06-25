@@ -53,7 +53,69 @@
 #define FLB_OUTPUT_PLUGIN_CORE   0
 #define FLB_OUTPUT_PLUGIN_PROXY  1
 
-struct flb_output_instance;
+/*
+ * Tests callbacks
+ * ===============
+ */
+struct flb_test_out_formatter {
+    /*
+     * Runtime Library Mode
+     * ====================
+     * When the runtime library enable the test formatter mode, it needs to
+     * keep a reference of the context and other information:
+     *
+     * - rt_ctx : context created by flb_create()
+     *
+     * - rt_ffd : this plugin assigned 'integer' created by flb_output()
+     *
+     * - rt_step_calback: intermediary function to receive the results of
+     *                    the formatter plugin test function.
+     *
+     * - rt_data: opaque data type for rt_step_callback()
+     */
+
+    /* runtime library context */
+    void *rt_ctx;
+
+    /* runtime library: assigned plugin integer */
+    int rt_ffd;
+
+    /*
+     * "runtime step callback": this function pointer is used by Fluent Bit
+     * library mode to reference a test function that must retrieve the
+     * results of 'callback'. Consider this an intermediary function to
+     * transfer the results to the runtime test.
+     *
+     * This function is private and should not be set manually in the plugin
+     * code, it's set on src/flb_lib.c .
+     */
+    void (*rt_out_callback) (void *, int, int, void *, size_t, void *);
+
+    /*
+     * opaque data type passed by the runtime library to be used on
+     * rt_step_test().
+     */
+    void *rt_data;
+
+    /*
+     * Callback
+     * =========
+     * "Formatter callback": it references the plugin function that performs
+     * data formatting (msgpack -> local data). This entry is mostly to
+     * expose the plugin local function.
+     */
+    int (*callback) (/* Fluent Bit context */
+                     struct flb_config *,
+                     /* plugin that ingested the records */
+                     struct flb_input_instance *,
+                     void *,       /* plugin internal context */
+                     const char *, /* tag        */
+                     int,          /* tag length */
+                     const void *, /* incoming msgpack data */
+                     size_t,       /* incoming msgpack size */
+                     void **,      /* output buffer      */
+                     size_t *);    /* output buffer size */
+};
 
 struct flb_output_plugin {
     /*
@@ -106,6 +168,9 @@ struct flb_output_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Tests */
+    struct flb_test_out_formatter test_formatter;
+
     /* Link to global list from flb_config->outputs */
     struct mk_list _head;
 };
@@ -124,6 +189,7 @@ struct flb_output_instance {
     char name[32];                       /* numbered name (cpu -> cpu.0) */
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
+    int test_mode;                       /* running tests? (default:off) */
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
 
@@ -219,6 +285,9 @@ struct flb_output_instance {
 
     /* Callbacks context */
     struct flb_callback *callback;
+
+    /* Tests */
+    struct flb_test_out_formatter test_formatter;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

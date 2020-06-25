@@ -83,6 +83,7 @@ option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
+option(FLB_AWS                "Enable AWS support"            Yes)
 option(FLB_SYSTEM_STRPTIME     "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
@@ -150,7 +151,7 @@ option(FLB_OUT_GELF           "Enable GELF output plugin"           Yes)
 option(FLB_OUT_HTTP           "Enable HTTP output plugin"           Yes)
 option(FLB_OUT_INFLUXDB       "Enable InfluxDB output plugin"       Yes)
 option(FLB_OUT_NATS           "Enable NATS output plugin"           Yes)
-option(FLB_OUT_NEWRELIC       "Enable New Relic output plugin"      Yes)
+option(FLB_OUT_NRLOGS         "Enable New Relic output plugin"      Yes)
 option(FLB_OUT_TCP            "Enable TCP output plugin"            Yes)
 option(FLB_OUT_PLOT           "Enable Plot output plugin"           Yes)
 option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
@@ -389,6 +390,11 @@ endif()
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# AWS
+if (FLB_AWS)
+  FLB_DEFINITION(FLB_HAVE_AWS)
 endif()
 
 # Signv4

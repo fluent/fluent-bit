@@ -35,6 +35,8 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_kv.h>
 
+struct flb_libco_in_params libco_in_param;
+
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
 static int check_protocol(const char *prot, const char *output)
@@ -742,7 +744,7 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
             ret = collector_start(coll, in->config);
             if (ret == -1) {
                 flb_error("[input] error starting collector #%i: %s",
-                          in->name);
+                          coll_id, in->name);
             }
             return ret;
         }
