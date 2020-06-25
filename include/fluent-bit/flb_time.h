@@ -80,6 +80,7 @@ int flb_time_add(struct flb_time *base, struct flb_time *duration,
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0, struct flb_time *result);
 int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt);
+int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
 
