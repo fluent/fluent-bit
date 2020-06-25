@@ -170,7 +170,7 @@ void flb_test_resource_global()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_global_resource,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -210,7 +210,7 @@ void flb_test_resource_gce_instance()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_gce_instance,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
