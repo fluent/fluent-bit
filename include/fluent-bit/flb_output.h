@@ -97,6 +97,9 @@ struct flb_test_out_formatter {
      */
     void *rt_data;
 
+    /* optional context for flush callback */
+    void *flush_ctx;
+
     /*
      * Callback
      * =========
@@ -108,7 +111,8 @@ struct flb_test_out_formatter {
                      struct flb_config *,
                      /* plugin that ingested the records */
                      struct flb_input_instance *,
-                     void *,       /* plugin internal context */
+                     void *,       /* plugin instance context */
+                     void *,       /* optional flush context */
                      const char *, /* tag        */
                      int,          /* tag length */
                      const void *, /* incoming msgpack data */
