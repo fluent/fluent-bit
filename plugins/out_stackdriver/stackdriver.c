@@ -30,6 +30,7 @@
 #include "gce_metadata.h"
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
+#include "stackdriver_operation.h"
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
 
@@ -446,6 +447,47 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int pack_json_payload(int operation_extracted, int operation_extra_size, 
+                             msgpack_packer* mp_pck, msgpack_object *obj)
+{
+    /* Specified fields include operation, sourceLocation ... */
+    int to_remove = 0;
+    int ret;
+    msgpack_object_kv *kv = obj->via.map.ptr;
+    msgpack_object_kv *const kvend = obj->via.map.ptr + obj->via.map.size;
+
+    if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
+        to_remove += 1;
+    }
+
+    ret = msgpack_pack_map(mp_pck, obj->via.map.size - to_remove);
+    if (ret < 0) {
+        return ret;
+    }
+    
+    for(; kv != kvend; ++kv	) {
+        if (strncmp(OPERATION_FIELD_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0 
+            && kv->val.type == MSGPACK_OBJECT_MAP) {
+
+            if (operation_extra_size > 0) {
+                msgpack_pack_object(mp_pck, kv->key);
+                pack_extra_operation_subfields(mp_pck, &kv->val, operation_extra_size);
+            }
+            continue;
+        }
+        
+        ret = msgpack_pack_object(mp_pck, kv->key);
+        if (ret < 0) {
+            return ret;
+        }
+        ret = msgpack_pack_object(mp_pck, kv->val);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
 static int stackdriver_format(struct flb_config *config,
                               struct flb_input_instance *ins,
                               void *plugin_context,
@@ -455,19 +497,32 @@ static int stackdriver_format(struct flb_config *config,
 {
     int len;
     int array_size = 0;
+    /* The default value is 3: timestamp, jsonPayload, logName. */
+    int entry_size = 3; 
     size_t s;
     size_t off = 0;
     char path[PATH_MAX];
     char time_formatted[255];
     struct tm tm;
     struct flb_time tms;
-    severity_t severity;
     msgpack_object *obj;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
     struct flb_stackdriver *ctx = plugin_context;
+
+    /* Parameters in severity */
+    int severity_extracted = FLB_FALSE;
+    severity_t severity;
+
+    /* Parameters in Operation */
+    flb_sds_t operation_id;
+    flb_sds_t operation_producer;
+    int operation_first = FLB_FALSE;
+    int operation_last = FLB_FALSE;
+    int operation_extracted = FLB_FALSE;
+    int operation_extra_size = 0;
 
     /* Count number of records */
     array_size = flb_mp_count(data, bytes);
@@ -552,22 +607,50 @@ static int stackdriver_format(struct flb_config *config,
          *  "timestamp": "..."
          * }
          */
-        if (ctx->severity_key
+        
+        /* Extract severity */
+         if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
-            /* additional field for severity */
-            msgpack_pack_map(&mp_pck, 4);
+            severity_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract operation */
+        operation_id = flb_sds_create("");
+        operation_producer = flb_sds_create("");
+        operation_first = FLB_FALSE;
+        operation_last = FLB_FALSE;
+        operation_extra_size = 0;
+        operation_extracted = extract_operation(&operation_id, &operation_producer,
+                                                &operation_first, &operation_last, obj, &operation_extra_size);
+        
+        if (operation_extracted == FLB_TRUE) {
+            entry_size += 1;
+        }
+
+        msgpack_pack_map(&mp_pck, entry_size);
+        
+        /* Add severity into the log entry */
+        if (severity_extracted == FLB_TRUE) {
             msgpack_pack_str(&mp_pck, 8);
             msgpack_pack_str_body(&mp_pck, "severity", 8);
             msgpack_pack_int(&mp_pck, severity);
         }
-        else {
-            msgpack_pack_map(&mp_pck, 3);
+
+        /* Add operation field into the log entry */
+        if (operation_extracted == FLB_TRUE) {
+            add_operation_field(&operation_id, &operation_producer,
+                                &operation_first, &operation_last, &mp_pck);
         }
+        
+        /* Clean up id and producer if operation extracted */
+        flb_sds_destroy(operation_id);
+        flb_sds_destroy(operation_producer);
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-        msgpack_pack_object(&mp_pck, *obj);
+        pack_json_payload(operation_extracted, operation_extra_size, &mp_pck, obj);
 
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
