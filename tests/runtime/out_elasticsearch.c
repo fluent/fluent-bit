@@ -93,7 +93,7 @@ void flb_test_index_type()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_index_type,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -139,7 +139,7 @@ void flb_test_logstash_format()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_logstash_format,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -184,7 +184,7 @@ void flb_test_tag_key()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_tag_key,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -228,7 +228,7 @@ void flb_test_replace_dots()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_replace_dots,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
