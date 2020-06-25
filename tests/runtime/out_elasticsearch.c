@@ -55,7 +55,6 @@ static void cb_check_replace_dots(void *ctx, int ffd,
     char *out_js = res_data;
     char *record = "\"key_4\":5000";
 
-    printf("%s\n", out_js);
     p = strstr(out_js, record);
     TEST_CHECK(p != NULL);
     flb_free(res_data);
