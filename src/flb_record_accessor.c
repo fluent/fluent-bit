@@ -520,6 +520,40 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
 }
 
 /*
+ * If the record accessor rules do not generate content based on a keymap or
+ * regex, it's considered to be 'static', so the value returned will always be
+ * the same.
+ *
+ * If the 'ra' is static, return FLB_TRUE, otherwise FLB_FALSE.
+ */
+int flb_ra_is_static(struct flb_record_accessor *ra)
+{
+    struct mk_list *head;
+    struct flb_ra_parser *rp;
+
+    mk_list_foreach(head, &ra->list) {
+        rp = mk_list_entry(head, struct flb_ra_parser, _head);
+        if (rp->type == FLB_RA_PARSER_STRING) {
+            continue;
+        }
+        else if (rp->type == FLB_RA_PARSER_KEYMAP) {
+            return FLB_FALSE;
+        }
+        else if (rp->type == FLB_RA_PARSER_REGEX_ID) {
+            return FLB_FALSE;
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG) {
+            continue;
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+            continue;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+/*
  * Compare a string value against the first entry of a record accessor component, used
  * specifically when the record accessor refers to a single key name.
  */
