@@ -325,9 +325,6 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         }
     }
     ra->size_hint = hint + 128;
-
-    flb_ra_dump(ra);
-
     return ra;
 }
 
