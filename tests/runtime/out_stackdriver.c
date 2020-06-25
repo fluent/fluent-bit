@@ -78,7 +78,7 @@ static int mp_kv_cmp(char *json_data, size_t json_len, char *key_accessor, char 
         flb_error("invalid record accessor key, aborting test");
         goto out;
     }
-    
+
     rval = flb_ra_get_value_object(ra, map);
     TEST_CHECK(rval != NULL);
     msgpack_unpacked_destroy(&result);
@@ -137,7 +137,7 @@ static int mp_kv_cmp_integer(char *json_data, size_t json_len, char *key_accesso
         flb_error("invalid record accessor key, aborting test");
         goto out;
     }
-    
+
     rval = flb_ra_get_value_object(ra, map);
     TEST_CHECK(rval != NULL);
     msgpack_unpacked_destroy(&result);
@@ -198,7 +198,7 @@ static int mp_kv_cmp_boolean(char *json_data, size_t json_len, char *key_accesso
         flb_error("invalid record accessor key, aborting test");
         goto out;
     }
-    
+
     rval = flb_ra_get_value_object(ra, map);
     TEST_CHECK(rval != NULL);
     msgpack_unpacked_destroy(&result);
@@ -259,7 +259,7 @@ static int mp_kv_exists(char *json_data, size_t json_len, char *key_accessor)
         flb_error("invalid record accessor key, aborting test");
         goto out;
     }
-    
+
     rval = flb_ra_get_value_object(ra, map);
     msgpack_unpacked_destroy(&result);
     if (rval) {
@@ -290,7 +290,7 @@ static void cb_check_global_resource(void *ctx, int ffd,
 
     ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "global");
     TEST_CHECK(ret == FLB_TRUE);
-    
+
     flb_sds_destroy(res_data);
 }
 
@@ -363,7 +363,7 @@ static void cb_check_k8s_container_resource(void *ctx, int ffd,
     TEST_CHECK(ret == FLB_TRUE);
 
     /* check `local_resource_id` has been removed from jsonPayload */
-    ret = mp_kv_exists(res_data, res_size, 
+    ret = mp_kv_exists(res_data, res_size,
                        "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
     TEST_CHECK(ret == FLB_FALSE);
 
@@ -401,7 +401,7 @@ static void cb_check_k8s_node_resource(void *ctx, int ffd,
     TEST_CHECK(ret == FLB_TRUE);
 
     /* check `local_resource_id` has been removed from jsonPayload */
-    ret = mp_kv_exists(res_data, res_size, 
+    ret = mp_kv_exists(res_data, res_size,
                        "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
     TEST_CHECK(ret == FLB_FALSE);
 
@@ -444,7 +444,7 @@ static void cb_check_k8s_pod_resource(void *ctx, int ffd,
     TEST_CHECK(ret == FLB_TRUE);
 
     /* check `local_resource_id` has been removed from jsonPayload */
-    ret = mp_kv_exists(res_data, res_size, 
+    ret = mp_kv_exists(res_data, res_size,
                        "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
     TEST_CHECK(ret == FLB_FALSE);
 
@@ -646,7 +646,7 @@ void flb_test_resource_global()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_global_resource,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -686,7 +686,7 @@ void flb_test_resource_gce_instance()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_gce_instance,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -726,7 +726,7 @@ void flb_test_operation_common()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_operation_common_case,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -766,7 +766,7 @@ void flb_test_empty_operation()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_empty_operation,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -806,7 +806,7 @@ void flb_test_operation_in_string()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_operation_in_string,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -846,7 +846,7 @@ void flb_test_operation_partial_subfields()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_operation_partial_subfields,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -886,7 +886,7 @@ void flb_test_operation_incorrect_type_subfields()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_operation_incorrect_type_subfields,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -926,8 +926,7 @@ void flb_test_operation_extra_subfields()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_operation_extra_subfields,
-                              NULL);
-
+                              NULL, NULL);
     /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -969,7 +968,7 @@ void flb_test_resource_k8s_container_common()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_k8s_container_resource,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -1012,7 +1011,7 @@ void flb_test_resource_k8s_node_common()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_k8s_node_resource,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
@@ -1055,7 +1054,7 @@ void flb_test_resource_k8s_pod_common()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_k8s_pod_resource,
-                              NULL);
+                              NULL, NULL);
 
     /* Start */
     ret = flb_start(ctx);
