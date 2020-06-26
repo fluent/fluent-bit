@@ -143,6 +143,7 @@ option(FLB_IN_COLLECTD        "Enable Collectd input plugin"        Yes)
 option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
 option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
 option(FLB_IN_EMITTER         "Enable emitter input plugin"         Yes)
+option(FLB_IN_UDP             "Enable UDP input plugin"             Yes)
 option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
 option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
 option(FLB_OUT_COUNTER        "Enable Counter output plugin"        Yes)
@@ -188,6 +189,7 @@ option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 
+
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
@@ -210,6 +212,7 @@ if(FLB_ALL)
   set(FLB_IN_DUMMY     1)
   set(FLB_IN_NETIF     1)
   set(FLB_IN_EXEC      1)
+  set(FLB_IN_UDP       1)
 
   # Output plugins
   set(FLB_OUT_ES       1)
