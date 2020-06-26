@@ -46,9 +46,13 @@
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
 
+#define INSERTID_IN_JSON "logging.googleapis.com/insertId"
 #define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
 #define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
 #define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
+#define SOURCELOCATION_FIELD_IN_JSON "logging.googleapis.com/sourceLocation"
+#define HTTPREQUEST_FIELD_IN_JSON "logging.googleapis.com/http_request"
+
 #define LEN_LOCAL_RESOURCE_ID_KEY 40
 
 #define K8S_CONTAINER "k8s_container"
@@ -129,5 +133,11 @@ struct local_resource_id_list {
     flb_sds_t val;
     struct mk_list _head;
 };
+
+typedef enum {
+    INSERTID_VALID = 0,
+    INSERTID_INVALID = 1,
+    INSERTID_NOT_PRESENT = 2
+} insert_id_status;
 
 #endif
