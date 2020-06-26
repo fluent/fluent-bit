@@ -2357,7 +2357,6 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
         }
         else {
             flb_free(nums);
-            flb_free(aggr_node_hs->groupby_nums);
             flb_free(aggr_node_hs);
         }
     }
