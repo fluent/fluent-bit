@@ -5,6 +5,7 @@ set(src
   stackdriver_operation.c
   stackdriver_source_location.c
   stackdriver_http_request.c
+  stackdriver_timestamp.c
   stackdriver_helper.c
   )
 
