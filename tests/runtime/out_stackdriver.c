@@ -1124,6 +1124,7 @@ void flb_test_operation_extra_subfields()
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_operation_extra_subfields,
                               NULL, NULL);
+
     /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -1484,12 +1485,16 @@ TEST_LIST = {
     {"severity_multi_entries", flb_test_multi_entries_severity },
     {"resource_global", flb_test_resource_global },
     {"resource_gce_instance", flb_test_resource_gce_instance },
+
+    /* test operation */
     {"operation_common_case", flb_test_operation_common},
     {"empty_operation", flb_test_empty_operation},
     {"operation_not_a_map", flb_test_operation_in_string},
     {"operation_partial_subfields", flb_test_operation_partial_subfields},
     {"operation_subfields_in_incorrect_type", flb_test_operation_incorrect_type_subfields},
     {"operation_extra_subfields_exist", flb_test_operation_extra_subfields},
+
+    /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },
     {"resource_k8s_node_common", flb_test_resource_k8s_node_common },
     {"resource_k8s_pod_common", flb_test_resource_k8s_pod_common },
@@ -1497,5 +1502,6 @@ TEST_LIST = {
     {"custom_labels", flb_test_custom_labels },
     {"default_labels_k8s_resource_type", flb_test_default_labels_k8s_resource_type },
     {"custom_labels_k8s_resource_type", flb_test_custom_labels_k8s_resource_type },
+
     {NULL, NULL}
 };
