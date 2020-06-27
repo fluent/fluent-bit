@@ -32,6 +32,8 @@ if (MSVC)
   # Use add_compile_options() to set /MT since Visual Studio
   # Generator does not notice /MT in CMAKE_C_FLAGS.
   add_compile_options(/MT)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fno-common")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
