@@ -402,7 +402,7 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
     return -1;
 }
 
-int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_io_tls_net_read_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
                         void *buf, size_t len)
 {
     int ret;
@@ -429,7 +429,31 @@ int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
     return ret;
 }
 
-int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_io_tls_net_read(struct flb_upstream_conn *u_conn,
+                        void *buf, size_t len)
+{
+    int ret;
+
+ retry_read:
+    ret = mbedtls_ssl_read(&u_conn->tls_session->ssl, buf, len);
+    if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+        goto retry_read;
+    }
+    else if (ret < 0) {
+        char err_buf[72];
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+        flb_error("[tls] SSL error: %s", err_buf);
+        return -1;
+    }
+    else if (ret == 0) {
+        flb_debug("[tls] SSL connection closed by peer");
+        return -1;
+    }
+
+    return ret;
+}
+
+int flb_io_tls_net_write_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
                          const void *data, size_t len, size_t *out_len)
 {
     int ret;
@@ -469,5 +493,39 @@ int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn
 
     *out_len = total;
     mk_event_del(u->evl, &u_conn->event);
+    return 0;
+}
+
+
+int flb_io_tls_net_write(struct flb_upstream_conn *u_conn,
+                         const void *data, size_t len, size_t *out_len)
+{
+    int ret;
+    size_t total = 0;
+
+retry_write:
+    ret = mbedtls_ssl_write(&u_conn->tls_session->ssl,
+                            (unsigned char *) data + total,
+                            len - total);
+    if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+        goto retry_write;
+    }
+    else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+        goto retry_write;
+    }
+    else if (ret < 0) {
+        char err_buf[72];
+        mbedtls_strerror(ret, err_buf, sizeof(err_buf));
+        flb_error("[tls] SSL error: %s", err_buf);
+        return -1;
+    }
+
+    /* Update counter and check if we need to continue writing */
+    total += ret;
+    if (total < len) {
+        goto retry_write;
+    }
+
+    *out_len = total;
     return 0;
 }
