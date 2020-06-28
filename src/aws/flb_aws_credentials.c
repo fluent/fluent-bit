@@ -542,14 +542,17 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size)
     char *buf = NULL;
     FILE *fp = NULL;
     struct stat st;
-
-    ret = stat(path, &st);
-    if (ret == -1) {
-        return -1;
-    }
+    int fd;
 
     fp = fopen(path, "r");
     if (!fp) {
+        return -1;
+    }
+
+    fd = fileno(fp);
+    ret = fstat(fd, &st);
+    if (ret == -1) {
+        flb_errno();
         return -1;
     }
 
