@@ -32,6 +32,7 @@
 #include "data/stackdriver/json.h"
 #include "data/stackdriver/stackdriver_test_operation.h"
 #include "data/stackdriver/stackdriver_test_k8s_resource.h"
+#include "data/stackdriver/stackdriver_test_labels.h"
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
@@ -525,7 +526,6 @@ static void cb_check_operation_in_string(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
-
 static void cb_check_operation_partial_subfields(void *ctx, int ffd,
                                                  int res_ret, void *res_data, size_t res_size,
                                                  void *data)
@@ -615,6 +615,184 @@ static void cb_check_operation_extra_subfields(void *ctx, int ffd,
 
     ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/operation']['extra_key3']", true);
     TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_default_labels(void *ctx, int ffd,
+                                    int res_ret, void *res_data, size_t res_size,
+                                    void *data)
+{
+    int ret;
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_custom_labels(void *ctx, int ffd,
+                                   int res_ret, void *res_data, size_t res_size,
+                                   void *data)
+{
+    int ret;
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/customlabels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_default_labels_k8s_resource_type(void *ctx, int ffd,
+                                                      int res_ret, void *res_data, size_t res_size,
+                                                      void *data)
+{
+    int ret;
+
+    /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "k8s_container");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "test_cluster_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* cluster name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['cluster_name']", "test_cluster_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace_name']", "testnamespace");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* pod name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['pod_name']", "testpod");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* container name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['container_name']", "testctr");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `local_resource_id` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_custom_labels_k8s_resource_type(void *ctx, int ffd,
+                                                     int res_ret, void *res_data, size_t res_size,
+                                                     void *data)
+{
+    int ret;
+
+    /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "k8s_container");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "test_cluster_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* cluster name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['cluster_name']", "test_cluster_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace_name']", "testnamespace");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* pod name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['pod_name']", "testpod");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* container name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['container_name']", "testctr");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `local_resource_id` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/customlabels']");
+    TEST_CHECK(ret == FLB_FALSE);
 
     flb_sds_destroy(res_data);
 }
@@ -1068,6 +1246,176 @@ void flb_test_resource_k8s_pod_common()
     flb_destroy(ctx);
 }
 
+void flb_test_default_labels()
+{
+    int ret;
+    int size = sizeof(DEFAULT_LABELS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_default_labels,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_custom_labels()
+{
+    int ret;
+    int size = sizeof(CUSTOM_LABELS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "labels_key", "logging.googleapis.com/customlabels",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_custom_labels,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_default_labels_k8s_resource_type()
+{
+    int ret;
+    int size = sizeof(DEFAULT_LABELS_K8S_RESOURCE_TYPE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "k8s_container",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_default_labels_k8s_resource_type,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS_K8S_RESOURCE_TYPE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_custom_labels_k8s_resource_type()
+{
+    int ret;
+    int size = sizeof(CUSTOM_LABELS_K8S_RESOURCE_TYPE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "k8s_container",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "labels_key", "logging.googleapis.com/customlabels",
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_custom_labels_k8s_resource_type,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS_K8S_RESOURCE_TYPE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"resource_global", flb_test_resource_global },
@@ -1081,5 +1429,9 @@ TEST_LIST = {
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },
     {"resource_k8s_node_common", flb_test_resource_k8s_node_common },
     {"resource_k8s_pod_common", flb_test_resource_k8s_pod_common },
+    {"default_labels", flb_test_default_labels },
+    {"custom_labels", flb_test_custom_labels },
+    {"default_labels_k8s_resource_type", flb_test_default_labels_k8s_resource_type },
+    {"custom_labels_k8s_resource_type", flb_test_custom_labels_k8s_resource_type },
     {NULL, NULL}
 };
