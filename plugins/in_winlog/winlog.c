@@ -138,7 +138,7 @@ int winlog_read(struct winlog_channel *ch, char *buf, unsigned int size,
         flags = EVENTLOG_SEQUENTIAL_READ | EVENTLOG_FORWARDS_READ;
     }
 
-    if (!ReadEventLogA(ch->h, flags, ch->record_number, buf, size, read, &req)) {
+    if (!ReadEventLogW(ch->h, flags, ch->record_number, buf, size, read, &req)) {
         switch (err = GetLastError()) {
             case ERROR_HANDLE_EOF:
                 break;
