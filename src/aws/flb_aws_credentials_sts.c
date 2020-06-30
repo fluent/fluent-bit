@@ -802,7 +802,7 @@ struct flb_aws_credentials *flb_parse_sts_resp(char *response,
                                                time_t *expiration)
 {
     struct flb_aws_credentials *creds = NULL;
-    char *cred_node;
+    char *cred_node = NULL;
     flb_sds_t tmp = NULL;
 
     cred_node = strstr(response, CREDENTIALS_NODE);
