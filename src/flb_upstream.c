@@ -403,7 +403,6 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
          * the remote endpoint we need to add it again.
          */
         conn->event.handler = cb_upstream_conn_ka_dropped;
-        conn->event.data    = &conn;
 
         ret = mk_event_add(u->evl, conn->fd,
                            FLB_ENGINE_EV_CUSTOM,
