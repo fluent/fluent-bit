@@ -801,7 +801,7 @@ struct flb_aws_credentials *flb_parse_sts_resp(char *response,
                                                time_t *expiration)
 {
     struct flb_aws_credentials *creds = NULL;
-    char *cred_node;
+    char *cred_node = NULL;
     flb_sds_t tmp = NULL;
 
     cred_node = strstr(response, CREDENTIALS_NODE);
@@ -812,7 +812,7 @@ struct flb_aws_credentials *flb_parse_sts_resp(char *response,
     }
     cred_node += CREDENTIALS_NODE_LEN;
 
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         flb_errno();
         return NULL;
