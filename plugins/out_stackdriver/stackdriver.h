@@ -58,6 +58,9 @@
 #define STREAM_STDERR 2
 #define STREAM_UNKNOWN 3
 
+#define STDOUT "stdout"
+#define STDERR "stderr"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;

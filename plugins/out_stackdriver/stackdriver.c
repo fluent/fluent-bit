@@ -699,23 +699,28 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
 static int get_stream(msgpack_object_map map)
 {
     int i;
+    int len_stream;
+    int val_size;
     msgpack_object k;
     msgpack_object v;
 
+    len_stream = sizeof(STDOUT) - 1;
     for (i = 0; i < map.size; i++) {
         k = map.ptr[i].key;
         v = map.ptr[i].val;
-
         if (k.type == MSGPACK_OBJECT_STR &&
             strncmp(k.via.str.ptr, "stream", k.via.str.size) == 0) {
-            if (strncmp(v.via.str.ptr, "stdout", strlen("stdout")) == 0) {
-                return STREAM_STDOUT;
-            }
-            else if (strncmp(v.via.str.ptr, "stderr", strlen("stderr")) == 0) {
-                return STREAM_STDERR;
-            }
-            else {
-               return STREAM_UNKNOWN;
+            val_size = v.via.str.size;
+            if (val_size == len_stream) {
+                if (strncmp(v.via.str.ptr, STDOUT, val_size) == 0) {
+                    return STREAM_STDOUT;
+                }
+                else if (strncmp(v.via.str.ptr, STDERR, val_size) == 0) {
+                    return STREAM_STDERR;
+                }
+                else {
+                    return STREAM_UNKNOWN;
+                }
             }
         }
     }
@@ -842,7 +847,7 @@ static int stackdriver_format(struct flb_config *config,
     size_t off = 0;
     char path[PATH_MAX];
     char time_formatted[255];
-    char *newtag;
+    const char *newtag;
     struct tm tm;
     struct flb_time tms;
     msgpack_object *obj;
