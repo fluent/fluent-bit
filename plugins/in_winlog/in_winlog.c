@@ -24,33 +24,11 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sqldb.h>
-#include <sddl.h>
 #include "winlog.h"
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
 #define DEFAULT_BUFFER_SIZE 0x7fff /* Max size allowed by Win32 (32kb) */
-
-struct flb_in_winlog_config {
-    unsigned int interval_sec;
-    unsigned int interval_nsec;
-    unsigned int bufsize;
-    char *buf;
-
-    /* Event Log channels */
-    struct mk_list *active_channel;
-
-    /* SQLite DB */
-    struct flb_sqldb *db;
-
-    /* Collector */
-    flb_pipefd_t coll_fd;
-
-    /* Plugin input instance */
-    struct flb_input_instance *ins;
-};
-
-struct flb_input_plugin in_winlog_plugin;
 
 static int in_winlog_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context);
@@ -62,10 +40,10 @@ static int in_winlog_init(struct flb_input_instance *in,
     const char *tmp;
     struct mk_list *head;
     struct winlog_channel *ch;
-    struct flb_in_winlog_config *ctx;
+    struct winlog_config *ctx;
 
     /* Initialize context */
-    ctx = flb_calloc(1, sizeof(struct flb_in_winlog_config));
+    ctx = flb_calloc(1, sizeof(struct winlog_config));
     if (!ctx) {
         flb_errno();
         return -1;
@@ -151,47 +129,12 @@ static int in_winlog_init(struct flb_input_instance *in,
     return 0;
 }
 
-static int in_winlog_pack_sid(struct flb_in_winlog_config *ctx,
-                              msgpack_packer *ppck, PEVENTLOGRECORD evt)
-{
-    int len;
-    char *str;
-    char *sid = (char *) evt + evt->UserSidOffset;
-
-    if (!evt->UserSidLength) {
-        msgpack_pack_str(ppck, 0);
-        msgpack_pack_str_body(ppck, "", 0);
-        return 0;
-    }
-
-    if (!ConvertSidToStringSidA(sid, &str)) {
-        flb_plg_error(ctx->ins, "cannot pack sid (%i)", GetLastError());
-        msgpack_pack_str(ppck, 0);
-        msgpack_pack_str_body(ppck, "", 0);
-        return -1;
-    }
-
-    len = strlen(str);
-    msgpack_pack_str(ppck, len);
-    msgpack_pack_str_body(ppck, str, len);
-
-    LocalFree(str);
-    return 0;
-}
-
-
 static int in_winlog_read_channel(struct flb_input_instance *ins,
-                                  struct flb_in_winlog_config *ctx,
+                                  struct winlog_config *ctx,
                                   struct winlog_channel *ch)
 {
-    int i;
-    int ret;
     unsigned int read;
-    unsigned int off;
-    int len;
-    int len_sn;
-    int len_cn;
-    char *p;
+    char *ptr;
     PEVENTLOGRECORD evt;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
@@ -209,87 +152,16 @@ static int in_winlog_read_channel(struct flb_input_instance *ins,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    p = ctx->buf;
-    while (p < ctx->buf + read) {
-        evt = (PEVENTLOGRECORD) p;
+    ptr = ctx->buf;
+    while (ptr < ctx->buf + read) {
+        evt = (PEVENTLOGRECORD) ptr;
 
-        /* Update the */
+        winlog_pack_event(&mp_pck, evt, ch, ctx);
+
         ch->record_number = evt->RecordNumber;
         ch->time_written = evt->TimeWritten;
 
-        /* Initialize local msgpack buffer */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_pack_time_now(&mp_pck);
-
-        /* Pack the data */
-        msgpack_pack_map(&mp_pck, 11);
-
-        msgpack_pack_str(&mp_pck, 12);
-        msgpack_pack_str_body(&mp_pck, "RecordNumber", 12);
-        msgpack_pack_uint32(&mp_pck, evt->RecordNumber);
-
-        msgpack_pack_str(&mp_pck, 13);
-        msgpack_pack_str_body(&mp_pck, "TimeGenerated", 13);
-        msgpack_pack_uint32(&mp_pck, evt->TimeGenerated);
-
-        msgpack_pack_str(&mp_pck, 11);
-        msgpack_pack_str_body(&mp_pck, "TimeWritten", 11);
-        msgpack_pack_uint32(&mp_pck, evt->TimeWritten);
-
-        msgpack_pack_str(&mp_pck, 7);
-        msgpack_pack_str_body(&mp_pck, "EventID", 7);
-        msgpack_pack_uint32(&mp_pck, evt->EventID);
-
-        msgpack_pack_str(&mp_pck, 9);
-        msgpack_pack_str_body(&mp_pck, "EventType", 9);
-        msgpack_pack_uint16(&mp_pck, evt->EventType);
-
-        msgpack_pack_str(&mp_pck, 13);
-        msgpack_pack_str_body(&mp_pck, "EventCategory", 13);
-        msgpack_pack_uint16(&mp_pck, evt->EventCategory);
-
-        /* Source Name */
-        msgpack_pack_str(&mp_pck, 10);
-        msgpack_pack_str_body(&mp_pck, "SourceName", 10);
-
-        len_sn = strlen(p + sizeof(EVENTLOGRECORD));
-        msgpack_pack_str(&mp_pck, len_sn);
-        msgpack_pack_str_body(&mp_pck, p + sizeof(EVENTLOGRECORD), len_sn);
-
-        /* Computer Name */
-        msgpack_pack_str(&mp_pck, 12);
-        msgpack_pack_str_body(&mp_pck, "ComputerName", 12);
-
-        len_cn = strlen(p + sizeof(EVENTLOGRECORD) + len_sn + 1);
-        msgpack_pack_str(&mp_pck, len_cn);
-        msgpack_pack_str_body(&mp_pck, p + sizeof(EVENTLOGRECORD) + len_sn + 1, len_cn);
-
-        /* StringInserts */
-        msgpack_pack_str(&mp_pck, 13);
-        msgpack_pack_str_body(&mp_pck, "StringInserts", 13);
-
-        msgpack_pack_array(&mp_pck, evt->NumStrings);
-
-        off = evt->StringOffset;
-        for (i = 0; i < evt->NumStrings; i++) {
-            len = strlen(p + off);
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, p + off , len);
-            off += len + 1;
-        }
-
-        /* Sid */
-        msgpack_pack_str(&mp_pck, 3);
-        msgpack_pack_str_body(&mp_pck, "Sid", 3);
-        in_winlog_pack_sid(ctx, &mp_pck, evt);
-
-        /* Data */
-        msgpack_pack_str(&mp_pck, 4);
-        msgpack_pack_str_body(&mp_pck, "Data", 4);
-        msgpack_pack_bin(&mp_pck, evt->DataLength);
-        msgpack_pack_bin_body(&mp_pck, p + evt->DataOffset, evt->DataLength);
-
-        p += evt->Length;
+        ptr += evt->Length;
     }
 
     if (ctx->db) {
@@ -307,7 +179,7 @@ static int in_winlog_read_channel(struct flb_input_instance *ins,
 static int in_winlog_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
-    struct flb_in_winlog_config *ctx = in_context;
+    struct winlog_config *ctx = in_context;
     struct mk_list *head;
     struct winlog_channel *ch;
 
@@ -320,19 +192,19 @@ static int in_winlog_collect(struct flb_input_instance *ins,
 
 static void in_winlog_pause(void *data, struct flb_config *config)
 {
-    struct flb_in_winlog_config *ctx = data;
+    struct winlog_config *ctx = data;
     flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void in_winlog_resume(void *data, struct flb_config *config)
 {
-    struct flb_in_winlog_config *ctx = data;
+    struct winlog_config *ctx = data;
     flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int in_winlog_exit(void *data, struct flb_config *config)
 {
-    struct flb_in_winlog_config *ctx = data;
+    struct winlog_config *ctx = data;
 
     if (!ctx) {
         return 0;
