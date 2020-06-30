@@ -699,27 +699,25 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
 static int get_stream(msgpack_object_map map)
 {
     int i;
-    int len_stream;
+    int len_stdout;
     int val_size;
     msgpack_object k;
     msgpack_object v;
 
-    len_stream = sizeof(STDOUT) - 1;
+    /* len(stdout) == len(stderr) */
+    len_stdout = sizeof(STDOUT) - 1;
     for (i = 0; i < map.size; i++) {
         k = map.ptr[i].key;
         v = map.ptr[i].val;
         if (k.type == MSGPACK_OBJECT_STR &&
             strncmp(k.via.str.ptr, "stream", k.via.str.size) == 0) {
             val_size = v.via.str.size;
-            if (val_size == len_stream) {
+            if (val_size == len_stdout) {
                 if (strncmp(v.via.str.ptr, STDOUT, val_size) == 0) {
                     return STREAM_STDOUT;
                 }
                 else if (strncmp(v.via.str.ptr, STDERR, val_size) == 0) {
                     return STREAM_STDERR;
-                }
-                else {
-                    return STREAM_UNKNOWN;
                 }
             }
         }
