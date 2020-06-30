@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 
 /* Refresh creds if they will expire in 5 min or less */
@@ -232,8 +233,8 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size);
 
 struct flb_aws_credentials *flb_parse_sts_resp(char *response,
                                                time_t *expiration);
-char *flb_sts_uri(char *action, char *role_arn, char *session_name,
-                  char *external_id, char *identity_token);
+flb_sds_t flb_sts_uri(char *action, char *role_arn, char *session_name,
+                      char *external_id, char *identity_token);
 char *flb_sts_session_name();
 
 struct flb_aws_credentials *flb_parse_http_credentials(char *response,
