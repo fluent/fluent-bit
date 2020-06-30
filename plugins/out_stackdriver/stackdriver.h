@@ -54,6 +54,13 @@
 #define K8S_NODE      "k8s_node"
 #define K8S_POD       "k8s_pod"
 
+#define STREAM_STDOUT 1
+#define STREAM_STDERR 2
+#define STREAM_UNKNOWN 3
+
+#define STDOUT "stdout"
+#define STDERR "stderr"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;

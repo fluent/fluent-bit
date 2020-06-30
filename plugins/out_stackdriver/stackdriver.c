@@ -696,6 +696,36 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int get_stream(msgpack_object_map map)
+{
+    int i;
+    int len_stdout;
+    int val_size;
+    msgpack_object k;
+    msgpack_object v;
+
+    /* len(stdout) == len(stderr) */
+    len_stdout = sizeof(STDOUT) - 1;
+    for (i = 0; i < map.size; i++) {
+        k = map.ptr[i].key;
+        v = map.ptr[i].val;
+        if (k.type == MSGPACK_OBJECT_STR &&
+            strncmp(k.via.str.ptr, "stream", k.via.str.size) == 0) {
+            val_size = v.via.str.size;
+            if (val_size == len_stdout) {
+                if (strncmp(v.via.str.ptr, STDOUT, val_size) == 0) {
+                    return STREAM_STDOUT;
+                }
+                else if (strncmp(v.via.str.ptr, STDERR, val_size) == 0) {
+                    return STREAM_STDERR;
+                }
+            }
+        }
+    }
+
+    return STREAM_UNKNOWN;
+}
+
 static int pack_json_payload(int operation_extracted, int operation_extra_size, 
                              msgpack_packer* mp_pck, msgpack_object *obj)
 {
@@ -809,11 +839,13 @@ static int stackdriver_format(struct flb_config *config,
     int ret;
     int array_size = 0;
     /* The default value is 3: timestamp, jsonPayload, logName. */
-    int entry_size = 3; 
+    int entry_size = 3;
+    int stream;
     size_t s;
     size_t off = 0;
     char path[PATH_MAX];
     char time_formatted[255];
+    const char *newtag;
     struct tm tm;
     struct flb_time tms;
     msgpack_object *obj;
@@ -1106,9 +1138,20 @@ static int stackdriver_format(struct flb_config *config,
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
         pack_json_payload(operation_extracted, operation_extra_size, &mp_pck, obj);
 
+        /* avoid modifying the original tag */
+        newtag = tag;
+        if (ctx->k8s_resource_type) {
+            stream = get_stream(result.data.via.array.ptr[1].via.map);
+            if (stream == STREAM_STDOUT) {
+                newtag = "stdout";
+            }
+            else if (stream == STREAM_STDERR) {
+                newtag = "stderr";
+            }
+        }
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->project_id, tag);
+                       "projects/%s/logs/%s", ctx->project_id, newtag);
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);
