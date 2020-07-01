@@ -616,9 +616,18 @@ static int config_set_properties(struct flb_upstream_node *node,
     if (tmp) {
         /* Set the tag */
         fc->tag = flb_sds_create(tmp);
+        if (!fc->tag) {
+            flb_plg_error(ctx->ins, "cannot allocate tag");
+            return -1;
+        }
 
         /* Record Accessor */
         fc->ra_tag = flb_ra_create(fc->tag, FLB_TRUE);
+        if (!fc->ra_tag) {
+            flb_plg_error(ctx->ins, "cannot create record accessor for tag: %s",
+                          fc->tag);
+            return -1;
+        }
 
         /* Static record accessor ? (no dynamic values from map) */
         fc->ra_static = flb_ra_is_static(fc->ra_tag);

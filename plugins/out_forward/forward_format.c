@@ -366,7 +366,7 @@ int flb_forward_format(struct flb_config *config,
     /*
      * Based in the configuration, decide the preferred protocol mode
      */
-    if (fc->ra_tag && fc->ra_static == FLB_FALSE) {
+    if (fc->ra_static == FLB_FALSE) {
         /*
          * Dynamic tag per records needs to include the Tag for every entry,
          * if record accessor option has been enabled we jump into this
