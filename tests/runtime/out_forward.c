@@ -347,8 +347,10 @@ void flb_test_forward_compat_mode()
 
 /* Test list */
 TEST_LIST = {
+#ifdef FLB_HAVE_RECORD_ACCESSOR
     {"message_mode"       , flb_test_message_mode },
     {"message_compat_mode", flb_test_message_compat_mode },
+#endif
     {"forward_mode"       , flb_test_forward_mode },
     {"forward_compat_mode", flb_test_forward_compat_mode },
     {NULL, NULL}
