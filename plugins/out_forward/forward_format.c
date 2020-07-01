@@ -41,6 +41,7 @@ int flb_forward_format_append_tag(struct flb_forward *ctx,
                                   msgpack_object map,
                                   const char *tag, int tag_len)
 {
+#ifdef FLB_HAVE_RECORD_ACCESSOR
     flb_sds_t tmp;
 
     /* Tag */
@@ -55,6 +56,11 @@ int flb_forward_format_append_tag(struct flb_forward *ctx,
         msgpack_pack_str_body(mp_pck, tmp, flb_sds_len(tmp));
         flb_sds_destroy(tmp);
     }
+#else
+    msgpack_pack_str(mp_pck, tag_len);
+    msgpack_pack_str_body(mp_pck, tag, tag_len);
+
+#endif
 
     return 0;
 }
@@ -112,6 +118,7 @@ static int append_options(struct flb_forward *ctx,
     return 0;
 }
 
+#ifdef FLB_HAVE_RECORD_ACCESSOR
 /*
  * Forward Protocol: Message Mode
  * ------------------------------
@@ -218,6 +225,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
 
     return entries;
 }
+#endif
 
 /*
  * Forward Protocol: Forward Mode
@@ -363,6 +371,7 @@ int flb_forward_format(struct flb_config *config,
         return -1;
     }
 
+#ifdef FLB_HAVE_RECORD_ACCESSOR
     /*
      * Based in the configuration, decide the preferred protocol mode
      */
@@ -375,6 +384,7 @@ int flb_forward_format(struct flb_config *config,
         mode = MODE_MESSAGE;
     }
     else {
+#endif
         /* Forward Modes */
         if (fc->time_as_integer == FLB_FALSE) {
             /*
@@ -392,14 +402,19 @@ int flb_forward_format(struct flb_config *config,
              */
             mode = MODE_FORWARD_COMPAT;
         }
+
+#ifdef FLB_HAVE_RECORD_ACCESSOR
     }
+#endif
 
     /* Message Mode: the user needs custom Tags */
     if (mode == MODE_MESSAGE) {
+#ifdef FLB_HAVE_RECORD_ACCESSOR
         ret = flb_forward_format_message_mode(ctx, fc, ff,
                                               tag, tag_len,
                                               data, bytes,
                                               out_buf, out_size);
+#endif
     }
     else if (mode == MODE_FORWARD) {
         ret = flb_forward_format_forward_mode(ctx, fc, ff,

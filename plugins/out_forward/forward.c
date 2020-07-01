@@ -621,6 +621,7 @@ static int config_set_properties(struct flb_upstream_node *node,
             return -1;
         }
 
+#ifdef FLB_HAVE_RECORD_ACCESSOR
         /* Record Accessor */
         fc->ra_tag = flb_ra_create(fc->tag, FLB_TRUE);
         if (!fc->ra_tag) {
@@ -631,6 +632,7 @@ static int config_set_properties(struct flb_upstream_node *node,
 
         /* Static record accessor ? (no dynamic values from map) */
         fc->ra_static = flb_ra_is_static(fc->ra_tag);
+#endif
     }
     else {
         fc->tag = NULL;
@@ -645,9 +647,12 @@ static void forward_config_destroy(struct flb_forward_config *fc)
     flb_sds_destroy(fc->self_hostname);
     flb_sds_destroy(fc->tag);
 
+#ifdef FLB_HAVE_RECORD_ACCESSOR
     if (fc->ra_tag) {
         flb_ra_destroy(fc->ra_tag);
     }
+#endif
+
     flb_free(fc);
 }
 

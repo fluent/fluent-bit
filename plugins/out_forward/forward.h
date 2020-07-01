@@ -69,8 +69,10 @@ struct flb_forward_config {
     mbedtls_ctr_drbg_context tls_ctr_drbg;
 #endif
 
+#ifdef FLB_HAVE_RECORD_ACCESSOR
     struct flb_record_accessor *ra_tag; /* Tag Record accessor */
     int ra_static;                      /* Is the record accessor static ? */
+#endif
 
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
