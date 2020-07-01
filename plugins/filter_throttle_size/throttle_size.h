@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@
 #define throttle_size_RET_DROP  1
 
 /* defaults */
-#define throttle_size_DEFAULT_RATE  1024*1024   //bytes
+#define throttle_size_DEFAULT_RATE  1024*1024   /* bytes */
 #define throttle_size_DEFAULT_WINDOW  5
 #define throttle_size_DEFAULT_INTERVAL  1
 #define throttle_size_DEFAULT_STATUS FLB_FALSE;
@@ -39,19 +39,23 @@
 
 struct flb_filter_throttle_size_ctx
 {
-    double max_size_rate;
-    unsigned int window_size;
     int slide_interval;
     int window_time_duration;
-    struct mk_list name_fields;
-    struct mk_list log_fields;
+    double max_size_rate;
+    unsigned int window_size;
     size_t log_fields_depth;
     size_t name_fields_depth;
     void *ticker_id;
-    volatile bool done;
     int print_status;
+
+    volatile bool done;
+
+    struct mk_list name_fields;
+    struct mk_list log_fields;
+
     /* internal */
     struct throttle_size_table *hash;
+    struct flb_filter_instance *ins;
 };
 
 #endif
