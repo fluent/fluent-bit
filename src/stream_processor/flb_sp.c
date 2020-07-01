@@ -856,7 +856,7 @@ static void itof_convert(struct flb_exp_val *val)
     }
 
     val->type = FLB_EXP_FLOAT;
-    val->val.f64 = val->val.i64;
+    val->val.f64 = (double) val->val.i64;
 }
 
 /* Convert (string) expression to number */
