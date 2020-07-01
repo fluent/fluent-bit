@@ -950,7 +950,6 @@ static int flush_forward_mode(struct flb_forward *ctx,
     ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward entries");
-        msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
     }
 
@@ -959,7 +958,6 @@ static int flush_forward_mode(struct flb_forward *ctx,
         ret = flb_io_net_write(u_conn, opts_buf, opts_size, &bytes_sent);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not write forward options");
-            msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_RETRY;
         }
     }
