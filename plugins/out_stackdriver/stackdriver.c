@@ -285,7 +285,7 @@ static bool validate_msgpack_unpacked_data(msgpack_object root)
            root.via.array.ptr[1].type == MSGPACK_OBJECT_MAP;
 }
 
-static flb_sds_t get_str_value_from_msgpack_map(msgpack_object_map map, 
+static flb_sds_t get_str_value_from_msgpack_map(msgpack_object_map map,
                                                 const char *key, int key_size)
 {
     int i;
@@ -301,9 +301,9 @@ static flb_sds_t get_str_value_from_msgpack_map(msgpack_object_map map,
             continue;
         }
 
-        if (k.via.str.size == key_size && 
+        if (k.via.str.size == key_size &&
             strncmp(key, (char *) k.via.str.ptr, k.via.str.size) == 0) {
-            /* make sure to free it after use */ 
+            /* make sure to free it after use */
             ptr =  flb_sds_create_len(v.via.str.ptr, v.via.str.size);
             break;
         }
@@ -360,7 +360,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *str, char *type)
     return list;
 }
 
-/* 
+/*
 *    process_local_resource_id():
 *  - extract the value from "logging.googleapis.com/local_resource_id" field
 *  - use extracted value to assign the label keys for different resource types
@@ -405,7 +405,7 @@ static int process_local_resource_id(const void *data, size_t bytes,
             msgpack_unpacked_destroy(&result);
             return -1;
         }
-        
+
         if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
             list = parse_local_resource_id_to_list(local_resource_id, K8S_CONTAINER);
             if (!list) {
@@ -431,7 +431,7 @@ static int process_local_resource_id(const void *data, size_t bytes,
                 }
                 else if (!ctx->pod_name) {
                     ctx->pod_name = flb_sds_create(ptr->val);
-                } 
+                }
                 else if (!ctx->container_name) {
                     ctx->container_name = flb_sds_create(ptr->val);
                 }
@@ -467,7 +467,7 @@ static int process_local_resource_id(const void *data, size_t bytes,
                 goto error;
             }
         }
-        else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {           
+        else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {
             list = parse_local_resource_id_to_list(local_resource_id, K8S_POD);
             if (!list) {
                 goto error;
@@ -507,24 +507,27 @@ static int process_local_resource_id(const void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
     return ret;
 
-    error:
+ error:
+    if (list) {
         flb_slist_destroy(list);
         flb_free(list);
-        msgpack_unpacked_destroy(&result);
-        flb_sds_destroy(local_resource_id);
-        if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
-            flb_sds_destroy(ctx->namespace_name);
-            flb_sds_destroy(ctx->pod_name);
-            flb_sds_destroy(ctx->container_name);
-        }
-        else if (strncmp(type, K8S_NODE, len_k8s_node) == 0) {
-            flb_sds_destroy(ctx->node_name);
-        }
-        else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {
-            flb_sds_destroy(ctx->namespace_name);
-            flb_sds_destroy(ctx->pod_name);
-        }
-        return -1;
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_sds_destroy(local_resource_id);
+    if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
+        flb_sds_destroy(ctx->namespace_name);
+        flb_sds_destroy(ctx->pod_name);
+        flb_sds_destroy(ctx->container_name);
+    }
+    else if (strncmp(type, K8S_NODE, len_k8s_node) == 0) {
+        flb_sds_destroy(ctx->node_name);
+    }
+    else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {
+        flb_sds_destroy(ctx->namespace_name);
+        flb_sds_destroy(ctx->pod_name);
+    }
+    return -1;
 }
 
 static int cb_stackdriver_init(struct flb_output_instance *ins,
@@ -726,7 +729,7 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
-static int pack_json_payload(int operation_extracted, int operation_extra_size, 
+static int pack_json_payload(int operation_extracted, int operation_extra_size,
                              msgpack_packer* mp_pck, msgpack_object *obj)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
@@ -748,7 +751,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
      * array of elements that need to be removed from payload,
      * special field 'operation' will be processed individually
      */
-    flb_sds_t to_be_removed[] = 
+    flb_sds_t to_be_removed[] =
     {
         local_resource_id_key
         /* more special fields are required to be added: labels .. */
@@ -765,7 +768,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
         len = kv->key.via.str.size;
         for (j = 0; j < len_to_be_removed; j++) {
             removed = to_be_removed[j];
-            /* 
+            /*
              * check length of key to avoid partial matching
              * e.g. labels key = labels && kv->key = labelss
              */
@@ -777,7 +780,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     }
 
     new_map_size = map_size - to_remove;
-    /* optimize, pack the original obj */ 
+    /* optimize, pack the original obj */
     if (new_map_size == map_size) {
         msgpack_pack_object(mp_pck, *obj);
         return 0;
@@ -802,7 +805,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
             }
             continue;
         }
-        
+
         len = kv->key.via.str.size;
         for (j = 0; j < len_to_be_removed; j++) {
             removed = to_be_removed[j];
@@ -811,7 +814,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
                 break;
             }
         }
-        
+
         if (key_not_found) {
             ret = msgpack_pack_object(mp_pck, kv->key);
             if (ret < 0) {
@@ -931,10 +934,10 @@ static int stackdriver_format(struct flb_config *config,
     else if (strcmp(ctx->resource, K8S_CONTAINER) == 0) {
         /* k8s_container resource has fields project_id, location, cluster_name,
          *                                   namespace_name, pod_name, container_name
-         * 
-         * The local_resource_id for k8s_container is in format: 
+         *
+         * The local_resource_id for k8s_container is in format:
          *    k8s_container.<namespace_name>.<pod_name>.<container_name>
-         */ 
+         */
 
         ret = process_local_resource_id(data, bytes, ctx, K8S_CONTAINER);
         if (ret != 0) {
@@ -985,7 +988,7 @@ static int stackdriver_format(struct flb_config *config,
     else if (strcmp(ctx->resource, K8S_NODE) == 0) {
         /* k8s_node resource has fields project_id, location, cluster_name, node_name
          *
-         * The local_resource_id for k8s_node is in format: 
+         * The local_resource_id for k8s_node is in format:
          *      k8s_node.<node_name>
          */
 
@@ -1024,12 +1027,12 @@ static int stackdriver_format(struct flb_config *config,
                               ctx->node_name, flb_sds_len(ctx->node_name));
     }
     else if (strcmp(ctx->resource, K8S_POD) == 0) {
-        /* k8s_pod resource has fields project_id, location, cluster_name, 
+        /* k8s_pod resource has fields project_id, location, cluster_name,
          *                             namespace_name, pod_name.
-         *  
-         * The local_resource_id for k8s_pod is in format: 
+         *
+         * The local_resource_id for k8s_pod is in format:
          *      k8s_pod.<namespace_name>.<pod_name>
-         */   
+         */
 
         ret = process_local_resource_id(data, bytes, ctx, K8S_POD);
         if (ret != 0) {
@@ -1093,7 +1096,7 @@ static int stackdriver_format(struct flb_config *config,
          *  "timestamp": "..."
          * }
          */
-        
+
         /* Extract severity */
          if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
@@ -1109,13 +1112,13 @@ static int stackdriver_format(struct flb_config *config,
         operation_extra_size = 0;
         operation_extracted = extract_operation(&operation_id, &operation_producer,
                                                 &operation_first, &operation_last, obj, &operation_extra_size);
-        
+
         if (operation_extracted == FLB_TRUE) {
             entry_size += 1;
         }
 
         msgpack_pack_map(&mp_pck, entry_size);
-        
+
         /* Add severity into the log entry */
         if (severity_extracted == FLB_TRUE) {
             msgpack_pack_str(&mp_pck, 8);
@@ -1128,7 +1131,7 @@ static int stackdriver_format(struct flb_config *config,
             add_operation_field(&operation_id, &operation_producer,
                                 &operation_first, &operation_last, &mp_pck);
         }
-        
+
         /* Clean up id and producer if operation extracted */
         flb_sds_destroy(operation_id);
         flb_sds_destroy(operation_producer);
