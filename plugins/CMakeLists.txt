@@ -207,16 +207,16 @@ REGISTER_FILTER_PLUGIN("filter_throttle")
 REGISTER_FILTER_PLUGIN("filter_throttle_size")
 
 if(FLB_REGEX)
-  REGISTER_FILTER_PLUGIN("filter_grep")
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
   REGISTER_FILTER_PLUGIN("filter_modify")
   REGISTER_FILTER_PLUGIN("filter_nest")
   REGISTER_FILTER_PLUGIN("filter_parser")
-  REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
 if(FLB_RECORD_ACCESSOR)
   REGISTER_FILTER_PLUGIN("filter_expect")
+  REGISTER_FILTER_PLUGIN("filter_grep")
+  REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
 if(FLB_LUAJIT)
