@@ -607,7 +607,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 int prefix_len = 0;
 
                 prefix_len = key_len + 1;
-                prefix = flb_malloc(prefix_len + 1);
+                prefix = flb_calloc(1, prefix_len + 1);
                 if (prefix == NULL) {
                     return NULL;
                 }
