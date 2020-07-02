@@ -136,6 +136,20 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         goto error;
     }
 
+    tmp = flb_output_get_property("metric_namespace", ins);
+    if (tmp)
+    {
+        flb_plg_info(ctx->ins, "Metric Namespace=%s", tmp);
+        ctx->metric_namespace = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("metric_dimensions", ins);
+    if (tmp)
+    {
+        flb_plg_info(ctx->ins, "Metric Dimensions=%s", tmp);
+        ctx->metric_dimensions = flb_utils_split(tmp, ';', 256);
+    }
+
     ctx->create_group = FLB_FALSE;
     tmp = flb_output_get_property("auto_create_group", ins);
     /* native plugins use On/Off as bool, the old Go plugin used true/false */
@@ -367,7 +381,38 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, ctx->buf, stream, data, bytes);
+    buf = flb_calloc(1, sizeof(struct cw_flush));
+    if (!buf) {
+        flb_errno();
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* TODO: could be more efficient in some cases with these memory allocs */
+    buf->out_buf = flb_malloc(sizeof(char) * PUT_LOG_EVENTS_PAYLOAD_SIZE);
+    if (!buf->out_buf) {
+        flb_errno();
+        cw_flush_destroy(buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    buf->out_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
+
+    buf->tmp_buf = flb_malloc(sizeof(char) * PUT_LOG_EVENTS_PAYLOAD_SIZE);
+    if (!buf->tmp_buf) {
+        flb_errno();
+        cw_flush_destroy(buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    buf->tmp_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
+
+    buf->events = flb_malloc(sizeof(struct event) * 1000);
+    if (!buf->events) {
+        flb_errno();
+        cw_flush_destroy(buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    buf->events_capacity = 1000;
+
+    event_count = process_and_send(ctx, i_ins->p->name, buf, stream, data, bytes);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
