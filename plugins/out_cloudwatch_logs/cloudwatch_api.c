@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
@@ -39,7 +40,6 @@
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 #include <string.h>
-#include <unistd.h>
 #include <stdio.h>
 
 #include "cloudwatch_api.h"
@@ -152,8 +152,8 @@ struct flb_http_client *mock_http_call(char *error_env_var, char *api)
 
 int compare_events(const void *a_arg, const void *b_arg)
 {
-    struct event *r_a = (struct event *) a_arg;
-    struct event *r_b = (struct event *) b_arg;
+    struct cw_event *r_a = (struct cw_event *) a_arg;
+    struct cw_event *r_b = (struct cw_event *) b_arg;
 
     if (r_a->timestamp < r_b->timestamp) {
         return -1;
@@ -243,7 +243,7 @@ error:
  * Writes a log event to the output buffer
  */
 static int write_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
-                       struct event *event, int *offset)
+                       struct cw_event *event, int *offset)
 {
     char ts[50];
 
@@ -296,7 +296,7 @@ static int end_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 }
 
 static unsigned long long stream_time_span(struct log_stream *stream,
-                                           struct event *event)
+                                           struct cw_event *event)
 {
     if (stream->oldest_event == 0 || stream->newest_event == 0) {
         return 0;
@@ -314,7 +314,7 @@ static unsigned long long stream_time_span(struct log_stream *stream,
 
 /* returns FLB_TRUE if time span is less than 24 hours, FLB_FALSE if greater */
 static int check_stream_time_span(struct log_stream *stream,
-                                  struct event *event)
+                                  struct cw_event *event)
 {
     unsigned long long span = stream_time_span(stream, event);
 
@@ -326,7 +326,7 @@ static int check_stream_time_span(struct log_stream *stream,
 }
 
 /* sets the oldest_event and newest_event fields */
-static void set_stream_time_span(struct log_stream *stream, struct event *event)
+static void set_stream_time_span(struct log_stream *stream, struct cw_event *event)
 {
     if (stream->oldest_event == 0 || stream->oldest_event > event->timestamp) {
         stream->oldest_event = event->timestamp;
@@ -350,7 +350,7 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     size_t written;
     size_t size;
     int offset = 0;
-    struct event *event;
+    struct cw_event *event;
     char *tmp_buf_ptr;
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
@@ -453,14 +453,14 @@ int send_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     int ret;
     int offset;
     int i;
-    struct event *event;
+    struct cw_event *event;
 
     if (buf->event_index == 0) {
         return 0;
     }
 
     /* events must be sorted by timestamp in a put payload */
-    qsort(buf->events, buf->event_index, sizeof(struct event), compare_events);
+    qsort(buf->events, buf->event_index, sizeof(struct cw_event), compare_events);
 
 retry:
     stream->newest_event = 0;
@@ -517,7 +517,7 @@ int add_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
               const msgpack_object *obj, struct flb_time *tms)
 {
     int ret;
-    struct event *event;
+    struct cw_event *event;
     int new_len;
     size_t size;
     int retry_add = FLB_FALSE;
@@ -531,7 +531,7 @@ int add_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     /* re-alloc event buffer if needed */
     if ((buf->event_index + 1) >= buf->events_capacity) {
         new_len = MAX_EVENTS_PER_PUT;
-        size = sizeof(struct event) * new_len;
+        size = sizeof(struct cw_event) * new_len;
         flb_plg_debug(ctx->ins, "Increasing event buffer to %d", new_len);
         buf->events = flb_realloc(buf->events, size);
         if (!buf->events) {

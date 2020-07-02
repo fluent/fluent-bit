@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
@@ -38,7 +39,6 @@
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 #include <string.h>
-#include <unistd.h>
 #include <stdio.h>
 
 #include "cloudwatch_logs.h"
@@ -310,7 +310,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
     buf->tmp_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
 
-    buf->events = flb_malloc(sizeof(struct event) * 1000);
+    buf->events = flb_malloc(sizeof(struct cw_event) * 1000);
     if (!buf->events) {
         flb_errno();
         cw_flush_destroy(buf);

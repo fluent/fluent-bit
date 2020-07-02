@@ -40,7 +40,7 @@ struct cw_flush {
     size_t data_size;
 
     /* log events- each of these has a pointer to their message in tmp_buf */
-    struct event *events;
+    struct cw_event *events;
     int events_capacity;
     /* current event */
     int event_index;
@@ -54,7 +54,7 @@ struct cw_flush {
     size_t event_buf_size;
 };
 
-struct event {
+struct cw_event {
     char *json;
     size_t len;
     // TODO: re-usable in kinesis streams plugin if we make it timespec instead
