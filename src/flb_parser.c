@@ -181,6 +181,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     p->name = flb_strdup(name);
 
     if (time_fmt) {
+        p->time_fmt_full = flb_strdup(time_fmt);
         p->time_fmt = flb_strdup(time_fmt);
 
         /* Check if the format is considering the year */
@@ -305,6 +306,7 @@ void flb_parser_destroy(struct flb_parser *parser)
     flb_free(parser->name);
     if (parser->time_fmt) {
         flb_free(parser->time_fmt);
+        flb_free(parser->time_fmt_full);
     }
     if (parser->time_fmt_year) {
         flb_free(parser->time_fmt_year);
