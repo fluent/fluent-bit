@@ -453,7 +453,7 @@ int flb_engine_start(struct flb_config *config)
 
     /* Initialize output plugins */
     ret = flb_output_init_all(config);
-    if (ret == -1 && config->support_mode == FLB_FALSE) {
+    if (ret == -1) {
         return -1;
     }
 
