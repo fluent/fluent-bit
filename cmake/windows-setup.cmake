@@ -67,6 +67,7 @@ set(FLB_OUT_NULL              Yes)
 set(FLB_OUT_FLOWCOUNTER       Yes)
 set(FLB_OUT_KAFKA              No)
 set(FLB_OUT_KAFKA_REST         No)
+set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
 
 # FILTER plugins
 # ==============
