@@ -47,8 +47,7 @@ static int de_unix_create(struct flb_in_de_config *ctx)
     char request[512];
 
     ctx->fd = flb_net_socket_create(AF_UNIX, FLB_FALSE);
-    if (ctx->fd == -1)
-    {
+    if (ctx->fd == -1) {
         return -1;
     }
 
@@ -57,8 +56,7 @@ static int de_unix_create(struct flb_in_de_config *ctx)
     address.sun_family = AF_UNIX;
     sprintf(address.sun_path, "%s", ctx->unix_path);
     address_length = sizeof(address.sun_family) + len + 1;
-    if (connect(ctx->fd, (struct sockaddr *)&address, address_length) == -1)
-    {
+    if (connect(ctx->fd, (struct sockaddr *)&address, address_length) == -1) {
         flb_errno();
         close(ctx->fd);
         return -1;
@@ -100,13 +98,11 @@ static int in_de_collect(struct flb_input_instance *ins,
     size_t out_size = 0;
     struct flb_time out_time;
 
-    if ((ret = read(ctx->fd, ctx->buf, ctx->buf_size - 1)) > 0)
-    {
+    if ((ret = read(ctx->fd, ctx->buf, ctx->buf_size - 1)) > 0) {
         str_len = ret;
         ctx->buf[str_len] = '\0';
 
-        if (!ctx->parser)
-        {
+        if (!ctx->parser) {
             /* Initialize local msgpack buffer */
             msgpack_sbuffer_init(&mp_sbuf);
             msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -115,24 +111,21 @@ static int in_de_collect(struct flb_input_instance *ins,
             flb_pack_time_now(&mp_pck);
             msgpack_pack_map(&mp_pck, 1);
 
-            msgpack_pack_str(&mp_pck, ctx->field_name_len);
-            msgpack_pack_str_body(&mp_pck, ctx->field_name,
-                                  ctx->field_name_len);
+            msgpack_pack_str(&mp_pck, ctx->key_len);
+            msgpack_pack_str_body(&mp_pck, ctx->key,
+                                  ctx->key_len);
             msgpack_pack_str(&mp_pck, str_len);
             msgpack_pack_str_body(&mp_pck, ctx->buf, str_len);
             flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data,
                                        mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
         }
-        else
-        {
+        else {
             flb_time_get(&out_time);
             parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
                                        &out_buf, &out_size, &out_time);
-            if (parser_ret >= 0)
-            {
-                if (flb_time_to_double(&out_time) == 0.0)
-                {
+            if (parser_ret >= 0) {
+                if (flb_time_to_double(&out_time) == 0.0) {
                     flb_time_get(&out_time);
                 }
 
@@ -149,8 +142,7 @@ static int in_de_collect(struct flb_input_instance *ins,
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(out_buf);
             }
-            else
-            {
+            else {
                 flb_plg_trace(ctx->ins, "tried to parse: %s", ctx->buf);
                 flb_plg_trace(ctx->ins, "buf_size %zu", ctx->buf_size);
                 flb_plg_error(ctx->ins, "parser returned an error: %d",
@@ -158,8 +150,7 @@ static int in_de_collect(struct flb_input_instance *ins,
             }
         }
     }
-    else
-    {
+    else {
         int error = errno;
         flb_plg_error(ctx->ins, "read returned error: %d, %s", error,
                       strerror(error));
@@ -185,8 +176,7 @@ static int in_de_init(struct flb_input_instance *ins,
 
     /* Allocate space for the configuration */
     ctx = de_config_init(ins, config);
-    if (!ctx)
-    {
+    if (!ctx) {
         return -1;
     }
     ctx->ins = ins;
@@ -194,8 +184,7 @@ static int in_de_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
-    if (de_unix_create(ctx) != 0)
-    {
+    if (de_unix_create(ctx) != 0) {
         flb_plg_error(ctx->ins, "could not listen on unix://%s",
                       ctx->unix_path);
         de_config_destroy(ctx);
@@ -203,8 +192,7 @@ static int in_de_init(struct flb_input_instance *ins,
     }
 
     if (flb_input_set_collector_event(ins, in_de_collect,
-                                      ctx->fd, config) == -1)
-    {
+                                      ctx->fd, config) == -1) {
         flb_plg_error(ctx->ins,
                       "could not set collector for IN_DOCKER_EVENTS plugin");
         de_config_destroy(ctx);

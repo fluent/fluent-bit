@@ -27,7 +27,7 @@
 
 #define DEFAULT_BUF_SIZE            8192
 #define MIN_BUF_SIZE                2048
-#define DEFAULT_FIELD_NAME          "message"
+#define DEFAULT_KEY                 "message"
 #define DEFAULT_UNIX_SOCKET_PATH    "/var/run/docker.sock"
 
 struct flb_in_de_config
@@ -38,8 +38,8 @@ struct flb_in_de_config
     struct flb_input_instance *ins; /* Input plugin instace */
     char *buf;
     size_t buf_size;
-    char *field_name;
-    int field_name_len;
+    char *key;
+    int key_len;
 };
 
 #endif

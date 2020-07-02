@@ -40,54 +40,45 @@ struct flb_in_de_config* de_config_init(struct flb_input_instance *i_ins,
     struct flb_in_de_config *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_in_de_config));
-    if (!ctx)
-    {
+    if (!ctx) {
         flb_errno();
         return NULL;
     }
 
     p = flb_input_get_property("unix_path", i_ins);
-    if (p)
-    {
+    if (p) {
         ctx->unix_path = flb_strdup(p);
     }
-    else
-    {
+    else {
         ctx->unix_path = flb_strdup(DEFAULT_UNIX_SOCKET_PATH);
     }
 
     p = flb_input_get_property("buffer_size", i_ins);
-    if (!p)
-    {
+    if (!p) {
         ctx->buf_size = DEFAULT_BUF_SIZE;
     }
-    else
-    {
+    else {
         ctx->buf_size = flb_utils_size_to_bytes(p);
     }
     ctx->buf = flb_malloc(ctx->buf_size);
 
     p = flb_input_get_property("parser", i_ins);
-    if (p)
-    {
+    if (p) {
         ctx->parser = flb_parser_get(p, config);
-        if (ctx->parser == NULL)
-        {
+        if (ctx->parser == NULL) {
             flb_error("[in_docker_events] requested parser '%s' not found", p);
             return NULL;
         }
     }
 
     p = flb_input_get_property("field_name", i_ins);
-    if (p)
-    {
-        ctx->field_name = flb_strdup(p);
+    if (p) {
+        ctx->key = flb_strdup(p);
     }
-    else
-    {
-        ctx->field_name = flb_strdup(DEFAULT_FIELD_NAME);
+    else {
+        ctx->key = flb_strdup(DEFAULT_KEY);
     }
-    ctx->field_name_len = strlen(ctx->field_name);
+    ctx->key_len = strlen(ctx->key);
 
     return ctx;
 }
@@ -101,17 +92,14 @@ struct flb_in_de_config* de_config_init(struct flb_input_instance *i_ins,
  */
 int de_config_destroy(struct flb_in_de_config *ctx)
 {
-    if (ctx->unix_path)
-    {
+    if (ctx->unix_path) {
         flb_free(ctx->unix_path);
     }
-    if (ctx->buf)
-    {
+    if (ctx->buf) {
         flb_free(ctx->buf);
     }
-    if (ctx->field_name)
-    {
-        flb_free(ctx->field_name);
+    if (ctx->key) {
+        flb_free(ctx->key);
     }
 
     flb_free(ctx);
