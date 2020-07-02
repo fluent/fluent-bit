@@ -110,9 +110,8 @@ static int in_de_collect(struct flb_input_instance *ins,
             flb_pack_time_now(&mp_pck);
             msgpack_pack_map(&mp_pck, 1);
 
-            msgpack_pack_str(&mp_pck, ctx->key_len);
-            msgpack_pack_str_body(&mp_pck, ctx->key,
-                                  ctx->key_len);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->key));
+            msgpack_pack_str_body(&mp_pck, ctx->key, flb_sds_len(ctx->key));
             msgpack_pack_str(&mp_pck, str_len);
             msgpack_pack_str_body(&mp_pck, ctx->buf, str_len);
             flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data,
@@ -198,6 +197,7 @@ static int in_de_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    flb_plg_info(ctx->ins, "listening for events on %s", ctx->unix_path);
     return 0;
 }
 
@@ -214,10 +214,40 @@ static int in_de_exit(void *data, struct flb_config *config)
     (void) config;
     struct flb_in_de_config *ctx = data;
 
+    if (!ctx) {
+        return 0;
+    }
+
     de_config_destroy(ctx);
 
     return 0;
 }
+
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "unix_path", DEFAULT_UNIX_SOCKET_PATH,
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, unix_path),
+     "Define Docker unix socket path to read events"
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", "8k",
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, buf_size),
+     "Set buffer size to read events"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parser", NULL,
+      0, FLB_FALSE, 0,
+     "Optional parser for records, if not set, records are packages under 'key'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "key", DEFAULT_FIELD_NAME,
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, key),
+     "Set the key name to store unparsed Docker events"
+    },
+    /* EOF */
+    {0}
+};
 
 /* Plugin reference */
 struct flb_input_plugin in_docker_events_plugin = {
@@ -228,5 +258,6 @@ struct flb_input_plugin in_docker_events_plugin = {
     .cb_collect   = in_de_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_de_exit,
+    .config_map   = config_map,
     .flags        = FLB_INPUT_NET
 };

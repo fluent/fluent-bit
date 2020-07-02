@@ -36,7 +36,8 @@
 struct flb_in_de_config *de_config_init(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
-    const char *p;
+    int ret;
+    const char *tmp;
     struct flb_in_de_config *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_in_de_config));
@@ -46,40 +47,29 @@ struct flb_in_de_config *de_config_init(struct flb_input_instance *ins,
     }
     ctx->ins = ins;
 
-    p = flb_input_get_property("unix_path", ins);
-    if (p) {
-        ctx->unix_path = flb_strdup(p);
-    }
-    else {
-        ctx->unix_path = flb_strdup(DEFAULT_UNIX_SOCKET_PATH);
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
     }
 
-    p = flb_input_get_property("buffer_size", ins);
-    if (!p) {
-        ctx->buf_size = DEFAULT_BUF_SIZE;
-    }
-    else {
-        ctx->buf_size = flb_utils_size_to_bytes(p);
-    }
+    /* Allocate buffer for events */
     ctx->buf = flb_malloc(ctx->buf_size);
+    if (!ctx->buf) {
+        flb_errno();
+        flb_free(ctx);
+        return NULL;
+    }
 
-    p = flb_input_get_property("parser", ins);
-    if (p) {
-        ctx->parser = flb_parser_get(p, config);
+    tmp = flb_input_get_property("parser", ins);
+    if (tmp) {
+        ctx->parser = flb_parser_get(tmp, config);
         if (ctx->parser == NULL) {
-            flb_error("[in_docker_events] requested parser '%s' not found", p);
+            flb_plg_error(ctx->ins, "requested parser '%s' not found", tmp);
             return NULL;
         }
     }
-
-    p = flb_input_get_property("key", ins);
-    if (p) {
-        ctx->key = flb_strdup(p);
-    }
-    else {
-        ctx->key = flb_strdup(DEFAULT_FIELD_NAME);
-    }
-    ctx->key_len = strlen(ctx->key);
 
     return ctx;
 }
@@ -93,14 +83,8 @@ struct flb_in_de_config *de_config_init(struct flb_input_instance *ins,
  */
 int de_config_destroy(struct flb_in_de_config *ctx)
 {
-    if (ctx->unix_path) {
-        flb_free(ctx->unix_path);
-    }
     if (ctx->buf) {
         flb_free(ctx->buf);
-    }
-    if (ctx->key) {
-        flb_free(ctx->key);
     }
 
     flb_free(ctx);
