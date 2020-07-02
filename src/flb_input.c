@@ -44,7 +44,7 @@ static int check_protocol(const char *prot, const char *output)
     int len;
 
     len = strlen(prot);
-    if (len > strlen(output)) {
+    if (len != strlen(output)) {
         return 0;
     }
 
