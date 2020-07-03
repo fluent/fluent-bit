@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,7 +60,7 @@ static struct flb_hs_buf *metrics_get_latest()
 }
 
 /* Delete unused metrics, note that we only care about the latest node */
-int cleanup_metrics()
+static int cleanup_metrics()
 {
     int c = 0;
     struct mk_list *tmp;
@@ -126,6 +126,7 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
     buf = flb_malloc(sizeof(struct flb_hs_buf));
     if (!buf) {
         flb_errno();
+        flb_sds_destroy(out_data);
         return;
     }
     buf->users = 0;
@@ -141,13 +142,15 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
 }
 
 int string_cmp(const void* a_arg, const void* b_arg) {
-  char* a = *(char **)a_arg;
-  char* b = *(char **)b_arg;
+  char *a = *(char **)a_arg;
+  char *b = *(char **)b_arg;
+
   return strcmp(a, b);
 }
 
 size_t extract_metric_name_end_position(char *s) {
     int i;
+
     for (i = 0; i < flb_sds_len(s); i++) {
         if (s[i] == '{') {
           return i;
@@ -157,41 +160,51 @@ size_t extract_metric_name_end_position(char *s) {
 }
 
 int is_same_metric(char *s1, char *s2) {
-  int i;
-  int p1 = extract_metric_name_end_position(s1);
-  int p2 = extract_metric_name_end_position(s2);
-  if (p1 != p2) {
-    return 0;
-  }
-  for (i = 0; i < p1; i++) {
-    if (s1[i] != s2[i]) {
-      return 0;
+    int i;
+    int p1 = extract_metric_name_end_position(s1);
+    int p2 = extract_metric_name_end_position(s2);
+
+    if (p1 != p2) {
+        return 0;
     }
-  }
-  return 1;
+
+    for (i = 0; i < p1; i++) {
+        if (s1[i] != s2[i]) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 /* derive HELP text from metricname */
 /* if help text length > 128, increase init memory for metric_helptxt */
 flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
 {
-   if (strstr(metric_name, "input_bytes")) {
+    if (strstr(metric_name, "input_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of input bytes.\n", 24);
-    } else if (strstr(metric_name, "input_records")) {
+    }
+    else if (strstr(metric_name, "input_records")) {
         return flb_sds_cat(*metric_helptxt, " Number of input records.\n", 26);
-    } else if (strstr(metric_name, "output_bytes")) {
+    }
+    else if (strstr(metric_name, "output_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of output bytes.\n", 25);
-    } else if (strstr(metric_name, "output_records")) {
+    }
+    else if (strstr(metric_name, "output_records")) {
         return flb_sds_cat(*metric_helptxt, " Number of output records.\n", 27);
-    } else if (strstr(metric_name, "output_errors")) {
+    }
+    else if (strstr(metric_name, "output_errors")) {
         return flb_sds_cat(*metric_helptxt, " Number of output errors.\n", 26);
-    } else if (strstr(metric_name, "output_retries_failed")) {
+    }
+    else if (strstr(metric_name, "output_retries_failed")) {
         return flb_sds_cat(*metric_helptxt, " Number of output retries failed.\n", 34);
-    } else if (strstr(metric_name, "output_retries")) {
+    }
+    else if (strstr(metric_name, "output_retries")) {
         return flb_sds_cat(*metric_helptxt, " Number of output retries.\n", 27);
-    } else if (strstr(metric_name, "output_proc_records")) {
+    }
+    else if (strstr(metric_name, "output_proc_records")) {
         return flb_sds_cat(*metric_helptxt, " Number of processed output records.\n", 37);
-    } else if (strstr(metric_name, "output_proc_bytes")) {
+    }
+    else if (strstr(metric_name, "output_proc_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
     }
     else {
@@ -473,7 +486,8 @@ int api_v1_metrics(struct flb_hs *hs)
     pthread_key_create(&hs_metrics_key, NULL);
 
     /* Create a message queue */
-    hs->qid = mk_mq_create(hs->ctx, "/metrics", cb_mq_metrics, NULL);
+    hs->qid_metrics = mk_mq_create(hs->ctx, "/metrics",
+                                   cb_mq_metrics, NULL);
 
     /* HTTP end-points */
     mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/metrics/prometheus",
