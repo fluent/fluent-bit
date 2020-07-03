@@ -1,3 +1,21 @@
+# pthread
+{
+   Pthread 'fake' leak at glibc level
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   fun:allocate_dtv
+   fun:_dl_allocate_tls
+   fun:allocate_stack
+   fun:pthread_create@@GLIBC_2.2.5
+   fun:mk_utils_worker_spawn
+   fun:flb_worker_create
+   fun:flb_log_init
+   fun:flb_lib_worker
+   fun:start_thread
+   fun:clone
+}
+
 # dl-open suppressions
 {
    Skip _dl_load_cache_lookup
