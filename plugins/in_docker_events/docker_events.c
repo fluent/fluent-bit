@@ -39,6 +39,7 @@
  */
 static int de_unix_create(struct flb_in_de_config *ctx)
 {
+    ssize_t bytes;
     unsigned long len;
     size_t address_length;
     struct sockaddr_un address;
@@ -65,7 +66,11 @@ static int de_unix_create(struct flb_in_de_config *ctx)
     write(ctx->fd, request, strlen(request));
 
     /* Read the initial http response */
-    read(ctx->fd, ctx->buf, ctx->buf_size - 1);
+    bytes = read(ctx->fd, ctx->buf, ctx->buf_size - 1);
+    if (bytes == -1) {
+        flb_errno();
+    }
+    flb_plg_debug(ctx->ins, "read %zu bytes from socket", bytes);
 
     return 0;
 }
