@@ -21,6 +21,17 @@
 #ifndef FLB_WINLOG_H
 #define FLB_WINLOG_H
 
+struct winlog_config {
+    unsigned int interval_sec;
+    unsigned int interval_nsec;
+    unsigned int bufsize;
+    char *buf;
+    struct mk_list *active_channel;
+    struct flb_sqldb *db;
+    flb_pipefd_t coll_fd;
+    struct flb_input_instance *ins;
+};
+
 struct winlog_channel {
     HANDLE h;
     char *name;
@@ -55,6 +66,9 @@ int winlog_read(struct winlog_channel *ch, char *buf, unsigned int size, unsigne
  */
 struct mk_list *winlog_open_all(const char *channels);
 void winlog_close_all(struct mk_list *list);
+
+void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
+                       struct winlog_channel *ch, struct winlog_config *ctx);
 
 /*
  * Save the read offset to disk.

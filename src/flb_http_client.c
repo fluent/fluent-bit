@@ -1074,6 +1074,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                  * We could not allocate more space, let the caller handle
                  * this.
                  */
+                flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
                 return 0;
             }
             available = flb_http_buffer_available(c) - 1;
