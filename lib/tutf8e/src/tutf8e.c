@@ -3,63 +3,65 @@
 
 #include <string.h>
 
-/* Determine the input length and UTF8 encoded length of NUL-terminated input string */
-/* return TUTF8E_INVALID if input character is not convertable                       */
-/* return TUTF8E_OK for success                                                      */
-
-int tutf8e_string_length(const uint16_t *table, const char *input, size_t *ilen, size_t *olen)
+int tutf8e_string_length(const uint16_t *table, const char *input, const char *invalid, size_t *input_length, size_t *output_length)
 {
+  const size_t invalid_length = invalid ? strlen(invalid) : 0;
+
   const unsigned char *i;
-  for (i = (const unsigned char *) input; *i; ++i, (*ilen)++) {
+  for (i = (const unsigned char *) input; *i; ++i, (*input_length)++) {
     const uint16_t c = table[*i];
     if (c<0x80) {
-      *olen += 1;
+      *output_length += 1;
       continue;
     }
     if (c<0x800) {
-      *olen += 2;
+      *output_length += 2;
       continue;
     }
     if (c<0xffff) {
-      *olen += 3;
+      *output_length += 3;
       continue;
     }
-    return TUTF8E_INVALID;
+    if (invalid) {
+      *output_length += invalid_length;
+    }
+    else {
+      return TUTF8E_INVALID;
+    }
   }
   return TUTF8E_OK;
 }
 
-/* UTF8 encode the given input string and table                */
-/* olen input is output buffer size, output is encoded length  */
-/* return TUTF8E_TOOLONG if output buffer insuficient          */
-/* return TUTF8E_INVALID if input character is not convertable */
-/* return TUTF8E_OK for success                                */
-
-int tutf8e_string_encode(const uint16_t *table, const char *i, char *o, size_t *olen)
+int tutf8e_string_encode(const uint16_t *table, const char *input, const char *invalid, char *output, size_t *output_length)
 {
   int ret;
-  size_t ilen = 0;
-  size_t length = 0;
-  if (!(ret = tutf8e_string_length(table, i, &ilen, &length)))
+  size_t input_length = 0;
+  size_t encoded_length = 0;
+  if (!(ret = tutf8e_string_length(table, input, invalid, &input_length, &encoded_length)))
   {
-    if (length+1 > *olen) return TUTF8E_TOOLONG;
-    if (!(ret = tutf8e_buffer_encode(table, i, ilen, o, olen)))
+    if (encoded_length+1 > *output_length) return TUTF8E_TOOLONG;
+    if (!(ret = tutf8e_buffer_encode(table, input, input_length, invalid, output, output_length)))
     {
-      o[length] = 0;
+      output[encoded_length] = 0;
       return TUTF8E_OK;
     }
   }
   return ret;
 }
 
-/* Determine the length of the UTF8 encoding of given input string and table */
-/* return TUTF8E_INVALID if input character is not convertable               */
-/* return TUTF8E_OK for success                                              */
-
-int tutf8e_buffer_length(const uint16_t *table, const char *input, size_t ilen, size_t *length)
+int tutf8e_buffer_length
+(
+  const uint16_t *table,
+  const char *input,
+  size_t input_length,
+  const char *invalid,
+  size_t *length
+)
 {
+  const size_t invalid_length = invalid ? strlen(invalid) : 0;
+
   const unsigned char *i;
-  for (i = (const unsigned char *) input; ilen; ++i, --ilen) {
+  for (i = (const unsigned char *) input; input_length; ++i, --input_length) {
     const uint16_t c = table[*i];
     if (c<0x80) {
       ++*length;
@@ -73,23 +75,32 @@ int tutf8e_buffer_length(const uint16_t *table, const char *input, size_t ilen, 
       *length += 3;
       continue;
     }
-    return TUTF8E_INVALID;
+    if (invalid) {
+      *length += invalid_length;
+    }
+    else {
+      return TUTF8E_INVALID;
+    }
   }
   return TUTF8E_OK;
 }
 
-/* UTF8 encode the given input string and table                */
-/* olen input is output buffer size, output is encoded length  */
-/* return TUTF8E_TOOLONG if output buffer insuficient          */
-/* return TUTF8E_INVALID if input character is not convertable */
-/* return TUTF8E_OK for success                                */
-
-int tutf8e_buffer_encode(const uint16_t *table, const char *input, size_t ilen, char *output, size_t *olen)
+int tutf8e_buffer_encode
+(
+  const uint16_t *table,
+  const char *input,
+  size_t input_length,
+  const char *invalid,
+  char *output,
+  size_t *output_length
+)
 {
-  size_t left = *olen;
+  size_t invalid_length = invalid ? strlen(invalid) : 0;
+
+  size_t left = *output_length;
   unsigned char *o = (unsigned char *) output;
   const unsigned char *i;
-  for (i = (const unsigned char *) input; ilen; ++i, --ilen) {
+  for (i = (const unsigned char *) input; input_length; ++i, --input_length) {
     const uint16_t c = table[*i];
     if (c<0x80) {
       if (left<1) return TUTF8E_TOOLONG;
@@ -112,9 +123,20 @@ int tutf8e_buffer_encode(const uint16_t *table, const char *input, size_t ilen, 
       left -= 3;
       continue;
     }
-    return TUTF8E_INVALID;
+    if (invalid)
+    {
+      if (left<invalid_length) return TUTF8E_TOOLONG;
+      if (invalid_length) {
+        memcpy(o, invalid, invalid_length);
+        o += invalid_length;
+        left -= invalid_length;
+      }
+    }
+    else {
+      return TUTF8E_INVALID;
+    }
   }
-  *olen -= left;
+  *output_length -= left;
   return TUTF8E_OK;
 }
 
