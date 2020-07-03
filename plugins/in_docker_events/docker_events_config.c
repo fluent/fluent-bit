@@ -67,6 +67,8 @@ struct flb_in_de_config *de_config_init(struct flb_input_instance *ins,
         ctx->parser = flb_parser_get(tmp, config);
         if (ctx->parser == NULL) {
             flb_plg_error(ctx->ins, "requested parser '%s' not found", tmp);
+            flb_free(ctx->buf);
+            flb_free(ctx);
             return NULL;
         }
     }
