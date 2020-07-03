@@ -77,7 +77,7 @@ struct flb_aws_provider_sts {
     /* Fluent Bit uses regional STS endpoints; this is a best practice. */
     char *endpoint;
 
-    char *uri;
+    flb_sds_t uri;
 };
 
 struct flb_aws_credentials *get_credentials_fn_sts(struct flb_aws_provider
@@ -196,31 +196,33 @@ int init_fn_sts(struct flb_aws_provider *provider) {
 
 void sync_fn_sts(struct flb_aws_provider *provider) {
     struct flb_aws_provider_sts *implementation = provider->implementation;
+    struct flb_aws_provider *base_provider = implementation->base_provider;
 
     flb_debug("[aws_credentials] Sync called on the STS provider");
     /* Remove async flag */
     implementation->sts_client->upstream->flags &= ~(FLB_IO_ASYNC);
 
-    /* Call sync on the base provider */
-    implementation->base_provider->provider_vtable->
-                                   sync(implementation->base_provider);
+    /* we also need to call sync on the base_provider */
+    base_provider->provider_vtable->sync(base_provider);
 }
 
 void async_fn_sts(struct flb_aws_provider *provider) {
     struct flb_aws_provider_sts *implementation = provider->implementation;
+    struct flb_aws_provider *base_provider = implementation->base_provider;
 
     flb_debug("[aws_credentials] Async called on the STS provider");
     /* Add async flag */
     implementation->sts_client->upstream->flags |= FLB_IO_ASYNC;
 
-    /* Call async on the base provider */
-    implementation->base_provider->provider_vtable->
-                                   async(implementation->base_provider);
+    /* we also need to call async on the base_provider */
+    base_provider->provider_vtable->async(base_provider);
 }
 
 void destroy_fn_sts(struct flb_aws_provider *provider) {
-    struct flb_aws_provider_sts *implementation = provider->
-                                                          implementation;
+    struct flb_aws_provider_sts *implementation;
+
+    implementation = provider->implementation;
+
     if (implementation) {
         if (implementation->creds) {
             flb_aws_credentials_destroy(implementation->creds);
@@ -231,7 +233,7 @@ void destroy_fn_sts(struct flb_aws_provider *provider) {
         }
 
         if (implementation->uri) {
-            flb_free(implementation->uri);
+            flb_sds_destroy(implementation->uri);
         }
 
         if (implementation->endpoint) {
@@ -272,14 +274,12 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
     struct flb_upstream *upstream = NULL;
 
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
-
     if (!provider) {
         flb_errno();
         return NULL;
     }
 
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_sts));
-
     if (!implementation) {
         goto error;
     }
@@ -288,7 +288,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
     provider->implementation = implementation;
 
     implementation->uri = flb_sts_uri("AssumeRole", role_arn, session_name,
-                                  external_id, NULL);
+                                      external_id, NULL);
     if (!implementation->uri) {
         goto error;
     }
@@ -399,7 +399,7 @@ struct flb_aws_credentials *get_credentials_fn_eks(struct flb_aws_provider
         return NULL;
     }
 
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         goto error;
     }
@@ -422,7 +422,8 @@ struct flb_aws_credentials *get_credentials_fn_eks(struct flb_aws_provider
             goto error;
         }
 
-    } else {
+    }
+    else {
         creds->session_token = NULL;
     }
 
@@ -668,9 +669,6 @@ error:
     if (random_data) {
         flb_free(random_data);
     }
-    if (session_name) {
-        flb_free(session_name);
-    }
     return NULL;
 }
 
@@ -694,7 +692,7 @@ static int assume_with_web_identity(struct flb_aws_provider_eks
     int ret;
     char *web_token = NULL;
     size_t web_token_size;
-    char *uri = NULL;
+    flb_sds_t uri = NULL;
     int init_mode = implementation->sts_client->debug_only;
 
     ret = flb_read_file(implementation->token_file, &web_token,
@@ -709,7 +707,7 @@ static int assume_with_web_identity(struct flb_aws_provider_eks
     }
 
     uri = flb_sts_uri("AssumeRoleWithWebIdentity", implementation->role_arn,
-                  implementation->session_name, NULL, web_token);
+                      implementation->session_name, NULL, web_token);
     if (!uri) {
         flb_free(web_token);
         return -1;
@@ -719,7 +717,7 @@ static int assume_with_web_identity(struct flb_aws_provider_eks
                                   &implementation->creds, uri,
                                   &implementation->next_refresh);
     flb_free(web_token);
-    flb_free(uri);
+    flb_sds_destroy(uri);
     return ret;
 }
 
@@ -804,7 +802,7 @@ struct flb_aws_credentials *flb_parse_sts_resp(char *response,
                                                time_t *expiration)
 {
     struct flb_aws_credentials *creds = NULL;
-    char *cred_node;
+    char *cred_node = NULL;
     flb_sds_t tmp = NULL;
 
     cred_node = strstr(response, CREDENTIALS_NODE);
@@ -815,7 +813,7 @@ struct flb_aws_credentials *flb_parse_sts_resp(char *response,
     }
     cred_node += CREDENTIALS_NODE_LEN;
 
-    creds = flb_malloc(sizeof(struct flb_aws_credentials));
+    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
     if (!creds) {
         flb_errno();
         return NULL;
@@ -860,10 +858,11 @@ error:
  * Constructs the STS request uri.
  * external_id can be NULL.
  */
-char *flb_sts_uri(char *action, char *role_arn, char *session_name,
-              char *external_id, char *identity_token)
+flb_sds_t flb_sts_uri(char *action, char *role_arn, char *session_name,
+                      char *external_id, char *identity_token)
 {
-    char *uri = NULL;
+    flb_sds_t tmp;
+    flb_sds_t uri = NULL;
     size_t len = STS_ASSUME_ROLE_URI_BASE_LEN;
 
     if (external_id) {
@@ -881,23 +880,25 @@ char *flb_sts_uri(char *action, char *role_arn, char *session_name,
     len += strlen(role_arn);
     len += strlen(action);
     len++; /* null char */
-    uri = flb_malloc(sizeof(char) * (len));
+
+    uri = flb_sds_create_size(len);
     if (!uri) {
-        flb_errno();
         return NULL;
     }
 
-    snprintf(uri, len, STS_ASSUME_ROLE_URI_FORMAT, action, session_name,
-             role_arn);
+    tmp = flb_sds_printf(&uri, STS_ASSUME_ROLE_URI_FORMAT, action, session_name,
+                         role_arn);
+    if (!tmp) {
+        flb_sds_destroy(uri);
+        return NULL;
+    }
 
     if (external_id) {
-        strncat(uri, "&ExternalId=", 12);
-        strncat(uri, external_id, strlen(external_id));
+        flb_sds_printf(&uri, "&ExternalId=%s", external_id);
     }
 
     if (identity_token) {
-        strncat(uri, "&WebIdentityToken=", 18);
-        strncat(uri, identity_token, strlen(identity_token));
+        flb_sds_printf(&uri, "&WebIdentityToken=%s", identity_token);
     }
 
     return uri;

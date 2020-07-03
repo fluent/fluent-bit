@@ -2,6 +2,7 @@
 set(src
   uptime.c
   metrics.c
+  storage.c
   plugins.c
   register.c
   )

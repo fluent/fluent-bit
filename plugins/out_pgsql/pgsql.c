@@ -19,35 +19,25 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 
 #include "pgsql.h"
+#include "pgsql_connections.h"
 
 void pgsql_conf_destroy(struct flb_pgsql_config *ctx)
 {
-    PGresult *res = NULL;
-
-    if(PQstatus(ctx->conn) == CONNECTION_OK) {
-        while(PQconsumeInput(ctx->conn) == 0) {
-            res = PQgetResult(ctx->conn);
-            if(PQresultStatus(res) != PGRES_COMMAND_OK) {
-                flb_warn("[out_pgsql] %s", PQerrorMessage(ctx->conn));
-            }
-            PQclear(res);
-        }
-    }
+    pgsql_destroy_connections(ctx);
 
     flb_free(ctx->db_hostname);
 
-    if(ctx->db_table != NULL) {
+    if (ctx->db_table != NULL) {
         flb_sds_destroy(ctx->db_table);
     }
 
-    if(ctx->timestamp_key != NULL) {
+    if (ctx->timestamp_key != NULL) {
         flb_sds_destroy(ctx->timestamp_key);
     }
-
-    PQfinish(ctx->conn);
 
     flb_free(ctx);
     ctx = NULL;
@@ -63,6 +53,7 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     char *query = NULL;
     char *temp = NULL;
     const char *tmp = NULL;
+    int ret;
 
     /* set default network configuration */
     flb_output_net_default(FLB_PGSQL_HOST, FLB_PGSQL_PORT, ins);
@@ -73,88 +64,116 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    ctx->ins = ins;
+
+    /* Database host */
     ctx->db_hostname = flb_strdup(ins->host.name);
-    if(!ctx->db_hostname) {
+    if (!ctx->db_hostname) {
         flb_errno();
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
+    /* Database port */
     snprintf(ctx->db_port, sizeof(ctx->db_port), "%d", ins->host.port);
 
-
+    /* Database name */
     ctx->db_name = flb_output_get_property("database", ins);
-    if(!ctx->db_name) {
+    if (!ctx->db_name) {
         ctx->db_name = FLB_PGSQL_DBNAME;
     }
 
+    /* db table */
     tmp = flb_output_get_property("table", ins);
-    if(tmp) {
+    if (tmp) {
         ctx->db_table = flb_sds_create(tmp);
     }
     else {
         ctx->db_table = flb_sds_create(FLB_PGSQL_TABLE);
     }
 
-    if(!ctx->db_table) {
+    if (!ctx->db_table) {
         flb_errno();
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
+    /* db user */
     ctx->db_user = flb_output_get_property("user", ins);
-    if(!ctx->db_user) {
-        flb_warn("[out_pgsql] You didn't supply a valid user to connect,"
-                 "your current unix user will be used");
+    if (!ctx->db_user) {
+        flb_plg_warn(ctx->ins,
+                     "You didn't supply a valid user to connect,"
+                     "your current unix user will be used");
     }
 
+    /* db user password */
     ctx->db_passwd = flb_output_get_property("password", ins);
-    if(!ctx->db_passwd) {
-        flb_warn("[out_pgsql] You didn't supply a password, you should"
-                 "use a password to authenticate against PostgreSQL");
-    }
 
+    /* timestamp key */
     tmp = flb_output_get_property("timestamp_key", ins);
-    if(tmp) {
+    if (tmp) {
         ctx->timestamp_key = flb_sds_create(tmp);
     }
     else {
         ctx->timestamp_key = flb_sds_create(FLB_PGSQL_TIMESTAMP_KEY);
     }
 
-    if(!ctx->timestamp_key) {
+    if (!ctx->timestamp_key) {
         flb_errno();
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
-    flb_info("[out_pgsql] host=%s port=%s dbname=%s ...",
-             ctx->db_hostname, ctx->db_port, ctx->db_name);
+    /* Pool size */
+    tmp = flb_output_get_property("max_pool_size", ins);
+    if (tmp) {
+        ctx->max_pool_size = strtol(tmp, NULL, 0);
+        if (ctx->max_pool_size < 1)
+            ctx->max_pool_size = 1;
+    }
+    else {
+        ctx->max_pool_size = FLB_PGSQL_POOL_SIZE;
+    }
 
-    ctx->conn = PQsetdbLogin(ctx->db_hostname,
-                             ctx->db_port,
-                             NULL, NULL,
-                             ctx->db_name,
-                             ctx->db_user,
-                             ctx->db_passwd);
+    tmp = flb_output_get_property("min_pool_size", ins);
+    if (tmp) {
+        ctx->min_pool_size = strtol(tmp, NULL, 0);
+        if (ctx->min_pool_size < 1 || ctx->min_pool_size > ctx->max_pool_size)
+            ctx->min_pool_size = ctx->max_pool_size;
+    }
+    else {
+        ctx->min_pool_size = FLB_PGSQL_MIN_POOL_SIZE;
+    }
 
-    if(PQstatus(ctx->conn) != CONNECTION_OK) {
-        flb_error("[out_pgsql] failed to connect to host=%s with error: %s",
-                  ctx->db_hostname, PQerrorMessage(ctx->conn));
-        pgsql_conf_destroy(ctx);
+    /* Sync Mode */
+    tmp = flb_output_get_property("async", ins);
+    if (tmp && flb_utils_bool(tmp)) {
+        ctx->async = FLB_TRUE;
+    }
+    else {
+        ctx->async = FLB_FALSE;
+    }
+
+    if (!ctx->async) {
+        ctx->min_pool_size = 1;
+        ctx->max_pool_size = 1;
+    }
+
+    ret = pgsql_start_connections(ctx);
+    if (ret) {
         return -1;
     }
 
-    flb_info("[out_pgsql] host=%s port=%s dbname=%s OK",
+    flb_plg_info(ctx->ins, "host=%s port=%s dbname=%s OK",
               ctx->db_hostname, ctx->db_port, ctx->db_name);
     flb_output_set_context(ins, ctx);
 
-    temp = PQescapeIdentifier(ctx->conn, ctx->db_table,
+    temp = PQescapeIdentifier(ctx->conn_current->conn, ctx->db_table,
                               flb_sds_len(ctx->db_table));
 
-    if(temp == NULL) {
-        flb_error("[out_pgsql] failed to parse table name: %s",
-                  PQerrorMessage(ctx->conn));
+    if (temp == NULL) {
+        flb_plg_error(ctx->ins, "failed to parse table name: %s",
+                      PQerrorMessage(ctx->conn_current->conn));
         pgsql_conf_destroy(ctx);
         return -1;
     }
@@ -163,19 +182,19 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     ctx->db_table = flb_sds_create(temp);
     PQfreemem(temp);
 
-    if(!ctx->db_table) {
+    if (!ctx->db_table) {
         flb_errno();
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
-    flb_info("[out_pgsql] we check that the table %s "
-             "exists, if not we create it", ctx->db_table);
+    flb_plg_info(ctx->ins, "we check that the table %s "
+                 "exists, if not we create it", ctx->db_table);
 
     str_len = 72 + flb_sds_len(ctx->db_table);
 
     query = flb_malloc(str_len);
-    if(query == NULL) {
+    if (query == NULL) {
         flb_errno();
         pgsql_conf_destroy(ctx);
         return -1;
@@ -187,24 +206,19 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
              "CREATE TABLE IF NOT EXISTS %s "
              "(tag varchar, time timestamp, data jsonb);",
              ctx->db_table);
-    res = PQexec(ctx->conn, query);
+    flb_plg_trace(ctx->ins, "%s", query);
+    res = PQexec(ctx->conn_current->conn, query);
+
     flb_free(query);
 
-    if(PQresultStatus(res) != PGRES_COMMAND_OK) {
-        flb_error("[out_pgsql] %s", PQerrorMessage(ctx->conn));
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        flb_plg_error(ctx->ins, "%s",
+                      PQerrorMessage(ctx->conn_current->conn));
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
     PQclear(res);
-
-    flb_info("[out_pgsql] switching postgresql connection "
-             "to non-blocking mode");
-    if(PQsetnonblocking(ctx->conn, 1) != 0) {
-        flb_error("[out_pgsql] non-blocking mode not set");
-        pgsql_conf_destroy(ctx);
-        return -1;
-    }
 
     return 0;
 }
@@ -218,13 +232,15 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
     struct flb_pgsql_config *ctx = out_context;
     flb_sds_t json;
     char *tmp = NULL;
-    PGresult *res = NULL;
     char *query = NULL;
+    PGresult *res = NULL;
+    int send_res;
     flb_sds_t tag_escaped = NULL;
     size_t str_len;
 
-    if(PQconsumeInput(ctx->conn) == 0 && PQisBusy(ctx->conn) == 1) {
-        flb_debug("[out_pgsql] Some command may still be running");
+
+    if (pgsql_next_connection(ctx) == 1) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /*
@@ -234,8 +250,8 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
       parameters previously used. This might be useful for error recovery
       if a working connection is lost.
      */
-    if(PQstatus(ctx->conn) != CONNECTION_OK) {
-        PQreset(ctx->conn);
+    if (PQstatus(ctx->conn_current->conn) != CONNECTION_OK) {
+        PQreset(ctx->conn_current->conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -244,40 +260,41 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
                                            FLB_PACK_JSON_FORMAT_JSON,
                                            FLB_PACK_JSON_DATE_DOUBLE,
                                            ctx->timestamp_key);
-    if(json == NULL) {
+    if (json == NULL) {
         flb_errno();
-        flb_error("[out_pgsql] Can't parse the msgpack into json");
+        flb_plg_error(ctx->ins,
+                      "Can't parse the msgpack into json");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    tmp = PQescapeLiteral(ctx->conn, json, flb_sds_len(json));
+    tmp = PQescapeLiteral(ctx->conn_current->conn, json, flb_sds_len(json));
     flb_sds_destroy(json);
-    if(!tmp) {
+    if (!tmp) {
         flb_errno();
         PQfreemem(tmp);
-        flb_error("[out_pgsql] Can't escape json string");
+        flb_plg_error(ctx->ins, "Can't escape json string");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     json = flb_sds_create(tmp);
     PQfreemem(tmp);
-    if(!json) {
+    if (!json) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    tmp = PQescapeLiteral(ctx->conn, tag, tag_len);
-    if(!tmp) {
+    tmp = PQescapeLiteral(ctx->conn_current->conn, tag, tag_len);
+    if (!tmp) {
         flb_errno();
         flb_sds_destroy(json);
         PQfreemem(tmp);
-        flb_error("[out_pgsql] Can't escape tag string: %s", tag);
+        flb_plg_error(ctx->ins, "Can't escape tag string: %s", tag);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     tag_escaped = flb_sds_create(tmp);
     PQfreemem(tmp);
-    if(!tag_escaped) {
+    if (!tag_escaped) {
         flb_errno();
         flb_sds_destroy(json);
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -297,36 +314,37 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
     }
 
 
-    /*
-      We should call PQgetResult() until get NULL
-      This fix some issues in this previous release
-      in a future release we will provide two modes
-      sync and async to send data to PostgreSQL
-    */
-    res = PQgetResult(ctx->conn);
-    while(res != NULL) {
-        PQclear(res);
-        res = PQgetResult(ctx->conn);
-    }
-
     snprintf(query, str_len,
              "INSERT INTO %s "
              "SELECT %s, "
              "to_timestamp(CAST(value->>'%s' as FLOAT)), * "
              "FROM json_array_elements(%s);",
              ctx->db_table, tag_escaped, ctx->timestamp_key, json);
+    flb_plg_trace(ctx->ins, "query: %s", query);
 
-    PQsendQuery(ctx->conn, query);
-    flb_free(query);
-    flb_sds_destroy(json);
-    flb_sds_destroy(tag_escaped);
+    if (ctx->async) {
+        send_res = PQsendQuery(ctx->conn_current->conn, query);
+        flb_free(query);
+        flb_sds_destroy(json);
+        flb_sds_destroy(tag_escaped);
 
-    PQflush(ctx->conn);
+        if (send_res == 0) {
+            flb_plg_error(ctx->ins, "%s",
+                          PQerrorMessage(ctx->conn_current->conn));
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
 
-    if(PQisBusy(ctx->conn) == 0) {
-        res = PQgetResult(ctx->conn);
-        if(PQresultStatus(res) != PGRES_COMMAND_OK) {
-            flb_debug("[out_pgsql] %s", PQerrorMessage(ctx->conn));
+        PQflush(ctx->conn_current->conn);
+    }
+    else {
+        res = PQexec(ctx->conn_current->conn, query);
+        flb_free(query);
+        flb_sds_destroy(json);
+        flb_sds_destroy(tag_escaped);
+
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            flb_plg_error(ctx->ins, "%s",
+                          PQerrorMessage(ctx->conn_current->conn));
             PQclear(res);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -340,7 +358,7 @@ static int cb_pgsql_exit(void *data, struct flb_config *config)
 {
     struct flb_pgsql_config *ctx = data;
 
-    if(!ctx){
+    if (!ctx){
         return 0;
     }
 

@@ -411,11 +411,13 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    /* Start the Storage engine */
-    ret = flb_storage_create(config);
-    if (ret == -1) {
+    /* Create the event loop and set it in the global configuration */
+    evl = mk_event_loop_create(256);
+    if (!evl) {
         return -1;
     }
+    config->evl = evl;
+
 
     flb_info("[engine] started (pid=%i)", getpid());
 
@@ -424,13 +426,6 @@ int flb_engine_start(struct flb_config *config)
                                            tmp, sizeof(tmp));
     flb_debug("[engine] coroutine stack size: %u bytes (%s)",
               config->coro_stack_size, tmp);
-
-    /* Create the event loop and set it in the global configuration */
-    evl = mk_event_loop_create(256);
-    if (!evl) {
-        return -1;
-    }
-    config->evl = evl;
 
     /*
      * Create a communication channel: this routine creates a channel to
@@ -443,6 +438,12 @@ int flb_engine_start(struct flb_config *config)
                                   config);
     if (ret != 0) {
         flb_error("[engine] could not create manager channels");
+        return -1;
+    }
+
+    /* Start the Storage engine */
+    ret = flb_storage_create(config);
+    if (ret == -1) {
         return -1;
     }
 
@@ -463,7 +464,7 @@ int flb_engine_start(struct flb_config *config)
 
     /* Initialize output plugins */
     ret = flb_output_init_all(config);
-    if (ret == -1 && config->support_mode == FLB_FALSE) {
+    if (ret == -1) {
         return -1;
     }
 
@@ -490,6 +491,12 @@ int flb_engine_start(struct flb_config *config)
         flb_error("[engine] scheduler could not start");
         return -1;
     }
+
+#ifdef FLB_HAVE_METRICS
+    if (config->storage_metrics == FLB_TRUE) {
+        config->storage_metrics_ctx = flb_storage_metrics_create(config);
+    }
+#endif
 
     /* Initialize collectors */
     flb_input_collectors_start(config);
@@ -646,7 +653,6 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_filter_exit(config);
     flb_input_exit_all(config);
     flb_output_exit(config);
-
 
     /* Destroy the storage context */
     flb_storage_destroy(config);

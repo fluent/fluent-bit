@@ -44,7 +44,7 @@ set(FLB_IN_EMITTER            Yes)
 
 # OUTPUT plugins
 # ==============
-set(FLB_OUT_AZURE              No)
+set(FLB_OUT_AZURE             Yes)
 set(FLB_OUT_BIGQUERY           No)
 set(FLB_OUT_COUNTER           Yes)
 set(FLB_OUT_DATADOG           Yes)
@@ -67,6 +67,7 @@ set(FLB_OUT_NULL              Yes)
 set(FLB_OUT_FLOWCOUNTER       Yes)
 set(FLB_OUT_KAFKA              No)
 set(FLB_OUT_KAFKA_REST         No)
+set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
 
 # FILTER plugins
 # ==============
@@ -76,6 +77,7 @@ set(FLB_FILTER_STDOUT         Yes)
 set(FLB_FILTER_PARSER         Yes)
 set(FLB_FILTER_KUBERNETES     Yes)
 set(FLB_FILTER_THROTTLE       Yes)
+set(FLB_FILTER_THROTTLE_SIZE  Yes)
 set(FLB_FILTER_NEST           Yes)
 set(FLB_FILTER_LUA            Yes)
 set(FLB_FILTER_RECORD_MODIFIER Yes)

@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_record_accessor.h>
 
 #ifdef FLB_HAVE_TLS
@@ -30,6 +31,12 @@
 #include <mbedtls/error.h>
 #include <mbedtls/ctr_drbg.h>
 #endif
+
+/* Forward modes */
+#define MODE_MESSAGE               0
+#define MODE_FORWARD               1
+#define MODE_FORWARD_COMPAT        3
+#define MODE_FORWARD_GZIP          4
 
 /*
  * Configuration: we put this separate from the main
@@ -62,7 +69,11 @@ struct flb_forward_config {
     mbedtls_ctr_drbg_context tls_ctr_drbg;
 #endif
 
-    struct flb_record_accessor *ra_tag; /* Record accessor for Tag */
+#ifdef FLB_HAVE_RECORD_ACCESSOR
+    struct flb_record_accessor *ra_tag; /* Tag Record accessor */
+    int ra_static;                      /* Is the record accessor static ? */
+#endif
+
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
 
@@ -86,5 +97,14 @@ struct flb_forward_ping {
     int auth_len;
     int keepalive;
 };
+
+/* Flush callback context */
+struct flb_forward_flush {
+    struct flb_forward_config *fc;
+    char checksum_hex[33];
+};
+
+struct flb_forward_config *flb_forward_target(struct flb_forward *ctx,
+                                              struct flb_upstream_node **node);
 
 #endif

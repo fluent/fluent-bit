@@ -22,6 +22,260 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_http_server.h>
+
+static void metrics_append_general(msgpack_packer *mp_pck,
+                                   struct flb_config *ctx,
+                                   struct flb_storage_metrics *sm)
+{
+    struct cio_stats storage_st;
+
+    /* Retrieve general stats from the storage layer */
+    cio_stats_get(ctx->cio, &storage_st);
+
+    msgpack_pack_str(mp_pck, 13);
+    msgpack_pack_str_body(mp_pck, "storage_layer", 13);
+    msgpack_pack_map(mp_pck, 1);
+
+    /* Chunks */
+    msgpack_pack_str(mp_pck, 6);
+    msgpack_pack_str_body(mp_pck, "chunks", 6);
+    msgpack_pack_map(mp_pck, 5);
+
+    /* chunks['total_chunks'] */
+    msgpack_pack_str(mp_pck, 12);
+    msgpack_pack_str_body(mp_pck, "total_chunks", 12);
+    msgpack_pack_uint64(mp_pck, storage_st.chunks_total);
+
+    /* chunks['mem_chunks'] */
+    msgpack_pack_str(mp_pck, 10);
+    msgpack_pack_str_body(mp_pck, "mem_chunks", 10);
+    msgpack_pack_uint64(mp_pck, storage_st.chunks_mem);
+
+    /* chunks['fs_chunks'] */
+    msgpack_pack_str(mp_pck, 9);
+    msgpack_pack_str_body(mp_pck, "fs_chunks", 9);
+    msgpack_pack_uint64(mp_pck, storage_st.chunks_fs);
+
+    /* chunks['fs_up_chunks'] */
+    msgpack_pack_str(mp_pck, 12);
+    msgpack_pack_str_body(mp_pck, "fs_chunks_up", 12);
+    msgpack_pack_uint64(mp_pck, storage_st.chunks_fs_up);
+
+    /* chunks['fs_down_chunks'] */
+    msgpack_pack_str(mp_pck, 14);
+    msgpack_pack_str_body(mp_pck, "fs_chunks_down", 14);
+    msgpack_pack_uint64(mp_pck, storage_st.chunks_fs_down);
+}
+
+static void metrics_append_input(msgpack_packer *mp_pck,
+                                 struct flb_config *ctx,
+                                 struct flb_storage_metrics *sm)
+{
+    int len;
+    int ret;
+    const char *tmp;
+    char buf[32];
+    ssize_t size;
+
+    /* chunks */
+    int up;
+    int down;
+    int busy;
+    int busy_size_err;
+    ssize_t busy_size;
+    struct mk_list *head;
+    struct mk_list *h_chunks;
+    struct flb_input_instance *i;
+    struct flb_input_chunk *ic;
+
+    msgpack_pack_str(mp_pck, 12);
+    msgpack_pack_str_body(mp_pck, "input_chunks", 12);
+    msgpack_pack_map(mp_pck, mk_list_size(&ctx->inputs));
+
+    /* Input Plugins Ingestion */
+    mk_list_foreach(head, &ctx->inputs) {
+        i = mk_list_entry(head, struct flb_input_instance, _head);
+
+        tmp = flb_input_name(i);
+        len = strlen(tmp);
+
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, tmp, len);
+
+        /* Map for 'status' and 'chunks' */
+        msgpack_pack_map(mp_pck, 2);
+
+        /*
+         * Status
+         * ======
+         */
+        msgpack_pack_str(mp_pck, 6);
+        msgpack_pack_str_body(mp_pck, "status", 6);
+
+        /* 'status' map has 2 keys: overlimit and chunks */
+        msgpack_pack_map(mp_pck, 3);
+
+        /* status['overlimit'] */
+        msgpack_pack_str(mp_pck, 9);
+        msgpack_pack_str_body(mp_pck, "overlimit", 9);
+
+        ret = FLB_FALSE;
+        if (i->mem_buf_limit > 0) {
+            if (i->mem_chunks_size >= i->mem_buf_limit) {
+                ret = FLB_TRUE;
+            }
+        }
+        if (ret == FLB_TRUE) {
+            msgpack_pack_true(mp_pck);
+        }
+        else {
+            msgpack_pack_false(mp_pck);
+        }
+
+        /* status['mem_size'] */
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "mem_size", 8);
+
+        /* Current memory size used based on last ingestion */
+        flb_utils_bytes_to_human_readable_size(i->mem_chunks_size,
+                                               buf, sizeof(buf) - 1);
+        len = strlen(buf);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, buf, len);
+
+        /* status['mem_limit'] */
+        msgpack_pack_str(mp_pck, 9);
+        msgpack_pack_str_body(mp_pck, "mem_limit", 9);
+
+        flb_utils_bytes_to_human_readable_size(i->mem_buf_limit,
+                                               buf, sizeof(buf) - 1);
+        len = strlen(buf);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, buf, len);
+
+        /*
+         * Chunks
+         * ======
+         */
+        msgpack_pack_str(mp_pck, 6);
+        msgpack_pack_str_body(mp_pck, "chunks", 6);
+
+        /* 'chunks' has 3 keys: total, up, down, busy and busy_size */
+        msgpack_pack_map(mp_pck, 5);
+
+        /* chunks['total_chunks'] */
+        msgpack_pack_str(mp_pck, 5);
+        msgpack_pack_str_body(mp_pck, "total", 5);
+        msgpack_pack_uint64(mp_pck, mk_list_size(&i->chunks));
+
+        /*
+         * chunks Details: chunks marked as 'busy' are 'locked' since they are in
+         * a 'flush' state. No more data can be appended to a busy chunk.
+         */
+        busy = 0;
+        busy_size = 0;
+        busy_size_err = 0;
+
+        /* up/down */
+        up = 0;
+        down = 0;
+
+        /* Iterate chunks for the input instance in question */
+        mk_list_foreach(h_chunks, &i->chunks) {
+            ic = mk_list_entry(h_chunks, struct flb_input_chunk, _head);
+            if (ic->busy == FLB_TRUE) {
+                busy++;
+                size = cio_chunk_get_content_size(ic->chunk);
+                if (size >= 0) {
+                    busy_size += size;
+                }
+                else {
+                    busy_size_err++;
+                }
+            }
+
+            if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
+                up++;
+            }
+            else {
+                down++;
+            }
+
+        }
+
+        /* chunks['up'] */
+        msgpack_pack_str(mp_pck, 2);
+        msgpack_pack_str_body(mp_pck, "up", 2);
+        msgpack_pack_uint64(mp_pck, up);
+
+        /* chunks['down'] */
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "down", 4);
+        msgpack_pack_uint64(mp_pck, down);
+
+        /* chunks['busy'] */
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "busy", 4);
+        msgpack_pack_uint64(mp_pck, busy);
+
+        /* chunks['busy_size'] */
+        msgpack_pack_str(mp_pck, 9);
+        msgpack_pack_str_body(mp_pck, "busy_size", 9);
+
+        flb_utils_bytes_to_human_readable_size(busy_size, buf, sizeof(buf) - 1);
+        len = strlen(buf);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, buf, len);
+    }
+}
+
+static void cb_storage_metrics_collect(struct flb_config *ctx, void *data)
+{
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /* Prepare new outgoing buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Pack main map and append relevant data */
+    msgpack_pack_map(&mp_pck, 2);
+    metrics_append_general(&mp_pck, ctx, data);
+    metrics_append_input(&mp_pck, ctx, data);
+
+#ifdef FLB_HAVE_HTTP_SERVER
+    if (ctx->http_server == FLB_TRUE) {
+        flb_hs_push_storage_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+    }
+#endif
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
+struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
+{
+    int ret;
+    struct flb_storage_metrics *sm;
+
+    sm = flb_malloc(sizeof(struct flb_storage_metrics));
+    if (!sm) {
+        flb_errno();
+        return NULL;
+    }
+
+    ret = flb_sched_timer_cb_create(ctx, FLB_SCHED_TIMER_CB_PERM, 5000,
+                                    cb_storage_metrics_collect,
+                                    ctx->storage_metrics_ctx);
+    if (ret == -1) {
+        flb_error("[storage metrics] cannot create timer to collect metrics");
+        flb_free(sm);
+        return NULL;
+    }
+
+    return sm;
+}
 
 static int sort_chunk_cmp(const void *a_arg, const void *b_arg)
 {
@@ -320,6 +574,11 @@ void flb_storage_destroy(struct flb_config *ctx)
 
     if (!cio) {
         return;
+    }
+
+    if (ctx->storage_metrics == FLB_TRUE &&
+        ctx->storage_metrics_ctx != NULL) {
+        flb_free(ctx->storage_metrics_ctx);
     }
 
     cio_destroy(cio);

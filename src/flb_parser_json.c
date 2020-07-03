@@ -163,8 +163,8 @@ int flb_parser_json_do(struct flb_parser *parser,
         }
         memcpy(tmp, v->via.str.ptr, len);
         tmp[len] = '\0';
-        flb_warn("[parser:%s] Invalid time format %s for '%s'.",
-                 parser->name, parser->time_fmt, tmp);
+        flb_warn("[parser:%s] invalid time format %s for '%s'",
+                 parser->name, parser->time_fmt_full, tmp);
         time_lookup = time(NULL);
     }
     else {

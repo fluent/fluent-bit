@@ -45,6 +45,7 @@ struct flb_parser {
     char *name;           /* format name */
     char *p_regex;        /* pattern for main regular expression */
     char *time_fmt;       /* time format */
+    char *time_fmt_full;  /* original given time format */
     char *time_key;       /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */

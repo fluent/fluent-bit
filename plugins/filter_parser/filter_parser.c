@@ -295,8 +295,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             }
                             else {
                                 continue_parsing = FLB_FALSE;
-                                break;
                             }
+                            break;
                         }
                     }
                 }

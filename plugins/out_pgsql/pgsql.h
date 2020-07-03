@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_output_plugin.h>
 
 #include <libpq-fe.h>
 
@@ -30,6 +31,15 @@
 #define FLB_PGSQL_DBNAME "fluentbit"
 #define FLB_PGSQL_TABLE "fluentbit"
 #define FLB_PGSQL_TIMESTAMP_KEY "date"
+#define FLB_PGSQL_POOL_SIZE 4
+#define FLB_PGSQL_MIN_POOL_SIZE 1
+#define FLB_PGSQL_SYNC FLB_FALSE
+
+struct flb_pgsql_conn {
+    struct mk_list _head;
+    PGconn *conn;
+    int number;
+};
 
 struct flb_pgsql_config {
 
@@ -43,11 +53,25 @@ struct flb_pgsql_config {
     const char *db_user;
     const char *db_passwd;
 
-    /* pgconn, params, etc */
-    PGconn *conn;
-
     /* time key */
     flb_sds_t timestamp_key;
+
+    /* instance reference */
+    struct flb_output_instance *ins;
+
+    /* connections pool */
+    struct mk_list conn_queue;
+    struct mk_list _head;
+
+    struct flb_pgsql_conn *conn_current;
+    int max_pool_size;
+    int min_pool_size;
+    int active_conn;
+
+    /* async mode or sync mode */
+    int async;
 };
+
+void pgsql_conf_destroy(struct flb_pgsql_config *ctx);
 
 #endif

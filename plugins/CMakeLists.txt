@@ -129,6 +129,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_systemd")
   REGISTER_IN_PLUGIN("in_netif")
   REGISTER_IN_PLUGIN("in_docker")
+  REGISTER_IN_PLUGIN("in_docker_events")
 endif()
 
 REGISTER_IN_PLUGIN("in_emitter")
@@ -196,6 +197,7 @@ REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
 REGISTER_OUT_PLUGIN("out_gelf")
+REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
 
 # FILTERS
 # =======
@@ -203,18 +205,19 @@ REGISTER_FILTER_PLUGIN("filter_alter_size")
 REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_throttle")
+REGISTER_FILTER_PLUGIN("filter_throttle_size")
 
 if(FLB_REGEX)
-  REGISTER_FILTER_PLUGIN("filter_grep")
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
   REGISTER_FILTER_PLUGIN("filter_modify")
   REGISTER_FILTER_PLUGIN("filter_nest")
   REGISTER_FILTER_PLUGIN("filter_parser")
-  REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
 if(FLB_RECORD_ACCESSOR)
   REGISTER_FILTER_PLUGIN("filter_expect")
+  REGISTER_FILTER_PLUGIN("filter_grep")
+  REGISTER_FILTER_PLUGIN("filter_rewrite_tag")
 endif()
 
 if(FLB_LUAJIT)

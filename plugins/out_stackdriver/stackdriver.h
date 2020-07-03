@@ -46,6 +46,21 @@
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
 
+#define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
+#define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
+#define LEN_LOCAL_RESOURCE_ID_KEY 40
+
+#define K8S_CONTAINER "k8s_container"
+#define K8S_NODE      "k8s_node"
+#define K8S_POD       "k8s_pod"
+
+#define STREAM_STDOUT 1
+#define STREAM_STDERR 2
+#define STREAM_UNKNOWN 3
+
+#define STDOUT "stdout"
+#define STDERR "stderr"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -65,6 +80,15 @@ struct flb_stackdriver {
     flb_sds_t zone;
     flb_sds_t instance_id;
     flb_sds_t instance_name;
+
+    /* kubernetes specific */
+    flb_sds_t cluster_name;
+    flb_sds_t cluster_location;
+    flb_sds_t namespace_name;
+    flb_sds_t pod_name;
+    flb_sds_t container_name;
+    flb_sds_t node_name;
+    bool k8s_resource_type;
 
     /* other */
     flb_sds_t resource;
@@ -97,5 +121,10 @@ typedef enum {
     FLB_STD_DEBUG     = 100,
     FLB_STD_DEFAULT   = 0
 } severity_t;
+
+struct local_resource_id_list {
+    flb_sds_t val;
+    struct mk_list _head;
+};
 
 #endif

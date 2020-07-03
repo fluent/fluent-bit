@@ -136,8 +136,8 @@ static int ltsv_parser(struct flb_parser *parser,
                     ret = flb_parser_time_lookup((const char *) field, field_len,
                                                   0, parser, &tm, tmfrac);
                     if (ret == -1) {
-                       flb_error("[parser:%s] Invalid time format %s.",
-                                 parser->name, parser->time_fmt);
+                       flb_error("[parser:%s] Invalid time format %s",
+                                 parser->name, parser->time_fmt_full);
                        return -1;
                     }
                     *time_lookup = flb_parser_tm2time(&tm);

@@ -81,8 +81,8 @@ static void cb_results(const char *name, const char *value,
                 }
                 memcpy(tmp, value, vlen);
                 tmp[vlen] = '\0';
-                flb_warn("[parser:%s] Invalid time format %s for '%s'.",
-                         parser->name, parser->time_fmt, tmp);
+                flb_warn("[parser:%s] invalid time format %s for '%s'",
+                         parser->name, parser->time_fmt_full, tmp);
                 pcb->num_skipped++;
                 return;
             }

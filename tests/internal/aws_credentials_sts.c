@@ -369,14 +369,14 @@ static void test_flb_sts_session_name()
 
 static void test_sts_uri()
 {
-    char *uri;
+    flb_sds_t uri;
 
     uri = flb_sts_uri("AssumeRole", "myrole", "mysession",
-                  "myexternalid", NULL);
+                      "myexternalid", NULL);
     TEST_CHECK(strcmp(uri, "/?Version=2011-06-15&Action=AssumeRole"
                       "&RoleSessionName=mysession&RoleArn=myrole"
                       "&ExternalId=myexternalid") == 0);
-    flb_free(uri);
+    flb_sds_destroy(uri);
 }
 
 static void test_process_sts_response()
@@ -882,7 +882,7 @@ static void test_sts_provider_unexpected_api_response() {
      * - Each call to get_credentials and refresh invokes the client's
      * request method and returns a request failure.
      */
-     TEST_CHECK(g_request_count == 3);
+    TEST_CHECK(g_request_count == 3);
 
     flb_aws_provider_destroy(base_provider);
     flb_aws_provider_destroy(provider);
