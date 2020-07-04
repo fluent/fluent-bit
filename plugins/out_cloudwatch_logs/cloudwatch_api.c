@@ -120,6 +120,7 @@ struct flb_http_client *mock_http_call(char *error_env_var, char *api)
     c = flb_calloc(1, sizeof(struct flb_http_client));
     if (!c) {
         flb_errno();
+        flb_free(error);
         return NULL;
     }
     mk_list_init(&c->headers);
