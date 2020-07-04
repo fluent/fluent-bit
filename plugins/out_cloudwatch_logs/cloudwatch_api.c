@@ -348,22 +348,24 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                   const msgpack_object *obj, struct flb_time *tms)
 {
     size_t written;
+    int ret;
     size_t size;
     int offset = 0;
     struct cw_event *event;
     char *tmp_buf_ptr;
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
-    written = flb_msgpack_to_json(tmp_buf_ptr,
+    ret = flb_msgpack_to_json(tmp_buf_ptr,
                                   buf->tmp_buf_size - buf->tmp_buf_offset,
                                   obj);
-    if (written < 0) {
+    if (ret < 0) {
         /*
          * negative value means failure to write to buffer,
          * which means we ran out of space, and must send the logs
          */
         return 1;
     }
+    written = (size_t) ret;
     /* Discard empty messages (written == 2 means '""') */
     if (written <= 2) {
         flb_plg_debug(ctx->ins, "Found empty log message");
