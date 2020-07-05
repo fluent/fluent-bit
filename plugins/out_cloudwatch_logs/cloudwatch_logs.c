@@ -310,13 +310,13 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
     buf->tmp_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
 
-    buf->events = flb_malloc(sizeof(struct cw_event) * 1000);
+    buf->events = flb_malloc(sizeof(struct cw_event) * MAX_EVENTS_PER_PUT);
     if (!buf->events) {
         flb_errno();
         cw_flush_destroy(buf);
         goto error;
     }
-    buf->events_capacity = 1000;
+    buf->events_capacity = MAX_EVENTS_PER_PUT;
 
     ctx->buf = buf;
 
