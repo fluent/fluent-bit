@@ -518,27 +518,12 @@ int add_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 {
     int ret;
     struct cw_event *event;
-    int new_len;
-    size_t size;
     int retry_add = FLB_FALSE;
     int event_bytes = 0;
 
     if (buf->event_index == 0) {
         /* init */
         reset_flush_buf(ctx, buf, stream);
-    }
-
-    /* re-alloc event buffer if needed */
-    if ((buf->event_index + 1) >= buf->events_capacity) {
-        new_len = MAX_EVENTS_PER_PUT;
-        size = sizeof(struct cw_event) * new_len;
-        flb_plg_debug(ctx->ins, "Increasing event buffer to %d", new_len);
-        buf->events = flb_realloc(buf->events, size);
-        if (!buf->events) {
-            flb_errno();
-            return -1;
-        }
-        buf->events_capacity = new_len;
     }
 
 retry_add_event:
