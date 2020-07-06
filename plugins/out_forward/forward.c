@@ -636,6 +636,7 @@ static int config_set_properties(struct flb_upstream_node *node,
     }
     else {
         fc->tag = NULL;
+
     }
 
     return 0;
@@ -936,8 +937,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
     msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
 
     /* Tag */
-    flb_forward_format_append_tag(ctx, fc, &mp_pck, (msgpack_object *) 0,
-                                  tag, tag_len);
+    flb_forward_format_append_tag(ctx, fc, &mp_pck, NULL, tag, tag_len);
 
     entries = flb_mp_count(data, bytes);
     msgpack_pack_array(&mp_pck, entries);

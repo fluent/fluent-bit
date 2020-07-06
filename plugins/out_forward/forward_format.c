@@ -38,14 +38,25 @@ void flb_forward_format_bin_to_hex(uint8_t *buf, size_t len, char *out)
 int flb_forward_format_append_tag(struct flb_forward *ctx,
                                   struct flb_forward_config *fc,
                                   msgpack_packer *mp_pck,
-                                  msgpack_object map,
+                                  msgpack_object *map,
                                   const char *tag, int tag_len)
 {
 #ifdef FLB_HAVE_RECORD_ACCESSOR
     flb_sds_t tmp;
+    msgpack_object m;
+
+    if (!fc->ra_tag) {
+        msgpack_pack_str(mp_pck, tag_len);
+        msgpack_pack_str_body(mp_pck, tag, tag_len);
+        return 0;
+    }
+
+    if (map) {
+        m = *map;
+    }
 
     /* Tag */
-    tmp = flb_ra_translate(fc->ra_tag, (char *) tag, tag_len, map, NULL);
+    tmp = flb_ra_translate(fc->ra_tag, (char *) tag, tag_len, m, NULL);
     if (!tmp) {
         flb_plg_warn(ctx->ins, "Tag translation failed, using default Tag");
         msgpack_pack_str(mp_pck, tag_len);
@@ -149,7 +160,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
     msgpack_object   *mp_obj;
     msgpack_object   root;
     msgpack_object   ts;
-    msgpack_object   map;
+    msgpack_object   *map;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
@@ -175,7 +186,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
         root = result.data;
 
         ts = root.via.array.ptr[0];
-        map = root.via.array.ptr[1];
+        map = &root.via.array.ptr[1];
 
         /* Gather time */
         flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
@@ -256,8 +267,10 @@ static int flb_forward_format_forward_mode(struct flb_forward *ctx,
         chunk = chunk_buf;
     }
 
-    entries = flb_mp_count(data, bytes);
-    append_options(ctx, fc, &mp_pck, entries, (char *) data, bytes, chunk);
+    if (fc->send_options == FLB_TRUE) {
+        entries = flb_mp_count(data, bytes);
+        append_options(ctx, fc, &mp_pck, entries, (char *) data, bytes, chunk);
+    }
 
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
@@ -287,7 +300,6 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
     msgpack_object   *mp_obj;
     msgpack_object   root;
     msgpack_object   ts;
-    msgpack_object   map;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
     msgpack_unpacked result;
@@ -307,7 +319,7 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
 
     /* Tag */
     flb_forward_format_append_tag(ctx, fc, &mp_pck,
-                                  map /* unused */, tag, tag_len);
+                                  NULL, tag, tag_len);
 
     /* Entries */
     entries = flb_mp_count(data, bytes);
@@ -317,7 +329,6 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
         root = result.data;
 
         ts = root.via.array.ptr[0];
-        map = root.via.array.ptr[1];
 
         msgpack_pack_array(&mp_pck, 2);
 
@@ -336,7 +347,9 @@ static int flb_forward_format_forward_compat_mode(struct flb_forward *ctx,
         msgpack_pack_object(&mp_pck, *mp_obj);
     }
 
-    append_options(ctx, fc, &mp_pck, entries, (char *) data, bytes, chunk);
+    if (fc->send_options == FLB_TRUE) {
+        append_options(ctx, fc, &mp_pck, entries, (char *) data, bytes, chunk);
+    }
 
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
@@ -375,7 +388,7 @@ int flb_forward_format(struct flb_config *config,
     /*
      * Based in the configuration, decide the preferred protocol mode
      */
-    if (fc->ra_static == FLB_FALSE) {
+    if (fc->ra_tag && fc->ra_static == FLB_FALSE) {
         /*
          * Dynamic tag per records needs to include the Tag for every entry,
          * if record accessor option has been enabled we jump into this
