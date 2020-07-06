@@ -55,7 +55,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
 {
     const char *tmp;
-    char *session_name;
+    char *session_name = NULL;
     struct flb_cloudwatch *ctx = NULL;
     struct cw_flush *buf = NULL;
     int ret;
@@ -327,6 +327,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     return 0;
 
 error:
+    flb_free(session_name);
     flb_plg_error(ctx->ins, "Initialization failed");
     flb_cloudwatch_ctx_destroy(ctx);
     return -1;
