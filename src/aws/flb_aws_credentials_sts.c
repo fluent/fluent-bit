@@ -509,7 +509,7 @@ static struct flb_aws_provider_vtable eks_provider_vtable = {
     .refresh = refresh_fn_eks,
     .destroy = destroy_fn_eks,
     .sync = sync_fn_eks,
-    .async = async_fn_sts,
+    .async = async_fn_eks,
 };
 
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
