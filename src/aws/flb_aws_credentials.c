@@ -300,7 +300,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
         return NULL;
     }
     mk_list_add(&sub_provider->_head, &implementation->sub_providers);
-    flb_debug("[aws_credentials] Initialized Env Provider in standard chain");
+    flb_debug("[aws_credentials] Initialized EC2 Provider in standard chain");
 
     sub_provider = flb_ecs_provider_create(config, generator);
     if (sub_provider) {
