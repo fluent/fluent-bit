@@ -112,6 +112,10 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
                           query, cb_file_check, &qs);
+    if (ret == FLB_ERROR) {
+        flb_plg_error(ctx->ins, "cannot execute SQL: %s", query);
+        return -1;
+    }
 
     if (qs.rows == 0) {
         /* Register the file */
@@ -121,6 +125,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
                  file->name, (uint64_t) 0, (uint64_t) file->inode, created);
         ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
         if (ret == FLB_ERROR) {
+            flb_plg_error(ctx->ins, "cannot execute SQL: %s", query);
             return -1;
         }
 
