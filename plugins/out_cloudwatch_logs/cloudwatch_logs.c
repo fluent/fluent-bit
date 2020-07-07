@@ -240,6 +240,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         }
         /* session name can freed after provider is created */
         flb_free(session_name);
+        session_name = NULL;
     }
 
     /* initialize credentials and set to sync mode */
