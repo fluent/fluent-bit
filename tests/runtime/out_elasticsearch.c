@@ -53,7 +53,7 @@ static void cb_check_replace_dots(void *ctx, int ffd,
 {
     char *p;
     char *out_js = res_data;
-    char *record = "\"key_4\":5000";
+    char *record = "\"_o_k\":[{\"_b_ar\"";
 
     p = strstr(out_js, record);
     TEST_CHECK(p != NULL);
@@ -200,7 +200,7 @@ void flb_test_tag_key()
 void flb_test_replace_dots()
 {
     int ret;
-    int size = sizeof(JSON_ES) - 1;
+    int size = sizeof(JSON_DOTS) - 1;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -234,7 +234,7 @@ void flb_test_replace_dots()
     TEST_CHECK(ret == 0);
 
     /* Ingest data sample */
-    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+    flb_lib_push(ctx, in_ffd, (char *) JSON_DOTS, size);
 
     sleep(2);
     flb_stop(ctx);
