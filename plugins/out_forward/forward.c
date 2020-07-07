@@ -500,7 +500,7 @@ static int forward_read_ack(struct flb_forward *ctx,
         goto error;
     }
 
-    flb_plg_debug(ctx->ins, "protocol: received ACK");
+    flb_plg_debug(ctx->ins, "protocol: received ACK %s", ack);
     msgpack_unpacked_destroy(&result);
     return 0;
 
