@@ -763,34 +763,35 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
-static void validate_insert_id(msgpack_object * subobj, const msgpack_object * o, 
-                               insert_id_status * status)
+static insert_id_status validate_insert_id(msgpack_object * insert_id_value, 
+                                           const msgpack_object * obj)                           
 {
     int i = 0;
     msgpack_object_kv * p = NULL;
-    *status = INSERTID_NOT_PRESENT;
+    insert_id_status ret = INSERTID_NOT_PRESENT;
 
-    if (o == NULL || subobj == NULL) {
-        return;
+    if (obj == NULL) {
+        return ret;
     }
 
-    for (i = 0; i < o->via.map.size; i++) {
-        p = &o->via.map.ptr[i];
+    for (i = 0; i < obj->via.map.size; i++) {
+        p = &obj->via.map.ptr[i];
         if (p->key.type != MSGPACK_OBJECT_STR) {
             continue;
         }
         if (sizeof(INSERTID_IN_JSON) - 1 == p->key.via.str.size 
             && strncmp(INSERTID_IN_JSON, p->key.via.str.ptr, p->key.via.str.size) == 0) {
             if (p->val.type == MSGPACK_OBJECT_STR && p->val.via.str.size > 0) {
-                *subobj = p->val;
-                *status = INSERTID_VALID;
+                *insert_id_value = p->val;
+                ret = INSERTID_VALID;
             }
             else {
-                *status = INSERTID_INVALID;
+                ret = INSERTID_INVALID;
             }
             break;
         }
     }
+    return ret;
 }
                                                                                         
 static int pack_json_payload(int insert_id_extracted, 
@@ -1018,7 +1019,7 @@ static int stackdriver_format(struct flb_config *config,
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         /* Extract insertId */
-        validate_insert_id(&insert_id_obj, obj, &in_status);
+        in_status = validate_insert_id(&insert_id_obj, obj);
         if (in_status == INSERTID_INVALID) {
             flb_plg_error(ctx->ins, 
                           "Incorrect insertId received. InsertId should be non-empty string.");
@@ -1028,8 +1029,6 @@ static int stackdriver_format(struct flb_config *config,
     msgpack_unpacked_destroy(&result);
 
     if (array_size == 0) {
-        flb_plg_error(ctx->ins, 
-                      "All entries are invalid.");
         *out_size = 0;
         return -1;
     }
@@ -1269,7 +1268,7 @@ static int stackdriver_format(struct flb_config *config,
         }
 
         /* Extract insertId */
-        validate_insert_id(&insert_id_obj, obj, &in_status);
+        in_status = validate_insert_id(&insert_id_obj, obj);
         if (in_status == INSERTID_VALID) {
             insert_id_extracted = FLB_TRUE;
             entry_size += 1;
