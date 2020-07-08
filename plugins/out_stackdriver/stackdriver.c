@@ -502,8 +502,10 @@ static int process_local_resource_id(const void *data, size_t bytes,
         flb_sds_destroy(local_resource_id);
     }
 
-    flb_slist_destroy(list);
-    flb_free(list);
+    if (list) {
+        flb_slist_destroy(list);
+        flb_free(list);
+    }
     msgpack_unpacked_destroy(&result);
     return ret;
 
