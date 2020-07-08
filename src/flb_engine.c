@@ -297,7 +297,7 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
         }
         else if (config->ch_manager[0] == fd) {
             ret = flb_engine_manager(fd, config);
-            if (ret == FLB_ENGINE_STOP) {
+            if (ret == FLB_ENGINE_STOP || ret == FLB_ENGINE_EV_STOP) {
                 return FLB_ENGINE_STOP;
             }
         }

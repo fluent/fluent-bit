@@ -287,6 +287,7 @@ void flb_test_forward_mode()
     flb_output_set(ctx, out_ffd,
                    "match", "test",
                    "tag", "new.tag",
+                   "send_options", "true",
                    NULL);
 
     /* Enable test mode */

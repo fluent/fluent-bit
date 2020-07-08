@@ -147,6 +147,13 @@ static void flb_help(int rc, struct flb_config *config)
         }
         printf("  %-22s%s\n", in->name, in->description);
     }
+
+    printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
+    mk_list_foreach(head, &config->filter_plugins) {
+        filter = mk_list_entry(head, struct flb_filter_plugin, _head);
+        printf("  %-22s%s\n", filter->name, filter->description);
+    }
+
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
     mk_list_foreach(head, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
@@ -155,12 +162,6 @@ static void flb_help(int rc, struct flb_config *config)
             continue;
         }
         printf("  %-22s%s\n", out->name, out->description);
-    }
-
-    printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
-    mk_list_foreach(head, &config->filter_plugins) {
-        filter = mk_list_entry(head, struct flb_filter_plugin, _head);
-        printf("  %-22s%s\n", filter->name, filter->description);
     }
 
     printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);

@@ -478,7 +478,6 @@ static void flb_lib_worker(void *data)
     int ret;
     struct flb_config *config = data;
 
-    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
     ret = flb_engine_start(config);
     if (ret == -1) {
         flb_engine_failed(config);

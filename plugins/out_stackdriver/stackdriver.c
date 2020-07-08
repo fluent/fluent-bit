@@ -730,7 +730,7 @@ static int get_stream(msgpack_object_map map)
 }
 
 static int pack_json_payload(int operation_extracted, int operation_extra_size,
-                             msgpack_packer* mp_pck, msgpack_object *obj)
+                             msgpack_packer *mp_pck, msgpack_object *obj)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
     int i, j;
@@ -783,11 +783,13 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     /* optimize, pack the original obj */
     if (new_map_size == map_size) {
         msgpack_pack_object(mp_pck, *obj);
+        flb_sds_destroy(local_resource_id_key);
         return 0;
     }
 
     ret = msgpack_pack_map(mp_pck, new_map_size);
     if (ret < 0) {
+        flb_sds_destroy(local_resource_id_key);
         return ret;
     }
 
@@ -818,10 +820,12 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
         if (key_not_found) {
             ret = msgpack_pack_object(mp_pck, kv->key);
             if (ret < 0) {
+                flb_sds_destroy(local_resource_id_key);
                 return ret;
             }
             ret = msgpack_pack_object(mp_pck, kv->val);
             if (ret < 0) {
+                flb_sds_destroy(local_resource_id_key);
                 return ret;
             }
         }
