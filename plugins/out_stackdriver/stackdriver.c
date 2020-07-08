@@ -799,7 +799,8 @@ static int pack_json_payload(int insert_id_extracted,
                              int source_location_extracted, 
                              int source_location_extra_size,
                              int http_request_extracted, int http_request_extra_size, 
-                             msgpack_packer *mp_pck, msgpack_object *obj)
+                             msgpack_packer *mp_pck, msgpack_object *obj,
+                             struct flb_stackdriver *ctx)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
     int i, j;
@@ -1385,7 +1386,7 @@ static int stackdriver_format(struct flb_config *config,
         pack_json_payload(insert_id_extracted, operation_extracted, 
                           operation_extra_size, source_location_extracted, 
                           source_location_extra_size, http_request_extracted, 
-                          http_request_extra_size, &mp_pck, obj);
+                          http_request_extra_size, &mp_pck, obj, ctx);
 
         /* avoid modifying the original tag */
         newtag = tag;
