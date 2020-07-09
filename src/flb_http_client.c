@@ -804,9 +804,21 @@ int flb_http_add_header(struct flb_http_client *c,
                         const char *val, size_t val_len)
 {
     struct flb_kv *kv;
+    struct mk_list *tmp;
+    struct mk_list *head;
 
     if (key_len < 1 || val_len < 1) {
         return -1;
+    }
+
+    /* Check any previous header to avoid duplicates */
+    mk_list_foreach_safe(head, tmp, &c->headers) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
+            /* the header already exists, remove it */
+            flb_kv_item_destroy(kv);
+            break;
+        }
     }
 
     /* register new header in the temporal kv list */
