@@ -1188,7 +1188,9 @@ static int cb_forward_exit(void *data, struct flb_config *config)
         }
     }
     else {
-        flb_upstream_destroy(ctx->u);
+        if (ctx->u) {
+            flb_upstream_destroy(ctx->u);
+        }
     }
     flb_free(ctx);
 
