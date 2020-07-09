@@ -134,6 +134,13 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    /* Tag settings */
+    if (strchr(ins->tag, '*') != NULL) {
+        ctx->dynamic_tag = FLB_TRUE;
+    } else {
+        ctx->dynamic_tag = FLB_FALSE;
+    }
+
     return ctx;
 }
 

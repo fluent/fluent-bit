@@ -58,6 +58,7 @@ struct flb_syslog {
 
     /* Configuration */
     struct flb_parser *parser;
+    int dynamic_tag;
 
     /* List for connections and event loop */
     struct mk_list connections;
