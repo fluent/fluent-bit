@@ -58,6 +58,9 @@ struct flb_out_http {
     /* Compression mode (gzip) */
     int compress_gzip;
 
+    /* Allow duplicated headers */
+    int allow_dup_headers;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 

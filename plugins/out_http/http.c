@@ -113,6 +113,9 @@ static int http_post(struct flb_out_http *ctx,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
+    /* Allow duplicated headers ? */
+    flb_http_allow_duplicated_headers(c, ctx->allow_dup_headers);
+
     /*
      * Direct assignment of the callback context to the HTTP client context.
      * This needs to be improved through a more clean API.
@@ -332,79 +335,84 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specify an HTTP Proxy. The expected format of this value is http://host:port. "
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "allow_duplicated_headers", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_http, allow_dup_headers),
+     "Specify if duplicated headers are allowed or not"
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, http_user),
-     NULL
+     "Set HTTP auth user"
     },
     {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
-     NULL
+     "Set HTTP auth password"
     },
     {
      FLB_CONFIG_MAP_STR, "header_tag", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, header_tag),
-     NULL
+     "Set a HTTP header which value is the Tag"
     },
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specify the format of the date. Supported formats are 'double' and 'iso8601'"
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_out_http, json_date_key),
-     NULL
+     "Specify the name of the date field in output"
     },
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set payload compression mechanism. Option available is 'gzip'"
     },
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_http, headers),
-     NULL,
+     "Add a HTTP header key/value pair. Multiple headers can be set"
     },
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, uri),
-     NULL,
+     "Specify an optional HTTP URI for the target web server, e.g: /something"
     },
 
     /* Gelf Properties */
     {
      FLB_CONFIG_MAP_STR, "gelf_timestamp_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.timestamp_key),
-     NULL
+     "Specify the key to use for 'timestamp' in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_host_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.host_key),
-     NULL
+     "Specify the key to use for the 'host' in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_short_message_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.short_message_key),
-     NULL
+     "Specify the key to use as the 'short' message in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_full_message_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.full_message_key),
-     NULL
+     "Specify the key to use for the 'full' message in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_level_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
-     NULL
+     "Specify the key to use for the 'level' in gelf format"
     },
 
     /* EOF */
