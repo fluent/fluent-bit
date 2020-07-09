@@ -109,6 +109,9 @@ struct flb_http_client {
     int header_size;
     char *header_buf;
 
+    /* Config */
+    int allow_dup_headers;          /* allow duplicated headers      */
+
     /* incoming parameters */
     const char *uri;
     const char *query_string;
@@ -154,6 +157,7 @@ size_t flb_http_buffer_available(struct flb_http_client *c);
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size);
 int flb_http_strip_port_from_host(struct flb_http_client *c);
+int flb_http_allow_duplicated_headers(struct flb_http_client *c, int allow);
 int flb_http_client_debug_property_is_valid(char *key, char *val);
 
 #endif

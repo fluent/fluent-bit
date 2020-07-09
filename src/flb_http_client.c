@@ -76,6 +76,16 @@ int flb_http_strip_port_from_host(struct flb_http_client *c)
     return -1;
 }
 
+int flb_http_allow_duplicated_headers(struct flb_http_client *c, int allow)
+{
+    if (allow != FLB_TRUE && allow != FLB_FALSE) {
+        return -1;
+    }
+
+    c->allow_dup_headers = allow;
+    return 0;
+}
+
 /* check if there is enough space in the client header buffer */
 static int header_available(struct flb_http_client *c, int bytes)
 {
@@ -643,6 +653,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->header_size = FLB_HTTP_BUF_SIZE;
     c->header_len  = ret;
     c->flags       = flags;
+    c->allow_dup_headers = FLB_TRUE;
     mk_list_init(&c->headers);
 
     /* Check if we have a query string */
@@ -812,12 +823,14 @@ int flb_http_add_header(struct flb_http_client *c,
     }
 
     /* Check any previous header to avoid duplicates */
-    mk_list_foreach_safe(head, tmp, &c->headers) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
-            /* the header already exists, remove it */
-            flb_kv_item_destroy(kv);
-            break;
+    if (c->allow_dup_headers == FLB_FALSE) {
+        mk_list_foreach_safe(head, tmp, &c->headers) {
+            kv = mk_list_entry(head, struct flb_kv, _head);
+            if (flb_sds_casecmp(kv->key, key, key_len) == 0) {
+                /* the header already exists, remove it */
+                flb_kv_item_destroy(kv);
+                break;
+            }
         }
     }
 
