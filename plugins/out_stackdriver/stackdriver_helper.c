@@ -19,9 +19,12 @@
 
 #include "stackdriver.h"
 
-int cmp_helper(msgpack_object key, const char* str, const int size) {
-    if (size != key.via.str.size 
-        || strncmp(str, key.via.str.ptr, key.via.str.size) != 0) {
+int cmp_str_helper(msgpack_object obj, const char* str, const int size) {
+    if (obj.type != MSGPACK_OBJECT_STR) {
+        return FLB_FALSE;
+    }
+    if (size != obj.via.str.size 
+        || strncmp(str, obj.via.str.ptr, obj.via.str.size) != 0) {
         return FLB_FALSE;
     }
     return FLB_TRUE;
@@ -29,41 +32,47 @@ int cmp_helper(msgpack_object key, const char* str, const int size) {
 
 int assign_subfield_str(msgpack_object_kv *tmp_p, const char* str, 
                         const int size, flb_sds_t *subfield) {
-    if (cmp_helper(tmp_p->key, str, size)) {
+    if (cmp_str_helper(tmp_p->key, str, size)) {
         if (tmp_p->val.type != MSGPACK_OBJECT_STR) {
-            return 0;
+            return FLB_TRUE;
         }
         *subfield = flb_sds_copy(*subfield, tmp_p->val.via.str.ptr, 
                                  tmp_p->val.via.str.size);
-        return 0;
+        return FLB_TRUE;
     }
-    return -1;
+    return FLB_FALSE;
 }
 
 int assign_subfield_bool(msgpack_object_kv *tmp_p, const char* str, 
                          const int size, int *subfield) {
-    if (cmp_helper(tmp_p->key, str, size)) {
+    if (cmp_str_helper(tmp_p->key, str, size)) {
         if (tmp_p->val.type != MSGPACK_OBJECT_BOOLEAN) {
-            return 0;
+            return FLB_TRUE;
         }
         if (tmp_p->val.via.boolean) {
             *subfield = FLB_TRUE;
         }
-        return 0;
+        else {
+            *subfield = FLB_FALSE;
+        }
+        return FLB_TRUE;
     }
-    return -1;
+    return FLB_FALSE;
 }
 
 int assign_subfield_int(msgpack_object_kv *tmp_p, const char* str, 
                         const int size, int *subfield) {
-    if (cmp_helper(tmp_p->key, str, size)) {
+    if (cmp_str_helper(tmp_p->key, str, size)) {
         if (tmp_p->val.type == MSGPACK_OBJECT_STR) {
             *subfield = atoll(tmp_p->val.via.str.ptr);
         }
         else if (tmp_p->val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
             *subfield = tmp_p->val.via.i64;
         }
-        return 0;
+        else {
+            *subfield = 0;
+        }
+        return FLB_TRUE;
     }
-    return -1;
+    return FLB_FALSE;
 }

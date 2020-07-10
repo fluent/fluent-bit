@@ -74,7 +74,7 @@ int extract_source_location(flb_sds_t *source_location_file,
 
         if (p->val.type != MSGPACK_OBJECT_MAP 
             || p->key.type != MSGPACK_OBJECT_STR
-            || !cmp_helper(p->key, SOURCELOCATION_FIELD_IN_JSON, 
+            || !cmp_str_helper(p->key, SOURCELOCATION_FIELD_IN_JSON, 
                            sizeof(SOURCELOCATION_FIELD_IN_JSON) - 1)) {
 
             continue;
@@ -94,17 +94,17 @@ int extract_source_location(flb_sds_t *source_location_file,
 
             if (assign_subfield_str(tmp_p, SOURCE_LOCATION_FILE, 
                                     SOURCE_LOCATION_FILE_SIZE, 
-                                    source_location_file) == 0) {
+                                    source_location_file) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, SOURCE_LOCATION_FUNCTION, 
                                          SOURCE_LOCATION_FUNCTION_SIZE, 
-                                         source_location_function) == 0) {
+                                         source_location_function) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_int(tmp_p, SOURCE_LOCATION_LINE, 
                                          SOURCE_LOCATION_LINE_SIZE, 
-                                         source_location_line) == 0) {
+                                         source_location_line) == FLB_TRUE) {
                 continue;
             }
             else {
@@ -127,9 +127,9 @@ void pack_extra_source_location_subfields(msgpack_packer *mp_pck,
     msgpack_pack_map(mp_pck, extra_subfields);
 
     for (; p < pend; ++p) {
-        if (cmp_helper(p->key, SOURCE_LOCATION_FILE, SOURCE_LOCATION_FILE_SIZE)
-            || cmp_helper(p->key, SOURCE_LOCATION_LINE, SOURCE_LOCATION_LINE_SIZE)
-            || cmp_helper(p->key, SOURCE_LOCATION_FUNCTION, 
+        if (cmp_str_helper(p->key, SOURCE_LOCATION_FILE, SOURCE_LOCATION_FILE_SIZE)
+            || cmp_str_helper(p->key, SOURCE_LOCATION_LINE, SOURCE_LOCATION_LINE_SIZE)
+            || cmp_str_helper(p->key, SOURCE_LOCATION_FUNCTION, 
                           SOURCE_LOCATION_FUNCTION_SIZE)) {
             continue;
         }

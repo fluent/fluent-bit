@@ -33,6 +33,7 @@
 #include "stackdriver_operation.h"
 #include "stackdriver_source_location.h"
 #include "stackdriver_http_request.h"
+#include "stackdriver_helper.h"
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
 
@@ -779,8 +780,7 @@ static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
         if (p->key.type != MSGPACK_OBJECT_STR) {
             continue;
         }
-        if (sizeof(INSERTID_IN_JSON) - 1 == p->key.via.str.size 
-            && strncmp(INSERTID_IN_JSON, p->key.via.str.ptr, p->key.via.str.size) == 0) {
+        if (cmp_str_helper(p->key, INSERTID_IN_JSON, sizeof(INSERTID_IN_JSON) - 1)) {
             if (p->val.type == MSGPACK_OBJECT_STR && p->val.via.str.size > 0) {
                 *insert_id_value = p->val;
                 ret = INSERTID_VALID;
@@ -879,14 +879,12 @@ static int pack_json_payload(int insert_id_extracted,
         key_not_found = 1;
         
         if (insert_id_extracted == FLB_TRUE 
-            && kv->val.type == MSGPACK_OBJECT_STR
-            && sizeof(INSERTID_IN_JSON) - 1 == kv->key.via.str.size 
-            && strncmp(INSERTID_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0 ) {
+            && cmp_str_helper(kv->key, INSERTID_IN_JSON, sizeof(INSERTID_IN_JSON) - 1) ) {
             continue;
         }
         
-        if (sizeof(OPERATION_FIELD_IN_JSON) - 1 == kv->key.via.str.size
-            && strncmp(OPERATION_FIELD_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0 
+        if (cmp_str_helper(kv->key, OPERATION_FIELD_IN_JSON, 
+                           sizeof(OPERATION_FIELD_IN_JSON) - 1)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if (operation_extra_size > 0) {
@@ -896,8 +894,8 @@ static int pack_json_payload(int insert_id_extracted,
             continue;
         }
 
-        if (sizeof(SOURCELOCATION_FIELD_IN_JSON) - 1 == kv->key.via.str.size
-            && strncmp(SOURCELOCATION_FIELD_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0 
+        if (cmp_str_helper(kv->key, SOURCELOCATION_FIELD_IN_JSON, 
+                           sizeof(SOURCELOCATION_FIELD_IN_JSON) - 1) 
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(source_location_extra_size > 0) {
@@ -908,8 +906,8 @@ static int pack_json_payload(int insert_id_extracted,
             continue;
         }
                                                                                         
-        if (sizeof(HTTPREQUEST_FIELD_IN_JSON) - 1 == kv->key.via.str.size
-            && strncmp(HTTPREQUEST_FIELD_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0 
+        if (cmp_str_helper(kv->key, HTTPREQUEST_FIELD_IN_JSON, 
+                           sizeof(HTTPREQUEST_FIELD_IN_JSON) - 1) 
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(http_request_extra_size > 0) {

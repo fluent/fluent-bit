@@ -83,8 +83,8 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
     for (; p < pend && op_status == NO_OPERATION; ++p) {
 
         if (p->val.type != MSGPACK_OBJECT_MAP || p->key.type != MSGPACK_OBJECT_STR
-            || !cmp_helper(p->key, OPERATION_FIELD_IN_JSON, 
-                          sizeof(OPERATION_FIELD_IN_JSON) - 1)) {
+            || !cmp_str_helper(p->key, OPERATION_FIELD_IN_JSON, 
+                           sizeof(OPERATION_FIELD_IN_JSON) - 1)) {
             continue;
         }
 
@@ -101,19 +101,22 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
             }
 
             if (assign_subfield_str(tmp_p, OPERATION_ID, 
-                                    OPERATION_ID_SIZE, operation_id) == 0) {
+                                    OPERATION_ID_SIZE, operation_id) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, OPERATION_PRODUCER, 
-                                         OPERATION_PRODUCER_SIZE, operation_producer) == 0) {
+                                         OPERATION_PRODUCER_SIZE, 
+                                         operation_producer) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_bool(tmp_p, OPERATION_FIRST, 
-                                          OPERATION_FIRST_SIZE, operation_first) == 0) {
+                                          OPERATION_FIRST_SIZE, 
+                                          operation_first) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_bool(tmp_p, OPERATION_LAST, 
-                                          OPERATION_LAST_SIZE, operation_last) == 0) {
+                                          OPERATION_LAST_SIZE, 
+                                          operation_last) == FLB_TRUE) {
                 continue;
             }
             else {
@@ -133,10 +136,10 @@ void pack_extra_operation_subfields(msgpack_packer *mp_pck,
     msgpack_pack_map(mp_pck, extra_subfields);
 
     for (; p < pend; ++p) {
-        if (cmp_helper(p->key, OPERATION_ID, OPERATION_ID_SIZE)
-            || cmp_helper(p->key, OPERATION_PRODUCER, OPERATION_PRODUCER_SIZE)
-            || cmp_helper(p->key, OPERATION_FIRST, OPERATION_FIRST_SIZE)
-            || cmp_helper(p->key, OPERATION_LAST, OPERATION_LAST_SIZE)) {
+        if (cmp_str_helper(p->key, OPERATION_ID, OPERATION_ID_SIZE)
+            || cmp_str_helper(p->key, OPERATION_PRODUCER, OPERATION_PRODUCER_SIZE)
+            || cmp_str_helper(p->key, OPERATION_FIRST, OPERATION_FIRST_SIZE)
+            || cmp_str_helper(p->key, OPERATION_LAST, OPERATION_LAST_SIZE)) {
             continue;
         }
 

@@ -230,7 +230,7 @@ int extract_http_request(struct http_request_field *http_request,
     for (; p < pend && op_status == NO_HTTPREQUEST; ++p) {
         if (p->val.type != MSGPACK_OBJECT_MAP
             || p->key.type != MSGPACK_OBJECT_STR
-            || !cmp_helper(p->key, HTTPREQUEST_FIELD_IN_JSON, 
+            || !cmp_str_helper(p->key, HTTPREQUEST_FIELD_IN_JSON, 
                            sizeof(HTTPREQUEST_FIELD_IN_JSON) - 1)) {
             
             continue;
@@ -248,7 +248,7 @@ int extract_http_request(struct http_request_field *http_request,
                 continue;
             }
 
-            if (cmp_helper(tmp_p->key, HTTP_REQUEST_LATENCY, 
+            if (cmp_str_helper(tmp_p->key, HTTP_REQUEST_LATENCY, 
                            HTTP_REQUEST_LATENCY_SIZE)) {                
                 if (tmp_p->val.type != MSGPACK_OBJECT_STR) {
                     continue;
@@ -257,74 +257,74 @@ int extract_http_request(struct http_request_field *http_request,
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_PROTOCOL, 
                                          HTTP_REQUEST_PROTOCOL_SIZE, 
-                                         &http_request->protocol) == 0) {
+                                         &http_request->protocol) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_REFERER, 
                                          HTTP_REQUEST_REFERER_SIZE, 
-                                         &http_request->referer) == 0) {
+                                         &http_request->referer) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_REMOTE_IP, 
                                          HTTP_REQUEST_REMOTE_IP_SIZE, 
-                                         &http_request->remoteIp) == 0) {
+                                         &http_request->remoteIp) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_REQUEST_METHOD, 
                                          HTTP_REQUEST_REQUEST_METHOD_SIZE, 
-                                         &http_request->requestMethod) == 0) {
+                                         &http_request->requestMethod) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_REQUEST_URL, 
                                          HTTP_REQUEST_REQUEST_URL_SIZE, 
-                                         &http_request->requestUrl) == 0) {
+                                         &http_request->requestUrl) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_SERVER_IP, 
                                          HTTP_REQUEST_SERVER_IP_SIZE, 
-                                         &http_request->serverIp) == 0) {
+                                         &http_request->serverIp) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_str(tmp_p, HTTP_REQUEST_USER_AGENT, 
                                          HTTP_REQUEST_USER_AGENT_SIZE, 
-                                         &http_request->userAgent) == 0) {
+                                         &http_request->userAgent) == FLB_TRUE) {
                 continue;
             }
 
             else if (assign_subfield_int(tmp_p, HTTP_REQUEST_CACHE_FILL_BYTES, 
                                          HTTP_REQUEST_CACHE_FILL_BYTES_SIZE, 
-                                         &http_request->cacheFillBytes) == 0) {
+                                         &http_request->cacheFillBytes) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_int(tmp_p, HTTP_REQUEST_REQUESTSIZE, 
                                          HTTP_REQUEST_REQUESTSIZE_SIZE, 
-                                         &http_request->requestSize) == 0) {
+                                         &http_request->requestSize) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_int(tmp_p, HTTP_REQUEST_RESPONSESIZE, 
                                          HTTP_REQUEST_RESPONSESIZE_SIZE, 
-                                         &http_request->responseSize) == 0) {
+                                         &http_request->responseSize) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_int(tmp_p, HTTP_REQUEST_STATUS, 
                                          HTTP_REQUEST_STATUS_SIZE, 
-                                         &http_request->status) == 0) {
+                                         &http_request->status) == FLB_TRUE) {
                 continue;
             }
 
             else if (assign_subfield_bool(tmp_p, HTTP_REQUEST_CACHE_HIT, 
                                           HTTP_REQUEST_CACHE_HIT_SIZE, 
-                                          &http_request->cacheHit) == 0) {
+                                          &http_request->cacheHit) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_bool(tmp_p, HTTP_REQUEST_CACHE_LOOKUP, 
                                           HTTP_REQUEST_CACHE_LOOKUP_SIZE, 
-                                          &http_request->cacheLookup) == 0) {
+                                          &http_request->cacheLookup) == FLB_TRUE) {
                 continue;
             }
             else if (assign_subfield_bool(tmp_p, HTTP_REQUEST_CACHE_VALIDATE_WITH_ORIGIN_SERVER, 
                                           HTTP_REQUEST_CACHE_VALIDATE_WITH_ORIGIN_SERVER_SIZE, 
-                                          &http_request->cacheValidatedWithOriginServer) == 0) {
+                                          &http_request->cacheValidatedWithOriginServer) == FLB_TRUE) {
                 continue;
             }
 
@@ -346,35 +346,35 @@ void pack_extra_http_request_subfields(msgpack_packer *mp_pck,
     msgpack_pack_map(mp_pck, extra_subfields);
 
     for (; p < pend; ++p) {
-        if (cmp_helper(p->key, HTTP_REQUEST_LATENCY, 
+        if (cmp_str_helper(p->key, HTTP_REQUEST_LATENCY, 
                        HTTP_REQUEST_LATENCY_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_PROTOCOL, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_PROTOCOL, 
                           HTTP_REQUEST_PROTOCOL_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_REFERER, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_REFERER, 
                           HTTP_REQUEST_REFERER_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_REMOTE_IP, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_REMOTE_IP, 
                           HTTP_REQUEST_REMOTE_IP_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_REQUEST_METHOD, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_REQUEST_METHOD, 
                           HTTP_REQUEST_REQUEST_METHOD_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_REQUEST_URL, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_REQUEST_URL, 
                           HTTP_REQUEST_REQUEST_URL_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_SERVER_IP, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_SERVER_IP, 
                           HTTP_REQUEST_SERVER_IP_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_USER_AGENT, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_USER_AGENT, 
                           HTTP_REQUEST_USER_AGENT_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_CACHE_FILL_BYTES, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_CACHE_FILL_BYTES, 
                           HTTP_REQUEST_CACHE_FILL_BYTES_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_REQUESTSIZE, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_REQUESTSIZE, 
                           HTTP_REQUEST_REQUESTSIZE_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_RESPONSESIZE, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_RESPONSESIZE, 
                           HTTP_REQUEST_RESPONSESIZE_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_STATUS, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_STATUS, 
                           HTTP_REQUEST_STATUS_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_CACHE_HIT, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_CACHE_HIT, 
                           HTTP_REQUEST_CACHE_HIT_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_CACHE_LOOKUP, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_CACHE_LOOKUP, 
                           HTTP_REQUEST_CACHE_LOOKUP_SIZE)
-            || cmp_helper(p->key, HTTP_REQUEST_CACHE_VALIDATE_WITH_ORIGIN_SERVER, 
+            || cmp_str_helper(p->key, HTTP_REQUEST_CACHE_VALIDATE_WITH_ORIGIN_SERVER, 
                           HTTP_REQUEST_CACHE_VALIDATE_WITH_ORIGIN_SERVER_SIZE)) {
             
             continue;

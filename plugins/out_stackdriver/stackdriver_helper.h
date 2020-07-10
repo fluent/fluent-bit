@@ -22,7 +22,8 @@
 
 #include "stackdriver.h"
 
-int cmp_helper(msgpack_object key, const char* str, const int size);
+/* Compare key->via.str and str. Return FLB_TRUE if matches */
+int cmp_str_helper(msgpack_object key, const char* str, const int size);
 
 int assign_subfield_str(msgpack_object_kv *tmp_p, const char* str, 
                         const int size, flb_sds_t *subfield);
