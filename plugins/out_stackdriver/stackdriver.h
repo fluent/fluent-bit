@@ -99,6 +99,7 @@ struct flb_stackdriver {
     bool k8s_resource_type;
 
     flb_sds_t labels_key;
+    flb_sds_t local_resource_id;
 
     /* other */
     flb_sds_t resource;
