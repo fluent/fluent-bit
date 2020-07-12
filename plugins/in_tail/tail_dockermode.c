@@ -286,6 +286,7 @@ int flb_tail_dmode_process_content(time_t now,
             flb_errno();
             return -1;
         }
+        file->dmode_buf = tmp;
 
         tmp_copy = flb_sds_copy(file->dmode_lastline, line, line_len);
         if (!tmp_copy) {
@@ -293,7 +294,6 @@ int flb_tail_dmode_process_content(time_t now,
             return -1;
         }
 
-        file->dmode_buf = tmp;
         file->dmode_lastline = tmp_copy;
         file->dmode_flush_timeout = now + (ctx->docker_mode_flush - 1);
 
