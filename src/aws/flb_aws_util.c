@@ -158,6 +158,10 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size)
 {
     flb_sds_t error = NULL;
 
+    if (payload_size == 0) {
+        return FLB_FALSE;
+    }
+
     /* Fluent Bit calls the STS API which returns XML */
     if (strcasestr(payload, "InvalidClientTokenId") != NULL) {
         return FLB_TRUE;
