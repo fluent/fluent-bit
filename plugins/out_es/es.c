@@ -172,9 +172,10 @@ static int es_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
                                  struct flb_elasticsearch *ctx)
 {
+    int i;
     msgpack_object *e;
 
-    for (int i = 0; i < array.via.array.size; i++) {
+    for (i = 0; i < array.via.array.size; i++) {
         e = &array.via.array.ptr[i];
         if (e->type == MSGPACK_OBJECT_MAP)
         {
