@@ -34,14 +34,14 @@ int validate_key(msgpack_object obj, const char *str, const int size) {
     return equal_obj_str(obj, str, size);
 }
 
-void assign_subfield_str(msgpack_object obj, flb_sds_t *subfield) {
+void try_assign_subfield_str(msgpack_object obj, flb_sds_t *subfield) {
     if (obj.type == MSGPACK_OBJECT_STR) {
         *subfield = flb_sds_copy(*subfield, obj.via.str.ptr, 
                                  obj.via.str.size);
     }
 }
 
-void assign_subfield_bool(msgpack_object obj, int *subfield) {
+void try_assign_subfield_bool(msgpack_object obj, int *subfield) {
     if (obj.type == MSGPACK_OBJECT_BOOLEAN) {
         if (obj.via.boolean) {
             *subfield = FLB_TRUE;
@@ -52,7 +52,7 @@ void assign_subfield_bool(msgpack_object obj, int *subfield) {
     }
 }
 
-void assign_subfield_int(msgpack_object obj, int *subfield) {
+void try_assign_subfield_int(msgpack_object obj, int *subfield) {
     if (obj.type == MSGPACK_OBJECT_STR) {
         *subfield = atoll(obj.via.str.ptr);
     }

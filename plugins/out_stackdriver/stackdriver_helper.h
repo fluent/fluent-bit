@@ -35,18 +35,18 @@ int validate_key(msgpack_object obj, const char *str, const int size);
  * if obj->type is string, assign obj->val to subfield 
  * Otherwise leave the subfield untouched
  */
-void assign_subfield_str(msgpack_object obj, flb_sds_t *subfield);
+void try_assign_subfield_str(msgpack_object obj, flb_sds_t *subfield);
 
 /* 
  * if obj->type is boolean, assign obj->val to subfield 
  * Otherwise leave the subfield untouched
  */
-void assign_subfield_bool(msgpack_object obj, int *subfield);
+void try_assign_subfield_bool(msgpack_object obj, int *subfield);
 
 /* 
  * if obj->type is valid, assign obj->val to subfield 
  * Otherwise leave the subfield untouched
  */
-void assign_subfield_int(msgpack_object obj, int *subfield);
+void try_assign_subfield_int(msgpack_object obj, int *subfield);
 
 #endif

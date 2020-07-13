@@ -101,17 +101,17 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
             }
 
             if (validate_key(tmp_p->key, OPERATION_ID, OPERATION_ID_SIZE)) {
-                assign_subfield_str(tmp_p->val, operation_id);
+                try_assign_subfield_str(tmp_p->val, operation_id);
             }
             else if (validate_key(tmp_p->key, OPERATION_PRODUCER, 
                                   OPERATION_PRODUCER_SIZE)) {
-                assign_subfield_str(tmp_p->val, operation_producer);
+                try_assign_subfield_str(tmp_p->val, operation_producer);
             }
             else if (validate_key(tmp_p->key, OPERATION_FIRST, OPERATION_FIRST_SIZE)) {
-                assign_subfield_bool(tmp_p->val, operation_first);
+                try_assign_subfield_bool(tmp_p->val, operation_first);
             }
             else if (validate_key(tmp_p->key, OPERATION_LAST, OPERATION_LAST_SIZE)) {
-                assign_subfield_bool(tmp_p->val, operation_last);
+                try_assign_subfield_bool(tmp_p->val, operation_last);
             }
             else {
                 *extra_subfields += 1;
