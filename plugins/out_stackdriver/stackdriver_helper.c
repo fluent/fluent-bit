@@ -59,7 +59,4 @@ void assign_subfield_int(msgpack_object obj, int *subfield) {
     else if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         *subfield = obj.via.i64;
     }
-    else {
-        *subfield = 0;
-    }
 }

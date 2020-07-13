@@ -82,7 +82,7 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
 
     for (; p < pend && op_status == NO_OPERATION; ++p) {
 
-        if (p->val.type != MSGPACK_OBJECT_MAP || p->key.type != MSGPACK_OBJECT_STR
+        if (p->val.type != MSGPACK_OBJECT_MAP
             || !validate_key(p->key, OPERATION_FIELD_IN_JSON, 
                              OPERATION_KEY_SIZE)) {
             continue;

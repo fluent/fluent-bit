@@ -793,7 +793,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
         /* more special fields are required to be added */
     };
 
-    if(operation_extracted == FLB_TRUE && operation_extra_size == 0) {
+    if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
         to_remove += 1;
     }
 

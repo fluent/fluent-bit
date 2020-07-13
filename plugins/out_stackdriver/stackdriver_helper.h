@@ -45,7 +45,7 @@ void assign_subfield_bool(msgpack_object obj, int *subfield);
 
 /* 
  * if obj->type is valid, assign obj->val to subfield 
- * Otherwise leave assign 0
+ * Otherwise leave the subfield untouched
  */
 void assign_subfield_int(msgpack_object obj, int *subfield);
 
