@@ -1,6 +1,6 @@
 name: fluent-bit
 base: core18
-version: '1.5.0'
+version: '1.5.1'
 summary: High performance logs and stream processor
 description: |
   Fluent Bit is a high performance log processor and stream processor for Linux.
@@ -12,9 +12,11 @@ grade: 'devel'
 confinement: 'strict'
 
 apps:
-  fluent-bit:
-    command: bin/fluent-bit
+  service:
+    command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
     daemon: simple
+  fluent-bit:
+    command: fluent-bit
 
 parts:
   fluent-bit:
@@ -43,3 +45,8 @@ parts:
         - -DFLB_EXAMPLES=OFF
         - -DFLB_SHARED_LIB=Off
         - -DFLB_OUT_PGSQL=On
+
+layout:
+  /etc/fluent-bit:
+    bind: $SNAP/etc/fluent-bit
+
