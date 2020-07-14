@@ -762,9 +762,42 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
-                                                                                        
-static int pack_json_payload(int operation_extracted, int operation_extra_size, 
-                             msgpack_packer *mp_pck, msgpack_object *obj,
+static insert_id_status validate_insert_id(msgpack_object * insert_id_value, 
+                                           const msgpack_object * obj)                           
+{
+    int i = 0;
+    msgpack_object_kv * p = NULL;
+    insert_id_status ret = INSERTID_NOT_PRESENT;
+
+    if (obj == NULL) {
+        return ret;
+    }
+
+    for (i = 0; i < obj->via.map.size; i++) {
+        p = &obj->via.map.ptr[i];
+        if (p->key.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+        if (p->key.via.str.size == INSERT_ID_SIZE 
+            && strncmp(DEFAULT_INSERT_ID_KEY, 
+                       p->key.via.str.ptr, 
+                       p->key.via.str.size) == 0) {
+            if (p->val.type == MSGPACK_OBJECT_STR && p->val.via.str.size > 0) {
+                *insert_id_value = p->val;
+                ret = INSERTID_VALID;
+            }
+            else {
+                ret = INSERTID_INVALID;
+            }
+            break;
+        }
+    }
+    return ret;
+}
+
+static int pack_json_payload(int insert_id_extracted, 
+                             int operation_extracted, int operation_extra_size, 
+                             msgpack_packer* mp_pck, msgpack_object *obj,
                              struct flb_stackdriver *ctx)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
@@ -793,6 +826,9 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
         /* more special fields are required to be added */
     };
 
+    if(insert_id_extracted == FLB_TRUE) {
+        to_remove += 1;
+    }
     if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
         to_remove += 1;
     }
@@ -828,6 +864,13 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     for(; kv != kvend; ++kv	) {
         key_not_found = 1;
         
+        /* processing logging.googleapis.com/insertId */
+        if (insert_id_extracted == FLB_TRUE
+            && validate_key(kv->key, DEFAULT_INSERT_ID_KEY, INSERT_ID_SIZE)) {
+            continue;
+        }
+
+        /* processing logging.googleapis.com/operation */
         if (validate_key(kv->key, OPERATION_FIELD_IN_JSON, 
                          OPERATION_KEY_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
@@ -899,7 +942,12 @@ static int stackdriver_format(struct flb_config *config,
     int severity_extracted = FLB_FALSE;
     severity_t severity;
 
-    /* Parameters for Operation */
+    /* Parameters for insertId */
+    msgpack_object insert_id_obj;
+    insert_id_status in_status;
+    int insert_id_extracted;
+
+    /* Parameters in Operation */
     flb_sds_t operation_id;
     flb_sds_t operation_producer;
     int operation_first = FLB_FALSE;
@@ -910,7 +958,33 @@ static int stackdriver_format(struct flb_config *config,
     /* Count number of records */
     array_size = flb_mp_count(data, bytes);
 
-    /* Create temporary msgpack buffer */
+    /* 
+     * Search each entry and validate insertId.
+     * Reject the entry if insertId is invalid.
+     * If all the entries are rejected, stop formatting.
+     * 
+     */
+    off = 0;
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        flb_time_pop_from_msgpack(&tms, &result, &obj);
+
+        /* Extract insertId */
+        in_status = validate_insert_id(&insert_id_obj, obj);
+        if (in_status == INSERTID_INVALID) {
+            flb_plg_error(ctx->ins, 
+                          "Incorrect insertId received. InsertId should be non-empty string.");
+            array_size -= 1;
+        }
+    }
+    msgpack_unpacked_destroy(&result);
+
+    if (array_size == 0) {
+        *out_size = 0;
+        return -1;
+    }
+
+    /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -1136,13 +1210,26 @@ static int stackdriver_format(struct flb_config *config,
          * }
          */
         entry_size = 3;
-
+        
         /* Extract severity */
         severity_extracted = FLB_FALSE;
         if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             severity_extracted = FLB_TRUE;
             entry_size += 1;
+        }
+
+        /* Extract insertId */
+        in_status = validate_insert_id(&insert_id_obj, obj);
+        if (in_status == INSERTID_VALID) {
+            insert_id_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+        else if (in_status == INSERTID_NOT_PRESENT) {
+            insert_id_extracted = FLB_FALSE;
+        }
+        else {
+            continue;
         }
 
         /* Extract operation */
@@ -1182,6 +1269,13 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_int(&mp_pck, severity);
         }
 
+        /* Add insertId field into the log entry */
+        if (insert_id_extracted == FLB_TRUE) {
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "insertId", 8);
+            msgpack_pack_object(&mp_pck, insert_id_obj);
+        }
+
         /* Add operation field into the log entry */
         if (operation_extracted == FLB_TRUE) {
             add_operation_field(&operation_id, &operation_producer,
@@ -1202,7 +1296,8 @@ static int stackdriver_format(struct flb_config *config,
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-        pack_json_payload(operation_extracted, operation_extra_size, 
+        pack_json_payload(insert_id_extracted, 
+                          operation_extracted, operation_extra_size, 
                           &mp_pck, obj, ctx);
 
         /* avoid modifying the original tag */

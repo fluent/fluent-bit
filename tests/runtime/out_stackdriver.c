@@ -34,6 +34,7 @@
 #include "data/stackdriver/stackdriver_test_operation.h"
 #include "data/stackdriver/stackdriver_test_k8s_resource.h"
 #include "data/stackdriver/stackdriver_test_labels.h"
+#include "data/stackdriver/stackdriver_test_insert_id.h"
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
@@ -449,6 +450,41 @@ static void cb_check_k8s_pod_resource(void *ctx, int ffd,
     ret = mp_kv_exists(res_data, res_size,
                        "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
     TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_insert_id_common_case(void *ctx, int ffd,
+                                           int res_ret, void *res_data, size_t res_size,
+                                           void *data)
+{
+    int ret;
+
+    /* insertId in the entries */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['insertId']", "test_insertId");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* insertId has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/insertId']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_empty_insert_id(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    TEST_CHECK(res_size == 0);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_insert_id_incorrect_type(void *ctx, int ffd,
+                                              int res_ret, void *res_data, size_t res_size,
+                                              void *data)
+{
+    TEST_CHECK(res_size == 0);
 
     flb_sds_destroy(res_data);
 }
@@ -894,6 +930,126 @@ void flb_test_resource_gce_instance()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_insert_id_common_case()
+{
+    int ret;
+    int size = sizeof(INSERTID_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_insert_id_common_case,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) INSERTID_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_empty_insert_id()
+{
+    int ret;
+    int size = sizeof(EMPTY_INSERTID) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_empty_insert_id,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) EMPTY_INSERTID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_insert_id_incorrect_type()
+{
+    int ret;
+    int size = sizeof(INSERTID_INCORRECT_TYPE_INT) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_insert_id_incorrect_type,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) INSERTID_INCORRECT_TYPE_INT, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -1489,6 +1645,11 @@ TEST_LIST = {
     {"resource_global", flb_test_resource_global },
     {"resource_gce_instance", flb_test_resource_gce_instance },
 
+    /* test insertId */
+    {"insertId_common_case", flb_test_insert_id_common_case},
+    {"empty_insertId", flb_test_empty_insert_id},
+    {"insertId_incorrect_type_int", flb_test_insert_id_incorrect_type},
+    
     /* test operation */
     {"operation_common_case", flb_test_operation_common},
     {"empty_operation", flb_test_empty_operation},
