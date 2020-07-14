@@ -122,6 +122,14 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
     }
 
     options = &arr->via.array.ptr[expected];
+    if (options->type == MSGPACK_OBJECT_NIL) {
+        /*
+         * Old Docker 18.x sends a NULL options parameter, just be friendly and
+         * let it pass.
+         */
+        return 0;
+    }
+
     if (options->type != MSGPACK_OBJECT_MAP) {
         return -1;
     }
