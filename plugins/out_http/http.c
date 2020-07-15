@@ -188,7 +188,7 @@ static int http_post(struct flb_out_http *ctx,
             out_ret = FLB_RETRY;
         }
         else {
-            if (c->resp.payload) {
+            if (c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                              ctx->host, ctx->port,
                              c->resp.status, c->resp.payload);
