@@ -30,6 +30,7 @@
 #include "tail.h"
 #include "tail_file.h"
 #include "tail_signal.h"
+#include "tail_scan.h"
 #include "tail_config.h"
 
 /* Define missing GLOB_TILDE if not exists */
@@ -41,6 +42,26 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <pwd.h>
+
+
+static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *pattern;
+
+    if (!ctx->exclude_list) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, ctx->exclude_list) {
+        pattern = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (fnmatch(pattern->str, path, 0) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
 
 static char *expand_tilde(const char *path)
 {
@@ -164,27 +185,8 @@ static inline int do_glob(const char *pattern, int flags,
     return ret;
 }
 
-static int tail_is_excluded(char *name, struct flb_tail_config *ctx)
-{
-    struct mk_list *head;
-    struct flb_slist_entry *pattern;
-
-    if (!ctx->exclude_list) {
-        return FLB_FALSE;
-    }
-
-    mk_list_foreach(head, ctx->exclude_list) {
-        pattern = mk_list_entry(head, struct flb_slist_entry, _head);
-        if (fnmatch(pattern->str, name, 0) == 0) {
-            return FLB_TRUE;
-        }
-    }
-
-    return FLB_FALSE;
-}
-
 /* Scan a path, register the entries and return how many */
-int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
+static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
     int i;
     int ret;
@@ -259,24 +261,5 @@ int flb_tail_scan(const char *path, struct flb_tail_config *ctx)
     }
 
     globfree(&globbuf);
-    return 0;
-}
-
-/*
- * Triggered by refresh_interval, it re-scan the path looking for new files
- * that match the original path pattern.
- */
-int flb_tail_scan_callback(struct flb_input_instance *ins,
-                           struct flb_config *config, void *context)
-{
-    int ret;
-    struct flb_tail_config *ctx = context;
-    (void) config;
-
-    ret = flb_tail_scan(ctx->path, ctx);
-    if (ret > 0) {
-        flb_plg_debug(ins, "scan_callback() added %i entries", ret);
-    }
-
-    return ret;
+    return count;
 }

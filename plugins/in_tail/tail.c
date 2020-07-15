@@ -295,8 +295,7 @@ static int in_tail_init(struct flb_input_instance *in,
     }
 
     /* Scan path */
-    flb_tail_scan(ctx->path, ctx);
-    flb_plg_trace(in, "scan path: %s", ctx->path);
+    flb_tail_scan(ctx->path_list, ctx);
 
     /* Set plugin context */
     flb_input_set_context(in, ctx);
@@ -455,8 +454,8 @@ static void in_tail_resume(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "path", NULL,
-     0, FLB_TRUE, offsetof(struct flb_tail_config, path),
+     FLB_CONFIG_MAP_CLIST, "path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path_list),
      "pattern specifying log files or multiple ones through "
      "the use of common wildcards."
     },
