@@ -158,16 +158,17 @@ static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
      * Following the New Relic Fluentd implementation, this is the
      * suggested structure for our payload:
      *
-     *     payload = {
-     *     'common' => {
-     *       'attributes' => {
-     *         'plugin' => {
-     *           'type' => 'fluentd',
-     *           'version' => NewrelicFluentdOutput::VERSION,
+     *     payload = {[
+     *       'common' => {
+     *         'attributes' => {
+     *           'plugin' => {
+     *             'type' => 'fluentd',
+     *             'version' => NewrelicFluentdOutput::VERSION,
+     *           }
      *         }
-     *       }
-     *     },
-     *     'logs' => []
+     *       },
+     *       'logs' => []
+     *     ]}
      */
 
     /* Count number of records */
@@ -177,6 +178,9 @@ static flb_sds_t newrelic_compose_payload(struct flb_newrelic *ctx,
     msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* The New Relic MELT API format is wrapped in an array */
+    msgpack_pack_array(&mp_pck, 1);
 
     /* Map for 'common' and 'logs' */
     msgpack_pack_map(&mp_pck, 2);
