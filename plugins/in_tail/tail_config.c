@@ -93,7 +93,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     }
 
     /* Config: path/pattern to read files */
-    if (!ctx->path) {
+    if (!ctx->path_list || mk_list_size(ctx->path_list) == 0) {
         flb_plg_error(ctx->ins, "no input 'path' was given");
         flb_free(ctx);
         return NULL;
