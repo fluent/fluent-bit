@@ -77,7 +77,7 @@ struct flb_tail_config {
     int watcher_interval;      /* watcher interval             */
     int ignore_older;          /* ignore fields older than X seconds        */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
-    flb_sds_t path;            /* lookup path (glob)           */
+    struct mk_list *path_list; /* list of paths to scan (glob) */
     flb_sds_t path_key;        /* key name of file path        */
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */

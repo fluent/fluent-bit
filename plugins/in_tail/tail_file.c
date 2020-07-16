@@ -1195,7 +1195,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
             if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
                 ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, ctx);
                 if (ret == -1) {
-                    flb_tail_scan(ctx->path, ctx);
+                    flb_tail_scan(ctx->path_list, ctx);
                 }
                 else {
                     tail_signal_manager(file->config);

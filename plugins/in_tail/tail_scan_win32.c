@@ -175,24 +175,6 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
     return n_added;
 }
 
-static int tail_do_scan(const char *path, struct flb_tail_config *ctx)
-{
-    int ret;
-    int n_added = 0;
-
-    if (strchr(path, '*')) {
-        return tail_scan_pattern(path, ctx);
-    }
-
-    /* No wildcard involved. Let's just handle the file... */
-    ret = tail_register_file(path, ctx);
-    if (ret == 0) {
-        n_added++;
-    }
-
-    return n_added;
-}
-
 static int tail_filepath(char *buf, int len, const char *basedir, const char *filename)
 {
     char drive[_MAX_DRIVE];
@@ -224,32 +206,20 @@ static int tail_filepath(char *buf, int len, const char *basedir, const char *fi
     return 0;
 }
 
-int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
+static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
-    int n_added;
+    int ret;
+    int n_added = 0;
 
-    flb_plg_debug(ctx->ins, "scanning path %s", pattern);
-
-    n_added = tail_do_scan(pattern, ctx);
-    if (n_added >= 0) {
-        flb_plg_debug(ctx->ins, "%i files found for '%s'", n_added, pattern);
+    if (strchr(path, '*')) {
+        return tail_scan_pattern(path, ctx);
     }
 
-    return 0;
-}
-
-int flb_tail_scan_callback(struct flb_input_instance *ins,
-                           struct flb_config *config, void *context)
-{
-    struct flb_tail_config *ctx = (struct flb_tail_config *) context;
-    int n_added;
-
-    n_added = tail_do_scan(ctx->path, ctx);
-    if (n_added > 0) {
-        flb_plg_debug(ctx->ins, "%i new files found for '%s'",
-                      n_added, ctx->path);
-        tail_signal_manager(ctx);
+    /* No wildcard involved. Let's just handle the file... */
+    ret = tail_register_file(path, ctx);
+    if (ret == 0) {
+        n_added++;
     }
 
-    return 0;
+    return n_added;
 }
