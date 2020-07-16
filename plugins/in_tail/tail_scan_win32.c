@@ -87,6 +87,9 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
  * supports patterns with "nested" wildcards like below.
  *
  *     tail_scan_pattern("C:\fluent-bit\*\*.txt", ctx);
+ *
+ * On success, the number of files found is returned (zero indicates
+ * "no file found"). On error, -1 is returned.
  */
 static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 {
@@ -131,7 +134,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 
     h = FindFirstFileA(pattern, &data);
     if (h == INVALID_HANDLE_VALUE) {
-        return -1;
+        return 0;  /* none matched */
     }
 
     do {
