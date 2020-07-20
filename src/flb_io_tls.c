@@ -326,7 +326,6 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
     struct flb_tls_session *session;
     struct flb_upstream_conn *u_conn = _u_conn;
     struct flb_upstream *u = u_conn->u;
-
     struct flb_thread *th = _th;
 
     session = flb_tls_session_new(u->tls->context);
@@ -364,6 +363,21 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
             flag = MK_EVENT_READ;
         }
         else {
+        }
+
+        /*
+         * If there are no coroutine thread context (th == NULL) it means this
+         * TLS handshake is happening from a blocking code. Just sleep a bit
+         * and retry.
+         *
+         * In the other case for an async socket 'th' is NOT NULL so the code
+         * is under a coroutine context and it can yield.
+         */
+        if (!th) {
+            flb_trace("[io_tls] handshake in process to %s:%i",
+                      u->tcp_host, u->tcp_port);
+            flb_time_msleep(500);
+            goto retry_handshake;
         }
 
         /*
