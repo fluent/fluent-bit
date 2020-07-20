@@ -3,8 +3,8 @@ FROM debian:buster as builder
 # Fluent Bit version
 ENV FLB_MAJOR 1
 ENV FLB_MINOR 5
-ENV FLB_PATCH 1
-ENV FLB_VERSION 1.5.1
+ENV FLB_PATCH 2
+ENV FLB_VERSION 1.5.2
 
 ENV DEBIAN_FRONTEND noninteractive
 
