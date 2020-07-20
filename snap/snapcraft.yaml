@@ -1,6 +1,6 @@
 name: fluent-bit
 base: core18
-version: '1.5.1'
+version: '1.5.2'
 summary: High performance logs and stream processor
 description: |
   Fluent Bit is a high performance log processor and stream processor for Linux.
@@ -8,7 +8,7 @@ description: |
   logs or metrics to multiple databases or cloud providers.
 license: 'Apache-2.0'
 icon: fluent-bit.svg
-grade: 'devel'
+grade: 'stable'
 confinement: 'strict'
 
 apps:
@@ -22,6 +22,7 @@ parts:
   fluent-bit:
     source: https://github.com/fluent/fluent-bit
     source-type: git
+    source-tag: v1.5.2
     plugin: cmake
     stage-packages:
         - libsasl2-2
