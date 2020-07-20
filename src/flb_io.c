@@ -166,7 +166,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
      * If the socket is asynchronous or we need a timeout for connect(2) on a
      * blocking socket set the 'async' flag,
      */
-    if ((u->flags & FLB_IO_ASYNC) || u->net.connect_timeout > 0) {
+    async = flb_upstream_is_async(u);
+    if (flb_upstream_is_async(u) == FLB_TRUE || u->net.connect_timeout > 0) {
         async = FLB_TRUE;
         flb_net_socket_nonblocking(u_conn->fd);
     }
@@ -211,9 +212,12 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
         /*
          * Timeout for blocking socket. Check if the 'original' socket
-         * mode is 'blocking'
+         * mode is asynchronous, if so, change it mode for a proper timeout
+         * check in 'blocking' mode.
+         *
+         * After the test the async mode is restored
          */
-        if ((u->flags & FLB_IO_ASYNC) == 0) {
+        if (flb_upstream_is_async(u) == FLB_TRUE) {
             /*
              * Prepare a timeout using select(2): we could use our own
              * event loop mechanism for this, but it will require an
@@ -247,9 +251,9 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
             /*
              * No exception, the connection succeeded, return the normal
-             * blocking mode to the socket.
+             * non-blocking mode to the socket.
              */
-            flb_net_socket_blocking(u_conn->fd);
+            flb_net_socket_nonblocking(u_conn->fd);
 
             /* Finalize last steps for connection like TLS and return */
             goto connected;
@@ -540,7 +544,6 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
     struct flb_upstream *u = u_conn->u;
 
  retry_read:
-
     ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
         if (FLB_WOULDBLOCK()) {
