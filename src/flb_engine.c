@@ -616,8 +616,10 @@ int flb_engine_start(struct flb_config *config)
                  */
                 u_conn = (struct flb_upstream_conn *) event;
                 th = u_conn->thread;
-                flb_trace("[engine] resuming thread=%p", th);
-                flb_thread_resume(th);
+                if (th) {
+                    flb_trace("[engine] resuming thread=%p", th);
+                    flb_thread_resume(th);
+                }
             }
         }
 
