@@ -360,7 +360,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *str, char *type)
     return list;
 }
 
-/* 
+/*
  *    process_local_resource_id():
  *  - extract the value from "logging.googleapis.com/local_resource_id" field
  *  - use extracted value to assign the label keys for different resource types
@@ -535,7 +535,7 @@ static int process_local_resource_id(const void *data, size_t bytes,
 /*
  * parse_labels
  * - Iterate throught the original payload (obj) and find out the entry that matches
- *   the labels_key 
+ *   the labels_key
  * - Used to convert all labels under labels_key to root-level `labels` field
  */
 static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
@@ -557,8 +557,8 @@ static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object 
         }
     }
 
-    flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload", 
-                  ctx->labels_key);
+    //flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload",
+    //              ctx->labels_key);
     return NULL;
 }
 
@@ -599,8 +599,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    /* Upstream Sync flags */
-    ctx->u->flags &= ~FLB_IO_ASYNC;
+    /* Metadata Upstream Sync flags */
     ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
 
     if (ins->test_mode == FLB_FALSE) {
@@ -626,8 +625,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         if (ret == -1) {
             return -1;
         }
-
     }
+
     return 0;
 }
 
@@ -761,7 +760,7 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
-static int pack_json_payload(int operation_extracted, int operation_extra_size, 
+static int pack_json_payload(int operation_extracted, int operation_extra_size,
                              msgpack_packer* mp_pck, msgpack_object *obj,
                              struct flb_stackdriver *ctx)
 {
@@ -1194,7 +1193,7 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_str_body(&mp_pck, "labels", 6);
             msgpack_pack_object(&mp_pck, *labels_ptr);
         }
-        
+
         /* Clean up id and producer if operation extracted */
         flb_sds_destroy(operation_id);
         flb_sds_destroy(operation_producer);
