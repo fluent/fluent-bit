@@ -223,6 +223,9 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     if (ret == -1) {
         mk_list_del(&conn->_head);
         flb_free(conn);
+        flb_debug("[upstream] CONNECT ERROR #%i to %s:%i is connected",
+                  conn->fd, u->tcp_host, u->tcp_port);
+
         return NULL;
     }
 
@@ -337,6 +340,17 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 
         /* Reset errno */
         conn->net_error = -1;
+
+        int err;
+        err = flb_socket_error(conn->fd);
+        if (!FLB_EINPROGRESS(err)) {
+            flb_debug("[upstream] KA connection #%i is in a failed state "
+                      "to: %s:%i, cleaning up",
+                      conn->fd, u->tcp_host, u->tcp_port);
+            destroy_conn(conn);
+            conn = NULL;
+            continue;
+        }
 
         /* Connect timeout */
         conn->ts_assigned = time(NULL);
@@ -481,4 +495,13 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
     }
 
     return 0;
+}
+
+int flb_upstream_is_async(struct flb_upstream *u)
+{
+    if (u->flags & FLB_IO_ASYNC) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }

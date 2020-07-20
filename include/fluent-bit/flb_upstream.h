@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_io.h>
 
 #ifdef FLB_HAVE_TLS
 #include <mbedtls/net.h>
@@ -154,6 +155,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn);
 int flb_upstream_conn_timeouts(struct flb_config *ctx);
 int flb_upstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
+int flb_upstream_is_async(struct flb_upstream *u);
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config);
 
 #endif
