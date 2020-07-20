@@ -364,7 +364,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *str, char *type)
     return list;
 }
 
-/* 
+/*
  *    process_local_resource_id():
  *  - extract the value from "logging.googleapis.com/local_resource_id" field
  *  - use extracted value to assign the label keys for different resource types
@@ -539,7 +539,7 @@ static int process_local_resource_id(const void *data, size_t bytes,
 /*
  * parse_labels
  * - Iterate throught the original payload (obj) and find out the entry that matches
- *   the labels_key 
+ *   the labels_key
  * - Used to convert all labels under labels_key to root-level `labels` field
  */
 static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
@@ -561,8 +561,8 @@ static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object 
         }
     }
 
-    flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload", 
-                  ctx->labels_key);
+    //flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload",
+    //              ctx->labels_key);
     return NULL;
 }
 
@@ -603,8 +603,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    /* Upstream Sync flags */
-    ctx->u->flags &= ~FLB_IO_ASYNC;
+    /* Metadata Upstream Sync flags */
     ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
 
     if (ins->test_mode == FLB_FALSE) {
@@ -630,8 +629,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         if (ret == -1) {
             return -1;
         }
-
     }
+
     return 0;
 }
 
@@ -765,8 +764,8 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
-static insert_id_status validate_insert_id(msgpack_object * insert_id_value, 
-                                           const msgpack_object * obj)                           
+static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
+                                           const msgpack_object * obj)
 {
     int i = 0;
     msgpack_object_kv * p = NULL;
@@ -794,12 +793,12 @@ static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
     }
     return ret;
 }
-                                                                                        
-static int pack_json_payload(int insert_id_extracted, 
+
+static int pack_json_payload(int insert_id_extracted,
                              int operation_extracted, int operation_extra_size,
-                             int source_location_extracted, 
+                             int source_location_extracted,
                              int source_location_extra_size,
-                             int http_request_extracted, 
+                             int http_request_extracted,
                              int http_request_extra_size,
                              timestamp_status tms_status,
                              msgpack_packer *mp_pck, msgpack_object *obj,
@@ -880,7 +879,7 @@ static int pack_json_payload(int insert_id_extracted,
     kv = obj->via.map.ptr;
     for(; kv != kvend; ++kv	) {
         key_not_found = 1;
-        
+
         /* processing logging.googleapis.com/insertId */
         if (insert_id_extracted == FLB_TRUE
             && validate_key(kv->key, DEFAULT_INSERT_ID_KEY, INSERT_ID_SIZE)) {
@@ -888,7 +887,7 @@ static int pack_json_payload(int insert_id_extracted,
         }
 
         /* processing logging.googleapis.com/operation */
-        if (validate_key(kv->key, OPERATION_FIELD_IN_JSON, 
+        if (validate_key(kv->key, OPERATION_FIELD_IN_JSON,
                          OPERATION_KEY_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
             if (operation_extra_size > 0) {
@@ -898,30 +897,30 @@ static int pack_json_payload(int insert_id_extracted,
             continue;
         }
 
-        if (validate_key(kv->key, SOURCELOCATION_FIELD_IN_JSON, 
+        if (validate_key(kv->key, SOURCELOCATION_FIELD_IN_JSON,
                          SOURCE_LOCATION_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if (source_location_extra_size > 0) {
                 msgpack_pack_object(mp_pck, kv->key);
-                pack_extra_source_location_subfields(mp_pck, &kv->val, 
+                pack_extra_source_location_subfields(mp_pck, &kv->val,
                                                      source_location_extra_size);
             }
             continue;
         }
-        
-        if (validate_key(kv->key, HTTPREQUEST_FIELD_IN_JSON, 
-                         HTTP_REQUEST_KEY_SIZE) 
+
+        if (validate_key(kv->key, HTTPREQUEST_FIELD_IN_JSON,
+                         HTTP_REQUEST_KEY_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(http_request_extra_size > 0) {
                 msgpack_pack_object(mp_pck, kv->key);
-                pack_extra_http_request_subfields(mp_pck, &kv->val, 
+                pack_extra_http_request_subfields(mp_pck, &kv->val,
                                                   http_request_extra_size);
             }
             continue;
         }
-        
+
         if (validate_key(kv->key, "timestamp", 9)
             && tms_status == FORMAT_TIMESTAMP_OBJECT) {
             continue;
@@ -1013,12 +1012,12 @@ static int stackdriver_format(struct flb_config *config,
     flb_sds_t source_location_function;
     int source_location_extracted = FLB_FALSE;
     int source_location_extra_size = 0;
-    
+
     /* Parameters for httpRequest */
     struct http_request_field http_request;
     int http_request_extracted = FLB_FALSE;
     int http_request_extra_size = 0;
-    
+
     /* Parameters for Timestamp */
     struct tm tm;
     struct flb_time tms;
@@ -1027,11 +1026,11 @@ static int stackdriver_format(struct flb_config *config,
     /* Count number of records */
     array_size = flb_mp_count(data, bytes);
 
-    /* 
+    /*
      * Search each entry and validate insertId.
      * Reject the entry if insertId is invalid.
      * If all the entries are rejected, stop formatting.
-     * 
+     *
      */
     off = 0;
     msgpack_unpacked_init(&result);
@@ -1041,7 +1040,7 @@ static int stackdriver_format(struct flb_config *config,
         /* Extract insertId */
         in_status = validate_insert_id(&insert_id_obj, obj);
         if (in_status == INSERTID_INVALID) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "Incorrect insertId received. InsertId should be non-empty string.");
             array_size -= 1;
         }
@@ -1309,7 +1308,7 @@ static int stackdriver_format(struct flb_config *config,
         operation_last = FLB_FALSE;
         operation_extra_size = 0;
         operation_extracted = extract_operation(&operation_id, &operation_producer,
-                                                &operation_first, &operation_last, obj, 
+                                                &operation_first, &operation_last, obj,
                                                 &operation_extra_size);
 
         if (operation_extracted == FLB_TRUE) {
@@ -1321,20 +1320,20 @@ static int stackdriver_format(struct flb_config *config,
         source_location_line = 0;
         source_location_function = flb_sds_create("");
         source_location_extra_size = 0;
-        source_location_extracted = extract_source_location(&source_location_file, 
+        source_location_extracted = extract_source_location(&source_location_file,
                                                             &source_location_line,
-                                                            &source_location_function, 
-                                                            obj, 
+                                                            &source_location_function,
+                                                            obj,
                                                             &source_location_extra_size);
 
         if (source_location_extracted == FLB_TRUE) {
             entry_size += 1;
         }
-        
+
         /* Extract httpRequest */
         init_http_request(&http_request);
         http_request_extra_size = 0;
-        http_request_extracted = extract_http_request(&http_request, obj, 
+        http_request_extracted = extract_http_request(&http_request, obj,
                                                       &http_request_extra_size);
         if (http_request_extracted == FLB_TRUE) {
             entry_size += 1;
@@ -1378,10 +1377,10 @@ static int stackdriver_format(struct flb_config *config,
 
         /* Add sourceLocation field into the log entry */
         if (source_location_extracted == FLB_TRUE) {
-            add_source_location_field(&source_location_file, source_location_line, 
+            add_source_location_field(&source_location_file, source_location_line,
                                       &source_location_function, &mp_pck);
         }
-        
+
         /* Add httpRequest field into the log entry */
         if (http_request_extracted == FLB_TRUE) {
             add_http_request_field(&http_request, &mp_pck);
@@ -1393,8 +1392,8 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_str_body(&mp_pck, "labels", 6);
             msgpack_pack_object(&mp_pck, *labels_ptr);
         }
-        
-        /* Clean up */
+
+        /* Clean up id and producer if operation extracted */
         flb_sds_destroy(operation_id);
         flb_sds_destroy(operation_producer);
         flb_sds_destroy(source_location_file);
@@ -1407,8 +1406,8 @@ static int stackdriver_format(struct flb_config *config,
         pack_json_payload(insert_id_extracted,
                           operation_extracted, operation_extra_size,
                           source_location_extracted,
-                          source_location_extra_size, 
-                          http_request_extracted, 
+                          source_location_extra_size,
+                          http_request_extracted,
                           http_request_extra_size,
                           tms_status,
                           &mp_pck, obj, ctx);
@@ -1438,14 +1437,14 @@ static int stackdriver_format(struct flb_config *config,
         msgpack_pack_str_body(&mp_pck, "timestamp", 9);
 
         /* Format the time */
-        /* 
-         * If format is timestamp_object or timestamp_duo_fields, 
-         * tms has been updated. 
-         * 
+        /*
+         * If format is timestamp_object or timestamp_duo_fields,
+         * tms has been updated.
+         *
          * If timestamp is not presen,
          * use the default tms(current time).
          */
-        
+
         gmtime_r(&tms.tm.tv_sec, &tm);
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                         FLB_STD_TIME_FMT, &tm);
