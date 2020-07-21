@@ -117,7 +117,8 @@ static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
         return -1;
     }
 
-    if (arr->via.array.size < 3) {
+    /* Make sure the 'expected' entry position is valid for the array size */
+    if (expected >= arr->via.array.size) {
         return 0;
     }
 
@@ -389,6 +390,7 @@ int fw_prot_process(struct fw_conn *conn)
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
+
                 /*
                  * Forward format 2 (message mode) : [tag, time, map, ...]
                  */
