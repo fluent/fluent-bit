@@ -142,7 +142,7 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
 
     /*
-     * Create a temporal definition used for registration. This definition
+     * Create a temporary definition used for registration. This definition
      * aims to be be populated by plugin in the registration phase with:
      *
      * - plugin type (or proxy type, e.g: Golang)

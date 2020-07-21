@@ -384,7 +384,7 @@ static int object_to_number(msgpack_object obj, int64_t *i, double *d)
     return -1;
 }
 
-/* Summarize a value into the temporal array considering data type */
+/* Summarize a value into the temporary array considering data type */
 static void aggr_sum(struct aggr_num *nums, int key_id, int64_t i, double d)
 {
     if (nums[key_id].type == FLB_SP_NUM_I64) {

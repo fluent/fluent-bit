@@ -57,7 +57,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
-    /* Init temporal buffers */
+    /* Init temporary buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 

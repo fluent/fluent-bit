@@ -126,7 +126,7 @@ int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
     char *buf;
     struct flbgo_output_plugin *plugin = ctx->proxy->data;
 
-    /* temporal buffer for the tag */
+    /* temporary buffer for the tag */
     buf = flb_malloc(tag_len + 1);
     if (!buf) {
         flb_errno();

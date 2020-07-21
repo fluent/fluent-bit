@@ -56,7 +56,7 @@ struct flb_ra_parser {
     int type;                /* token type */
     int id;                  /* used by PARSER_REGEX_ID & PARSER_TAG_PART */
     struct flb_ra_key *key;  /* context of data type */
-    struct mk_list *slist;   /* temporal list for subkeys parsing */
+    struct mk_list *slist;   /* temporary list for subkeys parsing */
     struct mk_list _head;    /* link to parent flb_record_accessor->list */
 };
 

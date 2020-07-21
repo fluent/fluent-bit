@@ -446,7 +446,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     if (ret == FLB_FALSE) {
         ret = cio_chunk_up_force(ic->chunk);
         if (ret == -1) {
-            flb_error("[input chunk] cannot retrieve temporal chunk");
+            flb_error("[input chunk] cannot retrieve temporary chunk");
             return -1;
         }
         set_down = FLB_TRUE;

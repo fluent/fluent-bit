@@ -35,7 +35,7 @@
 #include <msgpack.h>
 
 /* Merge status used by merge_log_handler() */
-#define MERGE_NONE        0 /* merge unescaped string in temporal buffer */
+#define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
 
@@ -246,7 +246,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /*
      * If a log_index exists, the application log content inside the
-     * Docker JSON map is a escaped string. Proceed to reserve a temporal
+     * Docker JSON map is a escaped string. Proceed to reserve a temporary
      * buffer and create an unescaped version.
      */
     if (log_index != -1) {
@@ -468,7 +468,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         }
     }
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
