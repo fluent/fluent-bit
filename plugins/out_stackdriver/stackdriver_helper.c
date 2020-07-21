@@ -52,7 +52,7 @@ void try_assign_subfield_bool(msgpack_object obj, int *subfield) {
     }
 }
 
-void try_assign_subfield_int(msgpack_object obj, int *subfield) {
+void try_assign_subfield_int(msgpack_object obj, int64_t *subfield) {
     if (obj.type == MSGPACK_OBJECT_STR) {
         *subfield = atoll(obj.via.str.ptr);
     }
