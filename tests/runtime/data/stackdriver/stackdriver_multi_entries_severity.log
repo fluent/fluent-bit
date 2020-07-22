@@ -1,0 +1,3 @@
+{"message":"test severity1", "severity":"INFO"}
+{"message":"test severity2"}
+{"message":"test severity3", "severity":"INFO"}
