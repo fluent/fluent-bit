@@ -152,7 +152,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->host = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
     }
     else {
-        ctx->host = flb_strdup(ins->host.name);
+        ctx->host = flb_sds_create(ins->host.name);
     }
     flb_plg_debug(ctx->ins, "host: %s", ctx->host);
 
@@ -225,7 +225,7 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
         flb_sds_destroy(ctx->scheme);
     }
     if (ctx->host) {
-        flb_free(ctx->host);
+        flb_sds_destroy(ctx->host);
     }
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);
