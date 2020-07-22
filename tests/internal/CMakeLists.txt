@@ -17,6 +17,7 @@ set(UNIT_TESTS_FILES
   gzip.c
   gelf.c
   config_map.c
+  mp.c
   )
 
 if(FLB_PARSER)
