@@ -27,6 +27,7 @@
 /* Local 'test' credentials file */
 #define SERVICE_CREDENTIALS \
     FLB_TESTS_DATA_PATH "/data/stackdriver/stackdriver-credentials.json"
+#define STACKDRIVER_DATA_PATH "/data/stackdriver"
 
 /* JSON payload example */
 #include "data/stackdriver/json.h"
@@ -797,6 +798,24 @@ static void cb_check_custom_labels_k8s_resource_type(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_multi_entries_severity(void *ctx, int ffd,
+                                            int res_ret, void *res_data, size_t res_size,
+                                            void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['severity']", "INFO");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[1]['severity']", "INFO");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[2]['severity']", "INFO");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
 void flb_test_resource_global()
 {
     int ret;
@@ -1416,8 +1435,53 @@ void flb_test_custom_labels_k8s_resource_type()
     flb_destroy(ctx);
 }
 
+void flb_test_multi_entries_severity()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    /* Tail input mode */
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    ret = flb_input_set(ctx, in_ffd, 
+                        "Path", STACKDRIVER_DATA_PATH "/stackdriver_multi_entries_severity.log",
+                        "tag", "test", 
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting input options");
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    ret = flb_output_set(ctx, out_ffd,
+                        "match", "test",
+                        "resource", "gce_instance",
+                        "google_service_credentials", SERVICE_CREDENTIALS,
+                        "severity_key", "severity",
+                        NULL);
+    TEST_CHECK_(ret == 0, "setting output options");
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_multi_entries_severity,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"severity_multi_entries", flb_test_multi_entries_severity },
     {"resource_global", flb_test_resource_global },
     {"resource_gce_instance", flb_test_resource_gce_instance },
     {"operation_common_case", flb_test_operation_common},
