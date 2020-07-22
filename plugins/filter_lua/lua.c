@@ -394,7 +394,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
     int l_code;
     double l_timestamp;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 

@@ -343,7 +343,7 @@ static int bigquery_format(const void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 

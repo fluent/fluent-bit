@@ -197,7 +197,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
     msgpack_packer *out_pck;
     struct flb_tail_config *ctx = file->config;
 
-    /* Create a temporal msgpack buffer */
+    /* Create a temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     out_sbuf = &mp_sbuf;

@@ -357,7 +357,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
 
         /*
          * We got a match: 'key name' == 'decoder field name', validate
-         * that we have enough space in our temporal buffer.
+         * that we have enough space in our temporary buffer.
          */
         if (flb_sds_alloc(dec->buffer) < flb_sds_alloc(data_sds)) {
             /* Increase buffer size */
@@ -380,7 +380,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /*
          * If some rule type is FLB_PARSER_DEC_DEFAULT, means that it will
          * try to register some extra fields as part of the record. For such
-         * case we prepare a temporal buffer to hold these extra keys.
+         * case we prepare a temporary buffer to hold these extra keys.
          *
          * The content of this buffer is just a serialized number of maps.
          */
@@ -716,7 +716,7 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
             }
         }
 
-        /* Remove temporal split */
+        /* Remove temporary split */
         flb_utils_split_free(split);
         mk_list_add(&dec_rule->_head, &dec->rules);
         c++;
