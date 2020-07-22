@@ -761,21 +761,67 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
+static int make_bool_map(struct flb_stackdriver *ctx, msgpack_object *map,
+                         bool_map_t *bool_map, int map_num, 
+                         flb_sds_t to_be_removed[], int removed_num) {
+    msgpack_object_kv *kv;
+    msgpack_object *key;
+
+    char is_to_delete;
+    int i, j;
+    int ret = 0;
+    flb_sds_t removed;
+
+    for (i = 0; i < map_num; i++) {
+        bool_map[i] = TO_BE_REMAINED;
+    }
+
+    /* tail of map */
+    bool_map[map_num] = TAIL_OF_ARRAY;
+    if (map != NULL) {
+        kv = map->via.map.ptr;
+        for (i = 0; i < map_num; i++) {
+            key = &(kv + i)->key;
+            is_to_delete = FLB_FALSE;
+            if (key->type == MSGPACK_OBJECT_STR) {
+                for (j = 0; j < removed_num; j++) {
+                    removed = to_be_removed[j];
+                    if (key->via.str.size != flb_sds_len(removed)) {
+                        continue;
+                    }
+
+                    if (strncasecmp(key->via.str.ptr, removed,
+                                    key->via.str.size) == 0) {
+                        is_to_delete = FLB_TRUE;
+                        break;
+                    }
+                }
+
+                if (is_to_delete == FLB_TRUE) {
+                    bool_map[i] = TO_BE_REMOVED;
+                    ret++;
+                }
+            }
+        }
+    }
+
+    /* return number of elements removed from payLoad */
+    return ret;
+}
+
 static int pack_json_payload(int operation_extracted, int operation_extra_size, 
                              msgpack_packer* mp_pck, msgpack_object *obj,
                              struct flb_stackdriver *ctx)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
-    int i, j;
+    int i;
     int to_remove = 0;
     int ret;
     int map_size;
     int new_map_size;
-    int len;
     int len_to_be_removed;
-    int key_not_found;
-    flb_sds_t removed;
     flb_sds_t local_resource_id_key;
+    bool_map_t bool_map[128];
     msgpack_object_kv *kv = obj->via.map.ptr;
     msgpack_object_kv *const kvend = obj->via.map.ptr + obj->via.map.size;
 
@@ -791,26 +837,13 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
         /* more special fields are required to be added */
     };
 
-    if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
-        to_remove += 1;
-    }
-
     map_size = obj->via.map.size;
     len_to_be_removed = sizeof(to_be_removed) / sizeof(to_be_removed[0]);
-    for (i = 0; i < map_size; i++) {
-        kv = &obj->via.map.ptr[i];
-        len = kv->key.via.str.size;
-        for (j = 0; j < len_to_be_removed; j++) {
-            removed = to_be_removed[j];
-            /*
-             * check length of key to avoid partial matching
-             * e.g. labels key = labels && kv->key = labelss
-             */
-            if (flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
-                to_remove += 1;
-                break;
-            }
-        }
+    to_remove += make_bool_map(ctx, obj, bool_map, map_size,
+                               to_be_removed, len_to_be_removed);
+
+    if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
+        to_remove += 1;
     }
 
     new_map_size = map_size - to_remove;
@@ -829,8 +862,8 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
 
     /* points back to the beginning of map */
     kv = obj->via.map.ptr;
-    for(; kv != kvend; ++kv	) {
-        key_not_found = 1;
+    i = 0;
+    for(; kv != kvend && bool_map[i] != TAIL_OF_ARRAY; ++kv, ++i) {
         /* processing logging.googleapis.com/operation */
         if (strncmp(OPERATION_FIELD_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0
             && kv->val.type == MSGPACK_OBJECT_MAP) {
@@ -842,16 +875,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
             continue;
         }
 
-        len = kv->key.via.str.size;
-        for (j = 0; j < len_to_be_removed; j++) {
-            removed = to_be_removed[j];
-            if (flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
-                key_not_found = 0;
-                break;
-            }
-        }
-
-        if (key_not_found) {
+        if (bool_map[i] == TO_BE_REMAINED) {
             ret = msgpack_pack_object(mp_pck, kv->key);
             if (ret < 0) {
                 flb_sds_destroy(local_resource_id_key);

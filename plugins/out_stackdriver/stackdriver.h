@@ -130,4 +130,10 @@ struct local_resource_id_list {
     struct mk_list _head;
 };
 
+typedef enum {
+    TO_BE_REMOVED = 0,
+    TO_BE_REMAINED = 1,
+    TAIL_OF_ARRAY = 2
+} bool_map_t;
+
 #endif
