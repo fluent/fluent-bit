@@ -85,6 +85,7 @@ struct flb_env *flb_env_create()
         return NULL;
     }
 
+    env->warn_unused = FLB_TRUE;
     env->ht = ht;
     env_preset(env);
 
