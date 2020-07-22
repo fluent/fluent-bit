@@ -21,7 +21,23 @@
 #ifndef FLB_MP_H
 #define FLB_MP_H
 
+#include <msgpack.h>
+
 int flb_mp_count(const void *data, size_t bytes);
 void flb_mp_set_map_header_size(char *buf, int arr_size);
+
+
+/*
+ * Map header handling functions
+ */
+struct flb_mp_map_header {
+    off_t offset;
+    size_t entries;
+    void *data;
+};
+
+int flb_mp_map_header_init(struct flb_mp_map_header *mh, msgpack_packer *mp_pck);
+int flb_mp_map_header_append(struct flb_mp_map_header *mh);
+void flb_mp_map_header_end(struct flb_mp_map_header *mh);
 
 #endif
