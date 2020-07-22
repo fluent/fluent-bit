@@ -4,7 +4,7 @@ project(tutf8e)
 # Not supported: -std=c90 (lacks support for inline)
 # Supported:     -std=gnu90, -std=c99 or -std=gnu99
 
-set(CMAKE_C_FLAGS "-Os -Wall")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -Wall")
 
 include_directories(include)
 add_library(tutf8e STATIC src/tutf8e.c)
