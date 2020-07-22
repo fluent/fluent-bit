@@ -1138,9 +1138,10 @@ static int stackdriver_format(struct flb_config *config,
          *  "timestamp": "..."
          * }
          */
-
+        entry_size = 3;
         /* Extract severity */
-         if (ctx->severity_key
+        severity_extracted = FLB_FALSE;
+        if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             severity_extracted = FLB_TRUE;
             entry_size += 1;
