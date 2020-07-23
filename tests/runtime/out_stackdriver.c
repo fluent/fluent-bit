@@ -807,11 +807,14 @@ static void cb_check_multi_entries_severity(void *ctx, int ffd,
     ret = mp_kv_cmp(res_data, res_size, "$entries[0]['severity']", "INFO");
     TEST_CHECK(ret == FLB_TRUE);
 
-    ret = mp_kv_cmp(res_data, res_size, "$entries[1]['severity']", "INFO");
+    ret = mp_kv_exists(res_data, res_size, "$entries[1]['severity']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[2]['severity']", "DEBUG");
     TEST_CHECK(ret == FLB_TRUE);
 
-    ret = mp_kv_cmp(res_data, res_size, "$entries[2]['severity']", "INFO");
-    TEST_CHECK(ret == FLB_TRUE);
+    ret = mp_kv_exists(res_data, res_size, "$entries[3]['severity']");
+    TEST_CHECK(ret == FLB_FALSE);
 
     flb_sds_destroy(res_data);
 }
