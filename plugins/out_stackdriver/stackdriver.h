@@ -131,8 +131,8 @@ struct local_resource_id_list {
 };
 
 typedef enum {
-    TO_BE_REMOVED = 0,
-    TO_BE_REMAINED = 1,
+    TO_BE_REMAINED = 0,
+    TO_BE_REMOVED = 1,
     TAIL_OF_ARRAY = 2
 } bool_map_t;
 

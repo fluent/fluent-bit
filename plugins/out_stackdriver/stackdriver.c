@@ -772,36 +772,38 @@ static int make_bool_map(struct flb_stackdriver *ctx, msgpack_object *map,
     int ret = 0;
     flb_sds_t removed;
 
-    for (i = 0; i < map_num; i++) {
-        bool_map[i] = TO_BE_REMAINED;
+    if (map == NULL) {
+        return ret;
     }
 
+    memset(bool_map, TO_BE_REMAINED, map_num * sizeof(*bool_map));
+    
     /* tail of map */
     bool_map[map_num] = TAIL_OF_ARRAY;
-    if (map != NULL) {
-        kv = map->via.map.ptr;
-        for (i = 0; i < map_num; i++) {
-            key = &(kv + i)->key;
-            is_to_delete = FLB_FALSE;
-            if (key->type == MSGPACK_OBJECT_STR) {
-                for (j = 0; j < removed_num; j++) {
-                    removed = to_be_removed[j];
-                    if (key->via.str.size != flb_sds_len(removed)) {
-                        continue;
-                    }
+    kv = map->via.map.ptr;
+    for (i = 0; i < map_num; i++) {
+        key = &(kv + i)->key;
+        is_to_delete = FLB_FALSE;
+        if (key->type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
 
-                    if (strncasecmp(key->via.str.ptr, removed,
-                                    key->via.str.size) == 0) {
-                        is_to_delete = FLB_TRUE;
-                        break;
-                    }
-                }
-
-                if (is_to_delete == FLB_TRUE) {
-                    bool_map[i] = TO_BE_REMOVED;
-                    ret++;
-                }
+        for (j = 0; j < removed_num; j++) {
+            removed = to_be_removed[j];
+            if (key->via.str.size != flb_sds_len(removed)) {
+                continue;
             }
+
+            if (strncasecmp(key->via.str.ptr, removed,
+                            key->via.str.size) == 0) {
+                is_to_delete = FLB_TRUE;
+                break;
+            }
+        }
+
+        if (is_to_delete == FLB_TRUE) {
+            bool_map[i] = TO_BE_REMOVED;
+            ret++;
         }
     }
 
@@ -821,7 +823,7 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     int new_map_size;
     int len_to_be_removed;
     flb_sds_t local_resource_id_key;
-    bool_map_t bool_map[128];
+    bool_map_t *bool_map;
     msgpack_object_kv *kv = obj->via.map.ptr;
     msgpack_object_kv *const kvend = obj->via.map.ptr + obj->via.map.size;
 
@@ -838,10 +840,15 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     };
 
     map_size = obj->via.map.size;
+    bool_map = (bool_map_t *) flb_malloc((map_size + 1) * sizeof(bool_map_t));
+    if (!bool_map) {
+        flb_sds_destroy(local_resource_id_key);
+        return -1;
+    }
+
     len_to_be_removed = sizeof(to_be_removed) / sizeof(to_be_removed[0]);
     to_remove += make_bool_map(ctx, obj, bool_map, map_size,
                                to_be_removed, len_to_be_removed);
-
     if (operation_extracted == FLB_TRUE && operation_extra_size == 0) {
         to_remove += 1;
     }
@@ -851,13 +858,13 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     if (new_map_size == map_size) {
         msgpack_pack_object(mp_pck, *obj);
         flb_sds_destroy(local_resource_id_key);
+        flb_free(bool_map);
         return 0;
     }
 
     ret = msgpack_pack_map(mp_pck, new_map_size);
     if (ret < 0) {
-        flb_sds_destroy(local_resource_id_key);
-        return ret;
+        goto error;
     }
 
     /* points back to the beginning of map */
@@ -878,19 +885,23 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
         if (bool_map[i] == TO_BE_REMAINED) {
             ret = msgpack_pack_object(mp_pck, kv->key);
             if (ret < 0) {
-                flb_sds_destroy(local_resource_id_key);
-                return ret;
+                goto error;
             }
             ret = msgpack_pack_object(mp_pck, kv->val);
             if (ret < 0) {
-                flb_sds_destroy(local_resource_id_key);
-                return ret;
+                goto error;
             }
         }
     }
 
+    flb_free(bool_map);
     flb_sds_destroy(local_resource_id_key);
     return 0;
+
+    error:
+        flb_sds_destroy(local_resource_id_key);
+        flb_free(bool_map);
+        return ret;
 }
 
 static int stackdriver_format(struct flb_config *config,
