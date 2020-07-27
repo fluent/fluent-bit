@@ -317,7 +317,7 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
     snprintf(query, str_len,
              "INSERT INTO %s "
              "SELECT %s, "
-             "to_timestamp(CAST(value->>'%s' as FLOAT)), * "
+             "CAST(value->>'%s' AS INTERVAL) + DATE'1970-01-01', * "
              "FROM json_array_elements(%s);",
              ctx->db_table, tag_escaped, ctx->timestamp_key, json);
     flb_plg_trace(ctx->ins, "query: %s", query);
