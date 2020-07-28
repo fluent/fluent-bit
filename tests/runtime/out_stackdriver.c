@@ -35,6 +35,7 @@
 #include "data/stackdriver/stackdriver_test_k8s_resource.h"
 #include "data/stackdriver/stackdriver_test_labels.h"
 #include "data/stackdriver/stackdriver_test_insert_id.h"
+#include "data/stackdriver/stackdriver_test_source_location.h"
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
@@ -855,6 +856,180 @@ static void cb_check_multi_entries_severity(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_source_location_common_case(void *ctx, int ffd,
+                                                 int res_ret, void *res_data, size_t res_size,
+                                                 void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "test_file");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_line */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "test_function");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `sourceLocation` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_source_location_common_case_line_in_string(void *ctx, int ffd,
+                                                                int res_ret, void *res_data, size_t res_size,
+                                                                void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "test_file");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_line */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "test_function");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `sourceLocation` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_empty_source_location(void *ctx, int ffd,
+                                           int res_ret, void *res_data, size_t res_size,
+                                           void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_line */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `sourceLocation` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_source_location_in_string(void *ctx, int ffd,
+                                               int res_ret, void *res_data, size_t res_size,
+                                               void *data)
+{
+    int ret;
+
+    /* sourceLocation remains in jsonPayload */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']", "some string");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['sourceLocation']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_source_location_partial_subfields(void *ctx, int ffd,
+                                                       int res_ret, void *res_data, size_t res_size,
+                                                       void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_line */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "test_function");
+    TEST_CHECK(ret == FLB_TRUE);
+
+
+    /* check `sourceLocation` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_source_location_incorrect_type_subfields(void *ctx, int ffd,
+                                                              int res_ret, void *res_data, size_t res_size,
+                                                              void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_line */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+
+    /* check `sourceLocation` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_source_location_extra_subfields(void *ctx, int ffd,
+                                                     int res_ret, void *res_data, size_t res_size,
+                                                     void *data)
+{
+    int ret;
+
+    /* sourceLocation_file */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['file']", "test_file");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_line */
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['sourceLocation']['line']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* sourceLocation_function */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['sourceLocation']['function']", "test_function");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* Preserve extra subfields inside jsonPayload */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']['extra_key1']", "extra_val1");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']['extra_key2']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/sourceLocation']['extra_key3']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
 void flb_test_resource_global()
 {
     int ret;
@@ -1639,6 +1814,286 @@ void flb_test_multi_entries_severity()
     flb_destroy(ctx);
 }
 
+void flb_test_source_location_common_case()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_common_case,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_source_location_line_in_string()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_COMMON_CASE_LINE_IN_STRING) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_common_case_line_in_string,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_COMMON_CASE_LINE_IN_STRING, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_empty_source_location()
+{
+    int ret;
+    int size = sizeof(EMPTY_SOURCELOCATION) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_empty_source_location,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) EMPTY_SOURCELOCATION, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_source_location_in_string()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_IN_STRING) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_in_string,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_IN_STRING, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_source_location_partial_subfields()
+{
+    int ret;
+    int size = sizeof(PARTIAL_SOURCELOCATION) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_partial_subfields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) PARTIAL_SOURCELOCATION, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_source_location_incorrect_type_subfields()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_SUBFIELDS_IN_INCORRECT_TYPE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_incorrect_type_subfields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_SUBFIELDS_IN_INCORRECT_TYPE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_source_location_extra_subfields()
+{
+    int ret;
+    int size = sizeof(SOURCELOCATION_EXTRA_SUBFIELDS_EXISTED) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_source_location_extra_subfields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) SOURCELOCATION_EXTRA_SUBFIELDS_EXISTED, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"severity_multi_entries", flb_test_multi_entries_severity },
@@ -1657,6 +2112,15 @@ TEST_LIST = {
     {"operation_partial_subfields", flb_test_operation_partial_subfields},
     {"operation_subfields_in_incorrect_type", flb_test_operation_incorrect_type_subfields},
     {"operation_extra_subfields_exist", flb_test_operation_extra_subfields},
+
+    /* test sourceLocation */
+    {"sourceLocation_common_case", flb_test_source_location_common_case},
+    {"sourceLocation_line_in_string", flb_test_source_location_line_in_string},
+    {"empty_sourceLocation", flb_test_empty_source_location},
+    {"sourceLocation_not_a_map", flb_test_source_location_in_string},
+    {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
+    {"sourceLocation_subfields_in_incorrect_type", flb_test_source_location_incorrect_type_subfields},
+    {"sourceLocation_extra_subfields_exist", flb_test_source_location_extra_subfields},
 
     /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },
