@@ -1030,6 +1030,7 @@ static void cb_check_source_location_extra_subfields(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+
 void flb_test_resource_global()
 {
     int ret;
@@ -2121,7 +2122,7 @@ TEST_LIST = {
     {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
     {"sourceLocation_subfields_in_incorrect_type", flb_test_source_location_incorrect_type_subfields},
     {"sourceLocation_extra_subfields_exist", flb_test_source_location_extra_subfields},
-
+    
     /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },
     {"resource_k8s_node_common", flb_test_resource_k8s_node_common },
