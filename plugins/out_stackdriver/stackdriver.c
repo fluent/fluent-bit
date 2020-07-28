@@ -31,6 +31,7 @@
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 #include "stackdriver_operation.h"
+#include "stackdriver_helper.h"
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
 
@@ -761,8 +762,9 @@ static int get_stream(msgpack_object_map map)
     return STREAM_UNKNOWN;
 }
 
+                                                                                        
 static int pack_json_payload(int operation_extracted, int operation_extra_size, 
-                             msgpack_packer* mp_pck, msgpack_object *obj,
+                             msgpack_packer *mp_pck, msgpack_object *obj,
                              struct flb_stackdriver *ctx)
 {
     /* Specified fields include local_resource_id, operation, sourceLocation ... */
@@ -814,12 +816,6 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     }
 
     new_map_size = map_size - to_remove;
-    /* optimize, pack the original obj */
-    if (new_map_size == map_size) {
-        msgpack_pack_object(mp_pck, *obj);
-        flb_sds_destroy(local_resource_id_key);
-        return 0;
-    }
 
     ret = msgpack_pack_map(mp_pck, new_map_size);
     if (ret < 0) {
@@ -831,8 +827,9 @@ static int pack_json_payload(int operation_extracted, int operation_extra_size,
     kv = obj->via.map.ptr;
     for(; kv != kvend; ++kv	) {
         key_not_found = 1;
-        /* processing logging.googleapis.com/operation */
-        if (strncmp(OPERATION_FIELD_IN_JSON, kv->key.via.str.ptr, kv->key.via.str.size) == 0
+        
+        if (validate_key(kv->key, OPERATION_FIELD_IN_JSON, 
+                         OPERATION_KEY_SIZE)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if (operation_extra_size > 0) {
@@ -898,11 +895,11 @@ static int stackdriver_format(struct flb_config *config,
     flb_sds_t out_buf;
     struct flb_stackdriver *ctx = plugin_context;
 
-    /* Parameters in severity */
+    /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
     severity_t severity;
 
-    /* Parameters in Operation */
+    /* Parameters for Operation */
     flb_sds_t operation_id;
     flb_sds_t operation_producer;
     int operation_first = FLB_FALSE;
@@ -1139,6 +1136,7 @@ static int stackdriver_format(struct flb_config *config,
          * }
          */
         entry_size = 3;
+
         /* Extract severity */
         severity_extracted = FLB_FALSE;
         if (ctx->severity_key
@@ -1154,7 +1152,8 @@ static int stackdriver_format(struct flb_config *config,
         operation_last = FLB_FALSE;
         operation_extra_size = 0;
         operation_extracted = extract_operation(&operation_id, &operation_producer,
-                                                &operation_first, &operation_last, obj, &operation_extra_size);
+                                                &operation_first, &operation_last, obj, 
+                                                &operation_extra_size);
 
         if (operation_extracted == FLB_TRUE) {
             entry_size += 1;
@@ -1196,14 +1195,15 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_object(&mp_pck, *labels_ptr);
         }
         
-        /* Clean up id and producer if operation extracted */
+        /* Clean up */
         flb_sds_destroy(operation_id);
         flb_sds_destroy(operation_producer);
 
         /* jsonPayload */
         msgpack_pack_str(&mp_pck, 11);
         msgpack_pack_str_body(&mp_pck, "jsonPayload", 11);
-        pack_json_payload(operation_extracted, operation_extra_size, &mp_pck, obj, ctx);
+        pack_json_payload(operation_extracted, operation_extra_size, 
+                          &mp_pck, obj, ctx);
 
         /* avoid modifying the original tag */
         newtag = tag;
