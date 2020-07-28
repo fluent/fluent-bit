@@ -22,15 +22,62 @@
 
 #include "stackdriver.h"
 
+/* subfield name and size */
+#define OPERATION_ID "id"
+#define OPERATION_PRODUCER "producer"
+#define OPERATION_FIRST "first"
+#define OPERATION_LAST "last"
+
+#define OPERATION_ID_SIZE 2
+#define OPERATION_PRODUCER_SIZE 8
+#define OPERATION_FIRST_SIZE 5
+#define OPERATION_LAST_SIZE 4
+
+/* 
+ *  Add operation field to the entries.
+ *  The structure of operation is:
+ *  {
+ *      "id": string,
+ *      "producer": string,
+ *      "first": boolean,
+ *      "last": boolean
+ *  }
+ * 
+ */                                                                                     
 void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer, 
                          int *operation_first, int *operation_last, 
                          msgpack_packer *mp_pck);
 
+/*
+ *  Extract the operation field from the jsonPayload.
+ *  If the operation field exists, return TRUE and store the subfields.
+ *  If there are extra subfields, count the number.
+ */
 int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer, 
                       int *operation_first, int *operation_last, 
                       msgpack_object *obj, int *extra_subfields);
 
-void pack_extra_operation_subfields(msgpack_packer *mp_pck, msgpack_object *operation, int extra_subfields);
+/*
+ *  When there are extra subfields, we will preserve the extra subfields inside jsonPayload
+ *  For example, if the jsonPayload is as followed：
+ *  jsonPayload {
+ *      "logging.googleapis.com/operation": {
+ *          "id": "id1",
+ *          "producer": "id2",
+ *          "first": true,
+ *          "last": true,
+ *          "extra": "some string"  #extra subfield
+ *      }
+ *  }
+ *  We will preserve the extra subfields. The jsonPayload after extracting is:
+ *  jsonPayload {
+ *      "logging.googleapis.com/operation": {
+ *          "extra": "some string" 
+ *      }
+ *  }
+ */
+void pack_extra_operation_subfields(msgpack_packer *mp_pck, msgpack_object *operation, 
+                                    int extra_subfields);
 
 
 #endif
