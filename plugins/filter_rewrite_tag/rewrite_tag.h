@@ -32,6 +32,7 @@
 /* Rewrite rule  */
 struct rewrite_rule {
     int keep_record;                       /* keep original record ? */
+    int and_combination;                   /* rule combination: false: OR, true: AND */
     struct flb_regex *regex;               /* matching regex */
     struct flb_record_accessor *ra_key;    /* key record accessor */
     struct flb_record_accessor *ra_tag;    /* tag record accessor */
