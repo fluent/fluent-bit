@@ -778,10 +778,7 @@ static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
         if (p->key.type != MSGPACK_OBJECT_STR) {
             continue;
         }
-        if (p->key.via.str.size == INSERT_ID_SIZE 
-            && strncmp(DEFAULT_INSERT_ID_KEY, 
-                       p->key.via.str.ptr, 
-                       p->key.via.str.size) == 0) {
+        if (validate_key(p->key, DEFAULT_INSERT_ID_KEY, INSERT_ID_SIZE)) {
             if (p->val.type == MSGPACK_OBJECT_STR && p->val.via.str.size > 0) {
                 *insert_id_value = p->val;
                 ret = INSERTID_VALID;
@@ -1210,7 +1207,7 @@ static int stackdriver_format(struct flb_config *config,
          * }
          */
         entry_size = 3;
-        
+
         /* Extract severity */
         severity_extracted = FLB_FALSE;
         if (ctx->severity_key
