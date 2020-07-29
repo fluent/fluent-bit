@@ -1270,8 +1270,8 @@ static int stackdriver_format(struct flb_config *config,
 
         /* Extract sourceLocation */
         source_location_file = flb_sds_create("");
-        source_location_function = flb_sds_create("");
         source_location_line = 0;
+        source_location_function = flb_sds_create("");
         source_location_extra_size = 0;
         source_location_extracted = extract_source_location(&source_location_file, 
                                                             &source_location_line,
