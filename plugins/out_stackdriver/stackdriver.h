@@ -50,9 +50,11 @@
 #define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
 #define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
 #define DEFAULT_INSERT_ID_KEY "logging.googleapis.com/insertId"
+#define SOURCELOCATION_FIELD_IN_JSON "logging.googleapis.com/sourceLocation"
 #define INSERT_ID_SIZE 31
 #define LEN_LOCAL_RESOURCE_ID_KEY 40
 #define OPERATION_KEY_SIZE 32
+#define SOURCE_LOCATION_SIZE 37
 
 #define K8S_CONTAINER "k8s_container"
 #define K8S_NODE      "k8s_node"
