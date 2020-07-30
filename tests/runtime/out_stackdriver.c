@@ -36,6 +36,7 @@
 #include "data/stackdriver/stackdriver_test_labels.h"
 #include "data/stackdriver/stackdriver_test_insert_id.h"
 #include "data/stackdriver/stackdriver_test_source_location.h"
+#include "data/stackdriver/stackdriver_test_http_request.h"
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
@@ -1030,6 +1031,348 @@ static void cb_check_source_location_extra_subfields(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_http_request_common_case(void *ctx, int ffd,
+                                             int res_ret, void *res_data, size_t res_size,
+                                             void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestMethod']", "test_requestMethod");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestUrl']", "test_requestUrl");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['userAgent']", "test_userAgent");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['remoteIp']", "test_remoteIp");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['serverIp']", "test_serverIp");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['referer']", "test_referer");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['protocol']", "test_protocol");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['latency']", "0s");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['requestSize']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['responseSize']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['status']", 200);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['cacheFillBytes']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheLookup']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheHit']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheValidatedWithOriginServer']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `httpRequest` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_empty_http_request(void *ctx, int ffd,
+                                        int res_ret, void *res_data, size_t res_size,
+                                        void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestMethod']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestUrl']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['userAgent']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['remoteIp']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['serverIp']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['referer']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['protocol']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,  "$entries[0]['httpRequest']['latency']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['requestSize']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['responseSize']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['status']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['cacheFillBytes']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheLookup']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheHit']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheValidatedWithOriginServer']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `httpRequest` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_in_string(void *ctx, int ffd,
+                                            int res_ret, void *res_data, size_t res_size,
+                                            void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']", "some string");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['httpRequest']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_partial_subfields(void *ctx, int ffd,
+                                                    int res_ret, void *res_data, size_t res_size,
+                                                    void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestMethod']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestUrl']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['userAgent']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['remoteIp']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['serverIp']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['referer']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['protocol']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,  "$entries[0]['httpRequest']['latency']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['requestSize']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['responseSize']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['status']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['cacheFillBytes']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheLookup']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheHit']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheValidatedWithOriginServer']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `httpRequest` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_incorrect_type_subfields(void *ctx, int ffd,
+                                                           int res_ret, void *res_data, size_t res_size,
+                                                           void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestMethod']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestUrl']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['userAgent']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['remoteIp']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['serverIp']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['referer']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['protocol']", "");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,  "$entries[0]['httpRequest']['latency']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['requestSize']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['responseSize']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['status']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['cacheFillBytes']", 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheLookup']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheHit']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheValidatedWithOriginServer']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `httpRequest` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_extra_subfields(void *ctx, int ffd,
+                                                  int res_ret, void *res_data, size_t res_size,
+                                                  void *data)
+{
+     int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestMethod']", "test_requestMethod");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['requestUrl']", "test_requestUrl");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['userAgent']", "test_userAgent");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['remoteIp']", "test_remoteIp");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['serverIp']", "test_serverIp");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['referer']", "test_referer");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['protocol']", "test_protocol");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['latency']", "0s");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['requestSize']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['responseSize']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['status']", 200);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['httpRequest']['cacheFillBytes']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheLookup']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheHit']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheValidatedWithOriginServer']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* Preserve extra subfields inside jsonPayload */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']['extra_key1']", "extra_val1");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_integer(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']['extra_key2']", 123);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']['extra_key3']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_lantency_common_case(void *ctx, int ffd,
+                                                       int res_ret, void *res_data, size_t res_size,
+                                                       void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['httpRequest']['latency']", "100.00s");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `httpRequest` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_latency_incorrect_format(void *ctx, int ffd,
+                                                           int res_ret, void *res_data, size_t res_size,
+                                                           void *data)
+{
+    int ret;
+
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['httpRequest']['latency']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    /* check `httpRequest` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
 
 void flb_test_resource_global()
 {
@@ -2095,6 +2438,406 @@ void flb_test_source_location_extra_subfields()
     flb_destroy(ctx);
 }
 
+void flb_test_http_request_common_case()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_common_case,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_empty_http_request()
+{
+    int ret;
+    int size = sizeof(EMPTY_HTTPREQUEST) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_empty_http_request,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) EMPTY_HTTPREQUEST, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_in_string()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_IN_STRING) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_in_string,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_IN_STRING, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_partial_subfields()
+{
+    int ret;
+    int size = sizeof(PARTIAL_HTTPREQUEST) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_partial_subfields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) PARTIAL_HTTPREQUEST, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_incorrect_type_subfields()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_SUBFIELDS_IN_INCORRECT_TYPE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_incorrect_type_subfields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_SUBFIELDS_IN_INCORRECT_TYPE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_extra_subfields()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_EXTRA_SUBFIELDS_EXISTED) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_extra_subfields,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_EXTRA_SUBFIELDS_EXISTED, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_latency_common_case()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_LATENCY_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_lantency_common_case,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_latency_invalid_spaces()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_LATENCY_INVALID_SPACES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_latency_incorrect_format,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_SPACES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_latency_invalid_string()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_LATENCY_INVALID_STRING) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_latency_incorrect_format,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_STRING, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_http_request_latency_invalid_end()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_LATENCY_INVALID_END) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_latency_incorrect_format,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_LATENCY_INVALID_END, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"severity_multi_entries", flb_test_multi_entries_severity },
@@ -2131,6 +2874,18 @@ TEST_LIST = {
     {"custom_labels", flb_test_custom_labels },
     {"default_labels_k8s_resource_type", flb_test_default_labels_k8s_resource_type },
     {"custom_labels_k8s_resource_type", flb_test_custom_labels_k8s_resource_type },
+
+    /* test httpRequest */
+    {"httpRequest_common_case", flb_test_http_request_common_case},
+    {"empty_httpRequest", flb_test_empty_http_request},
+    {"httpRequest_not_a_map", flb_test_http_request_in_string},
+    {"httpRequest_partial_subfields", flb_test_http_request_partial_subfields},
+    {"httpRequest_subfields_in_incorret_type", flb_test_http_request_incorrect_type_subfields},
+    {"httpRequest_extra_subfields_exist", flb_test_http_request_extra_subfields},
+    {"httpRequest_common_latency", flb_test_http_request_latency_common_case},
+    {"httpRequest_latency_incorrect_spaces", flb_test_http_request_latency_invalid_spaces},
+    {"httpRequest_latency_incorrect_string", flb_test_http_request_latency_invalid_string},
+    {"httpRequest_latency_incorrect_end", flb_test_http_request_latency_invalid_end},
 
     {NULL, NULL}
 };
