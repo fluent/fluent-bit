@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_tls.h>
 #include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_utils.h>
@@ -374,8 +375,20 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
          * is under a coroutine context and it can yield.
          */
         if (!th) {
-            flb_trace("[io_tls] handshake in process to %s:%i",
-                      u->tcp_host, u->tcp_port);
+            flb_trace("[io_tls] handshake connection #%i in process to %s:%i",
+                      u_conn->fd, u->tcp_host, u->tcp_port);
+
+            /* Connect timeout */
+            if (u->net.connect_timeout > 0 &&
+                u_conn->ts_connect_timeout > 0 &&
+                u_conn->ts_connect_timeout <= time(NULL)) {
+                flb_error("[io_tls] handshake connection #%i to %s:%i timed out after "
+                          "%i seconds",
+                          u_conn->fd,
+                          u->tcp_host, u->tcp_port, u->net.connect_timeout);
+                goto error;
+            }
+
             flb_time_msleep(500);
             goto retry_handshake;
         }
