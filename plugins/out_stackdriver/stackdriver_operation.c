@@ -1,3 +1,5 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
@@ -15,6 +17,9 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
+#include <fluent-bit/flb_output_plugin.h>
+
 #include "stackdriver.h"
 #include "stackdriver_helper.h"
 #include "stackdriver_operation.h"
@@ -24,10 +29,10 @@ typedef enum {
     OPERATION_EXISTED = 2
 } operation_status;
 
-void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer, 
-                         int *operation_first, int *operation_last, 
+void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer,
+                         int *operation_first, int *operation_last,
                          msgpack_packer *mp_pck)
-{    
+{
     msgpack_pack_str(mp_pck, 9);
     msgpack_pack_str_body(mp_pck, "operation", 9);
 
@@ -41,7 +46,7 @@ void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer,
     msgpack_pack_str(mp_pck, OPERATION_PRODUCER_SIZE);
     msgpack_pack_str_body(mp_pck, OPERATION_PRODUCER, OPERATION_PRODUCER_SIZE);
     msgpack_pack_str(mp_pck, flb_sds_len(*operation_producer));
-    msgpack_pack_str_body(mp_pck, *operation_producer, 
+    msgpack_pack_str_body(mp_pck, *operation_producer,
                           flb_sds_len(*operation_producer));
 
     msgpack_pack_str(mp_pck, OPERATION_FIRST_SIZE);
@@ -52,7 +57,7 @@ void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer,
     else {
         msgpack_pack_false(mp_pck);
     }
-    
+
     msgpack_pack_str(mp_pck, OPERATION_LAST_SIZE);
     msgpack_pack_str_body(mp_pck, OPERATION_LAST, OPERATION_LAST_SIZE);
     if (*operation_last == FLB_TRUE) {
@@ -64,8 +69,8 @@ void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer,
 }
 
 /* Return true if operation extracted */
-int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer, 
-                      int *operation_first, int *operation_last, 
+int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
+                      int *operation_first, int *operation_last,
                       msgpack_object *obj, int *extra_subfields)
 {
     operation_status op_status = NO_OPERATION;
@@ -74,7 +79,7 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
     msgpack_object_kv *tmp_p;
     msgpack_object_kv *tmp_pend;
 
-    if (obj->via.map.size == 0) {    	
+    if (obj->via.map.size == 0) {
         return FLB_FALSE;
     }
     p = obj->via.map.ptr;
@@ -83,14 +88,14 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
     for (; p < pend && op_status == NO_OPERATION; ++p) {
 
         if (p->val.type != MSGPACK_OBJECT_MAP
-            || !validate_key(p->key, OPERATION_FIELD_IN_JSON, 
+            || !validate_key(p->key, OPERATION_FIELD_IN_JSON,
                              OPERATION_KEY_SIZE)) {
             continue;
         }
 
         op_status = OPERATION_EXISTED;
         msgpack_object sub_field = p->val;
-        
+
         tmp_p = sub_field.via.map.ptr;
         tmp_pend = sub_field.via.map.ptr + sub_field.via.map.size;
 
@@ -103,7 +108,7 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
             if (validate_key(tmp_p->key, OPERATION_ID, OPERATION_ID_SIZE)) {
                 try_assign_subfield_str(tmp_p->val, operation_id);
             }
-            else if (validate_key(tmp_p->key, OPERATION_PRODUCER, 
+            else if (validate_key(tmp_p->key, OPERATION_PRODUCER,
                                   OPERATION_PRODUCER_SIZE)) {
                 try_assign_subfield_str(tmp_p->val, operation_producer);
             }
@@ -122,7 +127,7 @@ int extract_operation(flb_sds_t *operation_id, flb_sds_t *operation_producer,
     return op_status == OPERATION_EXISTED;
 }
 
-void pack_extra_operation_subfields(msgpack_packer *mp_pck, 
+void pack_extra_operation_subfields(msgpack_packer *mp_pck,
                                     msgpack_object *operation, int extra_subfields) {
     msgpack_object_kv *p = operation->via.map.ptr;
     msgpack_object_kv *const pend = operation->via.map.ptr + operation->via.map.size;
