@@ -294,7 +294,7 @@ int cio_chunk_lock(struct cio_chunk *ch)
     }
 
     ch->lock = CIO_TRUE;
-    return CIO_OK;
+    return cio_chunk_sync(ch);
 }
 
 int cio_chunk_unlock(struct cio_chunk *ch)
