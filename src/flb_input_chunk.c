@@ -588,6 +588,9 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     /* Set it busy as it likely it's a reference for an outgoing task */
     ic->busy = FLB_TRUE;
 
+    /* Lock the internal chunk */
+    cio_chunk_lock(ic->chunk);
+
     return buf;
 }
 
