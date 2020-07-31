@@ -1,3 +1,5 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
@@ -23,7 +25,7 @@ int equal_obj_str(msgpack_object obj, const char *str, const int size) {
     if (obj.type != MSGPACK_OBJECT_STR) {
         return FLB_FALSE;
     }
-    if (size != obj.via.str.size 
+    if (size != obj.via.str.size
         || strncmp(str, obj.via.str.ptr, obj.via.str.size) != 0) {
         return FLB_FALSE;
     }
@@ -36,7 +38,7 @@ int validate_key(msgpack_object obj, const char *str, const int size) {
 
 void try_assign_subfield_str(msgpack_object obj, flb_sds_t *subfield) {
     if (obj.type == MSGPACK_OBJECT_STR) {
-        *subfield = flb_sds_copy(*subfield, obj.via.str.ptr, 
+        *subfield = flb_sds_copy(*subfield, obj.via.str.ptr,
                                  obj.via.str.size);
     }
 }

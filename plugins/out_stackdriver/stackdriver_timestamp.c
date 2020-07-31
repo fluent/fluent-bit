@@ -1,3 +1,5 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
@@ -15,10 +17,15 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
+#include <fluent-bit/flb_output_plugin.h>
+
 #include "stackdriver.h"
 #include "stackdriver_helper.h"
 #include "stackdriver_timestamp.h"
 #include <fluent-bit/flb_regex.h>
+
+#include <ctype.h>
 
 static int is_integer(char *str, int size) {
     int i;
@@ -30,12 +37,12 @@ static int is_integer(char *str, int size) {
     return FLB_TRUE;
 }
 
-static void try_assign_time(long long seconds, long long nanos, 
+static void try_assign_time(long long seconds, long long nanos,
                             struct flb_time *tms)
 {
     if (seconds != 0) {
         tms->tm.tv_sec = seconds;
-        tms->tm.tv_nsec = nanos;    
+        tms->tm.tv_nsec = nanos;
     }
 }
 
@@ -44,8 +51,8 @@ static long long get_integer(msgpack_object obj)
     if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         return obj.via.i64;
     }
-    else if (obj.type == MSGPACK_OBJECT_STR 
-             && is_integer(obj.via.str.ptr, 
+    else if (obj.type == MSGPACK_OBJECT_STR
+             && is_integer((char *) obj.via.str.ptr,
                            obj.via.str.size)) {
         return atoll(obj.via.str.ptr);
     }
@@ -65,14 +72,14 @@ static int extract_format_timestamp_object(msgpack_object *obj,
     msgpack_object_kv *tmp_p;
     msgpack_object_kv *tmp_pend;
 
-    if (obj->via.map.size == 0) {    	
+    if (obj->via.map.size == 0) {
         return FLB_FALSE;
     }
     p = obj->via.map.ptr;
     pend = obj->via.map.ptr + obj->via.map.size;
 
     for (; p < pend; ++p) {
-        if (!validate_key(p->key, "timestamp", 9) 
+        if (!validate_key(p->key, "timestamp", 9)
             || p->val.type != MSGPACK_OBJECT_MAP) {
             continue;
         }
@@ -84,7 +91,7 @@ static int extract_format_timestamp_object(msgpack_object *obj,
             if (validate_key(tmp_p->key, "seconds", 7)) {
                 seconds_found = FLB_TRUE;
                 seconds = get_integer(tmp_p->val);
-                
+
                 if (nanos_found == FLB_TRUE) {
                     try_assign_time(seconds, nanos, tms);
                     return FLB_TRUE;
@@ -115,7 +122,7 @@ static int extract_format_timestamp_duo_fields(msgpack_object *obj,
     msgpack_object_kv *p;
     msgpack_object_kv *pend;
 
-    if (obj->via.map.size == 0) {    	
+    if (obj->via.map.size == 0) {
         return FLB_FALSE;
     }
     p = obj->via.map.ptr;
@@ -139,7 +146,7 @@ static int extract_format_timestamp_duo_fields(msgpack_object *obj,
                 try_assign_time(seconds, nanos, tms);
                 return FLB_TRUE;
             }
-        } 
+        }
     }
 
     return FLB_FALSE;

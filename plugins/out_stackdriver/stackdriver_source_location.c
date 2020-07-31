@@ -1,3 +1,5 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
@@ -25,11 +27,11 @@ typedef enum {
 } source_location_status;
 
 
-void add_source_location_field(flb_sds_t *source_location_file, 
-                               int64_t source_location_line, 
-                               flb_sds_t *source_location_function, 
+void add_source_location_field(flb_sds_t *source_location_file,
+                               int64_t source_location_line,
+                               flb_sds_t *source_location_function,
                                msgpack_packer *mp_pck)
-{    
+{
     msgpack_pack_str(mp_pck, 14);
     msgpack_pack_str_body(mp_pck, "sourceLocation", 14);
     msgpack_pack_map(mp_pck, 3);
@@ -37,7 +39,7 @@ void add_source_location_field(flb_sds_t *source_location_file,
     msgpack_pack_str(mp_pck, SOURCE_LOCATION_FILE_SIZE);
     msgpack_pack_str_body(mp_pck, SOURCE_LOCATION_FILE, SOURCE_LOCATION_FILE_SIZE);
     msgpack_pack_str(mp_pck, flb_sds_len(*source_location_file));
-    msgpack_pack_str_body(mp_pck, *source_location_file, 
+    msgpack_pack_str_body(mp_pck, *source_location_file,
                           flb_sds_len(*source_location_file));
 
     msgpack_pack_str(mp_pck, SOURCE_LOCATION_LINE_SIZE);
@@ -45,17 +47,17 @@ void add_source_location_field(flb_sds_t *source_location_file,
     msgpack_pack_int64(mp_pck, source_location_line);
 
     msgpack_pack_str(mp_pck, SOURCE_LOCATION_FUNCTION_SIZE);
-    msgpack_pack_str_body(mp_pck, SOURCE_LOCATION_FUNCTION, 
+    msgpack_pack_str_body(mp_pck, SOURCE_LOCATION_FUNCTION,
                           SOURCE_LOCATION_FUNCTION_SIZE);
     msgpack_pack_str(mp_pck, flb_sds_len(*source_location_function));
-    msgpack_pack_str_body(mp_pck, *source_location_function, 
+    msgpack_pack_str_body(mp_pck, *source_location_function,
                           flb_sds_len(*source_location_function));
 }
 
 /* Return FLB_TRUE if sourceLocation extracted */
-int extract_source_location(flb_sds_t *source_location_file, 
+int extract_source_location(flb_sds_t *source_location_file,
                             int64_t *source_location_line,
-                            flb_sds_t *source_location_function, 
+                            flb_sds_t *source_location_function,
                             msgpack_object *obj, int *extra_subfields)
 {
     source_location_status op_status = NO_SOURCELOCATION;
@@ -64,17 +66,17 @@ int extract_source_location(flb_sds_t *source_location_file,
     msgpack_object_kv *tmp_p;
     msgpack_object_kv *tmp_pend;
 
-    if (obj->via.map.size == 0) {   
+    if (obj->via.map.size == 0) {
         return FLB_FALSE;
-    } 	
+    }
     p = obj->via.map.ptr;
     pend = obj->via.map.ptr + obj->via.map.size;
 
     for (; p < pend && op_status == NO_SOURCELOCATION; ++p) {
 
-        if (p->val.type != MSGPACK_OBJECT_MAP 
+        if (p->val.type != MSGPACK_OBJECT_MAP
             || p->key.type != MSGPACK_OBJECT_STR
-            || !validate_key(p->key, SOURCELOCATION_FIELD_IN_JSON, 
+            || !validate_key(p->key, SOURCELOCATION_FIELD_IN_JSON,
                              SOURCE_LOCATION_SIZE)) {
 
             continue;
@@ -92,18 +94,18 @@ int extract_source_location(flb_sds_t *source_location_file,
                 continue;
             }
 
-            if (validate_key(tmp_p->key, 
-                             SOURCE_LOCATION_FILE, 
+            if (validate_key(tmp_p->key,
+                             SOURCE_LOCATION_FILE,
                              SOURCE_LOCATION_FILE_SIZE)) {
                 try_assign_subfield_str(tmp_p->val, source_location_file);
             }
-            else if (validate_key(tmp_p->key, 
-                                  SOURCE_LOCATION_FUNCTION, 
+            else if (validate_key(tmp_p->key,
+                                  SOURCE_LOCATION_FUNCTION,
                                   SOURCE_LOCATION_FUNCTION_SIZE)) {
                 try_assign_subfield_str(tmp_p->val, source_location_function);
             }
-            else if (validate_key(tmp_p->key, 
-                                  SOURCE_LOCATION_LINE, 
+            else if (validate_key(tmp_p->key,
+                                  SOURCE_LOCATION_LINE,
                                   SOURCE_LOCATION_LINE_SIZE)) {
                 try_assign_subfield_int(tmp_p->val, source_location_line);
             }
@@ -116,8 +118,8 @@ int extract_source_location(flb_sds_t *source_location_file,
     return op_status == SOURCELOCATION_EXISTED;
 }
 
-void pack_extra_source_location_subfields(msgpack_packer *mp_pck, 
-                                          msgpack_object *source_location, 
+void pack_extra_source_location_subfields(msgpack_packer *mp_pck,
+                                          msgpack_object *source_location,
                                           int extra_subfields) {
     msgpack_object_kv *p = source_location->via.map.ptr;
     msgpack_object_kv *const pend = source_location->via.map.ptr + source_location->via.map.size;
@@ -127,7 +129,7 @@ void pack_extra_source_location_subfields(msgpack_packer *mp_pck,
     for (; p < pend; ++p) {
         if (validate_key(p->key, SOURCE_LOCATION_FILE, SOURCE_LOCATION_FILE_SIZE)
             || validate_key(p->key, SOURCE_LOCATION_LINE, SOURCE_LOCATION_LINE_SIZE)
-            || validate_key(p->key, SOURCE_LOCATION_FUNCTION, 
+            || validate_key(p->key, SOURCE_LOCATION_FUNCTION,
                             SOURCE_LOCATION_FUNCTION_SIZE)) {
             continue;
         }
