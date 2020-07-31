@@ -31,11 +31,14 @@
 #include <chunkio/cio_log.h>
 
 #ifdef CIO_HAVE_BACKEND_FILESYSTEM
-static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
+static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
+                                 char *chunk_extension)
 {
     int len;
     int ret;
     int err;
+    int ext_off;
+    int ext_len = 0;
     char *path;
     DIR *dir;
     struct dirent *ent;
@@ -61,6 +64,10 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
         return -1;
     }
 
+    if (chunk_extension) {
+        ext_len = strlen(chunk_extension);
+    }
+
     cio_log_debug(ctx, "[cio scan] opening stream %s", st->name);
 
     /* Iterate the root_path */
@@ -74,6 +81,19 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
             continue;
         }
 
+        /* Check the file matches the desired extension (if set) */
+        if (chunk_extension) {
+            len = strlen(ent->d_name);
+            if (len <= ext_len) {
+                continue;
+            }
+
+            ext_off = len - ext_len;
+            if (strncmp(ent->d_name + ext_off, chunk_extension, ext_len) != 0) {
+                continue;
+            }
+        }
+
         /* register every directory as a stream */
         cio_chunk_open(ctx, st, ent->d_name, CIO_OPEN_RD, 0, &err);
     }
@@ -85,8 +105,9 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st)
 }
 
 /* Given a cio context, scan it root_path and populate stream/files */
-int cio_scan_streams(struct cio_ctx *ctx)
+int cio_scan_streams(struct cio_ctx *ctx, char *chunk_extension)
 {
+    int len;
     DIR *dir;
     struct dirent *ent;
     struct cio_stream *st;
@@ -113,7 +134,7 @@ int cio_scan_streams(struct cio_ctx *ctx)
         /* register every directory as a stream */
         st = cio_stream_create(ctx, ent->d_name, CIO_STORE_FS);
         if (st) {
-            cio_scan_stream_files(ctx, st);
+            cio_scan_stream_files(ctx, st, chunk_extension);
         }
     }
 

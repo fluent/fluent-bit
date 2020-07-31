@@ -98,6 +98,7 @@ static void cio_help(int rc)
     printf("  -m, --metadata=INFO\tset metadata\n");
     printf("  -M, --memory\t\trun in-memory mode\n");
     printf("  -l, --list\t\tlist environment content\n");
+    printf("  -E, --extension\tset chunk extension filter\n");
     printf("  -F, --full-sync\tforce data flush to disk\n");
     printf("  -k, --checksum\tenable CRC32 checksum\n");
     printf("  -f, --filename=FILE\tset name of file to create\n");
@@ -477,6 +478,7 @@ int main(int argc, char **argv)
     int cmd_perf = CIO_FALSE;
     int verbose = CIO_LOG_WARN;
     int flags = 0;
+    char *chunk_ext = NULL;
     char *perf_file = NULL;
     char *fname = NULL;
     char *stream = NULL;
@@ -488,6 +490,7 @@ int main(int argc, char **argv)
     static const struct option long_opts[] = {
         {"full-sync"  , no_argument      , NULL, 'F'},
         {"checksum"   , no_argument      , NULL, 'k'},
+        {"extension"  , required_argument, NULL, 'E'},
         {"list"       , no_argument      , NULL, 'l'},
         {"root"       , required_argument, NULL, 'r'},
         {"silent"     , no_argument      , NULL, 'S'},
@@ -507,7 +510,7 @@ int main(int argc, char **argv)
     /* Initialize signals */
     cio_signal_init();
 
-    while ((opt = getopt_long(argc, argv, "Fklr:p:w:e:Sis:m:Mf:vVh",
+    while ((opt = getopt_long(argc, argv, "FkE:lr:p:w:e:Sis:m:Mf:vVh",
                               long_opts, NULL)) != -1) {
         switch (opt) {
         case 'F':
@@ -515,6 +518,9 @@ int main(int argc, char **argv)
             break;
         case 'k':
             flags |= CIO_CHECKSUM;
+            break;
+        case 'E':
+            chunk_ext = strdup(optarg);
             break;
         case 'l':
             cmd_list = CIO_TRUE;
@@ -595,7 +601,7 @@ int main(int argc, char **argv)
     }
 
     /* Load */
-    cio_load(ctx);
+    cio_load(ctx, chunk_ext);
     cio_log_info(ctx, "root_path => %s", ctx->root_path);
 
     /*
@@ -627,6 +633,7 @@ int main(int argc, char **argv)
         cio_help(EXIT_FAILURE);
     }
 
+    free(chunk_ext);
     free(stream);
     free(fname);
     free(metadata);
