@@ -90,11 +90,11 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
         return NULL;
     }
 
-    u->tcp_port      = port;
-    u->flags         = flags;
-    u->evl           = config->evl;
-    u->n_connections = 0;
-    u->flags |= FLB_IO_ASYNC;
+    u->tcp_port       = port;
+    u->flags          = flags;
+    u->evl            = config->evl;
+    u->n_connections  = 0;
+    u->flags         |= FLB_IO_ASYNC;
 
     mk_list_init(&u->av_queue);
     mk_list_init(&u->busy_queue);
@@ -172,74 +172,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
     return u;
 }
 
-static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
-{
-    int ret;
-    time_t now;
-    struct flb_upstream_conn *conn;
-    struct flb_thread *th = pthread_getspecific(flb_thread_key);
-
-    now = time(NULL);
-
-    conn = flb_malloc(sizeof(struct flb_upstream_conn));
-    if (!conn) {
-        flb_errno();
-        return NULL;
-    }
-    conn->u             = u;
-    conn->fd            = -1;
-    conn->net_error     = -1;
-
-    if (u->net.connect_timeout > 0) {
-        conn->ts_connect_timeout = now + u->net.connect_timeout;
-    }
-    else {
-        conn->ts_connect_timeout = -1;
-    }
-
-#ifdef FLB_HAVE_TLS
-    conn->tls_session   = NULL;
-#endif
-    conn->ts_created = time(NULL);
-    conn->ts_assigned = time(NULL);
-    conn->ts_available = 0;
-    conn->ka_count = 0;
-
-    if (u->net.keepalive == FLB_TRUE) {
-        flb_upstream_conn_recycle(conn, FLB_TRUE);
-    }
-    else {
-        flb_upstream_conn_recycle(conn, FLB_FALSE);
-    }
-
-    MK_EVENT_ZERO(&conn->event);
-
-    /* Link new connection to the busy queue */
-    mk_list_add(&conn->_head, &u->busy_queue);
-    u->n_connections++;
-
-    /* Start connection */
-    ret = flb_io_net_connect(conn, th);
-    if (ret == -1) {
-        mk_list_del(&conn->_head);
-        flb_free(conn);
-        flb_debug("[upstream] CONNECT ERROR #%i to %s:%i is connected",
-                  conn->fd, u->tcp_host, u->tcp_port);
-
-        return NULL;
-    }
-
-    if (conn->u->flags & FLB_IO_TCP_KA) {
-        flb_debug("[upstream] KA connection #%i to %s:%i is connected",
-                  conn->fd, u->tcp_host, u->tcp_port);
-    }
-
-    /* Invalidate timeout for connection */
-    conn->ts_connect_timeout = -1;
-
-    return conn;
-}
-
 static int destroy_conn(struct flb_upstream_conn *u_conn)
 {
     struct flb_upstream *u = u_conn->u;
@@ -269,6 +201,75 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     flb_free(u_conn);
 
     return 0;
+}
+
+static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
+{
+    int ret;
+    time_t now;
+    struct flb_upstream_conn *conn;
+    struct flb_thread *th = pthread_getspecific(flb_thread_key);
+
+    now = time(NULL);
+
+    conn = flb_calloc(1, sizeof(struct flb_upstream_conn));
+    if (!conn) {
+        flb_errno();
+        return NULL;
+    }
+    conn->u             = u;
+    conn->fd            = -1;
+    conn->net_error     = -1;
+
+    if (u->net.connect_timeout > 0) {
+        conn->ts_connect_timeout = now + u->net.connect_timeout;
+    }
+    else {
+        conn->ts_connect_timeout = -1;
+    }
+
+#ifdef FLB_HAVE_TLS
+    conn->tls_session   = NULL;
+#endif
+    conn->ts_created = time(NULL);
+    conn->ts_assigned = time(NULL);
+    conn->ts_available = 0;
+    conn->ka_count = 0;
+    conn->thread = th;
+
+    if (u->net.keepalive == FLB_TRUE) {
+        flb_upstream_conn_recycle(conn, FLB_TRUE);
+    }
+    else {
+        flb_upstream_conn_recycle(conn, FLB_FALSE);
+    }
+
+    MK_EVENT_ZERO(&conn->event);
+
+    /* Link new connection to the busy queue */
+    mk_list_add(&conn->_head, &u->busy_queue);
+
+    /* Increase counter */
+    u->n_connections++;
+
+    /* Start connection */
+    ret = flb_io_net_connect(conn, th);
+    if (ret == -1) {
+        flb_debug("[upstream] connection #%i failed to %s:%i",
+                  conn->fd, u->tcp_host, u->tcp_port);
+        destroy_conn(conn);
+        return NULL;
+    }
+
+    if (conn->u->flags & FLB_IO_TCP_KA) {
+        flb_debug("[upstream] KA connection #%i to %s:%i is connected",
+                  conn->fd, u->tcp_host, u->tcp_port);
+    }
+
+    /* Invalidate timeout for connection */
+    conn->ts_connect_timeout = -1;
+
+    return conn;
 }
 
 int flb_upstream_destroy(struct flb_upstream *u)
@@ -465,8 +466,9 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
                 u_conn->ts_connect_timeout > 0 &&
                 u_conn->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
-                flb_error("[upstream] connect to %s:%i timed out after "
+                flb_error("[upstream] connection #%i to %s:%i timed out after "
                           "%i seconds",
+                          u_conn->fd,
                           u->tcp_host, u->tcp_port, u->net.connect_timeout);
             }
 
@@ -487,9 +489,9 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
                 shutdown(u_conn->fd, SHUT_RDWR);
-                flb_debug("[upstream] drop keepalive connection to %s:%i "
+                flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
                           "(keepalive idle timeout)",
-                          u->tcp_host, u->tcp_port);
+                          u_conn->fd, u->tcp_host, u->tcp_port);
             }
         }
     }
@@ -500,8 +502,8 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
 int flb_upstream_is_async(struct flb_upstream *u)
 {
     if (u->flags & FLB_IO_ASYNC) {
-        return FLB_FALSE;
+        return FLB_TRUE;
     }
 
-    return FLB_TRUE;
+    return FLB_FALSE;
 }
