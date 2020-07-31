@@ -521,7 +521,7 @@ int flb_storage_create(struct flb_config *ctx)
     cio_set_max_chunks_up(ctx->cio, ctx->storage_max_chunks_up);
 
     /* Load content from the file system if any */
-    ret = cio_load(ctx->cio);
+    ret = cio_load(ctx->cio, NULL);
     if (ret == -1) {
         flb_error("[storage] error scanning root path content: %s",
                   ctx->storage_path);
