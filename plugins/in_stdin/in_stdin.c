@@ -239,7 +239,7 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
         ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
 
         if (ctx->buf_size == -1) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid format", pval);
+            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", pval);
             return -1;
         } else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
             flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
