@@ -158,6 +158,8 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
  */
 int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
+int flb_read_file(const char *path, char **out_buf, size_t *out_size);
+
 
 #endif
 #endif /* FLB_HAVE_AWS */

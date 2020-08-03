@@ -27,6 +27,8 @@
 
 #include <jsmn/jsmn.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -457,4 +459,51 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
         flb_http_client_destroy(c);
         return -1;
     }
+}
+
+int flb_read_file(const char *path, char **out_buf, size_t *out_size)
+{
+    int ret;
+    long bytes;
+    char *buf = NULL;
+    FILE *fp = NULL;
+    struct stat st;
+    int fd;
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        return -1;
+    }
+
+    fd = fileno(fp);
+    ret = fstat(fd, &st);
+    if (ret == -1) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    buf = flb_malloc(st.st_size + sizeof(char));
+    if (!buf) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    bytes = fread(buf, st.st_size, 1, fp);
+    if (bytes != 1) {
+        flb_errno();
+        flb_free(buf);
+        fclose(fp);
+        return -1;
+    }
+
+    /* fread does not add null byte */
+    buf[st.st_size] = '\0';
+
+    fclose(fp);
+    *out_buf = buf;
+    *out_size = st.st_size;
+
+    return 0;
 }
