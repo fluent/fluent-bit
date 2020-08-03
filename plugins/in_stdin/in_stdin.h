@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 
-#define DEFAULT_BUF_SIZE 16384
+#define DEFAULT_BUF_SIZE 16000
 
 /* STDIN Input configuration & context */
 struct flb_in_stdin_config {

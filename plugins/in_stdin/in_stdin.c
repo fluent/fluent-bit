@@ -218,25 +218,34 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
 {
     const char *pval = NULL;
 
+    ctx->buf_size = DEFAULT_BUF_SIZE;
+    ctx->buf = NULL;
+    ctx->buf_len = 0;
+    ctx->ins = in;
+
     /* parser settings */
     pval = flb_input_get_property("parser", in);
     if (pval) {
         ctx->parser = flb_parser_get(pval, config);
         if (!ctx->parser) {
             flb_plg_error(ctx->ins, "requested parser '%s' not found", pval);
+            return -1;
         }
-    }
-    else {
-        ctx->parser = NULL;
     }
 
     /* buffer size setting */
     pval = flb_input_get_property("buffer_size", in);
-    if (pval != NULL && flb_utils_size_to_bytes(pval) > 0) {
-        ctx->buf_size = flb_utils_size_to_bytes(pval);
-    }
-    else {
-        ctx->buf_size = DEFAULT_BUF_SIZE;
+    if (pval != NULL) {
+        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
+
+        if (ctx->buf_size == -1) {
+            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid format", pval);
+            return -1;
+        } else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
+            flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
+                          pval, DEFAULT_BUF_SIZE);
+            return -1;
+        }
     }
 
     flb_plg_debug(ctx->ins, "buf_size=%zu", ctx->buf_size);
@@ -270,10 +279,6 @@ static int in_stdin_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-
-    ctx->buf = NULL;
-    ctx->buf_len = 0;
-    ctx->ins = in;
 
     /* Initialize stdin config */
     ret = in_stdin_config_init(ctx, in, config);
