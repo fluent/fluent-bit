@@ -211,7 +211,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
     return 0;
 }
 
-/* Read config file and*/
+/* Read stdin config*/
 static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
                                struct flb_input_instance *in,
                                struct flb_config *config)
