@@ -715,12 +715,10 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     msgpack_object *obj;
+    msgpack_object *k;
+    msgpack_object *v;
     struct tm tm;
     struct flb_time tms;
-
-    if (!date_key) {
-        return NULL;
-    }
 
     /* Iterate the original buffer and perform adjustments */
     records = flb_mp_count(data, bytes);
@@ -770,41 +768,48 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         /* Get the record/map */
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
-        msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        /* Append date key */
-        msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
-        msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+        if (date_key != NULL) {
+            msgpack_pack_map(&tmp_pck, map_size + 1);
+        }
+        else {
+            msgpack_pack_map(&tmp_pck, map_size);
+        }
 
-        /* Append date value */
-        switch (date_format) {
-        case FLB_PACK_JSON_DATE_DOUBLE:
-            msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
-            break;
-        case FLB_PACK_JSON_DATE_ISO8601:
+        if (date_key != NULL) {
+            /* Append date key */
+            msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
+            msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+
+            /* Append date value */
+            switch (date_format) {
+            case FLB_PACK_JSON_DATE_DOUBLE:
+                msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                break;
+            case FLB_PACK_JSON_DATE_ISO8601:
             /* Format the time, use microsecond precision not nanoseconds */
-            gmtime_r(&tms.tm.tv_sec, &tm);
-            s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                         FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
+                gmtime_r(&tms.tm.tv_sec, &tm);
+                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
 
-            len = snprintf(time_formatted + s,
-                           sizeof(time_formatted) - 1 - s,
-                           ".%06" PRIu64 "Z",
-                           (uint64_t) tms.tm.tv_nsec / 1000);
-            s += len;
-            msgpack_pack_str(&tmp_pck, s);
-            msgpack_pack_str_body(&tmp_pck, time_formatted, s);
-            break;
-        case FLB_PACK_JSON_DATE_EPOCH:
-            msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
-            break;
+                len = snprintf(time_formatted + s,
+                               sizeof(time_formatted) - 1 - s,
+                               ".%06" PRIu64 "Z",
+                               (uint64_t) tms.tm.tv_nsec / 1000);
+                s += len;
+                msgpack_pack_str(&tmp_pck, s);
+                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+                break;
+            case FLB_PACK_JSON_DATE_EPOCH:
+                msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+                break;
+            }
         }
 
         /* Append remaining keys/values */
         for (i = 0; i < map_size; i++) {
-            msgpack_object *k = &map.via.map.ptr[i].key;
-            msgpack_object *v = &map.via.map.ptr[i].val;
-
+            k = &map.via.map.ptr[i].key;
+            v = &map.via.map.ptr[i].val;
             msgpack_pack_object(&tmp_pck, *k);
             msgpack_pack_object(&tmp_pck, *v);
         }
