@@ -264,7 +264,7 @@ static int process_content(struct flb_tail_file *file, off_t *bytes)
             ret = flb_parser_do(ctx->parser, line, line_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0) {
+                if (flb_time_to_double(&out_time) == 0.0) {
                     flb_time_get(&out_time);
                 }
 
