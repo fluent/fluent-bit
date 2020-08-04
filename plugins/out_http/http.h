@@ -43,6 +43,7 @@ struct flb_out_http {
 
     int json_date_format;
     flb_sds_t json_date_key;
+    flb_sds_t date_key;        /* internal use */
 
     /* HTTP URI */
     char *uri;
