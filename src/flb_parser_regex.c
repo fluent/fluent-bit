@@ -149,7 +149,7 @@ int flb_parser_regex_do(struct flb_parser *parser,
     pcb.num_skipped = 0;
     pcb.time_lookup = 0;
     pcb.time_frac = 0;
-    pcb.time_now = time(NULL);
+    pcb.time_now = 0;
 
     /* Iterate results and compose new buffer */
     last_byte = flb_regex_parse(parser->regex, &result, cb_results, &pcb);
