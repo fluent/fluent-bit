@@ -173,7 +173,7 @@ int flb_tail_mult_process_first(time_t now,
     file->mult_firstline = FLB_TRUE;
 
     /* Validate obtained time, if not set, set the current time */
-    if (flb_time_to_double(out_time) == 0) {
+    if (flb_time_to_double(out_time) == 0.0) {
         flb_time_get(out_time);
     }
 
