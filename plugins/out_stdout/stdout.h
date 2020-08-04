@@ -28,6 +28,7 @@ struct flb_stdout {
     int out_format;
     int json_date_format;
     flb_sds_t json_date_key;
+    flb_sds_t date_key;
     struct flb_output_instance *ins;
 };
 
