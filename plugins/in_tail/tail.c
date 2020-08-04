@@ -640,7 +640,7 @@ static struct flb_config_map config_map[] = {
      "Replacement in case of decoding error (default: unicode replacement char)",
     },
 #endif
-    
+
     /* Multiline Options */
 #ifdef FLB_HAVE_PARSER
     {
