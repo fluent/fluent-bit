@@ -82,8 +82,10 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     int i;
     long nsec;
     const char *tmp;
+#ifdef FLB_HAVE_UTF8_ENCODER    
+    const char *tmp2;
+#endif
     struct flb_tail_config *ctx;
-
     ctx = flb_calloc(1, sizeof(struct flb_tail_config));
     if (!ctx) {
         flb_errno();
@@ -184,6 +186,19 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     if (ctx->multiline == FLB_TRUE) {
         ret = flb_tail_mult_create(ctx, ins, config);
         if (ret == -1) {
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
+#endif
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    tmp = flb_input_get_property("encoding", ins);
+    if (tmp) {
+        tmp2 = flb_input_get_property("encoding_relacement", ins);
+        ctx->encoding = flb_encoding_open(tmp,tmp2);
+        if (!ctx->encoding) {
+            flb_plg_error(ctx->ins,"illegal encoding: %s", tmp);
             flb_tail_config_destroy(ctx);
             return NULL;
         }

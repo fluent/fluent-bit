@@ -335,6 +335,10 @@ set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
   )
+set(src
+  ${src}
+  "flb_encoding.c"
+  )
 endif()
 
 # Record Accessor
