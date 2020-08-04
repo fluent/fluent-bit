@@ -273,7 +273,7 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
         time_key = "time";
     }
     time_key_len = strlen(time_key);
-    time_lookup = time(NULL);
+    time_lookup = 0;
 
     /* count the number of key value pairs */
     map_size = 0;
