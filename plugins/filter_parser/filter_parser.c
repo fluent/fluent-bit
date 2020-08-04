@@ -271,8 +271,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         flb_time_zero(&parsed_time);
 
                         parse_ret = flb_parser_do(fp->parser, val_str, val_len,
-                                            (void **) &out_buf, &out_size,
-                                            &parsed_time);
+                                                  (void **) &out_buf, &out_size,
+                                                  &parsed_time);
                         if (parse_ret >= 0) {
                             /*
                              * If the parser succeeded we need to check the
