@@ -82,7 +82,7 @@ static void cb_tcp_flush(const void *data, size_t bytes,
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->date_key);
         if (!json) {
             flb_plg_error(ctx->ins, "error formatting JSON payload");
             flb_upstream_conn_release(u_conn);

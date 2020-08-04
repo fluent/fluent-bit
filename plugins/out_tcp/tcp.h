@@ -31,6 +31,7 @@ struct flb_out_tcp {
     /* Timestamp format */
     int       json_date_format;
     flb_sds_t json_date_key;
+    flb_sds_t date_key;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
