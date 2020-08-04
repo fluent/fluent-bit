@@ -100,6 +100,9 @@ int syslog_prot_process(struct syslog_conn *conn)
         ret = flb_parser_do(ctx->parser, p, len,
                             &out_buf, &out_size, &out_time);
         if (ret >= 0) {
+            if (flb_time_to_double(&out_time) == 0.0) {
+                flb_time_get(&out_time);
+            }
             pack_line(ctx, &out_time, out_buf, out_size);
             flb_free(out_buf);
         }
