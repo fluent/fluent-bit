@@ -306,7 +306,7 @@ static void cb_http_flush(const void *data, size_t bytes,
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->date_key);
         if (json != NULL) {
             ret = http_post(ctx, json, flb_sds_len(json), tag, tag_len);
             flb_sds_destroy(json);
