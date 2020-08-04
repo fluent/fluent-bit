@@ -152,6 +152,14 @@ int syslog_server_destroy(struct flb_syslog *ctx)
         flb_free(ctx->port);
     }
 
+    if (ctx->addr_key) {
+        flb_free(ctx->addr_key);
+    }
+
+    if (ctx->host_key) {
+        flb_free(ctx->host_key);
+    }
+
     close(ctx->server_fd);
 
     return 0;

@@ -124,20 +124,124 @@ int syslog_prot_process(struct syslog_conn *conn)
     return 0;
 }
 
-int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
+static int syslog_append_client_data(char **map_data, size_t *map_size, struct flb_syslog *ctx, 
+                                      struct flb_syslog_client_info *client_info) {
+
+    int map_num;
+    int i;
+    int len;
+    int extra_count = 0;
+    char * hn = NULL;
+    struct hostent *he = NULL;
+    char * ret_buf = 0;
+    size_t outsize;
+
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+    msgpack_unpacked result;
+    size_t off = 0;
+
+    if (ctx->addr_key) {
+        hn = inet_ntoa(client_info->client.sin_addr);
+        if (hn != NULL) {
+            extra_count++;
+        }
+    }
+
+    if (ctx->host_key) {
+        he = gethostbyaddr(&client_info->client, client_info->client_len, AF_INET);
+        if (he != NULL) {
+            extra_count++;
+        }
+    }
+
+    if (*map_data == NULL){
+        return -1;
+    }
+
+    msgpack_unpacked_init(&result);
+    if ( (i=msgpack_unpack_next(&result, *map_data, *map_size, &off)) != MSGPACK_UNPACK_SUCCESS ){
+        return -1;
+    }
+    if (result.data.type != MSGPACK_OBJECT_MAP) {
+        msgpack_unpacked_destroy(&result);
+        return -1;
+    }
+
+    len = result.data.via.map.size;
+    map_num = len + extra_count;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pck, map_num);
+
+    for(i=0; i<len; i++) {
+        msgpack_pack_object(&pck, result.data.via.map.ptr[i].key);
+        msgpack_pack_object(&pck, result.data.via.map.ptr[i].val);
+    }
+
+    if (hn != NULL) {
+        msgpack_pack_str(&pck, strlen(ctx->addr_key));
+        msgpack_pack_str_body(&pck, ctx->addr_key, strlen(ctx->addr_key));
+        msgpack_pack_str(&pck, strlen(hn));
+        msgpack_pack_str_body(&pck, hn, strlen(hn));
+    }
+
+    if (he != NULL) {
+        int he_length = strlen(he->h_name);
+        msgpack_pack_str(&pck, strlen(ctx->host_key));
+        msgpack_pack_str_body(&pck, ctx->host_key, strlen(ctx->host_key));
+        msgpack_pack_str(&pck, he_length);
+        msgpack_pack_str_body(&pck, he->h_name, he_length);
+    }
+
+    msgpack_unpacked_destroy(&result);
+
+    outsize = sbuf.size;
+    ret_buf  = flb_malloc(sbuf.size);
+
+    if (ret_buf == NULL) {
+        flb_errno();
+        msgpack_sbuffer_destroy(&sbuf);
+        return -1;
+    }
+    memcpy(ret_buf, sbuf.data, sbuf.size);
+
+    msgpack_sbuffer_destroy(&sbuf);
+
+    // Free original map data
+    flb_free(*map_data);
+
+    *map_size = outsize;
+    *map_data = ret_buf;
+
+    return 0;
+}
+
+int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx, struct flb_syslog_client_info *client_info)
 {
     int ret;
     void *out_buf;
     size_t out_size;
+
     struct flb_time out_time = {0};
 
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
     if (ret >= 0) {
+        if (ctx->addr_key || ctx->host_key) {
+            if (0 != syslog_append_client_data((char **) &out_buf, &out_size, ctx, client_info)) {
+                flb_plg_warn(ctx->ins, "error adding client_info in '%s'",
+                     ctx->parser->name);
+            }
+        }
+
         if (flb_time_to_double(&out_time) == 0) {
             flb_time_get(&out_time);
         }
+
         pack_line(ctx, &out_time, out_buf, out_size);
+
         flb_free(out_buf);
     }
     else {

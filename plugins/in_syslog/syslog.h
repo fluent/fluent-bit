@@ -42,6 +42,9 @@ struct flb_syslog {
     char *listen;
     char *port;
 
+    char *host_key;
+    char *addr_key;
+
     /* Unix socket (UDP/TCP)*/
     int server_fd;
     char *unix_path;
@@ -63,6 +66,11 @@ struct flb_syslog {
     struct mk_list connections;
     struct mk_event_loop *evl;
     struct flb_input_instance *ins;
+};
+
+struct flb_syslog_client_info {
+   struct sockaddr_in client;
+   int client_len;
 };
 
 #endif
