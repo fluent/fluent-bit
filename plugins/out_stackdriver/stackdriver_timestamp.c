@@ -48,14 +48,30 @@ static void try_assign_time(long long seconds, long long nanos,
 
 static long long get_integer(msgpack_object obj)
 {
+    char tmp[32];
+
     if (obj.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
         return obj.via.i64;
     }
     else if (obj.type == MSGPACK_OBJECT_STR
              && is_integer((char *) obj.via.str.ptr,
                            obj.via.str.size)) {
-        return atoll(obj.via.str.ptr);
+
+        /*
+         * use an intermediary buffer to perform the conversion to avoid any
+         * overflow by atoll. LLONG_MAX value is +9,223,372,036,854,775,807,
+         * so using a 32 bytes buffer is enough.
+         */
+        if (obj.via.str.size > sizeof(tmp) - 1) {
+            return 0;
+        }
+
+        memcpy(tmp, obj.via.str.ptr, obj.via.str.size);
+        tmp[obj.via.str.size] = '\0';
+
+        return atoll(tmp);
     }
+
     return 0;
 }
 
