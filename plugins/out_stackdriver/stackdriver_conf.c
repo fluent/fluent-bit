@@ -347,6 +347,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->node_name);
         flb_sds_destroy(ctx->cluster_name);
         flb_sds_destroy(ctx->cluster_location);
+        flb_sds_destroy(ctx->local_resource_id);
     }
 
     flb_sds_destroy(ctx->credentials_file);
