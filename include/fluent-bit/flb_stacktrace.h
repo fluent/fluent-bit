@@ -48,7 +48,7 @@ static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
 {
     struct flb_stacktrace *p = data;
 
-    fprintf(stdout, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
+    fprintf(stderr, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
             p->line,
             (unsigned long) pc,
             function == NULL ? "???" : function,
