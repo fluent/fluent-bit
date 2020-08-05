@@ -8,6 +8,13 @@
     "\"logging.googleapis.com/local_resource_id\": \"k8s_container.testnamespace.testpod.testctr\""		\
 	"}]"
 
+#define K8S_CONTAINER_COMMON_DIFF_TAGS	"["		\
+	"1591649196,"			\
+	"{"				\
+    "\"message\": \"K8S_CONTAINER_COMMON\","		\
+    "\"logging.googleapis.com/local_resource_id\": \"k8s_container.diffnamespace.diffpod.diffctr\""		\
+	"}]"
+
 #define K8S_CONTAINER_NO_LOCAL_RESOURCE_ID	"["		\
 	"1591649196,"			\
 	"{"				\
