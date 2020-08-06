@@ -100,6 +100,7 @@ struct flb_stackdriver {
 
     flb_sds_t labels_key;
     flb_sds_t local_resource_id;
+    flb_sds_t tag_prefix;
 
     /* other */
     flb_sds_t resource;
