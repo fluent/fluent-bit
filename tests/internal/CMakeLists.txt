@@ -60,6 +60,7 @@ if(FLB_AWS)
     ${UNIT_TESTS_FILES}
     aws_util.c
     aws_credentials.c
+    aws_s3_local_buffer.c
     aws_credentials_ec2.c
     aws_credentials_sts.c
     aws_credentials_http.c
