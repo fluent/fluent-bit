@@ -74,7 +74,6 @@ int jwt_base64_url_encode(unsigned char *out_buf, size_t out_size,
     return 0;
 }
 
-
 static int jwt_encode(char *payload, char *secret,
                       char **out_signature, size_t *out_size,
                       struct flb_stackdriver *ctx)
@@ -374,6 +373,7 @@ static int extract_local_resource_id(const void *data, size_t bytes,
     msgpack_object root;
     msgpack_object_map map;
     msgpack_unpacked result;
+    flb_sds_t local_resource_id;
     size_t off = 0;
 
     msgpack_unpacked_init(&result);
@@ -387,14 +387,22 @@ static int extract_local_resource_id(const void *data, size_t bytes,
         }
 
         map = root.via.array.ptr[1].via.map;
-        ctx->local_resource_id = get_str_value_from_msgpack_map(map, LOCAL_RESOURCE_ID_KEY,
-                                                                LEN_LOCAL_RESOURCE_ID_KEY);
-        if (!ctx->local_resource_id) {
+        local_resource_id = get_str_value_from_msgpack_map(map, LOCAL_RESOURCE_ID_KEY,
+                                                           LEN_LOCAL_RESOURCE_ID_KEY);
+
+        if (local_resource_id == NULL) {
             /* if local_resource_id is not found, use the tag of the log */
             flb_plg_debug(ctx->ins, "local_resource_id not found, "
                                     "tag [%s] is assigned for local_resource_id", tag);
-            ctx->local_resource_id = flb_sds_create(tag);
+            local_resource_id = flb_sds_create(tag);
         }
+
+        /* we need to create up the local_resource_id from previous log */
+        if (ctx->local_resource_id) {
+            flb_sds_destroy(ctx->local_resource_id);
+        }
+
+        ctx->local_resource_id = flb_sds_create(local_resource_id);
     }
     else {
         msgpack_unpacked_destroy(&result);
@@ -402,6 +410,7 @@ static int extract_local_resource_id(const void *data, size_t bytes,
         return -1;
     }
 
+    flb_sds_destroy(local_resource_id);
     msgpack_unpacked_destroy(&result);
     return 0;
 }
@@ -443,8 +452,8 @@ static int process_local_resource_id(struct flb_stackdriver *ctx, char *type)
             ptr = mk_list_entry(head, struct local_resource_id_list, _head);
             if (first) {
                 /* check the prefix */
-                if (flb_sds_len(ptr->val) != len_k8s_container ||
-                    strncmp(ptr->val, K8S_CONTAINER, len_k8s_container) != 0) {
+                if (flb_sds_len(ptr->val) != flb_sds_len(ctx->tag_prefix) ||
+                    strncmp(ptr->val, ctx->tag_prefix, flb_sds_len(ctx->tag_prefix)) != 0) {
                     goto error;
                 }
                 first = FLB_FALSE;
@@ -487,8 +496,9 @@ static int process_local_resource_id(struct flb_stackdriver *ctx, char *type)
         mk_list_foreach(head, list) {
             ptr = mk_list_entry(head, struct local_resource_id_list, _head);
             if (first) {
-                if (flb_sds_len(ptr->val) != len_k8s_node ||
-                    strncmp(ptr->val, K8S_NODE, len_k8s_node) != 0) {
+                /* check the prefix */
+                if (flb_sds_len(ptr->val) != flb_sds_len(ctx->tag_prefix) ||
+                    strncmp(ptr->val, ctx->tag_prefix, flb_sds_len(ctx->tag_prefix)) != 0) {
                     goto error;
                 }
                 first = FLB_FALSE;
@@ -516,8 +526,9 @@ static int process_local_resource_id(struct flb_stackdriver *ctx, char *type)
         mk_list_foreach(head, list) {
             ptr = mk_list_entry(head, struct local_resource_id_list, _head);
             if (first) {
-                if (flb_sds_len(ptr->val) != len_k8s_pod ||
-                    strncmp(ptr->val, K8S_POD, len_k8s_pod) != 0) {
+                /* check the prefix */
+                if (flb_sds_len(ptr->val) != flb_sds_len(ctx->tag_prefix) ||
+                    strncmp(ptr->val, ctx->tag_prefix, flb_sds_len(ctx->tag_prefix)) != 0) {
                     goto error;
                 }
                 first = FLB_FALSE;
