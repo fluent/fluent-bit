@@ -5,17 +5,25 @@
 #include <stddef.h>  /* size_t */
 #include <stdint.h>  /* uint16_t */
 
-/* Internal API */
+/*************** Internal API ***************/
 
-extern int tutf8e_string_length(const uint16_t *table, const char *i, size_t *ilen, size_t *olen);
-extern int tutf8e_string_encode(const uint16_t *table, const char *i, char *o, size_t *olen);
+/* NUL-terminated C-string API */
 
-extern int tutf8e_buffer_length(const uint16_t *table, const char *i, size_t ilen, size_t *olen);
-extern int tutf8e_buffer_encode(const uint16_t *table, const char *i, size_t ilen, char *o, size_t *olen);
+extern int tutf8e_string_length(const uint16_t *table, const char *input, const char *invalid, size_t *input_length, size_t *output_length);
+extern int tutf8e_string_encode(const uint16_t *table, const char *input, const char *invalid, char *output, size_t *output_length);
 
-/* Generic API */
+/* Known-length buffer API */
+
+extern int tutf8e_buffer_length(const uint16_t *table, const char *input, size_t input_length, const char *invalid, size_t *output_length);
+extern int tutf8e_buffer_encode(const uint16_t *table, const char *input, size_t input_length, const char *invalid, char *output, size_t *output_length);
+
+/*************** Public API ***************/
+
+/* Opaque handle type */
 
 typedef void *TUTF8encoder;
+
+/* Query encoder by name */
 
 extern TUTF8encoder tutf8e_encoder(const char *encoding);
 
@@ -23,24 +31,81 @@ extern TUTF8encoder tutf8e_encoder(const char *encoding);
 #define TUTF8E_INVALID 1 /* Invalid input character    */
 #define TUTF8E_TOOLONG 2 /* Insufficient output buffer */
 
-static inline int tutf8e_encoder_string_length(const TUTF8encoder encoder, const char *i, size_t *ilen, size_t *olen)
+/*
+ * tutf8e_encoder_string_length
+ *
+ * Determine the length of input and UTF8 encoded output of NUL-terminated string
+ * Performance: single pass O(n)
+ *
+ * output NUL terminator not counted
+ *
+ * - TUTF8E_INVALID if input character is not convertable
+ * - TUTF8E_OK for success
+ */
+
+static inline int tutf8e_encoder_string_length(const TUTF8encoder encoder, const char *input, const char *invalid, size_t *input_length, size_t *output_length)
 {
-  return tutf8e_string_length((const uint16_t *) encoder, i, ilen, olen);
+  return tutf8e_string_length((const uint16_t *) encoder, input, invalid, input_length, output_length);
 }
 
-static inline int tutf8e_encoder_string_encode(const TUTF8encoder encoder, const char *i, char *o, size_t *olen)
+/*
+ * tutf8e_encoder_string_encode
+ *
+ * UTF8 encode NUL-terminated string
+ * Performance: two pass O(n)
+ *
+ * output string is NUL terminated
+ * output_length is output buffer size for input
+ * output_length is encoded length for output, including NUL
+ *
+ * - TUTF8E_TOOLONG if output buffer insuficient
+ * - TUTF8E_INVALID if input character is not convertable
+ * - TUTF8E_OK for success
+ */
+
+static inline int tutf8e_encoder_string_encode(const TUTF8encoder encoder, const char *input, const char *invalid, char *output, size_t *output_length)
 {
-  return tutf8e_string_encode((const uint16_t *) encoder, i, o, olen);
+  return tutf8e_string_encode((const uint16_t *) encoder, input, invalid, output, output_length);
 }
 
-static inline int tutf8e_encoder_buffer_length(const TUTF8encoder encoder, const char *i, size_t ilen, size_t *length)
+/* Known-length buffer API */
+
+/*
+ * tutf8e_encoder_buffer_length
+ *
+ * Determine the length of input and UTF8 encoded output of string
+ * Performance: single pass O(n)
+ *
+ * output NUL terminator not counted
+ *
+ * - TUTF8E_INVALID if input character is not convertable
+ * - TUTF8E_OK for success
+ */
+
+static inline int tutf8e_encoder_buffer_length(const TUTF8encoder encoder, const char *input, const char *invalid, size_t input_length, size_t *length)
 {
-  return tutf8e_buffer_length((const uint16_t *) encoder, i, ilen, length);
+  return tutf8e_buffer_length((const uint16_t *) encoder, input, input_length, invalid, length);
 }
 
-static inline int tutf8e_encoder_buffer_encode(const TUTF8encoder encoder, const char *i, size_t ilen, char *o, size_t *olen)
+/*
+ * tutf8e_encoder_buffer_encode
+ *
+ * UTF8 encode string
+ * Performance: two pass O(n)
+ *
+ * output string is not NUL terminated
+ *
+ * output_length is output buffer size for input
+ * output_length is encoded length for output
+ *
+ * - TUTF8E_TOOLONG if output buffer insuficient
+ * - TUTF8E_INVALID if input character is not convertable
+ * - TUTF8E_OK for success
+ */
+
+static inline int tutf8e_encoder_buffer_encode(const TUTF8encoder encoder, const char *input, size_t input_length, const char *invalid, char *output, size_t *output_length)
 {
-  return tutf8e_buffer_encode((const uint16_t *) encoder, i, ilen, o, olen);
+  return tutf8e_buffer_encode((const uint16_t *) encoder, input, input_length, invalid, output, output_length);
 }
 
 /* Supported encoders */
