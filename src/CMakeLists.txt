@@ -46,6 +46,7 @@ set(src
   flb_gzip.c
   flb_http_client.c
   flb_callback.c
+  flb_strptime.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -178,14 +179,6 @@ if(FLB_STATIC_CONF)
     "flb_config_static.c"
     )
 endif()
-
-if(NOT FLB_SYSTEM_STRPTIME)
-  set(src
-    ${src}
-    "flb_strptime.c"
-    )
-endif()
-
 
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)

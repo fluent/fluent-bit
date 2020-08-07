@@ -21,15 +21,6 @@
 #ifndef FLB_STRPTIME_H
 #define FLB_STRPTIME_H
 
-/* Load system strptime(3) */
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE
-#endif
-#include <time.h>
+char *flb_strptime(const char *s, const char *format, struct tm *tm);
 
-/* Override strptime if requested */
-#ifndef FLB_HAVE_SYSTEM_STRPTIME
-extern char *flb_strptime(const char *s, const char *format, struct tm *tm);
-#define strptime flb_strptime
-#endif
 #endif
