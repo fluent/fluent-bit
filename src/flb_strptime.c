@@ -1,4 +1,4 @@
-/*	$OpenBSD: strptime.c,v 1.24 2019/01/22 11:09:03 cheloha Exp $ */
+/*	$OpenBSD: strptime.c,v 1.30 2019/05/12 12:49:52 schwarze Exp $ */
 /*	$NetBSD: strptime.c,v 1.12 1998/01/20 21:39:40 mycroft Exp $	*/
 /*-
  * Copyright (c) 1997, 1998, 2005, 2008 The NetBSD Foundation, Inc.
@@ -42,6 +42,8 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_langinfo.h>
 
+#define	_ctloc(x)		(nl_langinfo(x))
+
 /*
  * We do not implement alternate representations. However, we always
  * check whether a given modifier is allowed for a certain conversion.
@@ -53,9 +55,6 @@
 /*
  * Copied from libc/time/private.h and libc/time/tzfile.h
  */
-#define TM_GMTOFF		tm_gmtoff
-#define TM_ZONE			tm_zone
-
 #define TM_YEAR_BASE	1900
 #define DAYSPERNYEAR	365
 #define DAYSPERLYEAR	366
@@ -63,6 +62,8 @@
 #define MONSPERYEAR		12
 #define EPOCH_YEAR		1970
 #define EPOCH_WDAY		4	/* Thursday */
+#define SECSPERHOUR		3600
+#define SECSPERMIN  	60
 
 #define isleap(y) (((y) % 4) == 0 && (((y) % 100) != 0 || ((y) % 400) == 0))
 
@@ -90,20 +91,20 @@ static const int mon_lengths[2][MONSPERYEAR] = {
         { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 };
 
-static nl_item list_day[] = {
+static nl_item day[] = {
         DAY_1, DAY_2, DAY_3, DAY_4, DAY_5, DAY_6, DAY_7
 };
 
-static nl_item list_mon[] = {
+static nl_item mon[] = {
         MON_1, MON_2, MON_3, MON_4, MON_5, MON_6, MON_7, MON_8, MON_9,
         MON_10, MON_11, MON_12
 };
 
-static nl_item list_abday[] = {
+static nl_item abday[] = {
         ABDAY_1, ABDAY_2, ABDAY_3, ABDAY_4, ABDAY_5, ABDAY_6, ABDAY_7
 };
 
-static nl_item list_abmon[] = {
+static nl_item abmon[] = {
         ABMON_1, ABMON_2, ABMON_3, ABMON_4, ABMON_5, ABMON_6, ABMON_7,
         ABMON_8, ABMON_9, ABMON_10, ABMON_11, ABMON_12
 };
@@ -151,7 +152,7 @@ _flb_strptime(const char *buf, const char *fmt, struct tm *tm, int initialize)
 			fmt++;
 			continue;
 		}
-				
+
 		if ((c = *fmt++) != '%')
 			goto literal;
 
@@ -177,13 +178,13 @@ literal:
 			_LEGAL_ALT(0);
 			alt_format |= _ALT_O;
 			goto again;
-			
+
 		/*
 		 * "Complex" conversion rules, implemented through recursion.
 		 */
 		case 'c':	/* Date and time, using the locale's format. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, nl_langinfo(D_T_FMT), tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, _ctloc(D_T_FMT), tm, 0)))
 				return (NULL);
 			break;
 
@@ -219,13 +220,13 @@ literal:
 
 		case 'X':	/* The time, using the locale's format. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, nl_langinfo(T_FMT), tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, _ctloc(T_FMT), tm, 0)))
 				return (NULL);
 			break;
 
 		case 'x':	/* The date, using the locale's format. */
 			_LEGAL_ALT(_ALT_E);
-			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, nl_langinfo(D_FMT), tm, 0)))
+			if (!(bp = (const unsigned char *)_flb_strptime((const char *)bp, _ctloc(D_FMT), tm, 0)))
 				return (NULL);
 			break;
 
@@ -237,13 +238,13 @@ literal:
 			_LEGAL_ALT(0);
 			for (i = 0; i < 7; i++) {
 				/* Full name. */
-				len = strlen(nl_langinfo(list_day[i]));
-				if (strncasecmp(nl_langinfo(list_day[i]), (const char *)bp, len) == 0)
+				len = strlen(_ctloc(day[i]));
+				if (strncasecmp(_ctloc(day[i]), (const char *)bp, len) == 0)
 					break;
 
 				/* Abbreviated name. */
-				len = strlen(nl_langinfo(list_abday[i]));
-				if (strncasecmp(nl_langinfo(list_abday[i]), (const char *)bp, len) == 0)
+				len = strlen(_ctloc(abday[i]));
+				if (strncasecmp(_ctloc(abday[i]), (const char *)bp, len) == 0)
 					break;
 			}
 
@@ -262,13 +263,13 @@ literal:
 			_LEGAL_ALT(0);
 			for (i = 0; i < 12; i++) {
 				/* Full name. */
-				len = strlen(nl_langinfo(list_mon[i]));
-				if (strncasecmp(nl_langinfo(list_mon[i]), (const char *)bp, len) == 0)
+				len = strlen(_ctloc(mon[i]));
+				if (strncasecmp(_ctloc(mon[i]), (const char *)bp, len) == 0)
 					break;
 
 				/* Abbreviated name. */
-				len = strlen(nl_langinfo(list_abmon[i]));
-				if (strncasecmp(nl_langinfo(list_abmon[i]), (const char *)bp, len) == 0)
+				len = strlen(_ctloc(abmon[i]));
+				if (strncasecmp(_ctloc(abmon[i]), (const char *)bp, len) == 0)
 					break;
 			}
 
@@ -289,8 +290,11 @@ literal:
 			century = i * 100;
 			break;
 
-		case 'd':	/* The day of month. */
-		case 'e':
+		case 'e':	/* The day of month. */
+			if (isspace(*bp))
+				bp++;
+			/* FALLTHROUGH */
+		case 'd':
 			_LEGAL_ALT(_ALT_O);
 			if (!(_conv_num(&bp, &tm->tm_mday, 1, 31)))
 				return (NULL);
@@ -340,8 +344,8 @@ literal:
 		case 'p':	/* The locale's equivalent of AM/PM. */
 			_LEGAL_ALT(0);
 			/* AM? */
-			len = strlen(nl_langinfo(AM_STR));
-			if (strncasecmp(nl_langinfo(AM_STR), (const char *)bp, len) == 0) {
+			len = strlen(_ctloc(AM_STR));
+			if (strncasecmp(_ctloc(AM_STR), (const char *)bp, len) == 0) {
 				if (tm->tm_hour > 12)	/* i.e., 13:00 AM ?! */
 					return (NULL);
 				else if (tm->tm_hour == 12)
@@ -351,8 +355,8 @@ literal:
 				break;
 			}
 			/* PM? */
-			len = strlen(nl_langinfo(PM_STR));
-			if (strncasecmp(nl_langinfo(PM_STR), (const char *)bp, len) == 0) {
+			len = strlen(_ctloc(PM_STR));
+			if (strncasecmp(_ctloc(PM_STR), (const char *)bp, len) == 0) {
 				if (tm->tm_hour > 12)	/* i.e., 13:00 PM ?! */
 					return (NULL);
 				else if (tm->tm_hour < 12)
@@ -412,7 +416,7 @@ literal:
 				 * number but without the century.
 				 */
 			if (!(_conv_num(&bp, &i, 0, 99)))
-				return (NULL);				
+				return (NULL);
 			continue;
 
 		case 'G':	/* The year corresponding to the ISO week
@@ -449,34 +453,34 @@ literal:
 			if (strncmp((const char *)bp, gmt, 3) == 0) {
 				tm->tm_isdst = 0;
 #ifdef FLB_HAVE_GMTOFF
-				tm->TM_GMTOFF = 0;
+				tm->tm_gmtoff = 0;
 #endif
 #ifdef FLB_HAVE_ZONE
-				tm->TM_ZONE = gmt;
+				tm->tm_zone = gmt;
 #endif
 				bp += 3;
 			} else if (strncmp((const char *)bp, utc, 3) == 0) {
 				tm->tm_isdst = 0;
 #ifdef FLB_HAVE_GMTOFF
-				tm->TM_GMTOFF = 0;
+				tm->tm_gmtoff = 0;
 #endif
 #ifdef FLB_HAVE_ZONE
-				tm->TM_ZONE = utc;
+				tm->tm_zone = utc;
 #endif
 				bp += 3;
 			} else {
 				ep = _find_string(bp, &i,
-					       	 (const char * const *)tzname,
-					       	  NULL, 2);
+						 (const char * const *)tzname,
+						  NULL, 2);
 				if (ep == NULL)
 					return (NULL);
 
 				tm->tm_isdst = i;
 #ifdef FLB_HAVE_GMTOFF
-				tm->TM_GMTOFF = -(timezone);
+				tm->tm_gmtoff = -(timezone);
 #endif
 #ifdef FLB_HAVE_ZONE
-				tm->TM_ZONE = tzname[i];
+				tm->tm_zone = tzname[i];
 #endif
 				bp = ep;
 			}
@@ -496,9 +500,6 @@ literal:
 			 * C[DS]T = Central : -5 | -6
 			 * M[DS]T = Mountain: -6 | -7
 			 * P[DS]T = Pacific : -7 | -8
-			 *          Military
-			 * [A-IL-M] = -1 ... -9 (J not used)
-			 * [N-Y]  = +1 ... +12
 			 */
 			while (isspace(*bp))
 				bp++;
@@ -515,10 +516,10 @@ literal:
 			case 'Z':
 				tm->tm_isdst = 0;
 #ifdef FLB_HAVE_GMTOFF
-				tm->TM_GMTOFF = 0;
+				tm->tm_gmtoff = 0;
 #endif
 #ifdef FLB_HAVE_ZONE
-				tm->TM_ZONE = utc;
+				tm->tm_zone = utc;
 #endif
 				continue;
 			case '+':
@@ -532,10 +533,10 @@ literal:
 				ep = _find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
 #ifdef FLB_HAVE_GMTOFF
-					tm->TM_GMTOFF = (-5 - i) * 3600;
+					tm->tm_gmtoff = (-5 - i) * SECSPERHOUR;
 #endif
 #ifdef FLB_HAVE_ZONE
-					tm->TM_ZONE = (char *)nast[i];
+					tm->tm_zone = (char *)nast[i];
 #endif
 					bp = ep;
 					continue;
@@ -544,70 +545,36 @@ literal:
 				if (ep != NULL) {
 					tm->tm_isdst = 1;
 #ifdef FLB_HAVE_GMTOFF
-					tm->TM_GMTOFF = (-4 - i) * 3600;
+					tm->tm_gmtoff = (-4 - i) * SECSPERHOUR;
 #endif
 #ifdef FLB_HAVE_ZONE
-					tm->TM_ZONE = (char *)nadt[i];
+					tm->tm_zone = (char *)nadt[i];
 #endif
 					bp = ep;
 					continue;
 				}
-
-				if ((*bp >= 'A' && *bp <= 'I') ||
-				    (*bp >= 'L' && *bp <= 'Y')) {
-#ifdef FLB_HAVE_GMTOFF
-					/* Argh! No 'J'! */
-					if (*bp >= 'A' && *bp <= 'I')
-						tm->TM_GMTOFF =
-						    (('A' - 1) - (int)*bp) * 3600;
-					else if (*bp >= 'L' && *bp <= 'M')
-						tm->TM_GMTOFF = ('A' - (int)*bp) * 3600;
-					else if (*bp >= 'N' && *bp <= 'Y')
-						tm->TM_GMTOFF = ((int)*bp - 'M') * 3600;
-#endif
-#ifdef FLB_HAVE_ZONE
-					tm->TM_ZONE = NULL; /* XXX */
-#endif
-					bp++;
-					continue;
-				}
 				return NULL;
 			}
-			offs = 0;
-			for (i = 0; i < 4; ) {
-				if (isdigit(*bp)) {
-					offs = offs * 10 + (*bp++ - '0');
-					i++;
-					continue;
-				}
-				if (i == 2 && *bp == ':') {
-					bp++;
-					continue;
-				}
-				break;
-			}
-			switch (i) {
-			case 2:
-				offs *= 3600;
-				break;
-			case 4:
-				i = offs % 100;
-				if (i >= 60)
+			if (!isdigit(bp[0]) || !isdigit(bp[1]))
+				return NULL;
+			offs = ((bp[0]-'0') * 10 + (bp[1]-'0')) * SECSPERHOUR;
+			bp += 2;
+			if (*bp == ':')
+				bp++;
+			if (isdigit(*bp)) {
+				offs += (*bp++ - '0') * 10 * SECSPERMIN;
+				if (!isdigit(*bp))
 					return NULL;
-				/* Convert hours/minutes into seconds */
-				offs = (offs / 100) * 3600 + i * 60;
-				break;
-			default:
-				return NULL;
+				offs += (*bp++ - '0') * SECSPERMIN;
 			}
 			if (neg)
 				offs = -offs;
 			tm->tm_isdst = 0;	/* XXX */
 #ifdef FLB_HAVE_GMTOFF
-			tm->TM_GMTOFF = offs;
+			tm->tm_gmtoff = offs;
 #endif
 #ifdef FLB_HAVE_ZONE
-			tm->TM_ZONE = NULL;	/* XXX */
+			tm->tm_zone = NULL;	/* XXX */
 #endif
 			continue;
 
@@ -751,7 +718,7 @@ _find_string(const u_char *bp, int *tgt, const char * const *n1,
 	return NULL;
 }
 
-static int              
+static int
 leaps_thru_end_of(const int y)
 {
 	return (y >= 0) ? (y / 4 - y / 100 + y / 400) :
