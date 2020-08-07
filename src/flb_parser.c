@@ -759,10 +759,10 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
 
         time_ptr = tmp;
         time_len = strlen(tmp);
-        p = strptime(time_ptr, parser->time_fmt_year, tm);
+        p = flb_strptime(time_ptr, parser->time_fmt_year, tm);
     }
     else {
-        p = strptime(time_ptr, parser->time_fmt, tm);
+        p = flb_strptime(time_ptr, parser->time_fmt, tm);
     }
 
     if (p != NULL) {
@@ -787,7 +787,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
             }
             *ns = tmfrac;
 
-            p = strptime(time_ptr, parser->time_frac_secs, tm);
+            p = flb_strptime(time_ptr, parser->time_frac_secs, tm);
 
             if (p == NULL) {
                 return -1;
