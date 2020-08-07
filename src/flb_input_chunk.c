@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_router.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 
 static void generate_chunk_name(struct flb_input_instance *in,
@@ -121,6 +122,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     int ret;
     int err;
     int set_down = FLB_FALSE;
+    uint64_t chunk_routes_mask;
     char name[64];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
@@ -190,11 +192,37 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         cio_chunk_down(chunk);
     }
 
+    /* Calculate the routes_mask for the input chunk */
+    chunk_routes_mask = flb_router_get_routes_mask_by_tag(tag, tag_len, in);
+    if (chunk_routes_mask == -1) {
+        flb_error("[input chunk] fail to calculate the routes_mask for input chunk");
+        cio_chunk_close(chunk, CIO_TRUE);
+        return NULL;
+    }
+    ic->routes_mask = chunk_routes_mask;
+
     return ic;
 }
 
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 {
+    ssize_t bytes;
+    uint64_t routes_mask;
+    uint64_t o_mask_id;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_instance *o_ins;
+
+    mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        o_mask_id = o_ins->mask_id;
+        routes_mask = ic->routes_mask;
+        bytes = flb_input_chunk_get_size(ic);
+        if ((routes_mask & o_mask_id) > 0) {
+            o_ins->fs_chunks_size -= bytes;
+        }
+    }
+
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
     flb_free(ic);
@@ -396,7 +424,6 @@ int flb_input_chunk_set_up(struct flb_input_chunk *ic)
     return 0;
 }
 
-
 /* Append a RAW MessagPack buffer to the input instance */
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                const char *tag, size_t tag_len,
@@ -460,6 +487,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
         cio_chunk_tx_rollback(ic->chunk);
         return -1;
     }
+
+    flb_input_chunk_update_output_instances(ic);
 
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
@@ -631,4 +660,42 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
 
     return ret;
 
+}
+
+/*
+ * Iterate all chunks associated to the input instance and summarize
+ * the total number of bytes in use to all related output instances.
+ */
+void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic)
+{
+    ssize_t bytes;
+    uint64_t routes_mask;
+    uint64_t o_mask_id;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_instance *o_ins;
+
+    if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+        return;
+    }
+
+    bytes = flb_input_chunk_get_size(ic);
+    if (bytes <= 0) {
+        return;
+    }
+
+    /* for each output plugin, we update the fs_chunks_size */
+    mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        o_mask_id = o_ins->mask_id;
+        routes_mask = ic->routes_mask;
+
+        if ((routes_mask & o_mask_id) > 0) {
+            /*
+             * if there is match on any index of 1's in the binary, it indicates
+             * that the input chunk will flush to this output instance
+             */
+            o_ins->fs_chunks_size += bytes;
+        }
+    }
 }
