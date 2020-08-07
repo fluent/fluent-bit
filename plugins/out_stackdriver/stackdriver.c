@@ -363,7 +363,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *local_resource_id, 
     return list;
 }
 
-/* 
+/*
  *    extract_local_resource_id():
  *  - extract the value from "logging.googleapis.com/local_resource_id" field
  *  - if local_resource_id is missing from the payLoad, use the tag of the log
@@ -415,7 +415,7 @@ static int extract_local_resource_id(const void *data, size_t bytes,
     return 0;
 }
 
-/* 
+/*
  *    process_local_resource_id():
  *  - use the extracted local_resource_id to assign the label keys for different
  *    resource types that are specified in the configuration of stackdriver_out plugin
@@ -563,7 +563,7 @@ static int process_local_resource_id(struct flb_stackdriver *ctx, char *type)
         flb_slist_destroy(list);
         flb_free(list);
     }
-    
+
     return ret;
 
  error:
@@ -680,6 +680,12 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         if (ret == -1) {
             return -1;
         }
+    }
+
+    /* Validate project_id */
+    if (!ctx->project_id) {
+        flb_plg_error(ctx->ins, "property 'project_id' is not set");
+        return -1;
     }
 
     return 0;
