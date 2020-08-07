@@ -119,6 +119,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     int len;
     int diff = 0;
     int size;
+    int is_epoch = FLB_FALSE;
     char *tmp;
     struct mk_list *head;
     struct flb_parser *p;
@@ -188,6 +189,10 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
         if (strstr(p->time_fmt, "%Y") || strstr(p->time_fmt, "%y")) {
             p->time_with_year = FLB_TRUE;
         }
+        else if (strstr(p->time_fmt, "%s")) {
+            is_epoch = FLB_TRUE;
+            p->time_with_year = FLB_TRUE;
+        }
         else {
             size = strlen(p->time_fmt);
             p->time_with_year = FLB_FALSE;
@@ -234,7 +239,10 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
          * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
          * - http://code.activestate.com/lists/python-list/521885/
          */
-        if (p->time_with_year == FLB_TRUE) {
+        if (is_epoch == FLB_TRUE) {
+            tmp = strstr(p->time_fmt, "%s.%L");
+        }
+        else if (p->time_with_year == FLB_TRUE) {
             tmp = strstr(p->time_fmt, "%S.%L");
         }
         else {
