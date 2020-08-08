@@ -67,14 +67,14 @@ static void dump_input_chunks(struct flb_config *ctx)
     struct flb_input_chunk *ic;
     struct flb_task *task;
 
-    fprintf(stdout, "\n===== Input =====\n");
+    fprintf(stderr, "\n===== Input =====\n");
 
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
-        fprintf(stdout, "%s (%s)\n", flb_input_name(i), i->p->name);
+        fprintf(stderr, "%s (%s)\n", flb_input_name(i), i->p->name);
 
-        fprintf(stdout, "│\n");
-        fprintf(stdout, "├─ status\n");
+        fprintf(stderr, "│\n");
+        fprintf(stderr, "├─ status\n");
 
         /* Overlimit checks */
         ret = FLB_FALSE;
@@ -83,19 +83,19 @@ static void dump_input_chunks(struct flb_config *ctx)
                 ret = FLB_TRUE;
             }
         }
-        fprintf(stdout, "│  └─ overlimit     : %s\n",
+        fprintf(stderr, "│  └─ overlimit     : %s\n",
                 ret ? "yes" : "no");
 
         /* Current memory size used based on last ingestion */
         flb_utils_bytes_to_human_readable_size(i->mem_chunks_size,
                                                tmp, sizeof(tmp) - 1);
-        fprintf(stdout, "│     ├─ mem size   : %s (%lu bytes)\n",
+        fprintf(stderr, "│     ├─ mem size   : %s (%lu bytes)\n",
                 tmp, i->mem_chunks_size);
 
         /* Mem buf limit set */
         flb_utils_bytes_to_human_readable_size(i->mem_buf_limit,
                                                tmp, sizeof(tmp) - 1);
-        fprintf(stdout, "│     └─ mem limit  : %s (%lu bytes)\n",
+        fprintf(stderr, "│     └─ mem limit  : %s (%lu bytes)\n",
                 tmp, i->mem_buf_limit);
 
         /*
@@ -108,9 +108,9 @@ static void dump_input_chunks(struct flb_config *ctx)
          * For short: every task is a chunk. But it's a different structure
          * handled by the engine to coordinate the flush process.
          */
-        fprintf(stdout, "│\n");
-        fprintf(stdout, "├─ tasks\n");
-        fprintf(stdout, "│  ├─ total tasks   : %i\n", mk_list_size(&i->tasks));
+        fprintf(stderr, "│\n");
+        fprintf(stderr, "├─ tasks\n");
+        fprintf(stderr, "│  ├─ total tasks   : %i\n", mk_list_size(&i->tasks));
 
         size = 0;
         task_new = 0;
@@ -129,9 +129,9 @@ static void dump_input_chunks(struct flb_config *ctx)
 
         flb_utils_bytes_to_human_readable_size(size, tmp, sizeof(tmp) - 1);
 
-        fprintf(stdout, "│  ├─ new           : %i\n", task_new);
-        fprintf(stdout, "│  ├─ running       : %i\n", task_running);
-        fprintf(stdout, "│  └─ size          : %s (%lu bytes)\n", tmp, size);
+        fprintf(stderr, "│  ├─ new           : %i\n", task_new);
+        fprintf(stderr, "│  ├─ running       : %i\n", task_running);
+        fprintf(stderr, "│  └─ size          : %s (%lu bytes)\n", tmp, size);
 
         /*
          * Chunks
@@ -145,11 +145,11 @@ static void dump_input_chunks(struct flb_config *ctx)
          * of them are 'down' and only get 'up' when they are going to be
          * processed.
          */
-        fprintf(stdout, "│\n");
-        fprintf(stdout, "└─ chunks\n");
+        fprintf(stderr, "│\n");
+        fprintf(stderr, "└─ chunks\n");
 
         /* Number of chunks registered */
-        fprintf(stdout, "   └─ total chunks  : %i\n", mk_list_size(&i->chunks));
+        fprintf(stderr, "   └─ total chunks  : %i\n", mk_list_size(&i->chunks));
 
         /* Busy chunks
          * -----------
@@ -186,14 +186,14 @@ static void dump_input_chunks(struct flb_config *ctx)
             }
         }
 
-        fprintf(stdout, "      ├─ up chunks  : %i\n", up);
-        fprintf(stdout, "      ├─ down chunks: %i\n", down);
+        fprintf(stderr, "      ├─ up chunks  : %i\n", up);
+        fprintf(stderr, "      ├─ down chunks: %i\n", down);
         flb_utils_bytes_to_human_readable_size(busy_size, tmp, sizeof(tmp) - 1);
 
-        fprintf(stdout, "      └─ busy chunks: %i\n", busy);
-        fprintf(stdout, "         ├─ size    : %s (%lu bytes)\n", tmp, busy_size);
-        fprintf(stdout, "         └─ size err: %i\n", busy_size_err);
-        fprintf(stdout, "\n");
+        fprintf(stderr, "      └─ busy chunks: %i\n", busy);
+        fprintf(stderr, "         ├─ size    : %s (%lu bytes)\n", tmp, busy_size);
+        fprintf(stderr, "         └─ size err: %i\n", busy_size_err);
+        fprintf(stderr, "\n");
     }
 }
 
@@ -206,14 +206,14 @@ static void dump_storage(struct flb_config *ctx)
 {
     struct cio_stats storage_st;
 
-    fprintf(stdout, "\n===== Storage Layer =====\n");
+    fprintf(stderr, "\n===== Storage Layer =====\n");
     cio_stats_get(ctx->cio, &storage_st);
 
-    fprintf(stdout, "total chunks     : %i\n", storage_st.chunks_total);
-    fprintf(stdout, "├─ mem chunks    : %i\n", storage_st.chunks_mem);
-    fprintf(stdout, "└─ fs chunks     : %i\n", storage_st.chunks_fs);
-    fprintf(stdout, "   ├─ up         : %i\n", storage_st.chunks_fs_up);
-    fprintf(stdout, "   └─ down       : %i\n", storage_st.chunks_fs_down);
+    fprintf(stderr, "total chunks     : %i\n", storage_st.chunks_total);
+    fprintf(stderr, "├─ mem chunks    : %i\n", storage_st.chunks_mem);
+    fprintf(stderr, "└─ fs chunks     : %i\n", storage_st.chunks_fs);
+    fprintf(stderr, "   ├─ up         : %i\n", storage_st.chunks_fs_up);
+    fprintf(stderr, "   └─ down       : %i\n", storage_st.chunks_fs_down);
 }
 
 void flb_dump(struct flb_config *ctx)
@@ -224,7 +224,7 @@ void flb_dump(struct flb_config *ctx)
     now = time(NULL);
     current = localtime(&now);
 
-    fprintf(stdout,
+    fprintf(stderr,
             "[%i/%02i/%02i %02i:%02i:%02i] Fluent Bit Dump\n",
             current->tm_year + 1900,
             current->tm_mon + 1,
@@ -243,7 +243,7 @@ void flb_dump(struct flb_config *ctx)
      * If we are in a co-routine likely we need a different libbacktrace
      * context, but it's just a guess, not tested.
      */
-    //fprintf(stdout, "\n===== Stacktrace =====\n");
+    //fprintf(stderr, "\n===== Stacktrace =====\n");
     //flb_stacktrace_print();
 #endif
 
@@ -256,5 +256,5 @@ void flb_dump(struct flb_config *ctx)
     /* Make sure to flush the stdout buffer in case output
      * has been redirected to a file
      */
-    fflush(stdout);
+    fflush(stderr);
 }
