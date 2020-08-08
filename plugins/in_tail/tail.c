@@ -153,7 +153,9 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             if (file->config->exit_on_eof) {
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
-                flb_engine_exit(config);
+                if (mk_list_size(&ctx->files_static) == 1) {
+                    flb_engine_exit(config);
+                }
             }
             /* Promote file to 'events' type handler */
             flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s promote to TAIL_EVENT",
