@@ -619,8 +619,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                        fmt_plain,
                        str_method,
                        uri,
-                       flags & FLB_HTTP_10 ? 0 : 1,
-                       body_len);
+                       flags & FLB_HTTP_10 ? 0 : 1);
     }
     else {
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
