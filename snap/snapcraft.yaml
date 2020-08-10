@@ -15,8 +15,14 @@ apps:
   service:
     command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
     daemon: simple
+    plugs:
+      - network
+      - network-bind
   fluent-bit:
     command: fluent-bit
+    plugs:
+      - network
+      - network-bind
 
 parts:
   fluent-bit:
