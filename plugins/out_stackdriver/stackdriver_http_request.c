@@ -203,7 +203,9 @@ static void validate_latency(msgpack_object_str latency_in_payload,
     }
 
     regex = flb_regex_create(pattern);
-    status = flb_regex_match(regex, latency_in_payload.ptr, latency_in_payload.size);
+    status = flb_regex_match(regex,
+                             (unsigned char *) latency_in_payload.ptr,
+                             latency_in_payload.size);
     flb_regex_destroy(regex);
     flb_sds_destroy(pattern);
 
