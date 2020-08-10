@@ -545,11 +545,13 @@ int flb_output_set_property(struct flb_output_instance *ins,
 #endif
     else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "off") == 0 ||
-            strcasecmp(tmp, "false") == 0) {
+            flb_utils_bool(tmp) == FLB_FALSE) {
             /* no limit for filesystem storage */
             limit = -1;
-            flb_info("[config] unlimited total_limit_size");
-        } else {
+            flb_info("[config] unlimited filesystem buffer for %s plugin",
+                     ins->name);
+        }
+        else {
             limit = flb_utils_size_to_bytes(tmp);
             if (limit == -1) {
                 flb_sds_destroy(tmp);

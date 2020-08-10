@@ -207,18 +207,13 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 {
     ssize_t bytes;
-    uint64_t routes_mask;
-    uint64_t o_mask_id;
     struct mk_list *head;
-    struct mk_list *tmp;
     struct flb_output_instance *o_ins;
 
-    mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
+    mk_list_foreach(head, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        o_mask_id = o_ins->mask_id;
-        routes_mask = ic->routes_mask;
         bytes = flb_input_chunk_get_size(ic);
-        if ((routes_mask & o_mask_id) > 0) {
+        if ((ic->routes_mask & o_ins->mask_id) > 0) {
             o_ins->fs_chunks_size -= bytes;
         }
     }
@@ -669,10 +664,7 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
 void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic)
 {
     ssize_t bytes;
-    uint64_t routes_mask;
-    uint64_t o_mask_id;
     struct mk_list *head;
-    struct mk_list *tmp;
     struct flb_output_instance *o_ins;
 
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
@@ -685,17 +677,17 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic)
     }
 
     /* for each output plugin, we update the fs_chunks_size */
-    mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
+    mk_list_foreach(head, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        o_mask_id = o_ins->mask_id;
-        routes_mask = ic->routes_mask;
 
-        if ((routes_mask & o_mask_id) > 0) {
+        if ((ic->routes_mask & o_ins->mask_id) > 0) {
             /*
              * if there is match on any index of 1's in the binary, it indicates
              * that the input chunk will flush to this output instance
              */
             o_ins->fs_chunks_size += bytes;
+            flb_debug("update plugin %s fs_buffer_size by %lu bytes",
+                      o_ins->name, bytes);
         }
     }
 }
