@@ -977,7 +977,6 @@ static flb_sds_t flb_signv4_add_authorization(struct flb_http_client *c,
         return NULL;
 
     }
-    header_value = tmp;
 
     /* Return the composed final header for testing if required */
     return header_value;
