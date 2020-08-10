@@ -44,7 +44,6 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
         flb_errno();
         return -1;
     }
-    ctx->ins = ins;
 
     io_flags = FLB_IO_TCP;
     if (ins->host.ipv6 == FLB_TRUE) {
