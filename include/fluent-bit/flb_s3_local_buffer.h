@@ -70,5 +70,7 @@ int flb_remove_chunk_files(struct flb_local_chunk *c);
 
 void flb_chunk_destroy(struct flb_local_chunk *c);
 
+void flb_local_buffer_destroy(struct flb_local_buffer *store);
+
 #endif
 #endif /* FLB_HAVE_AWS */

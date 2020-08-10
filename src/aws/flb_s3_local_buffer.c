@@ -52,6 +52,24 @@ void flb_chunk_destroy(struct flb_local_chunk *c)
     flb_free(c);
 }
 
+void flb_local_buffer_destroy(struct flb_local_buffer *store)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_local_chunk *chunk;
+
+    if (!store) {
+        return;
+    }
+    if (mk_list_is_set(&store->chunks) == 0) {
+        mk_list_foreach_safe(head, tmp, &store->chunks) {
+            chunk = mk_list_entry(head, struct flb_local_chunk, _head);
+            flb_chunk_destroy(chunk);
+        }
+    }
+    flb_free(store);
+}
+
 static int is_tag_file(char *string)
 {
     string = strrchr(string, '.');
@@ -249,21 +267,23 @@ int flb_buffer_put(struct flb_local_buffer *store, struct flb_local_chunk *c,
         }
         c->create_time = time(NULL);
         c->key = flb_sds_create(hash_key);
-        flb_sds_destroy(hash_key);
         if (!c->key) {
             flb_errno();
+            flb_sds_destroy(hash_key);
             flb_chunk_destroy(c);
             return -1;
         }
         c->tag = flb_sds_create(tag);
         if (!c->tag) {
             flb_errno();
+            flb_sds_destroy(hash_key);
             flb_chunk_destroy(c);
             return -1;
         }
         path = flb_sds_create_size(strlen(store->dir) + strlen(hash_key));
         if (!path) {
             flb_errno();
+            flb_sds_destroy(hash_key);
             flb_chunk_destroy(c);
             flb_errno();
             return -1;
@@ -271,6 +291,7 @@ int flb_buffer_put(struct flb_local_buffer *store, struct flb_local_chunk *c,
         tmp_sds = flb_sds_printf(&path, "%s/%s", store->dir, hash_key);
         if (!tmp_sds) {
             flb_errno();
+            flb_sds_destroy(hash_key);
             flb_chunk_destroy(c);
             flb_sds_destroy(path);
             return -1;
@@ -285,6 +306,8 @@ int flb_buffer_put(struct flb_local_buffer *store, struct flb_local_chunk *c,
         }
         mk_list_add(&c->_head, &store->chunks);
     }
+
+    flb_sds_destroy(hash_key);
 
     written = append_data(c->file_path, data, bytes);
     if (written > 0) {
@@ -329,6 +352,7 @@ struct flb_local_chunk *flb_chunk_get(struct flb_local_buffer *store, char *tag)
         }
     }
 
+    flb_sds_destroy(hash_key);
     return c;
 }
 
