@@ -248,7 +248,7 @@ static int write_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 {
     char ts[50];
 
-    if (!sprintf(ts, "%llu", event->timestamp)) {
+    if (!snprintf(ts, 50, "%llu", event->timestamp)) {
         goto error;
     }
 
