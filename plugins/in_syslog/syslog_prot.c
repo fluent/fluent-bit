@@ -52,17 +52,64 @@ static inline int pack_line(struct flb_syslog *ctx,
     return 0;
 }
 
-int syslog_prot_process(struct syslog_conn *conn)
+
+int syslog_prot_process_msg(struct flb_syslog *ctx, char *p, size_t len)
 {
-    int len;
     int ret;
-    char *p;
-    char *eof;
-    char *end;
     void *out_buf;
     size_t out_size;
     struct flb_time out_time;
-    struct flb_syslog *ctx = conn->ctx;
+#ifdef FLB_HAVE_UTF8_ENCODER
+    char *decoded = NULL;
+    size_t decoded_size;
+#endif
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    if (ctx->encoding) {
+        ret = flb_encoding_decode(ctx->encoding, p, len, &decoded, &decoded_size);
+        if (ret != FLB_ENCODING_SUCCESS) {
+            flb_plg_error(ctx->ins, "decoding failed '%.*s'", p, len);
+            goto finish;
+        }
+        p = decoded;
+        len = decoded_size;
+    }
+#endif
+
+    /* Process the string */
+    ret = flb_parser_do(ctx->parser, p, len,
+                            &out_buf, &out_size, &out_time);
+    if (ret < 0) {
+        flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
+                     ctx->parser->name);
+        flb_plg_debug(ctx->ins, "unparsed log message: %.*s", len, p);
+        goto finish;
+    }
+
+    if (flb_time_to_double(&out_time) == 0.0) {
+        flb_time_get(&out_time);
+    }
+
+    pack_line(ctx, &out_time, out_buf, out_size);
+    ret = 0;
+
+ finish:
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    if (decoded) {
+        flb_free(decoded);
+    }
+#endif
+    return ret;
+
+}
+
+int syslog_prot_process(struct syslog_conn *conn)
+{
+    int len;
+    char *p;
+    char *eof;
+    char *end;
 
     eof = conn->buf_data;
     end = conn->buf_data + conn->buf_len;
@@ -96,21 +143,7 @@ int syslog_prot_process(struct syslog_conn *conn)
             continue;
         }
 
-        /* Process the string */
-        ret = flb_parser_do(ctx->parser, p, len,
-                            &out_buf, &out_size, &out_time);
-        if (ret >= 0) {
-            if (flb_time_to_double(&out_time) == 0.0) {
-                flb_time_get(&out_time);
-            }
-            pack_line(ctx, &out_time, out_buf, out_size);
-            flb_free(out_buf);
-        }
-        else {
-            flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
-                         ctx->parser->name);
-            flb_plg_debug(ctx->ins, "unparsed log message: %.*s", len, p);
-        }
+        syslog_prot_process_msg(conn->ctx, p, len);
 
         conn->buf_parsed += len + 1;
         end = conn->buf_data + conn->buf_len;
@@ -129,27 +162,5 @@ int syslog_prot_process(struct syslog_conn *conn)
 
 int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx)
 {
-    int ret;
-    void *out_buf;
-    size_t out_size;
-    struct flb_time out_time = {0};
-
-    ret = flb_parser_do(ctx->parser, buf, size,
-                        &out_buf, &out_size, &out_time);
-    if (ret >= 0) {
-        if (flb_time_to_double(&out_time) == 0) {
-            flb_time_get(&out_time);
-        }
-        pack_line(ctx, &out_time, out_buf, out_size);
-        flb_free(out_buf);
-    }
-    else {
-        flb_plg_warn(ctx->ins, "error parsing log message with parser '%s'",
-                     ctx->parser->name);
-        flb_plg_debug(ctx->ins, "unparsed log message: %.*s",
-                      (int) size, buf);
-        return -1;
-    }
-
-    return 0;
+    return syslog_prot_process_msg(ctx, buf, size);
 }

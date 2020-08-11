@@ -160,6 +160,13 @@ int syslog_conf_destroy(struct flb_syslog *ctx)
         flb_free(ctx->buffer_data);
         ctx->buffer_data = NULL;
     }
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    if(ctx->encoding) {
+        flb_encoding_close(ctx->encoding);
+    }
+#endif
+
     syslog_server_destroy(ctx);
     flb_free(ctx);
 
