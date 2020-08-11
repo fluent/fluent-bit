@@ -99,6 +99,10 @@ int flb_init_local_buffer(struct flb_local_buffer *store)
     if (d) {
         while ((dir = readdir(d)) != NULL) {
             if (dir->d_type == DT_REG) {
+                if (strlen(dir->d_name) > 0 && dir->d_name[0] == '.') {
+                    /* ignore hidden files */
+                    continue;
+                }
                 if (is_tag_file(dir->d_name) == 0) {
                     continue;
                 }
@@ -156,7 +160,10 @@ int flb_init_local_buffer(struct flb_local_buffer *store)
         }
         closedir(d);
     }
-  return 0;
+    else {
+
+    }
+    return 0;
 }
 
 /*
