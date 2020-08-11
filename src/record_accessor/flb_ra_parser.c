@@ -224,12 +224,12 @@ struct flb_ra_parser *flb_ra_parser_string_create(char *str, int len)
         flb_ra_parser_destroy(rp);
         return NULL;
     }
+    rp->key->subkeys = NULL;
     rp->key->name = flb_sds_create_len(str, len);
     if (!rp->key->name) {
         flb_ra_parser_destroy(rp);
         return NULL;
     }
-    rp->key->subkeys = NULL;
 
     return rp;
 }
