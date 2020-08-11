@@ -161,7 +161,8 @@ int flb_init_local_buffer(struct flb_local_buffer *store)
         closedir(d);
     }
     else {
-
+        flb_errno();
+        flb_plg_error(store->ins, "Could not open buffer dir %s", store->dir);
     }
     return 0;
 }
