@@ -185,15 +185,22 @@ void add_http_request_field(struct http_request_field *http_request,
 /* latency should be in the format:
  *      whitespace (opt.) + integer + point & decimal (opt.)
  *      + whitespace (opt.) + "s" + whitespace (opt.)
+ *
+ * latency is Duration, so the maximum value is "315576000000.999999999s".
+ * (23 characters in length)
  */
 static void validate_latency(msgpack_object_str latency_in_payload,
                              struct http_request_field *http_request) {
     flb_sds_t pattern = flb_sds_create("^\\s*\\d+(.\\d+)?\\s*s\\s*$");
-    char extract_latency[latency_in_payload.size];
+    char extract_latency[32];
     struct flb_regex *regex;
 
     int status = 0;
     int i = 0, j = 0;
+
+    if (latency_in_payload.size > sizeof(extract_latency)) {
+        return;
+    }
 
     regex = flb_regex_create(pattern);
     status = flb_regex_match(regex, latency_in_payload.ptr, latency_in_payload.size);

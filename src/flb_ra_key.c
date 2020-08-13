@@ -78,6 +78,10 @@ static int ra_key_val_id(flb_sds_t ckey, msgpack_object map)
     int map_size;
     msgpack_object key;
 
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
     map_size = map.via.map.size;
     for (i = 0; i < map_size; i++) {
         key = map.via.map.ptr[i].key;
