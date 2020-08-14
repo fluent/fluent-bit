@@ -96,35 +96,84 @@ static int cb_file_check(void *data, int argc, char **argv, char **cols)
     return 0;
 }
 
+/*
+ * Construct a SQL string from a template (and variable args).
+ * Return an allocated buffer on success, NULL on error.
+ */
+static char *create_sql(const char *tmpl, ...)
+{
+    char *buf;
+    size_t size;
+    va_list ap;
+
+    va_start(ap, tmpl);
+    size = vsnprintf(NULL, 0, tmpl, ap);
+    va_end(ap);
+
+    if (size < 0) {
+        return NULL;
+    }
+
+    buf = flb_malloc(size + 1);
+    if (buf == NULL) {
+        return NULL;
+    }
+
+    va_start(ap, tmpl);
+    size = vsnprintf(buf, size + 1, tmpl, ap);
+    va_end(ap);
+
+    if (size < 0) {
+        flb_free(buf);
+        return NULL;
+    }
+
+    return buf;
+}
+
 int flb_tail_db_file_set(struct flb_tail_file *file,
                          struct flb_tail_config *ctx)
 {
     int ret;
-    char query[PATH_MAX];
+    char *query;
     struct query_status qs = {0};
-    uint64_t created;
 
     /* Check if the file exists */
-    snprintf(query, sizeof(query) - 1, SQL_GET_FILE, (uint64_t) file->inode);
+    query = create_sql(SQL_GET_FILE, (uint64_t) file->inode);
+    if (query == NULL) {
+        flb_plg_error(ctx->ins, "cannot format '%s'", SQL_GET_FILE);
+        return -1;
+    }
+
     memset(&qs, '\0', sizeof(qs));
     ret = flb_sqldb_query(ctx->db,
                           query, cb_file_check, &qs);
     if (ret == FLB_ERROR) {
         flb_plg_error(ctx->ins, "cannot execute SQL: %s", query);
+        flb_free(query);
         return -1;
     }
+    flb_free(query);
 
     if (qs.rows == 0) {
         /* Register the file */
-        created = time(NULL);
-        snprintf(query, sizeof(query) - 1,
-                 SQL_INSERT_FILE,
-                 file->name, (uint64_t) 0, (uint64_t) file->inode, created);
+        query = create_sql(SQL_INSERT_FILE,
+                           file->name,             /* file path */
+                           (uint64_t) 0,           /* offset */
+                           (uint64_t) file->inode, /* inode */
+                           (uint64_t) time(NULL)); /* created */
+        if (query == NULL) {
+            flb_plg_error(ctx->ins, "cannot format '%s'", SQL_INSERT_FILE);
+            return -1;
+        }
+
         ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
         if (ret == FLB_ERROR) {
             flb_plg_error(ctx->ins, "cannot execute SQL: %s", query);
+            flb_free(query);
             return -1;
         }
+        flb_free(query);
 
         /* Get the database ID for this file */
         file->db_id = flb_sqldb_last_id(ctx->db);
@@ -164,18 +213,22 @@ int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_config *ctx)
 {
     int ret;
-    char query[PATH_MAX];
+    char *query;
     struct query_status qs = {0};
 
-    snprintf(query, sizeof(query) - 1,
-             SQL_ROTATE_FILE,
-             new_name, file->db_id);
+    query = create_sql(SQL_ROTATE_FILE, new_name, file->db_id);
+    if (query == NULL) {
+        flb_plg_error(ctx->ins, "cannot format '%s'", SQL_ROTATE_FILE);
+        return -1;
+    }
 
     ret = flb_sqldb_query(ctx->db,
                           query, cb_file_check, &qs);
     if (ret != FLB_OK) {
+        flb_free(query);
         return -1;
     }
+    flb_free(query);
 
     return 0;
 }
