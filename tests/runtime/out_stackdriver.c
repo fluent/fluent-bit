@@ -1456,7 +1456,7 @@ static void cb_check_timestamp_format_object_not_a_map(void *ctx, int ffd,
 }
 
 static void cb_check_timestamp_format_object_missing_subfield(void *ctx, int ffd,
-                                                              int res_ret, void *res_data, 
+                                                              int res_ret, void *res_data,
                                                               size_t res_size,
                                                               void *data)
 {
@@ -1472,7 +1472,7 @@ static void cb_check_timestamp_format_object_missing_subfield(void *ctx, int ffd
 }
 
 static void cb_check_timestamp_format_object_incorrect_subfields(void *ctx, int ffd,
-                                                                 int res_ret, void *res_data, 
+                                                                 int res_ret, void *res_data,
                                                                  size_t res_size,
                                                                  void *data)
 {
@@ -2115,10 +2115,6 @@ void flb_test_resource_k8s_container_multi_tag_value()
                               cb_check_k8s_container_resource_diff_tag,
                               NULL, NULL);
 
-    /* Start */
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_COMMON_DIFF_TAGS, size_two);
 
@@ -2442,7 +2438,7 @@ void flb_test_resource_k8s_container_no_local_resource_id()
 
     /* Lib input mode */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, in_ffd, "tag", 
+    flb_input_set(ctx, in_ffd, "tag",
                   "k8s_container.testnamespace.testpod.testctr", NULL);
 
     /* Stackdriver output */
@@ -2572,9 +2568,9 @@ void flb_test_multi_entries_severity()
 
     /* Tail input mode */
     in_ffd = flb_input(ctx, (char *) "tail", NULL);
-    ret = flb_input_set(ctx, in_ffd, 
+    ret = flb_input_set(ctx, in_ffd,
                         "Path", STACKDRIVER_DATA_PATH "/stackdriver_multi_entries_severity.log",
-                        "tag", "test", 
+                        "tag", "test",
                         NULL);
     TEST_CHECK_(ret == 0, "setting input options");
 
@@ -3573,7 +3569,7 @@ TEST_LIST = {
     {"insertId_common_case", flb_test_insert_id_common_case},
     {"empty_insertId", flb_test_empty_insert_id},
     {"insertId_incorrect_type_int", flb_test_insert_id_incorrect_type},
-    
+
     /* test operation */
     {"operation_common_case", flb_test_operation_common},
     {"empty_operation", flb_test_empty_operation},
@@ -3590,7 +3586,7 @@ TEST_LIST = {
     {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
     {"sourceLocation_subfields_in_incorrect_type", flb_test_source_location_incorrect_type_subfields},
     {"sourceLocation_extra_subfields_exist", flb_test_source_location_extra_subfields},
-    
+
     /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },
     {"resource_k8s_container_no_local_resource_id", flb_test_resource_k8s_container_no_local_resource_id },
