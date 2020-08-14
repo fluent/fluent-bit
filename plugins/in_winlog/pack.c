@@ -325,7 +325,7 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     msgpack_pack_array(mp_pck, 2);
     flb_pack_time_now(mp_pck);
 
-    msgpack_pack_map(mp_pck, 11);
+    msgpack_pack_map(mp_pck, 12);
 
     /* RecordNumber */
     msgpack_pack_str(mp_pck, 12);
@@ -347,6 +347,11 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
         flb_plg_error(ctx->ins, "invalid TimeWritten %i", evt->TimeWritten);
         pack_nullstr(mp_pck);
     }
+
+    /* EventId */
+    msgpack_pack_str(mp_pck, 7);
+    msgpack_pack_str_body(mp_pck, "EventID", 7);
+    msgpack_pack_uint32(mp_pck, evt->EventID);
 
     /* EventType */
     msgpack_pack_str(mp_pck, 9);
