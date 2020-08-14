@@ -290,6 +290,7 @@ static bool validate_msgpack_unpacked_data(msgpack_object root)
 
 void replace_prefix_dot(flb_sds_t s, int tag_prefix_len)
 {
+    int i;
     int str_len;
     char c;
 
@@ -303,7 +304,7 @@ void replace_prefix_dot(flb_sds_t s, int tag_prefix_len)
         return;
     }
 
-    for (int i = 0; i < tag_prefix_len; i++) {
+    for (i = 0; i < tag_prefix_len; i++) {
         c = s[i];
 
         if (c == '.') {
