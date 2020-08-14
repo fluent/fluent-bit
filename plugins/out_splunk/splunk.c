@@ -74,7 +74,14 @@ static int splunk_format(const void *in_buf, size_t in_bytes,
     msgpack_unpacked_init(&result);
 
     while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
         root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
