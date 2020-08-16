@@ -85,6 +85,9 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
+#define QQQQ1 "{\"namespace\":\"com.linkedin.kubernetes.docker\",\"name\":\"unstructured_logs\",\"type\":\"record\",\"fields\":[{\"name\":\"message\",\"type\":\"string\"},{\"name\":\"docker\",\"type\":{\"name\":\"docker\",\"type\":\"record\",\"fields\":[{\"name\":\"container_id\",\"type\":\"string\"}]}},{\"name\":\"kubernetes\",\"type\":{\"name\":\"kubernetes\",\"type\":\"record\",\"fields\":[{\"name\":\"container_name\",\"type\":\"string\"},{\"name\":\"namespace_name\",\"type\":\"string\"},{\"name\":\"pod_name\",\"type\":\"string\"},{\"name\":\"container_image\",\"type\":[\"null\",\"string\"],\"default\":null},{\"name\":\"container_image_id\",\"type\":[\"null\",\"string\"],\"default\":null},{\"name\":\"pod_id\",\"type\":\"string\"},{\"name\":\"host\",\"type\":\"string\"},{\"name\":\"labels\",\"type\":[\"null\",{\"type\":\"map\",\"values\":\"string\"}],\"default\":null},{\"name\":\"master_url\",\"type\":\"string\"},{\"name\":\"namespace_id\",\"type\":\"string\"},{\"name\":\"namespace_labels\",\"type\":[\"null\",{\"type\":\"map\",\"values\":\"string\"}],\"default\":null}]}}]}"
+#define QQQQ2 "{\"namespace\":\"com.linkedin.kubernetes.docker\",\"name\":\"structured_logs\",\"type\":\"record\",\"fields\":[{\"name\":\"log\",\"type\":\"string\"},{\"name\":\"kubernetes_labels\",\"type\":[\"null\",{\"type\":\"map\",\"values\":\"string\"}],\"default\":null},{\"name\":\"kubernetes_pod_name\",\"type\":\"string\"},{\"name\":\"kubernetes_namespace_name\",\"type\":\"string\"},{\"name\":\"kubernetes_pod_id\",\"type\":\"string\"},{\"name\":\"kubernetes_host\",\"type\":\"string\"},{\"name\":\"kubernetes_container_name\",\"type\":\"string\"},{\"name\":\"kubernetes_docker_id\",\"type\":\"string\"},{\"name\":\"kubernetes_container_hash\",\"type\":\"string\"},{\"name\":\"kubernetes_container_image\",\"type\":\"string\"}]}"
+const char  QQQQ[] = "{\"namespace\":\"com.linkedin.kubernetes.docker\",\"name\":\"qavro\",\"type\":\"record\",\"fields\":[{\"name\":\"log\",\"type\":\"string\"}]}";
 int produce_message(struct flb_time *tm, msgpack_object *map,
                     struct flb_kafka *ctx, struct flb_config *config)
 {
@@ -106,6 +109,10 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object key;
     msgpack_object val;
     flb_sds_t s;
+    // avro_value_t *avalue;
+
+    // get rid of this QQQQ
+    ctx->format = FLB_KAFKA_FMT_AVRO;
 
     /* Init temporal buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -250,6 +257,20 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_buf = s;
         out_size = flb_sds_len(s);
     }
+    else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+    // else if (1 == 1) {
+        // flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const char hexstring[], char* schema_json)
+        // s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, "900b4ffa3eded88a849c2970b7d491de", QQQQ);
+        s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, "34530c546683be367ddde8b7734b8af3", QQQQ);
+        if( s == NULL) {
+            flb_plg_error(ctx->ins, "error encoding to AVRO");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        out_buf = s;
+        out_size = flb_sds_len(s);
+    }
+    fprintf(stderr, "back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf);
 
     if (!message_key) {
         message_key = ctx->message_key;
@@ -332,6 +353,10 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         flb_sds_destroy(s);
     }
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
+        flb_sds_destroy(s);
+    }
+    // QQQ this section is shitty fix this
+    if (ctx->format == FLB_KAFKA_FMT_AVRO) {
         flb_sds_destroy(s);
     }
 

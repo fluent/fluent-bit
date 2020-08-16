@@ -67,6 +67,11 @@ if(FLB_PARSER)
     )
 endif()
 
+  set(src
+    ${src}
+    flb_avro.c
+    )
+
 # Fluent Bit have TLS support
 if(FLB_TLS)
   # Register the TLS interface and functions
@@ -155,6 +160,10 @@ if(FLB_REGEX)
     "flb_regex.c"
     )
 endif()
+
+set(extra_libs
+  ${extra_libs}
+  "libjansson")
 
 if(FLB_LUAJIT)
   set(extra_libs
@@ -265,6 +274,7 @@ set(FLB_DEPS
   jsmn
   msgpackc-static
   mpack-static
+  avro-static
   chunkio-static
   miniz
   ${FLB_PLUGINS}

@@ -29,6 +29,7 @@
 #define FLB_KAFKA_FMT_JSON  0
 #define FLB_KAFKA_FMT_MSGP  1
 #define FLB_KAFKA_FMT_GELF  2
+#define FLB_KAFKA_FMT_AVRO  3
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
@@ -99,6 +100,7 @@ struct flb_kafka {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,

@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 include_directories(cutest/)
 
 set(UNIT_TESTS_FILES
+  avro.c
   pack.c
   pipe.c
   sds.c
