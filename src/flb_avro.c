@@ -24,21 +24,33 @@
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
-// #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
-// #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_error.h>
-// #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
-// #include <fluent-bit/flb_time.h>
-// #include <fluent-bit/flb_pack.h>
-// #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_avro.h>
 
-// #include <msgpack.h>
 
-// #include <avro.h>
+AVRO_POOL * avro_pool_create( size_t size ) {
+    AVRO_POOL * p = (AVRO_POOL*)malloc( size + sizeof(AVRO_POOL) );
+    p->next = (char*)&p[1];
+    p->end = p->next + size;
+    return p;
+}
 
+void avro_pool_destroy( AVRO_POOL *p ) {
+    free(p);
+}
+
+size_t avro_pool_available( AVRO_POOL *p ) {
+    return p->end - p->next;
+}
+
+void * avro_pool_alloc( AVRO_POOL *p, size_t size ) {
+    if( avro_pool_available(p) < size ) return NULL;
+    void *mem = (void*)p->next;
+    p->next += size;
+    return mem;
+}
 static inline int do_avro(bool call, const char *msg) {
     if (call) {
             fprintf(stderr, "%s:\n  %s\n", msg, avro_strerror());
@@ -49,14 +61,8 @@ static inline int do_avro(bool call, const char *msg) {
 
 avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t json_len, avro_schema_t *aschema)
 {
-    // avro_schema_t aschema;
 
     fprintf(stderr, "before:error:%s:json len:%zu:\n", avro_strerror(), json_len);
-
-    // if (aobject == NULL) {
-    //     fprintf(stderr, "avro init called but avro object is null\n");
-	// 	return FLB_ERROR;
-    // }
 
 	if (avro_schema_from_json_length(json, json_len, aschema)) {
 		fprintf(stderr, "Unable to parse aobject schema:%s:error:%s:\n", json, avro_strerror());
@@ -75,38 +81,8 @@ avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t jso
 		return NULL;
     }
 
-    // avro_free(aclass, 0);
-
     return aclass;
 }
-
-// typedef struct pool
-// {
-//   char * next;
-//   char * end;
-// } POOL;
-
-// POOL * pool_create( size_t size ) {
-//     POOL * p = (POOL*)malloc( size + sizeof(POOL) );
-//     p->next = (char*)&p[1];
-//     p->end = p->next + size;
-//     return p;
-// }
-
-// void pool_destroy( POOL *p ) {
-//     free(p);
-// }
-
-// size_t pool_available( POOL *p ) {
-//     return p->end - p->next;
-// }
-
-// void * pool_alloc( POOL *p, size_t size ) {
-//     if( pool_available(p) < size ) return NULL;
-//     void *mem = (void*)p->next;
-//     p->next += size;
-//     return mem;
-// }
 
 /*
  * void *ud points to a POOL
@@ -120,21 +96,15 @@ flb_avro_allocator(void *ud, void *ptr, size_t osize, size_t nsize)
         if (nsize == 0) {
             fprintf(stderr, "don't free anything. do that later in the caller\n");
             flb_free(ptr);
-            // pool_destroy(pool);
             return NULL;
         } else {
             fprintf(stderr, "realloc:ud:%p:\n", ud);
             return flb_realloc_z(ptr, osize, nsize);
-            // ud = flb_realloc_z(ptr, osize, nsize);
-            // return pool_alloc(pool, nsize);
-
         }
 }
 void *
 flb_avro_allocator22(void *ud, void *ptr, size_t osize, size_t nsize)
 {
-        // AVRO_UNUSED(ud);
-        // AVRO_UNUSED(osize);
 
 #if SHOW_ALLOCATIONS
         fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
@@ -266,7 +236,6 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
                         goto msg2avro_end;
                     }
                     ret = flb_msgpack_to_avro(&element, p);
-                    // avro_value_decref(&element);
                 }
             }
         } 
@@ -280,11 +249,7 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
             size_t i = 0;
 
             for(; p < pend; ++p) {
-                // avro_value_t  *element = flb_calloc(1, sizeof(avro_value_t));
                 avro_value_t  element;
-
-                // size_t  new_index;
-                // int  is_new = 0;
 
                 flb_sds_t key = flb_sds_create_len(p->key.via.str.ptr, p->key.via.str.size);
                 fprintf(stderr, "DEBUG: got key:%s:\n", key);
@@ -300,18 +265,13 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
 
                 fprintf(stderr, "after first\n");
 
-                // avro_value_add(val, key, &element, &new_index, &is_new);
-
                 if (!do_avro(avro_value_get_by_index(val, i++, &element, NULL), "Cannot get field")) {
                     flb_sds_destroy(key);
                     goto msg2avro_end;
                 }
                 ret = flb_msgpack_to_avro(&element, &p->val);
-                // avro_value_decref(&element);
 
                 flb_sds_destroy(key);
-
-                // avro_value_reset(&element);
 
             }
         }
@@ -377,14 +337,6 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     avro_writer_t awriter;
     size_t schema_json_len = strlen(schema_json);
 
-    // out_size = in_size * 1.5;
-    // out_buf = flb_sds_create_size(out_size);
-    // if (!out_buf) {
-        // flb_errno();
-        // return NULL;
-    // }
-
-    // char buf2[512*100];          /* Message value temporary buffer */
     void *buf2;
 
 #define EDEDE 512 * 1000
@@ -394,8 +346,6 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
         return NULL;
     }
 
-    // avro_set_allocator(flb_avro_allocator, NULL);
-    // avro_value_iface_t  *aclass;
     avro_schema_t aschema;
 
     avro_value_iface_t *aclass = flb_avro_init(&avalue, schema_json, schema_json_len, &aschema);
@@ -416,34 +366,9 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
         return NULL;
     }
 
-    // while (1) {
-    //     ret = flb_msgpack_to_avro(&avalue, root);
-    //     if (ret <= 0) {
-    //         tmp_buf = flb_sds_increase(out_buf, 256);
-    //         if (tmp_buf) {
-    //             out_buf = tmp_buf;
-    //             out_size += 256;
-    //         }
-    //         else {
-    //             flb_errno();
-    //             flb_sds_destroy(out_buf);
-    //             msgpack_unpacked_destroy(&result);
-    //             return NULL;
-    //         }
-    //     }
-    //     else {
-    //         break;
-    //     }
-    // }
-
-    // ./avro/src/avro/io.h:avro_writer_t avro_writer_file(FILE * fp);
-    // av = avro_writer_file(stdout);
-    // ./avro/src/avro/io.h:avro_writer_t avro_writer_memory(const char *buf, int64_t len);
     fprintf(stderr,  "before avro_writer_memory\n");
     //  write one bye of \0
     //  write 16 bytes schemaid where the schemaid is hex for the written bytes
-    // av = avro_writer_memory(buf2, sizeof(buf2));
-    
     awriter = avro_writer_memory(buf2, EDEDE);
     if (awriter == NULL) {
             fprintf(stderr,  "Unable to init avro writer\n");
@@ -451,12 +376,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     }
 
     // write the magic byte
-    // int avro_write(avro_writer_t writer, void *buf, int64_t len)
     int rval;
-    // const char dddd[] = {'\0'};
     rval = avro_write(awriter, "\0", 1);
-    // rval = avro_write(awriter, dddd, 1);
-    // avro_write(awriter, "\0", 1);
     if (rval != 0) {
             fprintf(stderr,  "Unable to write magic byte\n");
             return NULL;
@@ -464,7 +385,6 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 
     // write the schemaid
     const char hexstring[] = "34530c546683be367ddde8b7734b8af3", *pos = hexstring;
-    // const char *pos = hexstring;
     unsigned char val[16];
     size_t count;
     for (count = 0; count < sizeof val/sizeof *val; count++) {
@@ -484,23 +404,6 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 			"Unable to write avro value to memory buffer\nMessage: %s\n", avro_strerror());
 		return NULL;
 	}
-    // rval = avro_write(awriter, avalue, avro_writer_tell(avalue));
-    // if (rval != 0) {
-            // fprintf(stderr,  "Unable to write schemaid\n");
-            // return NULL;
-    // }
-    // null terminate it
-    // since the other use-cases are strings
-    // its safer to pretend this is a string
-    // rval = avro_write(awriter, "\0", 1);
-    // if (rval != 0) {
-    //         fprintf(stderr,  "Unable to null terminate the buffer\n");
-    //         return NULL;
-    // }
-
-    // fprintf(stderr,  "before add_person\n");
-
-    // add_person(awriter, "Super", "Man", "123456", 31);
 
     fprintf(stderr,  "before avro_writer_flush\n");
 
@@ -511,14 +414,9 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     // by here the entire object should be fully serialized into the sds buffer
     msgpack_unpacked_destroy(&result);
     avro_writer_free(awriter);
-    // avro_generic_value_free(&avalue);
-    // avro_free()
-    // avro_free(&avalue, 0);
     avro_free(aclass, 0);
  
     fprintf(stderr,  "after memory free\n");
-
-    // flb_sds_len_set(out_buf, ret);
 
     // strictly pretending its a string here
     // since it was strictly null terminated above

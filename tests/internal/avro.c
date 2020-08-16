@@ -9,43 +9,12 @@
 #define AVRO_SINGLE_MAP1 FLB_TESTS_DATA_PATH "/data/pack/json_single_map_001.json"
 
 /*
- * some memory pooling code because i'm paranoid about avro leaking
- */
-typedef struct pool
-{
-  char * next;
-  char * end;
-} POOL;
-
-POOL * pool_create( size_t size ) {
-    POOL * p = (POOL*)malloc( size + sizeof(POOL) );
-    p->next = (char*)&p[1];
-    p->end = p->next + size;
-    return p;
-}
-
-void pool_destroy( POOL *p ) {
-    free(p);
-}
-
-size_t pool_available( POOL *p ) {
-    return p->end - p->next;
-}
-
-void * pool_alloc( POOL *p, size_t size ) {
-    if( pool_available(p) < size ) return NULL;
-    void *mem = (void*)p->next;
-    p->next += size;
-    return mem;
-}
-
-/*
- * ud points to a POOL
+ * ud points to a AVRO_POOL
  */
 void *
 flb_avro_allocatorqqq(void *ud, void *ptr, size_t osize, size_t nsize)
 {
-    POOL *pool = (POOL *)ud;
+    AVRO_POOL *pool = (AVRO_POOL *)ud;
 
     fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
     if (nsize == 0) {
@@ -53,7 +22,7 @@ flb_avro_allocatorqqq(void *ud, void *ptr, size_t osize, size_t nsize)
         return NULL;
     } else {
         fprintf(stderr, "realloc:ud:%p:\n", ud);
-        return pool_alloc(pool, nsize);
+        return avro_pool_alloc(pool, nsize);
     }
 }
 
@@ -79,7 +48,7 @@ void test_unpack_to_avro()
 
     avro_value_t  aobject;
 
-     POOL *ppp = pool_create(1024 * 1024);
+     AVRO_POOL *ppp = avro_pool_create(1024 * 1024);
 
     avro_set_allocator(flb_avro_allocatorqqq, (void *)ppp);
     avro_value_iface_t  *aclass = NULL;
@@ -173,7 +142,7 @@ void test_unpack_to_avro()
 
     TEST_CHECK(msize == 2);
 
-    pool_destroy(ppp);
+    avro_pool_destroy(ppp);
     msgpack_unpacked_destroy(&msg);
     // flb_free(aclass);
     flb_free(data);
