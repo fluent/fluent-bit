@@ -193,6 +193,7 @@ add_subdirectory(examples)
 add_subdirectory(tests)
 add_subdirectory(docs)
 
+#added mcqueen 8/16/2020 for fluent-bit compatability
 add_dependencies(avro-static jansson)
 
 add_custom_target(pretty
