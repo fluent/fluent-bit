@@ -101,6 +101,15 @@ struct flb_kafka {
     /* Plugin instance */
     struct flb_output_instance *ins;
 
+    // avro serialization requires a schema
+    // the schema is stored in json in avro_schema_str
+    // 
+    // optionally the schema ID can be stashed in the avro data stream
+    // the schema ID is stored in avro_schema_id
+    // this is common at this time with large kafka installations and schema registries
+    flb_sds_t avro_schema_str;
+    flb_sds_t avro_schema_id;
+
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,

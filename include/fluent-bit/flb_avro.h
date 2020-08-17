@@ -41,6 +41,7 @@ AVRO_POOL * avro_pool_create( size_t size );
 void avro_pool_destroy( AVRO_POOL *p );
 size_t avro_pool_available( AVRO_POOL *p );
 void * avro_pool_alloc( AVRO_POOL *p, size_t size );
+void *flb_avro_allocatorqqq(void *ud, void *ptr, size_t osize, size_t nsize);
 
 
 #endif

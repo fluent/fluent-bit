@@ -8,24 +8,6 @@
 /* AVRO iteration tests */
 #define AVRO_SINGLE_MAP1 FLB_TESTS_DATA_PATH "/data/pack/json_single_map_001.json"
 
-/*
- * ud points to a AVRO_POOL
- */
-void *
-flb_avro_allocatorqqq(void *ud, void *ptr, size_t osize, size_t nsize)
-{
-    AVRO_POOL *pool = (AVRO_POOL *)ud;
-
-    fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
-    if (nsize == 0) {
-        fprintf(stderr, "don't free anything. do that later in the caller\n");
-        return NULL;
-    } else {
-        fprintf(stderr, "realloc:ud:%p:\n", ud);
-        return avro_pool_alloc(pool, nsize);
-    }
-}
-
 const char  JSON_SINGLE_MAP_001_SCHEMA[] =
 "{\"type\":\"record\",\
   \"name\":\"Map001\",\
@@ -48,7 +30,7 @@ void test_unpack_to_avro()
 
     avro_value_t  aobject;
 
-     AVRO_POOL *ppp = avro_pool_create(1024 * 1024);
+    AVRO_POOL *ppp = avro_pool_create(1024 * 1024);
 
     avro_set_allocator(flb_avro_allocatorqqq, (void *)ppp);
     avro_value_iface_t  *aclass = NULL;
