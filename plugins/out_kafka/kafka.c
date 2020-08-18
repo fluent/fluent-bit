@@ -31,6 +31,8 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
 {
     struct flb_kafka *ctx = (struct flb_kafka *) opaque;
 
+    return;
+
     if (rkmessage->err) {
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
                      rd_kafka_err2str(rkmessage->err));
@@ -47,6 +49,7 @@ void cb_kafka_logger(const rd_kafka_t *rk, int level,
 {
     struct flb_kafka *ctx;
 
+return;
     ctx = (struct flb_kafka *) rd_kafka_opaque(rk);
 
     if (level <= FLB_KAFKA_LOG_ERR) {

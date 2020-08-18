@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,28 +29,82 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_avro.h>
 
+// https://stackoverflow.com/questions/11749386/implement-own-memory-pool
+// AVRO_POOL * avro_pool_create( size_t size ) {
+//     AVRO_POOL * p = (AVRO_POOL*)malloc( size + sizeof(AVRO_POOL) );
+//     p->next = (char*)&p[1];
+//     p->end = p->next + size;
+//     return p;
+// }
 
-AVRO_POOL * avro_pool_create( size_t size ) {
-    AVRO_POOL * p = (AVRO_POOL*)malloc( size + sizeof(AVRO_POOL) );
-    p->next = (char*)&p[1];
-    p->end = p->next + size;
-    return p;
+// void avro_pool_destroy( AVRO_POOL *p ) {
+//     free(p);
+// }
+
+// size_t avro_pool_available( AVRO_POOL *p ) {
+//     return p->end - p->next;
+// }
+
+// void * avro_pool_alloc( AVRO_POOL *p, size_t size ) {
+//     if( avro_pool_available(p) < size ) return NULL;
+//     void *mem = (void*)p->next;
+//     p->next += size;
+//     return mem;
+// }
+
+
+// https://codereview.stackexchange.com/questions/48919/simple-memory-pool-using-no-extra-memory
+int mp_init(Memory_Pool *mp, size_t size, size_t slots)
+{
+    //allocate memory
+    if((mp->memory = malloc(size * slots)) == NULL)
+        return MEMORY_POOL_ERROR;
+
+    //initialize
+    mp->head = NULL;
+
+    //add every slot to the list
+    char *end = (char *)mp->memory + size * slots;
+    char *ite = NULL;
+    // for(char *ite = mp->memory; ite < end; ite += size)
+    for(ite = mp->memory; ite < end; ite += size)
+        mp_release(mp, ite);
+
+    return MEMORY_POOL_SUCCESS;
 }
 
-void avro_pool_destroy( AVRO_POOL *p ) {
-    free(p);
+void mp_destroy(Memory_Pool *mp)
+{
+    free(mp->memory);
 }
 
-size_t avro_pool_available( AVRO_POOL *p ) {
-    return p->end - p->next;
+void *mp_get(Memory_Pool *mp)
+{
+    if(mp->head == NULL)
+        return NULL;
+
+    //store first address
+    void *temp = mp->head;
+
+    //link one past it
+    mp->head = *mp->head;
+
+    //return the first address
+    return temp;
 }
 
-void * avro_pool_alloc( AVRO_POOL *p, size_t size ) {
-    if( avro_pool_available(p) < size ) return NULL;
-    void *mem = (void*)p->next;
-    p->next += size;
-    return mem;
+void mp_release(Memory_Pool *mp, void *mem)
+{
+    //store first address
+    void *temp = mp->head;
+
+    //link new node
+    mp->head = mem;
+
+    //link to the list from new node
+    *mp->head = temp;
 }
+
 static inline int do_avro(bool call, const char *msg) {
     if (call) {
             // fprintf(stderr, "%s:\n  %s\n", msg, avro_strerror());
@@ -65,15 +119,23 @@ static inline int do_avro(bool call, const char *msg) {
 void *
 flb_avro_allocatorqqq(void *ud, void *ptr, size_t osize, size_t nsize)
 {
-    AVRO_POOL *pool = (AVRO_POOL *)ud;
+
+    assert(ud != NULL);
+    assert(ptr != NULL);
+
+    // AVRO_POOL *pool = (AVRO_POOL *)ud;
+
+    Memory_Pool * mp = (Memory_Pool *)ud;
 
     fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
     if (nsize == 0) {
         // fprintf(stderr, "don't free anything. do that later in the caller\n");
+        mp_release(mp, ptr);
         return NULL;
     } else {
         // fprintf(stderr, "realloc:ud:%p:\n", ud);
-        return avro_pool_alloc(pool, nsize);
+        // return avro_pool_alloc(pool, nsize);
+        return mp_get(mp);
     }
 }
 
@@ -102,66 +164,69 @@ avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t jso
     return aclass;
 }
 
-/*
- * void *ud points to a POOL
- */
-void *
-flb_avro_allocator(void *ud, void *ptr, size_t osize, size_t nsize)
-{
-    // POOL *pool = (POOL *)ud;
+// /*
+//  * void *ud points to a POOL
+//  */
+// void *
+// flb_avro_allocator(void *ud, void *ptr, size_t osize, size_t nsize)
+// {
+//     // POOL *pool = (POOL *)ud;
 
-        fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
-        if (nsize == 0) {
-            fprintf(stderr, "don't free anything. do that later in the caller\n");
-            flb_free(ptr);
-            return NULL;
-        } else {
-            fprintf(stderr, "realloc:ud:%p:\n", ud);
-            return flb_realloc_z(ptr, osize, nsize);
-        }
-}
-void *
-flb_avro_allocator22(void *ud, void *ptr, size_t osize, size_t nsize)
-{
+//         fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
+//         if (nsize == 0) {
+//             fprintf(stderr, "don't free anything. do that later in the caller\n");
+//             flb_free(ptr);
+//             return NULL;
+//         } else {
+//             fprintf(stderr, "realloc:ud:%p:\n", ud);
+//             return flb_realloc_z(ptr, osize, nsize);
+//         }
+// }
+// void *
+// flb_avro_allocator22(void *ud, void *ptr, size_t osize, size_t nsize)
+// {
 
-#if SHOW_ALLOCATIONS
-        fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
-#endif
+// #if SHOW_ALLOCATIONS
+//         fprintf(stderr, "alloc(%p, %" PRIsz ", %" PRIsz ") => ", ptr, osize, nsize);
+// #endif
 
-        if (nsize == 0) {
-                size_t  *size = ((size_t *) ptr) - 1;
-                if (osize != *size) {
-                        fprintf(stderr,
-#if SHOW_ALLOCATIONS
-                                "ERROR!\n"
-#endif
-                                "Error freeing %p:\n"
-                                "Size passed to avro_free (%" PRIsz ") "
-                                "doesn't match size passed to "
-                                "avro_malloc (%" PRIsz ")\n",
-                                ptr, osize, *size);
-                        exit(EXIT_FAILURE);
-                }
-                free(size);
-#if SHOW_ALLOCATIONS
-                fprintf(stderr, "NULL\n");
-#endif
-                return NULL;
-        } else {
-                size_t  real_size = nsize + sizeof(size_t);
-                size_t  *old_size = ptr? ((size_t *) ptr)-1: NULL;
-                size_t  *size = (size_t *) realloc(old_size, real_size);
-                *size = nsize;
-#if SHOW_ALLOCATIONS
-                fprintf(stderr, "%p\n", (size+1));
-#endif
-                return (size + 1);
-        }
-}
+//         if (nsize == 0) {
+//                 size_t  *size = ((size_t *) ptr) - 1;
+//                 if (osize != *size) {
+//                         fprintf(stderr,
+// #if SHOW_ALLOCATIONS
+//                                 "ERROR!\n"
+// #endif
+//                                 "Error freeing %p:\n"
+//                                 "Size passed to avro_free (%" PRIsz ") "
+//                                 "doesn't match size passed to "
+//                                 "avro_malloc (%" PRIsz ")\n",
+//                                 ptr, osize, *size);
+//                         exit(EXIT_FAILURE);
+//                 }
+//                 free(size);
+// #if SHOW_ALLOCATIONS
+//                 fprintf(stderr, "NULL\n");
+// #endif
+//                 return NULL;
+//         } else {
+//                 size_t  real_size = nsize + sizeof(size_t);
+//                 size_t  *old_size = ptr? ((size_t *) ptr)-1: NULL;
+//                 size_t  *size = (size_t *) realloc(old_size, real_size);
+//                 *size = nsize;
+// #if SHOW_ALLOCATIONS
+//                 fprintf(stderr, "%p\n", (size+1));
+// #endif
+//                 return (size + 1);
+//         }
+// }
 
 int msgpack2avro(avro_value_t *val, msgpack_object *o)
 {
     int ret = FLB_FALSE;
+
+    assert(val != NULL);
+    assert(o != NULL);
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
@@ -356,28 +421,39 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 
     avro_value_t  aobject;
 
-#define AVRO_BUFFER_SIZE 1024 * 1024 * 1024
-    AVRO_POOL *avro_pool = avro_pool_create(AVRO_BUFFER_SIZE);
+    assert(in_buf != NULL);
 
-    avro_set_allocator(flb_avro_allocatorqqq, (void *)avro_pool);
+#define AVRO_BUFFER_SIZE 1024 * 1024 * 1024
+    // AVRO_POOL *avro_pool = avro_pool_create(AVRO_BUFFER_SIZE);
+    Memory_Pool mp;
+    mp_init(&mp, 2048, 2048);
+
+    // avro_set_allocator(flb_avro_allocatorqqq, (void *)avro_pool);
+    avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
     avro_value_iface_t  *aclass = NULL;
     avro_schema_t aschema;
 
     aclass = flb_avro_init(&aobject, (char *)hexstringxx, strlen(hexstringxx), &aschema);
 
+    // this is the return buffer holding the avro encoded data
     // this allocs a large buffer
     // the NULL ptr is at the beginning
-    // en is zero but alloc is large
+    // len is zero but alloc is large
     flb_sds_t memory_buffer = flb_sds_create_size(AVRO_BUFFER_SIZE);
     if (!memory_buffer) {
         flb_errno();
-        avro_pool_destroy(avro_pool);
+        // avro_pool_destroy(avro_pool);
+        mp_destroy(&mp);
         // avro_free(aclass, 0);
         return NULL;
     }
 
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, in_buf, in_size, &off);
+    if (msgpack_unpack_next(&result, in_buf, in_size, &off) != MSGPACK_UNPACK_SUCCESS) {
+        mp_destroy(&mp);
+        return NULL;
+    }
+
     root = &result.data;
 
     // create the avro object
@@ -386,24 +462,27 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
         flb_errno();
         fprintf(stderr,  "Failed msgpack to avro\n");
         flb_sds_destroy(memory_buffer);
-        avro_pool_destroy(avro_pool);
+        // avro_pool_destroy(avro_pool);
+        mp_destroy(&mp);
         msgpack_unpacked_destroy(&result);
         // avro_free(aclass, 0);
         return NULL;
     }
 
     fprintf(stderr,  "before avro_writer_memory\n");
-    //  write one bye of \0
-    //  write 16 bytes schemaid where the schemaid is hex for the written bytes
     awriter = avro_writer_memory(memory_buffer, AVRO_BUFFER_SIZE);
     if (awriter == NULL) {
             fprintf(stderr,  "Unable to init avro writer\n");
             flb_sds_destroy(memory_buffer);
-            avro_pool_destroy(avro_pool);
+            // avro_pool_destroy(avro_pool);
+            mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
             // avro_free(aclass, 0);
             return NULL;
     }
+
+    //  write one bye of \0
+    //  write 16 bytes schemaid where the schemaid is hex for the written bytes
 
     // write the magic byte
     int rval;
@@ -411,7 +490,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     if (rval != 0) {
             fprintf(stderr,  "Unable to write magic byte\n");
             flb_sds_destroy(memory_buffer);
-            avro_pool_destroy(avro_pool);
+            // avro_pool_destroy(avro_pool);
+            mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
             avro_writer_free(awriter);
             // avro_free(aclass, 0);
@@ -433,7 +513,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     if (rval != 0) {
             fprintf(stderr,  "Unable to write schemaid\n");
             flb_sds_destroy(memory_buffer);
-            avro_pool_destroy(avro_pool);
+            // avro_pool_destroy(avro_pool);
+            mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
             avro_writer_free(awriter);
             // avro_free(aclass, 0);
@@ -444,7 +525,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 		// fprintf(stderr,
 			// "Unable to write avro value to memory buffer\nMessage: %s\n", avro_strerror());
         flb_sds_destroy(memory_buffer);
-        avro_pool_destroy(avro_pool);
+        // avro_pool_destroy(avro_pool);
+        mp_destroy(&mp);
         msgpack_unpacked_destroy(&result);
         avro_writer_free(awriter);
         // avro_free(aclass, 0);
@@ -456,7 +538,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     if (rval != 0) {
             fprintf(stderr,  "Unable to null terminate the memory buffer\n");
             flb_sds_destroy(memory_buffer);
-            avro_pool_destroy(avro_pool);
+            // avro_pool_destroy(avro_pool);
+            mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
             avro_writer_free(awriter);
             // avro_free(aclass, 0);
@@ -465,9 +548,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 
     fprintf(stderr,  "before avro_writer_flush\n");
 
+    // avro_writer_flush(awriter);
     int64_t bytes_written = avro_writer_tell(awriter);
-
-    avro_writer_flush(awriter);
 
     // by here the entire object should be fully serialized into the sds buffer
     // msgpack_unpacked_destroy(&result);
@@ -482,7 +564,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 
     // flb_free(memory_buffer);
 
-    avro_pool_destroy(avro_pool);
+    // avro_pool_destroy(avro_pool);
+    mp_destroy(&mp);
     msgpack_unpacked_destroy(&result);
     // class is freed above
     // flb_free(aclass);
