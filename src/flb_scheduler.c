@@ -350,6 +350,14 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data)
         }
     }
 
+    mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        if (request->data == data) {
+            flb_sched_request_destroy(config, request);
+            return 0;
+        }
+    }
+
     return -1;
 }
 

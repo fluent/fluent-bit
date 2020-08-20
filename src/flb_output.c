@@ -557,6 +557,10 @@ int flb_output_set_property(struct flb_output_instance *ins,
                 flb_sds_destroy(tmp);
                 return -1;
             }
+
+            if (limit == 0) {
+                limit = -1;
+            }
         }
 
         flb_sds_destroy(tmp);

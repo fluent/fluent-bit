@@ -280,7 +280,7 @@ uint64_t flb_router_get_routes_mask_by_tag(const char *tag, int tag_len,
              * 
              *    0 |= 1 -> 00000 |= 00001 -> 00001
              *    00001 |= 4 -> 00001 |= 00100 -> 00101
-             */   
+             */
             routes_mask |= o_ins->mask_id;
         }
     }
