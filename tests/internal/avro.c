@@ -9,6 +9,7 @@
 #define AVRO_SINGLE_MAP1 FLB_TESTS_DATA_PATH "/data/avro/json_single_map_001.json"
 #define AVRO_SINGLE_MAPX FLB_TESTS_DATA_PATH "/data/avro/json_single_map_00x.json"
 #define AVRO_REC_REC_MAP FLB_TESTS_DATA_PATH "/data/avro/map_in_record_in_record.json"
+#define AVRO_LIST_REC_REC_MAP FLB_TESTS_DATA_PATH "/data/avro/map_in_record_in_record_in_list.json"
 #define AVRO_TIGHT_SCHEMA FLB_TESTS_DATA_PATH "/data/avro/tight_schema.json"
 #define AVRO_MULTILINE_JSON FLB_TESTS_DATA_PATH "/data/avro/multiline.json"
 
@@ -47,6 +48,25 @@ const char  JSON_REC_REC_MAP_SCHEMA[] =
             {\"name\": \"key003\", \"type\": \"string\"},\
             {\"name\": \"key004\", \"type\":\
                {\"type\": \"map\",\"values\": \"string\"}}]}}]}";
+
+const char  JSON_LIST_REC_REC_MAP_SCHEMA[] =
+"{\"name\": \"qavrov2\",\
+\"type\": \"array\",\
+\"namespace\": \"com.x.kubernetes.docker\",\
+\"items\":\
+{\"type\":\"record\",\
+  \"name\":\"ListRecRecMap\",\
+  \"fields\":[\
+     {\"name\": \"log\", \"type\": \"string\"},\
+     {\"name\": \"kubernetes\", \"type\":\
+        {\"type\":\"record\",\
+         \"name\":\"Map001\",\
+         \"fields\":[\
+            {\"name\": \"key001\", \"type\": \"int\"},\
+            {\"name\": \"key002\", \"type\": \"float\"},\
+            {\"name\": \"key003\", \"type\": \"string\"},\
+            {\"name\": \"key004\", \"type\":\
+               {\"type\": \"map\",\"values\": \"string\"}}]}}]}}";
 
 /* Unpack msgpack per avro schema */
 void test_unpack_to_avro()
@@ -349,9 +369,11 @@ void test_rec_rec_map()
     avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
     avro_schema_t aschema;
 
-    flb_avro_init(&aobject, (char *)JSON_REC_REC_MAP_SCHEMA, strlen(JSON_REC_REC_MAP_SCHEMA), &aschema);
+    // flb_avro_init(&aobject, (char *)JSON_REC_REC_MAP_SCHEMA, strlen(JSON_REC_REC_MAP_SCHEMA), &aschema);
+    flb_avro_init(&aobject, (char *)JSON_LIST_REC_REC_MAP_SCHEMA, strlen(JSON_LIST_REC_REC_MAP_SCHEMA), &aschema);
 
-    data = mk_file_to_buffer(AVRO_REC_REC_MAP);
+    // data = mk_file_to_buffer(AVRO_REC_REC_MAP);
+    data = mk_file_to_buffer(AVRO_LIST_REC_REC_MAP);
     TEST_CHECK(data != NULL);
 
     len = strlen(data);
@@ -365,8 +387,18 @@ void test_rec_rec_map()
     msgpack_object_print(stderr, msg.data);
     flb_msgpack_to_avro(&aobject, &msg.data);
 
+
+    size_t asize = 0;
+    avro_value_get_size(&aobject, &asize);
+    fprintf(stderr, "asize:%zu:\n", asize);
+
+    TEST_CHECK(asize == 1);
+
+    avro_value_t fbRecord;
+    TEST_CHECK(avro_value_get_by_index(&aobject, 0, &fbRecord, NULL) == 0);
+
     avro_value_t log0;
-    TEST_CHECK(avro_value_get_by_name(&aobject, "log", &log0, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_name(&fbRecord, "log", &log0, NULL) == 0);
 
     size_t size1 = 0;
     const char  *log_line = NULL;
@@ -374,7 +406,7 @@ void test_rec_rec_map()
     TEST_CHECK((strcmp(log_line, "log line") == 0));
 
     avro_value_t kubernetes0;
-    TEST_CHECK(avro_value_get_by_name(&aobject, "kubernetes", &kubernetes0, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_name(&fbRecord, "kubernetes", &kubernetes0, NULL) == 0);
 
     avro_value_get_size(&kubernetes0, &size1);
     fprintf(stderr, "asize:%zu:\n", size1);
