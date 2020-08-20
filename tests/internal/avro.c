@@ -8,6 +8,7 @@
 /* AVRO iteration tests */
 #define AVRO_SINGLE_MAP1 FLB_TESTS_DATA_PATH "/data/avro/json_single_map_001.json"
 #define AVRO_SINGLE_MAPX FLB_TESTS_DATA_PATH "/data/avro/json_single_map_00x.json"
+#define AVRO_REC_REC_MAP FLB_TESTS_DATA_PATH "/data/avro/map_in_record_in_record.json"
 #define AVRO_TIGHT_SCHEMA FLB_TESTS_DATA_PATH "/data/avro/tight_schema.json"
 #define AVRO_MULTILINE_JSON FLB_TESTS_DATA_PATH "/data/avro/multiline.json"
 
@@ -30,7 +31,22 @@ const char  JSON_SINGLE_MAP_00X_SCHEMA[] =
      {\"name\": \"key002\", \"type\": \"float\"},\
      {\"name\": \"key003\", \"type\": \"string\"},\
      {\"name\": \"key004\", \"type\":\
-        {\"type\": \"map\",\"values\": \"int\"}}]}";
+        {\"type\": \"map\",\"values\": \"string\"}}]}";
+
+const char  JSON_REC_REC_MAP_SCHEMA[] =
+"{\"type\":\"record\",\
+  \"name\":\"RecRecMap\",\
+  \"fields\":[\
+     {\"name\": \"log\", \"type\": \"string\"},\
+     {\"name\": \"kubernetes\", \"type\":\
+        {\"type\":\"record\",\
+         \"name\":\"Map001\",\
+         \"fields\":[\
+            {\"name\": \"key001\", \"type\": \"int\"},\
+            {\"name\": \"key002\", \"type\": \"float\"},\
+            {\"name\": \"key003\", \"type\": \"string\"},\
+            {\"name\": \"key004\", \"type\":\
+               {\"type\": \"map\",\"values\": \"string\"}}]}}]}";
 
 /* Unpack msgpack per avro schema */
 void test_unpack_to_avro()
@@ -107,11 +123,11 @@ void test_unpack_to_avro()
     TEST_CHECK(asize == 2);
 
     // check the first map
-    avro_value_t mapX;
-    TEST_CHECK(avro_value_get_by_index(&test_value, 0, &mapX, NULL) == 0);
+    avro_value_t k8sRecord;
+    TEST_CHECK(avro_value_get_by_index(&test_value, 0, &k8sRecord, NULL) == 0);
 
     size_t msize = 0;
-    avro_value_get_size(&mapX, &msize);
+    avro_value_get_size(&k8sRecord, &msize);
     fprintf(stderr, "msize:%zu:\n", msize);
 
     TEST_CHECK(msize == 2);
@@ -121,7 +137,7 @@ void test_unpack_to_avro()
     int  actual = 0;
 
     // check the first item in the map
-    TEST_CHECK(avro_value_get_by_index(&mapX, 0, &obj_test, &actual_key) == 0);
+    TEST_CHECK(avro_value_get_by_index(&k8sRecord, 0, &obj_test, &actual_key) == 0);
         fprintf(stderr, "actual_key:%s:\n", actual_key);
 
     TEST_CHECK(strcmp(actual_key, "a") == 0);
@@ -129,7 +145,7 @@ void test_unpack_to_avro()
     TEST_CHECK(actual == 1);
 
     // check the second item in the map
-    TEST_CHECK(avro_value_get_by_index(&mapX, 1, &obj_test, &actual_key) == 0);
+    TEST_CHECK(avro_value_get_by_index(&k8sRecord, 1, &obj_test, &actual_key) == 0);
             fprintf(stderr, "actual_key:%s:\n", actual_key);
 
     TEST_CHECK(strcmp(actual_key, "b") == 0);
@@ -137,9 +153,9 @@ void test_unpack_to_avro()
     TEST_CHECK(actual == 2);
 
     // check the second map
-    TEST_CHECK(avro_value_get_by_index(&test_value, 1, &mapX, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_index(&test_value, 1, &k8sRecord, NULL) == 0);
 
-    avro_value_get_size(&mapX, &msize);
+    avro_value_get_size(&k8sRecord, &msize);
     fprintf(stderr, "msize:%zu:\n", msize);
 
     TEST_CHECK(msize == 2);
@@ -197,12 +213,12 @@ void test_parse_tight_schema()
     avro_value_t record0;
     TEST_CHECK(avro_value_get_by_index(&aobject, 0, &record0, NULL) == 0);
 
-    avro_value_t mapX;
-    TEST_CHECK(avro_value_get_by_name(&record0, "kubernetes", &mapX, NULL) == 0);
+    avro_value_t k8sRecord;
+    TEST_CHECK(avro_value_get_by_name(&record0, "kubernetes", &k8sRecord, NULL) == 0);
 
     // cat ../tests/internal/data/avro/multiline.json | jq .[0].kubernetes.pod_name
     avro_value_t pn;
-    TEST_CHECK(avro_value_get_by_name(&mapX, "pod_name", &pn, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_name(&k8sRecord, "pod_name", &pn, NULL) == 0);
 
     char *pod_name = NULL;
     size_t pod_name_size = 0;
@@ -210,7 +226,7 @@ void test_parse_tight_schema()
     TEST_CHECK(strcmp(pod_name, "yali-bert-completion-tensorboard-6786c9c8-wj25m") == 0);
 
     avro_value_t nn;
-    TEST_CHECK(avro_value_get_by_name(&mapX, "namespace_name", &nn, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_name(&k8sRecord, "namespace_name", &nn, NULL) == 0);
 
     char *namespace_name = NULL;
     size_t namespace_name_size = 0;
@@ -219,12 +235,20 @@ void test_parse_tight_schema()
 
     // "annotations":{"doAs":"stdemb",
     // cat ../tests/internal/data/avro/multiline.json | jq .[0].kubernetes.annotations.doAs
-    avro_value_t annotations;
-    TEST_CHECK(avro_value_get_by_name(&mapX, "annotations", &annotations, NULL) == 0);
+    // avro_value_t annotations;
+    // TEST_CHECK(avro_value_get_by_name(&k8sRecord, "annotations", &annotations, NULL) == 0);
+    avro_value_t mapX;
+    TEST_CHECK(avro_value_get_by_name(&k8sRecord, "annotations", &mapX, NULL) == 0);
 
-    size_t msize = 0;
-    avro_value_get_size(&annotations, &msize);
-    fprintf(stderr, "msize:%zu:\n", msize);
+    size_t asize = 0;
+    avro_value_get_size(&mapX, &asize);
+    fprintf(stderr, "asize:%zu:\n", asize);
+
+    TEST_CHECK(asize == 5);
+
+    // size_t msize = 0;
+    // avro_value_get_size(&annotations, &msize);
+    // fprintf(stderr, "msize:%zu:\n", msize);
 
     // TEST_CHECK(msize == 5);
 
@@ -247,12 +271,9 @@ void test_unpack_to_avrox()
 
     avro_value_t  aobject;
 
-    // AVRO_POOL *ppp = avro_pool_create(1024 * 1024);
     Memory_Pool mp;
-    // mp_init(&mp, 2048, 2048);
     mp_init(&mp, 4096, 4096);
 
-    // avro_set_allocator(flb_avro_allocatorqqq, (void *)ppp);
     avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
     avro_schema_t aschema;
 
@@ -275,33 +296,6 @@ void test_unpack_to_avrox()
     avro_value_t test_value;
     TEST_CHECK(avro_value_get_by_name(&aobject, "key001", &test_value, NULL) == 0);
 
-    int val001 = 0;
-    avro_value_get_int(&test_value, &val001);
-    TEST_CHECK(val001 == 123456789);
-
-    TEST_CHECK(avro_value_get_by_name(&aobject, "key002", &test_value, NULL) == 0);
-
-    float val002 = 0.0f;
-    // for some reason its rounding to this value
-    float val002_actual = 0.999888f;
-    avro_value_get_float(&test_value, &val002);
-    char str1[80];
-    char str2[80];
-    sprintf(str1, "%f", val002);
-    sprintf(str2, "%f", val002_actual);
-    fprintf(stderr, "val002:%s:\n", str1);
-    fprintf(stderr, "val002_actual:%s:\n", str2);
-    TEST_CHECK((strcmp(str1, str2) == 0));
-
-    TEST_CHECK(avro_value_get_by_name(&aobject, "key003", &test_value, NULL) == 0);
-    char *val003 = NULL;
-    size_t val003_size = 0;
-    avro_value_get_string(&test_value, &val003, &val003_size);
-    fprintf(stderr, "val003_size:%zu:\n", val003_size);
-
-    TEST_CHECK((strcmp(val003, "abcdefghijk") == 0));
-    TEST_CHECK(val003_size == 11);
-
     avro_value_t mapX;
     TEST_CHECK(avro_value_get_by_name(&aobject, "key004", &mapX, NULL) == 0);
 
@@ -313,36 +307,120 @@ void test_unpack_to_avrox()
 
     avro_value_t obj_test;
     const char  *actual_key = NULL;
-    int  actual = 0;
 
     // check the first item in the map
     TEST_CHECK(avro_value_get_by_index(&mapX, 0, &obj_test, &actual_key) == 0);
-        fprintf(stderr, "actual_key:%s:\n", actual_key);
+    fprintf(stderr, "actual_key:%s:\n", actual_key);
 
+    size_t size1 = 0;
     TEST_CHECK(strcmp(actual_key, "a") == 0);
-    TEST_CHECK(avro_value_get_int(&obj_test, &actual) == 0);
-    TEST_CHECK(actual == 1);
+    TEST_CHECK(avro_value_get_string(&obj_test, &actual_key, &size1) == 0);
+    TEST_CHECK((strcmp(actual_key, "ede") == 0));
+
 
     // check the second item in the map
     TEST_CHECK(avro_value_get_by_index(&mapX, 1, &obj_test, &actual_key) == 0);
-            fprintf(stderr, "actual_key:%s:\n", actual_key);
+    fprintf(stderr, "actual_key:%s:\n", actual_key);
 
+    size_t size2 = 0;
     TEST_CHECK(strcmp(actual_key, "b") == 0);
-    TEST_CHECK(avro_value_get_int(&obj_test, &actual) == 0);
-    TEST_CHECK(actual == 2);
+    TEST_CHECK(avro_value_get_string(&obj_test, &actual_key, &size2) == 0);
+    TEST_CHECK((strcmp(actual_key, "dkjdkj") == 0));
 
-    // avro_pool_destroy(ppp);
     mp_destroy(&mp);
     msgpack_unpacked_destroy(&msg);
-    // flb_free(aclass);
+    flb_free(data);
+    flb_free(out_buf);
+}
+
+void test_rec_rec_map()
+{
+    int root_type;
+    size_t len;
+    char *data;
+    char *out_buf;
+    size_t out_size;
+
+    avro_value_t  aobject;
+
+    Memory_Pool mp;
+    mp_init(&mp, 4096, 4096);
+
+    avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
+    avro_schema_t aschema;
+
+    flb_avro_init(&aobject, (char *)JSON_REC_REC_MAP_SCHEMA, strlen(JSON_REC_REC_MAP_SCHEMA), &aschema);
+
+    data = mk_file_to_buffer(AVRO_REC_REC_MAP);
+    TEST_CHECK(data != NULL);
+
+    len = strlen(data);
+
+    TEST_CHECK(flb_pack_json(data, len, &out_buf, &out_size, &root_type) == 0);
+
+    msgpack_unpacked msg;
+    msgpack_unpacked_init(&msg);
+    TEST_CHECK(msgpack_unpack_next(&msg, out_buf, out_size, NULL) == MSGPACK_UNPACK_SUCCESS);
+
+    msgpack_object_print(stderr, msg.data);
+    flb_msgpack_to_avro(&aobject, &msg.data);
+
+    avro_value_t log0;
+    TEST_CHECK(avro_value_get_by_name(&aobject, "log", &log0, NULL) == 0);
+
+    size_t size1 = 0;
+    const char  *log_line = NULL;
+    TEST_CHECK(avro_value_get_string(&log0, &log_line, &size1) == 0);
+    TEST_CHECK((strcmp(log_line, "log line") == 0));
+
+    avro_value_t kubernetes0;
+    TEST_CHECK(avro_value_get_by_name(&aobject, "kubernetes", &kubernetes0, NULL) == 0);
+
+    avro_value_get_size(&kubernetes0, &size1);
+    fprintf(stderr, "asize:%zu:\n", size1);
+    TEST_CHECK(size1 == 4);
+
+    avro_value_t test_value;
+    TEST_CHECK(avro_value_get_by_name(&kubernetes0, "key001", &test_value, NULL) == 0);
+
+    avro_value_t mapX;
+    TEST_CHECK(avro_value_get_by_name(&kubernetes0, "key004", &mapX, NULL) == 0);
+
+    avro_value_get_size(&mapX, &size1);
+    fprintf(stderr, "asize:%zu:\n", size1);
+
+    TEST_CHECK(size1 == 2);
+
+    avro_value_t obj_test;
+    const char  *actual_key = NULL;
+
+    // check the first item in the map
+    TEST_CHECK(avro_value_get_by_index(&mapX, 0, &obj_test, &actual_key) == 0);
+    fprintf(stderr, "actual_key:%s:\n", actual_key);
+
+    TEST_CHECK(strcmp(actual_key, "a") == 0);
+    TEST_CHECK(avro_value_get_string(&obj_test, &actual_key, &size1) == 0);
+    TEST_CHECK((strcmp(actual_key, "ede") == 0));
+
+    // check the second item in the map
+    TEST_CHECK(avro_value_get_by_index(&mapX, 1, &obj_test, &actual_key) == 0);
+    fprintf(stderr, "actual_key:%s:\n", actual_key);
+
+    TEST_CHECK(strcmp(actual_key, "b") == 0);
+    TEST_CHECK(avro_value_get_string(&obj_test, &actual_key, &size1) == 0);
+    TEST_CHECK((strcmp(actual_key, "dkjdkj") == 0));
+
+    mp_destroy(&mp);
+    msgpack_unpacked_destroy(&msg);
     flb_free(data);
     flb_free(out_buf);
 }
 
 TEST_LIST = {
     /* Avro */
-    // { "msgpack_to_avro", test_unpack_to_avro},
+    // { "msgpack_to_avro_basic", test_unpack_to_avro},
     // { "avro_tight_schema", test_parse_tight_schema},
-    { "msgpack_to_avrox", test_unpack_to_avrox},
+    // { "msgpack_to_avrox", test_unpack_to_avrox},
+    { "rec_rec_map", test_rec_rec_map},
     { 0 }
 };
