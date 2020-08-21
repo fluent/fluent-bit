@@ -866,6 +866,13 @@ static inline int extract_meta(struct flb_kube *ctx,
             off += meta->container_name_len;
         }
 
+        if (ctx->use_docker_id && meta->docker_id) {
+            /* Separator */
+            meta->cache_key[off++] = ':';
+            memcpy(meta->cache_key + off, meta->docker_id, meta->docker_id_len);
+            off += meta->docker_id_len;
+        }
+
         meta->cache_key[off] = '\0';
         meta->cache_key_len = off;
     }
