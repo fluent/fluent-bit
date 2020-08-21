@@ -20,6 +20,7 @@ RUN apt-get update && \
     libsasl2-dev \
     pkg-config \
     libsystemd-dev \
+    libzstd-dev \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
