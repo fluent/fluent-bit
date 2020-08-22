@@ -239,6 +239,43 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 
     /* Prepare Statement */
     if (ctx->db) {
+        /* SQL_GET_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_GET_FILE,
+                                 -1,
+                                 &ctx->stmt_get_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_INSERT_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_INSERT_FILE,
+                                 -1,
+                                 &ctx->stmt_insert_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_ROTATE_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_ROTATE_FILE,
+                                 -1,
+                                 &ctx->stmt_rotate_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_UPDATE_OFFSET */
         ret = sqlite3_prepare_v2(ctx->db->handler,
                                  SQL_UPDATE_OFFSET,
                                  -1,
@@ -249,6 +286,19 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
             flb_tail_config_destroy(ctx);
             return NULL;
         }
+
+        /* SQL_DELETE_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_DELETE_FILE,
+                                 -1,
+                                 &ctx->stmt_delete_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
     }
 #endif
 
@@ -285,6 +335,10 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
 #ifdef FLB_HAVE_SQLDB
     if (config->db != NULL) {
+        sqlite3_finalize(config->stmt_get_file);
+        sqlite3_finalize(config->stmt_insert_file);
+        sqlite3_finalize(config->stmt_delete_file);
+        sqlite3_finalize(config->stmt_rotate_file);
         sqlite3_finalize(config->stmt_offset);
         flb_tail_db_close(config->db);
     }

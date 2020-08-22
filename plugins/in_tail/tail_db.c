@@ -84,55 +84,99 @@ int flb_tail_db_close(struct flb_sqldb *db)
     return 0;
 }
 
-
-static int cb_file_check(void *data, int argc, char **argv, char **cols)
+/*
+ * Check if an file inode exists in the database. Return FLB_TRUE or
+ * FLB_FALSE
+ */
+static int db_file_exists(struct flb_tail_file *file,
+                          struct flb_tail_config *ctx,
+                          uint64_t *id, uint64_t *inode, off_t *offset)
 {
-    struct query_status *qs = data;
+    int ret;
+    int exists = FLB_FALSE;
 
-    qs->id = atoi(argv[0]);      /* id column */
-    qs->offset = atoll(argv[2]); /* offset column */
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_get_file, 1, file->inode);
+    ret = sqlite3_step(ctx->stmt_get_file);
 
-    qs->rows++;
-    return 0;
+    if (ret == SQLITE_ROW) {
+        exists = FLB_TRUE;
+
+        /* id: column 0 */
+        *id = sqlite3_column_int64(ctx->stmt_get_file, 0);
+
+        /* offset: column 2 */
+        *offset = sqlite3_column_int64(ctx->stmt_get_file, 2);
+
+        /* inode: column 3 */
+        *inode = sqlite3_column_int64(ctx->stmt_get_file, 3);
+    }
+    else if (ret == SQLITE_DONE) {
+        /* all good */
+    }
+    else {
+        exists = -1;
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_get_file);
+    sqlite3_reset(ctx->stmt_get_file);
+
+    return exists;
+
+}
+
+static int db_file_insert(struct flb_tail_file *file, struct flb_tail_config *ctx)
+
+{
+    int ret;
+    time_t created;
+
+    /* Register the file */
+    created = time(NULL);
+
+    /* Bind parameters */
+    sqlite3_bind_text(ctx->stmt_insert_file, 1, file->name, -1, 0);
+    sqlite3_bind_int64(ctx->stmt_insert_file, 2, file->offset);
+    sqlite3_bind_int64(ctx->stmt_insert_file, 3, file->inode);
+    sqlite3_bind_int64(ctx->stmt_insert_file, 4, created);
+
+    /* Run the insert */
+    ret = sqlite3_step(ctx->stmt_insert_file);
+    if (ret != SQLITE_DONE) {
+        flb_plg_error(ctx->ins, "cannot execute insert file %s inode=%lu",
+                      file->name, file->inode);
+        return -1;
+    }
+
+    /* Get the database ID for this file */
+    return flb_sqldb_last_id(ctx->db);
 }
 
 int flb_tail_db_file_set(struct flb_tail_file *file,
                          struct flb_tail_config *ctx)
 {
     int ret;
-    char query[PATH_MAX];
-    struct query_status qs = {0};
-    uint64_t created;
+    uint64_t id = 0;
+    off_t offset = 0;
+    uint64_t inode = 0;
 
     /* Check if the file exists */
-    snprintf(query, sizeof(query) - 1, SQL_GET_FILE, (uint64_t) file->inode);
-    memset(&qs, '\0', sizeof(qs));
-    ret = flb_sqldb_query(ctx->db,
-                          query, cb_file_check, &qs);
-    if (ret == FLB_ERROR) {
-        flb_plg_error(ctx->ins, "cannot execute SQL: %s", query);
+    ret = db_file_exists(file, ctx, &id, &inode, &offset);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot execute query to check inode: %lu",
+                      file->inode);
         return -1;
     }
 
-    if (qs.rows == 0) {
-        /* Register the file */
-        created = time(NULL);
-        snprintf(query, sizeof(query) - 1,
-                 SQL_INSERT_FILE,
-                 file->name, (uint64_t) 0, (uint64_t) file->inode, created);
-        ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
-        if (ret == FLB_ERROR) {
-            flb_plg_error(ctx->ins, "cannot execute SQL: %s", query);
-            return -1;
-        }
-
+    if (ret == FLB_FALSE) {
         /* Get the database ID for this file */
-        file->db_id = flb_sqldb_last_id(ctx->db);
-        return 0;
+        file->db_id = db_file_insert(file, ctx);
+    }
+    else {
+        file->db_id = id;
+        file->offset = offset;
     }
 
-    file->db_id  = qs.id;
-    file->offset = qs.offset;
     return 0;
 }
 
@@ -148,32 +192,45 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
 
     ret = sqlite3_step(ctx->stmt_offset);
 
-    sqlite3_clear_bindings(ctx->stmt_offset);
-    sqlite3_reset(ctx->stmt_offset);
-
     if (ret != SQLITE_DONE) {
+        sqlite3_clear_bindings(ctx->stmt_offset);
+        sqlite3_reset(ctx->stmt_offset);
         return -1;
     }
+
+    /* Verify number of updated rows */
+    ret = sqlite3_changes(ctx->db->handler);
+    if (ret == 0) {
+        /*
+         * 'someone' like you 'the reader' or another user has deleted the database
+         * entry, just restore it.
+         */
+        file->db_id = db_file_insert(file, ctx);
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_offset);
+    sqlite3_reset(ctx->stmt_offset);
 
     return 0;
 }
 
-/* Mark a file as rotated */
+/* Mark a file as rotated v2 */
 int flb_tail_db_file_rotate(const char *new_name,
                             struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {
     int ret;
-    char query[PATH_MAX];
-    struct query_status qs = {0};
 
-    snprintf(query, sizeof(query) - 1,
-             SQL_ROTATE_FILE,
-             new_name, file->db_id);
+    /* Bind parameters */
+    sqlite3_bind_text(ctx->stmt_rotate_file, 1, new_name, -1, 0);
+    sqlite3_bind_int64(ctx->stmt_rotate_file, 2, file->db_id);
 
-    ret = flb_sqldb_query(ctx->db,
-                          query, cb_file_check, &qs);
-    if (ret != FLB_OK) {
+    ret = sqlite3_step(ctx->stmt_rotate_file);
+
+    sqlite3_clear_bindings(ctx->stmt_rotate_file);
+    sqlite3_reset(ctx->stmt_rotate_file);
+
+    if (ret != SQLITE_DONE) {
         return -1;
     }
 
@@ -185,12 +242,15 @@ int flb_tail_db_file_delete(struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {
     int ret;
-    char query[PATH_MAX];
 
-    /* Check if the file exists */
-    snprintf(query, sizeof(query) - 1, SQL_DELETE_FILE, file->db_id);
-    ret = flb_sqldb_query(ctx->db, query, NULL, NULL);
-    if (ret != FLB_OK) {
+    /* Bind parameters */
+    sqlite3_bind_int64(ctx->stmt_delete_file, 1, file->db_id);
+    ret = sqlite3_step(ctx->stmt_delete_file);
+
+    sqlite3_clear_bindings(ctx->stmt_delete_file);
+    sqlite3_reset(ctx->stmt_delete_file);
+
+    if (ret != SQLITE_DONE) {
         flb_plg_error(ctx->ins, "db: error deleting entry from database: %s",
                       file->name);
         return -1;
