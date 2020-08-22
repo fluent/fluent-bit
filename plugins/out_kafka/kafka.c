@@ -110,6 +110,10 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object val;
     flb_sds_t s;
 
+    fprintf(stderr, "in produce_message\n");
+    msgpack_object_print(stderr, *map);
+
+
     /* Init temporal buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -254,7 +258,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_size = flb_sds_len(s);
     }
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
-        flb_plg_debug(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
+        flb_plg_info(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
 
         // flb_plg_info(ctx->ins, "avro topis:%s:schema ID:%s:\n",
         //     rd_kafka_topic_name(topic->tp), ctx->avro_schema_id);
@@ -269,8 +273,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         }
         out_buf = s;
         out_size = flb_sds_len(s);
+        // beware: note the shitty +19 thing below, it just skips the shemaid header frame which is binary
+        fprintf(stderr, "back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf+19);
     }
-    // fprintf(stderr, "back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf);
 
     if (!message_key) {
         message_key = ctx->message_key;
@@ -307,6 +312,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                            out_buf, out_size,
                            message_key, message_key_len,
                            ctx);
+fprintf(stderr, "QQQJJJ:%zu:\n", ret);
+
     if (ret == -1) {
         fprintf(stderr,
                 "%% Failed to produce to topic %s: %s\n",

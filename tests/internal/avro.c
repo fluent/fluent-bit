@@ -11,7 +11,8 @@
 #define AVRO_REC_REC_MAP FLB_TESTS_DATA_PATH "/data/avro/map_in_record_in_record.json"
 #define AVRO_LIST_REC_REC_MAP FLB_TESTS_DATA_PATH "/data/avro/map_in_record_in_record_in_list.json"
 #define AVRO_TIGHT_SCHEMA FLB_TESTS_DATA_PATH "/data/avro/tight_schema.json"
-#define AVRO_MULTILINE_JSON FLB_TESTS_DATA_PATH "/data/avro/multiline.json"
+// #define AVRO_MULTILINE_JSON FLB_TESTS_DATA_PATH "/data/avro/multiline.json"
+#define AVRO_MULTILINE_JSON FLB_TESTS_DATA_PATH "/data/avro/live-sample.json"
 
 const char  JSON_SINGLE_MAP_001_SCHEMA[] =
 "{\"type\":\"record\",\
@@ -69,7 +70,8 @@ const char  JSON_LIST_REC_REC_MAP_SCHEMA[] =
                {\"type\": \"map\",\"values\": \"string\"}}]}}]}}";
 
 const char QQQq[] = "{\"name\": \"qavrov2\",\"type\": \"array\",\"namespace\": \"com.x.kubernetes.docker\",\"items\":{\"name\":\"qavrov2_record\",\"type\":\"record\",\"fields\":[{\"name\":\"date\",\"type\":\"float\"},{\"name\":\"log\",\"type\":\"string\"},{\"name\":\"kubernetes\",\"type\":{\"name\":\"krec\",\"type\":\"record\",\"fields\":[{\"name\":\"pod_name\",\"type\":\"string\"},{\"name\":\"namespace_name\",\"type\":\"string\"},{\"name\":\"pod_id\",\"type\":\"string\"},{\"name\":\"host\",\"type\":\"string\"},{\"name\":\"container_name\",\"type\":\"string\"},{\"name\":\"docker_id\",\"type\":\"string\"},{\"name\":\"container_hash\",\"type\":\"string\"},{\"name\":\"container_image\",\"type\":\"string\"},{\"name\":\"labels\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"annotations\",\"type\":{\"type\":\"map\",\"values\":\"string\"}}]}}]}}";
-const char QQQ[] = "{\"name\": \"qavrov2\",\"type\": \"array\",\"namespace\": \"com.x.kubernetes.docker\",\"items\":{\"name\":\"qavrov2_record\",\"type\":\"record\",\"fields\":[{\"name\":\"date\",\"type\":\"float\"},{\"name\":\"log\",\"type\":\"string\"},{\"name\":\"kubernetes\",\"type\":{\"name\":\"krec\",\"type\":\"record\",\"fields\":[{\"name\":\"pod_name\",\"type\":\"string\"},{\"name\":\"namespace_name\",\"type\":\"string\"},{\"name\":\"pod_id\",\"type\":\"string\"},{\"name\":\"labels\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"annotations\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"host\",\"type\":\"string\"},{\"name\":\"container_name\",\"type\":\"string\"},{\"name\":\"docker_id\",\"type\":\"string\"},{\"name\":\"container_hash\",\"type\":\"string\"},{\"name\":\"container_image\",\"type\":\"string\"}]}}]}}";
+// const char QQQ[] = "{\"name\":\"qavrov2\",\"type\":\"array\",\"namespace\":\"com.x.kubernetes.docker\",\"items\":{\"name\":\"qavrov2_record\",\"type\":\"record\",\"fields\":[{\"name\":\"log\",\"type\":\"string\"},{\"name\":\"capture\",\"type\":\"string\"},{\"name\":\"kubernetes\",\"type\":{\"name\":\"krec\",\"type\":\"record\",\"fields\":[{\"name\":\"pod_name\",\"type\":\"string\"},{\"name\":\"namespace_name\",\"type\":\"string\"},{\"name\":\"pod_id\",\"type\":\"string\"},{\"name\":\"labels\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"annotations\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"host\",\"type\":\"string\"},{\"name\":\"container_name\",\"type\":\"string\"},{\"name\":\"docker_id\",\"type\":\"string\"},{\"name\":\"container_hash\",\"type\":\"string\"},{\"name\":\"container_image\",\"type\":\"string\"}]}}]}}";
+const char QQQ[] = "{\"name\":\"qavrov2_record\",\"type\":\"record\",\"fields\":[{\"name\":\"log\",\"type\":\"string\"},{\"name\":\"capture\",\"type\":\"string\"},{\"name\":\"kubernetes\",\"type\":{\"name\":\"krec\",\"type\":\"record\",\"fields\":[{\"name\":\"pod_name\",\"type\":\"string\"},{\"name\":\"namespace_name\",\"type\":\"string\"},{\"name\":\"pod_id\",\"type\":\"string\"},{\"name\":\"labels\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"annotations\",\"type\":{\"type\":\"map\",\"values\":\"string\"}},{\"name\":\"host\",\"type\":\"string\"},{\"name\":\"container_name\",\"type\":\"string\"},{\"name\":\"docker_id\",\"type\":\"string\"},{\"name\":\"container_hash\",\"type\":\"string\"},{\"name\":\"container_image\",\"type\":\"string\"}]}}]}";
 
 /* Unpack msgpack per avro schema */
 void test_unpack_to_avro()
@@ -234,37 +236,32 @@ void test_parse_tight_schema()
 
     flb_msgpack_to_avro(&aobject, &msg.data);
 
-    size_t asize = 0;
-    avro_value_get_size(&aobject, &asize);
-    fprintf(stderr, "asize:%zu:\n", asize);
-    TEST_CHECK(asize == 1);
+    // size_t asize = 0;
+    // avro_value_get_size(&aobject, &asize);
+    // fprintf(stderr, "asize:%zu:\n", asize);
+    // TEST_CHECK(asize == 1);
 
-    avro_value_t fbRecord;
-    TEST_CHECK(avro_value_get_by_index(&aobject, 0, &fbRecord, NULL) == 0);
+    // avro_value_t fbRecord;
+    // TEST_CHECK(avro_value_get_by_index(&aobject, 0, &fbRecord, NULL) == 0);
 
     avro_value_t log0;
-    TEST_CHECK(avro_value_get_by_name(&fbRecord, "log", &log0, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_name(&aobject, "log", &log0, NULL) == 0);
 
     size_t size1 = 0;
     const char  *log_line = NULL;
     TEST_CHECK(avro_value_get_string(&log0, &log_line, &size1) == 0);
-    // TEST_CHECK((strspn(log_line, "log line") == 0));
-    char *pre = "2020-08-19T21:06:24.337499838Z stderr F";
+    char *pre = "2020-08-21T15:49:48.154291375Z";
     TEST_CHECK((strncmp(pre, log_line, strlen(pre)) == 0));
     fprintf(stderr, "log_line len:%zu:\n", strlen(log_line));
     // TEST_CHECK((strlen(log_line) == 2344));
 
     avro_value_t kubernetes0;
-    TEST_CHECK(avro_value_get_by_name(&fbRecord, "kubernetes", &kubernetes0, NULL) == 0);
+    TEST_CHECK(avro_value_get_by_name(&aobject, "kubernetes", &kubernetes0, NULL) == 0);
 
     avro_value_get_size(&kubernetes0, &size1);
     fprintf(stderr, "asize:%zu:\n", size1);
-    // TEST_CHECK(size1 == 10);
+    TEST_CHECK(size1 == 10);
 
-    // avro_value_t k8sRecord;
-    // TEST_CHECK(avro_value_get_by_name(&record0, "kubernetes", &k8sRecord, NULL) == 0);
-
-    // // cat ../tests/internal/data/avro/multiline.json | jq .[0].kubernetes.pod_name
     avro_value_t pn;
     TEST_CHECK(avro_value_get_by_name(&kubernetes0, "pod_name", &pn, NULL) == 0);
 
@@ -273,18 +270,13 @@ void test_parse_tight_schema()
     TEST_CHECK(avro_value_get_string(&pn, &pod_name, &pod_name_size) == 0);
     TEST_CHECK(strcmp(pod_name, "yali-bert-completion-tensorboard-6786c9c8-wj25m") == 0);
 
-    // avro_value_t nn;
-    // TEST_CHECK(avro_value_get_by_name(&k8sRecord, "namespace_name", &nn, NULL) == 0);
+    avro_value_t nn;
+    TEST_CHECK(avro_value_get_by_name(&kubernetes0, "namespace_name", &nn, NULL) == 0);
 
-    // char *namespace_name = NULL;
-    // size_t namespace_name_size = 0;
-    // TEST_CHECK(avro_value_get_string(&nn, &namespace_name, &namespace_name_size) == 0);
-    // TEST_CHECK(strcmp(namespace_name, "k8s-pilot") == 0);
-
-    // // "annotations":{"doAs":"stdemb",
-    // // cat ../tests/internal/data/avro/multiline.json | jq .[0].kubernetes.annotations.doAs
-    // avro_value_t annotations;
-    // TEST_CHECK(avro_value_get_by_name(&k8sRecord, "annotations", &annotations, NULL) == 0);
+    char *namespace_name = NULL;
+    size_t namespace_name_size = 0;
+    TEST_CHECK(avro_value_get_string(&nn, &namespace_name, &namespace_name_size) == 0);
+    TEST_CHECK(strcmp(namespace_name, "k8s-pilot") == 0);
 
     avro_value_t mapX;
     TEST_CHECK(avro_value_get_by_name(&kubernetes0, "annotations", &mapX, NULL) == 0);
@@ -294,19 +286,13 @@ void test_parse_tight_schema()
 
     TEST_CHECK(size1 == 5);
 
-    // // size_t msize = 0;
-    // // avro_value_get_size(&annotations, &msize);
-    // // fprintf(stderr, "msize:%zu:\n", msize);
-
-    // // TEST_CHECK(msize == 5);
-
-    // // check the first item in the map
-    // // const char  *actual_key = NULL;
-    // // avro_value_t doas;
-    // // TEST_CHECK(avro_value_get_by_name(&annotations, "doAs", &doas, &actual_key) == 0);
-    // // fprintf(stderr, "actual_key:%s:\n", actual_key);
-    // // TEST_CHECK(strcmp(actual_key, "doAs") == 0);
-
+    // check the first item in the map
+    avro_value_t doas;
+    TEST_CHECK(avro_value_get_by_name(&mapX, "doAs", &doas, NULL) == 0);
+    char *doaser = NULL;
+    size_t doaser_size;
+    TEST_CHECK(avro_value_get_string(&doas, &doaser, &doaser_size) == 0);
+    TEST_CHECK((strcmp(doaser, "stdemb") == 0));
 }
 
 void test_unpack_to_avrox()

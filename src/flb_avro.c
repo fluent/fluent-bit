@@ -442,10 +442,16 @@ int flb_msgpack_to_avro(avro_value_t *val, msgpack_object *o)
 flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const char *hexstringxx, char* schema_json)
 {
     // size_t off = 0;
-    size_t out_size;
+    // size_t out_size;
     msgpack_unpacked result;
     msgpack_object *root;
     // avro_value_t avalue;
+    // flb_sds_t out_buff;
+
+#define AVRO_BUFFER_SIZE 1024 * 1024 * 1024
+    // char out_buff[AVRO_BUFFER_SIZE];
+    char *out_buff = flb_malloc(AVRO_BUFFER_SIZE);
+
     avro_writer_t awriter;
     size_t schema_json_len = strlen(schema_json);
 
@@ -455,14 +461,13 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 
     assert(in_buf != NULL);
 
-#define AVRO_BUFFER_SIZE 1024 * 1024 * 1024
     // AVRO_POOL *avro_pool = avro_pool_create(AVRO_BUFFER_SIZE);
-    Memory_Pool mp;
+    // Memory_Pool mp;
     // mp_init(&mp, 2048, 2048);
-    mp_init(&mp, 4096, 4096);
+    // mp_init(&mp, 4096, 4096);
 
     // avro_set_allocator(flb_avro_allocatorqqq, (void *)avro_pool);
-    avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
+    // avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
     avro_value_iface_t  *aclass = NULL;
     avro_schema_t aschema;
 
@@ -470,7 +475,7 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
 
     if (!aclass) {
         fprintf(stderr,  "Failed init avro:%s:n", avro_strerror());
-        mp_destroy(&mp);
+        // mp_destroy(&mp);
         return NULL;
     }
 
@@ -478,20 +483,27 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     // this allocs a large buffer
     // the NULL ptr is at the beginning
     // len is zero but alloc is large
-    flb_sds_t out_buff = flb_sds_create_size(AVRO_BUFFER_SIZE);
-    if (!out_buff) {
-        flb_errno();
-        // avro_pool_destroy(avro_pool);
-        mp_destroy(&mp);
-        // avro_free(aclass, 0);
-        return NULL;
-    }
+    // out_buff = flb_sds_create_size(AVRO_BUFFER_SIZE);
+    // if (!out_buff) {
+    //     flb_errno();
+    //     // avro_pool_destroy(avro_pool);
+    //     mp_destroy(&mp);
+    //     // avro_free(aclass, 0);
+    //     return NULL;
+    // }
+
+    // fprintf(stderr, "initial flb sds:\n");
+    // fprintf(stderr,  "sds len:%zu:\n", flb_sds_len(out_buff));
+    // fprintf(stderr,  "sds alloc:%zu:\n", flb_sds_alloc(out_buff));
+    // fprintf(stderr,  "sds avail:%zu:\n", flb_sds_avail(out_buff));
 
     msgpack_unpacked_init(&result);
     // if (msgpack_unpack_next(&result, in_buf, in_size, &off) != MSGPACK_UNPACK_SUCCESS) {
     if (msgpack_unpack_next(&result, in_buf, in_size, NULL) != MSGPACK_UNPACK_SUCCESS) {
         fprintf(stderr,  "msgpack_unpack problem\n");
-        mp_destroy(&mp);
+        avro_free(aclass, 0);
+
+        // mp_destroy(&mp);
         return NULL;
     }
 
@@ -504,11 +516,11 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     if (flb_msgpack_to_avro(&aobject, root) != FLB_TRUE) {
         flb_errno();
         fprintf(stderr,  "Failed msgpack to avro\n");
-        flb_sds_destroy(out_buff);
+        // flb_sds_destroy(out_buff);
         // avro_pool_destroy(avro_pool);
-        mp_destroy(&mp);
+        // mp_destroy(&mp);
         msgpack_unpacked_destroy(&result);
-        // avro_free(aclass, 0);
+        avro_free(aclass, 0);
         return NULL;
     }
 
@@ -516,11 +528,11 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     awriter = avro_writer_memory(out_buff, AVRO_BUFFER_SIZE);
     if (awriter == NULL) {
             fprintf(stderr,  "Unable to init avro writer\n");
-            flb_sds_destroy(out_buff);
+            // flb_sds_destroy(out_buff);
             // avro_pool_destroy(avro_pool);
-            mp_destroy(&mp);
+            // mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
-            // avro_free(aclass, 0);
+            avro_free(aclass, 0);
             return NULL;
     }
 
@@ -531,12 +543,12 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     rval = avro_write(awriter, "\0", 1);
     if (rval != 0) {
             fprintf(stderr,  "Unable to write magic byte\n");
-            flb_sds_destroy(out_buff);
+            // flb_sds_destroy(out_buff);
             // avro_pool_destroy(avro_pool);
-            mp_destroy(&mp);
+            // mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
             avro_writer_free(awriter);
-            // avro_free(aclass, 0);
+            avro_free(aclass, 0);
             return NULL;
     }
 
@@ -554,60 +566,56 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     rval = avro_write(awriter, val, 16);
     if (rval != 0) {
             fprintf(stderr,  "Unable to write schemaid\n");
-            flb_sds_destroy(out_buff);
+            // flb_sds_destroy(out_buff);
             // avro_pool_destroy(avro_pool);
-            mp_destroy(&mp);
+            // mp_destroy(&mp);
             msgpack_unpacked_destroy(&result);
             avro_writer_free(awriter);
-            // avro_free(aclass, 0);
+            avro_free(aclass, 0);
             return NULL;
     }
 
 	if (avro_value_write(awriter, &aobject)) {
 		// fprintf(stderr,
 			// "Unable to write avro value to memory buffer\nMessage: %s\n", avro_strerror());
-        flb_sds_destroy(out_buff);
+        // flb_sds_destroy(out_buff);
         // avro_pool_destroy(avro_pool);
-        mp_destroy(&mp);
+        // mp_destroy(&mp);
         msgpack_unpacked_destroy(&result);
         avro_writer_free(awriter);
-        // avro_free(aclass, 0);
+        avro_free(aclass, 0);
 		return NULL;
 	}
 
     // null terminate it
-    rval = avro_write(awriter, "\0", 1);
-    if (rval != 0) {
-            fprintf(stderr,  "Unable to null terminate the memory buffer\n");
-            flb_sds_destroy(out_buff);
-            // avro_pool_destroy(avro_pool);
-            mp_destroy(&mp);
-            msgpack_unpacked_destroy(&result);
-            avro_writer_free(awriter);
-            // avro_free(aclass, 0);
-            return NULL;
-    }
+    // rval = avro_write(awriter, "\0", 1);
+    // if (rval != 0) {
+    //         fprintf(stderr,  "Unable to null terminate the memory buffer\n");
+    //         // flb_sds_destroy(out_buff);
+    //         // avro_pool_destroy(avro_pool);
+    //         mp_destroy(&mp);
+    //         msgpack_unpacked_destroy(&result);
+    //         avro_writer_free(awriter);
+    //         // avro_free(aclass, 0);
+    //         return NULL;
+    // }
 
     fprintf(stderr,  "before avro_writer_flush\n");
 
-    // avro_writer_flush(awriter);
+    avro_writer_flush(awriter);
+
     int64_t bytes_written = avro_writer_tell(awriter);
 
     // by here the entire object should be fully serialized into the sds buffer
     // msgpack_unpacked_destroy(&result);
     avro_writer_free(awriter);
-    // avro_free(aclass, 0);
- 
-    fprintf(stderr,  "after memory free\n");
-
-    // out_buf = flb_sds_create_len(out_buff, bytes_written + 1);
-    // out_buf = flb_sds_alloc(out_buff, bytes_written + 1);
-    flb_sds_len_set(out_buff, bytes_written);
-
+    avro_value_decref(&aobject);
+	avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
     // flb_free(out_buff);
 
     // avro_pool_destroy(avro_pool);
-    mp_destroy(&mp);
+    // mp_destroy(&mp);
     msgpack_unpacked_destroy(&result);
     // class is freed above
     // flb_free(aclass);
@@ -615,7 +623,28 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     // flb_free(data);
     // in_buf is coming in from an sbuf that's freed by the caller
     // flb_free(in_buf);
+ 
+    fprintf(stderr,  "after memory free:bytes written:%zu:\n", bytes_written);
 
-    return out_buff;
+    // out_buf = flb_sds_create_len(out_buff, bytes_written + 1);
+    // out_buf = flb_sds_alloc(out_buff, bytes_written + 1);
+    // flb_sds_len_set(out_buff, bytes_written);
+
+    // fprintf(stderr, "final flb sds:\n");
+    // fprintf(stderr,  "sds len:%zu:\n", flb_sds_len(out_buff));
+    // fprintf(stderr,  "sds alloc:%zu:\n", flb_sds_alloc(out_buff));
+    // fprintf(stderr,  "sds avail:%zu:\n", flb_sds_avail(out_buff));
+
+    // flb_sds_t qqq =  flb_sds_create_len(out_buff, flb_sds_len(out_buff));
+    flb_sds_t qqq =  flb_sds_create_len(out_buff, bytes_written + 1);
+
+    flb_free(out_buff);
+
+    fprintf(stderr, "shrunk flb sds:\n");
+    fprintf(stderr,  "sds len:%zu:\n", flb_sds_len(qqq));
+    fprintf(stderr,  "sds alloc:%zu:\n", flb_sds_alloc(qqq));
+    fprintf(stderr,  "sds avail:%zu:\n", flb_sds_avail(qqq));
+
+    return qqq;
 
 }
