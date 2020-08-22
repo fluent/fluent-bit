@@ -199,24 +199,12 @@ void test_parse_tight_schema()
     size_t len;
     char *out_buf;
     size_t out_size;
-    // char *schema_buff;
-    // char *data;
 
     avro_value_t  aobject;
 
-    Memory_Pool mp;
-    mp_init(&mp, 4096, 4096);
-
-    avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
     avro_value_iface_t  *aclass = NULL;
     avro_schema_t aschema;
 
-    // char *schema_buff = mk_file_to_buffer(AVRO_TIGHT_SCHEMA);
-    // TEST_CHECK(schema_buff != NULL);
-
-    // fprintf(stderr, "tight schema:%s:\n", schema_buff);
-
-    // aclass = flb_avro_init(&aobject, (char *)schema_buff, strlen(schema_buff), &aschema);
     aclass = flb_avro_init(&aobject, (char *)QQQ, strlen(QQQ), &aschema);
     TEST_CHECK(aclass != NULL);
 
@@ -236,14 +224,6 @@ void test_parse_tight_schema()
 
     flb_msgpack_to_avro(&aobject, &msg.data);
 
-    // size_t asize = 0;
-    // avro_value_get_size(&aobject, &asize);
-    // fprintf(stderr, "asize:%zu:\n", asize);
-    // TEST_CHECK(asize == 1);
-
-    // avro_value_t fbRecord;
-    // TEST_CHECK(avro_value_get_by_index(&aobject, 0, &fbRecord, NULL) == 0);
-
     avro_value_t log0;
     TEST_CHECK(avro_value_get_by_name(&aobject, "log", &log0, NULL) == 0);
 
@@ -253,7 +233,6 @@ void test_parse_tight_schema()
     char *pre = "2020-08-21T15:49:48.154291375Z";
     TEST_CHECK((strncmp(pre, log_line, strlen(pre)) == 0));
     fprintf(stderr, "log_line len:%zu:\n", strlen(log_line));
-    // TEST_CHECK((strlen(log_line) == 2344));
 
     avro_value_t kubernetes0;
     TEST_CHECK(avro_value_get_by_name(&aobject, "kubernetes", &kubernetes0, NULL) == 0);
@@ -293,6 +272,14 @@ void test_parse_tight_schema()
     size_t doaser_size;
     TEST_CHECK(avro_value_get_string(&doas, &doaser, &doaser_size) == 0);
     TEST_CHECK((strcmp(doaser, "stdemb") == 0));
+
+    avro_value_decref(&aobject);
+	avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+    msgpack_unpacked_destroy(&msg);
+    flb_free(data);
+    flb_free(out_buf);
+
 }
 
 void test_unpack_to_avrox()
