@@ -444,8 +444,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     msgpack_unpacked result;
     msgpack_object *root;
 
-#define AVRO_BUFFER_SIZE 1024 * 1024 * 1024
-    char *out_buff = flb_malloc(AVRO_BUFFER_SIZE);
+    size_t avro_buffer_size = in_size * 3;
+    char *out_buff = flb_malloc(avro_buffer_size);
 
     avro_writer_t awriter;
     size_t schema_json_len = strlen(schema_json);
@@ -495,7 +495,7 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, const 
     }
 
     fprintf(stderr,  "before avro_writer_memory\n");
-    awriter = avro_writer_memory(out_buff, AVRO_BUFFER_SIZE);
+    awriter = avro_writer_memory(out_buff, avro_buffer_size);
     if (awriter == NULL) {
         fprintf(stderr,  "Unable to init avro writer\n");
         msgpack_unpacked_destroy(&result);

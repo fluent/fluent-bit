@@ -260,12 +260,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
         flb_plg_info(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
 
-        // flb_plg_info(ctx->ins, "avro topis:%s:schema ID:%s:\n",
-        //     rd_kafka_topic_name(topic->tp), ctx->avro_schema_id);
         flb_plg_info(ctx->ins, "avro schema ID:%s:\n", ctx->avro_schema_id);
-        // s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, ctx->avro_schema_id, ctx->avro_schema_str);
         s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, ctx->avro_schema_id, ctx->avro_schema_str);
-        // s = NULL;
         if(!s) {
             flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_schema_str, ctx->avro_schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);

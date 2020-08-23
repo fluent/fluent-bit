@@ -187,13 +187,6 @@ void test_unpack_to_avro()
 
     TEST_CHECK(msize == 2);
 
-    // avro_pool_destroy(ppp);
-    // mp_destroy(&mp);
-    // msgpack_unpacked_destroy(&msg);
-    // flb_free(aclass);
-    // flb_free(data);
-    // flb_free(out_buf);
-
 
     avro_value_decref(&aobject);
 	avro_value_iface_decref(aclass);
