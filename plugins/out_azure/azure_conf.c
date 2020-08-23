@@ -31,6 +31,10 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     size_t size;
     size_t olen;
     const char *tmp;
+    const char *subscription_id;
+    const char *resource_group;
+    const char *additional_providers;
+    const char *resource_id;
     const char *cid = NULL;
     struct flb_upstream *upstream;
     struct flb_azure *ctx;
@@ -108,6 +112,48 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     if (!ctx->time_key) {
         flb_azure_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* config: 'subscription_id' */
+    subscription_id = flb_output_get_property("subscription_id", ins);
+    if (subscription_id) {
+        ctx->subscription_id = flb_sds_create(subscription_id);
+    }
+
+    /* config: 'resource_group' */
+    resource_group = flb_output_get_property("resource_group", ins);
+    if (resource_group) {
+        ctx->resource_group = flb_sds_create(resource_group);
+    }
+
+    /* config: 'additional_providers' */
+    additional_providers = flb_output_get_property("additional_providers", ins);
+    if (additional_providers) {
+        ctx->additional_providers = flb_sds_create(additional_providers);
+    }
+
+    /* Construct resource_id */
+
+    flb_sds_t azure_resource_id(struct flb_azure *ctx){
+	    
+	 flb_sds_t rid;
+	 
+	 /*Calculate the needed size*/
+	int len_subscription_id = flb_sds_len(ctx->subscription_id);
+	int len_resource_group = flb_sds_len(ctx->resource_group);
+	int len_additional_providers = flb_sds_len(ctx->additional_providers);
+	int len_base = 41;
+	size_t array_size = len_base + len_subscription_id + len_resource_group + len_additional_providers + 1;
+	rid = flb_sds_create_size(array_size);
+        if (!rid) {
+            return NULL;
+        }
+        flb_sds_printf(&rid, "/resource/subscriptions/%s/resourcegroups/%s/%s", ctx->subscription_id, ctx->resource_group, ctx->additional_providers);
+        return rid;
+    }
+
+    if (subscription_id && resource_group) {
+        ctx->resource_id = azure_resource_id(ctx);
     }
 
     /* Validate hostname given by command line or 'Host' property */
@@ -217,6 +263,18 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
     }
     if (ctx->log_type) {
         flb_sds_destroy(ctx->log_type);
+    }
+    if (ctx->subscription_id) {
+        flb_sds_destroy(ctx->subscription_id);
+    }
+    if (ctx->resource_group) {
+        flb_sds_destroy(ctx->resource_group);
+    }
+    if (ctx->resource_id) {
+        flb_sds_destroy(ctx->resource_id);
+    }
+    if (ctx->additional_providers) {
+        flb_sds_destroy(ctx->additional_providers);
     }
     if (ctx->time_key) {
         flb_sds_destroy(ctx->time_key);

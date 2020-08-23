@@ -36,6 +36,10 @@ struct flb_azure {
     /* account setup */
     flb_sds_t customer_id;
     flb_sds_t log_type;
+    flb_sds_t subscription_id;
+    flb_sds_t resource_group;
+    flb_sds_t resource_id;
+    flb_sds_t additional_providers;
     flb_sds_t shared_key;
     flb_sds_t dec_shared_key;
 
