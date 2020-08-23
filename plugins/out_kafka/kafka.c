@@ -110,9 +110,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object val;
     flb_sds_t s;
 
-    fprintf(stderr, "in produce_message\n");
-    msgpack_object_print(stderr, *map);
-
+    flb_debug("in produce_message\n");
+    if (flb_log_check(FLB_LOG_DEBUG))
+        msgpack_object_print(stderr, *map);
 
     /* Init temporal buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -260,17 +260,17 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
         flb_plg_info(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
 
-        flb_plg_info(ctx->ins, "avro schema ID:%s:\n", ctx->avro_schema_id);
-        s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, ctx->avro_schema_id, ctx->avro_schema_str);
+        flb_plg_info(ctx->ins, "avro schema ID:%s:\n", ctx->avro_fields.schema_id);
+        s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, ctx->avro_fields);
         if(!s) {
-            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_schema_str, ctx->avro_schema_id);
+            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_ERROR;
         }
         out_buf = s;
         out_size = flb_sds_len(s);
         // beware: note the shitty +19 thing below, it just skips the shemaid header frame which is binary
-        fprintf(stderr, "back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf+19);
+        flb_debug("back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf+19);
     }
 
     if (!message_key) {
@@ -308,10 +308,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                            out_buf, out_size,
                            message_key, message_key_len,
                            ctx);
-fprintf(stderr, "QQQJJJ:%zu:\n", ret);
 
     if (ret == -1) {
-        fprintf(stderr,
+        flb_error(
                 "%% Failed to produce to topic %s: %s\n",
                 rd_kafka_topic_name(topic->tp),
                 rd_kafka_err2str(rd_kafka_last_error()));

@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_avro.h>
 
 #include "rdkafka.h"
 
@@ -107,8 +108,9 @@ struct flb_kafka {
     // optionally the schema ID can be stashed in the avro data stream
     // the schema ID is stored in avro_schema_id
     // this is common at this time with large kafka installations and schema registries
-    flb_sds_t avro_schema_str;
-    flb_sds_t avro_schema_id;
+    // flb_sds_t avro_schema_str;
+    // flb_sds_t avro_schema_id;
+    struct flb_avro_fields avro_fields;
 
 };
 

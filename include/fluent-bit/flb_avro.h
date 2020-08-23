@@ -21,6 +21,7 @@
 #ifndef FLB_AVRO_H
 #define FLB_AVRO_H
 
+#include <fluent-bit/flb_sds.h>
 #include <msgpack.h>
 #include <avro.h>
 
@@ -38,6 +39,11 @@
 #define MEMORY_POOL_SUCCESS 1
 #define MEMORY_POOL_ERROR 0
 #define MEMORY_POOL_MINIMUM_SIZE sizeof(void *)
+
+struct flb_avro_fields {
+    flb_sds_t schema_id;
+    flb_sds_t schema_str;
+};
 
 typedef struct {
     void **head;
