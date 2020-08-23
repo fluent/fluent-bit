@@ -85,15 +85,17 @@ void test_unpack_to_avro()
     avro_value_t  aobject;
 
     // AVRO_POOL *ppp = avro_pool_create(1024 * 1024);
-    Memory_Pool mp;
+    // Memory_Pool mp;
     // mp_init(&mp, 2048, 2048);
-    mp_init(&mp, 4096, 4096);
+    // mp_init(&mp, 4096, 4096);
 
     // avro_set_allocator(flb_avro_allocatorqqq, (void *)ppp);
-    avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
+    // avro_set_allocator(flb_avro_allocatorqqq, (void *)&mp);
     avro_schema_t aschema;
+    avro_value_iface_t  *aclass = NULL;
 
-    flb_avro_init(&aobject, (char *)JSON_SINGLE_MAP_001_SCHEMA, strlen(JSON_SINGLE_MAP_001_SCHEMA), &aschema);
+    aclass = flb_avro_init(&aobject, (char *)JSON_SINGLE_MAP_001_SCHEMA, strlen(JSON_SINGLE_MAP_001_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
 
     data = mk_file_to_buffer(AVRO_SINGLE_MAP1);
     TEST_CHECK(data != NULL);
@@ -186,9 +188,17 @@ void test_unpack_to_avro()
     TEST_CHECK(msize == 2);
 
     // avro_pool_destroy(ppp);
-    mp_destroy(&mp);
-    msgpack_unpacked_destroy(&msg);
+    // mp_destroy(&mp);
+    // msgpack_unpacked_destroy(&msg);
     // flb_free(aclass);
+    // flb_free(data);
+    // flb_free(out_buf);
+
+
+    avro_value_decref(&aobject);
+	avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+    msgpack_unpacked_destroy(&msg);
     flb_free(data);
     flb_free(out_buf);
 }
@@ -451,7 +461,7 @@ void test_rec_rec_map()
 
 TEST_LIST = {
     /* Avro */
-    // { "msgpack_to_avro_basic", test_unpack_to_avro},
+    { "msgpack_to_avro_basic", test_unpack_to_avro},
     { "avro_tight_schema", test_parse_tight_schema},
     // { "msgpack_to_avrox", test_unpack_to_avrox},
     // { "rec_rec_map", test_rec_rec_map},
