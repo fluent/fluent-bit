@@ -206,7 +206,11 @@ static int build_headers(struct flb_http_client *c,
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "x-ms-date", 9, rfc1123date,
                         flb_sds_len(rfc1123date));
-
+    /* Header resource_id is optional */
+    if (ctx->resource_id) {
+        flb_http_add_header(c, "x-ms-AzureResourceId", 20, ctx->resource_id ,flb_sds_len(ctx->resource_id));
+        flb_plg_debug(ctx->ins, "resource_id=%s", ctx->resource_id);
+    }
     size = 32 + flb_sds_len(ctx->customer_id) + olen;
     auth = flb_malloc(size);
     if (!auth) {

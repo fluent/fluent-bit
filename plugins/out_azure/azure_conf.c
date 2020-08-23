@@ -31,6 +31,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     size_t size;
     size_t olen;
     const char *tmp;
+    const char *rid;
     const char *cid = NULL;
     struct flb_upstream *upstream;
     struct flb_azure *ctx;
@@ -108,6 +109,12 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     if (!ctx->time_key) {
         flb_azure_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* config: 'resource_id' */
+    rid = flb_output_get_property("resource_id", ins);
+    if (rid) {
+        ctx->resource_id = flb_sds_create(rid);
     }
 
     /* Validate hostname given by command line or 'Host' property */
@@ -217,6 +224,9 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
     }
     if (ctx->log_type) {
         flb_sds_destroy(ctx->log_type);
+    }
+    if (ctx->resource_id) {
+        flb_sds_destroy(ctx->resource_id);
     }
     if (ctx->time_key) {
         flb_sds_destroy(ctx->time_key);
