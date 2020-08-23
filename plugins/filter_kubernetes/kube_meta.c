@@ -842,6 +842,9 @@ static inline int extract_meta(struct flb_kube *ctx,
         if (meta->container_name) {
             n += meta->container_name_len + 1;
         }
+        if (ctx->cache_use_docker_id && meta->docker_id) {
+            n += meta->docker_id_len + 1;
+        }
         meta->cache_key = flb_malloc(n);
         if (!meta->cache_key) {
             flb_errno();
