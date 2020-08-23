@@ -36,18 +36,6 @@ struct flb_avro_fields {
     flb_sds_t schema_str;
 };
 
-typedef struct {
-    void **head;
-    void *memory;
-} Memory_Pool;
-
-//size must be greater than or equal to MEMORY_POOL_MINIMUM_SIZE
-int mp_init(Memory_Pool *mp, size_t size, size_t slots);
-void mp_destroy(Memory_Pool *mp);
-
-void *mp_get(Memory_Pool *mp);
-void mp_release(Memory_Pool *mp, void *mem);
-
 void *flb_avro_allocator(void *ud, void *ptr, size_t osize, size_t nsize);
 avro_value_iface_t *flb_avro_init(avro_value_t *aobject, char *json, size_t json_len, avro_schema_t *aschema);
 int flb_msgpack_to_avro(avro_value_t *val, msgpack_object *o);
