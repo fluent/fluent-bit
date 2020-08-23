@@ -76,6 +76,7 @@ option(FLB_SYSTEM_STRPTIME     "Use strptime in system libc"  Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
+option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -335,10 +336,11 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Avro
-add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
-
-# jansson
-include(cmake/jansson.cmake)
+if(FLB_AVRO_ENCODER)
+  add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+  # jansson
+  include(cmake/jansson.cmake)
+endif()
 
 # tutf8e
 if(FLB_UTF8_ENCODER)
@@ -607,6 +609,12 @@ endif()
 # =====================
 if(FLB_UTF8_ENCODER)
   FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
+endif()
+
+# avro-c (Avro Encoding)
+# =====================
+if(FLB_AVRO_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_AVRO_ENCODER)
 endif()
 
 # LuaJIT (Scripting Support)

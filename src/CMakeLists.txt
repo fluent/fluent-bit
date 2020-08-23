@@ -67,10 +67,12 @@ if(FLB_PARSER)
     )
 endif()
 
+if(FLB_AVRO_ENCODER)
   set(src
     ${src}
     flb_avro.c
     )
+endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
@@ -161,9 +163,12 @@ if(FLB_REGEX)
     )
 endif()
 
-set(extra_libs
-  ${extra_libs}
-  "libjansson")
+if(FLB_AVRO_ENCODER)
+  set(extra_libs
+    ${extra_libs}
+    "libjansson"
+    )
+endif()
 
 if(FLB_LUAJIT)
   set(extra_libs
@@ -266,6 +271,13 @@ if(FLB_HTTP_SERVER)
     flb-http-server)
 endif()
 
+# AVRO Encoding
+if(FLB_AVRO_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  avro-static
+  )
+endif()
 
 # Set static dependencies
 set(FLB_DEPS
@@ -274,7 +286,6 @@ set(FLB_DEPS
   jsmn
   msgpackc-static
   mpack-static
-  avro-static
   chunkio-static
   miniz
   ${FLB_PLUGINS}
@@ -287,6 +298,14 @@ if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
+  )
+endif()
+
+# AVRO Encoding
+if(FLB_AVRO_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  avro-static
   )
 endif()
 

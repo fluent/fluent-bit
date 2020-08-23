@@ -25,15 +25,6 @@
 #include <msgpack.h>
 #include <avro.h>
 
-// /*
-//  * some memory pooling code because i'm paranoid about avro leaking
-//  */
-// typedef struct pool
-// {
-//   char * next;
-//   char * end;
-// } AVRO_POOL;
-
 #include <stdlib.h>
 
 #define MEMORY_POOL_SUCCESS 1
@@ -60,12 +51,5 @@ void mp_release(Memory_Pool *mp, void *mem);
 void *flb_avro_allocator(void *ud, void *ptr, size_t osize, size_t nsize);
 avro_value_iface_t *flb_avro_init(avro_value_t *aobject, char *json, size_t json_len, avro_schema_t *aschema);
 int flb_msgpack_to_avro(avro_value_t *val, msgpack_object *o);
-
-// AVRO_POOL * avro_pool_create( size_t size );
-// void avro_pool_destroy( AVRO_POOL *p );
-// size_t avro_pool_available( AVRO_POOL *p );
-// void * avro_pool_alloc( AVRO_POOL *p, size_t size );
-void *flb_avro_allocatorqqq(void *ud, void *ptr, size_t osize, size_t nsize);
-
 
 #endif

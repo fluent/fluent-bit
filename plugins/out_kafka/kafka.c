@@ -257,6 +257,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_buf = s;
         out_size = flb_sds_len(s);
     }
+#ifdef FLB_HAVE_AVRO_ENCODER
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
         flb_plg_info(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
 
@@ -272,6 +273,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         // schema_id is binary. skip it: schema_id + avro packaging
         flb_debug("back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf+strlen(ctx->avro_fields.schema_id)+3);
     }
+#endif
 
     if (!message_key) {
         message_key = ctx->message_key;
@@ -295,9 +297,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ctx->format == FLB_KAFKA_FMT_GELF) {
             flb_sds_destroy(s);
         }
+#ifdef FLB_HAVE_AVRO_ENCODER
         if (ctx->format == FLB_KAFKA_FMT_AVRO) {
             flb_sds_destroy(s);
         }
+#endif
         msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
     }
@@ -360,9 +364,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
         flb_sds_destroy(s);
     }
+#ifdef FLB_HAVE_AVRO_ENCODER
     if (ctx->format == FLB_KAFKA_FMT_AVRO) {
         flb_sds_destroy(s);
     }
+#endif
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     return FLB_OK;

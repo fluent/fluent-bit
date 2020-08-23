@@ -139,9 +139,11 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "gelf") == 0) {
             ctx->format = FLB_KAFKA_FMT_GELF;
         }
+#ifdef FLB_HAVE_AVRO_ENCODER
         else if (strcasecmp(tmp, "avro") == 0) {
             ctx->format = FLB_KAFKA_FMT_AVRO;
         }
+#endif
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
@@ -254,6 +256,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
+#ifdef FLB_HAVE_AVRO_ENCODER
     /* Config AVRO */
     tmp = flb_output_get_property("schema_str", ins);
     if (tmp) {
@@ -263,6 +266,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ctx->avro_fields.schema_id = flb_sds_create(tmp);
     }
+#endif
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->brokers, tmp);
     return ctx;
@@ -302,9 +306,11 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
     flb_sds_destroy(ctx->gelf_fields.full_message_key);
     flb_sds_destroy(ctx->gelf_fields.level_key);
 
+#ifdef FLB_HAVE_AVRO_ENCODER
     // avro
     flb_sds_destroy(ctx->avro_fields.schema_id);
     flb_sds_destroy(ctx->avro_fields.schema_str);
+#endif
 
     flb_free(ctx);
     return 0;

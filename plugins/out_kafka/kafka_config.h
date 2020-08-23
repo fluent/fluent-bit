@@ -23,14 +23,18 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
+#ifdef FLB_HAVE_AVRO_ENCODER
 #include <fluent-bit/flb_avro.h>
+#endif
 
 #include "rdkafka.h"
 
 #define FLB_KAFKA_FMT_JSON  0
 #define FLB_KAFKA_FMT_MSGP  1
 #define FLB_KAFKA_FMT_GELF  2
+#ifdef FLB_HAVE_AVRO_ENCODER
 #define FLB_KAFKA_FMT_AVRO  3
+#endif
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
@@ -102,6 +106,7 @@ struct flb_kafka {
     /* Plugin instance */
     struct flb_output_instance *ins;
 
+#ifdef FLB_HAVE_AVRO_ENCODER
     // avro serialization requires a schema
     // the schema is stored in json in avro_schema_str
     // 
@@ -111,6 +116,7 @@ struct flb_kafka {
     // flb_sds_t avro_schema_str;
     // flb_sds_t avro_schema_id;
     struct flb_avro_fields avro_fields;
+#endif
 
 };
 
