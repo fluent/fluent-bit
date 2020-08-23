@@ -269,8 +269,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         }
         out_buf = s;
         out_size = flb_sds_len(s);
-        // beware: note the shitty +19 thing below, it just skips the shemaid header frame which is binary
-        flb_debug("back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf+19);
+        // schema_id is binary. skip it: schema_id + avro packaging
+        flb_debug("back from flb_msgpack_raw_to_avro_sds:out_size:%zu:val:%s:\n", out_size, out_buf+strlen(ctx->avro_fields.schema_id)+3);
     }
 
     if (!message_key) {
