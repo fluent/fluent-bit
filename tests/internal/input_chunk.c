@@ -270,7 +270,7 @@ void flb_test_input_chunk_dropping_chunks()
                              "storage.type", "filesystem",
                              NULL) == 0);
 
-    /* Stackdriver output */
+    /* an invalid output destination */
     out_ffd = flb_output(ctx, (char *) "http", NULL);
     flb_output_set(ctx, out_ffd,
                    "match", "test",
