@@ -338,15 +338,10 @@ int flb_tail_mult_process_content(time_t now,
 
     if (!mult_parser) {
         /*
-         * If no parser was found means the string log must be appended
-         * to the last structured field.
+         * If no parser was found then we treat this as a regular
+         * single line entry
          */
-        if (file->mult_firstline == FLB_TRUE && file->mult_firstline_append == FLB_TRUE) {
-            flb_tail_mult_append_raw(buf, len, file, ctx);
-        }
-        else {
-            pack_line(buf, len, file, ctx);
-        }
+        pack_line(buf, len, file, ctx);
         return FLB_TAIL_MULT_MORE;
     }
 
