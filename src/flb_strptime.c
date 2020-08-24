@@ -115,6 +115,21 @@ static	char *_flb_strptime(const char *, const char *, struct tm *, int);
 static	const u_char *_find_string(const u_char *, int *, const char * const *,
 	    const char * const *, int);
 
+/*
+ * FreeBSD does not support `timezone` in time.h.
+ * https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=24590
+ */
+#ifdef __FreeBSD__
+int flb_timezone(void)
+{
+    struct tm tm;
+    time_t t = 0;
+    tzset();
+    localtime_r(&t, &tm);
+    return -(tm.tm_gmtoff);
+}
+#define timezone (flb_timezone())
+#endif
 
 char *
 flb_strptime(const char *buf, const char *fmt, struct tm *tm)
