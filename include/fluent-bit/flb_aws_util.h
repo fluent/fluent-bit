@@ -158,6 +158,10 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
  */
 int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
+int flb_read_file(const char *path, char **out_buf, size_t *out_size);
+
+//* Constructs S3 object key as per the format. */
+flb_sds_t flb_get_s3_key(const char *format, time_t time, char *tag, char *tag_delimiter);
 
 #endif
 #endif /* FLB_HAVE_AWS */
