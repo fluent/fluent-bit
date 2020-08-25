@@ -26,4 +26,11 @@ foreach(source_file ${UNIT_TESTS_FILES})
   endif()
 
   target_link_libraries(${source_file_we} fluent-bit-static)
+
+  if (FLB_TESTS_OSSFUZZ)
+   add_executable(${source_file_we}_OSSFUZZ ${source_file})
+   target_link_libraries(${source_file_we}_OSSFUZZ ${CMAKE_THREAD_LIBS_INIT})
+   set_target_properties(${source_file_we}_OSSFUZZ PROPERTIES LINK_FLAGS $ENV{LIB_FUZZING_ENGINE})
+   target_link_libraries(${source_file_we}_OSSFUZZ fluent-bit-static)
+  endif()
 endforeach()
