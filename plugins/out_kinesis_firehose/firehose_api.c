@@ -180,12 +180,6 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         return 2;
     }
 
-    if (written >= MAX_EVENT_SIZE) {
-        flb_plg_warn(ctx->ins, "Discarding record which is larger than "
-                     "max size allowed by Firehose");
-        return 2;
-    }
-
     if (ctx->time_key) {
         /* append time_key to end of json string */
         tmp = gmtime_r(&tms->tm.tv_sec, &time_stamp);
@@ -223,6 +217,25 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         time_key_ptr += 2;
         written = (time_key_ptr - tmp_buf_ptr);
     }
+
+    /* is (written + 1) because we still have to append newline */
+    if ((written + 1) >= MAX_EVENT_SIZE) {
+        flb_plg_warn(ctx->ins, "Discarding record which is larger than "
+                     "max size allowed by Firehose");
+        return 2;
+    }
+
+    /* append newline to record */
+
+    tmp_size = (buf->tmp_buf_size - buf->tmp_buf_offset) - written;
+    if (tmp_size <= 1) {
+        /* no space left- tell caller to retry */
+        return 1;
+    }
+
+    memcpy(tmp_buf_ptr + written, "\n", 1);
+    written++;
+
 
     /*
      * check if event_buf is initialized and big enough
