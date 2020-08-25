@@ -778,6 +778,8 @@ int put_record_batch(struct flb_firehose *ctx, struct flush *buf,
     flb_sds_t error;
     int failed_records = 0;
 
+    flb_plg_info(ctx->ins, "PRE-RELEASE VERSION");
+
     flb_plg_debug(ctx->ins, "Sending log records to delivery stream %s",
                   ctx->delivery_stream);
 
