@@ -236,7 +236,6 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     memcpy(tmp_buf_ptr + written, "\n", 1);
     written++;
 
-
     /*
      * check if event_buf is initialized and big enough
      * Base64 encoding will increase size by ~4/3
@@ -334,7 +333,7 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
                           "payload buffer", i);
             return -1;
         }
-        if (i != (buf->event_index - 1)) {
+        if (i != (buf->event_index -1)) {
             if (!try_to_write(buf->out_buf, &offset, buf->out_buf_size,
                               ",", 1)) {
                 flb_plg_error(ctx->ins, "Could not terminate record with ','");
@@ -348,7 +347,7 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
         flb_plg_error(ctx->ins, "Could not complete PutRecordBatch payload");
         return -1;
     }
-    flb_plg_debug(ctx->ins, "Sending %d records", i + 1);
+    flb_plg_debug(ctx->ins, "Sending %d records", i);
     ret = put_record_batch(ctx, buf, (size_t) offset, i);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send log records");
@@ -400,13 +399,13 @@ retry_add_event:
         goto send;
     }
 
-    if (buf->event_index == MAX_EVENTS_PER_PUT - 1) {
-        goto send;
-    }
-
     /* send is not needed yet, return to caller */
     buf->data_size += event_bytes;
     buf->event_index++;
+
+    if (buf->event_index == MAX_EVENTS_PER_PUT) {
+        goto send;
+    }
 
     return 0;
 
@@ -682,6 +681,91 @@ static int process_api_response(struct flb_firehose *ctx,
     return failed_records;
 }
 
+static int plugin_under_test()
+{
+    if (getenv("FLB_FIREHOSE_PLUGIN_UNDER_TEST") != NULL) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static char *mock_error_response(char *error_env_var)
+{
+    char *err_val = NULL;
+    char *error = NULL;
+    int len = 0;
+
+    err_val = getenv(error_env_var);
+    if (err_val != NULL && strlen(err_val) > 0) {
+        error = flb_malloc(strlen(err_val) + sizeof(char));
+        if (error == NULL) {
+            flb_errno();
+            return NULL;
+        }
+
+        len = strlen(err_val);
+        memcpy(error, err_val, len);
+        error[len] = '\0';
+        return error;
+    }
+
+    return NULL;
+}
+
+int partial_success()
+{
+    char *err_val = NULL;
+
+    err_val = getenv("PARTIAL_SUCCESS_CASE");
+    if (err_val != NULL && strlen(err_val) > 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static struct flb_http_client *mock_http_call(char *error_env_var)
+{
+    /* create an http client so that we can set the response */
+    struct flb_http_client *c = NULL;
+    char *error = mock_error_response(error_env_var);
+
+    c = flb_calloc(1, sizeof(struct flb_http_client));
+    if (!c) {
+        flb_errno();
+        flb_free(error);
+        return NULL;
+    }
+    mk_list_init(&c->headers);
+
+    if (error != NULL) {
+        c->resp.status = 400;
+        /* resp.data is freed on destroy, payload is supposed to reference it */
+        c->resp.data = error;
+        c->resp.payload = c->resp.data;
+        c->resp.payload_size = strlen(error);
+    }
+    else {
+        c->resp.status = 200;
+        c->resp.payload = "";
+        c->resp.payload_size = 0;
+        if (partial_success() == FLB_TRUE) {
+            /* mocked partial failure response */
+            c->resp.payload = "{\"Encrypted\": false,\"FailedPutCount\": 1,\"RequestResponses\":[{\"RecordId\": \"Me0CqhxK3BK3MiBWgy/AydQrVUg7vbc40Z4zNds3jiiJDscqGtWFz9bJugbrAoN70YCaxpXgmyR9R+LFxS2rleDepqFljYArBtXnRmVzSMOAzTJZlwsO84+757kBvA5RUycF3wC3XZjFtUFP0Q4QTdhuD8HMJBvKGiBY9Yy5jBUmZuKhXxCLQ/YTwKQaQKn4fnc5iISxaErPXsWMI7OApHZ1eFGvcHVZ\"},{\"RecordId\": \"NRAZVkblYgWWDSvTAF/9jBR4MlciEUFV+QIjb1D8uar7YbC3wqeLQuSZ0GEopGlE/8JAK9h9aAyTub5lH5V+bZuR3SeKKABWoJ788/tI455Kup9oRzmXTKWiXeklxmAe9MtsSz0y4t3oIrSLq8e3QVH9DJKWdhDkIXd8lXK1wuJi8tKmnNgxFob/Cz398kQFXPc4JwKj3Dv3Ou0qibZiusko6f7yBUve\",\"ErrorCode\":\"ServiceUnavailableException\",\"ErrorMessage\": \"Catsssss\"},{\"RecordId\": \"InFGTFvML/MGCLtnC3moI/zCISrKSScu/D8oCGmeIIeVaYUfywHpr2NmsQiZsxUL9+4ThOm2ypxqFGudZvgXQ45gUWMG+R4Y5xzS03N+vQ71+UaL392jY6HUs2SxYkZQe6vpdK+xHaJJ1b8uE++Laxg9rmsXtNt193WjmH3FhU1veu9pnSiGZgqC7czpyVgvZBNeWc+hTjEVicj3VAHBg/9yRN0sC30C\",\"ErrorCode\":\"ServiceUnavailableException\",\"ErrorMessage\": \"Catsssss 2\"},{\"RecordId\":\"KufmrRJ2z8zAgYAYGz6rm4BQC8SA7g87lQJQl2DQ+Be5EiEpr5bG33ilnQVvo1Q05BJuQBnjbw2cm919Ya72awapxfOBdZcPPKJN7KDZV/n1DFCDDrJ2vgyNK4qhKdo3Mr7nyrBpkLIs93PdxOdrTh11Y9HHEaFtim0cHJYpKCSZBjNObfWjfjHx5TuB7L3PHQqMKMu0MT5L9gPgVXHElGalqKZGTcfB\"}]}";
+            c->resp.payload_size = strlen(c->resp.payload);
+        }
+        else {
+            /* mocked success response */
+            c->resp.payload = "{\"Encrypted\": false,\"FailedPutCount\": 0,\"RequestResponses\":[{\"RecordId\": \"Me0CqhxK3BK3MiBWgy/AydQrVUg7vbc40Z4zNds3jiiJDscqGtWFz9bJugbrAoN70YCaxpXgmyR9R+LFxS2rleDepqFljYArBtXnRmVzSMOAzTJZlwsO84+757kBvA5RUycF3wC3XZjFtUFP0Q4QTdhuD8HMJBvKGiBY9Yy5jBUmZuKhXxCLQ/YTwKQaQKn4fnc5iISxaErPXsWMI7OApHZ1eFGvcHVZ\"},{\"RecordId\": \"NRAZVkblYgWWDSvTAF/9jBR4MlciEUFV+QIjb1D8uar7YbC3wqeLQuSZ0GEopGlE/8JAK9h9aAyTub5lH5V+bZuR3SeKKABWoJ788/tI455Kup9oRzmXTKWiXeklxmAe9MtsSz0y4t3oIrSLq8e3QVH9DJKWdhDkIXd8lXK1wuJi8tKmnNgxFob/Cz398kQFXPc4JwKj3Dv3Ou0qibZiusko6f7yBUve\"},{\"RecordId\": \"InFGTFvML/MGCLtnC3moI/zCISrKSScu/D8oCGmeIIeVaYUfywHpr2NmsQiZsxUL9+4ThOm2ypxqFGudZvgXQ45gUWMG+R4Y5xzS03N+vQ71+UaL392jY6HUs2SxYkZQe6vpdK+xHaJJ1b8uE++Laxg9rmsXtNt193WjmH3FhU1veu9pnSiGZgqC7czpyVgvZBNeWc+hTjEVicj3VAHBg/9yRN0sC30C\"},{\"RecordId\": \"KufmrRJ2z8zAgYAYGz6rm4BQC8SA7g87lQJQl2DQ+Be5EiEpr5bG33ilnQVvo1Q05BJuQBnjbw2cm919Ya72awapxfOBdZcPPKJN7KDZV/n1DFCDDrJ2vgyNK4qhKdo3Mr7nyrBpkLIs93PdxOdrTh11Y9HHEaFtim0cHJYpKCSZBjNObfWjfjHx5TuB7L3PHQqMKMu0MT5L9gPgVXHElGalqKZGTcfB\"}]}";
+            c->resp.payload_size = strlen(c->resp.payload);
+        }
+    }
+
+    return c;
+}
+
+
 /*
  * Returns -1 on failure, 0 on success
  */
@@ -697,10 +781,15 @@ int put_record_batch(struct flb_firehose *ctx, struct flush *buf,
     flb_plg_debug(ctx->ins, "Sending log records to delivery stream %s",
                   ctx->delivery_stream);
 
-    firehose_client = ctx->firehose_client;
-    c = firehose_client->client_vtable->request(firehose_client, FLB_HTTP_POST,
-                                                "/", buf->out_buf, payload_size,
-                                                &put_record_batch_header, 1);
+    if (plugin_under_test() == FLB_TRUE) {
+        c = mock_http_call("TEST_PUT_RECORD_BATCH_ERROR");
+    }
+    else {
+        firehose_client = ctx->firehose_client;
+        c = firehose_client->client_vtable->request(firehose_client, FLB_HTTP_POST,
+                                                    "/", buf->out_buf, payload_size,
+                                                    &put_record_batch_header, 1);
+    }
 
     if (c) {
         flb_plg_debug(ctx->ins, "PutRecordBatch http status=%d", c->resp.status);
