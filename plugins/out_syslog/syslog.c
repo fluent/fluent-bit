@@ -140,6 +140,13 @@ static char rfc5424_sp_name[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
+struct flb_nested_kv_list_entry {
+    flb_sds_t key_full_str;
+    msgpack_object *key;
+    msgpack_object *val;
+    struct mk_list _head;
+};
+
 static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
                                 struct syslog_msg *msg)
 {
@@ -356,6 +363,58 @@ static flb_sds_t syslog_rfc3164 (flb_sds_t *s, struct flb_time *tms,
     return *s;
 }
 
+/* Recurses through the map objects in val and builds key sequences */
+static int extract_nested_kv(struct flb_syslog *ctx, flb_sds_t key_str,
+        msgpack_object *key, msgpack_object *val, struct mk_list *kvs)
+{
+    int i;
+    int loop_val;
+    struct flb_nested_kv_list_entry *e;
+    flb_sds_t tmp_key_str;
+
+    if (val == NULL) {
+        flb_plg_error(ctx->ins, "nested value empty");
+        return -1;
+    }
+
+    /* Add to list */
+    e = flb_malloc(sizeof(struct flb_nested_kv_list_entry));
+    if (!e) {
+        flb_errno();
+        return -1;
+    }
+
+    e->key_full_str = key_str;
+    e->key = key;
+    e->val = val;
+    mk_list_add(&e->_head, kvs);
+
+    if (val->type == MSGPACK_OBJECT_MAP){
+        /* Iterate thtough map value */
+        loop_val = val->via.map.size;
+        if (loop_val > 0) {
+            msgpack_object_kv *p = val->via.map.ptr;
+
+            for (i = 0; i < loop_val; i++) {
+                msgpack_object *k = &p[i].key;
+                msgpack_object *v = &p[i].val;
+
+                if (k->type == MSGPACK_OBJECT_STR){
+                    /* Concatenate new key using separator */
+                    tmp_key_str = flb_sds_create(key_str);
+                    tmp_key_str = flb_sds_cat(tmp_key_str, ctx->nested_key_separator, flb_sds_len(ctx->nested_key_separator));
+                    tmp_key_str = flb_sds_cat(tmp_key_str, k->via.str.ptr, k->via.str.size);
+
+                    /* Recurse */
+                    extract_nested_kv(ctx, tmp_key_str, k, v, kvs);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
                                msgpack_object *o)
 {
@@ -504,6 +563,20 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
 {
     int i,n;
     int loop;
+    int ret = 0;
+
+    char temp[48] = {0};
+    const char *key = NULL;
+    int key_len;
+    const char *val = NULL;
+    int val_len;
+
+    struct mk_list kvs;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_nested_kv_list_entry *e = NULL;
+
+    flb_sds_t key_str;
 
     if (o == NULL) {
         return -1;
@@ -513,13 +586,9 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
     if (loop != 0) {
         msgpack_object_kv *p = o->via.map.ptr;
 
-        for (i = 0; i < loop; i++) {
-            char temp[48] = {0};
-            const char *key = NULL;
-            int key_len;
-            const char *val = NULL;
-            int val_len;
+        mk_list_init(&kvs);
 
+        for (i = 0; i < loop; i++) {
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
 
@@ -527,9 +596,47 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                 continue;
             }
 
+            if (k->type == MSGPACK_OBJECT_STR && v->type == MSGPACK_OBJECT_MAP
+                && flb_sds_is_empty(ctx->nested_key_separator) == FLB_FALSE) {
+                /* Expand nested key-values: add to a list of {key, value, expanded key} */
+                key_str = flb_sds_create_len(k->via.str.ptr, k->via.str.size);
+
+                if (extract_nested_kv(ctx, key_str, k, v, &kvs) == -1) {
+                    flb_plg_error(ctx->ins, "error in nested key/value extraction");
+                    ret = -1;
+                    goto cleanup_kv_list;
+                }
+            }
+            else {
+                /* Not nested - simply add to list */
+                e = flb_malloc(sizeof(struct flb_nested_kv_list_entry));
+                if (!e) {
+                    flb_errno();
+                    ret = -1;
+                    goto cleanup_kv_list;
+                }
+
+                if (k->type == MSGPACK_OBJECT_STR) {
+                    e->key_full_str = flb_sds_create_len(k->via.str.ptr, k->via.str.size);
+                }
+                else{
+                    e->key_full_str = flb_sds_create("");
+                }
+                e->key = k;
+                e->val = v;
+                mk_list_add(&e->_head, &kvs);
+            }
+        }
+
+        /* Iterate through expanded key-value list to find defined syslog keys */
+        mk_list_foreach_safe(head, tmp, &kvs) {
+            e = mk_list_entry(head, struct flb_nested_kv_list_entry, _head);
+            msgpack_object *k = e->key;
+            msgpack_object *v = e->val;
+
             if (k->type == MSGPACK_OBJECT_STR) {
-                key = k->via.str.ptr;
-                key_len = k->via.str.size;
+                key = e->key_full_str;
+                key_len = flb_sds_len(e->key_full_str);
             }
             else {
                 key = k->via.bin.ptr;
@@ -675,9 +782,20 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                 }
             }
         }
+
+cleanup_kv_list:
+        /* Cleanup key-value list */
+        mk_list_foreach_safe(head, tmp, &kvs) {
+            e = mk_list_entry(head, struct flb_nested_kv_list_entry, _head);
+            flb_sds_destroy(e->key_full_str);
+            e->key = NULL;
+            e->val = NULL;
+            mk_list_del(&e->_head);
+            flb_free(e);
+        }
     }
 
-    return 0;
+    return ret;
 }
 
 static flb_sds_t syslog_format(struct flb_syslog *ctx, msgpack_object *o,

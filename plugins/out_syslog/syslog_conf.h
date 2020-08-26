@@ -33,6 +33,7 @@ struct flb_syslog {
     int mode;
     int format;
     int maxsize;
+    flb_sds_t nested_key_separator;
     flb_sds_t severity_key;
     flb_sds_t facility_key;
     flb_sds_t timestamp_key;

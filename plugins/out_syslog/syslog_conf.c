@@ -93,6 +93,15 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                 goto clean;
             }
         }
+        else if (!strcasecmp(prop->key, "syslog_nested_key_separator")) {
+            if (ctx->nested_key_separator == NULL) {
+                ctx->nested_key_separator = flb_sds_create(prop->val);
+            }
+            else {
+                flb_plg_error(ctx->ins, "syslog_nested_key_separator already defined");
+                goto clean;
+            }
+        }
         else if (!strcasecmp(prop->key, "syslog_severity_key")) {
             if (ctx->severity_key == NULL) {
                 ctx->severity_key = flb_sds_create(prop->val);
@@ -178,6 +187,7 @@ clean:
 
 void flb_syslog_config_destroy(struct flb_syslog *ctx)
 {
+    flb_sds_destroy(ctx->nested_key_separator);
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->facility_key);
     flb_sds_destroy(ctx->hostname_key);
