@@ -803,7 +803,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "aws_sts_endpoint", "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_sts_endpoint),
-     "STS endpoint"
+     "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
     },
     {
      FLB_CONFIG_MAP_STR, "aws_role_arn", "",

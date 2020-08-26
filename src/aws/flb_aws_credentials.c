@@ -236,6 +236,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             *config,
                                                             struct flb_tls *tls,
                                                             char *region,
+                                                            char *sts_endpoint,
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
@@ -284,7 +285,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                   "standard chain");
     }
 
-    sub_provider = flb_eks_provider_create(config, tls, region, proxy, generator);
+    sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
     if (sub_provider) {
         /* EKS provider can fail if we are not running in k8s */;
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);

@@ -209,7 +209,7 @@ char *flb_s3_endpoint(char* bucket, char* region)
 }
 
 char *removeProtocol (char *endpoint, char *protocol) {
-    if (strstr(endpoint, protocol)){
+    if (strncmp(protocol, endpoint, strlen(protocol)) == 0){
         endpoint = endpoint + strlen(protocol);
     }
     return endpoint;

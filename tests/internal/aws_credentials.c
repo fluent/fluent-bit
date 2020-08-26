@@ -276,6 +276,7 @@ static void test_standard_chain_provider()
     mk_list_init(&config->upstreams);
 
     provider = flb_standard_chain_provider_create(config, NULL, "us-west-2",
+                                                  "https://sts.us-west-2.amazonaws.com",
                                                   NULL,
                                                   flb_aws_client_generator());
     if (!provider) {

@@ -427,8 +427,9 @@ static void test_eks_provider() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -499,8 +500,9 @@ static void test_eks_provider_random_session_name() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2",
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -571,8 +573,9 @@ static void test_eks_provider_unexpected_api_response() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* API will return an error - creds will be NULL */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -626,8 +629,9 @@ static void test_eks_provider_api_error() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* API will return an error - creds will be NULL */
     creds = provider->provider_vtable->get_credentials(provider);
