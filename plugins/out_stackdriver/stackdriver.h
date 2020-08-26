@@ -69,6 +69,8 @@
 #define STDOUT "stdout"
 #define STDERR "stderr"
 
+#define DEFAULT_TAG_REGEX "(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
