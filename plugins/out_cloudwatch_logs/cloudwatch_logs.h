@@ -102,6 +102,7 @@ struct flb_cloudwatch {
     const char *log_stream_prefix;
     const char *log_group;
     const char *region;
+    const char *sts_endpoint;
     const char *log_format;
     const char *role_arn;
     const char *log_key;
