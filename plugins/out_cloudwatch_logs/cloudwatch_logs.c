@@ -117,10 +117,15 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
         ctx->custom_endpoint = FLB_TRUE;
-        ctx->endpoint = (char *) tmp;
+        ctx->endpoint = removeProtocol((char *) tmp, "https://");
     }
     else {
         ctx->custom_endpoint = FLB_FALSE;
+    }
+
+    tmp = flb_output_get_property("sts_endpoint", ins);
+    if (tmp) {
+        ctx->sts_endpoint = (char *) tmp;
     }
 
     tmp = flb_output_get_property("log_key", ins);
@@ -231,6 +236,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
+                                                    (char *) ctx->sts_endpoint,
                                                     NULL,
                                                     flb_aws_client_generator());
         if (!ctx->aws_provider) {
@@ -510,6 +516,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the CloudWatch Logs API"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
+     0, FLB_FALSE, 0,
+     "Specify a custom sts endpoint for the CloudWatch Logs API"
     },
 
     /* EOF */
