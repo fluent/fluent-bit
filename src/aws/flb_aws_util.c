@@ -208,6 +208,14 @@ char *flb_s3_endpoint(char* bucket, char* region)
 
 }
 
+char *removeProtocol (char *endpoint, char *protocol) {
+    if (strstr(endpoint, protocol)){
+        endpoint = endpoint + strlen(protocol);
+    }
+    return endpoint;
+}
+
+
 struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client,
                                                int method, const char *uri,
                                                const char *body, size_t body_len,

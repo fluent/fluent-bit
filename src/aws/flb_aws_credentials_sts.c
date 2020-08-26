@@ -264,6 +264,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
                                                  char *role_arn,
                                                  char *session_name,
                                                  char *region,
+                                                 char *sts_endpoint,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator
@@ -293,7 +294,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
         goto error;
     }
 
-    implementation->endpoint = flb_aws_endpoint("sts", region);
+    implementation->endpoint = removeProtocol(sts_endpoint, "https://");
     if (!implementation->endpoint) {
         goto error;
     }
