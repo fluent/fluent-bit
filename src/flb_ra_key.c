@@ -27,7 +27,7 @@
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
 
-/* Map msgpack object intp flb_ra_value representation */
+/* Map msgpack object into flb_ra_value representation */
 static int msgpack_object_to_ra_value(msgpack_object o,
                                       struct flb_ra_value *result)
 {
