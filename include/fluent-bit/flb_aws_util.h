@@ -119,6 +119,9 @@ struct flb_aws_client_generator {
     flb_aws_client_create_fn *create;
 };
 
+/* Remove protocol from endpoint */
+char *removeProtocol (char *endpoint, char *protocol);
+
 /* Get the flb_aws_client_generator */
 struct flb_aws_client_generator *flb_aws_client_generator();
 
