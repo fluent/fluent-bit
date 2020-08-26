@@ -425,6 +425,54 @@ static void cb_check_k8s_container_resource_diff_tag(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_k8s_container_resource_default_regex(void *ctx, int ffd,
+                                                          int res_ret, void *res_data, size_t res_size,
+                                                          void *data)
+{
+    int ret;
+
+    /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "k8s_container");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "test_cluster_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* cluster name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['cluster_name']", "test_cluster_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace_name']", "default");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* pod name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['pod_name']", "apache-logs-annotated");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* container name */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['container_name']", "apache");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `local_resource_id` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_k8s_node_resource(void *ctx, int ffd,
                                        int res_ret, void *res_data, size_t res_size,
                                        void *data)
@@ -1607,7 +1655,7 @@ void flb_test_resource_global_custom_prefix()
                    "match", "test",
                    "google_service_credentials", SERVICE_CREDENTIALS,
                    "resource", "global",
-                   "tag_prefix", "custom_tag",
+                   "tag_prefix", "custom_tag.",
                    NULL);
 
     /* Enable test mode */
@@ -2148,7 +2196,7 @@ void flb_test_resource_k8s_container_custom_tag_prefix()
                    "google_service_credentials", SERVICE_CREDENTIALS,
                    "k8s_cluster_name", "test_cluster_name",
                    "k8s_cluster_location", "test_cluster_location",
-                   "tag_prefix", "kube_custom_tag",
+                   "tag_prefix", "kube_custom_tag.",
                    NULL);
 
     /* Enable test mode */
@@ -2192,12 +2240,57 @@ void flb_test_resource_k8s_container_custom_tag_prefix_with_dot()
                    "google_service_credentials", SERVICE_CREDENTIALS,
                    "k8s_cluster_name", "test_cluster_name",
                    "k8s_cluster_location", "test_cluster_location",
-                   "tag_prefix", "kube.custom.tag",
+                   "tag_prefix", "kube.custom.tag.",
                    NULL);
 
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_k8s_container_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) K8S_CONTAINER_NO_LOCAL_RESOURCE_ID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_k8s_container_default_tag_regex()
+{
+    int ret;
+    int size = sizeof(K8S_CONTAINER_NO_LOCAL_RESOURCE_ID) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag",
+                  "kube.var.log.containers.apache-logs-annotated_default_apache-aeeccc7a9f00f6e4e066aeff0434cf80621215071f1b20a51e8340aa7c35eac6.log", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "kube.custom.tag.*",
+                   "resource", "k8s_container",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   "tag_prefix", "kube.var.log.containers.",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_k8s_container_resource_default_regex,
                               NULL, NULL);
 
     /* Start */
@@ -3637,6 +3730,7 @@ TEST_LIST = {
     {"resource_k8s_container_multi_tag_value", flb_test_resource_k8s_container_multi_tag_value } ,
     {"resource_k8s_container_custom_tag_prefix", flb_test_resource_k8s_container_custom_tag_prefix },
     {"resource_k8s_container_custom_tag_prefix_with_dot", flb_test_resource_k8s_container_custom_tag_prefix_with_dot },
+    {"resource_k8s_container_default_tag_regex", flb_test_resource_k8s_container_default_tag_regex },
     {"resource_k8s_node_common", flb_test_resource_k8s_node_common },
     {"resource_k8s_node_no_local_resource_id", flb_test_resource_k8s_node_no_local_resource_id },
     {"resource_k8s_pod_common", flb_test_resource_k8s_pod_common },
