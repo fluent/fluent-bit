@@ -45,6 +45,12 @@ static int in_exec_collect(struct flb_input_instance *ins,
     msgpack_sbuffer mp_sbuf;
     struct flb_exec *ctx = in_context;
 
+    char *read_result = NULL;
+    char *buf_cur = ctx->buf;
+    size_t buf_free = ctx->buf_size;
+    size_t buf_read = 0;
+    int buffer_has_data = 0;
+
     /* variables for parser */
     int parser_ret = -1;
     void *out_buf = NULL;
@@ -57,13 +63,31 @@ static int in_exec_collect(struct flb_input_instance *ins,
         goto collect_end;
     }
 
-    if (ctx->parser) {
-        while (fgets(ctx->buf, ctx->buf_size, cmdp) != NULL) {
-            str_len = strnlen(ctx->buf, ctx->buf_size);
+    while ((read_result = fgets(buf_cur, buf_free, cmdp)) != NULL
+            || buffer_has_data) {
+        if (read_result != NULL) {
+            buf_read = strnlen(buf_cur, buf_free);
+            str_len += buf_read;
+            buf_free -= buf_read;
+            /* if multiline logs are enabled, continue until EOF or full buffer */
+            if (ctx->multiline && buf_free > 1) {
+                buffer_has_data = 1;
+                buf_cur += buf_read;
+                continue;
+            }
+        }
+        /* strip newline where applicable */
+        if (!ctx->multiline && ctx->buf[str_len - 1] == '\n') {
             ctx->buf[str_len - 1] = '\0'; /* chomp */
+            str_len -= 1;
+        }
+        buf_cur = ctx->buf;
+        buf_free = ctx->buf_size;
+        buf_read = 0;
 
+        if (ctx->parser) {
             flb_time_get(&out_time);
-            parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
+            parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len,
                                        &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
                 if (flb_time_to_double(&out_time) == 0.0) {
@@ -88,13 +112,10 @@ static int in_exec_collect(struct flb_input_instance *ins,
                 flb_plg_trace(ctx->ins, "buf_size %zu", ctx->buf_size);
                 flb_plg_error(ctx->ins, "parser returned an error");
             }
+            buffer_has_data = 0;
+            str_len = 0;
         }
-    }
-    else {
-        while (fgets(ctx->buf, ctx->buf_size, cmdp) != NULL) {
-            str_len = strnlen(ctx->buf, ctx->buf_size);
-            ctx->buf[str_len - 1] = '\0'; /* chomp */
-
+        else {
             /* Initialize local msgpack buffer */
             msgpack_sbuffer_init(&mp_sbuf);
             msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
@@ -105,13 +126,16 @@ static int in_exec_collect(struct flb_input_instance *ins,
 
             msgpack_pack_str(&mp_pck, 4);
             msgpack_pack_str_body(&mp_pck, "exec", 4);
-            msgpack_pack_str(&mp_pck, str_len - 1);
+            msgpack_pack_str(&mp_pck, str_len);
             msgpack_pack_str_body(&mp_pck,
-                                  ctx->buf, str_len - 1);
+                                ctx->buf, str_len);
 
             flb_input_chunk_append_raw(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);
             msgpack_sbuffer_destroy(&mp_sbuf);
+
+            buffer_has_data = 0;
+            str_len = 0;
         }
     }
 
@@ -165,6 +189,14 @@ static int in_exec_config_read(struct flb_exec *ctx,
     }
     else {
         ctx->buf_size = DEFAULT_BUF_SIZE;
+    }
+
+    pval = flb_input_get_property("multiline", in);
+    if (pval != NULL && flb_utils_bool(pval)) {
+        ctx->multiline = FLB_TRUE;
+    }
+    else {
+        ctx->multiline = FLB_FALSE;
     }
 
     /* interval settings */
