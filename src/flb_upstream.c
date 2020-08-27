@@ -191,14 +191,14 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
 #endif
 
     if (u_conn->fd > 0) {
+        u_conn->fd = -1;
         flb_socket_close(u_conn->fd);
+        /* remove connection from the queue */
+        mk_list_del(&u_conn->_head);
+
+        u->n_connections--;
+        flb_free(u_conn);
     }
-
-    /* remove connection from the queue */
-    mk_list_del(&u_conn->_head);
-
-    u->n_connections--;
-    flb_free(u_conn);
 
     return 0;
 }
