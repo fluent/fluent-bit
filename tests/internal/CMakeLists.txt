@@ -18,6 +18,12 @@ set(UNIT_TESTS_FILES
   gzip.c
   gelf.c
   config_map.c
+  aws_credentials.c
+  aws_credentials_sts.c
+  aws_credentials_profile.c
+  aws_credentials_http.c
+  aws_credentials_ec2.c
+  aws_util.c
   )
 
 if(FLB_STREAM_PROCESSOR)
@@ -38,13 +44,6 @@ if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     metrics.c
-    )
-endif()
-
-if(FLB_SIGNV4)
-  set(UNIT_TESTS_FILES
-    ${UNIT_TESTS_FILES}
-    signv4.c
     )
 endif()
 
