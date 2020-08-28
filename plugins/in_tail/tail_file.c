@@ -806,6 +806,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     struct stat st;
     struct flb_tail_config *ctx;
 
+    flb_info("Reading from : name=%s, real_name=%s, inode=%"PRIu64"",
+             file->name, file->real_name, file->inode);
+
     /* Check if we the engine issued a pause */
     ctx = file->config;
     if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {

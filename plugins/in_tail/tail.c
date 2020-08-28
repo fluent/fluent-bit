@@ -88,6 +88,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
             continue;
         }
 
+        flb_info("Reading from : name=%s, real_name=%s, inode=%"PRIu64"",
+                 file->name, file->real_name, file->inode);
         ret = flb_tail_file_chunk(file);
         switch (ret) {
         case FLB_TAIL_ERROR:
