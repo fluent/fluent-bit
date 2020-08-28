@@ -123,12 +123,15 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
         {
             flb_debug("got a string: \"");
 
-            fwrite(o->via.str.ptr, o->via.str.size, 1, stderr);
+            if (flb_log_check(FLB_LOG_DEBUG))
+                fwrite(o->via.str.ptr, o->via.str.size, 1, stderr);
             flb_debug("\"\n");
-            flb_debug("setting string\n");
-            ret = do_avro(avro_value_set_string_len(val, o->via.str.ptr, o->via.str.size), "failed on string");
-            flb_debug("set string\n");
 
+            flb_debug("setting string:%.*s:\n", o->via.str.size, o->via.str.ptr);
+            flb_sds_t cstr = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
+            ret = do_avro(avro_value_set_string_len(val, cstr, flb_sds_len(cstr) + 1), "failed on string");
+            flb_sds_destroy(cstr);
+            flb_debug("set string\n");
         }
         break;
 
@@ -268,9 +271,11 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
     char *out_buff = flb_malloc(avro_buffer_size);
 
     avro_writer_t awriter;
-    size_t schema_json_len = strlen(ctx->schema_str);
-
     flb_debug("in flb_msgpack_raw_to_avro_sds\n");
+    flb_debug("schemaID:%s:\n", ctx->schema_id);
+    flb_debug("schema string:%s:\n", ctx->schema_str);
+
+    size_t schema_json_len = flb_sds_len(ctx->schema_str);
 
     avro_value_t  aobject;
 
@@ -390,7 +395,7 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
  
     flb_debug("after memory free:bytes written:%zu:\n", bytes_written);
 
-    flb_sds_t ret =  flb_sds_create_len(out_buff, bytes_written + 1);
+    flb_sds_t ret =  flb_sds_create_len(out_buff, bytes_written);
 
     flb_free(out_buff);
 

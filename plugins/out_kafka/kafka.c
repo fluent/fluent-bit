@@ -256,10 +256,10 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 #ifdef FLB_HAVE_AVRO_ENCODER
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
-        flb_plg_info(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
-
-        flb_plg_info(ctx->ins, "avro schema ID:%s:\n", ctx->avro_fields.schema_id);
-        s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, ctx->avro_fields);
+        flb_plg_debug(ctx->ins, "calling flb_msgpack_raw_to_avro_sds\n");
+        flb_plg_debug(ctx->ins, "avro schema ID:%s:\n", ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->avro_fields.schema_str);
+        s = flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &ctx->avro_fields);
         if(!s) {
             flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);

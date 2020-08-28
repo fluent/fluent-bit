@@ -84,9 +84,12 @@ void test_unpack_to_avro()
     size_t val003_size = 0;
     avro_value_get_string(&test_value, &val003, &val003_size);
     flb_info("val003_size:%zu:\n", val003_size);
+    TEST_CHECK(val003[val003_size] == NULL);
+
 
     TEST_CHECK((strcmp(val003, "abcdefghijk") == 0));
-    TEST_CHECK(val003_size == 11);
+    // avro_value_get_by_name returns ths string length plus the NUL
+    TEST_CHECK(val003_size == 12);
 
     TEST_CHECK(avro_value_get_by_name(&aobject, "key004", &test_value, NULL) == 0);
 
@@ -198,6 +201,8 @@ void test_parse_tight_schema()
     size_t pod_name_size = 0;
     TEST_CHECK(avro_value_get_string(&pn, &pod_name, &pod_name_size) == 0);
     TEST_CHECK(strcmp(pod_name, "yali-bert-completion-tensorboard-6786c9c8-wj25m") == 0);
+    TEST_CHECK(pod_name[pod_name_size] == NULL);
+    TEST_CHECK(strlen(pod_name) == (pod_name_size-1));
 
     avro_value_t nn;
     TEST_CHECK(avro_value_get_by_name(&kubernetes0, "namespace_name", &nn, NULL) == 0);
@@ -222,6 +227,14 @@ void test_parse_tight_schema()
     size_t doaser_size;
     TEST_CHECK(avro_value_get_string(&doas, &doaser, &doaser_size) == 0);
     TEST_CHECK((strcmp(doaser, "stdemb") == 0));
+
+    // check the second item in the map
+    avro_value_t iddecorator;
+    TEST_CHECK(avro_value_get_by_name(&mapX, "iddecorator.grid.li.username", &iddecorator, NULL) == 0);
+    char *idder = NULL;
+    size_t idder_size;
+    TEST_CHECK(avro_value_get_string(&iddecorator, &idder, &idder_size) == 0);
+    TEST_CHECK((strcmp(idder, "yali") == 0));
 
     avro_value_decref(&aobject);
 	avro_value_iface_decref(aclass);

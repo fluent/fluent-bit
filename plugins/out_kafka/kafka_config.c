@@ -231,6 +231,18 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_AVRO_ENCODER
+    /* Config AVRO */
+    tmp = flb_output_get_property("schema_str", ins);
+    if (tmp) {
+        ctx->avro_fields.schema_str = flb_sds_create(tmp);
+    }
+    tmp = flb_output_get_property("schema_id", ins);
+    if (tmp) {
+        ctx->avro_fields.schema_id = flb_sds_create(tmp);
+    }
+#endif
+
     /* Config: Topic */
     mk_list_init(&ctx->topics);
     tmp = flb_output_get_property("topics", ins);
@@ -256,19 +268,11 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->brokers, tmp);
 #ifdef FLB_HAVE_AVRO_ENCODER
-    /* Config AVRO */
-    tmp = flb_output_get_property("schema_str", ins);
-    if (tmp) {
-        ctx->avro_fields.schema_str = flb_sds_create(tmp);
-    }
-    tmp = flb_output_get_property("schema_id", ins);
-    if (tmp) {
-        ctx->avro_fields.schema_id = flb_sds_create(tmp);
-    }
+    flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
 #endif
 
-    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->brokers, tmp);
     return ctx;
 }
 
