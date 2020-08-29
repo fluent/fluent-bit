@@ -54,6 +54,9 @@ struct flush {
     /* buffer used to temporarily hold an event during processing */
     char *event_buf;
     size_t event_buf_size;
+
+    int records_sent;
+    int records_processed;
 };
 
 struct event {
