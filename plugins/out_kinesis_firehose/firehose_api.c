@@ -41,6 +41,8 @@
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 #include "firehose_api.h"
 
@@ -147,7 +149,7 @@ static int end_put_payload(struct flb_firehose *ctx, struct flush *buf,
 static int process_event(struct flb_firehose *ctx, struct flush *buf,
                          const msgpack_object *obj, struct flb_time *tms)
 {
-    size_t written;
+    size_t written = 0;
     int ret;
     size_t size;
     size_t b64_len;
@@ -163,7 +165,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     ret = flb_msgpack_to_json(tmp_buf_ptr,
                                   buf->tmp_buf_size - buf->tmp_buf_offset,
                                   obj);
-    if (ret < 0) {
+    if (ret <= 0) {
         /*
          * negative value means failure to write to buffer,
          * which means we ran out of space, and must send the logs
@@ -174,6 +176,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         return 1;
     }
     written = (size_t) ret;
+
     /* Discard empty messages (written == 2 means '""') */
     if (written <= 2) {
         flb_plg_debug(ctx->ins, "Found empty log message");
@@ -220,8 +223,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
 
     /* is (written + 1) because we still have to append newline */
     if ((written + 1) >= MAX_EVENT_SIZE) {
-        flb_plg_warn(ctx->ins, "Discarding record which is larger than "
-                     "max size allowed by Firehose");
+        flb_plg_warn(ctx->ins, "[size=%zu] Discarding record which is larger than "
+                     "max size allowed by Firehose", written + 1);
         return 2;
     }
 
@@ -251,6 +254,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         }
     }
 
+    tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = mbedtls_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
                                 (unsigned char *) tmp_buf_ptr, written);
     if (ret != 0) {
@@ -260,9 +264,9 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     written = b64_len;
 
     if (written >= MAX_EVENT_SIZE) {
-        flb_plg_warn(ctx->ins, "Discarding record which is larger than "
-                     "max size allowed by Firehose");
-        return 0;
+        flb_plg_warn(ctx->ins, "[size=%zu] Discarding record which is larger than "
+                     "max size allowed by Firehose", written);
+        return 2;
     }
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
@@ -272,9 +276,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     }
 
     /* copy serialized json to tmp_buf */
-    if (!strncpy(tmp_buf_ptr, buf->event_buf, written)) {
-        return -1;
-    }
+    memcpy(tmp_buf_ptr, buf->event_buf, written);
 
     buf->tmp_buf_offset += written;
     event = &buf->events[buf->event_index];
@@ -301,7 +303,14 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
     int i;
     struct event *event;
 
-    if (buf->event_index == 0) {
+    if (buf->event_index <= 0) {
+        /*
+         * event_index should always be 1 more than the actual last event index
+         * when this function is called.
+         * Except in the case where send_log_events() is called at the end of
+         * process_and_send. If all records were already sent, event_index
+         * will be 0. Hence this check.
+         */
         return 0;
     }
 
@@ -353,6 +362,7 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
         flb_plg_error(ctx->ins, "Failed to send log records");
         return -1;
     }
+    buf->records_sent += i;
 
     return 0;
 }
@@ -380,12 +390,19 @@ retry_add_event:
         return -1;
     }
     else if (ret == 1) {
+        if (buf->event_index <= 0) {
+            /* somehow the record was larger than our entire request buffer */
+            flb_plg_warn(ctx->ins, "Discarding massive log record, %s",
+                         ctx->delivery_stream);
+            return 0; /* discard this record and return to caller */
+        }
         /* send logs and then retry the add */
-        buf->event_index--;
         retry_add = FLB_TRUE;
         goto send;
     } else if (ret == 2) {
         /* discard this record and return to caller */
+        flb_plg_warn(ctx->ins, "Discarding large or unprocessable record, %s",
+                     ctx->delivery_stream);
         return 0;
     }
 
@@ -393,8 +410,13 @@ retry_add_event:
     event_bytes = event->len + PUT_RECORD_BATCH_PER_RECORD_LEN;
 
     if ((buf->data_size + event_bytes) > PUT_RECORD_BATCH_PAYLOAD_SIZE) {
+        if (buf->event_index <= 0) {
+            /* somehow the record was larger than our entire request buffer */
+            flb_plg_warn(ctx->ins, "[size=%zu] Discarding massive log record, %s",
+                         event_bytes, ctx->delivery_stream);
+            return 0; /* discard this record and return to caller */
+        }
         /* do not send this event */
-        buf->event_index--;
         retry_add = FLB_TRUE;
         goto send;
     }
@@ -425,7 +447,7 @@ send:
 
 /*
  * Main routine- processes msgpack and sends in batches
- * return value is the number of events processed
+ * return value is the number of events processed (number sent is stored in buf)
  */
 int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
                              const char *data, size_t bytes)
@@ -525,7 +547,8 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
         return -1;
     }
 
-    /* return number of events */
+    /* return number of events processed */
+    buf->records_processed = i;
     return i;
 
 error:
@@ -778,8 +801,6 @@ int put_record_batch(struct flb_firehose *ctx, struct flush *buf,
     flb_sds_t error;
     int failed_records = 0;
 
-    flb_plg_info(ctx->ins, "PRE-RELEASE VERSION");
-
     flb_plg_debug(ctx->ins, "Sending log records to delivery stream %s",
                   ctx->delivery_stream);
 
@@ -830,13 +851,20 @@ int put_record_batch(struct flb_firehose *ctx, struct flush *buf,
 
         /* Check error */
         if (c->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "Raw response: %s", c->resp.payload);
             error = flb_aws_error(c->resp.payload, c->resp.payload_size);
             if (error != NULL) {
                 if (strcmp(error, ERR_CODE_SERVICE_UNAVAILABLE) == 0) {
                     flb_plg_error(ctx->ins, "Throughput limits for %s "
                                   "may have been exceeded.",
                                   ctx->delivery_stream);
+                }
+                if (strncmp(error, "SerializationException", 22) == 0) {
+                    /*
+                     * If this happens, we habe a bug in the code
+                     * User should send us the output to debug
+                     */
+                    flb_plg_error(ctx->ins, "<<------Bug in Code------>>");
+                    printf("Malformed request: %s", buf->out_buf);
                 }
                 flb_aws_print_error(c->resp.payload, c->resp.payload_size,
                                     "PutRecordBatch", ctx->ins);
