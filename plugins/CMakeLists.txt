@@ -206,6 +206,7 @@ REGISTER_FILTER_PLUGIN("filter_aws")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 REGISTER_FILTER_PLUGIN("filter_throttle_size")
+REGISTER_FILTER_PLUGIN("filter_tensorflow")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_kubernetes")

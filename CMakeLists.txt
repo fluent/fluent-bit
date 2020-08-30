@@ -186,6 +186,7 @@ option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
+option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
