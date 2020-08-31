@@ -179,7 +179,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
 
     /* Discard empty messages (written == 2 means '""') */
     if (written <= 2) {
-        flb_plg_debug(ctx->ins, "Found empty log message");
+        flb_plg_debug(ctx->ins, "Found empty log message, %s", ctx->delivery_stream);
         return 2;
     }
 
@@ -188,7 +188,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         tmp = gmtime_r(&tms->tm.tv_sec, &time_stamp);
         if (!tmp) {
             flb_plg_error(ctx->ins, "Could not create time stamp for %d unix "
-                         "seconds, discarding record", tms->tm.tv_sec);
+                         "seconds, discarding record, %s", tms->tm.tv_sec,
+                         ctx->delivery_stream);
             return 2;
         }
         /* guess space needed to write time_key */
@@ -224,7 +225,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     /* is (written + 1) because we still have to append newline */
     if ((written + 1) >= MAX_EVENT_SIZE) {
         flb_plg_warn(ctx->ins, "[size=%zu] Discarding record which is larger than "
-                     "max size allowed by Firehose", written + 1);
+                     "max size allowed by Firehose, %s", written + 1,
+                     ctx->delivery_stream);
         return 2;
     }
 
@@ -265,7 +267,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
 
     if (written >= MAX_EVENT_SIZE) {
         flb_plg_warn(ctx->ins, "[size=%zu] Discarding record which is larger than "
-                     "max size allowed by Firehose", written);
+                     "max size allowed by Firehose, %s", written,
+                     ctx->delivery_stream);
         return 2;
     }
 
@@ -330,7 +333,8 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
     offset = 0;
     ret = init_put_payload(ctx, buf, &offset);
     if (ret < 0) {
-        flb_plg_error(ctx->ins, "Failed to initialize PutRecordBatch payload");
+        flb_plg_error(ctx->ins, "Failed to initialize PutRecordBatch payload, %s",
+                      ctx->delivery_stream);
         return -1;
     }
 
@@ -339,7 +343,7 @@ static int send_log_events(struct flb_firehose *ctx, struct flush *buf) {
         ret = write_event(ctx, buf, event, &offset);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to write log record %d to "
-                          "payload buffer", i);
+                          "payload buffer, %s", i, ctx->delivery_stream);
             return -1;
         }
         if (i != (buf->event_index -1)) {
@@ -523,8 +527,8 @@ int process_and_send_records(struct flb_firehose *ctx, struct flush *buf,
 
             }
             if (found == FLB_FALSE) {
-                flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
-                              ctx->log_key);
+                flb_plg_error(ctx->ins, "Could not find log_key '%s' in record, %s",
+                              ctx->log_key, ctx->delivery_stream);
             }
             else {
                 i++;
