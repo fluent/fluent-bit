@@ -97,6 +97,10 @@ void flb_pipe_destroy(flb_pipefd_t pipefd[2])
 
 int flb_pipe_close(flb_pipefd_t fd)
 {
+    if (fd == -1) {
+        return -1;
+    }
+
     return close(fd);
 }
 
