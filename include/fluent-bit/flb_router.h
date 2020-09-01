@@ -33,5 +33,6 @@ int flb_router_match(const char *tag, int tag_len,
                      const char *match, void *match_regex);
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
-
+uint64_t flb_router_get_routes_mask_by_tag(const char *tag, int tag_len,
+                                           struct flb_input_instance *in);
 #endif
