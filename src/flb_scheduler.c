@@ -354,6 +354,23 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data)
         }
     }
 
+    /*
+     *  Clean up retry tasks that are scheduled more than 60s.
+     *  Task might be destroyed when there are still retry 
+     *  scheduled but no thread is running for the task.
+     * 
+     *  We need to drop buffered chunks when the filesystem buffer
+     *  limit is reached. We need to make sure that all requests
+     *  should be destroyed to avoid invoke an invlidated request.
+     */
+    mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        if (request->data == data) {
+            flb_sched_request_destroy(config, request);
+            return 0;
+        }
+    }
+
     return -1;
 }
 
