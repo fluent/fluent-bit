@@ -333,6 +333,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->host.address = NULL;
     instance->net_config_map = NULL;
 
+    /* Storage */
+    instance->total_limit_size = -1;
+
     /* Parent plugin flags */
     flags = instance->flags;
     if (flags & FLB_IO_TCP) {
@@ -395,6 +398,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
 {
     int len;
     int ret;
+    ssize_t limit;
     flb_sds_t tmp;
     struct flb_kv *kv;
     struct flb_config *config = ins->config;
@@ -539,6 +543,29 @@ int flb_output_set_property(struct flb_output_instance *ins,
         ins->tls_key_passwd = tmp;
     }
 #endif
+    else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "off") == 0 ||
+            flb_utils_bool(tmp) == FLB_FALSE) {
+            /* no limit for filesystem storage */
+            limit = -1;
+            flb_info("[config] unlimited filesystem buffer for %s plugin",
+                     ins->name);
+        }
+        else {
+            limit = flb_utils_size_to_bytes(tmp);
+            if (limit == -1) {
+                flb_sds_destroy(tmp);
+                return -1;
+            }
+
+            if (limit == 0) {
+                limit = -1;
+            }
+        }
+
+        flb_sds_destroy(tmp);
+        ins->total_limit_size = (size_t) limit;
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
