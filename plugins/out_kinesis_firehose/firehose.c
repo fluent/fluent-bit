@@ -152,7 +152,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
 
     ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                            &ctx->cred_tls,
-                                                           "us-west-2",
+                                                           (char *) ctx->region,
                                                            NULL,
                                                            flb_aws_client_generator());
     if (!ctx->aws_provider) {
