@@ -293,6 +293,21 @@ struct flb_output_instance {
     /* Tests */
     struct flb_test_out_formatter test_formatter;
 
+    /*
+     * Buffer counter: it counts the total of disk space (filesystem) used by buffers
+     */
+    size_t fs_chunks_size;
+
+    /*
+     * Buffer limit: optional limit set by configuration so this output instance
+     * cannot buffer more than total_limit_size (bytes unit).
+     *
+     * Note that this is the limit set to the filesystem buffer mechanism so the
+     * input instance routered to this output plugin should configure to use
+     * filesystem as buffer type.
+     */
+    size_t total_limit_size;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
