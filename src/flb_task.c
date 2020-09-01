@@ -66,7 +66,6 @@ static inline void map_free_task_id(int id, struct flb_config *config)
     config->tasks_map[id].task = NULL;
 }
 
-
 void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
     int ret;
@@ -345,6 +344,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_task *task;
     struct flb_task_route *route;
     struct flb_output_instance *o_ins;
+    struct flb_input_chunk *task_ic;
     struct mk_list *o_head;
 
     /* No error status */
@@ -369,6 +369,9 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->tag[tag_len] = '\0';
     task->tag_len = tag_len;
 
+    task_ic = (struct flb_input_chunk *) ic;
+    task_ic->task = task;
+
     /* Keep track of origins */
     task->ref_id = ref_id;
     task->buf    = buf;
@@ -381,18 +384,12 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->records = ((struct flb_input_chunk *) ic)->total_records;
 #endif
 
-    /* Find matching routes for the incoming tag */
+    /* Find matching routes for the incoming task */
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
-
-        if (flb_router_match(task->tag, task->tag_len, o_ins->match
-#ifdef FLB_HAVE_REGEX
-                             , o_ins->match_regex
-#else
-                             , NULL
-#endif
-                             )) {
+        
+        if ((((struct flb_input_chunk *) ic)->routes_mask & o_ins->mask_id) > 0) {
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
