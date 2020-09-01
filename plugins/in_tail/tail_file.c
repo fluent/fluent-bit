@@ -757,7 +757,10 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_sds_destroy(file->dmode_lastline);
     mk_list_del(&file->_head);
     flb_tail_fs_remove(file);
-    close(file->fd);
+    /* avoid deleting file with -1 fd */
+    if (file->fd != -1) {
+        close(file->fd);
+    }
     if (file->tag_buf) {
         flb_free(file->tag_buf);
     }
