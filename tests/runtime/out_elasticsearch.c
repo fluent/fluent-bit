@@ -34,6 +34,19 @@ static void cb_check_logstash_format(void *ctx, int ffd,
     flb_free(res_data);
 }
 
+static void cb_check_logstash_format_nanos(void *ctx, int ffd,
+                                           int res_ret, void *res_data, size_t res_size,
+                                           void *data)
+{
+    char *p;
+    char *out_js = res_data;
+    char *index_line = "\"@timestamp\":\"2015-11-24T22:15:40.000000000Z\"";
+
+    p = strstr(out_js, index_line);
+    TEST_CHECK(p != NULL);
+    flb_free(res_data);
+}
+
 static void cb_check_tag_key(void *ctx, int ffd,
                              int res_ret, void *res_data, size_t res_size,
                              void *data)
@@ -152,6 +165,53 @@ void flb_test_logstash_format()
     flb_destroy(ctx);
 }
 
+void flb_test_logstash_format_nanos()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "logstash_format", "on",
+                   "logstash_prefix", "prefix",
+                   "logstash_dateformat", "%Y-%m-%d",
+                   "time_key_nanos", "on",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_logstash_format_nanos,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_tag_key()
 {
     int ret;
@@ -243,9 +303,10 @@ void flb_test_replace_dots()
 
 /* Test list */
 TEST_LIST = {
-    {"index_type"     , flb_test_index_type },
-    {"logstash_format", flb_test_logstash_format },
-    {"tag_key"        , flb_test_tag_key },
-    {"replace_dots"   , flb_test_replace_dots },
+    {"index_type"           , flb_test_index_type },
+    {"logstash_format"      , flb_test_logstash_format },
+    {"logstash_format_nanos", flb_test_logstash_format_nanos },
+    {"tag_key"              , flb_test_tag_key },
+    {"replace_dots"         , flb_test_replace_dots },
     {NULL, NULL}
 };
