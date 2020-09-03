@@ -139,6 +139,9 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         }
         else if (strcasecmp(prot, "https") == 0) {
             tmp_port = 443;
+            if ((flags & FLB_IO_TLS) == 0) {
+                flags |= FLB_IO_TLS;
+            }
         }
     }
     else {
