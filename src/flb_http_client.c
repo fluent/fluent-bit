@@ -533,7 +533,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     char *fmt_plain =                           \
         "%s %s HTTP/1.%i\r\n";
     char *fmt_proxy =                           \
-        "%s http://%s:%i%s HTTP/1.%i\r\n"
+        "%s https://%s:%i%s HTTP/1.%i\r\n"
         "Proxy-Connection: KeepAlive\r\n";
 
     struct flb_http_client *c;
