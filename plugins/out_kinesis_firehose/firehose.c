@@ -138,8 +138,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
-            flb_free(ctx);
-            return NULL;
+            goto error;
         }
 
         ctx->proxy_host = host;
@@ -255,7 +254,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->firehose_client->service = "firehose";
     ctx->firehose_client->port = 443;
     ctx->firehose_client->flags = 0;
-    ctx->firehose_client->proxy = ctx->proxy;
+    ctx->firehose_client->proxy = (char *) ctx->proxy;
     ctx->firehose_client->static_headers = &content_type_header;
     ctx->firehose_client->static_headers_len = 1;
 
