@@ -57,6 +57,12 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     char *session_name = NULL;
     struct flb_firehose *ctx = NULL;
     int ret;
+    int io_flags = 0;
+    struct flb_upstream *upstream;
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *uri = NULL;
     (void) config;
     (void) data;
 
@@ -120,6 +126,28 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("role_arn", ins);
     if (tmp) {
         ctx->role_arn = tmp;
+    }
+
+    /*
+     * Check if a Proxy have been set, if so the Upstream manager will use
+     * the Proxy end-point and then we let the HTTP client know about it, so
+     * it can adjust the HTTP requests.
+     */
+    tmp = flb_output_get_property("proxy", ins);
+    if (tmp) {
+        ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
+            flb_free(ctx);
+            return NULL;
+        }
+
+        ctx->proxy_host = host;
+        ctx->proxy_port = atoi(port);
+        ctx->proxy = tmp;
+        flb_free(protocol);
+        flb_free(port);
+        flb_free(uri);
     }
 
     /* one tls instance for provider, one for cw client */
@@ -227,13 +255,42 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->firehose_client->service = "firehose";
     ctx->firehose_client->port = 443;
     ctx->firehose_client->flags = 0;
-    ctx->firehose_client->proxy = NULL;
+    ctx->firehose_client->proxy = ctx->proxy;
     ctx->firehose_client->static_headers = &content_type_header;
     ctx->firehose_client->static_headers_len = 1;
 
-    struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
-                                                        443, FLB_IO_TLS,
-                                                        &ctx->client_tls);
+    if (ctx->proxy) {
+        flb_plg_info(ctx->ins, "Proxy=%s:%i",
+                      ctx->proxy_host, ctx->proxy_port);
+        /*
+         * for now, we are using the TLS setting only for proxy setup.
+         * TODO: Should change this to some flag like proxy_tls??
+         */
+        if (ins->use_tls == FLB_TRUE) {
+            io_flags = FLB_IO_TLS;
+            flb_plg_info(ctx->ins, "Will use TLS to talk to Proxy %s:%i; disable"
+                         " this with `TLS off` in your config.",
+                         ctx->proxy_host,
+                         ctx->proxy_port);
+        }
+        else {
+            io_flags = FLB_IO_TCP;
+            flb_plg_info(ctx->ins, "Will not use TLS to talk to Proxy %s:%i; enable"
+                         " TLS with `TLS On` in your config.",
+                         ctx->proxy_host,
+                         ctx->proxy_port);
+        }
+        upstream = flb_upstream_create(config,
+                                       ctx->proxy_host,
+                                       ctx->proxy_port,
+                                       io_flags, &ctx->client_tls);
+    }
+    else {
+        upstream = flb_upstream_create(config, ctx->endpoint,
+                                       443, FLB_IO_TLS,
+                                       &ctx->client_tls);
+    }
+
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         goto error;
@@ -347,6 +404,10 @@ void flb_firehose_ctx_destroy(struct flb_firehose *ctx)
             flb_free(ctx->endpoint);
         }
 
+        if (ctx->proxy_host) {
+            flb_free(ctx->proxy_host);
+        }
+
         flb_free(ctx);
     }
 }
@@ -397,6 +458,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the Firehose API"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "proxy", NULL,
+     0, FLB_FALSE, 0,
+     NULL
     },
 
     /* EOF */

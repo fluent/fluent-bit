@@ -91,6 +91,11 @@ struct flb_firehose {
     /* must be freed on shutdown if custom_endpoint is not set */
     char *endpoint;
 
+    /* Proxy */
+    const char *proxy;
+    char *proxy_host;
+    int proxy_port;
+
     /* Plugin output instance reference */
     struct flb_output_instance *ins;
 };
