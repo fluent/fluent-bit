@@ -80,6 +80,8 @@ struct flb_upstream {
      */
     struct mk_list busy_queue;
 
+    struct mk_list destroy_queue;
+
 #ifdef FLB_HAVE_TLS
     /* context with mbedTLS data to handle certificates and keys */
     struct flb_tls *tls;
