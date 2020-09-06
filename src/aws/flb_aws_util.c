@@ -444,6 +444,7 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
 
         if (!ec2_metadata) {
             flb_errno();
+            flb_http_client_destroy(c);
             return -1;
         }
         *metadata = ec2_metadata;
@@ -452,9 +453,9 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
         flb_http_client_destroy(c);
         return 0;
     }
-    else {
-        flb_debug("[ecs_imds] IMDS metadata response was empty");
-        flb_http_client_destroy(c);
-        return -1;
-    }
+
+    flb_debug("[ecs_imds] IMDS metadata response was empty");
+    flb_http_client_destroy(c);
+    return -1;
+
 }
