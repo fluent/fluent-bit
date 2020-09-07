@@ -18,7 +18,7 @@
 
 
 #ifndef FLB_STD_TIMESTAMP_H
-#define FLB_STD_TIEMSTAMP_H
+#define FLB_STD_TIMESTAMP_H
 
 #include "stackdriver.h"
 #include <fluent-bit/flb_time.h>
@@ -29,16 +29,16 @@ typedef enum {
     FORMAT_TIMESTAMP_DUO_FIELDS = 2
 } timestamp_status;
 
-/* 
+/*
  * Currently support two formats of time-related fields
  *      - "timestamp":{"seconds", "nanos"}
  *      - "timestampSeconds"/"timestampNanos"
- * 
- * If timestamp field is not existed, return TIMESTAMP_NOT_PRESENT 
- * If timestamp format is "timestamp":{"seconds", "nanos"}, 
+ *
+ * If timestamp field is not existed, return TIMESTAMP_NOT_PRESENT
+ * If timestamp format is "timestamp":{"seconds", "nanos"},
  * set the time and return FORMAT_TIMESTAMP
- * 
- * If timestamp format is "timestampSeconds"/"timestampNanos", 
+ *
+ * If timestamp format is "timestampSeconds"/"timestampNanos",
  * set the time and return FORMAT_TIMESTAMPSECONDS
  */
 timestamp_status extract_timestamp(msgpack_object *obj,
