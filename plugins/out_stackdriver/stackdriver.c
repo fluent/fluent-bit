@@ -373,7 +373,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *local_resource_id, 
     }
     else if (strncmp(type, K8S_NODE, len_k8s_node) == 0) {
         max_split = 2;
-    } 
+    }
     else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {
         max_split = 3;
     }
@@ -706,7 +706,9 @@ int is_tag_match_regex(struct flb_stackdriver *ctx, const char *tag, int tag_len
     len_to_be_matched = tag_len - tag_prefix_len;
 
     regex = flb_regex_create(DEFAULT_TAG_REGEX);
-    ret = flb_regex_match(regex, tag_str_to_be_matcheds, len_to_be_matched);
+    ret = flb_regex_match(regex,
+                          (unsigned char *) tag_str_to_be_matcheds,
+                          len_to_be_matched);
     flb_regex_destroy(regex);
 
     /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
