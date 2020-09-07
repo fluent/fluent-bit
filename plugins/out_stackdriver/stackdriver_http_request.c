@@ -22,6 +22,8 @@
 #include "stackdriver_helper.h"
 #include "stackdriver_http_request.h"
 
+#include <ctype.h>
+
 typedef enum {
     NO_HTTPREQUEST = 1,
     HTTPREQUEST_EXISTS = 2
