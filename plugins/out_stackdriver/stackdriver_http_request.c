@@ -17,6 +17,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+#include <ctype.h>
 #include <fluent-bit/flb_regex.h>
 #include "stackdriver.h"
 #include "stackdriver_helper.h"
