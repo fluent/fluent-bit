@@ -155,6 +155,7 @@ int flb_upstream_conn_recycle(struct flb_upstream_conn *conn, int val);
 struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u);
 int flb_upstream_conn_release(struct flb_upstream_conn *u_conn);
 int flb_upstream_conn_timeouts(struct flb_config *ctx);
+int flb_upstream_conn_pending_destroy(struct flb_config *ctx);
 int flb_upstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
 int flb_upstream_is_async(struct flb_upstream *u);
