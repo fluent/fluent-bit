@@ -199,6 +199,7 @@ REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
 REGISTER_OUT_PLUGIN("out_gelf")
 REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
+REGISTER_OUT_PLUGIN("out_kinesis_firehose")
 
 # FILTERS
 # =======
