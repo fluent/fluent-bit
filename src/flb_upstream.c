@@ -206,7 +206,6 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &u->destroy_queue);
 
-
     /*
      * note: the connection context is destroyed by the engine once all events
      * have been processed.
@@ -297,6 +296,12 @@ int flb_upstream_destroy(struct flb_upstream *u)
     mk_list_foreach_safe(head, tmp, &u->busy_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
         destroy_conn(u_conn);
+    }
+
+    mk_list_foreach_safe(head, tmp, &u->destroy_queue) {
+        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+        mk_list_del(&u_conn->_head);
+        flb_free(u_conn);
     }
 
     flb_free(u->tcp_host);
