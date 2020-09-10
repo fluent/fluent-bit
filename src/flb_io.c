@@ -168,7 +168,6 @@ static int net_io_connect_async(struct flb_upstream *u,
          */
         err = flb_socket_error(u_conn->fd);
         if (!FLB_EINPROGRESS(err) && err != 0) {
-            flb_errno();
             flb_error("[io] connection #%i failed to: %s:%i",
                       u_conn->fd, u->tcp_host, u->tcp_port);
             return -1;
