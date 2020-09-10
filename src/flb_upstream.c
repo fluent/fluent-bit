@@ -320,6 +320,7 @@ int flb_upstream_conn_recycle(struct flb_upstream_conn *conn, int val)
 
 struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
 {
+    int err;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_upstream_conn *conn = NULL;
@@ -355,10 +356,8 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
         /* Reset errno */
         conn->net_error = -1;
 
-        int err;
         err = flb_socket_error(conn->fd);
         if (!FLB_EINPROGRESS(err) && err != 0) {
-            flb_errno();
             flb_debug("[upstream] KA connection #%i is in a failed state "
                       "to: %s:%i, cleaning up",
                       conn->fd, u->tcp_host, u->tcp_port);
