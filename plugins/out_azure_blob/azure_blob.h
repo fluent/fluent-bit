@@ -29,11 +29,15 @@
 #define AZURE_BLOB_CT_JSON    "application/json"
 #define AZURE_ENDPOINT_PREFIX ".blob.core.windows.net"
 
+#define AZURE_BLOB_APPENDBLOB 0
+#define AZURE_BLOB_BLOCKBLOB  1
+
 struct flb_azure_blob {
     int auto_create_container;
     int emulator_mode;
     flb_sds_t account_name;
     flb_sds_t container_name;
+    flb_sds_t blob_type;
     flb_sds_t shared_key;
     flb_sds_t endpoint;
     flb_sds_t path;
@@ -42,6 +46,7 @@ struct flb_azure_blob {
     /*
      * Internal use
      */
+    int  btype;                  /* blob type */
     flb_sds_t real_endpoint;
     flb_sds_t base_uri;
     flb_sds_t shared_key_prefix;
