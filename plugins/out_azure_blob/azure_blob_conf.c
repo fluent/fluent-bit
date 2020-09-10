@@ -62,6 +62,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     int ret;
     int port;
     int io_flags = 0;
+    flb_sds_t tmp;
     struct flb_azure_blob *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_azure_blob));
@@ -89,6 +90,24 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     if (ctx->shared_key) {
         ret = set_shared_key(ctx);
         if (ret == -1) {
+            return NULL;
+        }
+    }
+
+    /* Set Blob type */
+    tmp = flb_output_get_property("blob_type", ins);
+    if (!tmp) {
+        ctx->btype = AZURE_BLOB_APPENDBLOB;
+    }
+    else {
+        if (strcasecmp(tmp, "appendblob") == 0) {
+            ctx->btype = AZURE_BLOB_APPENDBLOB;
+        }
+        else if (strcasecmp(tmp, "blockblob") == 0) {
+            ctx->btype = AZURE_BLOB_BLOCKBLOB;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid blob_type value '%s'", tmp);
             return NULL;
         }
     }
@@ -176,9 +195,11 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     flb_plg_info(ctx->ins,
-                 "account_name=%s, container_name=%s, emulator_mode=%s, endpoint=%s",
+                 "account_name=%s, container_name=%s, blob_type=%s, emulator_mode=%s, endpoint=%s",
                  ctx->account_name, ctx->container_name,
-                 ctx->emulator_mode ? "yes": "no", ctx->real_endpoint);
+                 ctx->btype == AZURE_BLOB_APPENDBLOB ? "appendblob": "blockblob",
+                 ctx->emulator_mode ? "yes": "no",
+                 ctx->real_endpoint ? ctx->real_endpoint: "no");
     return ctx;
 }
 
