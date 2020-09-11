@@ -3,7 +3,6 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_pack.h>
 
-
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     if (size != 512)
         return 0;
