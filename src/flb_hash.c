@@ -41,7 +41,7 @@
  * 2. It will not produce the same results on little-endian and big-endian
  *    machines.
  */
-static unsigned int gen_hash(const void *key, int len)
+unsigned int gen_hash(const void *key, int len)
 {
     /* 'm' and 'r' are mixing constants generated offline.
        They're not really 'magic', they just happen to work well.  */

@@ -24,6 +24,24 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 
+/* 
+ * Speed up Key_Value_Type_Matches condition check,
+ * use `switch` + `hash()` instead of `if ... else` + `strncmp()`.
+ *
+ * Note, it's arch sensitive, little-endian (LE) ONLY due to the implementation
+ * of hash function, see `gen_hash()` in `flb_hash.c`.
+ */
+#define FLB_FILTER_MODIFY_HASH_NIL    976956422U
+#define FLB_FILTER_MODIFY_HASH_BOOL   4022539617U
+#define FLB_FILTER_MODIFY_HASH_NUMBER 4188039317U
+#define FLB_FILTER_MODIFY_HASH_INT    3831089057U
+#define FLB_FILTER_MODIFY_HASH_FLOAT  1075678673U
+#define FLB_FILTER_MODIFY_HASH_STR    3331274845U
+#define FLB_FILTER_MODIFY_HASH_ARRAY  968645473U
+#define FLB_FILTER_MODIFY_HASH_MAP    671111262U
+#define FLB_FILTER_MODIFY_HASH_BIN    3587806299U
+#define FLB_FILTER_MODIFY_HASH_EXT    1459784193U
+
 enum FLB_FILTER_MODIFY_RULETYPE {
   RENAME,
   HARD_RENAME,
@@ -45,8 +63,11 @@ enum FLB_FILTER_MODIFY_CONDITIONTYPE {
   KEY_VALUE_DOES_NOT_EQUAL,
   KEY_VALUE_MATCHES,
   KEY_VALUE_DOES_NOT_MATCH,
+  KEY_VALUE_TYPE_MATCHES,
+  KEY_VALUE_TYPE_DOES_NOT_MATCH,
   MATCHING_KEYS_HAVE_MATCHING_VALUES,
-  MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES
+  MATCHING_KEYS_DO_NOT_HAVE_MATCHING_VALUES,
+  MATCHING_KEY
 };
 
 struct filter_modify_ctx

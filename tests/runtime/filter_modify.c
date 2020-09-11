@@ -922,6 +922,86 @@ static void flb_test_cond_key_value_does_not_match()
     filter_test_destroy(ctx);
 }
 
+/* Condition: KEY_VALUE_TYPE_MATCHES / If key value type matches, add a key */
+static void flb_test_cond_key_value_type_matches()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_type_matches k_str str",
+                         "copy", "k1 matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"matches\":\"sample1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"k1\":\"sample1\",\"k_str\":\"sample string\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_TYPE_DOES_NOT_MATCH / If key value type mismatch, add a key */
+static void flb_test_cond_key_value_type_does_not_match()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_type_does_not_match k_str map",
+                         "copy", "k1 no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"no_matches\":\"sample1\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"k1\":\"sample1\",\"k_str\":\"sample string\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 /* Condition: MATCHING_KEYS_HAVE_MATCHING_VALUES / If key match, add a key */
 static void flb_test_cond_matching_keys_have_matching_values()
 {
@@ -1045,12 +1125,17 @@ static void flb_test_cond_chain()
                          "^[a-z][0-9]$ ^[a-z][0-9]$",
 
                          "add", "k5 5",
+
+                         "condition", "key_value_type_matches k1 str",
+                         "condition", "key_value_type_does_not_match k1 map",
+                         "add", "k6 6",
+
                          NULL);
     TEST_CHECK(ret == 0);
 
     /* Prepare output callback with expected result */
     cb_data.cb = cb_check_result;
-    cb_data.data = "\"k5\":\"5\"";
+    cb_data.data = "\"k6\":\"6\"";
 
     /* Start the engine */
     ret = flb_start(ctx->flb);
@@ -1182,19 +1267,21 @@ TEST_LIST = {
     {"op_hard_copy_no_exists"   , flb_test_op_hard_copy_no_exists },
 
     /* Conditions */
-    {"cond_key_exists", flb_test_cond_key_exists },
-    {"cond_key_does_not_exist", flb_test_cond_key_does_not_exist },
-    {"cond_a_key_matches", flb_test_cond_a_key_matches },
-    {"cond_no_key_matches", flb_test_cond_no_key_matches },
-    {"cond_key_value_equals", flb_test_cond_key_value_equals },
-    {"cond_key_value_does_not_equal", flb_test_cond_key_value_does_not_equal },
-    {"cond_key_value_matches", flb_test_cond_key_value_matches },
-    {"cond_key_value_does_not_match", flb_test_cond_key_value_does_not_match },
+    {"cond_key_exists"                   , flb_test_cond_key_exists },
+    {"cond_key_does_not_exist"           , flb_test_cond_key_does_not_exist },
+    {"cond_a_key_matches"                , flb_test_cond_a_key_matches },
+    {"cond_no_key_matches"               , flb_test_cond_no_key_matches },
+    {"cond_key_value_equals"             , flb_test_cond_key_value_equals },
+    {"cond_key_value_does_not_equal"     , flb_test_cond_key_value_does_not_equal },
+    {"cond_key_value_matches"            , flb_test_cond_key_value_matches },
+    {"cond_key_value_does_not_match"     , flb_test_cond_key_value_does_not_match },
+    {"cond_key_value_type_matches"       , flb_test_cond_key_value_type_matches },
+    {"cond_key_value_type_does_not_match", flb_test_cond_key_value_type_does_not_match },
     {"cond_matching_keys_have_matching_values",
-     flb_test_cond_matching_keys_have_matching_values },
+        flb_test_cond_matching_keys_have_matching_values },
     {"cond_matching_keys_do_not_have_matching_values",
-     flb_test_cond_matching_keys_do_not_have_matching_values },
-    {"cond_chain", flb_test_cond_chain },
+        flb_test_cond_matching_keys_do_not_have_matching_values },
+    {"cond_chain"                        , flb_test_cond_chain },
 
     /* Bug fixes */
     {"multiple events are not dropped", flb_test_not_drop_multi_event },

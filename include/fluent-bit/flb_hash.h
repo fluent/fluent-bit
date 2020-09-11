@@ -73,4 +73,6 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id,
                        const char **out_buf, size_t *out_size);
 int flb_hash_del(struct flb_hash *ht, const char *key);
 
+unsigned int gen_hash(const void *key, int len);
+
 #endif

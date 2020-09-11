@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_hash.h>
 #include <msgpack.h>
 
 #include "modify.h"
@@ -182,6 +183,13 @@ static int setup(struct filter_modify_ctx *ctx,
                      0) {
                 condition->conditiontype = KEY_VALUE_DOES_NOT_MATCH;
                 condition->b_is_regex = true;
+            }
+            else if (strcasecmp(sentry->value, "key_value_type_matches") == 0) {
+                condition->conditiontype = KEY_VALUE_TYPE_MATCHES;
+            }
+            else if (strcasecmp(sentry->value, "key_value_type_does_not_match")
+                == 0) {
+                condition->conditiontype = KEY_VALUE_TYPE_DOES_NOT_MATCH;
             }
             else if (strcasecmp
                      (sentry->value,
@@ -543,6 +551,42 @@ static inline bool kv_val_matches_str(msgpack_object_kv * kv,
     return helper_msgpack_object_matches_str(&kv->val, str, len);
 }
 
+static inline bool kv_val_matches_type(msgpack_object_kv *kv,
+                                       char *str, int len)
+{
+    switch (gen_hash(str, len)) {
+    case FLB_FILTER_MODIFY_HASH_NIL:
+        return MSGPACK_OBJECT_NIL == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_BOOL:
+        return MSGPACK_OBJECT_BOOLEAN == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_NUMBER:
+        /* JSON compatible data type */
+        return MSGPACK_OBJECT_POSITIVE_INTEGER == kv->val.type
+            || MSGPACK_OBJECT_NEGATIVE_INTEGER == kv->val.type
+            || MSGPACK_OBJECT_FLOAT32 == kv->val.type
+            || MSGPACK_OBJECT_FLOAT64 == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_INT:
+        return MSGPACK_OBJECT_POSITIVE_INTEGER == kv->val.type
+            || MSGPACK_OBJECT_NEGATIVE_INTEGER == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_FLOAT:
+        return MSGPACK_OBJECT_FLOAT64 == kv->val.type
+            || MSGPACK_OBJECT_FLOAT32 == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_STR:
+        return MSGPACK_OBJECT_STR == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_ARRAY:
+        return MSGPACK_OBJECT_ARRAY == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_MAP:
+        return MSGPACK_OBJECT_MAP == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_BIN:
+        return MSGPACK_OBJECT_BIN == kv->val.type;
+    case FLB_FILTER_MODIFY_HASH_EXT:
+        return MSGPACK_OBJECT_EXT == kv->val.type;
+    }
+
+    /* unrecognized type */
+    return false;
+}
+
 static inline bool kv_key_matches_str_rule_key(msgpack_object_kv * kv,
                                                struct modify_rule *rule)
 {
@@ -706,6 +750,36 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(struct filter_modify_ctx *ctx,
 }
 
 static inline bool
+evaluate_condition_KEY_VALUE_TYPE_MATCHES(struct filter_modify_ctx *ctx,
+                                          msgpack_object *map,
+                                          struct modify_condition *condition)
+{
+    int i;
+    bool match = false;
+    msgpack_object_kv *kv;
+    for (i = 0; i < map->via.map.size; i++) {
+        kv = &map->via.map.ptr[i];
+        if (kv_key_matches_str(kv, condition->a, condition->a_len)) {
+            if (kv_val_matches_type(kv, condition->b, condition->b_len)) {
+                flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_TYPE_MATCHES %s",
+                              condition->b);
+                match = true;
+                break;
+            }
+        }
+    }
+    return match;
+}
+
+static inline bool
+evaluate_condition_KEY_VALUE_TYPE_DOES_NOT_MATCH(struct filter_modify_ctx *ctx,
+                                                 msgpack_object *map,
+                                                 struct modify_condition *condition)
+{
+    return !evaluate_condition_KEY_VALUE_TYPE_MATCHES(ctx, map, condition);
+}
+
+static inline bool
 evaluate_condition_MATCHING_KEYS_HAVE_MATCHING_VALUES(struct filter_modify_ctx *ctx,
                                                       msgpack_object *map,
                                                       struct modify_condition
@@ -764,6 +838,12 @@ static inline bool evaluate_condition(struct filter_modify_ctx *ctx,
         return evaluate_condition_KEY_VALUE_MATCHES(ctx, map, condition);
     case KEY_VALUE_DOES_NOT_MATCH:
         return evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(ctx, map, condition);
+    case KEY_VALUE_TYPE_MATCHES:
+        return evaluate_condition_KEY_VALUE_TYPE_MATCHES(ctx, map, condition);
+    case KEY_VALUE_TYPE_DOES_NOT_MATCH:
+        return evaluate_condition_KEY_VALUE_TYPE_DOES_NOT_MATCH(ctx,
+                                                                map,
+                                                                condition);
     case MATCHING_KEYS_HAVE_MATCHING_VALUES:
         return evaluate_condition_MATCHING_KEYS_HAVE_MATCHING_VALUES(ctx,
                                                                      map,
