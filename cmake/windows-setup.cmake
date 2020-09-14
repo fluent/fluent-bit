@@ -42,6 +42,7 @@ set(FLB_IN_EMITTER            Yes)
 # OUTPUT plugins
 # ==============
 set(FLB_OUT_AZURE             Yes)
+set(FLB_OUT_AZURE_BLOB        Yes)
 set(FLB_OUT_BIGQUERY           No)
 set(FLB_OUT_COUNTER           Yes)
 set(FLB_OUT_DATADOG           Yes)
