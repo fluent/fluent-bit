@@ -91,7 +91,6 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int i;
     int ret;
     int size;
-    int queue_full_retries = 0;
     char *out_buf;
     size_t out_size;
     struct mk_list *head;
@@ -266,17 +265,6 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
  retry:
-    if (queue_full_retries >= 10) {
-        if (ctx->format == FLB_KAFKA_FMT_JSON) {
-            flb_free(out_buf);
-        }
-        if (ctx->format == FLB_KAFKA_FMT_GELF) {
-            flb_sds_destroy(s);
-        }
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        return FLB_RETRY;
-    }
-
     ret = rd_kafka_produce(topic->tp,
                            RD_KAFKA_PARTITION_UA,
                            RD_KAFKA_MSG_F_COPY,
@@ -290,8 +278,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                 rd_kafka_err2str(rd_kafka_last_error()));
 
         /*
-         * rdkafka queue is full, keep trying 'locally' for a few seconds,
-         * otherwise let the caller to issue a main retry againt the engine.
+         * rdkafka queue is full, keep retrying when queue is full.
+         * We need at least one produce task retrying here so that it can
+         * set ctx->blocked back to FLB_FALSE when queue is flushed.
          */
         if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
             flb_plg_warn(ctx->ins, "internal queue is full, "
@@ -316,8 +305,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             flb_time_sleep(1000, config);
             rd_kafka_poll(ctx->producer, 0);
 
-            /* Issue a re-try */
-            queue_full_retries++;
+            /* Issue a retry. */
             goto retry;
         }
     }
