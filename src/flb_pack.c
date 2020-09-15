@@ -463,7 +463,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRIu64, o->via.u64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -471,7 +471,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRId64, o->via.i64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
