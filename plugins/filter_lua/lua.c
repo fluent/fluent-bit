@@ -48,11 +48,11 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
-            lua_pushnumber(l, (double) o->via.u64);
+            lua_pushinteger(l, (double) o->via.u64);
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-            lua_pushnumber(l, (double) o->via.i64);
+            lua_pushinteger(l, (double) o->via.i64);
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
@@ -157,6 +157,22 @@ static void try_to_convert_data_type(struct lua_filter *lf,
     lua_tomsgpack(lf, pck, 0);
 }
 
+static int lua_isinteger(lua_State *L, int index)
+{
+    lua_Number n;
+    lua_Integer i;
+
+    if (lua_type(L, index) == LUA_TNUMBER) {
+        n = lua_tonumber(L, index);
+        i = lua_tointeger(L, index);
+
+        if (i == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
 {
     int len;
@@ -177,8 +193,14 @@ static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
             break;
         case LUA_TNUMBER:
             {
-                double num = lua_tonumber(l, -1 + index);
-                msgpack_pack_double(pck, num);
+                if (lua_isinteger(l, -1 + index)) {
+                    int64_t num = lua_tointeger(l, -1 + index);
+                    msgpack_pack_int64(pck, num);
+                }
+                else {
+                    double num = lua_tonumber(l, -1 + index);
+                    msgpack_pack_double(pck, num);
+                }
             }
             break;
         case LUA_TBOOLEAN:
@@ -411,12 +433,15 @@ static int cb_lua_filter(const void *data, size_t bytes,
         /* Get timestamp */
         flb_time_pop_from_msgpack(&t, &result, &p);
         t_orig = t;
-        ts = flb_time_to_double(&t);
 
         /* Prepare function call, pass 3 arguments, expect 3 return values */
         lua_getglobal(ctx->lua->state, ctx->call);
         lua_pushstring(ctx->lua->state, tag);
+
+        /* Timestamp */
+        ts = flb_time_to_double(&t);
         lua_pushnumber(ctx->lua->state, ts);
+
         lua_pushmsgpack(ctx->lua->state, p);
         if (ctx->protected_mode) {
             ret = lua_pcall(ctx->lua->state, 3, 3, 0);
@@ -458,7 +483,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
             if (l_code == 1) {
                 flb_time_from_double(&t, l_timestamp);
             }
-            else if(l_code == 2) {
+            else if (l_code == 2) {
                 /* Keep the timestamp */
                 t = t_orig;
             }
