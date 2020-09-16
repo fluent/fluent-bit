@@ -376,7 +376,6 @@ int flb_pack_json_state(const char *js, size_t len,
 
 static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
 {
-    double unix_time;
     msgpack_object o;
     msgpack_object *obj;
     msgpack_object root;
