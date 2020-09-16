@@ -18,8 +18,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_MQTT_CONFIG_H
-#define FLB_MQTT_CONFIG_H
+#ifndef FLB_IN_FW_CONFIG_H
+#define FLB_IN_FW_CONFIG_H
 
 #include "fw.h"
 
