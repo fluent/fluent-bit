@@ -88,6 +88,7 @@ option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                "Enable AWS support"            Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
+option(FLB_STATIC_BINARY       "Build static binary           No")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 
@@ -284,6 +285,11 @@ endif()
 if(FLB_SMALL)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 -s -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
 endif()
+
+if(FLB_STATIC_BINARY)
+  set(CMAKE_EXE_LINKER_FLAGS " -static-libgcc -static -lpthread  ")
+endif()
+
 
 if(FLB_COVERAGE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O0 --coverage -fprofile-arcs -ftest-coverage")
