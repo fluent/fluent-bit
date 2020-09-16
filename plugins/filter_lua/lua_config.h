@@ -40,6 +40,7 @@ struct lua_filter {
     flb_sds_t buffer;                 /* json dec buffer */
     int    l2c_types_num;             /* number of l2c_types */
     int    protected_mode;            /* exec lua function in protected mode */
+    int    time_as_table;             /* timestamp as a Lua table */
     struct mk_list l2c_types;         /* data types (lua -> C) */
     struct flb_luajit *lua;           /* state context   */
     struct flb_filter_instance *ins;  /* filter instance */
