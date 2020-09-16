@@ -398,8 +398,8 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     /* This is a Fluent Bit record, just do the proper unpacking/printing */
     flb_time_pop_from_msgpack(&tms, &result, &obj);
 
-    unix_time = flb_time_to_double(&tms);
-    fprintf(stdout, "[%zd] [%f, ", cnt, unix_time);
+    fprintf(stdout, "[%zd] [%"PRIu32".%09lu, ", cnt,
+            (uint32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
     msgpack_object_print(stdout, *obj);
     fprintf(stdout, "]\n");
 
