@@ -333,16 +333,17 @@ struct cpu_snapshot *snapshot_pid_percent(struct cpu_stats *cstats,
     sum_pre = (snap_pre->v_user + snap_pre->v_system);
     sum_now = (snap_now->v_user + snap_now->v_system);
 
-    snap_now->p_cpu = CPU_METRIC_USAGE(sum_pre, sum_now, ctx);
+    snap_now->p_cpu = CPU_METRIC_SYS_AVERAGE(sum_pre, sum_now, ctx);
 
     /* User space CPU% */
-    snap_now->p_user = CPU_METRIC_USAGE(snap_pre->v_user, snap_now->v_user,
-                                        ctx);
+    snap_now->p_user = CPU_METRIC_SYS_AVERAGE(snap_pre->v_user,
+                                              snap_now->v_user,
+                                              ctx);
 
     /* Kernel space CPU% */
-    snap_now->p_system = CPU_METRIC_USAGE(snap_pre->v_system,
-                                          snap_now->v_system,
-                                          ctx);
+    snap_now->p_system = CPU_METRIC_SYS_AVERAGE(snap_pre->v_system,
+                                                snap_now->v_system,
+                                                ctx);
 
 #ifdef FLB_TRACE
     flb_trace("cpu[pid=%i] all=%s%f%s user=%s%f%s system=%s%f%s",
