@@ -431,6 +431,11 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         return NULL;
     }
 
+    /* Make sure the incoming object is a map */
+    if (o->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
     if (fields != NULL && fields->host_key != NULL) {
         host_key = fields->host_key;
         host_key_len = flb_sds_len(fields->host_key);
