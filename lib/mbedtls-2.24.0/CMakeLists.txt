@@ -69,18 +69,18 @@ set(CTR_DRBG_128_BIT_KEY_WARNING "${WARNING_BORDER}"
                          "${WARNING_BORDER}")
 
 # Python 3 is only needed here to check for configuration warnings.
-if(NOT CMAKE_VERSION VERSION_LESS 3.15.0)
-    set(Python3_FIND_STRATEGY LOCATION)
-    find_package(Python3 COMPONENTS Interpreter)
-    if(Python3_Interpreter_FOUND)
-        set(MBEDTLS_PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
-    endif()
-else()
-    find_package(PythonInterp 3)
-    if(PYTHONINTERP_FOUND)
-        set(MBEDTLS_PYTHON_EXECUTABLE ${PYTHON_EXECUTABLE})
-    endif()
-endif()
+#if(NOT CMAKE_VERSION VERSION_LESS 3.15.0)
+#    set(Python3_FIND_STRATEGY LOCATION)
+#    find_package(Python3 COMPONENTS Interpreter)
+#    if(Python3_Interpreter_FOUND)
+#        set(MBEDTLS_PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+#    endif()
+#else()
+#    find_package(PythonInterp 3)
+#    if(PYTHONINTERP_FOUND)
+#        set(MBEDTLS_PYTHON_EXECUTABLE ${PYTHON_EXECUTABLE})
+#    endif()
+#endif()
 if(MBEDTLS_PYTHON_EXECUTABLE)
 
     # If 128-bit keys are configured for CTR_DRBG, display an appropriate warning
@@ -241,8 +241,8 @@ endif(ENABLE_ZLIB_SUPPORT)
 
 add_subdirectory(include)
 
-add_subdirectory(3rdparty)
-list(APPEND libs ${thirdparty_lib})
+#add_subdirectory(3rdparty)
+#list(APPEND libs ${thirdparty_lib})
 
 add_subdirectory(library)
 
