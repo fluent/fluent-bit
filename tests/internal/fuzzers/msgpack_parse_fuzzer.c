@@ -10,7 +10,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     /* target the conversion of raw msgpack to json */
     flb_sds_t record;
     record = flb_msgpack_raw_to_json_sds(data, size);
-    printf("=> %s\n", record);
     flb_sds_destroy(record);
 
     return 0;
