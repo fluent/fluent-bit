@@ -16,6 +16,7 @@ set(UNIT_TESTS_FILES
   utils.c
   gzip.c
   gelf.c
+  random.c
   config_map.c
   )
 
