@@ -624,9 +624,13 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     }
 
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, in_buf, in_size, &off);
-    root = &result.data;
+    ret = msgpack_unpack_next(&result, in_buf, in_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_sds_destroy(out_buf);
+        return NULL;
+    }
 
+    root = &result.data;
     while (1) {
         ret = flb_msgpack_to_json(out_buf, out_size, root);
         if (ret <= 0) {
