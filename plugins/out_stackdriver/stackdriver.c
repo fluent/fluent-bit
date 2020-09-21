@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_regex.h>
 
 #include <msgpack.h>
 
@@ -379,8 +380,10 @@ static struct mk_list *parse_local_resource_id_to_list(char *local_resource_id, 
 
     /* The local_resource_id is splitted by '.' */
     ret = flb_slist_split_string(list, local_resource_id, '.', max_split);
-    if (ret == -1) {
+
+    if (ret == -1 || mk_list_size(list) != max_split) {
         flb_error("error parsing local_resource_id for type %s", type);
+        flb_slist_destroy(list);
         flb_free(list);
         return NULL;
     }
@@ -478,7 +481,7 @@ static int process_local_resource_id(struct flb_stackdriver *ctx, char *type)
 
     new_local_resource_id = flb_sds_create_len(ctx->local_resource_id,
                                                flb_sds_len(ctx->local_resource_id));
-    replace_prefix_dot(new_local_resource_id, prefix_len);
+    replace_prefix_dot(new_local_resource_id, prefix_len - 1);
 
     if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
         list = parse_local_resource_id_to_list(new_local_resource_id, K8S_CONTAINER);
@@ -598,16 +601,31 @@ static int process_local_resource_id(struct flb_stackdriver *ctx, char *type)
     }
 
     if (strncmp(type, K8S_CONTAINER, len_k8s_container) == 0) {
-        flb_sds_destroy(ctx->namespace_name);
-        flb_sds_destroy(ctx->pod_name);
-        flb_sds_destroy(ctx->container_name);
+        if (ctx->namespace_name) {
+            flb_sds_destroy(ctx->namespace_name);
+        }
+
+        if (ctx->pod_name) {
+            flb_sds_destroy(ctx->pod_name);
+        }
+
+        if (ctx->container_name) {
+            flb_sds_destroy(ctx->container_name);
+        }
     }
     else if (strncmp(type, K8S_NODE, len_k8s_node) == 0) {
-        flb_sds_destroy(ctx->node_name);
+        if (ctx->node_name) {
+            flb_sds_destroy(ctx->node_name);
+        }
     }
     else if (strncmp(type, K8S_POD, len_k8s_pod) == 0) {
-        flb_sds_destroy(ctx->namespace_name);
-        flb_sds_destroy(ctx->pod_name);
+        if (ctx->namespace_name) {
+            flb_sds_destroy(ctx->namespace_name);
+        }
+
+        if (ctx->pod_name) {
+            flb_sds_destroy(ctx->pod_name);
+        }
     }
 
     flb_sds_destroy(new_local_resource_id);
@@ -642,6 +660,89 @@ static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object 
     //flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload",
     //              ctx->labels_key);
     return NULL;
+}
+
+static void cb_results(const char *name, const char *value,
+                       size_t vlen, void *data)
+{
+    struct flb_stackdriver *ctx = data;
+
+    if (vlen == 0) {
+        return;
+    }
+
+    if (strcmp(name, "pod_name") == 0) {
+        if (ctx->pod_name != NULL) {
+            flb_sds_destroy(ctx->pod_name);
+        }
+        ctx->pod_name = flb_sds_create_len(value, vlen);
+    }
+    else if (strcmp(name, "namespace_name") == 0) {
+        if (ctx->namespace_name != NULL) {
+            flb_sds_destroy(ctx->namespace_name);
+        }
+        ctx->namespace_name = flb_sds_create_len(value, vlen);
+    }
+    else if (strcmp(name, "container_name") == 0) {
+        if (ctx->container_name != NULL) {
+            flb_sds_destroy(ctx->container_name);
+        }
+        ctx->container_name = flb_sds_create_len(value, vlen);
+    }
+
+    return;
+}
+
+int is_tag_match_regex(struct flb_stackdriver *ctx, const char *tag, int tag_len)
+{
+    int ret;
+    int tag_prefix_len;
+    int len_to_be_matched;
+    const char *tag_str_to_be_matcheds;
+    struct flb_regex *regex;
+
+    tag_prefix_len = flb_sds_len(ctx->tag_prefix);
+    tag_str_to_be_matcheds = tag + tag_prefix_len;
+    len_to_be_matched = tag_len - tag_prefix_len;
+
+    regex = flb_regex_create(DEFAULT_TAG_REGEX);
+    ret = flb_regex_match(regex,
+                          (unsigned char *) tag_str_to_be_matcheds,
+                          len_to_be_matched);
+    flb_regex_destroy(regex);
+
+    /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
+    return ret;
+}
+
+/* extract_resource_labels_from_regex(3) will only be called if the
+ * tag matches the regex rule
+ */
+int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
+                                       const char *tag, int tag_len)
+{
+    int ret = 1;
+    int tag_prefix_len;
+    int len_to_be_matched;
+    const char *tag_str_to_be_matcheds;
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+
+    tag_prefix_len = flb_sds_len(ctx->tag_prefix);
+    tag_str_to_be_matcheds = tag + tag_prefix_len;
+    len_to_be_matched = tag_len - tag_prefix_len;
+
+    regex = flb_regex_create(DEFAULT_TAG_REGEX);
+    ret = flb_regex_do(regex, tag_str_to_be_matcheds, len_to_be_matched, &result);
+    if (ret <= 0) {
+        flb_plg_warn(ctx->ins, "invalid pattern for given tag %s", tag);
+        return -1;
+    }
+
+    flb_regex_parse(regex, &result, cb_results, ctx);
+    flb_regex_destroy(regex);
+
+    return ret;
 }
 
 static int cb_stackdriver_init(struct flb_output_instance *ins,
@@ -1216,10 +1317,16 @@ static int stackdriver_format(struct flb_config *config,
          *    k8s_container.<namespace_name>.<pod_name>.<container_name>
          */
 
-        ret = process_local_resource_id(ctx, K8S_CONTAINER);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "fail to process local_resource_id from "
-                          "log entry for k8s_container");
+        if (is_tag_match_regex(ctx, tag, tag_len) > 0) {
+            ret = extract_resource_labels_from_regex(ctx, tag, tag_len);
+        }
+        else {
+            ret = process_local_resource_id(ctx, K8S_CONTAINER);
+        }
+
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "fail to extract resource labels "
+                          "for k8s_container resource type");
             msgpack_sbuffer_destroy(&mp_sbuf);
             return -1;
         }

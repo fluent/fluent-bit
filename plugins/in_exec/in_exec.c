@@ -136,6 +136,8 @@ static int in_exec_config_read(struct flb_exec *ctx,
     const char *cmd = NULL;
     const char *pval = NULL;
 
+    ctx->ins = in;
+
     /* filepath setting */
     cmd = flb_input_get_property("command", in);
     if (cmd == NULL) {

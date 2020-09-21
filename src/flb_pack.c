@@ -376,7 +376,6 @@ int flb_pack_json_state(const char *js, size_t len,
 
 static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
 {
-    double unix_time;
     msgpack_object o;
     msgpack_object *obj;
     msgpack_object root;
@@ -398,8 +397,8 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     /* This is a Fluent Bit record, just do the proper unpacking/printing */
     flb_time_pop_from_msgpack(&tms, &result, &obj);
 
-    unix_time = flb_time_to_double(&tms);
-    fprintf(stdout, "[%zd] [%f, ", cnt, unix_time);
+    fprintf(stdout, "[%zd] [%"PRIu32".%09lu, ", cnt,
+            (uint32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
     msgpack_object_print(stdout, *obj);
     fprintf(stdout, "]\n");
 
@@ -463,7 +462,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRIu64, o->via.u64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -471,7 +470,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRId64, o->via.i64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;

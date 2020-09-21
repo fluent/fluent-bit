@@ -83,7 +83,7 @@ static struct filter_test *filter_test_create(struct flb_lib_out_cb *data)
 
 static void filter_test_destroy(struct filter_test *ctx)
 {
-    sleep(0.2);
+    sleep(1);
     flb_stop(ctx->flb);
     flb_destroy(ctx->flb);
     flb_free(ctx);
@@ -1098,7 +1098,7 @@ static int callback_count(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
         flb_debug("[test_filter_modify] received message: %s", data);
-        add_output_num(size); /* success */
+        add_output_num(); /* success */
     }
     return 0;
 }
@@ -1109,19 +1109,19 @@ static void flb_test_not_drop_multi_event()
 {
     int count = 0;
     int expected = 3;
-    
+
     char *p;
     int len;
     int ret;
     int bytes;
-    
+
     struct filter_test *ctx;
     struct flb_lib_out_cb cb_data;
 
 
     clear_output_num();
     cb_data.cb = callback_count;
-    
+
     /* Create test context */
     ctx = filter_test_create((void *) &cb_data);
     if (!ctx) {
@@ -1154,15 +1154,15 @@ static void flb_test_not_drop_multi_event()
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
-    
+
     sleep(1); /* waiting flush */
     count = get_output_num();
 
     TEST_CHECK_(count == expected, "Expected number of events %d, got %d", expected, count );
 
-    
+
     filter_test_destroy(ctx);
-    
+
 }
 
 TEST_LIST = {
@@ -1198,6 +1198,6 @@ TEST_LIST = {
 
     /* Bug fixes */
     {"multiple events are not dropped", flb_test_not_drop_multi_event },
-    
+
     {NULL, NULL}
 };

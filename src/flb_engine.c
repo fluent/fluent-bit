@@ -88,6 +88,7 @@ int flb_engine_flush(struct flb_config *config,
     return 0;
 }
 
+/* Cleanup function that runs every 1.5 second */
 static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
 {
     (void) data;
@@ -626,6 +627,7 @@ int flb_engine_start(struct flb_config *config)
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
             flb_sched_timer_cleanup(config->sched);
+            flb_upstream_conn_pending_destroy(config);
         }
     }
 }

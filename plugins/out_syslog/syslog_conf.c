@@ -25,8 +25,7 @@
 struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
                                             struct flb_config *config)
 {
-    struct mk_list *head;
-    struct flb_kv *prop;
+    int ret;
     const char *tmp;
     struct flb_syslog *ctx = NULL;
 
@@ -37,165 +36,65 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
-    ctx->mode = FLB_SYSLOG_UDP;
-    ctx->format = FLB_SYSLOG_RFC5424;
+    ctx->parsed_mode = FLB_SYSLOG_UDP;
+    ctx->parsed_format = FLB_SYSLOG_RFC5424;
     ctx->maxsize = -1;
+
+    /* Populate context with config map defaults and incoming properties */
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "configuration error");
+        flb_syslog_config_destroy(ctx);
+        return NULL;
+    }
+
+    /* Set context */
+    flb_output_set_context(ins, ctx);
 
     /* Config Mode */
     tmp = flb_output_get_property("mode", ins);
     if (tmp) {
         if (!strcasecmp(tmp, "tcp")) {
-            ctx->mode = FLB_SYSLOG_TCP;
+            ctx->parsed_mode = FLB_SYSLOG_TCP;
         }
         else if (!strcasecmp(tmp, "tls")) {
-            ctx->mode = FLB_SYSLOG_TLS;
+            ctx->parsed_mode = FLB_SYSLOG_TLS;
         }
         else if (!strcasecmp(tmp, "udp")) {
-            ctx->mode = FLB_SYSLOG_UDP;
+            ctx->parsed_mode = FLB_SYSLOG_UDP;
         }
         else {
             flb_plg_error(ctx->ins, "unknown syslog mode %s", tmp);
-            goto clean;
+            return NULL;
         }
     }
 
-    mk_list_foreach(head, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_kv, _head);
+    /* syslog_format */
+    tmp = flb_output_get_property("syslog_format", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "rfc3164") == 0) {
+            ctx->parsed_format = FLB_SYSLOG_RFC3164;
+        }
+        else if (strcasecmp(tmp, "rfc5424") == 0) {
+            ctx->parsed_format = FLB_SYSLOG_RFC5424;
+        }
+        else {
+            flb_plg_error(ctx->ins, "unknown syslog format %s", tmp);
+            return NULL;
+        }
+    }
 
-        if (strncasecmp(prop->key, "syslog_", 7) != 0) {
-            continue;
-        }
-
-        if (!strcasecmp(prop->key, "syslog_format")) {
-            if (!strcasecmp(prop->val, "rfc3164")) {
-                ctx->format = FLB_SYSLOG_RFC3164;
-            }
-            else if (!strcasecmp(prop->val, "rfc5424")) {
-                ctx->format = FLB_SYSLOG_RFC5424;
-            }
-            else {
-                flb_plg_error(ctx->ins, "unknown syslog format %s", prop->val);
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_maxsize")) {
-            if (ctx->maxsize > 0) {
-                if (atoi(prop->val) > 0) {
-                    ctx->maxsize = atoi(prop->val);
-                }
-                else {
-                    flb_plg_error(ctx->ins, "syslog_maxsize must be > 0");
-                    goto clean;
-                }
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_maxsize already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_nested_key_separator")) {
-            if (ctx->nested_key_separator == NULL) {
-                ctx->nested_key_separator = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_nested_key_separator already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_severity_key")) {
-            if (ctx->severity_key == NULL) {
-                ctx->severity_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_severity_key already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_facility_key")) {
-            if (ctx->facility_key == NULL) {
-                ctx->facility_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_facility_key already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_hostname_key")) {
-            if (ctx->hostname_key == NULL) {
-                ctx->hostname_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_hostname_key already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_appname_key")) {
-            if (ctx->appname_key == NULL) {
-                ctx->appname_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_appname_key already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_procid_key")) {
-            if (ctx->procid_key == NULL) {
-                ctx->procid_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_procid_key already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_msgid_key")) {
-            if (ctx->msgid_key == NULL) {
-                ctx->msgid_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_msgid_key already defined");
-                goto clean;
-            }
-        }
-        else if (!strcasecmp(prop->key, "syslog_sd_key")) {
-            flb_sds_t *ftmp;
-            ftmp = flb_realloc(ctx->sd_key, sizeof(flb_sds_t) * (ctx->nsd+1));
-            if (ftmp == NULL) {
-                flb_errno();
-                goto clean;
-            }
-            ctx->sd_key = ftmp;
-            ctx->sd_key[ctx->nsd] = flb_sds_create(prop->val);
-            ctx->nsd++;
-        }
-        else if (!strcasecmp(prop->key, "syslog_message_key")) {
-            if (ctx->message_key == NULL) {
-                ctx->message_key = flb_sds_create(prop->val);
-            }
-            else {
-                flb_plg_error(ctx->ins, "syslog_message_key already defined");
-                goto clean;
-            }
-        }
+    /* syslog maxsize */
+    if (ctx->maxsize < 0) {
+        flb_plg_error(ctx->ins, "invalid 'syslog_maxsize' value %i",
+                      ctx->maxsize);
+        return NULL;
     }
 
     return ctx;
-
-clean:
-    flb_syslog_config_destroy(ctx);
-    return NULL;
 }
 
 void flb_syslog_config_destroy(struct flb_syslog *ctx)
 {
-    flb_sds_destroy(ctx->nested_key_separator);
-    flb_sds_destroy(ctx->severity_key);
-    flb_sds_destroy(ctx->facility_key);
-    flb_sds_destroy(ctx->hostname_key);
-    flb_sds_destroy(ctx->appname_key);
-    flb_sds_destroy(ctx->procid_key);
-    flb_sds_destroy(ctx->msgid_key);
-    flb_sds_destroy(ctx->message_key);
-
-    flb_free(ctx->sd_key);
     flb_free(ctx);
 }

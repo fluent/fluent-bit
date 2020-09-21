@@ -434,6 +434,37 @@ int64_t flb_utils_size_to_bytes(const char *size)
     return val;
 }
 
+int flb_utils_hex2int(char *hex, int len)
+{
+    int i = 0;
+    int res = 0;
+    char c;
+
+    while ((c = *hex++) && i < len) {
+        res *= 0x10;
+
+        if (c >= 'a' && c <= 'f') {
+            res += (c - 0x57);
+        }
+        else if (c >= 'A' && c <= 'F') {
+            res += (c - 0x37);
+        }
+        else if (c >= '0' && c <= '9') {
+            res += (c - 0x30);
+        }
+        else {
+            return -1;
+        }
+        i++;
+    }
+
+    if (res < 0) {
+        return -1;
+    }
+
+    return res;
+}
+
 int flb_utils_time_to_seconds(const char *time)
 {
     int len;
