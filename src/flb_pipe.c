@@ -182,3 +182,30 @@ ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
 
     return total;
 }
+
+/* Writes to a non-blocking pipe yielding if no more bytes can be written */
+ssize_t flb_pipe_write_async(int fd, const void *buf, size_t count, struct flb_thread *th)
+{
+    ssize_t bytes;
+    size_t total = 0;
+
+    do {
+        bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
+        if (bytes == -1) {
+            if (FLB_PIPE_WOULDBLOCK()) {
+                flb_thread_yield(th, FLB_FALSE);
+                continue;
+            }
+            return -1;
+        }
+        else if (bytes == 0) {
+            /* Broken pipe ? */
+            flb_errno();
+            return -1;
+        }
+        total += bytes;
+
+    } while (total < count);
+
+    return total;
+}
