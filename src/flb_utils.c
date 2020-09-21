@@ -655,12 +655,14 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             if (available - written < 6) {
                 return FLB_FALSE;
             }
+
             if (i + hex_bytes > str_len) {
                 break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
             codepoint = 0;
+
             for (b = 0; b < hex_bytes; b++) {
                 s = (unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &codepoint, *s);
@@ -671,7 +673,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
@@ -685,6 +687,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             if (available - written < 6) {
                 return FLB_FALSE;
             }
+
             if (i + hex_bytes > str_len) {
                 break; /* skip truncated UTF-8 */
             }
@@ -701,8 +704,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes, skipping");
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
@@ -718,6 +720,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     }
 
     *off += written;
+
     return FLB_TRUE;
 }
 
