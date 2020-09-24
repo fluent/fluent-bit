@@ -24,12 +24,15 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 
+#define DEFAULT_BUF_SIZE 16000
+
 /* STDIN Input configuration & context */
 struct flb_in_stdin_config {
-    int fd;                           /* stdin file descriptor */
-    int coll_fd;                      /* collector fd          */
-    int buf_len;                      /* read buffer length    */
-    char buf[8192 * 2];               /* read buffer: 16Kb max */
+    int    fd;                /* stdin file descriptor */
+    int    coll_fd;           /* collector fd          */
+    size_t buf_size;          /* size of a buffer      */
+    int    buf_len;           /* read buffer length    */
+    char   *buf;              /* read buffer           */
 
     /* Parser / Format */
     struct flb_parser *parser;

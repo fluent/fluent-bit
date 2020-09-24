@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <msgpack.h>
 
@@ -106,7 +107,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
 
     bytes = read(ctx->fd,
                  ctx->buf + ctx->buf_len,
-                 sizeof(ctx->buf) - ctx->buf_len - 1);
+                 ctx->buf_size - ctx->buf_len - 1);
     flb_plg_trace(ctx->ins, "stdin read() = %i", bytes);
 
     if (bytes == 0) {
@@ -210,44 +211,96 @@ static int in_stdin_collect(struct flb_input_instance *ins,
     return 0;
 }
 
+/* Read stdin config*/
+static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
+                               struct flb_input_instance *in,
+                               struct flb_config *config)
+{
+    const char *pval = NULL;
+
+    ctx->buf_size = DEFAULT_BUF_SIZE;
+    ctx->buf = NULL;
+    ctx->buf_len = 0;
+    ctx->ins = in;
+
+    /* parser settings */
+    pval = flb_input_get_property("parser", in);
+    if (pval) {
+        ctx->parser = flb_parser_get(pval, config);
+        if (!ctx->parser) {
+            flb_plg_error(ctx->ins, "requested parser '%s' not found", pval);
+            return -1;
+        }
+    }
+
+    /* buffer size setting */
+    pval = flb_input_get_property("buffer_size", in);
+    if (pval != NULL) {
+        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
+
+        if (ctx->buf_size == -1) {
+            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", pval);
+            return -1;
+        }
+        else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
+            flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
+                          pval, DEFAULT_BUF_SIZE);
+            return -1;
+        }
+    }
+
+    flb_plg_debug(ctx->ins, "buf_size=%zu", ctx->buf_size);
+    return 0;
+}
+
+static void in_stdin_config_destroy(struct flb_in_stdin_config *ctx)
+{
+    if (!ctx) {
+        return;
+    }
+
+    /* release buffer */
+    if (ctx->buf) {
+        flb_free(ctx->buf);
+    }
+    flb_free(ctx);
+}
+
 /* Initialize plugin */
 static int in_stdin_init(struct flb_input_instance *in,
                          struct flb_config *config, void *data)
 {
     int fd;
     int ret;
-    const char *tmp;
     struct flb_in_stdin_config *ctx;
     (void) data;
 
-    /* Allocate space for the configuration */
+    /* Allocate space for the configuration context */
     ctx = flb_malloc(sizeof(struct flb_in_stdin_config));
     if (!ctx) {
         return -1;
     }
-    ctx->buf_len = 0;
-    ctx->ins = in;
+
+    /* Initialize stdin config */
+    ret = in_stdin_config_init(ctx, in, config);
+    if (ret < 0) {
+        goto init_error;
+    }
+
+    ctx->buf = flb_malloc(ctx->buf_size);
+    if (!ctx->buf) {
+        flb_errno();
+        goto init_error;
+    }
 
     /* Clone the standard input file descriptor */
     fd = dup(STDIN_FILENO);
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "Could not open standard input!");
-        flb_free(ctx);
-        return -1;
+        goto init_error;
     }
     ctx->fd = fd;
-
-    tmp = flb_input_get_property("parser", in);
-    if (tmp) {
-        ctx->parser = flb_parser_get(tmp, config);
-        if (!ctx->parser) {
-            flb_plg_error(ctx->ins, "requested parser '%s' not found", tmp);
-        }
-    }
-    else {
-        ctx->parser = NULL;
-    }
 
     /* Always initialize built-in JSON pack state */
     flb_pack_state_init(&ctx->pack_state);
@@ -263,12 +316,16 @@ static int in_stdin_init(struct flb_input_instance *in,
                                         config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for STDIN input plugin");
-        flb_free(ctx);
-        return -1;
+        goto init_error;
     }
     ctx->coll_fd = ret;
 
     return 0;
+
+init_error:
+    in_stdin_config_destroy(ctx);
+
+    return -1;
 }
 
 /* Cleanup serial input */
@@ -284,7 +341,7 @@ static int in_stdin_exit(void *in_context, struct flb_config *config)
         close(ctx->fd);
     }
     flb_pack_state_reset(&ctx->pack_state);
-    flb_free(ctx);
+    in_stdin_config_destroy(ctx);
 
     return 0;
 }
