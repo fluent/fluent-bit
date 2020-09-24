@@ -173,12 +173,12 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     return 0;
 }
 
-static int process_content(struct flb_tail_file *file, off_t *bytes)
+static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
-    int len;
+    size_t len;
     int lines = 0;
     int ret;
-    off_t processed_bytes = 0;
+    size_t processed_bytes = 0;
     char *data;
     char *end;
     char *p;
@@ -377,7 +377,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
 #endif
 {
     int i;
-    int len;
+    size_t len;
     char *p;
     size_t buf_s = 0;
 #ifdef FLB_HAVE_REGEX
@@ -544,8 +544,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 {
     int fd;
     int ret;
-    int len;
-    off_t offset;
+    size_t len;
+    int64_t offset;
     char *tag;
     size_t tag_len;
     struct flb_tail_file *file;
@@ -697,7 +697,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     /* Seek if required */
     if (file->offset > 0) {
-        flb_plg_debug(ctx->ins, "inode=%"PRIu64" appended file following on offset=%lu",
+        flb_plg_debug(ctx->ins, "inode=%"PRIu64" appended file following on offset=%"PRId64,
                       file->inode, file->offset);
         offset = lseek(file->fd, file->offset, SEEK_SET);
         if (offset == -1) {
@@ -800,8 +800,8 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     int ret;
     char *tmp;
     size_t size;
-    off_t capacity;
-    off_t processed_bytes;
+    size_t capacity;
+    size_t processed_bytes;
     ssize_t bytes;
     struct stat st;
     struct flb_tail_config *ctx;
@@ -1261,7 +1261,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
             if (ret == 0) {
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \
-                              "(offset=%lu / size = %"PRIu64")",
+                              "(offset=%"PRId64" / size = %"PRIu64")",
                               file->inode, file->name, file->offset, st.st_size);
                 if (file->pending_bytes > 0 && flb_input_buf_paused(ins)) {
                     flb_plg_warn(ctx->ins, "purged rotated file while data "
@@ -1271,7 +1271,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
             }
             else {
                 flb_plg_debug(ctx->ins,
-                              "inode=%"PRIu64" purge rotated file %s (offset=%lu)",
+                              "inode=%"PRIu64" purge rotated file %s (offset=%"PRId64")",
                               file->inode, file->name, file->offset);
             }
 

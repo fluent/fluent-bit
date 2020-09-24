@@ -159,7 +159,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    off_t offset;
+    int64_t offset;
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_tail_config *ctx = in_context;
