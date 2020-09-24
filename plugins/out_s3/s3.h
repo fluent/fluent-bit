@@ -33,6 +33,7 @@
 #define MAX_CHUNKED_UPLOAD_SIZE 50000000
 
 #define UPLOAD_TIMER_MAX_WAIT 60000
+#define UPLOAD_TIMER_MIN_WAIT 6000
 
 #define MULTIPART_UPLOAD_STATE_NOT_CREATED              0
 #define MULTIPART_UPLOAD_STATE_CREATED                  1
@@ -92,7 +93,6 @@ struct flb_s3 {
     char *region;
     char *s3_key_format;
     char *tag_delimiters;
-    char *chunk_buffer_dir;
     char *endpoint;
     int free_endpoint;
     int use_put_object;
@@ -114,6 +114,9 @@ struct flb_s3 {
 
     struct flb_local_buffer upload_store;
     flb_sds_t upload_dir;
+
+    flb_sds_t store_dir;
+    struct flb_fstore *fs;
 
     /*
      * used to track that unset buffers were found on startup that have not
