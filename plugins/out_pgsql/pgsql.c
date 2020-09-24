@@ -159,6 +159,15 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         ctx->max_pool_size = 1;
     }
 
+    /* CockroachDB Support */
+    tmp = flb_output_get_property("cockroachdb", ins);
+    if (tmp && flb_utils_bool(tmp)) {
+        ctx->cockroachdb = FLB_TRUE;
+    }
+    else {
+        ctx->cockroachdb = FLB_FALSE;
+    }
+
     ret = pgsql_start_connections(ctx);
     if (ret) {
         return -1;
@@ -315,10 +324,7 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
 
 
     snprintf(query, str_len,
-             "INSERT INTO %s "
-             "SELECT %s, "
-             "to_timestamp(CAST(value->>'%s' as FLOAT)), * "
-             "FROM json_array_elements(%s);",
+             ctx->cockroachdb ? FLB_PGSQL_INSERT_COCKROACH : FLB_PGSQL_INSERT,
              ctx->db_table, tag_escaped, ctx->timestamp_key, json);
     flb_plg_trace(ctx->ins, "query: %s", query);
 
