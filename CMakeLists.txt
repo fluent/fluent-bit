@@ -282,7 +282,12 @@ if(FLEX_FOUND AND BISON_FOUND)
 endif()
 
 if(FLB_SMALL)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 -s -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
+  if(CMAKE_COMPILER_IS_GNUCC)
+    set(strip_flag  " -s ")
+  else()
+    set(strip_flag  "")
+  endif()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 ${strip_flag} -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
 endif()
 
 if(FLB_COVERAGE)
