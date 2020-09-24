@@ -210,7 +210,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
     msgpack_packer tmp_pck;
 
     msgpack_object_kv **append_arr = NULL;
-    size_t            append_arr_len;
+    size_t            append_arr_len = 0;
     int                append_arr_i;
     struct mk_list *head;
     struct filter_parser *fp;
