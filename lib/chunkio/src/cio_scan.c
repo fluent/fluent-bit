@@ -107,7 +107,6 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
 /* Given a cio context, scan it root_path and populate stream/files */
 int cio_scan_streams(struct cio_ctx *ctx, char *chunk_extension)
 {
-    int len;
     DIR *dir;
     struct dirent *ent;
     struct cio_stream *st;

@@ -437,6 +437,56 @@ int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
     return 0;
 }
 
+int cio_file_content_copy(struct cio_chunk *ch,
+                          void **out_buf, size_t *out_size)
+{
+    int ret;
+    int set_down = CIO_FALSE;
+    char *buf;
+    char *data = NULL;
+    size_t size;
+    struct cio_file *cf = ch->backend;
+
+    /* If the file content is already up, just do a copy of the memory map */
+    if (cio_chunk_is_up(ch) == CIO_FALSE) {
+        ret = cio_chunk_up_force(ch);
+        if (ret != CIO_OK ){
+            return CIO_ERROR;
+        }
+        set_down = CIO_TRUE;
+    }
+
+    size = cf->data_size;
+    data = cio_file_st_get_content(cf->map);
+
+    if (!data) {
+        if (set_down == CIO_TRUE) {
+            cio_chunk_down(ch);
+        }
+        return CIO_ERROR;
+    }
+
+    buf = malloc(size + 1);
+    if (!buf) {
+        cio_errno();
+        if (set_down == CIO_TRUE) {
+            cio_chunk_down(ch);
+        }
+        return CIO_ERROR;
+    }
+    memcpy(buf, data, size);
+    buf[size] = '\0';
+
+    *out_buf = buf;
+    *out_size = size;
+
+    if (set_down == CIO_TRUE) {
+        cio_chunk_down(ch);
+    }
+
+    return CIO_OK;
+}
+
 /*
  * If the maximum number of 'up' chunks is reached, put this chunk
  * down (only at open time).
