@@ -65,9 +65,6 @@ static int secure_forward_init(struct flb_forward *ctx,
         secure_forward_tls_error(ctx, ret);
         return -1;
     }
-
-    /* Gernerate shared key salt */
-    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
     return 0;
 }
 #endif
@@ -519,6 +516,12 @@ static int forward_config_init(struct flb_forward_config *fc,
         secure_forward_init(ctx, fc);
     }
 #endif
+
+    /* Generate the shared key salt */
+    if (flb_randombytes(fc->shared_key_salt, 16)) {
+        flb_plg_error(ctx->ins, "cannot generate shared key salt");
+        return -1;
+    }
 
     mk_list_add(&fc->_head, &ctx->configs);
     return 0;
