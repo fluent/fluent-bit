@@ -143,7 +143,7 @@ _flb_strptime(const char *buf, const char *fmt, struct tm *tm, int initialize)
 {
 	unsigned char c;
 	const unsigned char *bp, *ep;
-	size_t len;
+	size_t len = 0;
 	int alt_format, i, offs;
 	int neg = 0;
 	static int century, relyear, fields;
