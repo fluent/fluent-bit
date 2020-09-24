@@ -231,7 +231,7 @@ static void cb_gelf_flush(const void *data, size_t bytes,
                           void *out_context,
                           struct flb_config *config)
 {
-    struct flb_out_gelf_config *ctx = out_context;
+    int ret;
     flb_sds_t s;
     flb_sds_t tmp;
     msgpack_unpacked result;
@@ -243,8 +243,8 @@ static void cb_gelf_flush(const void *data, size_t bytes,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn;
-    int ret;
+    struct flb_upstream_conn *u_conn = NULL;
+    struct flb_out_gelf_config *ctx = out_context;
 
     if (ctx->mode != FLB_GELF_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
