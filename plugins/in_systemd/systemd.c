@@ -89,7 +89,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
 #endif
-    char *tag;
+    char *tag = NULL;
     char new_tag[PATH_MAX];
     char last_tag[PATH_MAX];
     size_t tag_len;
