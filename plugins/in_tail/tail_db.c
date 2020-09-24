@@ -29,7 +29,7 @@
 struct query_status {
     int id;
     int rows;
-    off_t offset;
+    int64_t offset;
 };
 
 /* Open or create database required by tail plugin */

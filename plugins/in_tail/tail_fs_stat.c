@@ -86,7 +86,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    off_t offset;
+    int64_t offset;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
