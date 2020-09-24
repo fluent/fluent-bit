@@ -357,13 +357,12 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
             goto error;
         }
 
+        flag = 0;
         if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
             flag = MK_EVENT_WRITE;
         }
         else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
             flag = MK_EVENT_READ;
-        }
-        else {
         }
 
         /*
