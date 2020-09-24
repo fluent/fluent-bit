@@ -38,7 +38,7 @@ static inline char *flb_strdup(const char *s)
     if (!str) {
         return NULL;
     }
-    strncpy(str, s, len);
+    memcpy(str, s, len);
     str[len] = '\0';
 
     return str;
@@ -52,7 +52,7 @@ static inline char *flb_strndup(const char *s, size_t n)
     if (!str) {
         return NULL;
     }
-    strncpy(str, s, n);
+    memcpy(str, s, n);
     str[n] = '\0';
 
     return str;
