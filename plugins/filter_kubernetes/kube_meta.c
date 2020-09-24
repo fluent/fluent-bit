@@ -551,7 +551,9 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 k = api_map.via.map.ptr[i].key;
                 if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
                     meta_val = api_map.via.map.ptr[i].val;
-                    meta_found = FLB_TRUE;
+                    if (meta_val.type == MSGPACK_OBJECT_MAP) {
+                        meta_found = FLB_TRUE;
+                    }
                 }
                 else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
                    spec_val = api_map.via.map.ptr[i].val;
