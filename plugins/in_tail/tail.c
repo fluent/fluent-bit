@@ -49,7 +49,7 @@ static inline int consume_byte(int fd)
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = flb_pipe_r(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, (char *) &val, sizeof(val));
     if (ret <= 0) {
         flb_errno();
         return -1;

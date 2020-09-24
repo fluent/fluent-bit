@@ -34,9 +34,9 @@ struct flb_tail_file {
     int watch_fd;
     /* file lookup info */
     int fd;
-    off_t size;
-    off_t offset;
-    off_t last_line;
+    int64_t size;
+    int64_t offset;
+    int64_t last_line;
     uint64_t  inode;
     uint64_t  link_inode;
     int   is_link;
@@ -44,7 +44,7 @@ struct flb_tail_file {
     char *real_name;            /* real file name in the file system */
     size_t name_len;
     time_t rotated;
-    off_t pending_bytes;
+    int64_t pending_bytes;
 
     /* dynamic tag for this file */
     int tag_len;
@@ -67,8 +67,8 @@ struct flb_tail_file {
     bool dmode_complete;        /* buffer contains completed log         */
 
     /* buffering */
-    off_t parsed;
-    off_t buf_len;
+    size_t parsed;
+    size_t buf_len;
     size_t buf_size;
     char *buf_data;
 

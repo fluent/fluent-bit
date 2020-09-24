@@ -44,7 +44,7 @@ static inline int tail_signal_manager(struct flb_tail_config *ctx)
     }
 
     /* Insert a dummy event into the channel manager */
-    n = flb_pipe_w(ctx->ch_manager[1], &val, sizeof(val));
+    n = flb_pipe_w(ctx->ch_manager[1], (const char *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
         return -1;
@@ -62,7 +62,7 @@ static inline int tail_signal_pending(struct flb_tail_config *ctx)
     uint64_t val = 0xc002;
 
     /* Insert a dummy event into the 'pending' channel */
-    n = flb_pipe_w(ctx->ch_pending[1], &val, sizeof(val));
+    n = flb_pipe_w(ctx->ch_pending[1], (const char *) &val, sizeof(val));
 
     /*
      * If we get EAGAIN, it simply means pending channel is full. As
@@ -86,7 +86,7 @@ static inline int tail_consume_pending(struct flb_tail_config *ctx)
      * blocked (pipe is empty).
      */
     do {
-        ret = flb_pipe_r(ctx->ch_pending[0], &val, sizeof(val));
+        ret = flb_pipe_r(ctx->ch_pending[0], (char *) &val, sizeof(val));
         if (ret <= 0 && !FLB_PIPE_WOULDBLOCK()) {
             flb_errno();
             return -1;
