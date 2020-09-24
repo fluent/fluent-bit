@@ -48,6 +48,7 @@ set(src
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
+  flb_fstore.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
