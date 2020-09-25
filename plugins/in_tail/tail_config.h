@@ -39,13 +39,8 @@
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
-#ifdef _WIN32
-    intptr_t ch_manager[2];    /* pipe: channel manager    */
-    intptr_t ch_pending[2];    /* pipe: pending events     */
-#else
-    int ch_manager[2];         /* pipe: channel manager    */
-    int ch_pending[2];         /* pipe: pending events     */
-#endif
+    flb_pipefd_t ch_manager[2];    /* pipe: channel manager    */
+    flb_pipefd_t ch_pending[2];    /* pipe: pending events     */
     int ch_reads;              /* count number if signal reads */
     int ch_writes;             /* count number of signal writes */
 
