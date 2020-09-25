@@ -36,6 +36,9 @@
 /* number of characters needed to 'end' a PutLogEvents payload */
 #define PUT_LOG_EVENTS_FOOTER_LEN      4
 
+/* 256KiB minus 26 bytes for the event */
+#define MAX_EVENT_LEN      262118
+
 #include "cloudwatch_logs.h"
 
 void cw_flush_destroy(struct cw_flush *buf);
