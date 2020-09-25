@@ -15,7 +15,7 @@
 #define S3_KEY_FORMAT_SPECIAL_CHARCATERS_TAG "logs/my.great_photos-2020:jan/$TAG/%Y/%m/%d"
 #define S3_OBJECT_KEY_SPECIAL_CHARCATERS_TAG "logs/my.great_photos-2020:jan/aa.bb.ccc/2020/08/15"
 
-#define S3_OBJECT_KEY_INVALID_DELIMITER "logs/aa.bb-ccc/aa.bb-ccc[0]/2020/08/15"
+#define S3_OBJECT_KEY_INVALID_DELIMITER "logs/aa.bb-ccc[2]/aa.bb-ccc/2020/08/15"
 
 #define S3_KEY_FORMAT_INVALID_TAG "logs/$TAG[2]/$TAG[-1]/%Y/%m/%d"
 #define S3_OBJECY_KEY_INVALID_TAG "logs/ccc/aa.bb.ccc[-1]/2020/08/15"
