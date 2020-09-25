@@ -474,7 +474,7 @@ int send_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     int i;
     struct cw_event *event;
 
-    if (buf->event_index == 0) {
+    if (buf->event_index <= 0) {
         return 0;
     }
 
@@ -546,15 +546,26 @@ int add_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     }
 
 retry_add_event:
+    retry_add = FLB_FALSE;
     ret = process_event(ctx, buf, obj, tms);
     if (ret < 0) {
         return -1;
     }
-    else if (ret > 0) {
+    else if (ret == 1) {
+        if (buf->event_index <= 0) {
+            /* somehow the record was larger than our entire request buffer */
+            flb_plg_warn(ctx->ins, "Discarding massive log record");
+            return 0; /* discard this record and return to caller */
+        }
         /* send logs and then retry the add */
-        buf->event_index--;
         retry_add = FLB_TRUE;
         goto send;
+    } else if (ret == 2) {
+        /*
+         * discard this record and return to caller
+         * only happens for empty records in this plugin
+         */
+        return 0;
     }
 
     event = &buf->events[buf->event_index];
@@ -562,27 +573,30 @@ retry_add_event:
 
     if (check_stream_time_span(stream, event) == FLB_FALSE) {
         /* do not send this event */
-        buf->event_index--;
         retry_add = FLB_TRUE;
         goto send;
     }
 
     if ((buf->data_size + event_bytes) > PUT_LOG_EVENTS_PAYLOAD_SIZE) {
+        if (buf->event_index <= 0) {
+            /* somehow the record was larger than our entire request buffer */
+            flb_plg_warn(ctx->ins, "Discarding massive log record");
+            return 0; /* discard this record and return to caller */
+        }
         /* do not send this event */
-        buf->event_index--;
         retry_add = FLB_TRUE;
         goto send;
     }
+
+    buf->data_size += event_bytes;
+    set_stream_time_span(stream, event);
+    buf->event_index++;
 
     if (buf->event_index == MAX_EVENTS_PER_PUT) {
         goto send;
     }
 
     /* send is not needed yet, return to caller */
-    buf->data_size += event_bytes;
-    set_stream_time_span(stream, event);
-    buf->event_index++;
-
     return 0;
 
 send:
