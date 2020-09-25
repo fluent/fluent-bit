@@ -341,6 +341,10 @@ static void set_stream_time_span(struct log_stream *stream, struct cw_event *eve
 
 /*
  * Processes the msgpack object
+ * -1 = failure, record not added
+ * 0 = success, record added
+ * 1 = we ran out of space, send and retry
+ * 2 = record could not be processed, discard it
  * Returns 0 on success, -1 on general errors,
  * and 1 if we ran out of space to write the event
  * which means a send must occur
@@ -370,7 +374,7 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     /* Discard empty messages (written == 2 means '""') */
     if (written <= 2) {
         flb_plg_debug(ctx->ins, "Found empty log message");
-        return 0;
+        return 2;
     }
 
     /* the json string must be escaped, unless the log_key option is used */
@@ -403,6 +407,12 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
             return 1;
         }
 
+        if (written > MAX_EVENT_LEN) {
+            flb_plg_warn(ctx->ins, "[size=%zu] Truncating event which is larger than "
+                         "max size allowed by CloudWatch", written);
+            written = MAX_EVENT_LEN;
+        }
+
         /* copy serialized json to tmp_buf */
         if (!strncpy(tmp_buf_ptr, buf->event_buf, written)) {
             return -1;
@@ -422,10 +432,16 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
          * We don't want that for log_key, so we ignore the first
          * and last character
          */
-        written--;
-        tmp_buf_ptr++;
+        written -= 2;
+
+        if (written > MAX_EVENT_LEN) {
+            flb_plg_warn(ctx->ins, "[size=%zu] Truncating event which is larger than "
+                         "max size allowed by CloudWatch", written);
+            written = MAX_EVENT_LEN;
+        }
+
+        tmp_buf_ptr++; /* pass over the opening quote */
         buf->tmp_buf_offset += written;
-        written--;
         event = &buf->events[buf->event_index];
         event->json = tmp_buf_ptr;
         event->len = written;
