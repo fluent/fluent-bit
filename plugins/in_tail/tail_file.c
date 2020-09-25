@@ -1057,7 +1057,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char tmp[128];
 #elif defined(__APPLE__)
     char path[PATH_MAX];
-#elif defined(_MSC_VER)
+#elif defined(FLB_SYSTEM_WINDOWS)
     HANDLE h;
 #endif
 
@@ -1097,10 +1097,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     memcpy(buf, path, len);
     buf[len] = '\0';
 
-#elif defined(_MSC_VER)
+#elif defined(FLB_SYSTEM_WINDOWS)
     int len;
 
-    h = _get_osfhandle(file->fd);
+    h = (HANDLE) _get_osfhandle(file->fd);
     if (h == INVALID_HANDLE_VALUE) {
         flb_errno();
         flb_free(buf);
