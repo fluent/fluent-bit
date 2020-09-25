@@ -57,6 +57,8 @@ void cio_file_hash_print(struct cio_file *cf);
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out);
 void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st);
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch);
+int cio_file_content_copy(struct cio_chunk *ch,
+                          void **out_buf, size_t *out_size);
 
 
 int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);

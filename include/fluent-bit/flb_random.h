@@ -25,6 +25,6 @@
  * Fill buffer with the random bytes. Return 0 on success;
  * -1 on error.
  */
-int flb_randombytes(unsigned char *buf, int len);
+int flb_random_bytes(unsigned char *buf, int len);
 
 #endif

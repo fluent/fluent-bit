@@ -495,7 +495,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
             const char *key = NULL;
             int key_len;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
             int quote = FLB_FALSE;
             int custom_key = FLB_FALSE;
 

@@ -35,6 +35,7 @@ struct flb_out_gelf_config {
     flb_sockfd_t fd;
 
     int pckt_size;
+    char *pckt_buf;
     int compress;
     unsigned int seed;
 

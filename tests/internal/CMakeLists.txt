@@ -15,11 +15,17 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
-  gelf.c
   random.c
   config_map.c
   mp.c
   )
+
+if (NOT WIN32)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    gelf.c
+    )
+endif()
 
 if(FLB_PARSER)
   set(UNIT_TESTS_FILES

@@ -419,7 +419,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
     size_t off = 0;
     (void) f_ins;
     (void) config;
-    double ts;
+    double ts = 0;
     msgpack_object *p;
     msgpack_object root;
     msgpack_unpacked result;

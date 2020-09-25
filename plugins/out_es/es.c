@@ -62,6 +62,7 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
                               ctx->aws_region, "es",
+                              0,
                               ctx->aws_provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
