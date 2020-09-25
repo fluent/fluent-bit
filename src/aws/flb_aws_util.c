@@ -798,7 +798,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     /* A match against "$TAG[" indicates an invalid or out of bounds tag part. */
     if (strstr(s3_key, tmp)){
         flb_warn("[s3_key] Invalid / Out of bounds tag part: At most 10 tag parts "
-                 "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s", tag, format);
+                 "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s, delimiters=%s",
+                 tag, format, tag_delimiter);
     }
 
     /* Find all occurences of $TAG and replace with the entire tag. */
