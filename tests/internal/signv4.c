@@ -604,6 +604,7 @@ static void aws_test_suite()
                                   FLB_TRUE,  /* normalize URI ? */
                                   FLB_FALSE, /* add x-amz-date header ? */
                                   t, region, service,
+                                  0,
                                   provider);
         TEST_CHECK(signature != NULL);
         if (signature) {
