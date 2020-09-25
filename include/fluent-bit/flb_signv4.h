@@ -27,6 +27,12 @@
 #ifndef FLB_SIGNV4_H
 #define FLB_SIGNV4_H
 
+/* Request is not Amazon S3 PutObject */
+#define S3_MODE_NONE             0
+/* Set the x-amz-content-sha256 header with the sha value */
+#define S3_MODE_SIGNED_PAYLOAD   1
+/* Set the x-amz-content-sha256 header with the value UNSIGNED-PAYLOAD */
+#define S3_MODE_UNSIGNED_PAYLOAD 2
 
 flb_sds_t flb_signv4_uri_normalize_path(char *uri, size_t len);
 
@@ -34,6 +40,7 @@ flb_sds_t flb_signv4_do(struct flb_http_client *c, int normalize_uri,
                         int amz_date,
                         time_t t_now,
                         char *region, char *service,
+                        int s3_mode,
                         struct flb_aws_provider *provider);
 
 #endif
