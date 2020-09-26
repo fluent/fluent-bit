@@ -379,7 +379,7 @@ static flb_sds_t url_params_format(char *params)
              * This happens in the S3 CreateMultipartUpload request
              */
             tmp = flb_sds_printf(&buf, "%s=",
-                                 kv->key, kv->val);
+                                 kv->key);
         }
         else {
             tmp = flb_sds_printf(&buf, "%s=%s",
