@@ -65,6 +65,8 @@ int flb_fstore_file_meta_set(struct flb_fstore *fs,
         flb_errno();
         flb_error("[fstore] could not cache metadata in file: %s:%s",
                   fs->stream->name, fsf->chunk->name);
+        fsf->meta_size = 0;
+        return -1;
     }
     memcpy(fsf->meta_buf, meta, size);
     fsf->meta_size = size;
