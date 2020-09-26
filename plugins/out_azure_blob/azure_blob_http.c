@@ -271,7 +271,7 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     ret = mbedtls_base64_encode((unsigned char *) b64, size, &o_len,
                                 signature, sizeof(signature));
     if (ret != 0) {
-        flb_sds_destroy(can_req);
+        flb_sds_destroy(b64);
         return NULL;
     }
     flb_sds_len_set(b64, o_len);
