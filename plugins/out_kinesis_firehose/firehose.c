@@ -98,11 +98,17 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
         ctx->custom_endpoint = FLB_TRUE;
-        ctx->endpoint = (char *) tmp;
+        ctx->endpoint = removeProtocol((char *) tmp, "https://");
     }
     else {
         ctx->custom_endpoint = FLB_FALSE;
     }
+
+    tmp = flb_output_get_property("sts_endpoint", ins);
+    if (tmp) {
+        ctx->sts_endpoint = (char *) tmp;
+    }
+
 
     tmp = flb_output_get_property("log_key", ins);
     if (tmp) {
@@ -153,6 +159,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                            &ctx->cred_tls,
                                                            (char *) ctx->region,
+                                                           ctx->sts_endpoint,
                                                            NULL,
                                                            flb_aws_client_generator());
     if (!ctx->aws_provider) {
@@ -192,6 +199,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
+                                                    ctx->sts_endpoint,
                                                     NULL,
                                                     flb_aws_client_generator());
         if (!ctx->aws_provider) {
@@ -397,6 +405,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the Firehose API"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
+     0, FLB_FALSE, 0,
+    "Custom endpoint for the STS API."
     },
 
     /* EOF */

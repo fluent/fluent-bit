@@ -86,6 +86,7 @@ struct flb_firehose {
     const char *region;
     const char *role_arn;
     const char *log_key;
+    char *sts_endpoint;
     int custom_endpoint;
 
     /* must be freed on shutdown if custom_endpoint is not set */
