@@ -361,6 +361,7 @@ if(FLB_AVRO_ENCODER)
   # jansson
   set(JANSSON_BUILD_DOCS Off)
   set(JANSSON_EXAMPLES Off)
+  set(JANSSON_WITHOUT_TESTS  On)
   include(cmake/jansson.cmake)
 endif()
 
