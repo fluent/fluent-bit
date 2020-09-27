@@ -359,6 +359,8 @@ if(FLB_AVRO_ENCODER)
   #add this back in on next PR
   #add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
   # jansson
+  set(JANSSON_BUILD_DOCS Off)
+  set(JANSSON_EXAMPLES Off)
   include(cmake/jansson.cmake)
 endif()
 
