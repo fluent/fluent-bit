@@ -86,7 +86,7 @@ static struct request *http_request_create(char *request)
     char *start;
     char *end;
     char *p;
-    char *br;
+    char *br = NULL;
     flb_sds_t tmp;
     flb_sds_t key;
     flb_sds_t val;
@@ -604,6 +604,7 @@ static void aws_test_suite()
                                   FLB_TRUE,  /* normalize URI ? */
                                   FLB_FALSE, /* add x-amz-date header ? */
                                   t, region, service,
+                                  0,
                                   provider);
         TEST_CHECK(signature != NULL);
         if (signature) {

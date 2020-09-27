@@ -146,6 +146,12 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         lf->protected_mode = flb_utils_bool(tmp);
     }
 
+    lf->time_as_table = FLB_FALSE;
+    tmp = flb_filter_get_property("time_as_table", ins);
+    if (tmp) {
+        lf->time_as_table = flb_utils_bool(tmp);
+    }
+
     return lf;
 }
 

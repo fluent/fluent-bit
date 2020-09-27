@@ -229,8 +229,6 @@ struct flb_aws_provider *flb_profile_provider_create();
 
 time_t flb_aws_cred_expiration(const char* timestamp);
 
-int flb_read_file(const char *path, char **out_buf, size_t *out_size);
-
 struct flb_aws_credentials *flb_parse_sts_resp(char *response,
                                                time_t *expiration);
 flb_sds_t flb_sts_uri(char *action, char *role_arn, char *session_name,

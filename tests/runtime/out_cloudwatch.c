@@ -33,6 +33,7 @@ void flb_test_cloudwatch_success(void)
     flb_output_set(ctx, out_ffd,"log_group_name", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"log_stream_prefix", "from-fluent-", NULL);
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -69,6 +70,7 @@ void flb_test_cloudwatch_already_exists_create_group(void)
     flb_output_set(ctx, out_ffd,"log_group_name", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"log_stream_prefix", "from-fluent-", NULL);
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -105,6 +107,7 @@ void flb_test_cloudwatch_already_exists_create_stream(void)
     flb_output_set(ctx, out_ffd,"log_group_name", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"log_stream_prefix", "from-fluent-", NULL);
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -141,6 +144,7 @@ void flb_test_cloudwatch_error_create_group(void)
     flb_output_set(ctx, out_ffd,"log_group_name", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"log_stream_prefix", "from-fluent-", NULL);
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -177,6 +181,7 @@ void flb_test_cloudwatch_error_create_stream(void)
     flb_output_set(ctx, out_ffd,"log_group_name", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"log_stream_prefix", "from-fluent-", NULL);
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);
@@ -213,6 +218,7 @@ void flb_test_cloudwatch_error_put_log_events(void)
     flb_output_set(ctx, out_ffd,"log_group_name", "fluent", NULL);
     flb_output_set(ctx, out_ffd,"log_stream_prefix", "from-fluent-", NULL);
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
+    flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
 
     ret = flb_start(ctx);

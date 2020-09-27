@@ -116,11 +116,14 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 | name | title | description |
 | :--- | :--- | :--- |
+| [aws](https://docs.fluentbit.io/manual/pipeline/filters/aws-metadata) | AWS Metadata | Enrich logs with AWS Metadata. |
+| [expect](https://docs.fluentbit.io/manual/pipeline/filters/expect) | Expect | Validate records match certain criteria in structure. |
 | [grep](https://docs.fluentbit.io/manual/pipeline/filters/grep) | Grep | Match or exclude specific records by patterns. |
 | [kubernetes](https://docs.fluentbit.io/manual/pipeline/filters/kubernetes) | Kubernetes | Enrich logs with Kubernetes Metadata. |
 | [lua](https://docs.fluentbit.io/manual/pipeline/filters/lua) | Lua | Filter records using Lua Scripts. |
 | [parser](https://docs.fluentbit.io/manual/pipeline/filters/parser) | Parser | Parse record. |
 | [record\_modifier](https://docs.fluentbit.io/manual/pipeline/filters/record-modifier) | Record Modifier | Modify record. |
+| [rewrite\_tag](https://docs.fluentbit.io/manual/pipeline/filters/rewrite-tag) | Rewrite Tag | Re-emit records under new tag. |
 | [stdout](https://docs.fluentbit.io/manual/pipeline/filters/standard-output) | Stdout | Print records to the standard output interface. |
 | [throttle](https://docs.fluentbit.io/manual/pipeline/filters/throttle) | Throttle | Apply rate limit to event flow. |
 | [nest](https://docs.fluentbit.io/manual/pipeline/filters/nest) | Nest | Nest records under a specified key |

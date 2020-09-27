@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
 
 #include "azure_blob.h"
@@ -91,7 +92,7 @@ flb_sds_t azb_uri_decode(const char *uri, size_t len)
             hex[1] = uri[i + 2];
             hex[2] = '\0';
 
-            hex_result = mk_utils_hex2int(hex, 2);
+            hex_result = flb_utils_hex2int(hex, 2);
             out[c++] = hex_result;
             i += 2;
         }

@@ -397,9 +397,9 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
         for (i = 0; i < loop; i++) {
             char temp[48] = {0};
             const char *key = NULL;
-            int key_len;
+            int key_len = 0;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
@@ -502,8 +502,10 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
 static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                              struct syslog_msg *msg)
 {
-    int i,n;
+    int i;
     int loop;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
 
     if (o == NULL) {
         return -1;
@@ -516,9 +518,9 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         for (i = 0; i < loop; i++) {
             char temp[48] = {0};
             const char *key = NULL;
-            int key_len;
+            int key_len = 0;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
@@ -537,11 +539,11 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
             }
 
             if (v->type == MSGPACK_OBJECT_MAP) {
-                if (ctx->nsd > 0) {
-                    for (n = 0 ; n < ctx->nsd ; n++) {
-                        if ((key_len == flb_sds_len(ctx->sd_key[n])) &&
-                            !strncmp(key, ctx->sd_key[n], flb_sds_len(ctx->sd_key[n]))) {
-                            msgpack_to_sd (&(msg->sd), key, key_len, v);
+                if (ctx->sd_keys) {
+                    flb_config_map_foreach(head, mv, ctx->sd_keys) {
+                        if ((key_len == flb_sds_len(mv->val.str)) &&
+                            strncmp(key, mv->val.str, flb_sds_len(mv->val.str)) == 0) {
+                            msgpack_to_sd(&(msg->sd), key, key_len, v);
                             break;
                         }
                     }
@@ -584,8 +586,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
             }
 
             if ((ctx->severity_key != NULL) &&
-                (key_len == flb_sds_len(ctx->severity_key)) &&
-                !strncmp(key, ctx->severity_key, flb_sds_len(ctx->severity_key))) {
+                flb_sds_cmp(ctx->severity_key, key, key_len) == 0) {
                 if (msg->severity == -1) {
                     if ((val_len == 1) && (val[0] >= '0' && val[0] <= '7')) {
                         msg->severity = val[0]-'0';
@@ -606,8 +607,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                 }
             }
             else if ((ctx->facility_key != NULL) &&
-                     (key_len == flb_sds_len(ctx->facility_key)) &&
-                     !strncmp(key, ctx->facility_key, flb_sds_len(ctx->facility_key))) {
+                     flb_sds_cmp(ctx->facility_key, key, key_len) == 0) {
                 if (msg->facility == -1) {
                     if ((val_len == 1) && (val[0] >= '0' && val[0] <= '9')) {
                         msg->facility = val[0]-'0';
@@ -617,8 +617,7 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                              (val[1] >= '0' && val[1] <= '9')) {
                         msg->facility = (val[0]-'0')*10;
                         msg->facility += (val[1]-'0');
-                        if (!((msg->facility >= 0) &&
-                              (msg->facility <=23))) {
+                        if (!((msg->facility >= 0) && (msg->facility <=23))) {
                             flb_plg_warn(ctx->ins, "invalid facility: '%.*s'",
                                          val_len, val);
                             msg->facility= -1;
@@ -640,38 +639,33 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
                 }
             }
             else if ((ctx->hostname_key != NULL) &&
-                     (key_len == flb_sds_len(ctx->hostname_key)) &&
-                     !strncmp(key, ctx->hostname_key, flb_sds_len(ctx->hostname_key))) {
+                     flb_sds_cmp(ctx->hostname_key, key, key_len) == 0) {
                 if (!msg->hostname) {
-                   msg->hostname = flb_sds_create_len(val, val_len);
+                    msg->hostname = flb_sds_create_len(val, val_len);
                 }
             }
             else if ((ctx->appname_key != NULL) &&
-                     (key_len == flb_sds_len(ctx->appname_key)) &&
-                     !strncmp(key, ctx->appname_key, flb_sds_len(ctx->appname_key))) {
+                     flb_sds_cmp(ctx->appname_key, key, key_len) == 0) {
                 if (!msg->appname) {
-                   msg->appname = flb_sds_create_len(val, val_len);
+                    msg->appname = flb_sds_create_len(val, val_len);
                 }
             }
             else if ((ctx->procid_key != NULL) &&
-                     (key_len == flb_sds_len(ctx->procid_key)) &&
-                     !strncmp(key, ctx->procid_key, flb_sds_len(ctx->procid_key))) {
+                     flb_sds_cmp(ctx->procid_key, key, key_len) == 0) {
                 if (!msg->procid) {
-                   msg->procid = flb_sds_create_len(val, val_len);
+                    msg->procid = flb_sds_create_len(val, val_len);
                 }
             }
             else if ((ctx->msgid_key != NULL) &&
-                     (key_len == flb_sds_len(ctx->msgid_key)) &&
-                     !strncmp(key, ctx->msgid_key, flb_sds_len(ctx->msgid_key))) {
+                     flb_sds_cmp(ctx->msgid_key, key, key_len) == 0) {
                 if (!msg->msgid) {
-                   msg->msgid = flb_sds_create_len(val, val_len);
+                    msg->msgid = flb_sds_create_len(val, val_len);
                 }
             }
             else if ((ctx->message_key != NULL) &&
-                     (key_len == flb_sds_len(ctx->message_key)) &&
-                     !strncmp(key, ctx->message_key, flb_sds_len(ctx->message_key))) {
+                     flb_sds_cmp(ctx->message_key, key, key_len) == 0) {
                 if (!msg->message) {
-                   msg->message = flb_sds_create_len(val, val_len);
+                    msg->message = flb_sds_create_len(val, val_len);
                 }
             }
         }
@@ -724,7 +718,7 @@ static flb_sds_t syslog_format(struct flb_syslog *ctx, msgpack_object *o,
             flb_sds_len_set(*s, ctx->maxsize);
         }
 
-        if (ctx->mode != FLB_SYSLOG_UDP) {
+        if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
             tmp = flb_sds_cat(*s, "\n", 1);
             if (!tmp) {
                 ret_sds = NULL;
@@ -766,10 +760,10 @@ static void cb_syslog_flush(const void *data, size_t bytes,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn;
+    struct flb_upstream_conn *u_conn = NULL;
     int ret;
 
-    if (ctx->mode != FLB_SYSLOG_UDP) {
+    if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
         u_conn = flb_upstream_conn_get(ctx->u);
         if (!u_conn) {
             flb_plg_error(ctx->ins, "no upstream connections available");
@@ -803,7 +797,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
         tmp = syslog_format(ctx, &map, &s, &tm);
         if (tmp != NULL) {
             s = tmp;
-            if (ctx->mode == FLB_SYSLOG_UDP) {
+            if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
                 ret = send(ctx->fd, s, flb_sds_len(s), MSG_DONTWAIT | MSG_NOSIGNAL);
                 if (ret == -1) {
                     msgpack_unpacked_destroy(&result);
@@ -832,7 +826,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
 
     msgpack_unpacked_destroy(&result);
 
-    if (ctx->mode != FLB_SYSLOG_UDP) {
+    if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
         flb_upstream_conn_release(u_conn);
     }
 
@@ -842,6 +836,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
 static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *config,
                           void *data)
 {
+    int io_flags;
     struct flb_syslog *ctx = NULL;
 
     /* Set default network configuration */
@@ -864,7 +859,7 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
     }
 
     ctx->fd = -1;
-    if (ctx->mode == FLB_SYSLOG_UDP) {
+    if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
         ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port);
         if (ctx->fd < 0) {
             flb_syslog_config_destroy(ctx);
@@ -872,9 +867,9 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
     }
     else {
-        int io_flags = FLB_IO_TCP;
+        io_flags = FLB_IO_TCP;
 
-        if (ctx->mode == FLB_SYSLOG_TLS) {
+        if (ctx->parsed_mode == FLB_SYSLOG_TLS) {
             io_flags = FLB_IO_TLS;
         }
 
@@ -919,6 +914,92 @@ static int cb_syslog_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "mode", "udp",
+     0, FLB_TRUE, offsetof(struct flb_syslog, mode),
+     "Set the desired transport type, the available options are tcp, tls and udp."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_format", "rfc5424",
+     0, FLB_TRUE, offsetof(struct flb_syslog, format),
+     "Specify the Syslog protocol format to use, the available options are rfc3164 "
+     "and rfc5424."
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "syslog_maxsize", "0",
+     0, FLB_TRUE, offsetof(struct flb_syslog, maxsize),
+     "Set the maximum size allowed per message. The value must be only integers "
+     "representing the number of bytes allowed. If no value is provided, the "
+     "default size is set depending of the protocol version specified by "
+     "syslog_format , rfc3164 sets max size to 1024 bytes, while rfc5424 sets "
+     "the size to 2048 bytes."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_severity_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, severity_key),
+     "Specify the name of the key from the original record that contains the Syslog "
+     "severity number. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_facility_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, facility_key),
+     "Specify the name of the key from the original record that contains the Syslog "
+     "facility number. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_hostname_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, hostname_key),
+     "Specify the key name from the original record that contains the hostname that "
+     "generated the message. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_appname_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, appname_key),
+     "Specify the key name from the original record that contains the application "
+     "name that generated the message. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_procid_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, procid_key),
+     "Specify the key name from the original record that contains the Process ID "
+     "that generated the message. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_msgid_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, msgid_key),
+     "Specify the key name from the original record that contains the Message ID "
+     "associated to the message. This configuration is optional."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_sd_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_syslog, sd_keys),
+     "Specify the key name from the original record that contains the "
+     "Structured Data (SD) content. If set, the value of the key must be a map."
+     "This option can be set multiple times."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "syslog_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, message_key),
+     "Specify the key name that contains the message to deliver. Note that if "
+     "this property is mandatory, otherwise the message will be empty."
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_syslog_plugin = {
     .name           = "syslog",
@@ -927,5 +1008,10 @@ struct flb_output_plugin out_syslog_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_syslog_flush,
     .cb_exit        = cb_syslog_exit,
+
+    /* Configuration */
+    .config_map     = config_map,
+
+    /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

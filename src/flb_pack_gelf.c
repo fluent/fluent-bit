@@ -431,6 +431,11 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         return NULL;
     }
 
+    /* Make sure the incoming object is a map */
+    if (o->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
     if (fields != NULL && fields->host_key != NULL) {
         host_key = fields->host_key;
         host_key_len = flb_sds_len(fields->host_key);
@@ -490,7 +495,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
             const char *key = NULL;
             int key_len;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
             int quote = FLB_FALSE;
             int custom_key = FLB_FALSE;
 
@@ -730,7 +735,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         }
         *s = tmp;
 
-        tmp = flb_sds_printf(s, "%f", flb_time_to_double(tm));
+        tmp = flb_sds_printf(s, "%" PRIu32".%lu",
+                             tm->tm.tv_sec, tm->tm.tv_nsec / 1000000);
         if (tmp == NULL) {
             return NULL;
         }
@@ -752,7 +758,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 }
 
 flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
-   struct flb_time *tm, struct flb_gelf_fields *fields)
+                                  struct flb_time *tm, struct flb_gelf_fields *fields)
 {
     int ret;
     size_t off = 0;

@@ -273,7 +273,7 @@ static inline int is_last_key_val_string(char *buf, size_t size)
 }
 
 int flb_tail_mult_process_content(time_t now,
-                                  char *buf, int len,
+                                  char *buf, size_t len,
                                   struct flb_tail_file *file,
                                   struct flb_tail_config *ctx)
 {

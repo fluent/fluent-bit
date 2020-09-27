@@ -208,6 +208,23 @@ int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
     return CIO_ERROR;
 }
 
+/* Using the content of the chunk, generate a copy using the heap */
+int cio_chunk_get_content_copy(struct cio_chunk *ch,
+                               void **out_buf, size_t *out_size)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_MEM) {
+        return cio_memfs_content_copy(ch, out_buf, out_size);
+    }
+    else if (type == CIO_STORE_FS) {
+        return cio_file_content_copy(ch, out_buf, out_size);
+    }
+
+    return CIO_ERROR;
+}
+
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch)
 {
     int type;

@@ -62,6 +62,7 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 
     signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
                               ctx->aws_region, "es",
+                              0,
                               ctx->aws_provider);
     if (!signature) {
         flb_plg_error(ctx->ins, "could not sign request with sigv4");
@@ -329,13 +330,6 @@ static int elasticsearch_format(struct flb_config *config,
             flb_time_pop_from_msgpack(&tms, &result, &obj);
         }
 
-        /*
-         * Timestamp: Elasticsearch only support fractional seconds in
-         * milliseconds unit, not nanoseconds, so we take our nsec value and
-         * change it representation.
-         */
-        tms.tm.tv_nsec = (tms.tm.tv_nsec / 1000000);
-
         map   = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
@@ -387,8 +381,14 @@ static int elasticsearch_format(struct flb_config *config,
         gmtime_r(&tms.tm.tv_sec, &tm);
         s = strftime(time_formatted, sizeof(time_formatted) - 1,
                      ctx->time_key_format, &tm);
-        len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%03" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
+        if (ctx->time_key_nanos) {
+            len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                           ".%09" PRIu64 "Z", (uint64_t) tms.tm.tv_nsec);
+        } else {
+            len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
+                           ".%03" PRIu64 "Z",
+                           (uint64_t) tms.tm.tv_nsec / 1000000);
+        }
 
         s += len;
         msgpack_pack_str(&tmp_pck, s);
@@ -843,6 +843,11 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "time_key_format", FLB_ES_DEFAULT_TIME_KEYF,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, time_key_format),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "time_key_nanos", "false",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, time_key_nanos),
      NULL
     },
     {

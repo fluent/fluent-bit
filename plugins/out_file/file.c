@@ -401,9 +401,9 @@ static void cb_file_flush(const void *data, size_t bytes,
         case FLB_OUT_FILE_FMT_JSON:
             buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
-                fprintf(fp, "%s: [%f, %s]" NEWLINE,
+                fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         tag_buf,
-                        flb_time_to_double(&tm),
+                        tm.tm.tv_sec, tm.tm.tv_nsec,
                         buf);
                 flb_free(buf);
             }

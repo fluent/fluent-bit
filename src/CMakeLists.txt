@@ -42,11 +42,13 @@ set(src
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
+  flb_random.c
   flb_plugin.c
   flb_gzip.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
+  flb_fstore.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -122,6 +124,7 @@ if(FLB_AWS)
     "aws/flb_aws_credentials_ec2.c"
     "aws/flb_aws_credentials_http.c"
     "aws/flb_aws_credentials_profile.c"
+    "aws/flb_s3_local_buffer.c"
     )
 endif()
 
@@ -188,6 +191,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     "ws2_32.lib"
     "crypt32.lib"
+    "Bcrypt.lib"
     )
 else()
   set(FLB_DEPS

@@ -43,13 +43,13 @@
 #include "tail_dockermode.h"
 #include "tail_multiline.h"
 
-static inline int consume_byte(int fd)
+static inline int consume_byte(flb_pipefd_t fd)
 {
     int ret;
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = flb_pipe_r(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, (char *) &val, sizeof(val));
     if (ret <= 0) {
         flb_errno();
         return -1;
@@ -231,7 +231,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
     struct flb_tail_file *file;
     (void) config;
 
-#ifndef _MSC_VER
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         if (file->is_link == FLB_TRUE) {
@@ -244,8 +243,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
     }
-
-#endif
     return ret;
 }
 

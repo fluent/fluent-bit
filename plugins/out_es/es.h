@@ -91,6 +91,9 @@ struct flb_elasticsearch {
     /* time key format */
     flb_sds_t time_key_format;
 
+    /* time key nanoseconds */
+    int time_key_nanos;
+
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;

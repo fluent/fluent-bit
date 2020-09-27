@@ -5,7 +5,7 @@ set(FLB_PATH_LIB_MSGPACK "lib/msgpack-3.2.0")
 #add this back in on the next RP
 #set(FLB_PATH_LIB_AVRO    "lib/avro")
 set(FLB_PATH_LIB_CHUNKIO "lib/chunkio")
-set(FLB_PATH_LIB_LUAJIT  "lib/LuaJIT-2.1.0-beta3")
+set(FLB_PATH_LIB_LUAJIT  "lib/luajit-2.1.0-dd5032e")
 set(FLB_PATH_LIB_MONKEY  "lib/monkey")
 set(FLB_PATH_LIB_JSMN    "lib/jsmn")
 set(FLB_PATH_LIB_MBEDTLS "lib/mbedtls-2.24.0")

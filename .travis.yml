@@ -1,8 +1,5 @@
 dist: bionic
 language: c
-# The leak sanitizer uses ptrace, which doesn't work under the
-# travis container infrastructure, so we enable 'sudo'
-sudo: true
 
 git:
   depth: 3
@@ -49,7 +46,6 @@ matrix:
     - os: linux
       env: FLB_OPT="-DFLB_COVERAGE=On"
       dist: bionic
-      sudo: true
       language: c
       compiler: gcc
       script: |
@@ -61,7 +57,6 @@ matrix:
       services:
         - docker
       dist: bionic
-      sudo: true
       language: c
       compiler: gcc
       env: DOCKER_BUILD=1
