@@ -297,15 +297,14 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
 
     if (sts_endpoint) {
         implementation->endpoint = removeProtocol(sts_endpoint, "https://");
+        implementation->custom_endpoint = FLB_TRUE;
     }
     else {
         implementation->endpoint = flb_aws_endpoint("sts", region);
+        implementation->custom_endpoint = FLB_FALSE;
     }
 
-    implementation->custom_endpoint = FLB_TRUE;
-    
     if(!implementation->endpoint) {
-        implementation->custom_endpoint = FLB_FALSE;
         goto error;
     }
 
@@ -526,7 +525,7 @@ static struct flb_aws_provider_vtable eks_provider_vtable = {
 
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  struct flb_tls *tls,
-                                                 char *region, 
+                                                 char *region,
                                                  char *sts_endpoint,
                                                  char *proxy,
                                                  struct
@@ -584,15 +583,14 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
 
     if (sts_endpoint) {
         implementation->endpoint = removeProtocol(sts_endpoint, "https://");
+        implementation->custom_endpoint = FLB_TRUE;
     }
     else {
         implementation->endpoint = flb_aws_endpoint("sts", region);
+        implementation->custom_endpoint = FLB_FALSE;
     }
 
-    implementation->custom_endpoint = FLB_TRUE;
-
     if(!implementation->endpoint) {
-        implementation->custom_endpoint = FLB_FALSE;
         goto error;
     }
 
