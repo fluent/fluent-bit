@@ -329,7 +329,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
-        ctx->endpoint = (char *) tmp;
+        ctx->endpoint = removeProtocol((char *) tmp, "https://");
         ctx->free_endpoint = FLB_FALSE;
     }
     else {
@@ -340,6 +340,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
             goto error;
         }
+    }
+
+    tmp = flb_output_get_property("sts_endpoint", ins);
+    if (tmp) {
+        ctx->sts_endpoint = (char *) tmp;
     }
 
     ctx->client_tls.context = flb_tls_context_new(FLB_TRUE,
@@ -372,6 +377,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->provider = flb_standard_chain_provider_create(config,
                                                        &ctx->provider_tls,
                                                        ctx->region,
+                                                       ctx->sts_endpoint,
                                                        NULL,
                                                        flb_aws_client_generator());
 
@@ -420,6 +426,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                 role_arn,
                                                 session_name,
                                                 ctx->region,
+                                                ctx->sts_endpoint,
                                                 NULL,
                                                 flb_aws_client_generator());
         if (!ctx->provider) {
@@ -1283,6 +1290,21 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "region", "us-east-1",
      0, FLB_TRUE, offsetof(struct flb_s3, region),
     "AWS region."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "role_arn", NULL,
+     0, FLB_FALSE, 0,
+     "ARN of an IAM role to assume (ex. for cross account access)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "endpoint", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, endpoint),
+    "Custom endpoint for the S3 API."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, sts_endpoint),
+    "Custom endpoint for the STS API."
     },
 
     {
