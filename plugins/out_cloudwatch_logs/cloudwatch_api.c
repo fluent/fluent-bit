@@ -441,7 +441,7 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         }
 
         tmp_buf_ptr++; /* pass over the opening quote */
-        buf->tmp_buf_offset += written;
+        buf->tmp_buf_offset += (written + 1);
         event = &buf->events[buf->event_index];
         event->json = tmp_buf_ptr;
         event->len = written;
