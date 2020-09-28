@@ -567,7 +567,7 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key)
     const jsmntok_t *t = NULL;
     char *current_token = NULL;
     jsmn_parser parser;
-    int tokens_size = 10;
+    int tokens_size = 50;
     size_t size;
     int ret;
     int i = 0;
