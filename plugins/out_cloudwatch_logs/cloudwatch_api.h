@@ -26,7 +26,7 @@
  * For reasons that are under investigation, using that number in this plugin
  * leads to API errors. No issues have been seen setting it to 1,000,000 bytes.
  */
-#define PUT_LOG_EVENTS_PAYLOAD_SIZE    1000000
+#define PUT_LOG_EVENTS_PAYLOAD_SIZE    1048576
 #define MAX_EVENTS_PER_PUT             10000
 
 /* number of characters needed to 'start' a PutLogEvents payload */
