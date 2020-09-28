@@ -313,7 +313,7 @@ static void cb_check_gce_instance(void *ctx, int ffd,
 
     /* project id */
     ret = mp_kv_cmp(res_data, res_size,
-                    "$resource['labels']['project_id']", "111222333");
+                    "$resource['labels']['project_id']", "fluent-bit-test");
     TEST_CHECK(ret == FLB_TRUE);
 
     /* zone */
