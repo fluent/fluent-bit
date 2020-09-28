@@ -2,7 +2,6 @@
 set(FLB_PATH_LIB_CO      "lib/flb_libco")
 set(FLB_PATH_LIB_RBTREE  "lib/rbtree")
 set(FLB_PATH_LIB_MSGPACK "lib/msgpack-3.2.0")
-#add this back in on the next RP
 set(FLB_PATH_LIB_AVRO    "lib/avro")
 set(FLB_PATH_LIB_CHUNKIO "lib/chunkio")
 set(FLB_PATH_LIB_LUAJIT  "lib/luajit-2.1.0-dd5032e")
