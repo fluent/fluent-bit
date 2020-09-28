@@ -767,7 +767,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
 
         if (chunk->failures >= MAX_UPLOAD_ERRORS) {
             flb_plg_warn(ctx->ins, "Chunk for tag %s failed to send %i times, "
-                         "will not retry", fsf->meta_buf, MAX_UPLOAD_ERRORS);
+                         "will not retry", (char *) fsf->meta_buf, MAX_UPLOAD_ERRORS);
             flb_fstore_file_inactive(ctx->fs, fsf);
             continue;
         }
@@ -779,7 +779,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
             return -1;
         }
 
-        ret = s3_put_object(ctx, fsf->meta_buf, chunk->create_time, buffer, buffer_size);
+        ret = s3_put_object(ctx, (const char *) fsf->meta_buf, chunk->create_time, buffer, buffer_size);
         flb_free(buffer);
         if (ret < 0) {
             s3_store_file_unlock(chunk);
@@ -1014,7 +1014,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             continue;
         }
 
-        m_upload = get_upload(ctx, fsf->meta_buf, fsf->meta_size);
+        m_upload = get_upload(ctx, (const char *) fsf->meta_buf, fsf->meta_size);
 
         ret = construct_request_buffer(ctx, NULL, chunk, &buffer, &buffer_size);
         if (ret < 0) {
@@ -1026,11 +1026,11 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         /* FYI: if construct_request_buffer() succeedeed, the s3_file is locked */
 
         ret = upload_data(ctx, chunk, m_upload, buffer, buffer_size,
-                          fsf->meta_buf, fsf->meta_size);
+                          (const char *) fsf->meta_buf, fsf->meta_size);
         flb_free(buffer);
         if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "Could not send chunk with tag %s",
-                          fsf->meta_buf);
+                          (char *) fsf->meta_buf);
         }
     }
 
