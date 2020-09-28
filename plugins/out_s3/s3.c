@@ -1137,7 +1137,7 @@ static void cb_s3_flush(const void *data, size_t bytes,
     chunk = s3_store_file_get(ctx, tag, tag_len);
 
     if (chunk != NULL && chunk->failures >= MAX_UPLOAD_ERRORS) {
-        flb_plg_warn(ctx->ins, "Chunk for tag %s failed to send %s times, "
+        flb_plg_warn(ctx->ins, "Chunk for tag %s failed to send %d times, "
                      "will not retry", tag, MAX_UPLOAD_ERRORS);
         s3_store_file_inactive(ctx, chunk);
         chunk = NULL;
