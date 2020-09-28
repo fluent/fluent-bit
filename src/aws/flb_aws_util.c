@@ -714,6 +714,8 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     int i = 0;
     int ret = 0;
     char *tag_token = NULL;
+    char *key;
+    int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
     flb_sds_t s3_key = NULL;
@@ -819,20 +821,28 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
 
     flb_sds_destroy(tmp);
 
-    /* A string longer than S3_KEY_SIZE is created to store the formatted timestamp. */
-    tmp = flb_sds_create_size(S3_KEY_SIZE);
-    if (!tmp) {
+    /* A string no longer than S3_KEY_SIZE is created to store the formatted timestamp. */
+    key = flb_malloc(S3_KEY_SIZE * sizeof(char));
+    if (!key) {
         goto error;
     }
 
-    ret = strftime(tmp, S3_KEY_SIZE, s3_key, gmt);
+    ret = strftime(key, S3_KEY_SIZE, s3_key, gmt);
     if(ret == 0){
         flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
     }
-
     flb_sds_destroy(s3_key);
-    s3_key = tmp;
-    FLB_SDS_HEADER(s3_key)->len = strlen(s3_key);
+
+    len = strlen(key);
+    if (len > S3_KEY_SIZE) {
+        len = S3_KEY_SIZE;
+    }
+
+    s3_key = flb_sds_create_len(key, len);
+    flb_free(key);
+    if (!s3_key) {
+        goto error;
+    }
 
     flb_sds_destroy(tmp_tag);
     return s3_key;
