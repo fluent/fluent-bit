@@ -99,7 +99,8 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = jansson_private_config.h
-CONFIG_CLEAN_FILES = jansson.pc
+CONFIG_CLEAN_FILES = jansson.pc doc/Makefile test/ossfuzz/Makefile \
+	test/suites/Makefile test/suites/api/Makefile
 CONFIG_CLEAN_VPATH_FILES =
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -188,7 +189,11 @@ CTAGS = ctags
 CSCOPE = cscope
 DIST_SUBDIRS = $(SUBDIRS)
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/jansson.pc.in \
-	$(srcdir)/jansson_private_config.h.in compile config.guess \
+	$(srcdir)/jansson_private_config.h.in \
+	$(top_srcdir)/doc/Makefile.in \
+	$(top_srcdir)/test/ossfuzz/Makefile.in \
+	$(top_srcdir)/test/suites/Makefile.in \
+	$(top_srcdir)/test/suites/api/Makefile.in compile config.guess \
 	config.sub depcomp install-sh ltmain.sh missing
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 distdir = $(PACKAGE)-$(VERSION)
@@ -417,6 +422,14 @@ $(srcdir)/jansson_private_config.h.in:  $(am__configure_deps)
 distclean-hdr:
 	-rm -f jansson_private_config.h stamp-h1
 jansson.pc: $(top_builddir)/config.status $(srcdir)/jansson.pc.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
+doc/Makefile: $(top_builddir)/config.status $(top_srcdir)/doc/Makefile.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
+test/ossfuzz/Makefile: $(top_builddir)/config.status $(top_srcdir)/test/ossfuzz/Makefile.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
+test/suites/Makefile: $(top_builddir)/config.status $(top_srcdir)/test/suites/Makefile.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
+test/suites/api/Makefile: $(top_builddir)/config.status $(top_srcdir)/test/suites/api/Makefile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
 
 mostlyclean-libtool:
