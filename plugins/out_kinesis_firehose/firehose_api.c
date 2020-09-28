@@ -381,7 +381,7 @@ static int add_event(struct flb_firehose *ctx, struct flush *buf,
     int ret;
     struct event *event;
     int retry_add = FLB_FALSE;
-    int event_bytes = 0;
+    size_t event_bytes = 0;
 
     if (buf->event_index == 0) {
         /* init */
