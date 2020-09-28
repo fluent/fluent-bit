@@ -763,6 +763,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     }
 
     flb_sds_destroy(tmp);
+    tmp = NULL;
 
     /* Split the string on the delimiters */
     tag_token = strtok(tmp_tag, tag_delimiter);
@@ -791,8 +792,10 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
         }
 
         flb_sds_destroy(tmp);
+        tmp = NULL;
         flb_sds_destroy(s3_key);
         s3_key = tmp_key;
+        tmp_key = NULL;
 
         tag_token = strtok(NULL, tag_delimiter);
         i++;
@@ -822,10 +825,12 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
 
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
+    tmp_key = NULL;
 
     gmt = gmtime(&time);
 
     flb_sds_destroy(tmp);
+    tmp = NULL;
 
     /* A string longer than S3_KEY_SIZE is created to store the formatted timestamp. */
     tmp = flb_sds_create_size(S3_KEY_SIZE);
@@ -843,6 +848,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     FLB_SDS_HEADER(s3_key)->len = strlen(s3_key);
 
     flb_sds_destroy(tmp_tag);
+    tmp_tag = NULL;
     return s3_key;
 
     error:
@@ -861,9 +867,6 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
         }
         if (tmp_key){
             flb_sds_destroy(tmp_key);
-        }
-        if (tag_token){
-            flb_free(tag_token);
         }
         return NULL;
 }
