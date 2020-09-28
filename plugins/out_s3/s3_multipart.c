@@ -116,7 +116,15 @@ static void parse_etags(struct multipart_upload *m_upload, char *data)
     int part_num;
     int len;
 
+    if (!data) {
+        return;
+    }
+
     line = strtok(data, "\n");
+
+    if (!line) {
+        return;
+    }
 
     do {
         start = strstr(line, "part_number=");
