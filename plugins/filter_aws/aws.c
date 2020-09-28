@@ -16,7 +16,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-
+#include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_filter_plugin.h>
@@ -31,9 +31,9 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_kv.h>
 
+
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
-
 #include <stdlib.h>
 #include <errno.h>
 
@@ -42,6 +42,8 @@
 static int get_ec2_token(struct flb_filter_aws *ctx);
 static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                         flb_sds_t *metadata, size_t *metadata_len);
+static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
+                               flb_sds_t *metadata, size_t *metadata_len, char *key);
 
 static int cb_aws_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
@@ -60,6 +62,8 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
+    ctx->ins = f_ins;
+
     /* Populate context with config map defaults and incoming properties */
     ret = flb_filter_config_map_set(f_ins, (void *) ctx);
     if (ret == -1) {
@@ -67,15 +71,6 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         flb_free(ctx);
         return -1;
     }
-
-    /* initilize all fields */
-    ctx->ins = f_ins;
-    ctx->imds_v2_token = NULL;
-    ctx->imds_v2_token_len = 0;
-    ctx->availability_zone = NULL;
-    ctx->availability_zone_len = 0;
-    ctx->instance_id = NULL;
-    ctx->instance_id_len = 0;
 
     use_v2 = FLB_TRUE;
     tmp = flb_filter_get_property("imds_version", f_ins);
@@ -94,12 +89,6 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
 
     /* v1 or v2 instance metadata */
     ctx->use_v2 = use_v2;
-
-    /* enabled fields */
-    ctx->instance_id_include = FLB_TRUE;
-    ctx->availability_zone_include = FLB_TRUE;
-
-    ctx->new_keys = 2;
 
     ctx->metadata_retrieved = FLB_FALSE;
 
@@ -183,8 +172,12 @@ static int get_ec2_token(struct flb_filter_aws *ctx)
     return 0;
 }
 
-static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
-                        flb_sds_t *metadata, size_t *metadata_len)
+/* get the metadata by key if the result is a json object.
+ * If key is NULL, just return the value it get.
+ */
+static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
+                               flb_sds_t *metadata, size_t *metadata_len,
+                               char *key)
 {
     int ret;
     size_t b_sent;
@@ -237,19 +230,74 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
         return -1;
     }
 
-    tmp = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
+    if (key != NULL) {
+        /* get the value of the key from payload json string */
+        tmp = flb_json_get_val(client->resp.payload,
+                               client->resp.payload_size, key);
+        if (!tmp) {
+            tmp = flb_sds_create_len("NULL", 4);
+            flb_plg_error(ctx->ins,
+                         "%s is undefined in EC2 instance", key);
+        }
+    } else {
+        tmp = flb_sds_create_len(client->resp.payload, client->resp.payload_size);
+    }
+
     if (!tmp) {
         flb_errno();
         flb_http_client_destroy(client);
         flb_upstream_conn_release(u_conn);
         return -1;
     }
+
     *metadata = tmp;
-    *metadata_len = client->resp.payload_size;
+    *metadata_len = key == NULL ? client->resp.payload_size : strlen(tmp);
 
     flb_http_client_destroy(client);
     flb_upstream_conn_release(u_conn);
     return 0;
+}
+
+static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
+                        flb_sds_t *metadata, size_t *metadata_len)
+{
+    return get_metadata_by_key(ctx, metadata_path, metadata,
+                               metadata_len, NULL);
+}
+
+/* get VPC metadata, it called IMDS twice.
+ * First is for getting the Mac ID and combine into the path for VPC.
+ * Second call is using the VPC path to get the VPC id
+ */
+static int get_vpc_metadata(struct flb_filter_aws *ctx)
+{
+    int ret;
+    flb_sds_t mac_id = NULL;
+    size_t len = 0;
+
+    /* get EC2 instance Mac id first before getting VPC id */
+    ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_MAC_PATH, &mac_id, &len);
+
+    if (ret < 0) {
+        flb_sds_destroy(mac_id);
+        return -1;
+    }
+
+    /* the VPC full path should be like:
+     *latest/meta-data/network/interfaces/macs/{mac_id}/vpc-id/"
+     */
+    flb_sds_t vpc_path = flb_sds_create_size(70);
+    vpc_path = flb_sds_printf(&vpc_path, "%s/%s/%s/",
+                              "/latest/meta-data/network/interfaces/macs",
+                              mac_id, "vpc-id");
+    ret = get_metadata(ctx, vpc_path, &ctx->vpc_id, &ctx->vpc_id_len);
+
+    flb_sds_destroy(mac_id);
+    flb_sds_destroy(vpc_path);
+
+    if (ret < 0) {
+        return -1;
+    }
 }
 
 /*
@@ -275,6 +323,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         if (ret < 0) {
             return -1;
         }
+        ctx->new_keys++;
     }
 
     if (ctx->availability_zone_include && !ctx->availability_zone) {
@@ -285,6 +334,67 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         if (ret < 0) {
             return -1;
         }
+        ctx->new_keys++;
+    }
+
+    if (ctx->instance_type_include && !ctx->instance_type) {
+        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_TYPE_PATH,
+                           &ctx->instance_type, &ctx->instance_type_len);
+
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys++;
+    }
+
+    if (ctx->private_ip_include && !ctx->private_ip) {
+        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_PRIVATE_IP_PATH,
+                           &ctx->private_ip, &ctx->private_ip_len);
+
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys++;
+    }
+
+    if (ctx->vpc_id_include && !ctx->vpc_id) {
+        ret = get_vpc_metadata(ctx);
+
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys++;
+    }
+
+    if (ctx->ami_id_include && !ctx->ami_id) {
+        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_AMI_ID_PATH,
+                           &ctx->ami_id, &ctx->ami_id_len);
+
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys++;
+    }
+
+    if (ctx->account_id_include && !ctx->account_id) {
+        ret = get_metadata_by_key(ctx, FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH,
+                                  &ctx->account_id, &ctx->account_id_len,
+                                  "accountId");
+
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys++;
+    }
+
+    if (ctx->hostname_include && !ctx->hostname) {
+        ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_HOSTNAME_PATH,
+                           &ctx->hostname, &ctx->hostname_len);
+
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->new_keys++;
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -321,7 +431,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             return FLB_FILTER_NOTOUCH;
         }
     }
-
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
@@ -385,6 +494,66 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->instance_id, ctx->instance_id_len);
         }
+
+        if (ctx->instance_type_include) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
+                                  FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->instance_type_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->instance_type, ctx->instance_type_len);
+        }
+
+        if (ctx->private_ip_include) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_PRIVATE_IP_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_PRIVATE_IP_KEY,
+                                  FLB_FILTER_AWS_PRIVATE_IP_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->private_ip_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->private_ip, ctx->private_ip_len);
+        }
+
+        if (ctx->vpc_id_include) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_VPC_ID_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_VPC_ID_KEY,
+                                  FLB_FILTER_AWS_VPC_ID_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->vpc_id_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->vpc_id, ctx->vpc_id_len);
+        }
+
+        if (ctx->ami_id_include) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_AMI_ID_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_AMI_ID_KEY,
+                                  FLB_FILTER_AWS_AMI_ID_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->ami_id_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->ami_id, ctx->ami_id_len);
+        }
+
+        if (ctx->account_id_include) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ACCOUNT_ID_KEY,
+                                  FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->account_id_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->account_id, ctx->account_id_len);
+        }
+
+        if (ctx->hostname_include) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_HOSTNAME_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_HOSTNAME_KEY,
+                                  FLB_FILTER_AWS_HOSTNAME_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->hostname_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->hostname, ctx->hostname_len);
+        }
     }
     msgpack_unpacked_destroy(&result);
 
@@ -412,6 +581,30 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
         flb_sds_destroy(ctx->instance_id);
     }
 
+    if (ctx->instance_type) {
+        flb_sds_destroy(ctx->instance_type);
+    }
+
+    if (ctx->private_ip) {
+        flb_sds_destroy(ctx->private_ip);
+    }
+
+    if (ctx->vpc_id) {
+        flb_sds_destroy(ctx->vpc_id);
+    }
+
+    if (ctx->ami_id) {
+        flb_sds_destroy(ctx->ami_id);
+    }
+
+    if (ctx->account_id) {
+        flb_sds_destroy(ctx->account_id);
+    }
+
+    if (ctx->hostname) {
+        flb_sds_destroy(ctx->hostname);
+    }
+
     flb_free(ctx);
 }
 
@@ -434,7 +627,46 @@ static struct flb_config_map config_map[] = {
      " will be used: 'v1' or 'v2'. 'v2' may not work"
      " if you run Fluent Bit in a container."
     },
-
+    {
+     FLB_CONFIG_MAP_BOOL, "az", "true",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, availability_zone_include),
+     "Enable EC2 instance availability zone"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "ec2_instance_id", "true",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, instance_id_include),
+     "Enable EC2 instance ID"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "ec2_instance_type", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, instance_type_include),
+     "Enable EC2 instance type"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "private_ip", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, private_ip_include),
+     "Enable EC2 instance private IP"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "vpc_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, vpc_id_include),
+     "Enable EC2 instance VPC ID"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "ami_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, ami_id_include),
+     "Enable EC2 instance Image ID"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "account_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, account_id_include),
+     "Enable EC2 instance Account ID"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "hostname", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, hostname_include),
+     "Enable EC2 instance hostname"
+    },
     {0}
 };
 
