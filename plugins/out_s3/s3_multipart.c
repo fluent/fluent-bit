@@ -205,10 +205,10 @@ static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
     }
 
     parse_etags(m_upload, buffered_data);
+    flb_free(buffered_data);
     if (m_upload->part_number == 0) {
         flb_plg_error(ctx->ins, "Could not extract upload data from %s",
                       chunk->file_path);
-        flb_free(buffered_data);
         multipart_upload_destroy(m_upload);
         return NULL;
     }
