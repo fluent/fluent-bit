@@ -369,14 +369,14 @@ add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Avro
 if(FLB_AVRO_ENCODER)
-  #temporary for PR1
-  #add this back in on next PR
-  #add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+  #avro
+  add_subdirectory(${FLB_PATH_LIB_AVRO})
   # jansson
   set(JANSSON_BUILD_DOCS Off)
   set(JANSSON_EXAMPLES Off)
   set(JANSSON_WITHOUT_TESTS  On)
-  include(cmake/jansson.cmake)
+  set(JANSSON_BUILD_SHARED_LIBS  Off)
+  add_subdirectory(${FLB_PATH_LIB_JANSSON})
 endif()
 
 # tutf8e
