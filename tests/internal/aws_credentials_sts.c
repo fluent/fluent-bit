@@ -427,8 +427,9 @@ static void test_eks_provider() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -499,8 +500,9 @@ static void test_eks_provider_random_session_name() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2",
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -571,8 +573,9 @@ static void test_eks_provider_unexpected_api_response() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* API will return an error - creds will be NULL */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -626,8 +629,9 @@ static void test_eks_provider_api_error() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", NULL,
-                                generator_in_test());
+    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+                                "https://sts.us-west-2.amazonaws.com",
+                                NULL, generator_in_test());
 
     /* API will return an error - creds will be NULL */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -695,8 +699,9 @@ static void test_sts_provider() {
 
     provider = flb_sts_provider_create(config, NULL, base_provider, "external_id",
                                        "arn:aws:iam::123456789012:role/test1",
-                                       "session_name", "cn-north-1", NULL,
-                                       generator_in_test());
+                                       "session_name", "cn-north-1",
+                                        "https://sts.us-west-2.amazonaws.com",
+                                        NULL, generator_in_test());
     if (!provider) {
         flb_errno();
         return;
@@ -784,7 +789,9 @@ static void test_sts_provider_api_error() {
 
     provider = flb_sts_provider_create(config, NULL, base_provider, "external_id",
                                 "arn:aws:iam::123456789012:role/apierror",
-                                "session_name", "cn-north-1", NULL,
+                                "session_name", "cn-north-1",
+                                 "https://sts.us-west-2.amazonaws.com",
+                                 NULL,
                                 generator_in_test());
     if (!provider) {
         flb_errno();
@@ -859,7 +866,9 @@ static void test_sts_provider_unexpected_api_response() {
     provider = flb_sts_provider_create(config, NULL, base_provider, "external_id",
                                        "arn:aws:iam::123456789012:role/"
                                        "unexpected_api_response",
-                                       "session_name", "cn-north-1", NULL,
+                                       "session_name", "cn-north-1", 
+                                       "https://sts.us-west-2.amazonaws.com",
+                                       NULL,
                                        generator_in_test());
     if (!provider) {
         flb_errno();

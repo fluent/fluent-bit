@@ -117,7 +117,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
         ctx->custom_endpoint = FLB_TRUE;
-        ctx->endpoint = (char *) tmp;
+        ctx->endpoint = removeProtocol((char *) tmp, "https://");
     }
     else {
         ctx->custom_endpoint = FLB_FALSE;
@@ -148,6 +148,10 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->role_arn = tmp;
     }
 
+    tmp = flb_output_get_property("sts_endpoint", ins);
+    if (tmp) {
+        ctx->sts_endpoint = (char *) tmp;
+    }
 
     ctx->group_created = FLB_FALSE;
 
@@ -191,7 +195,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
 
     ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                            &ctx->cred_tls,
-                                                           "us-west-2",
+                                                           (char *) ctx->region,
+                                                           (char *) ctx->sts_endpoint,
                                                            NULL,
                                                            flb_aws_client_generator());
     if (!ctx->aws_provider) {
@@ -231,6 +236,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
+                                                    (char *) ctx->sts_endpoint,
                                                     NULL,
                                                     flb_aws_client_generator());
         if (!ctx->aws_provider) {
@@ -510,6 +516,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the CloudWatch Logs API"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
+     0, FLB_FALSE, 0,
+     "Specify a custom endpoint for the STS API, can be used with the role_arn parameter"
     },
 
     /* EOF */

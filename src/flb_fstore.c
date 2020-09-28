@@ -207,7 +207,7 @@ struct flb_fstore *flb_fstore_create(char *path, char *stream_name)
     /* create file-system based stream */
     stream = cio_stream_create(cio, stream_name, CIO_STORE_FS);
     if (!stream) {
-        flb_error("[fstore] cannot create stream %s/%s", path, stream->name);
+        flb_error("[fstore] cannot create stream %s/%s", path, stream_name);
         flb_free(fs);
         cio_destroy(cio);
         return NULL;

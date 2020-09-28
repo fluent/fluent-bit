@@ -26,7 +26,7 @@
  * For reasons that are under investigation, using that number in this plugin
  * leads to API errors. No issues have been seen setting it to 1,000,000 bytes.
  */
-#define PUT_LOG_EVENTS_PAYLOAD_SIZE    1000000
+#define PUT_LOG_EVENTS_PAYLOAD_SIZE    1048576
 #define MAX_EVENTS_PER_PUT             10000
 
 /* number of characters needed to 'start' a PutLogEvents payload */
@@ -35,6 +35,9 @@
 #define PUT_LOG_EVENTS_PER_EVENT_LEN   42
 /* number of characters needed to 'end' a PutLogEvents payload */
 #define PUT_LOG_EVENTS_FOOTER_LEN      4
+
+/* 256KiB minus 26 bytes for the event */
+#define MAX_EVENT_LEN      262118
 
 #include "cloudwatch_logs.h"
 

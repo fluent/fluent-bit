@@ -142,6 +142,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             *config,
                                                             struct flb_tls *tls,
                                                             char *region,
+                                                            char *sts_endpoint,
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
@@ -158,7 +159,9 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
  */
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  struct flb_tls *tls,
-                                                 char *region, char *proxy,
+                                                 char *region, 
+                                                 char *sts_endpoint,
+                                                 char *proxy,
                                                  struct
                                                  flb_aws_client_generator
                                                  *generator);
@@ -175,6 +178,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
                                                  char *role_arn,
                                                  char *session_name,
                                                  char *region,
+                                                 char *sts_endpoint,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator

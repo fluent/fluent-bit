@@ -801,6 +801,11 @@ static struct flb_config_map config_map[] = {
      "AWS Region of your Amazon ElasticSearch Service cluster"
     },
     {
+     FLB_CONFIG_MAP_STR, "aws_sts_endpoint", "",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_sts_endpoint),
+     "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
+    },
+    {
      FLB_CONFIG_MAP_STR, "aws_role_arn", "",
      0, FLB_FALSE, 0,
      "AWS IAM Role to assume to put records to your Amazon ES cluster"

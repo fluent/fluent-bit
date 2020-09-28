@@ -94,6 +94,7 @@ struct flb_s3 {
     char *s3_key_format;
     char *tag_delimiters;
     char *endpoint;
+    char *sts_endpoint;
     int free_endpoint;
     int use_put_object;
 
