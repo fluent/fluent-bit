@@ -304,7 +304,8 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
      * and perform further adjustments.
      */
     if (flb_input_chunk_is_overlimit(in) == FLB_FALSE &&
-        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE) {
+        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE &&
+        in->config->is_ingestion_active == FLB_TRUE) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             in->p->cb_resume(in->context, in->config);
