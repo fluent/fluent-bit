@@ -478,6 +478,8 @@ static void flb_lib_worker(void *data)
     int ret;
     struct flb_config *config = data;
 
+    mk_utils_worker_rename("flb-pipeline");
+
     ret = flb_engine_start(config);
     if (ret == -1) {
         flb_engine_failed(config);
