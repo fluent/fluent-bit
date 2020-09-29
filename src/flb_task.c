@@ -272,11 +272,18 @@ int flb_task_running_count(struct flb_config *config)
 {
     int count = 0;
     struct mk_list *head;
+    struct mk_list *t_head;
+    struct flb_task *task;
     struct flb_input_instance *ins;
 
     mk_list_foreach(head, &config->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
-        count += mk_list_size(&ins->tasks);
+        mk_list_foreach(t_head, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+            if (task->users > 0) {
+                count++;
+            }
+        }
     }
 
     return count;
