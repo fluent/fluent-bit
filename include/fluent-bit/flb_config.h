@@ -45,6 +45,7 @@ struct flb_config {
     struct mk_event ch_event;
 
     int support_mode;         /* enterprise support mode ?      */
+    int is_ingestion_active;  /* date ingestion active/allowed  */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
     int grace;                /* Grace on shutdown              */
