@@ -878,6 +878,11 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
     config = in->config;
     event = &coll->event;
 
+    /* If data ingestion has been paused, the collector cannot resume */
+    if (config->is_ingestion_active == FLB_FALSE) {
+        return 0;
+    }
+
     if (coll->type == FLB_COLLECT_TIME) {
         event->mask = MK_EVENT_EMPTY;
         event->status = MK_EVENT_NONE;
