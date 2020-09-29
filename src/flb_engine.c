@@ -684,6 +684,8 @@ int flb_engine_exit(struct flb_config *config)
     int ret;
     uint64_t val = FLB_ENGINE_EV_STOP;
 
+    config->is_ingestion_active = FLB_FALSE;
+
     flb_input_pause_all(config);
 
     val = FLB_ENGINE_EV_STOP;
