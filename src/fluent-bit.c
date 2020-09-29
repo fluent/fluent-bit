@@ -46,7 +46,7 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
-
+#include <fluent-bit/flb_lib.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -57,7 +57,7 @@ extern int win32_main(int, char**);
 extern void win32_started(void);
 #endif
 
-struct flb_config *config;
+flb_ctx_t *ctx;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -366,9 +366,24 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
 
 static void flb_signal_handler(int signal)
 {
+    int len;
+    char ts[32];
     char s[] = "[engine] caught signal (";
+    time_t now;
+    struct tm *cur;
+
+    now = time(NULL);
+    cur = localtime(&now);
+    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+                   cur->tm_year + 1900,
+                   cur->tm_mon + 1,
+                   cur->tm_mday,
+                   cur->tm_hour,
+                   cur->tm_min,
+                   cur->tm_sec);
 
     /* write signal number */
+    write(STDERR_FILENO, ts, len);
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         flb_print_signal(SIGINT);
@@ -388,14 +403,12 @@ static void flb_signal_handler(int signal)
     case SIGQUIT:
     case SIGHUP:
 #endif
-        flb_engine_shutdown(config);
-#ifdef FLB_HAVE_MTRACE
-        /* Stop tracing malloc and free */
-        muntrace();
-#endif
+        flb_stop(ctx);
+        flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
     case SIGTERM:
-        flb_engine_exit(config);
+        flb_stop(ctx);
+        flb_destroy(ctx);
         break;
     case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
@@ -404,7 +417,7 @@ static void flb_signal_handler(int signal)
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
-        flb_dump(config);
+        flb_dump(ctx->config);
         break;
 #endif
     default:
@@ -747,6 +760,7 @@ int flb_main(int argc, char **argv)
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
     struct flb_filter_instance *filter = NULL;
+    struct flb_config *config;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
     flb_stacktrace_init(argv[0], &flb_st);
@@ -790,35 +804,18 @@ int flb_main(int argc, char **argv)
         { NULL, 0, NULL, 0 }
     };
 
-#ifdef FLB_HAVE_MTRACE
-    /* Start tracing malloc and free */
-    mtrace();
-#endif
-
-
-#ifdef _WIN32
-    /* Initialize sockets */
-    WSADATA wsaData;
-    int err;
-
-    err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (err != 0) {
-        fprintf(stderr, "WSAStartup failed with error: %d\n", err);
-        exit(EXIT_FAILURE);
-    }
-#endif
-
     /* Signal handler */
     flb_signal_init();
 
     /* Initialize Monkey Core library */
     mk_core_init();
 
-    /* Create configuration context */
-    config = flb_config_init();
-    if (!config) {
+    /* Create Fluent Bit context */
+    ctx = flb_create();
+    if (!ctx) {
         exit(EXIT_FAILURE);
     }
+    config = ctx->config;
 
 #ifndef FLB_HAVE_STATIC_CONF
 
@@ -1024,17 +1021,18 @@ int flb_main(int argc, char **argv)
     }
 #endif
 
-    /* Prepare pthread keys */
-    flb_thread_prepare();
-    flb_output_prepare();
-
 #ifdef FLB_SYSTEM_WINDOWS
     win32_started();
 #endif
 
-    ret = flb_engine_start(config);
-    if (ret == -1 && config) {
-        flb_engine_shutdown(config);
+    ret = flb_start(ctx);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return ret;
+    }
+
+    while (1) {
+        sleep(1);
     }
 
     return ret;
