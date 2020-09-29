@@ -114,6 +114,8 @@ static void log_worker_collector(void *data)
     FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
+    mk_utils_worker_rename("flb-logger");
+
     /* Signal the caller */
     pthread_mutex_lock(&log->pth_mutex);
     log->pth_init = FLB_TRUE;
