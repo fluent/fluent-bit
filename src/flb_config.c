@@ -139,6 +139,10 @@ struct flb_config *flb_config_init()
     MK_EVENT_ZERO(&config->event_flush);
     MK_EVENT_ZERO(&config->event_shutdown);
 
+    /* is data ingestion active ? */
+    config->is_ingestion_active = FLB_TRUE;
+
+    /* Is the engine (event loop) actively running ? */
     config->is_running = FLB_TRUE;
 
     /* Flush */
