@@ -31,7 +31,7 @@
  * Note, it's arch sensitive, little-endian (LE) ONLY due to the implementation
  * of hash function, see `gen_hash()` in `flb_hash.c`.
  */
-#define FLB_FILTER_MODIFY_HASH_NIL    976956422U
+#define FLB_FILTER_MODIFY_HASH_NULL   1430504305U
 #define FLB_FILTER_MODIFY_HASH_BOOL   4022539617U
 #define FLB_FILTER_MODIFY_HASH_NUMBER 4188039317U
 #define FLB_FILTER_MODIFY_HASH_INT    3831089057U

@@ -555,7 +555,7 @@ static inline bool kv_val_matches_type(msgpack_object_kv *kv,
                                        char *str, int len)
 {
     switch (gen_hash(str, len)) {
-    case FLB_FILTER_MODIFY_HASH_NIL:
+    case FLB_FILTER_MODIFY_HASH_NULL:
         return MSGPACK_OBJECT_NIL == kv->val.type;
     case FLB_FILTER_MODIFY_HASH_BOOL:
         return MSGPACK_OBJECT_BOOLEAN == kv->val.type;
