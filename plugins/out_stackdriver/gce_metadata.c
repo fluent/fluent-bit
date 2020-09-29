@@ -44,7 +44,7 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     /* If runtime test mode is enabled, add test data */
     if (ctx->ins->test_mode == FLB_TRUE) {
         if (strcmp(uri, FLB_STD_METADATA_PROJECT_ID_URI) == 0) {
-            flb_sds_cat(payload, "fluent-bit-test", 9);
+            flb_sds_cat(payload, "fluent-bit-test", 15);
             return 0;
         }
         else if (strcmp(uri, FLB_STD_METADATA_ZONE_URI) == 0) {
