@@ -280,6 +280,9 @@ void test_json_dup_keys()
     TEST_CHECK(strncmp(out_json, data_out, flb_sds_len(out_json)) == 0);
     flb_sds_destroy(d);
     flb_sds_destroy(out_json);
+    flb_free(out_buf);
+    flb_free(data_in);
+    flb_free(data_out);
 }
 
 void test_json_pack_bug342()
