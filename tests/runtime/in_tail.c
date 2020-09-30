@@ -130,7 +130,6 @@ static struct tail_file_lines *get_out_file_content(const char *target)
       }
     }
 
-    // printf("Just before return: %s\n", file_lines.lines[0]);
     return file_lines;
 }
 
@@ -144,7 +143,6 @@ static int cb_check_result(void *record, size_t size, void *data)
     char *check;
 
     out = get_out_file_content(result->target);
-    // printf("What we got from function: %s\n", out.lines[0]);
     if (!out->lines_c) {
         goto exit;
     }
@@ -281,14 +279,22 @@ void flb_test_in_tail_dockermode_splitted_multiple_lines()
             NULL);
 }
 
+void flb_test_in_tail_dockermode_firstline_detection()
+{
+    do_test("tail", "dockermode_firstline_detection", 20000, 5,
+            "Docker_Mode_Parser", "docker_multiline",
+            NULL);
+}
+
 
 /* Test list */
 TEST_LIST = {
 #ifdef in_tail
-    {"in_tail_dockermode",    flb_test_in_tail_dockermode},
-    {"in_tail_dockermode_splitted_line",    flb_test_in_tail_dockermode_splitted_line},
-    {"in_tail_dockermode_multiple_lines",    flb_test_in_tail_dockermode_multiple_lines},
-    {"in_tail_dockermode_splitted_multiple_lines",    flb_test_in_tail_dockermode_splitted_multiple_lines},
+    {"in_tail_dockermode",                          flb_test_in_tail_dockermode},
+    {"in_tail_dockermode_splitted_line",            flb_test_in_tail_dockermode_splitted_line},
+    {"in_tail_dockermode_multiple_lines",           flb_test_in_tail_dockermode_multiple_lines},
+    {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
+    {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
 #endif
     {NULL, NULL}
 };
