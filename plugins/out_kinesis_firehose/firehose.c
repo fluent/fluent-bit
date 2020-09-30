@@ -95,6 +95,16 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         ctx->time_key_format = DEFAULT_TIME_KEY_FORMAT;
     }
 
+    tmp = flb_output_get_property("log_key", ins);
+    if (tmp) {
+        ctx->log_key = tmp;
+    }
+
+    if (ctx->log_key && ctx->time_key) {
+        flb_plg_error(ctx->ins, "'time_key' and 'log_key' can not be used together");
+        goto error;
+    }
+
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
         ctx->custom_endpoint = FLB_TRUE;
@@ -411,6 +421,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
      0, FLB_FALSE, 0,
     "Custom endpoint for the STS API."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_key", NULL,
+     0, FLB_FALSE, 0,
+     "By default, the whole log record will be sent to Firehose. "
+     "If you specify a key name with this option, then only the value of "
+     "that key will be sent to Firehose. For example, if you are using "
+     "the Fluentd Docker log driver, you can specify `log_key log` and only "
+     "the log message will be sent to Firehose."
     },
 
     /* EOF */
