@@ -52,6 +52,17 @@ struct cw_flush {
     /* buffer used to temporarily hold an event during processing */
     char *event_buf;
     size_t event_buf_size;
+
+    /*
+     * According to the docs:
+     * PutLogEvents: 5 requests per second per log stream.
+     * Additional requests are throttled. This quota can't be changed.
+     * This plugin fast. A single flush might make more than 5 calls,
+     * Then fail, then retry, then be too fast again, on and on.
+     * I have seen this happen.
+     * So we throttle ourselves if more than 5 calls are made per flush
+     */
+    int put_events_calls;
 };
 
 struct cw_event {

@@ -367,6 +367,8 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
+    ctx->buf->put_events_calls = 0;
+
     if (ctx->create_group == FLB_TRUE && ctx->group_created == FLB_FALSE) {
         ret = create_log_group(ctx);
         if (ret < 0) {
@@ -379,38 +381,7 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    buf = flb_calloc(1, sizeof(struct cw_flush));
-    if (!buf) {
-        flb_errno();
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    /* TODO: could be more efficient in some cases with these memory allocs */
-    buf->out_buf = flb_malloc(sizeof(char) * PUT_LOG_EVENTS_PAYLOAD_SIZE);
-    if (!buf->out_buf) {
-        flb_errno();
-        cw_flush_destroy(buf);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-    buf->out_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
-
-    buf->tmp_buf = flb_malloc(sizeof(char) * PUT_LOG_EVENTS_PAYLOAD_SIZE);
-    if (!buf->tmp_buf) {
-        flb_errno();
-        cw_flush_destroy(buf);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-    buf->tmp_buf_size = PUT_LOG_EVENTS_PAYLOAD_SIZE;
-
-    buf->events = flb_malloc(sizeof(struct event) * 1000);
-    if (!buf->events) {
-        flb_errno();
-        cw_flush_destroy(buf);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-    buf->events_capacity = 1000;
-
-    event_count = process_and_send(ctx, i_ins->p->name, buf, stream, data, bytes);
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream, data, bytes);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -567,6 +538,21 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the STS API, can be used with the role_arn parameter"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_namespace", NULL,
+     0, FLB_FALSE, 0,
+     "Metric namespace for CloudWatch EMF logs"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_dimensions", NULL,
+     0, FLB_FALSE, 0,
+     "Metric dimensions is a list of lsit. If you have only one list of "
+     "dimensions, put the values as a comma seperated string. If you want to put "
+     "list of lists, use the list as semicolon seperated strings. If your value "
+     "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
     },
 
     /* EOF */

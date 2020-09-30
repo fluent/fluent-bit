@@ -562,7 +562,8 @@ retry_add_event:
         /* send logs and then retry the add */
         retry_add = FLB_TRUE;
         goto send;
-    } else if (ret == 2) {
+    } 
+    else if (ret == 2) {
         /*
          * discard this record and return to caller
          * only happens for empty records in this plugin
@@ -618,19 +619,19 @@ send:
 int should_add_to_emf(struct flb_intermediate_metric *an_item)
 {
     /* Valid for cpu plugin */
-    if (strncmp(an_item->key.via.str.ptr, "cpu_p", 4) == 0 
-    || strncmp(an_item->key.via.str.ptr, "user_p", 6) == 0 
-    || strncmp(an_item->key.via.str.ptr, "system_p", 8) == 0) {
+    if (strncmp(an_item->key.via.str.ptr, "cpu_", 4) == 0 
+        || strncmp(an_item->key.via.str.ptr, "user_p", 6) == 0 
+        || strncmp(an_item->key.via.str.ptr, "system_p", 8) == 0) {
         return 1;
     }
 
     /* Valid for mem plugin */
     if (strncmp(an_item->key.via.str.ptr, "Mem.total", 9) == 0 
-    || strncmp(an_item->key.via.str.ptr, "Mem.used", 8) == 0 
-    || strncmp(an_item->key.via.str.ptr, "Mem.free", 8) == 0 
-    || strncmp(an_item->key.via.str.ptr, "Swap.total", 10) == 0 
-    || strncmp(an_item->key.via.str.ptr, "Swap.used", 9) == 0 
-    || strncmp(an_item->key.via.str.ptr, "Swap.free", 9) == 0) {
+        || strncmp(an_item->key.via.str.ptr, "Mem.used", 8) == 0 
+        || strncmp(an_item->key.via.str.ptr, "Mem.free", 8) == 0 
+        || strncmp(an_item->key.via.str.ptr, "Swap.total", 10) == 0 
+        || strncmp(an_item->key.via.str.ptr, "Swap.used", 9) == 0 
+        || strncmp(an_item->key.via.str.ptr, "Swap.free", 9) == 0) {
         return 1;
     }
 
@@ -642,111 +643,109 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
                                        const char *input_plugin, 
                                        struct flb_time tms)
 {
+    int total_items = mk_list_size(flb_intermediate_metrics) + 1;
+
     struct mk_list *metric_temp;
     struct mk_list *metric_head;
+    struct flb_intermediate_metric *an_item;
 
     /* msgpack::sbuffer is a simple buffer implementation. */
-    msgpack_sbuffer sbuf_emf;
-    msgpack_sbuffer_init(&sbuf_emf);
+    msgpack_sbuffer mp_sbuf;
+    msgpack_sbuffer_init(&mp_sbuf);
 
     /* Serialize values into the buffer using msgpack_sbuffer_write */
-    msgpack_packer packer_emf;
-    msgpack_packer_init(&packer_emf, &sbuf_emf, msgpack_sbuffer_write);
-    int total_items = mk_list_size(flb_intermediate_metrics) + 1;
-    msgpack_pack_map(&packer_emf, total_items);
+    msgpack_packer mp_pck;
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&mp_pck, total_items);
 
     /* Pack the _aws map */
-    msgpack_pack_str(&packer_emf, 4);
-    msgpack_pack_str_body(&packer_emf, "_aws", 4);
+    msgpack_pack_str(&mp_pck, 4);
+    msgpack_pack_str_body(&mp_pck, "_aws", 4);
 
-    msgpack_pack_map(&packer_emf, 2);
+    msgpack_pack_map(&mp_pck, 2);
 
-    msgpack_pack_str(&packer_emf, 9);
-    msgpack_pack_str_body(&packer_emf, "Timestamp", 9);
-    msgpack_pack_long_long(&packer_emf, tms.tm.tv_sec * 1000L);
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Timestamp", 9);
+    msgpack_pack_long_long(&mp_pck, tms.tm.tv_sec * 1000L);
 
-    msgpack_pack_str(&packer_emf, 17);
-    msgpack_pack_str_body(&packer_emf, "CloudWatchMetrics", 17);
-    msgpack_pack_array(&packer_emf, 1);
+    msgpack_pack_str(&mp_pck, 17);
+    msgpack_pack_str_body(&mp_pck, "CloudWatchMetrics", 17);
+    msgpack_pack_array(&mp_pck, 1);
 
-    msgpack_pack_map(&packer_emf, 3);
+    msgpack_pack_map(&mp_pck, 3);
 
-    msgpack_pack_str(&packer_emf, 9);
-    msgpack_pack_str_body(&packer_emf, "Namespace", 9);
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Namespace", 9);
 
     if (ctx->metric_namespace) {
-        msgpack_pack_str(&packer_emf, flb_sds_len(ctx->metric_namespace));
-        msgpack_pack_str_body(&packer_emf, ctx->metric_namespace, 
+        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->metric_namespace));
+        msgpack_pack_str_body(&mp_pck, ctx->metric_namespace, 
                               flb_sds_len(ctx->metric_namespace));
     }
     else {
-        msgpack_pack_str(&packer_emf, 18);
-        msgpack_pack_str_body(&packer_emf, "fluent-bit-metrics", 18);
+        msgpack_pack_str(&mp_pck, 18);
+        msgpack_pack_str_body(&mp_pck, "fluent-bit-metrics", 18);
     }
 
-    msgpack_pack_str(&packer_emf, 10);
-    msgpack_pack_str_body(&packer_emf, "Dimensions", 10);
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "Dimensions", 10);
 
     struct mk_list *head, *inner_head;
     struct flb_split_entry *dimension_list, *entry;
     struct mk_list *csv_values;
     if (ctx->metric_dimensions) {
-        msgpack_pack_array(&packer_emf, mk_list_size(ctx->metric_dimensions));
+        msgpack_pack_array(&mp_pck, mk_list_size(ctx->metric_dimensions));
 
         mk_list_foreach(head, ctx->metric_dimensions) {
             dimension_list = mk_list_entry(head, struct flb_split_entry, _head);
             csv_values = flb_utils_split(dimension_list->value, ',', 256);
-            msgpack_pack_array(&packer_emf, mk_list_size(csv_values));
+            msgpack_pack_array(&mp_pck, mk_list_size(csv_values));
 
             mk_list_foreach(inner_head, csv_values) {
                 entry = mk_list_entry(inner_head, struct flb_split_entry, _head);
-                msgpack_pack_str(&packer_emf, entry->len);
-                msgpack_pack_str_body(&packer_emf, entry->value, entry->len);
+                msgpack_pack_str(&mp_pck, entry->len);
+                msgpack_pack_str_body(&mp_pck, entry->value, entry->len);
             }
             flb_utils_split_free(csv_values);
         }
     }
     else {
-        msgpack_pack_array(&packer_emf, 0);
+        msgpack_pack_array(&mp_pck, 0);
     }
 
-    msgpack_pack_str(&packer_emf, 7);
-    msgpack_pack_str_body(&packer_emf, "Metrics", 7);
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "Metrics", 7);
 
     if (strcmp(input_plugin, "cpu") == 0) {
-        msgpack_pack_array(&packer_emf, 3);
+        msgpack_pack_array(&mp_pck, 3);
     }
     else if (strcmp(input_plugin, "mem") == 0) {
-        msgpack_pack_array(&packer_emf, 6);
+        msgpack_pack_array(&mp_pck, 6);
     }
     else {
-        msgpack_pack_array(&packer_emf, 0);
+        msgpack_pack_array(&mp_pck, 0);
     }
 
     mk_list_foreach_safe(metric_head, metric_temp, flb_intermediate_metrics) {
-        struct flb_intermediate_metric *an_item = mk_list_entry(metric_head, 
-                                                      struct flb_intermediate_metric, 
-                                                      _head);
+        an_item = mk_list_entry(metric_head, struct flb_intermediate_metric, _head);
         if (should_add_to_emf(an_item) == 1) {
-            msgpack_pack_map(&packer_emf, 2);
-            msgpack_pack_str(&packer_emf, 4);
-            msgpack_pack_str_body(&packer_emf, "Name", 4);
-            msgpack_pack_object(&packer_emf, an_item->key);
-            msgpack_pack_str(&packer_emf, 4);
-            msgpack_pack_str_body(&packer_emf, "Unit", 4);
-            msgpack_pack_str(&packer_emf, strlen(an_item->metric_unit));
-            msgpack_pack_str_body(&packer_emf, an_item->metric_unit, 
+            msgpack_pack_map(&mp_pck, 2);
+            msgpack_pack_str(&mp_pck, 4);
+            msgpack_pack_str_body(&mp_pck, "Name", 4);
+            msgpack_pack_object(&mp_pck, an_item->key);
+            msgpack_pack_str(&mp_pck, 4);
+            msgpack_pack_str_body(&mp_pck, "Unit", 4);
+            msgpack_pack_str(&mp_pck, strlen(an_item->metric_unit));
+            msgpack_pack_str_body(&mp_pck, an_item->metric_unit, 
                                   strlen(an_item->metric_unit));
         }
     }
 
-    /* Pack the metric vlaues for each record */
+    /* Pack the metric values for each record */
     mk_list_foreach_safe(metric_head, metric_temp, flb_intermediate_metrics) {
-        struct flb_intermediate_metric *an_item = mk_list_entry(metric_head, 
-                                                      struct flb_intermediate_metric, 
-                                                      _head);
-        msgpack_pack_object(&packer_emf, an_item->key);
-        msgpack_pack_object(&packer_emf, an_item->value);
+        an_item = mk_list_entry(metric_head, struct flb_intermediate_metric, _head);
+        msgpack_pack_object(&mp_pck, an_item->key);
+        msgpack_pack_object(&mp_pck, an_item->value);
     }
 
     /* 
@@ -757,7 +756,7 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
     msgpack_zone_init(&mempool, 2048);
 
     msgpack_object deserialized_emf_object;
-    msgpack_unpack(sbuf_emf.data, sbuf_emf.size, NULL, &mempool, 
+    msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, 
                    &deserialized_emf_object);
 
     return deserialized_emf_object;
@@ -797,7 +796,8 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     if (strncmp(input_plugin, "cpu", 3) == 0) {
         intermediate_metric_type = GAUGE;
         intermediate_metric_unit = PERCENT;
-    } else if (strncmp(input_plugin, "mem", 3) == 0) {
+    } 
+    else if (strncmp(input_plugin, "mem", 3) == 0) {
         intermediate_metric_type = GAUGE;
         intermediate_metric_unit = BYTES;
     }
@@ -865,7 +865,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         }
 
         if (strncmp(input_plugin, "cpu", 3) == 0 
-        || strncmp(input_plugin, "mem", 3) == 0) {
+            || strncmp(input_plugin, "mem", 3) == 0) {
             /* Added for EMF support: Construct a list */
             struct mk_list flb_intermediate_metrics;
             mk_list_init(&flb_intermediate_metrics);
@@ -878,6 +878,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
              */
             for (i = 0; i < map_size; i++) {
                 metric = flb_malloc(sizeof(struct flb_intermediate_metric));
+                if (!metric) {
+                    goto error;
+                }
+
                 metric->key = (kv + i)->key;
                 metric->value = (kv + i)->val;
                 metric->metric_type = intermediate_metric_type;
@@ -923,6 +927,7 @@ error:
 struct log_stream *get_dynamic_log_stream(struct flb_cloudwatch *ctx,
                                           const char *tag, int tag_len)
 {
+    int ret;
     struct log_stream *new_stream;
     struct log_stream *stream;
     struct mk_list *tmp;
@@ -930,7 +935,6 @@ struct log_stream *get_dynamic_log_stream(struct flb_cloudwatch *ctx,
     flb_sds_t name = NULL;
     flb_sds_t tmp_s = NULL;
     time_t now;
-    int ret;
 
     name = flb_sds_create(ctx->log_stream_prefix);
     if (!name) {
