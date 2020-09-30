@@ -665,6 +665,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->dmode_complete = true;
     file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
     file->dmode_lastline = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 20000 : 0);
+    file->dmode_firstline = false;
 #ifdef FLB_HAVE_SQLDB
     file->db_id     = 0;
 #endif
