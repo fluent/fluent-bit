@@ -1031,9 +1031,8 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
-    while (1) {
-        sleep(1);
-    }
+    flb_loop(ctx);
+    flb_destroy(ctx);
 
     return ret;
 }
