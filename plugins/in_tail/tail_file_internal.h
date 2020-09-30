@@ -65,6 +65,7 @@ struct flb_tail_file {
     flb_sds_t dmode_buf;        /* buffer for docker mode                */
     flb_sds_t dmode_lastline;   /* last incomplete line                  */
     bool dmode_complete;        /* buffer contains completed log         */
+    bool dmode_firstline;       /* dmode mult firstline found ?          */
 
     /* buffering */
     size_t parsed;
