@@ -541,6 +541,18 @@ int flb_start(flb_ctx_t *ctx)
     return 0;
 }
 
+int flb_loop(flb_ctx_t *ctx)
+{
+    int ret;
+    pthread_t tid;
+
+    tid = ctx->config->worker;
+    ret = pthread_join(tid, NULL);
+    flb_debug("[lib] Fluent Bit exiting...");
+
+    return ret;
+}
+
 /* Stop the engine */
 int flb_stop(flb_ctx_t *ctx)
 {
