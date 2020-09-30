@@ -19,6 +19,9 @@
 /* JSON iteration tests */
 #define JSON_SINGLE_MAP1 FLB_TESTS_DATA_PATH "/data/pack/json_single_map_001.json"
 #define JSON_SINGLE_MAP2 FLB_TESTS_DATA_PATH "/data/pack/json_single_map_002.json"
+#define JSON_DUP_KEYS_I  FLB_TESTS_DATA_PATH "/data/pack/dup_keys_in.json"
+#define JSON_DUP_KEYS_O  FLB_TESTS_DATA_PATH "/data/pack/dup_keys_out.json"
+
 #define JSON_BUG342      FLB_TESTS_DATA_PATH "/data/pack/bug342.json"
 
 /* Pack Samples path */
@@ -236,6 +239,47 @@ void test_json_pack_mult_iter()
     TEST_CHECK(total_maps == 2);
     flb_pack_state_reset(&state);
     flb_free(buf);
+}
+
+/* Validate that duplicated keys are removed */
+void test_json_dup_keys()
+{
+    int ret;
+    int type;
+    size_t len_in;
+    char *out_buf;
+    size_t out_size;
+    char *data_in;
+    char *data_out;
+    flb_sds_t out_json;
+    flb_sds_t d;
+
+    /* Read JSON input file */
+    data_in = mk_file_to_buffer(JSON_DUP_KEYS_I);
+    TEST_CHECK(data_in != NULL);
+    len_in = strlen(data_in);
+
+    /* Read JSON output file */
+    data_out = mk_file_to_buffer(JSON_DUP_KEYS_O);
+    TEST_CHECK(data_out != NULL);
+
+    /* Pack raw JSON as msgpack */
+    ret = flb_pack_json(data_in, len_in, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+
+    d = flb_sds_create("date");
+    TEST_CHECK(d != NULL);
+
+    /* Convert back to JSON */
+    out_json = flb_pack_msgpack_to_json_format(out_buf, out_size,
+                                               FLB_PACK_JSON_FORMAT_LINES,
+                                               FLB_PACK_JSON_DATE_EPOCH,
+                                               d);
+    TEST_CHECK(out_json != NULL);
+
+    TEST_CHECK(strncmp(out_json, data_out, flb_sds_len(out_json)) == 0);
+    flb_sds_destroy(d);
+    flb_sds_destroy(out_json);
 }
 
 void test_json_pack_bug342()
@@ -581,11 +625,12 @@ void test_json_pack_bug1278()
 
 TEST_LIST = {
     /* JSON maps iteration */
-    { "json_pack", test_json_pack },
-    { "json_pack_iter", test_json_pack_iter},
-    { "json_pack_mult", test_json_pack_mult},
+    { "json_pack"          , test_json_pack },
+    { "json_pack_iter"     , test_json_pack_iter},
+    { "json_pack_mult"     , test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
-    { "json_pack_bug342", test_json_pack_bug342},
+    { "json_dup_keys"      , test_json_dup_keys},
+    { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
 
     /* Mixed bytes, check JSON encoding */
