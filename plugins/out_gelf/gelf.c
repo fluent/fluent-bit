@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_random.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -321,8 +322,6 @@ static void cb_gelf_flush(const void *data, size_t bytes,
 static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *config,
                         void *data)
 {
-    int ret;
-    int fd;
     const char *tmp;
     struct flb_out_gelf_config *ctx = NULL;
 
@@ -408,20 +407,8 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
     }
 
     /* init random seed */
-    fd = open("/dev/urandom", O_RDONLY);
-    if (fd == -1) {
+    if (flb_random_bytes((unsigned char *) &ctx->seed, sizeof(int))) {
         ctx->seed = time(NULL);
-    }
-    else {
-        unsigned int val;
-        ret = read(fd, &val, sizeof(val));
-        if (ret > 0) {
-            ctx->seed = val;
-        }
-        else {
-            ctx->seed = time(NULL);
-        }
-        close(fd);
     }
     srand(ctx->seed);
 
