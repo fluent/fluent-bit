@@ -835,7 +835,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     tmp = NULL;
 
     /* A string no longer than S3_KEY_SIZE is created to store the formatted timestamp. */
-    key = flb_malloc(S3_KEY_SIZE * sizeof(char));
+    key = flb_calloc(1, S3_KEY_SIZE * sizeof(char));
     if (!key) {
         goto error;
     }
