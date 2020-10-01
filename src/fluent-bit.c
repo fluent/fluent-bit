@@ -58,6 +58,7 @@ extern void win32_started(void);
 #endif
 
 flb_ctx_t *ctx;
+struct flb_config *config;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -760,7 +761,6 @@ int flb_main(int argc, char **argv)
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
     struct flb_filter_instance *filter = NULL;
-    struct flb_config *config;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
     flb_stacktrace_init(argv[0], &flb_st);
