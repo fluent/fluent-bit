@@ -2708,6 +2708,7 @@ void flb_test_multi_entries_severity()
     ret = flb_input_set(ctx, in_ffd,
                         "Path", STACKDRIVER_DATA_PATH "/stackdriver_multi_entries_severity.log",
                         "tag", "test",
+                        "read_from_head", "true",
                         NULL);
     TEST_CHECK_(ret == 0, "setting input options");
 
