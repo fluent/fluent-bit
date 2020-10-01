@@ -68,6 +68,7 @@ struct flb_tail_config {
 #endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
+    int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
     int ignore_older;          /* ignore fields older than X seconds        */
