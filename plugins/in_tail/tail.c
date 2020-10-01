@@ -472,6 +472,12 @@ static struct flb_config_map config_map[] = {
      "alternative name for that key."
     },
     {
+     FLB_CONFIG_MAP_BOOL, "read_from_head", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, read_from_head),
+     "For new discovered files on start (without a database offset/position), read the "
+     "content from the head of the file, not tail."
+    },
+    {
      FLB_CONFIG_MAP_STR, "refresh_interval", "60",
      0, FLB_FALSE, 0,
      "interval to refresh the list of watched files expressed in seconds."
@@ -481,7 +487,7 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
     },
     {
-     FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
+     FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
      "specify the number of extra time in seconds to monitor a file once is "
      "rotated in case some pending data is flushed."
