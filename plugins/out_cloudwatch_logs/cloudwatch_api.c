@@ -41,6 +41,7 @@
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include "cloudwatch_api.h"
 
@@ -990,6 +991,17 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     flb_sds_t tmp;
     flb_sds_t error;
     int num_headers = 1;
+
+    buf->put_events_calls++;
+
+    if (buf->put_events_calls >= 4) {
+        /*
+         * In normal execution, even under high throughput, 4+ calls per flush
+         * should be extremely rare. This is needed for edge cases basically.
+         */
+        flb_plg_debug(ctx->ins, "Too many calls this flush, sleeping for 250 ms");
+        usleep(250000);
+    }
 
     flb_plg_debug(ctx->ins, "Sending log events to log stream %s", stream->name);
 
