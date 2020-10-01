@@ -183,6 +183,17 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         return 2;
     }
 
+    if (ctx->log_key) {
+        /*
+         * flb_msgpack_to_json will encase the value in quotes
+         * We don't want that for log_key, so we ignore the first
+         * and last character
+         */
+        written -= 2;
+        tmp_buf_ptr++; /* pass over the opening quote */
+        buf->tmp_buf_offset++;
+    }
+
     /* is (written + 1) because we still have to append newline */
     if ((written + 1) >= MAX_EVENT_SIZE) {
         flb_plg_warn(ctx->ins, "[size=%zu] Discarding record which is larger than "
