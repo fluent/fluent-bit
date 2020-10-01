@@ -296,6 +296,14 @@ static int in_tail_init(struct flb_input_instance *in,
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
 
+    /*
+     * After the first scan (on start time), all new files discovered needs to be
+     * read from head, so we switch the 'read_from_head' flag to true so any
+     * other file discovered after a scan or a rotation are read from the
+     * beginning.
+     */
+    ctx->read_from_head = FLB_TRUE;
+
     /* Set plugin context */
     flb_input_set_context(in, ctx);
 

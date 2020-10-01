@@ -554,16 +554,26 @@ static int set_file_position(struct flb_tail_config *ctx,
      * database function updates the file->offset entry.
      */
     if (ctx->db) {
-        flb_tail_db_file_set(file, ctx);
-        if (file->offset > 0) {
-            ret = lseek(file->fd, file->offset, SEEK_SET);
-            if (ret == -1) {
-                flb_errno();
-                return -1;
+        ret = flb_tail_db_file_set(file, ctx);
+        if (ret == 0) {
+            if (file->offset > 0) {
+                ret = lseek(file->fd, file->offset, SEEK_SET);
+                if (ret == -1) {
+                    flb_errno();
+                    return -1;
+                }
             }
+            else if (ctx->read_from_head == FLB_FALSE) {
+                ret = lseek(file->fd, 0, SEEK_END);
+                if (ret == -1) {
+                    flb_errno();
+                    return -1;
+                }
+                file->offset = ret;
+                flb_tail_db_file_offset(file, ctx);
+            }
+            return 0;
         }
-        /* no need to seek */
-        return 0;
     }
 #endif
 
@@ -592,6 +602,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     char *tag;
     size_t tag_len;
     struct flb_tail_file *file;
+    struct stat lst;
 
     if (!S_ISREG(st->st_mode)) {
         return -1;
@@ -619,7 +630,6 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->fd        = fd;
 
     /* On non-windows environments check if the original path is a link */
-    struct stat lst;
     ret = lstat(path, &lst);
     if (ret == 0) {
         if (S_ISLNK(lst.st_mode)) {
