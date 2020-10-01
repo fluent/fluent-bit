@@ -41,7 +41,7 @@ struct tail_test_result {
 
 struct tail_file_lines {
   char *lines[MAX_LINES];
-  int lines_c; 
+  int lines_c;
 };
 
 
@@ -113,7 +113,7 @@ static struct tail_file_lines *get_out_file_content(const char *target)
     }
 
     file_lines->lines[file_lines->lines_c++] = out_buf;
-    
+
     for (int i=0; i<out_size; i++) {
       // Nullify \n and \r characters
       p = (char *)(out_buf + i);
@@ -210,10 +210,11 @@ void do_test(char *system, const char *target, int tExpected, int nExpected, ...
     TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
 
     TEST_CHECK(flb_input_set(ctx, in_ffd,
-                            "Path", path,
-                            "Docker_Mode", "On",
-                            "Parser", "docker",
-                            NULL) == 0);
+                             "path"          , path,
+                             "docker_mode"   , "on",
+                             "parser"        , "docker",
+                             "read_from_head", "true",
+                             NULL) == 0);
 
     va_start(va, nExpected);
     while ((key = va_arg(va, char *))) {
@@ -249,7 +250,7 @@ void do_test(char *system, const char *target, int tExpected, int nExpected, ...
 
     ret = flb_stop(ctx);
     TEST_CHECK_(ret == 0, "stopping engine");
-    
+
     if (ctx) {
         flb_destroy(ctx);
     }
