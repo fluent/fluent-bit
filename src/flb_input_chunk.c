@@ -75,7 +75,7 @@ int flb_input_chunk_write_at(void *data, off_t offset,
     return ret;
 }
 
-/* 
+/*
  * For input_chunk referenced by an outgoing task, we need to check
  * whether the chunk is in the middle of output flush callback
  */
@@ -88,7 +88,7 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
     if (task->users != 0) {
         return FLB_FALSE;
     }
- 
+
     return FLB_TRUE;
 }
 
@@ -113,11 +113,11 @@ int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
     return FLB_TRUE;
 }
 
-/* 
+/*
  * Returns how many chunks needs to be dropped in order to get enough space to
  * buffer the incoming data (with size chunk_size)
  */
-int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic, 
+int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
                                           struct flb_output_instance *o_ins,
                                           size_t chunk_size)
 {
@@ -145,11 +145,11 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
     }
 
     /*
-     * flb_intput_chunk_count_dropped_chunks(3) will only be called if the chunk will  
-     * be flushing to the output instance passed in and the instance will reach its 
-     * limit after appending the new data. This function will try to count how many 
+     * flb_intput_chunk_count_dropped_chunks(3) will only be called if the chunk will
+     * be flushing to the output instance passed in and the instance will reach its
+     * limit after appending the new data. This function will try to count how many
      * chunks need to be dropped in order to place the incoing chunk.
-     * 
+     *
      * Return '0' means that we cannot find a slot to ingest the incoming data.
      */
     if (enough_space == FLB_FALSE) {
@@ -162,8 +162,8 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 /*
  * Find a slot in the output instance to append the new data with size chunk_size, it
  * will drop the the oldest chunks when the limitaion on local disk is reached.
- * 
- * overlimit_routes_mask: A bit mask used to check whether the output instance will 
+ *
+ * overlimit_routes_mask: A bit mask used to check whether the output instance will
  * reach the limit when buffering the new data
  */
 int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
@@ -195,7 +195,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         count = flb_intput_chunk_count_dropped_chunks(ic, o_ins, chunk_size);
 
         if (count == 0) {
-            /* 
+            /*
              * The worst scenerio is that we cannot find a space by dropping some
              * old chunks for the incoming chunk. We need to adjust the routes_mask
              * of the incoming chunk to not flush to that output instance.
@@ -226,7 +226,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             o_ins->fs_chunks_size -= old_ic_bytes;
 
             flb_debug("[input chunk] remove route of chunk %s with size %ld bytes to output plugin %s "
-                      "to place the incoming data with size %ld bytes", flb_input_chunk_get_name(old_ic), 
+                      "to place the incoming data with size %ld bytes", flb_input_chunk_get_name(old_ic),
                       old_ic_bytes, o_ins->name, chunk_size);
 
             if (old_ic->routes_mask == 0) {
@@ -259,11 +259,11 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     return 0;
 }
 
-/* 
+/*
  * Returns routes_mask of output instances that will reach the limit
  * after buffering the new data
  */
-uint64_t flb_input_chunk_get_overlimit_routes_mask(struct flb_input_chunk *ic, 
+uint64_t flb_input_chunk_get_overlimit_routes_mask(struct flb_input_chunk *ic,
                                                    size_t chunk_size)
 {
     uint64_t routes_mask = 0;
@@ -272,14 +272,14 @@ uint64_t flb_input_chunk_get_overlimit_routes_mask(struct flb_input_chunk *ic,
 
     mk_list_foreach(head, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
-        
+
         if ((o_ins->total_limit_size == -1) ||
             (ic->routes_mask & o_ins->mask_id) == 0) {
             continue;
         }
 
         flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left in plugin %s",
-                  flb_input_chunk_get_name(ic), chunk_size, 
+                  flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size - o_ins->fs_chunks_size,
                   o_ins->name);
 
@@ -507,10 +507,10 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
         }
     }
 
-    /* 
+    /*
      * If buffering this block of data will exceed one of the limit among all output instances
      * that the chunk will flush to, we need to modify the routes_mask of the oldest chunks
-     * (based in creation time) to get enough space for the incoming chunk. 
+     * (based in creation time) to get enough space for the incoming chunk.
      */
     if (ic->routes_mask != 0 &&
         flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
@@ -937,7 +937,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
         if (o_ins->total_limit_size == -1) {
             continue;
         }
-        
+
         if ((ic->routes_mask & o_ins->mask_id) > 0) {
             /*
              * if there is match on any index of 1's in the binary, it indicates
