@@ -41,7 +41,10 @@
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
+#endif
 
 #include "cloudwatch_api.h"
 
