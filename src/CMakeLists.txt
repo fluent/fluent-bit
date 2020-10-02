@@ -70,6 +70,13 @@ if(FLB_PARSER)
     )
 endif()
 
+if(FLB_AVRO_ENCODER)
+  set(src
+    ${src}
+    flb_avro.c
+    )
+endif()
+
 # Fluent Bit have TLS support
 if(FLB_TLS)
   # Register the TLS interface and functions
@@ -253,6 +260,14 @@ if(FLB_HTTP_SERVER)
     flb-http-server)
 endif()
 
+# AVRO Encoding
+if(FLB_AVRO_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  avro-static
+  jansson-static
+  )
+endif()
 
 # Set static dependencies
 set(FLB_DEPS
