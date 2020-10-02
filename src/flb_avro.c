@@ -137,7 +137,7 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
 
     case MSGPACK_OBJECT_BIN:
         flb_debug("got a binary\n");
-        ret = do_avro(avro_value_set_bytes(val, o->via.bin.ptr, o->via.bin.size), "failed on bin");
+        ret = do_avro(avro_value_set_bytes(val, (void *)o->via.bin.ptr, o->via.bin.size), "failed on bin");
         break;
 
     case MSGPACK_OBJECT_EXT:
@@ -146,7 +146,7 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
 #else
         flb_debug("got an ext: %d)", (int)o->via.ext.type);
 #endif
-        ret = do_avro(avro_value_set_bytes(val, o->via.bin.ptr, o->via.bin.size), "failed on ext");
+        ret = do_avro(avro_value_set_bytes(val, (void *)o->via.bin.ptr, o->via.bin.size), "failed on ext");
         break;
 
     case MSGPACK_OBJECT_ARRAY: 

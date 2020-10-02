@@ -55,17 +55,17 @@ if(FLB_METRICS)
     )
 endif()
 
-if(FLB_AVRO_ENCODER)
-  set(UNIT_TESTS_FILES
-    ${UNIT_TESTS_FILES}
-    avro.c
-    )
-endif()
-
 if(FLB_SIGNV4)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     signv4.c
+    )
+endif()
+
+if(FLB_AVRO_ENCODER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    avro.c
     )
 endif()
 

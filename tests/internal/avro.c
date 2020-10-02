@@ -80,11 +80,11 @@ void test_unpack_to_avro()
     TEST_CHECK((strcmp(str1, str2) == 0));
 
     TEST_CHECK(avro_value_get_by_name(&aobject, "key003", &test_value, NULL) == 0);
-    char *val003 = NULL;
+    const char *val003 = NULL;
     size_t val003_size = 0;
     avro_value_get_string(&test_value, &val003, &val003_size);
     flb_info("val003_size:%zu:\n", val003_size);
-    TEST_CHECK(val003[val003_size] == NULL);
+    TEST_CHECK(val003[val003_size] == '\0');
 
 
     TEST_CHECK((strcmp(val003, "abcdefghijk") == 0));
@@ -197,17 +197,17 @@ void test_parse_tight_schema()
     avro_value_t pn;
     TEST_CHECK(avro_value_get_by_name(&kubernetes0, "pod_name", &pn, NULL) == 0);
 
-    char *pod_name = NULL;
+    const char *pod_name = NULL;
     size_t pod_name_size = 0;
     TEST_CHECK(avro_value_get_string(&pn, &pod_name, &pod_name_size) == 0);
     TEST_CHECK(strcmp(pod_name, "yali-bert-completion-tensorboard-6786c9c8-wj25m") == 0);
-    TEST_CHECK(pod_name[pod_name_size] == NULL);
+    TEST_CHECK(pod_name[pod_name_size] == '\0');
     TEST_CHECK(strlen(pod_name) == (pod_name_size-1));
 
     avro_value_t nn;
     TEST_CHECK(avro_value_get_by_name(&kubernetes0, "namespace_name", &nn, NULL) == 0);
 
-    char *namespace_name = NULL;
+    const char *namespace_name = NULL;
     size_t namespace_name_size = 0;
     TEST_CHECK(avro_value_get_string(&nn, &namespace_name, &namespace_name_size) == 0);
     TEST_CHECK(strcmp(namespace_name, "k8s-pilot") == 0);
@@ -223,7 +223,7 @@ void test_parse_tight_schema()
     // check the first item in the map
     avro_value_t doas;
     TEST_CHECK(avro_value_get_by_name(&mapX, "doAs", &doas, NULL) == 0);
-    char *doaser = NULL;
+    const char *doaser = NULL;
     size_t doaser_size;
     TEST_CHECK(avro_value_get_string(&doas, &doaser, &doaser_size) == 0);
     TEST_CHECK((strcmp(doaser, "stdemb") == 0));
@@ -231,7 +231,7 @@ void test_parse_tight_schema()
     // check the second item in the map
     avro_value_t iddecorator;
     TEST_CHECK(avro_value_get_by_name(&mapX, "iddecorator.grid.li.username", &iddecorator, NULL) == 0);
-    char *idder = NULL;
+    const char *idder = NULL;
     size_t idder_size;
     TEST_CHECK(avro_value_get_string(&iddecorator, &idder, &idder_size) == 0);
     TEST_CHECK((strcmp(idder, "yali") == 0));
