@@ -51,6 +51,91 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
                                               const char *tag, int tag_len);
 
 
+static char *mock_error_response(char *error_env_var)
+{
+    char *err_val = NULL;
+    char *error = NULL;
+    int len = 0;
+
+    err_val = getenv(error_env_var);
+    if (err_val != NULL && strlen(err_val) > 0) {
+        error = flb_malloc(strlen(err_val) + sizeof(char));
+        if (error == NULL) {
+            flb_errno();
+            return NULL;
+        }
+
+        len = strlen(err_val);
+        memcpy(error, err_val, len);
+        error[len] = '\0';
+        return error;
+    }
+
+    return NULL;
+}
+
+int s3_plugin_under_test()
+{
+    if (getenv("FLB_S3_PLUGIN_UNDER_TEST") != NULL) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
+{
+    /* create an http client so that we can set the response */
+    struct flb_http_client *c = NULL;
+    char *error = mock_error_response(error_env_var);
+
+    c = flb_calloc(1, sizeof(struct flb_http_client));
+    if (!c) {
+        flb_errno();
+        flb_free(error);
+        return NULL;
+    }
+    mk_list_init(&c->headers);
+
+    if (error != NULL) {
+        c->resp.status = 400;
+        /* resp.data is freed on destroy, payload is supposed to reference it */
+        c->resp.data = error;
+        c->resp.payload = c->resp.data;
+        c->resp.payload_size = strlen(error);
+    }
+    else {
+        c->resp.status = 200;
+        c->resp.payload = "";
+        c->resp.payload_size = 0;
+        if (strcmp(api, "CreateMultipartUpload") == 0) {
+            /* mocked success response */
+            c->resp.payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<InitiateMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\n"
+              "<Bucket>example-bucket</Bucket>\n"
+              "<Key>example-object</Key>\n"
+              "<UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>\n"
+            "</InitiateMultipartUploadResult>";
+            c->resp.payload_size = strlen(c->resp.payload);
+        }
+        else if (strcmp(api, "UploadPart") == 0) {
+            /* mocked success response */
+            c->resp.payload = "Date:  Mon, 1 Nov 2010 20:34:56 GMT\n"
+                              "ETag: \"b54357faf0632cce46e942fa68356b38\"\n"
+                              "Content-Length: 0\n"
+                              "Connection: keep-alive\n"
+                              "Server: AmazonS3";
+            c->resp.payload_size = strlen(c->resp.payload);
+        }
+        else {
+            c->resp.payload = "";
+            c->resp.payload_size = 0;
+        }
+    }
+
+    return c;
+}
+
 static flb_sds_t concat_path(char *p1, char *p2)
 {
     flb_sds_t dir;
@@ -277,27 +362,29 @@ static int cb_s3_init(struct flb_output_instance *ins,
     flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
 
 
-    /* upload_chunk_size */
-    if (ctx->upload_chunk_size <= 0) {
-        flb_plg_error(ctx->ins, "Failed to parse upload_chunk_size %s", tmp);
-        goto error;
-    }
-    if (ctx->upload_chunk_size > ctx->file_size) {
-        flb_plg_error(ctx->ins, "upload_chunk_size can not be larger than total_file_size");
-        goto error;
-    }
-    if (ctx->upload_chunk_size < MIN_CHUNKED_UPLOAD_SIZE) {
-        flb_plg_error(ctx->ins, "upload_chunk_size must be at least 5,242,880 bytes");
-        goto error;
-    }
-    if (ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_SIZE) {
-        flb_plg_error(ctx->ins, "Max upload_chunk_size is 50M");
-        goto error;
-    }
+    if (ctx->use_put_object == FLB_FALSE) {
+        /* upload_chunk_size */
+        if (ctx->upload_chunk_size <= 0) {
+            flb_plg_error(ctx->ins, "Failed to parse upload_chunk_size %s", tmp);
+            goto error;
+        }
+        if (ctx->upload_chunk_size > ctx->file_size) {
+            flb_plg_error(ctx->ins, "upload_chunk_size can not be larger than total_file_size");
+            goto error;
+        }
+        if (ctx->upload_chunk_size < MIN_CHUNKED_UPLOAD_SIZE) {
+            flb_plg_error(ctx->ins, "upload_chunk_size must be at least 5,242,880 bytes");
+            goto error;
+        }
+        if (ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_SIZE) {
+            flb_plg_error(ctx->ins, "Max upload_chunk_size is 50M");
+            goto error;
+        }
 
-    if (ctx->file_size < 2 * MIN_CHUNKED_UPLOAD_SIZE) {
-        flb_plg_info(ctx->ins, "total_file_size is less than 10 MB, will use PutObject API");
-        ctx->use_put_object = FLB_TRUE;
+        if (ctx->file_size < 2 * MIN_CHUNKED_UPLOAD_SIZE) {
+            flb_plg_info(ctx->ins, "total_file_size is less than 10 MB, will use PutObject API");
+            ctx->use_put_object = FLB_TRUE;
+        }
     }
 
     if (ctx->upload_chunk_size != MIN_CHUNKED_UPLOAD_SIZE &&
@@ -609,6 +696,17 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         goto put_object;
     }
 
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        init_upload = FLB_TRUE;
+        complete_upload = FLB_TRUE;
+        if (ctx->use_put_object == FLB_TRUE) {
+            goto put_object;
+        }
+        else {
+            goto multipart;
+        }
+    }
+
     if (m_upload == NULL) {
         if (chunk != NULL && time(NULL) > (chunk->create_time + ctx->upload_timeout)) {
             /* timeout already reached, just PutObject */
@@ -901,9 +999,14 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     }
 
     s3_client = ctx->s3_client;
-    c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                          uri, body, body_size,
-                                          NULL, 0);
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
+    }
+    else {
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
+                                              uri, body, body_size,
+                                              NULL, 0);
+    }
     if (c) {
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
         if (c->resp.status == 200) {
@@ -1171,6 +1274,9 @@ static void cb_s3_flush(const void *data, size_t bytes,
             /* add data to local buffer */
             ret = s3_store_buffer_put(ctx, chunk,
                                       tag, tag_len, json, (size_t) len);
+            if (s3_plugin_under_test() == FLB_TRUE) {
+                goto send_data;
+            }
             flb_sds_destroy(json);
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1179,6 +1285,7 @@ static void cb_s3_flush(const void *data, size_t bytes,
         }
     }
 
+send_data:
     ret = construct_request_buffer(ctx, json, chunk, &buffer, &buffer_size);
     flb_sds_destroy(json);
     if (ret < 0) {
