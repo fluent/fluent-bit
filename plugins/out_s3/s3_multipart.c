@@ -435,9 +435,14 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     }
 
     s3_client = ctx->s3_client;
-    c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
-                                          uri, body, size,
-                                          NULL, 0);
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        c = mock_s3_call("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", "CompleteMultipartUpload");
+    }
+    else {
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                              uri, body, size,
+                                              NULL, 0);
+    }
     flb_sds_destroy(uri);
     flb_free(body);
     if (c) {
@@ -454,9 +459,9 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "CompleteMultipartUpload", ctx->ins);
-        if (c->resp.data != NULL) {
+        if (c->resp.payload != NULL) {
             flb_plg_debug(ctx->ins, "Raw CompleteMultipartUpload response: %s",
-                          c->resp.data);
+                          c->resp.payload);
         }
         flb_http_client_destroy(c);
     }
@@ -488,8 +493,13 @@ int create_multipart_upload(struct flb_s3 *ctx,
     uri = tmp;
 
     s3_client = ctx->s3_client;
-    c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
-                                          uri, NULL, 0, NULL, 0);
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        c = mock_s3_call("TEST_CREATE_MULTIPART_UPLOAD_ERROR", "CreateMultipartUpload");
+    }
+    else {
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                              uri, NULL, 0, NULL, 0);
+    }
     flb_sds_destroy(uri);
     if (c) {
         flb_plg_debug(ctx->ins, "CreateMultipartUpload http status=%d",
@@ -501,7 +511,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
                 flb_plg_error(ctx->ins, "Could not find upload ID in "
                               "CreateMultipartUpload response");
                 flb_plg_debug(ctx->ins, "Raw CreateMultipartUpload response: %s",
-                              c->resp.data);
+                              c->resp.payload);
                 flb_http_client_destroy(c);
                 return -1;
             }
@@ -514,9 +524,9 @@ int create_multipart_upload(struct flb_s3 *ctx,
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "CreateMultipartUpload", ctx->ins);
-        if (c->resp.data != NULL) {
+        if (c->resp.payload != NULL) {
             flb_plg_debug(ctx->ins, "Raw CreateMultipartUpload response: %s",
-                          c->resp.data);
+                          c->resp.payload);
         }
         flb_http_client_destroy(c);
     }
@@ -590,20 +600,25 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     uri = tmp;
 
     s3_client = ctx->s3_client;
-    c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                          uri, body, body_size,
-                                          NULL, 0);
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        c = mock_s3_call("TEST_UPLOAD_PART_ERROR", "UploadPart");
+    }
+    else {
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
+                                              uri, body, body_size,
+                                              NULL, 0);
+    }
     flb_sds_destroy(uri);
     if (c) {
-        flb_plg_debug(ctx->ins, "UploadPart http status=%d",
+        flb_plg_info(ctx->ins, "UploadPart http status=%d",
                       c->resp.status);
         if (c->resp.status == 200) {
-            tmp = get_etag(c->resp.data, c->resp.data_size);
+            tmp = get_etag(c->resp.payload, c->resp.payload_size);
             if (!tmp) {
                 flb_plg_error(ctx->ins, "Could not find ETag in "
                               "UploadPart response");
                 flb_plg_debug(ctx->ins, "Raw UploadPart response: %s",
-                              c->resp.data);
+                              c->resp.payload);
                 flb_http_client_destroy(c);
                 return -1;
             }
@@ -631,9 +646,9 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
                                 "UploadPart", ctx->ins);
-        if (c->resp.data != NULL) {
+        if (c->resp.payload != NULL) {
             flb_plg_debug(ctx->ins, "Raw UploadPart response: %s",
-                          c->resp.data);
+                          c->resp.payload);
         }
         flb_http_client_destroy(c);
     }
