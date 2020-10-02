@@ -295,9 +295,7 @@ static int get_vpc_metadata(struct flb_filter_aws *ctx)
     flb_sds_destroy(mac_id);
     flb_sds_destroy(vpc_path);
 
-    if (ret < 0) {
-        return -1;
-    }
+    return ret;
 }
 
 /*
