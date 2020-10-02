@@ -796,6 +796,7 @@ int flb_input_collector_running(int coll_id, struct flb_input_instance *in)
     return coll->running;
 }
 
+
 int flb_input_pause_all(struct flb_config *config)
 {
     int paused = 0;
@@ -942,7 +943,7 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
-    return 0;
+    return collector->id;
 }
 
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
