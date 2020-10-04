@@ -9,6 +9,7 @@ set(FLB_LUAJIT                Yes)
 set(FLB_EXAMPLES              Yes)
 set(FLB_PARSER                Yes)
 set(FLB_TLS                   Yes)
+set(FLB_AWS                   Yes)
 
 # INPUT plugins
 # =============
@@ -66,6 +67,8 @@ set(FLB_OUT_FLOWCOUNTER       Yes)
 set(FLB_OUT_KAFKA              No)
 set(FLB_OUT_KAFKA_REST         No)
 set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
+set(FLB_OUT_S3                 No)
+set(FLB_OUT_KINESIS_FIREHOSE   No)
 
 # FILTER plugins
 # ==============
