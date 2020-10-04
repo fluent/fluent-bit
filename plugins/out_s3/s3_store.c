@@ -74,7 +74,7 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
      * Based in the current ctx->stream_name, locate a candidate file to
      * store the incoming data using as a lookup pattern the content Tag.
      */
-    mk_list_foreach(head, &ctx->fs->files) {
+    mk_list_foreach(head, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
         if (fsf->meta_size != tag_len) {
             fsf = NULL;
@@ -115,7 +115,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         }
 
         /* Create the file */
-        fsf = flb_fstore_file_create(ctx->fs, name, bytes);
+        fsf = flb_fstore_file_create(ctx->fs, ctx->stream_active, name, bytes);
         if (!fsf) {
             flb_plg_error(ctx->ins, "could not create the file '%s' in the store",
                           name);
@@ -158,6 +158,49 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     return 0;
 }
 
+static int set_files_context(struct flb_s3 *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *f_head;
+    struct flb_fstore_stream *fs_stream;
+    struct flb_fstore_file *fsf;
+    struct s3_file *s3_file;
+
+    mk_list_foreach(head, &ctx->fs->streams) {
+        fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+
+        /* skip current stream since it's new */
+        if (fs_stream == ctx->stream_active) {
+            continue;
+        }
+
+        /* skip multi-upload */
+        if (fs_stream == ctx->stream_upload) {
+            continue;
+        }
+
+        mk_list_foreach(f_head, &fs_stream->files) {
+            fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
+            if (fsf->data) {
+                continue;
+            }
+
+            /* Allocate local context */
+            s3_file = flb_calloc(1, sizeof(struct s3_file));
+            if (!s3_file) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "cannot allocate s3 file context");
+                continue;
+            }
+            s3_file->fsf = fsf;
+            s3_file->create_time = time(NULL);
+
+            /* Use fstore opaque 'data' reference to keep our context */
+            fsf->data = s3_file;
+        }
+    }
+}
+
 /* Initialize filesystem storage for S3 plugin */
 int s3_store_init(struct flb_s3 *ctx)
 {
@@ -165,23 +208,80 @@ int s3_store_init(struct flb_s3 *ctx)
     char tmp[64];
     struct tm *tm;
     struct flb_fstore *fs;
+    struct flb_fstore_stream *fs_stream;
 
-    /* Compose a new stream name using 'local' date */
-    now = time(NULL);
-    tm = localtime(&now);
-    strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H:%M:%S", tm);
-
-    fs = flb_fstore_create(ctx->store_dir, tmp);
+    /* Initialize the storage context */
+    fs = flb_fstore_create(ctx->store_dir);
     if (!fs) {
         return -1;
     }
     ctx->fs = fs;
 
+    /*
+     * On every start we create a new stream, this stream in the file system
+     * is directory with the name using the date like '2020-10-03T13:00:02'. So
+     * all the 'new' data that is generated on this process is stored there.
+     *
+     * Note that previous data in similar directories from previous runs is
+     * considered backlog data, in the S3 plugin we need to differenciate the
+     * new v/s the older buffered data.
+     *
+     * Compose a stream name...
+     */
+    now = time(NULL);
+    tm = localtime(&now);
+    strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H:%M:%S", tm);
+
+    /* Create the stream */
+    fs_stream = flb_fstore_stream_create(ctx->fs, tmp);
+    if (!fs_stream) {
+        /* Upon exception abort */
+        flb_plg_error(ctx->ins, "could not initialize active stream: %s", tmp);
+        flb_fstore_destroy(fs);
+        ctx->fs = NULL;
+        return -1;
+    }
+    ctx->stream_active = fs_stream;
+
+    /* Multipart upload stream */
+    fs_stream = flb_fstore_stream_create(ctx->fs, "multipart_upload_metadata");
+    if (!fs_stream) {
+        flb_plg_error(ctx->ins, "could not initialize multipart_upload stream");
+        flb_fstore_destroy(fs);
+        ctx->fs = NULL;
+        return -1;
+    }
+    ctx->stream_upload = fs_stream;
+
+    set_files_context(ctx);
     return 0;
 }
 
 int s3_store_exit(struct flb_s3 *ctx)
 {
+    struct mk_list *head;
+    struct mk_list *f_head;
+    struct flb_fstore_stream *fs_stream;
+    struct flb_fstore_file *fsf;
+    struct s3_file *s3_file;
+
+    /* release local context on non-multi upload files */
+    mk_list_foreach(head, &ctx->fs->streams) {
+        fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+        if (fs_stream == ctx->stream_upload) {
+            continue;
+        }
+
+        mk_list_foreach(f_head, &fs_stream->files) {
+            fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
+            if (fsf->data != NULL) {
+                s3_file = fsf->data;
+                flb_sds_destroy(s3_file->file_path);
+                flb_free(s3_file);
+            }
+        }
+    }
+
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
     }
@@ -194,7 +294,31 @@ int s3_store_exit(struct flb_s3 *ctx)
  */
 int s3_store_has_data(struct flb_s3 *ctx)
 {
-    return 0;
+    struct mk_list *head;
+    struct flb_fstore_stream *fs_stream;
+
+    mk_list_foreach(head, &ctx->fs->streams) {
+        /* skip multi upload stream */
+        fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+        if (fs_stream == ctx->stream_upload) {
+            continue;
+        }
+
+        if (mk_list_size(&fs_stream->files) > 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+int s3_store_has_uploads(struct flb_s3 *ctx)
+{
+    if (mk_list_size(&ctx->stream_upload->files) > 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
 
 int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file)
@@ -223,13 +347,85 @@ int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
 }
 
 int s3_store_file_read(struct flb_s3 *ctx, struct s3_file *s3_file,
-                       char **out_buf, size_t *out_size)
+                               char **out_buf, size_t *out_size)
 {
     int ret;
 
     ret = flb_fstore_file_content_copy(ctx->fs, s3_file->fsf,
-                                         (void **) out_buf, out_size);
+                                       (void **) out_buf, out_size);
     return ret;
+}
+
+int s3_store_file_upload_read(struct flb_s3 *ctx, struct flb_fstore_file *fsf,
+                              char **out_buf, size_t *out_size)
+{
+    int ret;
+
+    ret = flb_fstore_file_content_copy(ctx->fs, fsf,
+                                       (void **) out_buf, out_size);
+    return ret;
+}
+
+struct flb_fstore_file *s3_store_file_upload_get(struct flb_s3 *ctx,
+                                                 char *key, int key_len)
+{
+    struct mk_list *head;
+    struct flb_fstore_file *fsf = NULL;
+
+    mk_list_foreach(head, &ctx->stream_upload->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        if (fsf->meta_buf == NULL) {
+            continue;
+        }
+
+        if (fsf->meta_size != key_len ){
+            continue;
+        }
+
+        if (memcmp(fsf->meta_buf, key, key_len) == 0) {
+            break;
+        }
+        fsf = NULL;
+    }
+
+    return fsf;
+}
+
+int s3_store_file_upload_put(struct flb_s3 *ctx,
+                             struct flb_fstore_file *fsf, flb_sds_t key,
+                             flb_sds_t data)
+{
+    int ret;
+
+    /* Write key as metadata */
+    ret = flb_fstore_file_meta_set(ctx->fs, fsf,
+                                   key, flb_sds_len(key));
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "error writing tag metadata");
+        return -1;
+    }
+
+    /* Append data to the target file */
+    ret = flb_fstore_file_append(fsf, data, flb_sds_len(data));
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "error writing data to local s3 file");
+        return -1;
+    }
+
+    return 0;
+}
+
+int s3_store_file_upload_delete(struct flb_s3 *ctx, struct flb_fstore_file *fsf)
+{
+    /* permanent deletion */
+    flb_fstore_file_delete(ctx->fs, fsf);
+    return 0;
+}
+
+/* Always set an updated copy of metadata into the fs_store_file entry */
+int s3_store_file_meta_get(struct flb_s3 *ctx, struct flb_fstore_file *fsf)
+{
+    return flb_fstore_file_meta_get(ctx->fs, fsf);
 }
 
 void s3_store_file_lock(struct s3_file *s3_file)

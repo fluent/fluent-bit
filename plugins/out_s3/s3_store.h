@@ -30,7 +30,7 @@ struct s3_file {
     size_t size;                     /* file size */
     time_t create_time;              /* creation time */
     flb_sds_t file_path;             /* file path */
-    struct flb_fstore_file *fsf;   /* reference to parent flb_fstore_file */
+    struct flb_fstore_file *fsf;     /* reference to parent flb_fstore_file */
 };
 
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
@@ -41,12 +41,25 @@ int s3_store_init(struct flb_s3 *ctx);
 int s3_store_exit(struct flb_s3 *ctx);
 
 int s3_store_has_data(struct flb_s3 *ctx);
+int s3_store_has_uploads(struct flb_s3 *ctx);
+
 int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file);
 struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
                                   int tag_len);
 int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file);
 int s3_store_file_read(struct flb_s3 *ctx, struct s3_file *s3_file,
                        char **out_buf, size_t *out_size);
+int s3_store_file_upload_read(struct flb_s3 *ctx, struct flb_fstore_file *fsf,
+                              char **out_buf, size_t *out_size);
+struct flb_fstore_file *s3_store_file_upload_get(struct flb_s3 *ctx,
+                                                 char *key, int key_len);
+
+int s3_store_file_upload_put(struct flb_s3 *ctx,
+                             struct flb_fstore_file *fsf, flb_sds_t key,
+                             flb_sds_t data);
+int s3_store_file_upload_delete(struct flb_s3 *ctx, struct flb_fstore_file *fsf);
+
+int s3_store_file_meta_get(struct flb_s3 *ctx, struct flb_fstore_file *fsf);
 
 void s3_store_file_lock(struct s3_file *s3_file);
 void s3_store_file_unlock(struct s3_file *s3_file);

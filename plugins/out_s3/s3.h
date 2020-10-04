@@ -26,7 +26,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
-#include <fluent-bit/flb_s3_local_buffer.h>
 
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
@@ -110,14 +109,14 @@ struct flb_s3 {
     int json_date_format;
     flb_sds_t json_date_key;
 
-    struct flb_local_buffer store;
     flb_sds_t buffer_dir;
 
-    struct flb_local_buffer upload_store;
     flb_sds_t upload_dir;
 
     flb_sds_t store_dir;
     struct flb_fstore *fs;
+    struct flb_fstore_stream *stream_active;  /* default active stream */
+    struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
 
     /*
      * used to track that unset buffers were found on startup that have not
@@ -148,7 +147,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
 int complete_multipart_upload(struct flb_s3 *ctx,
                               struct multipart_upload *m_upload);
 
-void read_uploads_from_fs(struct flb_s3 *ctx);
+void multipart_read_uploads_from_fs(struct flb_s3 *ctx);
 
 void multipart_upload_destroy(struct multipart_upload *m_upload);
 

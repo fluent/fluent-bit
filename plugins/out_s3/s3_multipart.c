@@ -26,10 +26,11 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_fstore.h>
 #include <ctype.h>
-#include <msgpack.h>
 
 #include "s3.h"
+#include "s3_store.h"
 
 #define COMPLETE_MULTIPART_UPLOAD_BASE_LEN 100
 #define COMPLETE_MULTIPART_UPLOAD_PART_LEN 124
@@ -172,17 +173,25 @@ static void parse_etags(struct multipart_upload *m_upload, char *data)
 }
 
 static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
-                                                 struct flb_local_chunk *chunk)
+                                                 struct flb_fstore_file *fsf)
 {
     struct multipart_upload *m_upload = NULL;
     char *buffered_data = NULL;
     size_t buffer_size = 0;
     int ret;
 
-    ret = flb_read_file(chunk->file_path, &buffered_data, &buffer_size);
+    ret = s3_store_file_upload_read(ctx, fsf, &buffered_data, &buffer_size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not read locally buffered data %s",
-                      chunk->file_path);
+                      fsf->name);
+        return NULL;
+    }
+
+    /* always make sure we have a fresh copy of metadata */
+    ret = s3_store_file_meta_get(ctx, fsf);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Could not read file metadata: %s",
+                      fsf->name);
         return NULL;
     }
 
@@ -195,10 +204,10 @@ static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
     m_upload->init_time = time(NULL);
     m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
 
-    ret = upload_data_from_key(m_upload, chunk->tag);
+    ret = upload_data_from_key(m_upload, fsf->meta_buf);
     if (ret < 0) {
-        flb_plg_error(ctx->ins, "Could not extract upload data from %s.tag",
-                      chunk->file_path);
+        flb_plg_error(ctx->ins, "Could not extract upload data from: %s",
+                      fsf->name);
         flb_free(buffered_data);
         multipart_upload_destroy(m_upload);
         return NULL;
@@ -208,7 +217,7 @@ static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
     flb_free(buffered_data);
     if (m_upload->part_number == 0) {
         flb_plg_error(ctx->ins, "Could not extract upload data from %s",
-                      chunk->file_path);
+                      fsf->name);
         multipart_upload_destroy(m_upload);
         return NULL;
     }
@@ -219,24 +228,26 @@ static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
     return m_upload;
 }
 
-void read_uploads_from_fs(struct flb_s3 *ctx)
+void multipart_read_uploads_from_fs(struct flb_s3 *ctx)
 {
-    struct flb_local_chunk *chunk;
     struct mk_list *tmp;
     struct mk_list *head;
     struct multipart_upload *m_upload = NULL;
+    struct flb_fstore_file *fsf;
 
-    mk_list_foreach_safe(head, tmp, &ctx->upload_store.chunks) {
-        chunk = mk_list_entry(head, struct flb_local_chunk, _head);
-        m_upload = upload_from_file(ctx, chunk);
+    mk_list_foreach_safe(head, tmp, &ctx->stream_upload->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        m_upload = upload_from_file(ctx, fsf);
         if (!m_upload) {
-            flb_plg_error(ctx->ins, "Could not process multipart upload data in %s",
-                          chunk->file_path);
+            flb_plg_error(ctx->ins,
+                          "Could not process multipart upload data in %s",
+                          fsf->name);
             continue;
         }
         mk_list_add(&m_upload->_head, &ctx->uploads);
-        flb_plg_info(ctx->ins, "Successfully read existing upload from file system, s3_key=%s",
-                      m_upload->s3_key);
+        flb_plg_info(ctx->ins,
+                     "Successfully read existing upload from file system, s3_key=%s",
+                     m_upload->s3_key);
     }
 }
 
@@ -263,11 +274,10 @@ static flb_sds_t upload_data(flb_sds_t etag, int part_num)
 static int save_upload(struct flb_s3 *ctx, struct multipart_upload *m_upload,
                        flb_sds_t etag)
 {
+    int ret;
     flb_sds_t key;
     flb_sds_t data;
-    int ret;
-    int len;
-    struct flb_local_chunk *chunk = NULL;
+    struct flb_fstore_file *fsf;
 
     key = upload_key(m_upload);
     if (!key) {
@@ -281,11 +291,16 @@ static int save_upload(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         return -1;
     }
 
-    len = flb_sds_len(data);
+    fsf = s3_store_file_upload_get(ctx, key, flb_sds_len(key));
+    if (!fsf) {
+        flb_plg_error(ctx->ins, "Could not find upload file by using key: %s", key);
+        flb_sds_destroy(key);
+        flb_sds_destroy(data);
+        return -1;
+    }
 
-    chunk = flb_chunk_get(&ctx->upload_store, key);
-
-    ret = flb_buffer_put(&ctx->upload_store, chunk, key, data, (size_t) len);
+    /* Write the key to the file */
+    ret = s3_store_file_upload_put(ctx, fsf, key, data);
 
     flb_sds_destroy(key);
     flb_sds_destroy(data);
@@ -295,9 +310,8 @@ static int save_upload(struct flb_s3 *ctx, struct multipart_upload *m_upload,
 
 static int remove_upload_from_fs(struct flb_s3 *ctx, struct multipart_upload *m_upload)
 {
-    int ret;
-    struct flb_local_chunk *chunk = NULL;
     flb_sds_t key;
+    struct flb_fstore_file *fsf;
 
     key = upload_key(m_upload);
     if (!key) {
@@ -305,20 +319,11 @@ static int remove_upload_from_fs(struct flb_s3 *ctx, struct multipart_upload *m_
         return -1;
     }
 
-    chunk = flb_chunk_get(&ctx->upload_store, key);
-
-    if (chunk) {
-        mk_list_del(&chunk->_head);
-        ret = flb_remove_chunk_files(chunk);
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "Could not delete local buffer file %s",
-                          chunk->file_path);
-        }
-        flb_chunk_destroy(chunk);
+    fsf = s3_store_file_upload_get(ctx, key, flb_sds_len(key));
+    if (fsf) {
+        s3_store_file_upload_delete(ctx, fsf);
     }
-
     flb_sds_destroy(key);
-
     return 0;
 }
 
