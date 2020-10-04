@@ -154,6 +154,7 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         flb_plg_error(ctx->ins, "error writing data to local s3 file");
         return -1;
     }
+    s3_file->size += bytes;
 
     return 0;
 }
