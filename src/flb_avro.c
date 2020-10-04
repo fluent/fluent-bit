@@ -89,7 +89,8 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
         ret = do_avro(avro_value_set_int(val, o->via.u64), "failed on posint");
 #else
         if (o.via.u64 > ULONG_MAX)
-            flb_warn("over 4294967295");
+            flb_warn("over \"%lu\"", ULONG_MAX);
+            ret = do_avro(avro_value_set_int(val, ULONG_MAX), "failed on posint");
         else
             flb_debug("got a posint: %lu\n", (unsigned long)o->via.u64);
             ret = do_avro(avro_value_set_int(val, o->via.u64), "failed on posint");
@@ -103,13 +104,14 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
         ret = do_avro(avro_value_set_int(val, o->via.i64), "failed on negint");
 #else
         if (o->via.i64 > LONG_MAX)
-            flb_warn("over +2147483647");
+            flb_warn("over +\"%ld\"", LONG_MAX);
+            ret = do_avro(avro_value_set_int(val, LONG_MAX), "failed on negint");
         else if (o->via.i64 < LONG_MIN)
-            flb_warn("under -2147483648");
+            flb_warn("under -\"%ld\"", LONG_MIN);
+            ret = do_avro(avro_value_set_int(val, LONG_MIN), "failed on negint");
         else
             flb_debug("got a negint: %ld\n", (signed long)o->via.i64);
             ret = do_avro(avro_value_set_int(val, o->via.i64), "failed on negint");
-
 #endif
         break;
 
@@ -180,7 +182,10 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
 
             for(; p < pend; ++p) {
                 avro_value_t  element;
-
+                if (p->key.type != MSGPACK_OBJECT_STR) {
+                    flb_debug("the key of in a map must be string.\n");
+                    continue;
+                }
                 flb_sds_t key = flb_sds_create_len(p->key.via.str.ptr, p->key.via.str.size);
                 flb_debug("got key:%s:\n", key);
 
@@ -189,16 +194,14 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
                     flb_sds_destroy(key);
                     continue;
                 }
-                flb_debug("calling avro_value_add\n");
-
                 // this does not always return 0 for succcess
                 if (avro_value_add(val, key, &element, NULL, NULL) != 0) {
                     flb_debug("avro_value_add:key:%s:avro error:%s:\n", key, avro_strerror());
                 }
                 flb_debug("added\n");
 
-                flb_debug("calling avro_value_get_by_index\n");
-                if (!do_avro(avro_value_get_by_index(val, i++, &element, NULL), "Cannot get field")) {
+                flb_debug("calling avro_value_get_by_name\n");
+                if (!do_avro(avro_value_get_by_name(val, key, &element, NULL), "Cannot get field")) {
                     flb_sds_destroy(key);
                     goto msg2avro_end;
                 }
@@ -207,7 +210,6 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
                 ret = flb_msgpack_to_avro(&element, &p->val);
 
                 flb_sds_destroy(key);
-
             }
         }
         break;
@@ -239,7 +241,7 @@ msg2avro_end:
  *    - avro_generic_class_from_schema
  *    - avro_generic_value_new 
  * 
- *  or use flb_avro_init for the so do the initialization
+ *  or use flb_avro_init for the initialization
  * 
  *  refer to avro docs
  *     http://avro.apache.org/docs/current/api/c/index.html#_avro_values
@@ -333,7 +335,9 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
 
     // write the magic byte stuff
     //  write one bye of \0
-    //  write 16 bytes schemaid where the schemaid is hex for the written bytes
+    //  this is followed by
+    //  16 bytes of the schemaid where the schemaid is in hex
+    //  in this implementation the schemaid is the md5hash of the avro schema
     int rval;
     rval = avro_write(awriter, "\0", 1);
     if (rval != 0) {
@@ -348,6 +352,8 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
     }
 
     // write the schemaid
+    // its md5hash of the avro schema
+    // it looks like this c4b52aaf22429c7f9eb8c30270bc1795
     const char *pos = ctx->schema_id;
     unsigned char val[16];
     size_t count;
