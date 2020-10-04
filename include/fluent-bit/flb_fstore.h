@@ -35,27 +35,42 @@ struct flb_fstore_file {
     size_t meta_size;               /* metadata size */
     void *data;                     /* opaque data type for user/caller context */
     struct cio_chunk *chunk;        /* chunk context */
+    struct cio_chunk *stream;       /* parent stream that owns this file */
     struct mk_list _head;           /* link to parent flb_fstore->files */
 };
 
-struct flb_fstore {
-    struct cio_ctx *cio;            /* Chunk I/O context */
+struct flb_fstore_stream {
     struct cio_stream *stream;      /* Chunk I/O stream context */
-
-    /* Linked list of known files on the current 'active' stream */
+    flb_sds_t path;                 /* stream filesystem path */
     struct mk_list files;
+    struct mk_list _head;
 };
 
-struct flb_fstore *flb_fstore_create(char *path, char *stream_name);
+struct flb_fstore {
+    char *root_path;
+    struct cio_ctx *cio;            /* Chunk I/O context */
+    struct mk_list streams;
+};
+
+struct flb_fstore *flb_fstore_create(char *path);
+
 int flb_fstore_destroy(struct flb_fstore *fs);
+
+struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
+                                                   char *stream_name);
+void flb_fstore_stream_destroy(struct flb_fstore_stream *stream);
 
 int flb_fstore_file_meta_set(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf,
                              void *meta, size_t size);
 
+int flb_fstore_file_meta_get(struct flb_fstore *fs,
+                             struct flb_fstore_file *fsf);
+
 struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
-                                               char *name,
-                                               size_t size);
+                                               struct flb_fstore_stream *fs_stream,
+                                               char *name, size_t size);
+
 int flb_fstore_file_content_copy(struct flb_fstore *fs,
                                  struct flb_fstore_file *fsf,
                                  void **out_buf, size_t *out_size);
