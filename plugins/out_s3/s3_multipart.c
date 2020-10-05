@@ -549,6 +549,11 @@ flb_sds_t get_etag(char *response, size_t size)
     int len;
     int i = 0;
     flb_sds_t etag;
+
+    if (response == NULL) {
+        return NULL;
+    }
+
     tmp = strstr(response, "ETag:");
     if (!tmp) {
         return NULL;
@@ -618,7 +623,7 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         flb_plg_info(ctx->ins, "UploadPart http status=%d",
                       c->resp.status);
         if (c->resp.status == 200) {
-            tmp = get_etag(c->resp.payload, c->resp.payload_size);
+            tmp = get_etag(c->resp.data, c->resp.data_size);
             if (!tmp) {
                 flb_plg_error(ctx->ins, "Could not find ETag in "
                               "UploadPart response");
