@@ -1275,6 +1275,7 @@ static int stackdriver_format(struct flb_config *config,
         ret = extract_local_resource_id(data, bytes, ctx, tag);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "fail to construct local_resource_id");
+            msgpack_sbuffer_destroy(&mp_sbuf);
             return -1;
         }
     }
