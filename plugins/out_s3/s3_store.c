@@ -200,6 +200,8 @@ static int set_files_context(struct flb_s3 *ctx)
             fsf->data = s3_file;
         }
     }
+
+    return 0;
 }
 
 /* Initialize filesystem storage for S3 plugin */
