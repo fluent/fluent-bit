@@ -138,7 +138,7 @@ struct flb_cloudwatch {
     /* The namespace to use for the metric */
     flb_sds_t metric_namespace;
 
-    /* Metric dimensions is a list of lsit. If you have only one list of 
+    /* Metric dimensions is a list of lsits. If you have only one list of 
     dimensions, put the values as a comma seperated string. If you want to put
     list of lists, use the list as semicolon seperated strings. If your value
     is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]*/
