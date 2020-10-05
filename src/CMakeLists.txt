@@ -167,13 +167,6 @@ if(FLB_REGEX)
     )
 endif()
 
-if(FLB_AVRO_ENCODER)
-  set(extra_libs
-    ${extra_libs}
-    "libjansson"
-    )
-endif()
-
 if(FLB_LUAJIT)
   set(extra_libs
     ${extra_libs}
@@ -273,6 +266,7 @@ if(FLB_AVRO_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   avro-static
+  jansson-static
   )
 endif()
 

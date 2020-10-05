@@ -62,13 +62,6 @@ if(FLB_SIGNV4)
     )
 endif()
 
-if(FLB_AVRO_ENCODER)
-  set(UNIT_TESTS_FILES
-    ${UNIT_TESTS_FILES}
-    avro.c
-    )
-endif()
-
 if(FLB_AWS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
@@ -127,10 +120,6 @@ foreach(source_file ${UNIT_TESTS_FILES})
     endif()
 
     target_link_libraries(${source_file_we} fluent-bit-static)
-
-    if(FLB_AVRO_ENCODER)
-      target_link_libraries(${source_file_we} avro-static libjansson)
-    endif()
 
     add_test(NAME ${source_file_we}
             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
