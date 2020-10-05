@@ -581,9 +581,15 @@ static struct flb_config_map config_map[] = {
      "set a database file to keep track of monitored files and it offsets."
     },
     {
-     FLB_CONFIG_MAP_STR, "db.sync", "full",
+     FLB_CONFIG_MAP_STR, "db.sync", "normal",
      0, FLB_FALSE, 0,
      "set a database sync method. values: extra, full, normal and off."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.locking", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, db_locking),
+     "set exclusive locking mode, increase performance but don't allow "
+     "external connections to the database file."
     },
 #endif
 
