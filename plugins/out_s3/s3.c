@@ -280,13 +280,13 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
 
     /* Date format for JSON output */
-    ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
+    ctx->json_date_format = FLB_PACK_JSON_DATE_ISO8601;
     tmp = flb_output_get_property("json_date_format", ins);
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_plg_error(ctx->ins, "invalid json_date_format '%s'. "
-                          "Using 'double' type", tmp);
+            flb_plg_error(ctx->ins, "invalid json_date_format '%s'. ", tmp);
+            goto error;
         }
         else {
             ctx->json_date_format = ret;
