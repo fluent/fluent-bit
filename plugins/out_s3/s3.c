@@ -88,6 +88,8 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
     /* create an http client so that we can set the response */
     struct flb_http_client *c = NULL;
     char *error = mock_error_response(error_env_var);
+    char *resp;
+    int len;
 
     c = flb_calloc(1, sizeof(struct flb_http_client));
     if (!c) {
@@ -120,12 +122,21 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
         }
         else if (strcmp(api, "UploadPart") == 0) {
             /* mocked success response */
-            c->resp.payload = "Date:  Mon, 1 Nov 2010 20:34:56 GMT\n"
+            resp =            "Date:  Mon, 1 Nov 2010 20:34:56 GMT\n"
                               "ETag: \"b54357faf0632cce46e942fa68356b38\"\n"
                               "Content-Length: 0\n"
                               "Connection: keep-alive\n"
                               "Server: AmazonS3";
-            c->resp.payload_size = strlen(c->resp.payload);
+            /* since etag is in the headers, this code uses resp.data */
+            len = strlen(resp);
+            c->resp.data = flb_malloc(len + 1);
+            if (!c->resp.data) {
+                flb_errno();
+                return NULL;
+            }
+            memcpy(c->resp.data, resp, len);
+            c->resp.data[len] = '\0';
+            c->resp.data_size = len;
         }
         else {
             c->resp.payload = "";
