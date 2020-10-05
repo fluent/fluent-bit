@@ -178,8 +178,6 @@ int msgpack2avro(avro_value_t *val, msgpack_object *o)
         if(o->via.map.size != 0) {
             msgpack_object_kv* p = o->via.map.ptr;
             msgpack_object_kv* const pend = o->via.map.ptr + o->via.map.size;
-            size_t i = 0;
-
             for(; p < pend; ++p) {
                 avro_value_t  element;
                 if (p->key.type != MSGPACK_OBJECT_STR) {

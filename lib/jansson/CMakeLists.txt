@@ -60,8 +60,6 @@ if (MSVC)
 	option(JANSSON_STATIC_CRT "Link the static CRT libraries" OFF )
 endif ()
 
-option(JANSSON_EXAMPLES "Compile example applications" ON)
-
 if (UNIX)
    option(JANSSON_COVERAGE "(GCC Only! Requires gcov/lcov to be installed). Include target for doing coverage analysis for the test suite. Note that -DCMAKE_BUILD_TYPE=Debug must be set" OFF)
    option(JANSSON_COVERALLS "Generate coverage info for Coveralls" OFF)
@@ -370,17 +368,20 @@ if(JANSSON_BUILD_SHARED_LIBS)
       VERSION ${JANSSON_VERSION}
       SOVERSION ${JANSSON_SOVERSION})
 else()
+   #added by mcqueen 10/5/2020 for simplicity in packaging with fluent-bit
+   add_library(jansson-static STATIC
+      ${JANSSON_SRC}
+      ${JANSSON_HDR_PRIVATE}
+      ${JANSSON_HDR_PUBLIC})
+   set_target_properties(jansson-static PROPERTIES
+      POSITION_INDEPENDENT_CODE true)
+   set_target_properties(jansson-static PROPERTIES OUTPUT_NAME jansson-static)
    add_library(jansson STATIC
       ${JANSSON_SRC}
       ${JANSSON_HDR_PRIVATE}
       ${JANSSON_HDR_PUBLIC})
    set_target_properties(jansson PROPERTIES
       POSITION_INDEPENDENT_CODE true)
-endif()
-
-if (JANSSON_EXAMPLES)
-	add_executable(simple_parse "${CMAKE_CURRENT_SOURCE_DIR}/examples/simple_parse.c")
-	target_link_libraries(simple_parse jansson)
 endif()
 
 # For building Documentation (uses Sphinx)
@@ -469,133 +470,6 @@ if (JANSSON_BUILD_DOCS)
    endif()
 endif ()
 
-
-option(JANSSON_WITHOUT_TESTS "Don't build tests ('make test' to execute tests)" OFF)
-
-if (NOT JANSSON_WITHOUT_TESTS)
-   option(JANSSON_TEST_WITH_VALGRIND "Enable valgrind tests." OFF)
-
-   ENABLE_TESTING()
-
-   if (JANSSON_TEST_WITH_VALGRIND)
-      # TODO: Add FindValgrind.cmake instead of having a hardcoded path.
-
-      add_definitions(-DVALGRIND)
-
-      # enable valgrind
-      set(CMAKE_MEMORYCHECK_COMMAND valgrind)
-      set(CMAKE_MEMORYCHECK_COMMAND_OPTIONS
-         "--error-exitcode=1 --leak-check=full --show-reachable=yes --track-origins=yes -q")
-
-      set(MEMCHECK_COMMAND
-         "${CMAKE_MEMORYCHECK_COMMAND} ${CMAKE_MEMORYCHECK_COMMAND_OPTIONS}")
-      separate_arguments(MEMCHECK_COMMAND)
-   endif ()
-
-   #
-   # Test suites.
-   #
-   if (CMAKE_COMPILER_IS_GNUCC)
-      add_definitions(-Wall -Wextra -Wdeclaration-after-statement)
-   endif ()
-
-   set(api_tests
-         test_array
-         test_copy
-         test_chaos
-         test_dump
-         test_dump_callback
-         test_equal
-         test_load
-         test_loadb
-         test_load_callback
-         test_number
-         test_object
-         test_pack
-         test_simple
-         test_sprintf
-         test_unpack)
-
-   # Doing arithmetic on void pointers is not allowed by Microsofts compiler
-   # such as secure_malloc and secure_free is doing, so exclude it for now.
-   if (NOT MSVC)
-      list(APPEND api_tests test_memory_funcs)
-   endif()
-
-   # Helper macro for building and linking a test program.
-   macro(build_testprog name dir)
-       add_executable(${name} ${dir}/${name}.c)
-       add_dependencies(${name} jansson)
-       target_link_libraries(${name} jansson)
-   endmacro(build_testprog)
-
-   # Create executables and tests/valgrind tests for API tests.
-   foreach (test ${api_tests})
-      build_testprog(${test} ${CMAKE_CURRENT_SOURCE_DIR}/test/suites/api)
-
-      if (JANSSON_TEST_WITH_VALGRIND)
-         add_test(memcheck__${test}
-             ${MEMCHECK_COMMAND} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${test}
-             WORKING_DIRECTORY ${JANSSON_TEMP_DIR})
-      else()
-         add_test(${test}
-             ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${test}
-             WORKING_DIRECTORY ${JANSSON_TEMP_DIR})
-      endif ()
-   endforeach ()
-
-   # Test harness for the suites tests.
-   build_testprog(json_process ${CMAKE_CURRENT_SOURCE_DIR}/test/bin)
-
-   set(SUITE_TEST_CMD ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/json_process)
-   set(SUITES encoding-flags valid invalid invalid-unicode)
-   foreach (SUITE ${SUITES})
-       file(GLOB TESTDIRS test/suites/${SUITE}/*)
-
-       foreach (TESTDIR ${TESTDIRS})
-         if (IS_DIRECTORY ${TESTDIR})
-            get_filename_component(TNAME ${TESTDIR} NAME)
-
-            if (JANSSON_TEST_WITH_VALGRIND)
-               add_test(memcheck__${SUITE}__${TNAME}
-                        ${MEMCHECK_COMMAND} ${SUITE_TEST_CMD} ${TESTDIR})
-            else()
-               add_test(${SUITE}__${TNAME}
-                        ${SUITE_TEST_CMD} ${TESTDIR})
-            endif()
-
-            if ((${SUITE} STREQUAL "valid" OR ${SUITE} STREQUAL "invalid") AND NOT EXISTS ${TESTDIR}/nostrip)
-               if (JANSSON_TEST_WITH_VALGRIND)
-                  add_test(memcheck__${SUITE}__${TNAME}__strip
-                           ${MEMCHECK_COMMAND} ${SUITE_TEST_CMD} --strip ${TESTDIR})
-               else()
-                  add_test(${SUITE}__${TNAME}__strip
-                           ${SUITE_TEST_CMD} --strip ${TESTDIR})
-               endif()
-            endif ()
-         endif ()
-       endforeach ()
-   endforeach ()
-
-   if (JANSSON_COVERAGE)
-      setup_target_for_coverage(
-            coverage             # Coverage make target "make coverage".
-            coverage             # Name of output directory.
-            make                 # Name of test runner executable.
-            test)                # Arguments to the test runner above (make test).
-
-      if (JANSSON_COVERALLS)
-         set(COVERAGE_SRCS ${JANSSON_SRC})
-         coveralls_setup("${COVERAGE_SRCS}" ${JANSSON_COVERALLS_UPLOAD})
-      endif ()
-   endif ()
-
-   # Enable using "make check" just like the autotools project.
-   # By default cmake creates a target "make test"
-   add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
-                     DEPENDS json_process ${api_tests})
-endif ()
-
 #
 # Installation preparation.
 #
@@ -659,6 +533,11 @@ configure_package_config_file(
 #
 option(JANSSON_INSTALL "Generate installation target" ON)
 if (JANSSON_INSTALL)
+  install(TARGETS jansson-static
+	  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+          LIBRARY DESTINATION ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}
+          ARCHIVE DESTINATION ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}
+          INCLUDES DESTINATION "include")
   install(TARGETS jansson
           EXPORT janssonTargets
           LIBRARY DESTINATION "lib"

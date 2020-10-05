@@ -369,7 +369,8 @@ if(FLB_AVRO_ENCODER)
   set(JANSSON_BUILD_DOCS Off)
   set(JANSSON_EXAMPLES Off)
   set(JANSSON_WITHOUT_TESTS  On)
-  include(cmake/jansson.cmake)
+  set(JANSSON_BUILD_SHARED_LIBS  Off)
+  add_subdirectory(${FLB_PATH_LIB_JANSSON})
 endif()
 
 # tutf8e
