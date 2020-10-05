@@ -212,7 +212,7 @@ int s3_store_init(struct flb_s3 *ctx)
     struct flb_fstore_stream *fs_stream;
 
     /* Initialize the storage context */
-    fs = flb_fstore_create(ctx->store_dir);
+    fs = flb_fstore_create(ctx->buffer_dir);
     if (!fs) {
         return -1;
     }

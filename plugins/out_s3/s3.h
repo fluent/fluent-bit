@@ -111,9 +111,7 @@ struct flb_s3 {
 
     flb_sds_t buffer_dir;
 
-    flb_sds_t upload_dir;
-
-    flb_sds_t store_dir;
+    char *store_dir;
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
