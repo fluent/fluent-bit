@@ -225,10 +225,6 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_sds_destroy(ctx->buffer_dir);
     }
 
-    if (ctx->upload_dir) {
-        flb_sds_destroy(ctx->upload_dir);
-    }
-
     /* Remove uploads */
     mk_list_foreach_safe(head, tmp, &ctx->uploads) {
         m_upload = mk_list_entry(head, struct multipart_upload, _head);
@@ -296,7 +292,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (tmp) {
         len = strlen(tmp);
         if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') {
-            flb_plg_error(ctx->ins, "'chunk_buffer_dir' can not end in a / of \\");
+            flb_plg_error(ctx->ins, "'chunk_buffer_dir' can not end in a / or \\");
             return -1;
         }
     }
@@ -312,14 +308,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->buffer_dir = tmp_sds;
-
-    /* upload state is stored in a sub-dir */
-    tmp_sds = concat_path(ctx->buffer_dir, "multipart_upload_metadata");
-    if (!tmp_sds) {
-        flb_plg_error(ctx->ins, "Could not construct upload buffer path");
-        return -1;
-    }
-    ctx->upload_dir = tmp_sds;
 
     tmp = flb_output_get_property("s3_key_format", ins);
     if (tmp) {
@@ -516,7 +504,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     multipart_read_uploads_from_fs(ctx);
 
     if (mk_list_size(&ctx->uploads) > 0) {
-        /* note that these should be sent on first flush */
+        /* note that these should be sent */
         ctx->has_old_uploads = FLB_TRUE;
     }
 
