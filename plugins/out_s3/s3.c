@@ -750,24 +750,6 @@ multipart:
         /* mark for completion- the upload timer will handle actual completion */
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
     }
-    //     mk_list_del(&m_upload->_head);
-    //     ret = complete_multipart_upload(ctx, m_upload);
-    //     if (ret == 0) {
-    //         multipart_upload_destroy(m_upload);
-    //     } else {
-    //         m_upload->complete_errors += 1;
-    //         if (m_upload->complete_errors < MAX_UPLOAD_ERRORS) {
-    //             mk_list_add(&m_upload->_head, &ctx->uploads);
-    //             /* we return FLB_OK in this case, since data was persisted */
-    //             flb_plg_error(ctx->ins, "Could not complete upload, will retry on next flush..",
-    //                           m_upload->s3_key);
-    //         }
-    //         else {
-    //             flb_plg_error(ctx->ins, "Upload for %s has reached max completion errors, plugin will give up",
-    //                           m_upload->s3_key);
-    //         }
-    //     }
-    // }
 
     return FLB_OK;
 }
@@ -1295,6 +1277,11 @@ static struct flb_config_map config_map[] = {
     "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
     },
     {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_s3, json_date_key),
+    "Specifies the name of the date field in output."
+    },
+    {
      FLB_CONFIG_MAP_SIZE, "total_file_size", "100000000",
      0, FLB_TRUE, offsetof(struct flb_s3, file_size),
      "Specifies the size of files in S3. Maximum size is 50GB, minimim is 1MB"
@@ -1315,15 +1302,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "upload_timeout", "10m",
      0, FLB_TRUE, offsetof(struct flb_s3, upload_timeout),
-     "Optionally specify a timeout for uploads using an integer number of minutes. "
+     "Optionally specify a timeout for uploads. "
      "Whenever this amount of time has elapsed, Fluent Bit will complete an "
-     "upload and create a new file in S3. For example, set this value to 60 "
-     "and you will get a new file in S3 every hour. Default is 60."
-    },
-    {
-     FLB_CONFIG_MAP_STR, "json_date_key", "date",
-     0, FLB_TRUE, offsetof(struct flb_s3, json_date_key),
-    "Specifies the name of the date field in output."
+     "upload and create a new file in S3. For example, set this value to 60m "
+     "and you will get a new file in S3 every hour. Default is 10m."
     },
     {
      FLB_CONFIG_MAP_STR, "bucket", NULL,
