@@ -44,7 +44,7 @@
 #define TFLITE_INTEGER(x) (x == kTfLiteInt16 || x == kTfLiteInt32 || x == kTfLiteInt64)
 #define TFLITE_FLOAT(x) (x == kTfLiteFloat16 || x == kTfLiteFloat32)
 
-void print_tensor_info(const TfLiteTensor* tensor)
+void print_tensor_info(struct flb_tensorflow *ctx, const TfLiteTensor* tensor)
 {
     int i;
     TfLiteType type;
@@ -57,47 +57,47 @@ void print_tensor_info(const TfLiteTensor* tensor)
     }
     sprintf(dims, "%s%d}", dims, TfLiteTensorDim(tensor, i));
 
-    flb_info("%s", dims);
+    flb_plg_debug(ctx->ins, "%s", dims);
 }
 
-void print_model_io(TfLiteInterpreter* interpreter)
+void print_model_io(struct flb_tensorflow *ctx)
 {
     int i;
     int num;
     const TfLiteTensor* tensor;
     char dims[100] = "";
 
-    // Input information
-    num = TfLiteInterpreterGetInputTensorCount(interpreter);
+    /* Input information */
+    num = TfLiteInterpreterGetInputTensorCount(ctx->interpreter);
     for (i = 0; i < num; i++) {
-        tensor = TfLiteInterpreterGetInputTensor(interpreter, i);
-        flb_info("[tensorflow] ===== input #%d =====", i + 1);
-        print_tensor_info(tensor);
+        tensor = TfLiteInterpreterGetInputTensor(ctx->interpreter, i);
+        flb_plg_debug(ctx->ins, "[tensorflow] ===== input #%d =====", i + 1);
+        print_tensor_info(ctx, tensor);
     }
 
-    // Output information
-    num = TfLiteInterpreterGetOutputTensorCount(interpreter);
+    /* Output information */
+    num = TfLiteInterpreterGetOutputTensorCount(ctx->interpreter);
     for (i = 0; i < num; i++) {
-        tensor = TfLiteInterpreterGetOutputTensor(interpreter, i);
-        flb_info("[tensorflow] ===== output #%d ====", i + 1);
-        print_tensor_info(tensor);
+        tensor = TfLiteInterpreterGetOutputTensor(ctx->interpreter, i);
+        flb_plg_debug(ctx->ins, "[tensorflow] ===== output #%d ====", i + 1);
+        print_tensor_info(ctx, tensor);
     }
 }
 
 void build_interpreter(struct flb_tensorflow *ctx, char* model_path)
 {
-    // from c_api.h
+    /* from c_api.h */
     ctx->model = TfLiteModelCreateFromFile(model_path);
     ctx->interpreter_options = TfLiteInterpreterOptionsCreate();
     ctx->interpreter = TfLiteInterpreterCreate(ctx->model, ctx->interpreter_options);
     TfLiteInterpreterAllocateTensors(ctx->interpreter);
 
     flb_info("Tensorflow Lite interpreter created!");
-    print_model_io(ctx->interpreter);
+    print_model_io(ctx);
 }
 
 void inference(TfLiteInterpreter* interpreter, void* input_data, void* output_data, int input_buf_size, int output_buf_size) {
-    // from c_api.h
+    /* from c_api.h */
     TfLiteTensor* input_tensor = TfLiteInterpreterGetInputTensor(interpreter, 0);
     TfLiteTensorCopyFromBuffer(input_tensor, input_data, input_buf_size);
 
@@ -169,7 +169,7 @@ static int cb_tf_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    // calculate input information
+    /* calculate input information */
     ctx->input_size = 1;
     tensor = TfLiteInterpreterGetInputTensor(ctx->interpreter, 0);
     for (i = 0; i < TfLiteTensorNumDims(tensor); i++) {
@@ -182,7 +182,7 @@ static int cb_tf_init(struct flb_filter_instance *f_ins,
     }
     ctx->input_byte_size = TfLiteTensorByteSize(tensor);
 
-    // calculate output information
+    /* calculate output information */
     ctx->output_size = 1;
     tensor = TfLiteInterpreterGetOutputTensor(ctx->interpreter, 0);
     for (i = 0; i < TfLiteTensorNumDims(tensor); i++) {
@@ -250,13 +250,13 @@ static int cb_tf_filter(const void *data, size_t bytes,
 
     struct flb_tensorflow* ctx = filter_context;
 
-    // data pointers
+    /* data pointers */
     int* dint;
     float* dfloat;
 
     size_t b64_out_len;
 
-    // calculate inference time
+    /* calculate inference time */
     clock_t start, end;
     double elapsed_time;
 
@@ -269,11 +269,11 @@ static int cb_tf_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
-        // TODO check if msgpack type is map
+        /* TODO check if msgpack type is map */
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
-        // get timestamp from msgpack record
+        /* get timestamp from msgpack record */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
 
         for (i = 0; i < map_size; i++) {
@@ -283,8 +283,8 @@ static int cb_tf_filter(const void *data, size_t bytes,
                 continue;
             }
 
-            // Convention: value has to be of primitive types, or array of
-            // primitive types i.e. unrolled data (like unrolled image)
+            /* convention: value has to be of primitive types, or array of
+               primitive types i.e. unrolled data (like unrolled image) */
             value = map.via.map.ptr[i].val;
             if (value.type == MSGPACK_OBJECT_ARRAY)
             {
@@ -299,14 +299,14 @@ static int cb_tf_filter(const void *data, size_t bytes,
                     break;
                 }
 
-                // We only accept numbers as in
+                /* we only accept numbers as in */
                 input_data_type = value.via.array.ptr[0].type;
                 if (!MSGPACK_NUMBER(input_data_type)) {
                     flb_error("[tensorflow] input data has to be of numerical type!");
                     break;
                 }
 
-                // copy data from messagepack into input buffer
+                /* copy data from messagepack into input buffer */
                 if (TFLITE_FLOAT(ctx->input_tensor_type)) {
                     dfloat = (float*) ctx->input;
                     if (MSGPACK_FLOAT(input_data_type)) {
@@ -319,7 +319,7 @@ static int cb_tf_filter(const void *data, size_t bytes,
                             }
                         }
                     }
-                    else { // MSGPACK_INTEGER
+                    else { /* MSGPACK_INTEGER */
                         for (i = 0; i < value.via.array.size; i++) {
                             if (ctx->normalization_value) {
                                 dfloat[i] = ((float) value.via.array.ptr[i].via.i64) / *ctx->normalization_value;
@@ -337,7 +337,7 @@ static int cb_tf_filter(const void *data, size_t bytes,
                             dint[i] = value.via.array.ptr[i].via.i64;
                         }
                     }
-                    else { // MSGPACK_FLOAT
+                    else { /* MSGPACK_FLOAT */
                         for (i = 0; i < value.via.array.size; i++) {
                             dint[i] = (int) value.via.array.ptr[i].via.f64;
                         }
@@ -366,16 +366,16 @@ static int cb_tf_filter(const void *data, size_t bytes,
                 break;
             }
 
-            // run the inference
+            /* run the inference */
             inference(ctx->interpreter, ctx->input, ctx->output, ctx->input_byte_size, ctx->output_byte_size);
 
-            // create output messagepack
+            /* create output messagepack */
             end = clock();
             elapsed_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
             msgpack_pack_array(&tmp_pck, 2);
             flb_time_append_to_msgpack(&tm, &tmp_pck, 0);
-            // one more field for the result
+            /* one more field for the result */
             if (ctx->include_input_fields) {
                 msgpack_pack_map(&tmp_pck, map_size + 2);
             }
@@ -425,7 +425,7 @@ void flb_tf_conf_destroy(struct flb_tensorflow *ctx)
         flb_free(ctx->normalization_value);
     }
 
-    // delete Tensorflow model and interpreter
+    /* delete Tensorflow model and interpreter */
     TfLiteInterpreterDelete(ctx->interpreter);
     TfLiteInterpreterOptionsDelete(ctx->interpreter_options);
     TfLiteModelDelete(ctx->model);
