@@ -615,11 +615,21 @@ static int flb_service_conf(struct flb_config *config, char *file)
     /* Read main [SERVICE] section */
     section = mk_rconf_section_get(fconf, "SERVICE");
     if (section) {
+        int prop_ret;
         /* Iterate properties */
         mk_list_foreach(h_prop, &section->entries) {
             entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
-            /* Set the property */
-            flb_config_set_property(config, entry->key, entry->val);
+            /* 
+             * Set the property, a local `prop_ret` value is required for
+             * the whole loop to execute and thus log properly
+             */
+            prop_ret = flb_config_set_property(config, entry->key, entry->val);
+            if (prop_ret == -1) {
+                ret = -1;
+            }
+        }
+        if (ret == -1) {
+            goto flb_service_conf_end;
         }
     }
 
