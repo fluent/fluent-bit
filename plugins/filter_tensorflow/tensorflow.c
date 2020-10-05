@@ -43,7 +43,7 @@
 #define TFLITE_INTEGER(x) (x == kTfLiteInt16 || x == kTfLiteInt32 || x == kTfLiteInt64)
 #define TFLITE_FLOAT(x) (x == kTfLiteFloat16 || x == kTfLiteFloat32)
 
-void print_tensor_info(const TfLiteTensor* tensor)
+void print_tensor_info(struct flb_tensorflow *ctx, const TfLiteTensor* tensor)
 {
     int i;
     TfLiteType type;
@@ -56,30 +56,30 @@ void print_tensor_info(const TfLiteTensor* tensor)
     }
     sprintf(dims, "%s%d}", dims, TfLiteTensorDim(tensor, i));
 
-    flb_info("%s", dims);
+    flb_plg_debug(ctx->ins, "%s", dims);
 }
 
-void print_model_io(TfLiteInterpreter* interpreter)
+void print_model_io(struct flb_tensorflow *ctx)
 {
     int i;
     int num;
     const TfLiteTensor* tensor;
     char dims[100] = "";
 
-    // Input information
-    num = TfLiteInterpreterGetInputTensorCount(interpreter);
+    /* Input information */
+    num = TfLiteInterpreterGetInputTensorCount(ctx->interpreter);
     for (i = 0; i < num; i++) {
-        tensor = TfLiteInterpreterGetInputTensor(interpreter, i);
-        flb_info("[tensorflow] ===== input #%d =====", i + 1);
-        print_tensor_info(tensor);
+        tensor = TfLiteInterpreterGetInputTensor(ctx->interpreter, i);
+        flb_plg_debug(ctx->ins, "[tensorflow] ===== input #%d =====", i + 1);
+        print_tensor_info(ctx, tensor);
     }
 
-    // Output information
-    num = TfLiteInterpreterGetOutputTensorCount(interpreter);
+    /* Output information */
+    num = TfLiteInterpreterGetOutputTensorCount(ctx->interpreter);
     for (i = 0; i < num; i++) {
-        tensor = TfLiteInterpreterGetOutputTensor(interpreter, i);
-        flb_info("[tensorflow] ===== output #%d ====", i + 1);
-        print_tensor_info(tensor);
+        tensor = TfLiteInterpreterGetOutputTensor(ctx->interpreter, i);
+        flb_plg_debug(ctx->ins, "[tensorflow] ===== output #%d ====", i + 1);
+        print_tensor_info(ctx, tensor);
     }
 }
 
@@ -92,7 +92,7 @@ void build_interpreter(struct flb_tensorflow *ctx, char* model_path)
     TfLiteInterpreterAllocateTensors(ctx->interpreter);
 
     flb_info("Tensorflow Lite interpreter created!");
-    print_model_io(ctx->interpreter);
+    print_model_io(ctx);
 }
 
 void inference(TfLiteInterpreter* interpreter, void* input_data, void* output_data, int input_buf_size, int output_buf_size) {
