@@ -72,14 +72,14 @@ static flb_sds_t upload_key(struct multipart_upload *m_upload)
 }
 
 /* the 'tag' or key in the upload_dir is s3_key + \n + upload_id */
-static int upload_data_from_key(struct multipart_upload *m_upload, flb_sds_t key)
+static int upload_data_from_key(struct multipart_upload *m_upload, char *key)
 {
     flb_sds_t tmp_sds;
     int len = 0;
     int original_len;
     char *tmp;
 
-    original_len = flb_sds_len(key);
+    original_len = strlen(key);
 
     tmp = strchr(key, '\n');
     if (!tmp) {
@@ -292,12 +292,6 @@ static int save_upload(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     }
 
     fsf = s3_store_file_upload_get(ctx, key, flb_sds_len(key));
-    if (!fsf) {
-        flb_plg_error(ctx->ins, "Could not find upload file by using key: %s", key);
-        flb_sds_destroy(key);
-        flb_sds_destroy(data);
-        return -1;
-    }
 
     /* Write the key to the file */
     ret = s3_store_file_upload_put(ctx, fsf, key, data);

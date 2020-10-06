@@ -794,6 +794,11 @@ static int put_all_chunks(struct flb_s3 *ctx)
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             chunk = fsf->data;
 
+            /* Locked chunks are being processed, skip */
+            if (chunk->locked == FLB_TRUE) {
+                continue;
+            }
+
             if (chunk->failures >= MAX_UPLOAD_ERRORS) {
                 flb_plg_warn(ctx->ins,
                              "Chunk for tag %s failed to send %i times, "
@@ -1042,7 +1047,7 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     now = time(NULL);
 
     /* Check all chunks and see if any have timed out */
-    mk_list_foreach_safe(head, tmp, &ctx->stream_upload->files) {
+    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
         chunk = fsf->data;
 
@@ -1132,6 +1137,24 @@ static void cb_s3_flush(const void *data, size_t bytes,
     int len;
     (void) i_ins;
     (void) config;
+
+    /* clean up any old buffers found on startup */
+    if (ctx->has_old_buffers == FLB_TRUE) {
+        flb_plg_info(ctx->ins,
+                     "Sending locally buffered data from previous "
+                     "executions to S3; buffer=%s",
+                     ctx->fs->root_path);
+        ctx->has_old_buffers = FLB_FALSE;
+        ret = put_all_chunks(ctx);
+        if (ret < 0) {
+            ctx->has_old_buffers = FLB_TRUE;
+            flb_plg_error(ctx->ins,
+                          "Failed to send locally buffered data left over "
+                          "from previous executions; will retry. Buffer=%s",
+                          ctx->fs->root_path);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+    }
 
     /*
      * create a timer that will run periodically and check if uploads

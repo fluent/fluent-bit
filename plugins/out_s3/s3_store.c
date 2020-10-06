@@ -385,7 +385,7 @@ struct flb_fstore_file *s3_store_file_upload_get(struct flb_s3 *ctx,
             continue;
         }
 
-        if (memcmp(fsf->meta_buf, key, key_len) == 0) {
+        if (strncmp(fsf->meta_buf, key, key_len) == 0) {
             break;
         }
         fsf = NULL;
@@ -394,11 +394,32 @@ struct flb_fstore_file *s3_store_file_upload_get(struct flb_s3 *ctx,
     return fsf;
 }
 
+/* param fsf can NULL if the file has not yet been created */
 int s3_store_file_upload_put(struct flb_s3 *ctx,
                              struct flb_fstore_file *fsf, flb_sds_t key,
                              flb_sds_t data)
 {
     int ret;
+    flb_sds_t name;
+
+    /* If no target file was found, create a new one */
+    if (!fsf) {
+        name = gen_store_filename(key);
+        if (!name) {
+            flb_plg_error(ctx->ins, "could not generate chunk file name");
+            return -1;
+        }
+
+        /* Create the file */
+        fsf = flb_fstore_file_create(ctx->fs, ctx->stream_upload, name, flb_sds_len(data));
+        if (!fsf) {
+            flb_plg_error(ctx->ins, "could not create the file '%s' in the upload store",
+                          name);
+            flb_sds_destroy(name);
+            return -1;
+        }
+        flb_sds_destroy(name);
+    }
 
     /* Write key as metadata */
     ret = flb_fstore_file_meta_set(ctx->fs, fsf,
