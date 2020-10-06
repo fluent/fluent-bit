@@ -382,7 +382,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *local_resource_id, 
     ret = flb_slist_split_string(list, local_resource_id, '.', max_split);
 
     if (ret == -1 || mk_list_size(list) != max_split) {
-        flb_error("error parsing local_resource_id for type %s", type);
+        flb_error("error parsing local_resource_id [%s] for type %s", local_resource_id, type);
         flb_slist_destroy(list);
         flb_free(list);
         return NULL;
