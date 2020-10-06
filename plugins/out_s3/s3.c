@@ -286,7 +286,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "invalid json_date_format '%s'. ", tmp);
-            goto error;
+            return -1;
         }
         else {
             ctx->json_date_format = ret;
