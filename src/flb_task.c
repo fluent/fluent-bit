@@ -92,7 +92,7 @@ int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *c
     struct flb_task *task;
 
     task = retry->parent;
-    seconds = flb_sched_request_create(config, retry, retry->attemps);
+    seconds = flb_sched_request_create(config, retry, retry->attempts);
     if (seconds == -1) {
         /*
          * This is the worse case scenario: 'cannot re-schedule a retry'. If the Chunk
@@ -128,9 +128,9 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
-            if (retry->attemps >= o_ins->retry_limit && o_ins->retry_limit >= 0) {
-                flb_debug("[task] task_id=%i reached retry-attemps limit %i/%i",
-                          task->id, retry->attemps, o_ins->retry_limit);
+            if (retry->attempts >= o_ins->retry_limit && o_ins->retry_limit >= 0) {
+                flb_debug("[task] task_id=%i reached retry-attempts limit %i/%i",
+                          task->id, retry->attempts, o_ins->retry_limit);
                 flb_task_retry_destroy(retry);
                 return NULL;
             }
@@ -147,18 +147,18 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
             return NULL;
         }
 
-        retry->attemps = 1;
+        retry->attempts = 1;
         retry->o_ins   = o_ins;
         retry->parent  = task;
         mk_list_add(&retry->_head, &task->retries);
 
-        flb_debug("[retry] new retry created for task_id=%i attemps=%i",
-                  out_th->task->id, retry->attemps);
+        flb_debug("[retry] new retry created for task_id=%i attempts=%i",
+                  out_th->task->id, retry->attempts);
     }
     else {
-        retry->attemps++;
-        flb_debug("[retry] re-using retry for task_id=%i attemps=%i",
-                  out_th->task->id, retry->attemps);
+        retry->attempts++;
+        flb_debug("[retry] re-using retry for task_id=%i attempts=%i",
+                  out_th->task->id, retry->attempts);
     }
 
     /*
@@ -199,7 +199,7 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     mk_list_foreach(head, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
-            return retry->attemps;
+            return retry->attempts;
         }
     }
 

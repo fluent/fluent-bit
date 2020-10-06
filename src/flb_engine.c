@@ -234,7 +234,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
             /* Let the scheduler to retry the failed task/thread */
             retry_seconds = flb_sched_request_create(config,
-                                                     retry, retry->attemps);
+                                                     retry, retry->attempts);
 
             /*
              * If for some reason the Scheduler could not include this retry,
