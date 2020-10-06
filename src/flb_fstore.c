@@ -328,7 +328,6 @@ static int map_chunks(struct flb_fstore *ctx, struct flb_fstore_stream *fs_strea
     struct mk_list *head;
     struct cio_chunk *chunk;
     struct flb_fstore_file *fsf;
-    struct s3_file *s3_file;
 
     mk_list_foreach(head, &stream->chunks) {
         chunk = mk_list_entry(head, struct cio_chunk, _head);
