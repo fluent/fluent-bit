@@ -127,6 +127,26 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->dynamic_topic = FLB_FALSE;
     }
 
+    /* Config: Hash */
+    tmp = flb_output_get_property("hash", ins);
+    if (tmp) {
+        ctx->hash = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->hash = FLB_FALSE;
+    }
+
+    /* Config: Hash_Key */
+    tmp = flb_output_get_property("hash_key", ins);
+    if (tmp) {
+        ctx->hash_key = flb_strdup(tmp);
+        ctx->hash_key_len = strlen(tmp);
+    }
+    else {
+        ctx->hash_key = FLB_KAFKA_HASH_KEY;
+        ctx->hash_key_len = strlen(FLB_KAFKA_HASH_KEY);
+    }
+
     /* Config: Format */
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
@@ -281,6 +301,10 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
 
     if (ctx->message_key_field) {
         flb_free(ctx->message_key_field);
+    }
+
+    if (ctx->hash_key) {
+        flb_free(ctx->hash_key);
     }
 
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);

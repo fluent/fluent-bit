@@ -89,10 +89,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                     struct flb_kafka *ctx, struct flb_config *config)
 {
     int i;
+    int counter;
     int ret;
     int size;
     int queue_full_retries = 0;
     char *out_buf;
+    unsigned long message_hash = 0;
+    /* long int -> to hex-string conversion */
+    char message_hash_buf[32];
     size_t out_size;
     struct mk_list *head;
     struct mk_list *topics;
@@ -114,6 +118,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_MSGP) {
         /* Make room for the timestamp */
         size = map->via.map.size + 1;
+
+        /* Make room for the message_hash */
+        if (ctx->hash) {
+            size++;
+        }
         msgpack_pack_map(&mp_pck, size);
 
         /* Pack timestamp */
@@ -148,15 +157,45 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     else {
         size = map->via.map.size;
+        /* Make room for the message_hash */
+        if (ctx->hash) {
+            size++;
+        }
         msgpack_pack_map(&mp_pck, size);
     }
 
+    if (ctx->hash) {
+        /* Init message_hash with timestamp */
+        message_hash = (unsigned long) flb_time_to_double(tm);
+    }
     for (i = 0; i < map->via.map.size; i++) {
         key = map->via.map.ptr[i].key;
         val = map->via.map.ptr[i].val;
 
         msgpack_pack_object(&mp_pck, key);
         msgpack_pack_object(&mp_pck, val);
+
+        if (ctx->hash) {
+            if (key.via.str.size) {
+                for (counter = 0; counter < key.via.str.size; counter++) {
+                      message_hash = key.via.str.ptr[counter] + (message_hash << 5) + message_hash;
+                }
+            }
+            if (val.type == MSGPACK_OBJECT_STR) {
+                for (counter = 0; counter < val.via.str.size; counter++) {
+                      message_hash = val.via.str.ptr[counter] + (message_hash << 5) + message_hash;
+                }
+            }
+            if (val.type == MSGPACK_OBJECT_FLOAT64) {
+                message_hash = (unsigned long) (message_hash + (val.via.f64 * 1000));
+            }
+            if (val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                message_hash = (unsigned long) (message_hash + (val.via.u64 << 6));
+            }
+            if (val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+                message_hash = (unsigned long) (message_hash + (val.via.i64 << 6));
+            }
+        }
 
         /* Lookup message key */
         if (ctx->message_key_field && !message_key && val.type == MSGPACK_OBJECT_STR) {
@@ -223,6 +262,17 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                 }
             }
         }
+    }
+
+    if (ctx->hash) {
+        /* Add message_hash as hex-string field */
+        msgpack_pack_str(&mp_pck, ctx->hash_key_len);
+        msgpack_pack_str_body(&mp_pck, ctx->hash_key, ctx->hash_key_len);
+        /* (long int) message_hash -> (str) message_hash_buf */
+        i = snprintf(NULL, 0, "%lX", message_hash);
+        snprintf(message_hash_buf, i+1, "%lX", message_hash);
+        msgpack_pack_str(&mp_pck, i);
+        msgpack_pack_str_body(&mp_pck, message_hash_buf, i);
     }
 
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
