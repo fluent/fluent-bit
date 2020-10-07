@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -39,14 +39,16 @@
 #endif
 
 struct flb_file_conf {
+    const char *out_path;
     const char *out_file;
     const char *delimiter;
     const char *label_delimiter;
     const char *template;
     int  format;
+    struct flb_output_instance *ins;
 };
 
-static char* check_delimiter(const char *str)
+static char *check_delimiter(const char *str)
 {
     if (str == NULL) {
         return NULL;
@@ -70,76 +72,71 @@ static int cb_file_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
+    int ret;
     const char *tmp;
     char *ret_str;
     (void) config;
     (void) data;
-    struct flb_file_conf *conf;
+    struct flb_file_conf *ctx;
 
-    conf = flb_calloc(1, sizeof(struct flb_file_conf));
-    if (!conf) {
+    ctx = flb_calloc(1, sizeof(struct flb_file_conf));
+    if (!ctx) {
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
+    ctx->format = FLB_OUT_FILE_FMT_JSON; /* default */
+    ctx->delimiter = NULL;
+    ctx->label_delimiter = NULL;
+    ctx->template = NULL;
 
-    conf->format = FLB_OUT_FILE_FMT_JSON; /* default */
-    conf->delimiter = NULL;
-    conf->label_delimiter = NULL;
-    conf->template = NULL;
-
-    /* Optional output file name/path */
-    tmp = flb_output_get_property("Path", ins);
-    if (tmp) {
-        conf->out_file = tmp;
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
     }
 
     /* Optional, file format */
     tmp = flb_output_get_property("Format", ins);
     if (tmp) {
         if (!strcasecmp(tmp, "csv")) {
-            conf->format    = FLB_OUT_FILE_FMT_CSV;
-            conf->delimiter = ",";
+            ctx->format    = FLB_OUT_FILE_FMT_CSV;
+            ctx->delimiter = ",";
         }
         else if (!strcasecmp(tmp, "ltsv")) {
-            conf->format    = FLB_OUT_FILE_FMT_LTSV;
-            conf->delimiter = "\t";
-            conf->label_delimiter = ":";
+            ctx->format    = FLB_OUT_FILE_FMT_LTSV;
+            ctx->delimiter = "\t";
+            ctx->label_delimiter = ":";
         }
         else if (!strcasecmp(tmp, "plain")) {
-            conf->format    = FLB_OUT_FILE_FMT_PLAIN;
-            conf->delimiter = NULL;
-            conf->label_delimiter = NULL;
+            ctx->format    = FLB_OUT_FILE_FMT_PLAIN;
+            ctx->delimiter = NULL;
+            ctx->label_delimiter = NULL;
         }
         else if (!strcasecmp(tmp, "msgpack")) {
-            conf->format    = FLB_OUT_FILE_FMT_MSGPACK;
-            conf->delimiter = NULL;
-            conf->label_delimiter = NULL;
+            ctx->format    = FLB_OUT_FILE_FMT_MSGPACK;
+            ctx->delimiter = NULL;
+            ctx->label_delimiter = NULL;
         }
         else if (!strcasecmp(tmp, "template")) {
-            conf->format    = FLB_OUT_FILE_FMT_TEMPLATE;
-            conf->template  = "{time} {message}";
+            ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
         }
     }
 
     tmp = flb_output_get_property("delimiter", ins);
     ret_str = check_delimiter(tmp);
     if (ret_str != NULL) {
-        conf->delimiter = ret_str;
+        ctx->delimiter = ret_str;
     }
 
     tmp = flb_output_get_property("label_delimiter", ins);
     ret_str = check_delimiter(tmp);
     if (ret_str != NULL) {
-        conf->label_delimiter = ret_str;
-    }
-
-    tmp = flb_output_get_property("template", ins);
-    if (tmp != NULL) {
-        conf->template = tmp;
+        ctx->label_delimiter = ret_str;
     }
 
     /* Set the context */
-    flb_output_set_context(ins, conf);
+    flb_output_set_context(ins, ctx);
 
     return 0;
 }
@@ -197,7 +194,8 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
     return 0;
 }
 
-static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+static int template_output_write(struct flb_file_conf *ctx,
+                                 FILE *fp, struct flb_time *tm, msgpack_object *obj,
                                  const char *key, int size)
 {
     int i;
@@ -213,7 +211,7 @@ static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *
     }
 
     if (obj->type != MSGPACK_OBJECT_MAP) {
-        flb_error("[out_file] invalid object type (type=%i)", obj->type);
+        flb_plg_error(ctx->ins, "invalid object type (type=%i)", obj->type);
         return -1;
     }
 
@@ -227,7 +225,8 @@ static int template_output_write(FILE *fp, struct flb_time *tm, msgpack_object *
         if (!memcmp(key, kv->key.via.str.ptr, size)) {
             if (kv->val.type == MSGPACK_OBJECT_STR) {
                 fwrite(kv->val.via.str.ptr, 1, kv->val.via.str.size, fp);
-            } else {
+            }
+            else {
                 msgpack_object_print(fp, kv->val);
             }
             return 0;
@@ -270,7 +269,7 @@ static int template_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
             key = inbrace + 1;
             keysize = pos - inbrace - 1;
 
-            if (template_output_write(fp, tm, obj, key, keysize)) {
+            if (template_output_write(ctx, fp, tm, obj, key, keysize)) {
                 fwrite(inbrace, 1, pos - inbrace + 1, fp);
             }
             inbrace = NULL;
@@ -317,7 +316,7 @@ static void cb_file_flush(const void *data, size_t bytes,
     size_t last_off = 0;
     size_t alloc_size = 0;
     size_t total;
-    const char *out_file;
+    char out_file[PATH_MAX];
     char *buf;
     char *tag_buf;
     msgpack_object *obj;
@@ -326,18 +325,31 @@ static void cb_file_flush(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
-    /* Set the right output */
-    if (!ctx->out_file) {
-        out_file = tag;
+    /* Set the right output file */
+    if (ctx->out_path) {
+        if (ctx->out_file) {
+            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+                     ctx->out_path, ctx->out_file);
+        }
+        else {
+            snprintf(out_file, PATH_MAX - 1, "%s/%s",
+                     ctx->out_path, tag);
+        }
     }
     else {
-        out_file = ctx->out_file;
+        if (ctx->out_file) {
+            snprintf(out_file, PATH_MAX - 1, "%s", ctx->out_file);
+        }
+        else {
+            snprintf(out_file, PATH_MAX - 1, "%s", tag);
+        }
     }
 
     /* Open output file with default name as the Tag */
     fp = fopen(out_file, "ab+");
     if (fp == NULL) {
         flb_errno();
+        flb_plg_error(ctx->ins, "error opening: %s", out_file);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -389,9 +401,9 @@ static void cb_file_flush(const void *data, size_t bytes,
         case FLB_OUT_FILE_FMT_JSON:
             buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
-                fprintf(fp, "%s: [%f, %s]" NEWLINE,
+                fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
                         tag_buf,
-                        flb_time_to_double(&tm),
+                        tm.tm.tv_sec, tm.tm.tv_nsec,
                         buf);
                 flb_free(buf);
             }
@@ -428,10 +440,50 @@ static int cb_file_exit(void *data, struct flb_config *config)
 {
     struct flb_file_conf *ctx = data;
 
-    flb_free(ctx);
+    if (!ctx) {
+        return 0;
+    }
 
+    flb_free(ctx);
     return 0;
 }
+
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_file_conf, out_path),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "delimiter", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "label_delimiter", NULL,
+     0, FLB_FALSE, 0,
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "template", "{time} {message}",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, template),
+     NULL
+    },
+
+    /* EOF */
+    {0}
+};
 
 struct flb_output_plugin out_file_plugin = {
     .name         = "file",
@@ -439,5 +491,6 @@ struct flb_output_plugin out_file_plugin = {
     .cb_init      = cb_file_init,
     .cb_flush     = cb_file_flush,
     .cb_exit      = cb_file_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

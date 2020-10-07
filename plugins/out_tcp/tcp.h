@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,9 +31,12 @@ struct flb_out_tcp {
     /* Timestamp format */
     int       json_date_format;
     flb_sds_t json_date_key;
+    flb_sds_t date_key;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    struct flb_output_instance *ins;
 };
 
 #endif

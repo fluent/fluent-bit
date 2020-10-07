@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,72 +18,71 @@
  *  limitations under the License.
  */
 
-#include <stdlib.h>
-#include <fluent-bit.h>
-
+#include <fluent-bit/flb_output_plugin.h>
 #include "td_config.h"
+#include <stdlib.h>
 
-struct flb_out_td_config *td_config_init(struct flb_output_instance *o_ins)
+struct flb_td *td_config_init(struct flb_output_instance *ins)
 {
     const char *tmp;
     const char *api;
     const char *db_name;
     const char *db_table;
-    struct flb_out_td_config *config;
+    struct flb_td *ctx;
 
     /* Validate TD section keys */
-    api = flb_output_get_property("API", o_ins);
-    db_name = flb_output_get_property("Database", o_ins);
-    db_table = flb_output_get_property("Table", o_ins);
+    api = flb_output_get_property("API", ins);
+    db_name = flb_output_get_property("Database", ins);
+    db_table = flb_output_get_property("Table", ins);
 
     if (!api) {
-        flb_error("[out_td] error reading API key value");
+        flb_plg_error(ins, "error reading API key value");
         return NULL;
     }
 
     if (!db_name) {
-        flb_error("[out_td] error reading Database name");
+        flb_plg_error(ins, "error reading Database name");
         return NULL;
     }
 
     if (!db_table) {
-        flb_error("[out_td] error reading Table name");
+        flb_plg_error(ins, "error reading Table name");
         return NULL;
     }
 
     /* Allocate context */
-    config = flb_calloc(1, sizeof(struct flb_out_td_config));
-    if (!config) {
+    ctx = flb_calloc(1, sizeof(struct flb_td));
+    if (!ctx) {
         flb_errno();
         return NULL;
     }
-
-    config->fd       = -1;
-    config->api      = api;
-    config->db_name  = db_name;
-    config->db_table = db_table;
+    ctx->ins      = ins;
+    ctx->fd       = -1;
+    ctx->api      = api;
+    ctx->db_name  = db_name;
+    ctx->db_table = db_table;
 
     /* Lookup desired region */
-    tmp = flb_output_get_property("region", o_ins);
+    tmp = flb_output_get_property("region", ins);
     if (tmp) {
         if (strcasecmp(tmp, "us") == 0) {
-            config->region = FLB_TD_REGION_US;
+            ctx->region = FLB_TD_REGION_US;
         }
         else if (strcasecmp(tmp, "jp") == 0) {
-            config->region = FLB_TD_REGION_JP;
+            ctx->region = FLB_TD_REGION_JP;
         }
         else {
-            flb_error("[out_td] invalid region in configuration");
-            flb_free(config);
+            flb_plg_error(ctx->ins, "invalid region in configuration");
+            flb_free(ctx);
             return NULL;
         }
     }
     else {
-        config->region = FLB_TD_REGION_US;
+        ctx->region = FLB_TD_REGION_US;
     }
 
-    flb_info("[out_td] Treasure Data / database='%s' table='%s'",
-              config->db_name, config->db_table);
+    flb_plg_info(ctx->ins, "Treasure Data / database='%s' table='%s'",
+                 ctx->db_name, ctx->db_table);
 
-    return config;
+    return ctx;
 }

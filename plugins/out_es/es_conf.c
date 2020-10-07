@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +18,12 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_aws_credentials.h>
 
 #include "es.h"
 #include "es_conf.h"
@@ -34,6 +36,11 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     ssize_t ret;
     const char *tmp;
     const char *path;
+#ifdef FLB_HAVE_AWS
+    char *aws_role_arn = NULL;
+    char *aws_external_id = NULL;
+    char *aws_session_name = NULL;
+#endif
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -46,6 +53,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
 
     if (uri) {
         if (uri->count >= 2) {
@@ -56,6 +64,14 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
 
     /* Set default network configuration */
     flb_output_net_default("127.0.0.1", 9200, ins);
+
+    /* Populate context with config map defaults and incoming properties */
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "configuration error");
+        flb_es_conf_destroy(ctx);
+        return NULL;
+    }
 
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
@@ -76,158 +92,27 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                    io_flags,
                                    &ins->tls);
     if (!upstream) {
-        flb_error("[out_es] cannot create Upstream context");
+        flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_es_conf_destroy(ctx);
         return NULL;
     }
+    ctx->u = upstream;
+
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Set manual Index and Type */
-    ctx->u = upstream;
     if (f_index) {
-        ctx->index = flb_strdup(f_index->value);
-    }
-    else {
-        tmp = flb_output_get_property("index", ins);
-        if (!tmp) {
-            ctx->index = flb_strdup(FLB_ES_DEFAULT_INDEX);
-        }
-        else {
-            ctx->index = flb_strdup(tmp);
-        }
+        ctx->index = flb_strdup(f_index->value); /* FIXME */
     }
 
     if (f_type) {
-        ctx->type = flb_strdup(f_type->value);
-    }
-    else {
-        tmp = flb_output_get_property("type", ins);
-        if (!tmp) {
-            ctx->type = flb_strdup(FLB_ES_DEFAULT_TYPE);
-        }
-        else {
-            ctx->type = flb_strdup(tmp);
-        }
+        ctx->type = flb_strdup(f_type->value); /* FIXME */
     }
 
-    /* HTTP Auth */
-    tmp = flb_output_get_property("http_user", ins);
-    if (tmp) {
-        ctx->http_user = flb_strdup(tmp);
-
-        tmp = flb_output_get_property("http_passwd", ins);
-        if (tmp) {
-            ctx->http_passwd = flb_strdup(tmp);
-        }
-        else {
-            ctx->http_passwd = flb_strdup("");
-        }
-    }
-
-    /*
-     * Logstash compatibility options
-     * ==============================
-     */
-
-    /* Logstash_Format */
-    tmp = flb_output_get_property("logstash_format", ins);
-    if (tmp) {
-        ctx->logstash_format = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->logstash_format = FLB_FALSE;
-    }
-
-    /* Logstash_Prefix */
-    tmp = flb_output_get_property("logstash_prefix", ins);
-    if (tmp) {
-        ctx->logstash_prefix = flb_strdup(tmp);
-        ctx->logstash_prefix_len = strlen(tmp);
-    }
-    else if (ctx->logstash_format == FLB_TRUE) {
-        ctx->logstash_prefix = flb_strdup(FLB_ES_DEFAULT_PREFIX);
-        ctx->logstash_prefix_len = sizeof(FLB_ES_DEFAULT_PREFIX) - 1;
-    }
-
-    /* Logstash_Prefix_Key */
-    tmp = flb_output_get_property("logstash_prefix_key", ins);
-    if (tmp) {
-        ctx->logstash_prefix_key = flb_strdup(tmp);
-        ctx->logstash_prefix_key_len = strlen(tmp);
-    }
-
-    /* Logstash_DateFormat */
-    tmp = flb_output_get_property("logstash_dateformat", ins);
-    if (tmp) {
-        ctx->logstash_dateformat = flb_strdup(tmp);
-        ctx->logstash_dateformat_len = strlen(tmp);
-    }
-    else if (ctx->logstash_format == FLB_TRUE) {
-        ctx->logstash_dateformat = flb_strdup(FLB_ES_DEFAULT_TIME_FMT);
-        ctx->logstash_dateformat_len = sizeof(FLB_ES_DEFAULT_TIME_FMT) - 1;
-    }
-
-    /* Time Key */
-    tmp = flb_output_get_property("time_key", ins);
-    if (tmp) {
-        ctx->time_key = flb_strdup(tmp);
-        ctx->time_key_len = strlen(tmp);
-    }
-    else {
-        ctx->time_key = flb_strdup(FLB_ES_DEFAULT_TIME_KEY);
-        ctx->time_key_len = sizeof(FLB_ES_DEFAULT_TIME_KEY) - 1;
-    }
-
-    /* Time Key Format */
-    tmp = flb_output_get_property("time_key_format", ins);
-    if (tmp) {
-        ctx->time_key_format = flb_strdup(tmp);
-        ctx->time_key_format_len = strlen(tmp);
-    }
-    else {
-        ctx->time_key_format = flb_strdup(FLB_ES_DEFAULT_TIME_KEYF);
-        ctx->time_key_format_len = sizeof(FLB_ES_DEFAULT_TIME_KEYF) - 1;
-    }
-
-    /* Include Tag key */
-    tmp = flb_output_get_property("include_tag_key", ins);
-    if (tmp) {
-        ctx->include_tag_key = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->include_tag_key = FLB_FALSE;
-    }
-
-    /* Tag Key */
-    if (ctx->include_tag_key == FLB_TRUE) {
-        tmp = flb_output_get_property("tag_key", ins);
-        if (tmp) {
-            ctx->tag_key = flb_strdup(tmp);
-            ctx->tag_key_len = strlen(tmp);
-        }
-        else {
-            ctx->tag_key = flb_strdup(FLB_ES_DEFAULT_TAG_KEY);
-            ctx->tag_key_len = sizeof(FLB_ES_DEFAULT_TAG_KEY) - 1;
-        }
-    }
-
-    ctx->buffer_size = FLB_HTTP_DATA_SIZE_MAX;
-    tmp = flb_output_get_property("buffer_size", ins);
-    if (tmp) {
-        if (*tmp == 'f' || *tmp == 'F' || *tmp == 'o' || *tmp == 'O') {
-            /* unlimited size ? */
-            if (flb_utils_bool(tmp) == FLB_FALSE) {
-                ctx->buffer_size = 0;
-            }
-        }
-        else {
-            ret = flb_utils_size_to_bytes(tmp);
-            if (ret == -1) {
-                flb_error("[out_es] invalid buffer_size=%s, using default", tmp);
-            }
-            else {
-                ctx->buffer_size = (size_t) ret;
-            }
-        }
+    /* HTTP Payload (response) maximum buffer size (0 == unlimited) */
+    if (ctx->buffer_size == -1) {
+        ctx->buffer_size = 0;
     }
 
     /* Elasticsearch: Path */
@@ -245,74 +130,154 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
-    /* Generate _id */
-    tmp = flb_output_get_property("generate_id", ins);
+#ifdef FLB_HAVE_AWS
+    /* AWS Auth */
+    ctx->has_aws_auth = FLB_FALSE;
+    tmp = flb_output_get_property("aws_auth", ins);
     if (tmp) {
-        ctx->generate_id = flb_utils_bool(tmp);
-    } else {
-        ctx->generate_id = FLB_FALSE;
-    }
+        if (strncasecmp(tmp, "On", 2) == 0) {
+            ctx->has_aws_auth = FLB_TRUE;
+            flb_debug("[out_es] Enabled AWS Auth");
 
-    /* Replace dots */
-    tmp = flb_output_get_property("replace_dots", ins);
-    if (tmp) {
-        ctx->replace_dots = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->replace_dots = FLB_FALSE;
-    }
+            /* AWS provider needs a separate TLS instance */
+            ctx->aws_tls.context = flb_tls_context_new(FLB_TRUE,
+                                                       ins->tls_debug,
+                                                       ins->tls_vhost,
+                                                       ins->tls_ca_path,
+                                                       ins->tls_ca_file,
+                                                       ins->tls_crt_file,
+                                                       ins->tls_key_file,
+                                                       ins->tls_key_passwd);
+            if (!ctx->aws_tls.context) {
+                flb_errno();
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
 
-    /* Use current time for index generation instead of message record */
-    tmp = flb_output_get_property("current_time_index", ins);
-    if (tmp) {
-        ctx->current_time_index = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->current_time_index = FLB_FALSE;
-    }
+            tmp = flb_output_get_property("aws_region", ins);
+            if (!tmp) {
+                flb_error("[out_es] aws_auth enabled but aws_region not set");
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
+            ctx->aws_region = (char *) tmp;
 
+            tmp = flb_output_get_property("aws_sts_endpoint", ins);
+            if (!tmp) {
+                flb_error("[out_es] aws_sts_endpoint not set");
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
+            ctx->aws_sts_endpoint = (char *) tmp;
 
-    /* Trace output */
-    tmp = flb_output_get_property("Trace_Output", ins);
-    if (tmp) {
-        ctx->trace_output = flb_utils_bool(tmp);
+            ctx->aws_provider = flb_standard_chain_provider_create(config,
+                                                                   &ctx->aws_tls,
+                                                                   ctx->aws_region,
+                                                                   ctx->aws_sts_endpoint,
+                                                                   NULL,
+                                                                   flb_aws_client_generator());
+            if (!ctx->aws_provider) {
+                flb_error("[out_es] Failed to create AWS Credential Provider");
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
+
+            tmp = flb_output_get_property("aws_role_arn", ins);
+            if (tmp) {
+                /* Use the STS Provider */
+                ctx->base_aws_provider = ctx->aws_provider;
+                aws_role_arn = (char *) tmp;
+                aws_external_id = NULL;
+                tmp = flb_output_get_property("aws_external_id", ins);
+                if (tmp) {
+                    aws_external_id = (char *) tmp;
+                }
+
+                aws_session_name = flb_sts_session_name();
+                if (!aws_session_name) {
+                    flb_error("[out_es] Failed to create aws iam role "
+                              "session name");
+                    flb_es_conf_destroy(ctx);
+                    return NULL;
+                }
+
+                /* STS provider needs yet another separate TLS instance */
+                ctx->aws_sts_tls.context = flb_tls_context_new(FLB_TRUE,
+                                                               ins->tls_debug,
+                                                               ins->tls_vhost,
+                                                               ins->tls_ca_path,
+                                                               ins->tls_ca_file,
+                                                               ins->tls_crt_file,
+                                                               ins->tls_key_file,
+                                                               ins->tls_key_passwd);
+                if (!ctx->aws_sts_tls.context) {
+                    flb_errno();
+                    flb_es_conf_destroy(ctx);
+                    return NULL;
+                }
+
+                ctx->aws_provider = flb_sts_provider_create(config,
+                                                            &ctx->aws_sts_tls,
+                                                            ctx->
+                                                            base_aws_provider,
+                                                            aws_external_id,
+                                                            aws_role_arn,
+                                                            aws_session_name,
+                                                            ctx->aws_region,
+                                                            ctx->aws_sts_endpoint,
+                                                            NULL,
+                                                            flb_aws_client_generator());
+                /* Session name can be freed once provider is created */
+                flb_free(aws_session_name);
+                if (!ctx->aws_provider) {
+                    flb_error("[out_es] Failed to create AWS STS Credential "
+                              "Provider");
+                    flb_es_conf_destroy(ctx);
+                    return NULL;
+                }
+
+            }
+
+            /* initialize credentials in sync mode */
+            ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
+            ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+            /* set back to async */
+            ctx->aws_provider->provider_vtable->async(ctx->aws_provider);
+        }
     }
-    else {
-        ctx->trace_output = FLB_FALSE;
-    }
-    tmp = flb_output_get_property("Trace_Error", ins);
-    if (tmp) {
-        ctx->trace_error = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->trace_error = FLB_FALSE;
-    }
+#endif
 
     return ctx;
 }
 
 int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 {
-    flb_free(ctx->index);
-    flb_free(ctx->type);
-
-    flb_free(ctx->http_user);
-    flb_free(ctx->http_passwd);
-
-    flb_free(ctx->logstash_prefix);
-    flb_free(ctx->logstash_dateformat);
-    flb_free(ctx->time_key);
-    flb_free(ctx->time_key_format);
-
-    if (ctx->include_tag_key) {
-        flb_free(ctx->tag_key);
+    if (!ctx) {
+        return 0;
     }
 
-    if (ctx->logstash_prefix_key) {
-        flb_free(ctx->logstash_prefix_key);
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
     }
 
-    flb_upstream_destroy(ctx->u);
+#ifdef FLB_HAVE_AWS
+    if (ctx->base_aws_provider) {
+        flb_aws_provider_destroy(ctx->base_aws_provider);
+    }
+
+    if (ctx->aws_provider) {
+        flb_aws_provider_destroy(ctx->aws_provider);
+    }
+
+    if (ctx->aws_tls.context) {
+        flb_tls_context_destroy(ctx->aws_tls.context);
+    }
+
+    if (ctx->aws_sts_tls.context) {
+        flb_tls_context_destroy(ctx->aws_sts_tls.context);
+    }
+#endif
+
     flb_free(ctx);
 
     return 0;

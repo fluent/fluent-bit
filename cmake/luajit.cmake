@@ -8,8 +8,12 @@
 add_library(libluajit STATIC IMPORTED GLOBAL)
 
 # Global Settings
-set(LUAJIT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/LuaJIT-2.1.0-beta3)
+set(LUAJIT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_LUAJIT})
 set(LUAJIT_DEST ${CMAKE_CURRENT_BINARY_DIR})
+
+if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(CFLAGS "${CFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
+endif()
 
 # luajit (UNIX)
 # =============
@@ -18,7 +22,7 @@ ExternalProject_Add(luajit
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${LUAJIT_SRC}
   CONFIGURE_COMMAND ./configure
-  BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER} BUILD_MODE=static XCFLAGS="-fPIC"
+  BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER} CFLAGS=${CFLAGS} BUILD_MODE=static "XCFLAGS=-fPIC"
   INSTALL_COMMAND cp src/libluajit.a "${LUAJIT_DEST}/lib/libluajit.a")
 
 # luajit (Windows)
@@ -30,7 +34,7 @@ if (MSVC)
     SOURCE_DIR ${LUAJIT_SRC}/src
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ./msvcbuild.bat static
-    INSTALL_COMMAND cmake -E copy lua51.lib "${LUAJIT_DEST}/lib/libluajit.lib")
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy lua51.lib "${LUAJIT_DEST}/lib/libluajit.lib")
 endif()
 
 # Hook the buld definition to 'libluajit' target

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,9 +29,13 @@
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_upstream.h>
 
-int flb_io_tls_net_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_io_tls_net_read_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+                              void *buf, size_t len);
+int flb_io_tls_net_read(struct flb_upstream_conn *u_conn,
                         void *buf, size_t len);
-int flb_io_tls_net_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_io_tls_net_write_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+                               const void *data, size_t len, size_t *out_len);
+int flb_io_tls_net_write(struct flb_upstream_conn *u_conn,
                          const void *data, size_t len, size_t *out_len);
 
 #endif

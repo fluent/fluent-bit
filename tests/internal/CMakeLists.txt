@@ -7,16 +7,33 @@ set(UNIT_TESTS_FILES
   pipe.c
   sds.c
   sha512.c
+  slist.c
   router.c
-  parser.c
   network.c
   unit_sizes.c
   hashtable.c
   http_client.c
   utils.c
   gzip.c
-  gelf.c
+  random.c
+  config_map.c
+  mp.c
+  input_chunk.c
   )
+
+if (NOT WIN32)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    gelf.c
+    )
+endif()
+
+if(FLB_PARSER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    parser.c
+    )
+endif()
 
 if(FLB_STREAM_PROCESSOR)
   set(UNIT_TESTS_FILES
@@ -39,11 +56,32 @@ if(FLB_METRICS)
     )
 endif()
 
+if(FLB_SIGNV4)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    signv4.c
+    )
+endif()
+
+if(FLB_AWS)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    aws_util.c
+    aws_credentials.c
+    aws_credentials_ec2.c
+    aws_credentials_sts.c
+    aws_credentials_http.c
+    aws_credentials_profile.c
+    )
+endif()
+
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json
   data/parser/json.conf
   data/parser/regex.conf
+  data/input_chunk/log/a_thousand_plus_one_bytes.log
+  data/input_chunk/log/test_buffer_valid.log
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
@@ -92,3 +130,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
   endif()
 endforeach()
+
+if(FLB_TESTS_INTERNAL_FUZZ)
+  add_subdirectory(fuzzers)
+endif()

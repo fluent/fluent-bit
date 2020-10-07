@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,7 +67,7 @@ static int u8_wc_toutf8(char *dest, uint32_t ch)
 
 /* assumes that src points to the character after a backslash
    returns number of input characters processed */
-static int u8_read_escape_sequence(const char *str, uint32_t *dest)
+static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
 {
     uint32_t ch;
     char digs[9]="\0\0\0\0\0\0\0\0";
@@ -93,29 +93,32 @@ static int u8_read_escape_sequence(const char *str, uint32_t *dest)
         i = 0;
         do {
             digs[dno++] = str[i++];
-        } while (octal_digit(str[i]) && dno < 3);
+        } while (i < size && octal_digit(str[i]) && dno < 3);
         ch = strtol(digs, NULL, 8);
     }
     else if (str[0] == 'x') {
-        while (hex_digit(str[i]) && dno < 2) {
+        while (i < size && hex_digit(str[i]) && dno < 2) {
             digs[dno++] = str[i++];
         }
-        if (dno > 0)
+        if (dno > 0) {
             ch = strtol(digs, NULL, 16);
+        }
     }
     else if (str[0] == 'u') {
-        while (hex_digit(str[i]) && dno < 4) {
+        while (i < size && hex_digit(str[i]) && dno < 4) {
             digs[dno++] = str[i++];
         }
-        if (dno > 0)
+        if (dno > 0) {
             ch = strtol(digs, NULL, 16);
+        }
     }
     else if (str[0] == 'U') {
-        while (hex_digit(str[i]) && dno < 8) {
+        while (i < size && hex_digit(str[i]) && dno < 8) {
             digs[dno++] = str[i++];
         }
-        if (dno > 0)
+        if (dno > 0) {
             ch = strtol(digs, NULL, 16);
+        }
     }
     *dest = ch;
 
@@ -126,17 +129,20 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
 {
     uint32_t ch;
     char temp[4];
+    const char *end;
     const char *next;
+                int size;
+
 
     int count_out = 0;
     int count_in = 0;
     int esc_in = 0;
     int esc_out = 0;
 
-    while (*in_buf && count_in < sz) {
+    end = in_buf + sz;
+    while (in_buf < end && *in_buf && count_in < sz) {
         next = in_buf + 1;
-
-        if (*in_buf == '\\') {
+        if (next < end && *in_buf == '\\') {
             esc_in = 2;
             switch (*next) {
             case '"':
@@ -167,7 +173,14 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
                 ch = '\r';
                 break;
             default:
-                esc_in = u8_read_escape_sequence((in_buf + 1), &ch) + 1;
+                size = end - next;
+                if (size > 0) {
+                    esc_in = u8_read_escape_sequence(next, size, &ch) + 1;
+                }
+                else {
+                    ch = (uint32_t) *in_buf;
+                    esc_in = 1;
+                }
             }
         }
         else {
@@ -255,6 +268,59 @@ int flb_unescape_string(const char *buf, int buf_len, char **unesc_buf)
             }
         }
         p[j++] = buf[i++];
+    }
+    p[j] = '\0';
+    return j;
+}
+
+
+/* mysql unquote */
+int flb_mysql_unquote_string(char *buf, int buf_len, char **unesc_buf)
+{
+    int i = 0;
+    int j = 0;
+    char *p;
+    char n;
+
+    p = *unesc_buf;
+    while (i < buf_len) {
+        if ((n = buf[i++]) != '\\') {
+            p[j++] = n;
+        } else if(i >= buf_len) {
+            p[j++] = n;
+        } else {
+            n = buf[i++];
+            switch(n) {
+            case 'n':
+                p[j++] = '\n';
+                break;
+            case 'r':
+                p[j++] = '\r';
+                break;
+            case 't':
+                p[j++] = '\t';
+                break;
+            case '\\':
+                p[j++] = '\\';
+                break;
+            case '\'':
+                p[j++] = '\'';
+                break;
+            case '\"':
+                p[j++] = '\"';
+                break;
+            case '0':
+                p[j++] = 0;
+                break;
+            case 'Z':
+                p[j++] = 0x1a;
+                break;
+            default:
+                p[j++] = '\\';
+                p[j++] = n;
+                break;
+            }
+        }
     }
     p[j] = '\0';
     return j;

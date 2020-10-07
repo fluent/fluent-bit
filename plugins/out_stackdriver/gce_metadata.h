@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@
 #include "stackdriver.h"
 
 /* Project ID metadata URI */
-#define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/numeric-project-id"
+#define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/project-id"
 
 /* Zone metadata URI */
 #define FLB_STD_METADATA_ZONE_URI "/computeMetadata/v1/instance/zone"

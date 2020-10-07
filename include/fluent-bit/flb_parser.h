@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +45,7 @@ struct flb_parser {
     char *name;           /* format name */
     char *p_regex;        /* pattern for main regular expression */
     char *time_fmt;       /* time format */
+    char *time_fmt_full;  /* original given time format */
     char *time_key;       /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */

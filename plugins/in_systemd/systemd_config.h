@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_sqldb.h>
 
 #include <systemd/sd-journal.h>
 
@@ -62,8 +63,10 @@ struct flb_systemd_config {
 
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
+    int db_sync;
+    sqlite3_stmt *stmt_cursor;
 #endif
-    struct flb_input_instance *i_ins;
+    struct flb_input_instance *ins;
 };
 
 struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *i_ins,

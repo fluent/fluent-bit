@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_strptime.h>
+#include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_str.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -117,6 +119,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     int len;
     int diff = 0;
     int size;
+    int is_epoch = FLB_FALSE;
     char *tmp;
     struct mk_list *head;
     struct flb_parser *p;
@@ -179,10 +182,15 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     p->name = flb_strdup(name);
 
     if (time_fmt) {
+        p->time_fmt_full = flb_strdup(time_fmt);
         p->time_fmt = flb_strdup(time_fmt);
 
         /* Check if the format is considering the year */
         if (strstr(p->time_fmt, "%Y") || strstr(p->time_fmt, "%y")) {
+            p->time_with_year = FLB_TRUE;
+        }
+        else if (strstr(p->time_fmt, "%s")) {
+            is_epoch = FLB_TRUE;
             p->time_with_year = FLB_TRUE;
         }
         else {
@@ -231,7 +239,10 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
          * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
          * - http://code.activestate.com/lists/python-list/521885/
          */
-        if (p->time_with_year == FLB_TRUE) {
+        if (is_epoch == FLB_TRUE) {
+            tmp = strstr(p->time_fmt, "%s.%L");
+        }
+        else if (p->time_with_year == FLB_TRUE) {
             tmp = strstr(p->time_fmt, "%S.%L");
         }
         else {
@@ -303,6 +314,7 @@ void flb_parser_destroy(struct flb_parser *parser)
     flb_free(parser->name);
     if (parser->time_fmt) {
         flb_free(parser->time_fmt);
+        flb_free(parser->time_fmt_full);
     }
     if (parser->time_fmt_year) {
         flb_free(parser->time_fmt_year);
@@ -391,20 +403,47 @@ static int proc_types_str(const char *types_str, struct flb_parser_types **types
     return i;
 }
 
+static flb_sds_t get_parser_key(char *key,
+                                struct flb_config *config,
+                                struct mk_rconf_section *section)
+{
+    char *tmp;
+    flb_sds_t val;
+
+    tmp = mk_rconf_section_get_key(section, key, MK_RCONF_STR);
+    if (!tmp) {
+        return NULL;
+    }
+
+    val = flb_env_var_translate(config->env, tmp);
+    flb_free(tmp);
+
+    if (!val) {
+        return NULL;
+    }
+
+    if (flb_sds_len(val) == 0) {
+        flb_sds_destroy(val);
+        return NULL;
+    }
+
+    return val;
+}
+
 /* Load parsers from a configuration file */
 int flb_parser_conf_file(const char *file, struct flb_config *config)
 {
     int ret;
     char tmp[PATH_MAX + 1];
     const char *cfg = NULL;
-    char *name;
-    char *format;
-    char *regex;
-    char *time_fmt;
-    char *time_key;
-    char *time_offset;
-    char *types_str;
-    char *str;
+    flb_sds_t name;
+    flb_sds_t format;
+    flb_sds_t regex;
+    flb_sds_t time_fmt;
+    flb_sds_t time_key;
+    flb_sds_t time_offset;
+    flb_sds_t types_str;
+    flb_sds_t tmp_str;
     int time_keep;
     int types_len;
     struct mk_rconf *fconf;
@@ -412,7 +451,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     struct mk_list *head;
     struct stat st;
     struct flb_parser_types *types = NULL;
-    struct mk_list *decoders;
+    struct mk_list *decoders = NULL;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -450,6 +489,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         time_key = NULL;
         time_offset = NULL;
         types_str = NULL;
+        tmp_str = NULL;
 
         section = mk_list_entry(head, struct mk_rconf_section, _head);
         if (strcasecmp(section->name, "PARSER") != 0) {
@@ -457,53 +497,47 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         }
 
         /* Name */
-        name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
+        name = get_parser_key("Name", config, section);
         if (!name) {
             flb_error("[parser] no parser 'name' found in file '%s'", cfg);
             goto fconf_error;
         }
 
         /* Format */
-        format = mk_rconf_section_get_key(section, "Format", MK_RCONF_STR);
+        format = get_parser_key("Format", config, section);
         if (!format) {
-            flb_error("[parser] no parser 'format' found for '%s' in file '%s'", name, cfg);
+            flb_error("[parser] no parser 'format' found for '%s' in file '%s'",
+                      name, cfg);
             goto fconf_error;
         }
 
-        /* Regex (if format is regex) */
-        regex = mk_rconf_section_get_key(section, "Regex", MK_RCONF_STR);
+        /* Regex (if 'format' == 'regex') */
+        regex = get_parser_key("Regex", config, section);
         if (!regex && strcmp(format, "regex") == 0) {
             flb_error("[parser] no parser 'regex' found for '%s' in file '%s", name, cfg);
             goto fconf_error;
         }
 
         /* Time_Format */
-        time_fmt = mk_rconf_section_get_key(section, "Time_Format",
-                                            MK_RCONF_STR);
+        time_fmt = get_parser_key("Time_Format", config, section);
 
         /* Time_Key */
-        time_key = mk_rconf_section_get_key(section, "Time_Key",
-                                            MK_RCONF_STR);
+        time_key = get_parser_key("Time_Key", config, section);
 
         /* Time_Keep */
-        str = mk_rconf_section_get_key(section, "Time_Keep",
-                                       MK_RCONF_STR);
-        if (str) {
-            time_keep = flb_utils_bool(str);
-            flb_free(str);
-        }
-        else {
-            time_keep = FLB_FALSE;
+        time_keep = FLB_FALSE;
+        tmp_str = get_parser_key("Time_Keep", config, section);
+        if (tmp_str) {
+            time_keep = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
         }
 
         /* Time_Offset (UTC offset) */
-        time_offset = mk_rconf_section_get_key(section, "Time_Offset",
-                                               MK_RCONF_STR);
+        time_offset = get_parser_key("Time_Offset", config, section);
 
         /* Types */
-        types_str = mk_rconf_section_get_key(section, "Types",
-                                            MK_RCONF_STR);
-        if (types_str != NULL) {
+        types_str = get_parser_key("Types", config, section);
+        if (types_str) {
             types_len = proc_types_str(types_str, &types);
         }
         else {
@@ -522,25 +556,24 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
 
         flb_debug("[parser] new parser registered: %s", name);
 
-        flb_free(name);
-        flb_free(format);
+        flb_sds_destroy(name);
+        flb_sds_destroy(format);
 
         if (regex) {
-            flb_free(regex);
+            flb_sds_destroy(regex);
         }
         if (time_fmt) {
-            flb_free(time_fmt);
+            flb_sds_destroy(time_fmt);
         }
         if (time_key) {
-            flb_free(time_key);
+            flb_sds_destroy(time_key);
         }
         if (time_offset) {
-            flb_free(time_offset);
+            flb_sds_destroy(time_offset);
         }
         if (types_str) {
-            flb_free(types_str);
+            flb_sds_destroy(types_str);
         }
-
         decoders = NULL;
     }
 
@@ -548,19 +581,22 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     return 0;
 
  fconf_error:
-    flb_free(name);
-    flb_free(format);
+    flb_sds_destroy(name);
+    flb_sds_destroy(format);
     if (regex) {
-        flb_free(regex);
+        flb_sds_destroy(regex);
     }
     if (time_fmt) {
-        flb_free(time_fmt);
+        flb_sds_destroy(time_fmt);
     }
     if (time_key) {
-        flb_free(time_key);
+        flb_sds_destroy(time_key);
+    }
+    if (time_offset) {
+        flb_sds_destroy(time_offset);
     }
     if (types_str) {
-        flb_free(types_str);
+        flb_sds_destroy(types_str);
     }
     if (decoders) {
         flb_parser_decoder_list_destroy(decoders);
@@ -705,6 +741,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         }
 
         gmtime_r(&time_now, &tmy);
+
+        /* Make the timestamp default to today */
+        tm->tm_mon = tmy.tm_mon;
+        tm->tm_mday = tmy.tm_mday;
+
         uint64_t t = tmy.tm_year + 1900;
 
         fmt = tmp;
@@ -718,10 +759,10 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
 
         time_ptr = tmp;
         time_len = strlen(tmp);
-        p = strptime(time_ptr, parser->time_fmt_year, tm);
+        p = flb_strptime(time_ptr, parser->time_fmt_year, tm);
     }
     else {
-        p = strptime(time_ptr, parser->time_fmt, tm);
+        p = flb_strptime(time_ptr, parser->time_fmt, tm);
     }
 
     if (p != NULL) {
@@ -746,7 +787,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
             }
             *ns = tmfrac;
 
-            p = strptime(time_ptr, parser->time_frac_secs, tm);
+            p = flb_strptime(time_ptr, parser->time_frac_secs, tm);
 
             if (p == NULL) {
                 return -1;

@@ -26,11 +26,11 @@
 #define CIO_TRUE   !0
 
 /* debug levels */
-#define CIO_ERROR  1
-#define CIO_WARN   2
-#define CIO_INFO   3
-#define CIO_DEBUG  4
-#define CIO_TRACE  5
+#define CIO_LOG_ERROR  1
+#define CIO_LOG_WARN   2
+#define CIO_LOG_INFO   3
+#define CIO_LOG_DEBUG  4
+#define CIO_LOG_TRACE  5
 
 /* Storage backend */
 #define CIO_STORE_FS        0
@@ -42,13 +42,18 @@
 #define CIO_CHECKSUM        4   /* enable checksum verification (crc32) */
 #define CIO_FULL_SYNC       8   /* force sync to fs through MAP_SYNC */
 
+/* Return status */
+#define CIO_CORRUPTED      -3  /* Indicate that a chunk is corrupted */
+#define CIO_RETRY          -2  /* The operations needs to be retried */
+#define CIO_ERROR          -1  /* Generic error */
+#define CIO_OK              0  /* OK */
+
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
-int cio_page_size;
-
 struct cio_ctx {
     int flags;
+    int page_size;
     char *root_path;
 
     /* logging */
@@ -56,12 +61,18 @@ struct cio_ctx {
     void (*log_cb)(void *, int, const char *, int, const char *);
 
     /*
+     * Internal counters
+     */
+    size_t total_chunks;      /* Total number of registered chunks */
+    size_t total_chunks_up;   /* Total number of chunks 'up' in memory */
+
+    /*
      * maximum open 'file' chunks: this limit helps where there are many
      * chunks in the filesystem and you don't need all of them up in
      * memory. For short, it restrict the open number of files and
      * the amount of memory mapped.
      */
-    int max_chunks_up;
+    size_t max_chunks_up;
 
     /* streams */
     struct mk_list streams;
@@ -73,7 +84,8 @@ struct cio_ctx {
 struct cio_ctx *cio_create(const char *root_path,
                            void (*log_cb), int log_level, int flags);
 void cio_destroy(struct cio_ctx *ctx);
-int cio_load(struct cio_ctx *ctx);
+int cio_load(struct cio_ctx *ctx, char *chunk_extension);
+int cio_qsort(struct cio_ctx *ctx, int (*compar)(const void *, const void *));
 
 void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb));
 int cio_set_log_level(struct cio_ctx *ctx, int level);

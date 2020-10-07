@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,6 +66,28 @@ static void flb_proxy_cb_flush(const void *data, size_t bytes,
 }
 
 
+static int flb_proxy_cb_exit(void *data, struct flb_config *config)
+{
+    struct flb_output_plugin *instance = data;
+    struct flb_plugin_proxy *proxy = (instance->proxy);
+    struct flbgo_output_plugin *plugin;
+    void *inst;
+
+    inst = proxy->data;
+
+    plugin = (struct flbgo_output_plugin *) inst;
+    flb_debug("[GO] running exit callback");
+
+    if (plugin->cb_exit_ctx) {
+        return plugin->cb_exit_ctx(plugin->context->remote_context);
+    }
+    else if (plugin->cb_exit) {
+        return plugin->cb_exit();
+    }
+
+    return 0;
+}
+
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
                                      struct flb_plugin_proxy_def *def,
                                      struct flb_config *config)
@@ -92,6 +114,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
      * we put our proxy-middle callbacks to do the translation properly.
      */
     out->cb_flush = flb_proxy_cb_flush;
+    out->cb_exit = flb_proxy_cb_exit;
     return 0;
 }
 
@@ -119,7 +142,7 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
 
     /*
-     * Create a temporal definition used for registration. This definition
+     * Create a temporary definition used for registration. This definition
      * aims to be be populated by plugin in the registration phase with:
      *
      * - plugin type (or proxy type, e.g: Golang)

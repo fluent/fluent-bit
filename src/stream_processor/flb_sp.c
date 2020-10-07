@@ -31,6 +31,7 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_key.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
+#include <fluent-bit/stream_processor/flb_sp_snapshot.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_func_time.h>
 #include <fluent-bit/stream_processor/flb_sp_func_record.h>
@@ -383,7 +384,7 @@ static int object_to_number(msgpack_object obj, int64_t *i, double *d)
     return -1;
 }
 
-/* Summarize a value into the temporal array considering data type */
+/* Summarize a value into the temporary array considering data type */
 static void aggr_sum(struct aggr_num *nums, int key_id, int64_t i, double d)
 {
     if (nums[key_id].type == FLB_SP_NUM_I64) {
@@ -485,6 +486,37 @@ static void aggr_max(struct aggr_num *nums, int key_id, int64_t i, double d)
             }
         }
     }
+}
+
+int flb_sp_snapshot_create(struct flb_sp_task *task)
+{
+    struct flb_sp_cmd *cmd;
+    struct flb_sp_snapshot *snapshot;
+
+    cmd = task->cmd;
+
+    snapshot = (struct flb_sp_snapshot *) flb_calloc(1, sizeof(struct flb_sp_snapshot));
+    if (!snapshot) {
+        flb_error("[sp] could not create snapshot '%s'", cmd->stream_name);
+        return -1;
+    }
+
+    mk_list_init(&snapshot->pages);
+    snapshot->record_limit = cmd->limit;
+
+    if (flb_sp_cmd_stream_prop_get(cmd, "seconds") != NULL) {
+        snapshot->time_limit = atoi(flb_sp_cmd_stream_prop_get(cmd, "seconds"));
+    }
+
+    if (snapshot->time_limit == 0 && snapshot->record_limit == 0) {
+        flb_error("[sp] could not create snapshot '%s': size is not defined",
+                  cmd->stream_name);
+        flb_sp_snapshot_destroy(snapshot);
+        return -1;
+    }
+
+    task->snapshot = snapshot;
+    return 0;
 }
 
 struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
@@ -603,11 +635,22 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
         }
     }
 
+    /* Init snapshot page list */
+    if (cmd->type == FLB_SP_CREATE_SNAPSHOT) {
+        if (flb_sp_snapshot_create(task) == -1) {
+            flb_sp_task_destroy(task);
+            return NULL;
+        }
+    }
+
     /*
      * If the task involves a stream creation (CREATE STREAM abc..), create
      * the stream.
      */
-    if (cmd->type == FLB_SP_CREATE_STREAM) {
+    if (cmd->type == FLB_SP_CREATE_STREAM ||
+        cmd->type == FLB_SP_CREATE_SNAPSHOT ||
+        cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
+
         ret = flb_sp_stream_create(cmd->stream_name, task, sp);
         if (ret == -1) {
             flb_error("[sp] could not create stream '%s'", cmd->stream_name);
@@ -623,6 +666,19 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
      */
     sp_task_to_instance(task, sp);
     return task;
+}
+
+void groupby_nums_destroy(struct aggr_num *groupby_nums, int size)
+{
+    int i;
+
+    for (i = 0; i < size; i++) {
+        if (groupby_nums[i].type == FLB_SP_STRING) {
+            flb_sds_destroy(groupby_nums[i].string);
+          }
+    }
+
+    flb_free(groupby_nums);
 }
 
 /*
@@ -647,12 +703,7 @@ void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
         }
     }
 
-    for (i = 0; i < aggr_node->groupby_keys; i++) {
-        num = &aggr_node->groupby_nums[i];
-        if (num->type == FLB_SP_STRING) {
-            flb_sds_destroy(num->string);
-        }
-    }
+    groupby_nums_destroy(aggr_node->groupby_nums, aggr_node->groupby_keys);
 
     key_id = 0;
     mk_list_foreach(head, &cmd->keys) {
@@ -680,7 +731,6 @@ void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
     }
 
     flb_free(aggr_node->nums);
-    flb_free(aggr_node->groupby_nums);
     flb_free(aggr_node->ts);
     flb_free(aggr_node);
 }
@@ -728,6 +778,7 @@ void flb_sp_task_destroy(struct flb_sp_task *task)
     flb_sds_destroy(task->name);
     flb_sds_destroy(task->query);
     flb_sp_window_destroy(task->cmd, &task->window);
+    flb_sp_snapshot_destroy(task->snapshot);
     mk_list_del(&task->_head);
 
     if (task->stream) {
@@ -805,7 +856,7 @@ static void itof_convert(struct flb_exp_val *val)
     }
 
     val->type = FLB_EXP_FLOAT;
-    val->val.f64 = val->val.i64;
+    val->val.f64 = (double) val->val.i64;
 }
 
 /* Convert (string) expression to number */
@@ -1622,14 +1673,14 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
 
         /* if some GROUP BY keys are not found in the record */
         if (values_found < gb_entries) {
-            flb_free(gb_nums);
+            groupby_nums_destroy(gb_nums, gb_entries);
             return NULL;
         }
 
         aggr_node = (struct aggr_node *) flb_calloc(1, sizeof(struct aggr_node));
         if (!aggr_node) {
             flb_errno();
-            flb_free(gb_nums);
+            groupby_nums_destroy(gb_nums, gb_entries);
             return NULL;
         }
 
@@ -1907,12 +1958,15 @@ static int sp_process_data(const char *tag, int tag_len,
     int ret;
     int map_size;
     int map_entries;
-    int records = 0;
+    int records;
     uint8_t h;
     off_t map_off;
     off_t no_data;
-    size_t off = 0;
+    size_t off;
+    size_t off_copy;
+    size_t snapshot_out_size;
     char *tmp;
+    char *snapshot_out_buffer;
     msgpack_object root;
     msgpack_object *obj;
     msgpack_object key;
@@ -1923,24 +1977,37 @@ static int sp_process_data(const char *tag, int tag_len,
     msgpack_object map;
     struct flb_time tms;
     struct mk_list *head;
-    struct flb_sp_cmd *cmd = task->cmd;
+    struct flb_sp_cmd *cmd;
     struct flb_sp_cmd_key *cmd_key;
     struct flb_exp_val *condition;
     struct flb_sp_value *sval;
 
     /* Vars initialization */
+    off = 0;
+    off_copy = off;
+    records = 0;
+    cmd = task->cmd;
     ok = MSGPACK_UNPACK_SUCCESS;
     msgpack_unpacked_init(&result);
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
+    snapshot_out_size = 0;
+    snapshot_out_buffer = NULL;
+
     /* Iterate incoming records */
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
-        records++;
 
         /* extract timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
+
+        /* Store the buffer if the stream is a snapshot */
+        if (cmd->type == FLB_SP_CREATE_SNAPSHOT) {
+            flb_sp_snapshot_update(task, buf_data + off_copy, off - off_copy, &tms);
+            off_copy = off;
+            continue;
+        }
 
         /* get the map data and it size (number of items) */
         map   = root.via.array.ptr[1];
@@ -1961,6 +2028,20 @@ static int sp_process_data(const char *tag, int tag_len,
                 flb_free(condition);
             }
         }
+
+        records++;
+
+        /* Flush the snapshot if condition holds */
+        if (cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
+            if (flb_sp_snapshot_flush(sp, task, &snapshot_out_buffer,
+                                      &snapshot_out_size) == -1) {
+                msgpack_unpacked_destroy(&result);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+            continue;
+        }
+
 
         /*
          * If for some reason the Task keys did not insert any data, we will
@@ -2096,6 +2177,20 @@ static int sp_process_data(const char *tag, int tag_len,
     if (records == 0) {
         msgpack_sbuffer_destroy(&mp_sbuf);
         return 0;
+    }
+
+    /* Use snapshot out buffer if it is flush stream */
+    if (cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
+        if (snapshot_out_size == 0) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_free(snapshot_out_buffer);
+            return 0;
+        }
+        else {
+            *out_buf = snapshot_out_buffer;
+            *out_size = snapshot_out_size;
+            return records;
+        }
     }
 
     /* set outgoing results */
@@ -2262,7 +2357,6 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
         }
         else {
             flb_free(nums);
-            flb_free(aggr_node_hs->groupby_nums);
             flb_free(aggr_node_hs);
         }
     }
@@ -2358,7 +2452,7 @@ int flb_sp_do(struct flb_sp *sp, struct flb_input_instance *in,
     struct flb_sp_task *task;
     struct flb_sp_cmd *cmd;
 
-    /* Lookup Tasks that matches the incoming instance data */
+    /* Lookup tasks that match the incoming instance data */
     mk_list_foreach(head, &sp->tasks) {
         task = mk_list_entry(head, struct flb_sp_task, _head);
         cmd = task->cmd;
@@ -2569,7 +2663,7 @@ int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
         else if (fd == task->window.fd_hop) {
             sp_process_hopping_slot(tag, tag_len, task);
         }
-
     }
+
     return 0;
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -168,7 +168,7 @@ static int collect_metrics(struct flb_me *me)
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (ctx->http_server == FLB_TRUE) {
-        flb_hs_push_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+        flb_hs_push_pipeline_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
     }
 #endif
     msgpack_sbuffer_destroy(&mp_sbuf);

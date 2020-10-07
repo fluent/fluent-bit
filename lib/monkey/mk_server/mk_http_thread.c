@@ -44,6 +44,7 @@ struct mk_http_libco_params {
 
 struct mk_http_libco_params libco_param;
 
+pthread_key_t mk_thread_key;
 
 static inline void thread_cb_init_vars()
 {

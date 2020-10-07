@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,11 +18,12 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include "stdout.h"
@@ -32,14 +33,21 @@ static int cb_stdout_init(struct flb_output_instance *ins,
 {
     int ret;
     const char *tmp;
-    struct flb_out_stdout_config *ctx = NULL;
+    struct flb_stdout *ctx = NULL;
     (void) ins;
     (void) config;
     (void) data;
 
-    ctx = flb_calloc(1, sizeof(struct flb_out_stdout_config));
+    ctx = flb_calloc(1, sizeof(struct flb_stdout));
     if (!ctx) {
         flb_errno();
+        return -1;
+    }
+    ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
         return -1;
     }
 
@@ -48,11 +56,21 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1) {
-            flb_error("[out_stdout] unrecognized 'format' option. "
-                      "Using 'msgpack'");
+            flb_plg_error(ctx->ins, "unrecognized 'format' option. "
+                          "Using 'msgpack'");
         }
         else {
             ctx->out_format = ret;
+        }
+    }
+
+    /* Date key */
+    ctx->date_key = ctx->json_date_key;
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->date_key = NULL;
         }
     }
 
@@ -62,21 +80,12 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_error("[out_stdout] invalid json_date_format '%s'. "
-                      "Using 'double' type");
+            flb_plg_error(ctx->ins, "invalid json_date_format '%s'. "
+                          "Using 'double' type", tmp);
         }
         else {
             ctx->json_date_format = ret;
         }
-    }
-
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create("date");
     }
 
     /* Export context */
@@ -93,7 +102,7 @@ static void cb_stdout_flush(const void *data, size_t bytes,
 {
     msgpack_unpacked result;
     size_t off = 0, cnt = 0;
-    struct flb_out_stdout_config *ctx = out_context;
+    struct flb_stdout *ctx = out_context;
     flb_sds_t json;
     char *buf = NULL;
     (void) i_ins;
@@ -105,7 +114,7 @@ static void cb_stdout_flush(const void *data, size_t bytes,
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->date_key);
         write(STDOUT_FILENO, json, flb_sds_len(json));
         flb_sds_destroy(json);
 
@@ -145,19 +154,39 @@ static void cb_stdout_flush(const void *data, size_t bytes,
 
 static int cb_stdout_exit(void *data, struct flb_config *config)
 {
-    struct flb_out_stdout_config *ctx = data;
+    struct flb_stdout *ctx = data;
 
     if (!ctx) {
         return 0;
-    }
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
     }
 
     flb_free(ctx);
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     "Specifies the data format to be printed. Supported formats are msgpack json, json_lines and json_stream."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", NULL,
+     0, FLB_FALSE, 0,
+    "Specifies the name of the date field in output."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
+    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    },
+
+    /* EOF */
+    {0}
+};
+
+/* Plugin registration */
 struct flb_output_plugin out_stdout_plugin = {
     .name         = "stdout",
     .description  = "Prints events to STDOUT",
@@ -165,4 +194,5 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_flush     = cb_stdout_flush,
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
+    .config_map   = config_map
 };

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +17,10 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_utils.h>
@@ -93,8 +95,8 @@ static int configure(struct record_modifier_ctx *ctx,
             }
             split = flb_utils_split(kv->val, ' ', 1);
             if (mk_list_size(split) != 2) {
-                flb_error("[%s] invalid record parameters, expects 'KEY VALUE'",
-                          PLUGIN_NAME);
+                flb_plg_error(ctx->ins, "invalid record parameters, "
+                              "expects 'KEY VALUE'");
                 flb_free(mod_record);
                 flb_utils_split_free(split);
                 continue;
@@ -115,7 +117,8 @@ static int configure(struct record_modifier_ctx *ctx,
     }
 
     if (ctx->remove_keys_num > 0 && ctx->whitelist_keys_num > 0) {
-        flb_error("remove_keys and whitelist_keys are exclusive with each other.");
+        flb_plg_error(ctx->ins, "remove_keys and whitelist_keys are exclusive "
+                      "with each other.");
         return -1;
     }
     return 0;
@@ -165,6 +168,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
     mk_list_init(&ctx->records);
     mk_list_init(&ctx->remove_keys);
     mk_list_init(&ctx->whitelist_keys);
+    ctx->ins = f_ins;
 
     if ( configure(ctx, f_ins) < 0 ){
         delete_list(ctx);
@@ -270,7 +274,7 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     struct mk_list *tmp;
     struct mk_list *head;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 

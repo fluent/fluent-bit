@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,9 +23,14 @@
 
 #include <fluent-bit/flb_info.h>
 #include <chunkio/chunkio.h>
+#include <chunkio/cio_stats.h>
 
 #define FLB_STORAGE_BL_MEM_LIMIT   "5M"
 #define FLB_STORAGE_MAX_CHUNKS_UP  128
+
+struct flb_storage_metrics {
+    int fd;
+};
 
 /*
  * The storage structure helps to associate the contexts between
@@ -33,7 +38,6 @@
  *
  * Each input instance have a stream associated.
  */
-
 struct flb_storage_input {
     int type;                   /* CIO_STORE_FS | CIO_STORE_MEM */
     struct cio_stream *stream;
@@ -45,5 +49,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in);
 void flb_storage_destroy(struct flb_config *ctx);
 void flb_storage_input_destroy(struct flb_input_instance *in);
+
+struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx);
 
 #endif

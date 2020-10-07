@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,15 +36,10 @@
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
-/* thread initializator */
-static int pth_init;
-static pthread_cond_t  pth_cond;
-static pthread_mutex_t pth_mutex;
-
 /* Simple structure to dispatch messages to the log collector */
 struct log_message {
     size_t size;
-    char   msg[1024 - sizeof(size_t)];
+    char   msg[4096 - sizeof(size_t)];
 };
 
 static inline int consume_byte(flb_pipefd_t fd)
@@ -94,9 +89,14 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
      * under the PIPE_BUF limit (4KB on Linux) and our messages are always 1KB,
      * we can trust we will always get a full message on each read(2).
      */
-    bytes = flb_pipe_r(fd, &msg, sizeof(struct log_message));
+    bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
     if (bytes <= 0) {
         perror("bytes");
+        return -1;
+    }
+    if (msg.size > sizeof(msg.msg)) {
+        fprintf(stderr, "[log] message too long: %zi > %zi",
+                msg.size, sizeof(msg.msg));
         return -1;
     }
     log_push(&msg, log);
@@ -114,11 +114,13 @@ static void log_worker_collector(void *data)
     FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
+    mk_utils_worker_rename("flb-logger");
+
     /* Signal the caller */
-    pthread_mutex_lock(&pth_mutex);
-    pth_init = FLB_TRUE;
-    pthread_cond_signal(&pth_cond);
-    pthread_mutex_unlock(&pth_mutex);
+    pthread_mutex_lock(&log->pth_mutex);
+    log->pth_init = FLB_TRUE;
+    pthread_cond_signal(&log->pth_cond);
+    pthread_mutex_unlock(&log->pth_mutex);
 
     while (run) {
         mk_event_wait(log->evl);
@@ -167,6 +169,30 @@ int flb_log_set_level(struct flb_config *config, int level)
 {
     config->log->level = level;
     return 0;
+}
+
+int flb_log_get_level_str(char *str)
+{
+    if (strcasecmp(str, "off") == 0) {
+        return FLB_LOG_OFF;
+    }
+    else if (strcasecmp(str, "error") == 0) {
+        return FLB_LOG_ERROR;
+    }
+    else if (strcasecmp(str, "warn") == 0) {
+        return FLB_LOG_WARN;
+    }
+    else if (strcasecmp(str, "info") == 0) {
+        return FLB_LOG_INFO;
+    }
+    else if (strcasecmp(str, "debug") == 0) {
+        return FLB_LOG_DEBUG;
+    }
+    else if (strcasecmp(str, "trace") == 0) {
+        return FLB_LOG_TRACE;
+    }
+
+    return -1;
 }
 
 int flb_log_set_file(struct flb_config *config, char *out)
@@ -273,15 +299,15 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      * This lock is used for the 'pth_cond' conditional. Once the worker
      * thread is ready will signal the condition.
      */
-    pthread_mutex_init(&pth_mutex, NULL);
-    pthread_cond_init(&pth_cond, NULL);
-    pth_init = FLB_FALSE;
+    pthread_mutex_init(&log->pth_mutex, NULL);
+    pthread_cond_init(&log->pth_cond, NULL);
+    log->pth_init = FLB_FALSE;
 
-    pthread_mutex_lock(&pth_mutex);
+    pthread_mutex_lock(&log->pth_mutex);
 
     ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
     if (ret == -1) {
-        pthread_mutex_unlock(&pth_mutex);
+        pthread_mutex_unlock(&log->pth_mutex);
         mk_event_loop_destroy(log->evl);
         flb_free(log->worker);
         flb_free(log);
@@ -290,10 +316,10 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     }
 
     /* Block until the child thread is ready */
-    while (!pth_init) {
-        pthread_cond_wait(&pth_cond, &pth_mutex);
+    while (!log->pth_init) {
+        pthread_cond_wait(&log->pth_cond, &log->pth_mutex);
     }
-    pthread_mutex_unlock(&pth_mutex);
+    pthread_mutex_unlock(&log->pth_mutex);
 
     return log;
 }
@@ -315,6 +341,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     va_start(args, fmt);
 
     switch (type) {
+    case FLB_LOG_HELP:
+        header_title = "help";
+        header_color = ANSI_CYAN;
+        break;
     case FLB_LOG_INFO:
         header_title = "info";
         header_color = ANSI_GREEN;
@@ -330,6 +360,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     case FLB_LOG_DEBUG:
         header_title = "debug";
         header_color = ANSI_YELLOW;
+        break;
+    case FLB_LOG_IDEBUG:
+        header_title = "debug";
+        header_color = ANSI_CYAN;
         break;
     case FLB_LOG_TRACE:
         header_title = "trace";
@@ -387,7 +421,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     w = flb_worker_get();
     if (w) {
-        int n = flb_pipe_w(w->log[1], &msg, sizeof(msg));
+        int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
             perror("write");
         }

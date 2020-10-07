@@ -36,10 +36,16 @@ static void cb_root(mk_request_t *request, void *data)
     mk_http_done(request);
 }
 
-/* Ingest metrics into the web service context */
-int flb_hs_push_metrics(struct flb_hs *hs, void *data, size_t size)
+/* Ingest pipeline metrics into the web service context */
+int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size)
 {
-    return mk_mq_send(hs->ctx, hs->qid, data, size);
+    return mk_mq_send(hs->ctx, hs->qid_metrics, data, size);
+}
+
+/* Ingest storage metrics into the web service context */
+int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size)
+{
+    return mk_mq_send(hs->ctx, hs->qid_storage, data, size);
 }
 
 /* Create ROOT endpoints */

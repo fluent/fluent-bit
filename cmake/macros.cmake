@@ -6,5 +6,5 @@ macro(FLB_DEFINITION var)
 endmacro()
 
 macro(FLB_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
+  set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()

@@ -44,7 +44,8 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
                                struct cio_chunk *ch,
                                int flags,
-                               size_t size);
+                               size_t size,
+                               int *err);
 void cio_file_close(struct cio_chunk *ch, int delete);
 int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size);
@@ -56,6 +57,8 @@ void cio_file_hash_print(struct cio_file *cf);
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out);
 void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st);
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch);
+int cio_file_content_copy(struct cio_chunk *ch,
+                          void **out_buf, size_t *out_size);
 
 
 int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);

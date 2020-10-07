@@ -39,13 +39,17 @@ struct cio_chunk {
 };
 
 struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
-                                 const char *name, int flags, size_t size);
+                                 const char *name, int flags, size_t size,
+                                 int *err);
 void cio_chunk_close(struct cio_chunk *ch, int delete);
 int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
                        const void *buf, size_t count);
 int cio_chunk_sync(struct cio_chunk *ch);
 int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size);
+int cio_chunk_get_content_copy(struct cio_chunk *ch,
+                               void **out_buf, size_t *out_size);
+
 ssize_t cio_chunk_get_content_size(struct cio_chunk *ch);
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch);
@@ -66,5 +70,12 @@ int cio_chunk_is_file(struct cio_chunk *ch);
 int cio_chunk_up(struct cio_chunk *ch);
 int cio_chunk_up_force(struct cio_chunk *ch);
 int cio_chunk_down(struct cio_chunk *ch);
+char *cio_version();
+
+/* Counters */
+size_t cio_chunk_counter_total_add(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_sub(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_up_add(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_up_sub(struct cio_ctx *ctx);
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_MQTT_CONFIG_H
-#define FLB_MQTT_CONFIG_H
+#ifndef FLB_IN_FW_CONFIG_H
+#define FLB_IN_FW_CONFIG_H
 
 #include "fw.h"
 

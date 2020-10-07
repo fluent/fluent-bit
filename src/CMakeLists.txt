@@ -22,6 +22,7 @@ set(src
   flb_filter.c
   flb_output.c
   flb_config.c
+  flb_config_map.c
   flb_network.c
   flb_utils.c
   flb_slist.c
@@ -37,11 +38,17 @@ set(src
   flb_upstream_node.c
   flb_router.c
   flb_worker.c
+  flb_thread.c
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
+  flb_random.c
   flb_plugin.c
   flb_gzip.c
+  flb_http_client.c
+  flb_callback.c
+  flb_strptime.c
+  flb_fstore.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -70,7 +77,6 @@ if(FLB_TLS)
     ${src}
     "flb_io_tls.c"
     "flb_oauth2.c"
-    "flb_http_client.c"
     )
 
   # Make sure our output targets links to the TLS library
@@ -92,6 +98,32 @@ if(FLB_METRICS)
     ${src}
     "flb_metrics.c"
     "flb_metrics_exporter.c"
+    )
+endif()
+
+if(FLB_SIGNV4 AND FLB_TLS)
+  set(src
+    ${src}
+    "flb_signv4.c"
+    )
+endif()
+
+if(FLB_HTTP_CLIENT_DEBUG)
+  set(src
+    ${src}
+    "flb_http_client_debug.c"
+     )
+endif()
+
+if(FLB_AWS)
+  set(src
+    ${src}
+    "aws/flb_aws_util.c"
+    "aws/flb_aws_credentials.c"
+    "aws/flb_aws_credentials_sts.c"
+    "aws/flb_aws_credentials_ec2.c"
+    "aws/flb_aws_credentials_http.c"
+    "aws/flb_aws_credentials_profile.c"
     )
 endif()
 
@@ -150,14 +182,6 @@ if(FLB_STATIC_CONF)
     )
 endif()
 
-if(NOT FLB_SYSTEM_STRPTIME)
-  set(src
-    ${src}
-    "flb_strptime.c"
-    )
-endif()
-
-
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
@@ -166,6 +190,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     "ws2_32.lib"
     "crypt32.lib"
+    "Bcrypt.lib"
     )
 else()
   set(FLB_DEPS
@@ -185,6 +210,15 @@ endif()
 
 
 # Record Accessor
+# ---------------
+# Make sure it dependency is enabled
+if(FLB_RECORD_ACCESSOR AND NOT FLB_REGEX)
+  message(FATAL_ERROR
+    "FLB_RECORD_ACCESSOR depends on FLB_REGEX, "
+    "enable it with: -DFLB_REGEX=ON")
+endif()
+
+# Build record accessor files
 if(FLB_RECORD_ACCESSOR)
   set(src
     ${src}
@@ -234,6 +268,14 @@ set(FLB_DEPS
   ${extra_libs}
   )
 
+# UTF8 Encoding
+if(FLB_UTF8_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  tutf8e
+  )
+endif()
+
 # Record Accessor
 if(FLB_RECORD_ACCESSOR)
   set(FLB_DEPS
@@ -264,6 +306,13 @@ if(FLB_SHARED_LIB)
     target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
   endif()
 
+  if (MSVC)
+    set_target_properties(fluent-bit-shared
+      PROPERTIES PDB_NAME fluent-bit.dll)
+    target_link_options(fluent-bit-shared
+      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-shared>)
+  endif()
+
   # Library install routines
   install(TARGETS fluent-bit-shared
     LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
@@ -289,8 +338,13 @@ endif()
 # Binary / Executable
 if(FLB_BINARY)
   find_package (Threads)
-  add_executable(fluent-bit-bin fluent-bit.c)
+  if (FLB_SYSTEM_WINDOWS)
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c)
+  else()
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
+  endif()
   add_sanitizers(fluent-bit-bin)
+
 
   if(FLB_STATIC_CONF)
     add_dependencies(fluent-bit-bin flb-static-conf)
@@ -305,6 +359,7 @@ if(FLB_BINARY)
   endif()
 
   if(FLB_BACKTRACE)
+    add_definitions(-DFLB_DUMP_STACKTRACE=1)
     target_link_libraries(fluent-bit-bin libbacktrace)
   endif()
 
@@ -315,6 +370,14 @@ if(FLB_BINARY)
     OUTPUT_NAME ${FLB_OUT_NAME}
     ENABLE_EXPORTS ON)
   install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
+
+  # Include PDB file (if available)
+  if (MSVC)
+    target_link_options(fluent-bit-bin
+      PUBLIC /pdb:$<TARGET_PDB_FILE:fluent-bit-bin>)
+    install(FILES $<TARGET_PDB_FILE:fluent-bit-bin>
+      DESTINATION "${FLB_INSTALL_BINDIR}")
+  endif()
 
   # Detect init system, install upstart, systemd or init.d script
   if(IS_DIRECTORY /lib/systemd/system)

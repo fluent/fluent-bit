@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +18,15 @@
  *  limitations under the License.
  */
 
-#include <msgpack.h>
-
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_gzip.h>
+
+#include <msgpack.h>
 
 #include "fw.h"
 #include "fw_prot.h"
@@ -32,12 +35,149 @@
 /* Try parsing rounds up-to 32 bytes */
 #define EACH_RECV_SIZE 32
 
+static int is_gzip_compressed(msgpack_object options)
+{
+    int i;
+    msgpack_object k;
+    msgpack_object v;
+
+    if (options.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    for (i = 0; i < options.via.map.size; i++) {
+        k = options.via.map.ptr[i].key;
+        v = options.via.map.ptr[i].val;
+
+        if (k.type != MSGPACK_OBJECT_STR) {
+            return -1;
+        }
+
+        if (k.via.str.size != 10) {
+            continue;
+        }
+
+        if (strncmp(k.via.str.ptr, "compressed", 10) == 0) {
+            if (v.type != MSGPACK_OBJECT_STR) {
+                return -1;
+            }
+
+            if (v.via.str.size != 4) {
+                return -1;
+            }
+
+            if (strncmp(v.via.str.ptr, "gzip", 4) == 0) {
+                return FLB_TRUE;
+            }
+            else if (strncmp(v.via.str.ptr, "text", 4) == 0) {
+                return FLB_FALSE;
+            }
+
+            return -1;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int send_ack(struct flb_input_instance *in, struct fw_conn *conn,
+                    msgpack_object chunk)
+{
+    ssize_t bytes;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 3);
+    msgpack_pack_str_body(&mp_pck, "ack", 3);
+    msgpack_pack_object(&mp_pck, chunk);
+
+    bytes = send(conn->fd, mp_sbuf.data, mp_sbuf.size, 0);
+    if (bytes == -1) {
+        flb_errno();
+        flb_plg_error(in, "cannot send ACK response: %.*s",
+                      chunk.via.str.size, chunk.via.str.ptr);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    return 0;
+
+}
+
+static size_t get_options_chunk(msgpack_object *arr, int expected, size_t *idx)
+{
+    size_t i;
+    msgpack_object *options;
+    msgpack_object k;
+    msgpack_object v;
+
+    if (arr->type != MSGPACK_OBJECT_ARRAY) {
+        return -1;
+    }
+
+    /* Make sure the 'expected' entry position is valid for the array size */
+    if (expected >= arr->via.array.size) {
+        return 0;
+    }
+
+    options = &arr->via.array.ptr[expected];
+    if (options->type == MSGPACK_OBJECT_NIL) {
+        /*
+         * Old Docker 18.x sends a NULL options parameter, just be friendly and
+         * let it pass.
+         */
+        return 0;
+    }
+
+    if (options->type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
+    if (options->via.map.size <= 0) {
+        return 0;
+    }
+
+    for (i = 0; i < options->via.map.size; i++) {
+        k = options->via.map.ptr[i].key;
+        v = options->via.map.ptr[i].val;
+
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (k.via.str.size != 5) {
+            continue;
+        }
+
+        if (strncmp(k.via.str.ptr, "chunk", 5) != 0) {
+            continue;
+        }
+
+        if (v.type != MSGPACK_OBJECT_STR) {
+            return -1;
+        }
+
+        *idx = i;
+        return 0;
+    }
+
+    return 0;
+}
+
 static int fw_process_array(struct flb_input_instance *in,
+                            struct fw_conn *conn,
                             const char *tag, int tag_len,
-                            msgpack_object *arr)
+                            msgpack_object *root, msgpack_object *arr, int chunk_id)
 {
     int i;
     msgpack_object entry;
+    msgpack_object options;
+    msgpack_object chunk;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
@@ -58,6 +198,12 @@ static int fw_process_array(struct flb_input_instance *in,
 
     flb_input_chunk_append_raw(in, tag, tag_len, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (chunk_id != -1) {
+        options = root->via.array.ptr[2];
+        chunk = options.via.map.ptr[chunk_id].val;
+        send_ack(in, conn, chunk);
+    }
 
     return i;
 }
@@ -101,17 +247,24 @@ int fw_prot_process(struct fw_conn *conn)
     int ret;
     int stag_len;
     int c = 0;
+    size_t chunk_id = -1;
     const char *stag;
     size_t bytes;
     size_t buf_off = 0;
     size_t recv_len;
+    size_t gz_size;
+    void *gz_data;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object map;
     msgpack_object root;
+    msgpack_object chunk;
     msgpack_unpacked result;
     msgpack_unpacker *unp;
     size_t all_used = 0;
+    struct msgpack_sbuffer mp_sbuf;
+    struct msgpack_packer mp_pck;
+    struct flb_in_fw_config *ctx = conn->ctx;
 
     /*
      * [tag, time, record]
@@ -150,10 +303,10 @@ int fw_prot_process(struct fw_conn *conn)
             ret == MSGPACK_UNPACK_NOMEM_ERROR) {
             /* A bit redunant, print out the real error */
             if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
-                flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+                flb_plg_debug(ctx->ins, "err=MSGPACK_UNPACK_PARSE_ERROR");
             }
             else {
-                flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+                flb_plg_error(ctx->ins, "err=MSGPACK_UNPACK_NOMEM_ERROR");
             }
 
             /* Cleanup buffers */
@@ -188,15 +341,17 @@ int fw_prot_process(struct fw_conn *conn)
             root = result.data;
 
             if (root.type != MSGPACK_OBJECT_ARRAY) {
-                flb_debug("[in_fw] parser: expecting an array (type=%i), skip.",
-                          root.type);
+                flb_plg_debug(ctx->ins,
+                              "parser: expecting an array (type=%i), skip.",
+                              root.type);
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
             }
 
             if (root.via.array.size < 2) {
-                flb_debug("[in_fw] parser: array of invalid size, skip.");
+                flb_plg_debug(ctx->ins,
+                              "parser: array of invalid size, skip.");
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
@@ -205,7 +360,8 @@ int fw_prot_process(struct fw_conn *conn)
             /* Get the tag */
             tag = root.via.array.ptr[0];
             if (tag.type != MSGPACK_OBJECT_STR) {
-                flb_debug("[in_fw] parser: invalid tag format, skip.");
+                flb_plg_debug(ctx->ins,
+                              "parser: invalid tag format, skip.");
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
@@ -215,25 +371,51 @@ int fw_prot_process(struct fw_conn *conn)
             stag_len = tag.via.str.size;
 
             entry = root.via.array.ptr[1];
+
             if (entry.type == MSGPACK_OBJECT_ARRAY) {
-                /* Forward format 1: [tag, [[time, map], ...]] */
-                fw_process_array(conn->in, stag, stag_len, &entry);
+                /*
+                 * Forward format 1 (forward mode: [tag, [[time, map], ...]]
+                 */
+
+                /* Check for options */
+                chunk_id = -1;
+                ret = get_options_chunk(&root, 2, &chunk_id);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "invalid options field");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    return -1;
+                }
+
+                /* Process array */
+                fw_process_array(conn->in, conn,
+                                 stag, stag_len, &root, &entry, chunk_id);
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
-                /* Forward format 2: [tag, time, map] */
+
+                /*
+                 * Forward format 2 (message mode) : [tag, time, map, ...]
+                 */
                 map = root.via.array.ptr[2];
                 if (map.type != MSGPACK_OBJECT_MAP) {
-                    flb_warn("[in_fw] invalid data format, map expected");
+                    flb_plg_warn(ctx->ins, "invalid data format, map expected");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    return -1;
+                }
+
+                /* Check for options */
+                chunk_id = -1;
+                ret = get_options_chunk(&root, 3, &chunk_id);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "invalid options field");
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
                     return -1;
                 }
 
                 /* Compose the new array */
-                struct msgpack_sbuffer mp_sbuf;
-                struct msgpack_packer mp_pck;
-
                 msgpack_sbuffer_init(&mp_sbuf);
                 msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -246,12 +428,28 @@ int fw_prot_process(struct fw_conn *conn)
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 c++;
+
+                /* Handle ACK response */
+                if (chunk_id != -1) {
+                    chunk = root.via.array.ptr[3].via.map.ptr[chunk_id].val;
+                    send_ack(ctx->ins, conn, chunk);
+                }
             }
             else if (entry.type == MSGPACK_OBJECT_STR ||
                      entry.type == MSGPACK_OBJECT_BIN) {
                 /* PackedForward Mode */
                 const char *data = NULL;
                 size_t len = 0;
+
+                /* Check for options */
+                chunk_id = -1;
+                ret = get_options_chunk(&root, 2, &chunk_id);
+                if (ret == -1) {
+                    flb_plg_debug(ctx->ins, "invalid options field");
+                    msgpack_unpacked_destroy(&result);
+                    msgpack_unpacker_free(unp);
+                    return -1;
+                }
 
                 if (entry.type == MSGPACK_OBJECT_STR) {
                     data = entry.via.str.ptr;
@@ -263,14 +461,46 @@ int fw_prot_process(struct fw_conn *conn)
                 }
 
                 if (data) {
-                    flb_input_chunk_append_raw(conn->in,
-                                               stag, stag_len,
-                                               data, len);
+                    ret = is_gzip_compressed(root.via.array.ptr[2]);
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins, "invalid 'compressed' option");
+                        msgpack_unpacked_destroy(&result);
+                        msgpack_unpacker_free(unp);
+                        return -1;
+                    }
+
+                    if (ret == FLB_TRUE) {
+                        ret = flb_gzip_uncompress((void *) data, len,
+                                                  &gz_data, &gz_size);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins, "gzip uncompress failure");
+                            msgpack_unpacked_destroy(&result);
+                            msgpack_unpacker_free(unp);
+                            return -1;
+                        }
+
+                        /* Append uncompressed data */
+                        flb_input_chunk_append_raw(conn->in,
+                                                   stag, stag_len,
+                                                   gz_data, gz_size);
+                        flb_free(gz_data);
+                    }
+                    else {
+                        flb_input_chunk_append_raw(conn->in,
+                                                   stag, stag_len,
+                                                   data, len);
+                    }
+
+                    /* Handle ACK response */
+                    if (chunk_id != -1) {
+                        chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
+                        send_ack(ctx->ins, conn, chunk);
+                    }
                 }
             }
             else {
-                flb_warn("[in_fw] invalid data format, type=%i",
-                         entry.type);
+                flb_plg_warn(ctx->ins, "invalid data format, type=%i",
+                             entry.type);
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
                 return -1;
@@ -285,16 +515,16 @@ int fw_prot_process(struct fw_conn *conn)
 
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:
-        flb_error("[in_fw] MSGPACK_UNPACK_EXTRA_BYTES");
+        flb_plg_error(ctx->ins, "MSGPACK_UNPACK_EXTRA_BYTES");
         return -1;
     case MSGPACK_UNPACK_CONTINUE:
-        flb_trace("[in_fw] MSGPACK_UNPACK_CONTINUE");
+        flb_plg_trace(ctx->ins, "MSGPACK_UNPACK_CONTINUE");
         return 1;
     case MSGPACK_UNPACK_PARSE_ERROR:
-        flb_debug("[in_fw] err=MSGPACK_UNPACK_PARSE_ERROR");
+        flb_plg_debug(ctx->ins, "err=MSGPACK_UNPACK_PARSE_ERROR");
         return -1;
     case MSGPACK_UNPACK_NOMEM_ERROR:
-        flb_error("[in_fw] err=MSGPACK_UNPACK_NOMEM_ERROR");
+        flb_plg_error(ctx->ins, "err=MSGPACK_UNPACK_NOMEM_ERROR");
         return -1;
     };
 

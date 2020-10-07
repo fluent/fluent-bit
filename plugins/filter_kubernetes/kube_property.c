@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
 
@@ -39,23 +40,12 @@ static inline int prop_cmp(const char *key, size_t keylen,
     return proplen >= keylen && strncmp(key, property, keylen) == 0;
 }
 
-static inline const char *strnchr(const char *s, char c, size_t len)
+static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta,
+                                    struct flb_kube *ctx)
 {
-    while (len > 0) {
-        if (*s == c) {
-            return s;
-        }
-        s++;
-        len--;
-    }
-    return 0;
-}
-
-static inline void prop_not_allowed(const char *prop, struct flb_kube_meta *meta)
-{
-    flb_warn("[filter_kube] annotation '%s' not allowed "
-             "(ns='%s' pod_name='%s')",
-             prop, meta->namespace, meta->podname);
+    flb_plg_warn(ctx->ins, "annotation '%s' not allowed "
+                 "(ns='%s' pod_name='%s')",
+                 prop, meta->namespace, meta->podname);
 }
 
 /* Property: parser */
@@ -69,7 +59,7 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
 
     /* Parser property must be allowed by k8s-logging.parser */
     if (ctx->k8s_logging_parser == FLB_FALSE) {
-        prop_not_allowed("fluentbit.io/parser", meta);
+        prop_not_allowed("fluentbit.io/parser", meta, ctx);
         return -1;
     }
 
@@ -83,9 +73,9 @@ static int prop_set_parser(struct flb_kube *ctx, struct flb_kube_meta *meta,
     /* Get parser context */
     parser = flb_parser_get(tmp, ctx->config);
     if (!parser) {
-        flb_warn("[filter_kube] annotation parser '%s' not found "
-                 "(ns='%s' pod_name='%s', container_name='%s')",
-                 tmp, meta->namespace, meta->podname, meta->container_name);
+        flb_plg_warn(ctx->ins, "annotation parser '%s' not found "
+                     "(ns='%s' pod_name='%s', container_name='%s')",
+                     tmp, meta->namespace, meta->podname, meta->container_name);
         flb_free(tmp);
         return -1;
     }
@@ -119,7 +109,7 @@ static int prop_set_exclude(struct flb_kube *ctx, struct flb_kube_meta *meta,
 
     /* Exclude property must be allowed by k8s-logging.exclude */
     if (ctx->k8s_logging_exclude == FLB_FALSE) {
-        prop_not_allowed("fluentbit.io/exclude", meta);
+        prop_not_allowed("fluentbit.io/exclude", meta, ctx);
         return -1;
     }
 
@@ -185,9 +175,9 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
         cur += FLB_KUBE_PROP_EXCLUDE_LEN;
     }
     else {
-        flb_warn("[filter_kube] unknown annotation 'fluentbit.io/%.*s' "
-                 "(ns='%s' pod_name='%s')",
-                 prop_len, prop, meta->namespace, meta->podname);
+        flb_plg_warn(ctx->ins, "unknown annotation 'fluentbit.io/%.*s' "
+                     "(ns='%s' pod_name='%s')",
+                     prop_len, prop, meta->namespace, meta->podname);
         return -1;
     }
 
@@ -206,8 +196,8 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
             cur += sizeof("stderr") - 1;
         }
         else {
-            flb_warn("[filter_kube] invalid stream in annotation 'fluentbit.io/%.*s' "
-                      "(ns='%s' pod_name='%s')",
+            flb_plg_warn(ctx->ins, "invalid stream in annotation "
+                         "'fluentbit.io/%.*s' (ns='%s' pod_name='%s')",
                       prop_len, prop, meta->namespace, meta->podname);
             return -1;
         }
@@ -220,8 +210,8 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
         len--;
 
         if (len == 0) {
-            flb_warn("[filter_kube] invalid container in annotation 'fluentbit.io/%.*s' "
-                      "(ns='%s' pod_name='%s')",
+            flb_plg_warn(ctx->ins, "invalid container in annotation "
+                         "'fluentbit.io/%.*s' (ns='%s' pod_name='%s')",
                       prop_len, prop, meta->namespace, meta->podname);
             return -1;
         }
@@ -232,9 +222,9 @@ int flb_kube_prop_set(struct flb_kube *ctx, struct flb_kube_meta *meta,
     }
 
     if (len > 0) {
-        flb_warn("[filter_kube] invalid annotation 'fluentbit.io/%.*s' "
-                      "(ns='%s' pod_name='%s')",
-                      prop_len, prop, meta->namespace, meta->podname);
+        flb_plg_warn(ctx->ins, "invalid annotation 'fluentbit.io/%.*s' "
+                     "(ns='%s' pod_name='%s')",
+                     prop_len, prop, meta->namespace, meta->podname);
         return -1;
     }
 

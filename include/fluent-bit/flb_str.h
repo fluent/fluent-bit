@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +38,7 @@ static inline char *flb_strdup(const char *s)
     if (!str) {
         return NULL;
     }
-    strncpy(str, s, len);
+    memcpy(str, s, len);
     str[len] = '\0';
 
     return str;
@@ -52,7 +52,7 @@ static inline char *flb_strndup(const char *s, size_t n)
     if (!str) {
         return NULL;
     }
-    strncpy(str, s, n);
+    memcpy(str, s, n);
     str[n] = '\0';
 
     return str;

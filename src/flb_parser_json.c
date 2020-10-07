@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -163,9 +163,9 @@ int flb_parser_json_do(struct flb_parser *parser,
         }
         memcpy(tmp, v->via.str.ptr, len);
         tmp[len] = '\0';
-        flb_warn("[parser:%s] Invalid time format %s for '%s'.",
-                 parser->name, parser->time_fmt, tmp);
-        time_lookup = time(NULL);
+        flb_warn("[parser:%s] invalid time format %s for '%s'",
+                 parser->name, parser->time_fmt_full, tmp);
+        time_lookup = 0;
     }
     else {
         time_lookup = flb_parser_tm2time(&tm);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,9 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
@@ -111,7 +113,7 @@ static int configure(struct filter_parser_ctx *ctx,
         ctx->key_name_len = strlen(tmp);
     }
     else {
-        flb_error("[filter_parser] \"key_name\" is missing\n");
+        flb_plg_error(ctx->ins, "missing 'key_name'");
         return -1;
     }
 
@@ -124,12 +126,12 @@ static int configure(struct filter_parser_ctx *ctx,
 
         ret = add_parser(kv->val, ctx, config);
         if (ret == -1) {
-            flb_error("[filter_parser] requested parser '%s' not found", tmp);
+            flb_plg_error(ctx->ins, "requested parser '%s' not found", kv->val);
         }
     }
 
     if (mk_list_size(&ctx->parsers) == 0) {
-        flb_error("[filter_parser] Invalid \"parser\"\n");
+        flb_plg_error(ctx->ins, "Invalid 'parser'");
         return -1;
     }
 
@@ -164,6 +166,7 @@ static int cb_parser_init(struct flb_filter_instance *f_ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = f_ins;
 
     if ( configure(ctx, f_ins, config) < 0 ){
         flb_free(ctx);
@@ -207,12 +210,12 @@ static int cb_parser_filter(const void *data, size_t bytes,
     msgpack_packer tmp_pck;
 
     msgpack_object_kv **append_arr = NULL;
-    size_t            append_arr_len;
+    size_t            append_arr_len = 0;
     int                append_arr_i;
     struct mk_list *head;
     struct filter_parser *fp;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
@@ -268,8 +271,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         flb_time_zero(&parsed_time);
 
                         parse_ret = flb_parser_do(fp->parser, val_str, val_len,
-                                            (void **) &out_buf, &out_size,
-                                            &parsed_time);
+                                                  (void **) &out_buf, &out_size,
+                                                  &parsed_time);
                         if (parse_ret >= 0) {
                             /*
                              * If the parser succeeded we need to check the
@@ -292,8 +295,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             }
                             else {
                                 continue_parsing = FLB_FALSE;
-                                break;
                             }
+                            break;
                         }
                     }
                 }
@@ -310,7 +313,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                                                  append_arr, append_arr_len,
                                                  &new_buf, &new_size);
                     if (ret == -1) {
-                        flb_error("[filter_parser] cannot expand map");
+                        flb_plg_error(ctx->ins, "cannot expand map");
                         flb_free(append_arr);
                         msgpack_unpacked_destroy(&result);
                         return FLB_FILTER_NOTOUCH;

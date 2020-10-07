@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pack.h>
@@ -40,6 +39,13 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     ctx = flb_calloc(1, sizeof(struct flb_out_tcp));
     if (!ctx) {
         flb_errno();
+        return NULL;
+    }
+    ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
         return NULL;
     }
 
@@ -68,7 +74,7 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
                                    ins->host.port,
                                    io_flags, (void *) &ins->tls);
     if (!upstream) {
-        flb_error("[out_tcp] could not create upstream context");
+        flb_plg_error(ctx->ins, "could not create upstream context");
         flb_free(ctx);
         return NULL;
     }
@@ -79,11 +85,21 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_format_type(tmp);
         if (ret == -1) {
-            flb_error("[out_tcp] unrecognized 'format' option '%s'. "
-                      "Using 'msgpack'", tmp);
+            flb_plg_error(ctx->ins, "unrecognized 'format' option '%s'. "
+                          "Using 'msgpack'", tmp);
         }
         else {
             ctx->out_format = ret;
+        }
+    }
+
+    /* Date key */
+    ctx->date_key = ctx->json_date_key;
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->date_key = NULL;
         }
     }
 
@@ -93,23 +109,17 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         ret = flb_pack_to_json_date_type(tmp);
         if (ret == -1) {
-            flb_error("[out_tcp] unrecognized 'json_date_format' option '%s'. "
-                      "Using 'double'", tmp);
+            flb_plg_error(ctx->ins, "unrecognized 'json_date_format' option '%s'. "
+                          "Using 'double'", tmp);
         }
         else {
             ctx->json_date_format = ret;
         }
     }
 
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create("date");
-    }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
+
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
@@ -126,9 +136,6 @@ void flb_tcp_conf_destroy(struct flb_out_tcp *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
     flb_free(ctx);
     ctx = NULL;
 }

@@ -19,6 +19,7 @@
 
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
+#include <chunkio/cio_version.h>
 #include <chunkio/cio_file.h>
 #include <chunkio/cio_memfs.h>
 #include <chunkio/cio_log.h>
@@ -26,7 +27,8 @@
 #include <string.h>
 
 struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
-                                 const char *name, int flags, size_t size)
+                                 const char *name, int flags, size_t size,
+                                 int *err)
 {
     int len;
     void *backend = NULL;
@@ -73,9 +75,10 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
 
     /* create backend context */
     if (st->type == CIO_STORE_FS) {
-        backend = cio_file_open(ctx, st, ch, flags, size);
+        backend = cio_file_open(ctx, st, ch, flags, size, err);
     }
     else if (st->type == CIO_STORE_MEM) {
+        *err = CIO_OK;
         backend = cio_memfs_open(ctx, st, ch, flags, size);
     }
 
@@ -88,17 +91,22 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
 
     ch->backend = backend;
 
+    /* Adjust counter */
+    cio_chunk_counter_total_add(ctx);
+
     return ch;
 }
 
 void cio_chunk_close(struct cio_chunk *ch, int delete)
 {
     int type;
+    struct cio_ctx *ctx;
 
     if (!ch) {
         return;
     }
 
+    ctx = ch->ctx;
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
         cio_memfs_close(ch);
@@ -110,6 +118,9 @@ void cio_chunk_close(struct cio_chunk *ch, int delete)
     mk_list_del(&ch->_head);
     free(ch->name);
     free(ch);
+
+    /* Adjust counter */
+    cio_chunk_counter_total_sub(ctx);
 }
 
 /*
@@ -186,15 +197,32 @@ int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
         ret = cio_file_read_prepare(ch->ctx, ch);
-        if (ret == -1) {
-            return -1;
+        if (ret != CIO_OK) {
+            return ret;
         }
         *size = cf->data_size;
         *buf = cio_file_st_get_content(cf->map);
         return ret;
     }
 
-    return -1;
+    return CIO_ERROR;
+}
+
+/* Using the content of the chunk, generate a copy using the heap */
+int cio_chunk_get_content_copy(struct cio_chunk *ch,
+                               void **out_buf, size_t *out_size)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_MEM) {
+        return cio_memfs_content_copy(ch, out_buf, out_size);
+    }
+    else if (type == CIO_STORE_FS) {
+        return cio_file_content_copy(ch, out_buf, out_size);
+    }
+
+    return CIO_ERROR;
 }
 
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch)
@@ -279,21 +307,21 @@ char *cio_chunk_hash(struct cio_chunk *ch)
 int cio_chunk_lock(struct cio_chunk *ch)
 {
     if (ch->lock == CIO_TRUE) {
-        return -1;
+        return CIO_ERROR;
     }
 
     ch->lock = CIO_TRUE;
-    return 0;
+    return cio_chunk_sync(ch);
 }
 
 int cio_chunk_unlock(struct cio_chunk *ch)
 {
     if (ch->lock == CIO_FALSE) {
-        return -1;
+        return CIO_ERROR;
     }
 
     ch->lock = CIO_FALSE;
-    return 0;
+    return CIO_OK;
 }
 
 int cio_chunk_is_locked(struct cio_chunk *ch)
@@ -313,11 +341,11 @@ int cio_chunk_tx_begin(struct cio_chunk *ch)
     struct cio_file *cf;
 
     if (cio_chunk_is_locked(ch)) {
-        return -1;
+        return CIO_RETRY;
     }
 
     if (ch->tx_active == CIO_TRUE) {
-        return -1;
+        return CIO_OK;
     }
 
     ch->tx_active = CIO_TRUE;
@@ -333,7 +361,7 @@ int cio_chunk_tx_begin(struct cio_chunk *ch)
         ch->tx_content_length = cf->data_size;
     }
 
-    return 0;
+    return CIO_OK;
 }
 
 /*
@@ -346,11 +374,11 @@ int cio_chunk_tx_commit(struct cio_chunk *ch)
 
     ret = cio_chunk_sync(ch);
     if (ret == -1) {
-        return -1;
+        return CIO_ERROR;
     }
 
     ch->tx_active = CIO_FALSE;
-    return 0;
+    return CIO_OK;
 }
 
 /*
@@ -378,7 +406,7 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch)
     }
 
     ch->tx_active = CIO_FALSE;
-    return 0;
+    return CIO_OK;
 }
 
 /*
@@ -424,7 +452,7 @@ int cio_chunk_down(struct cio_chunk *ch)
         return cio_file_down(ch);
     }
 
-    return 0;
+    return CIO_OK;
 }
 
 int cio_chunk_up(struct cio_chunk *ch)
@@ -436,7 +464,7 @@ int cio_chunk_up(struct cio_chunk *ch)
         return cio_file_up(ch);
     }
 
-    return 0;
+    return CIO_OK;
 }
 
 int cio_chunk_up_force(struct cio_chunk *ch)
@@ -448,5 +476,42 @@ int cio_chunk_up_force(struct cio_chunk *ch)
         return cio_file_up_force(ch);
     }
 
-    return 0;
+    return CIO_OK;
+}
+
+char *cio_version()
+{
+    return CIO_VERSION_STR;
+}
+
+/*
+ * Counters API
+ */
+
+/* Increase the number of total chunks registered (+1) */
+size_t cio_chunk_counter_total_add(struct cio_ctx *ctx)
+{
+    ctx->total_chunks++;
+    return ctx->total_chunks;
+}
+
+/* Decrease the total number of chunks (-1) */
+size_t cio_chunk_counter_total_sub(struct cio_ctx *ctx)
+{
+    ctx->total_chunks--;
+    return ctx->total_chunks;
+}
+
+/* Increase the number of total chunks up in memory (+1) */
+size_t cio_chunk_counter_total_up_add(struct cio_ctx *ctx)
+{
+    ctx->total_chunks_up++;
+    return ctx->total_chunks_up;
+}
+
+/* Decrease the total number of chunks up in memory (-1) */
+size_t cio_chunk_counter_total_up_sub(struct cio_ctx *ctx)
+{
+    ctx->total_chunks_up--;
+    return ctx->total_chunks_up;
 }

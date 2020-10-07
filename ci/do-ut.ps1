@@ -1,9 +1,8 @@
 cd build
 
 # CACHE GENERATION
-cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
-                     -DCIO_BACKEND_FILESYSTEM=Off `
-                     -DFLB_TESTS_INTERNAL=On `
+cmake -G "NMake Makefiles" `
+                     -D FLB_TESTS_INTERNAL=On `
                      -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
                      -D FLB_WITHOUT_flb-rt-out_td=On `
                      -D FLB_WITHOUT_flb-rt-out_forward=On `
@@ -13,10 +12,18 @@ cmake -G "$ENV:msvc" -DCMAKE_BUILD_TYPE="$ENV:configuration" `
                      -D FLB_WITHOUT_flb-it-unit_sizes=On `
                      -D FLB_WITHOUT_flb-it-network=On `
                      -D FLB_WITHOUT_flb-it-pack=On `
+                     -D FLB_WITHOUT_flb-it-signv4=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_ec2=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_http=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_profile=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_sts=On `
+                     -D FLB_WITHOUT_flb-it-aws_util=On `
+                     -D FLB_WITHOUT_flb-it-input_chunk=On `
                      ../
 
 # COMPILE
-cmake --build . --config "$ENV:configuration"
+cmake --build .
 
 # RUNNING TESTS
-ctest -C "$ENV:configuration" --build-run-dir $PWD --output-on-failure
+ctest --build-run-dir $PWD --output-on-failure

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,7 @@ void flb_utils_error(int err)
         msg = "Configuration file contains format errors";
         break;
     case FLB_ERR_CFG_FILE_STOP:
-        msg = "Configuration file contain errors";
+        msg = "Configuration file contains errors";
         break;
     case FLB_ERR_CFG_FLUSH:
         msg = "Invalid flush value";
@@ -154,7 +154,7 @@ int flb_utils_set_daemon(struct flb_config *config)
 	}
 
     /* Our last STDOUT messages */
-    flb_info("switching to background mode (PID=%lu)", getpid());
+    flb_info("switching to background mode (PID=%ld)", (long) getpid());
 
     fclose(stderr);
     fclose(stdout);
@@ -169,33 +169,55 @@ void flb_utils_print_setup(struct flb_config *config)
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
     struct flb_input_instance *in;
+    struct flb_filter_instance *f;
+    struct flb_output_instance *out;
 
-    flb_info("Configuration");
+    flb_info("Configuration:");
 
     /* general */
-    flb_info(" flush time     : %i seconds", config->flush);
+    flb_info(" flush time     | %f seconds", config->flush);
+    flb_info(" grace          | %i seconds", config->grace);
+    flb_info(" daemon         | %i", config->daemon);
 
     /* Inputs */
-    flb_info(" input plugins  : ");
+    flb_info("___________");
+    flb_info(" inputs:");
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        flb_info("%s ", in->p->name);
+        flb_info("     %s", in->p->name);
+    }
+
+    /* Filters */
+    flb_info("___________");
+    flb_info(" filters:");
+    mk_list_foreach(head, &config->filters) {
+        f = mk_list_entry(head, struct flb_filter_instance, _head);
+        flb_info("     %s", f->name);
+    }
+
+    /* Outputs */
+    flb_info("___________");
+    flb_info(" outputs:");
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_info("     %s", out->name);
     }
 
     /* Collectors */
-    flb_info(" collectors     : ");
+    flb_info("___________");
+    flb_info(" collectors:");
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         plugin = collector->instance->p;
 
         if (collector->seconds > 0) {
             flb_info("[%s %lus,%luns] ",
-                     plugin->name,
-                     collector->seconds,
-                     collector->nanoseconds);
+                      plugin->name,
+                      collector->seconds,
+                      collector->nanoseconds);
         }
         else {
-            printf("[%s] ", plugin->name);
+            flb_info("     [%s] ", plugin->name);
         }
 
     }
@@ -285,6 +307,13 @@ struct mk_list *flb_utils_split(const char *line, int separator, int max_split)
     return list;
 }
 
+void flb_utils_split_free_entry(struct flb_split_entry *entry)
+{
+    mk_list_del(&entry->_head);
+    flb_free(entry->value);
+    flb_free(entry);
+}
+
 void flb_utils_split_free(struct mk_list *list)
 {
     struct mk_list *tmp;
@@ -293,9 +322,7 @@ void flb_utils_split_free(struct mk_list *list)
 
     mk_list_foreach_safe(head, tmp, list) {
         entry = mk_list_entry(head, struct flb_split_entry, _head);
-        mk_list_del(&entry->_head);
-        flb_free(entry->value);
-        flb_free(entry);
+        flb_utils_split_free_entry(entry);
     }
 
     flb_free(list);
@@ -353,6 +380,10 @@ int64_t flb_utils_size_to_bytes(const char *size)
         return -1;
     }
 
+    if (strcasecmp(size, "false") == 0) {
+        return 0;
+    }
+
     len = strlen(size);
     val = atoll(size);
 
@@ -403,6 +434,37 @@ int64_t flb_utils_size_to_bytes(const char *size)
     return val;
 }
 
+int flb_utils_hex2int(char *hex, int len)
+{
+    int i = 0;
+    int res = 0;
+    char c;
+
+    while ((c = *hex++) && i < len) {
+        res *= 0x10;
+
+        if (c >= 'a' && c <= 'f') {
+            res += (c - 0x57);
+        }
+        else if (c >= 'A' && c <= 'F') {
+            res += (c - 0x37);
+        }
+        else if (c >= '0' && c <= '9') {
+            res += (c - 0x30);
+        }
+        else {
+            return -1;
+        }
+        i++;
+    }
+
+    if (res < 0) {
+        return -1;
+    }
+
+    return res;
+}
+
 int flb_utils_time_to_seconds(const char *time)
 {
     int len;
@@ -432,8 +494,13 @@ int flb_utils_bool(const char *val)
         strcasecmp(val, "yes") == 0) {
         return FLB_TRUE;
     }
+    else if (strcasecmp(val, "false") == 0 ||
+             strcasecmp(val, "off") == 0 ||
+             strcasecmp(val, "no") == 0) {
+        return FLB_FALSE;
+    }
 
-    return FLB_FALSE;
+    return -1;
 }
 
 /* Convert a 'string' time seconds.nanoseconds to int and long values */
@@ -585,12 +652,17 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
         else if (c >= 0x80 && c <= 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < 6) {
+            if (available - written < 6) {
                 return FLB_FALSE;
+            }
+
+            if (i + hex_bytes > str_len) {
+                break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
             codepoint = 0;
+
             for (b = 0; b < hex_bytes; b++) {
                 s = (unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &codepoint, *s);
@@ -601,7 +673,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
@@ -612,8 +684,12 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
         else if (c > 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (4 + hex_bytes)) {
+            if (available - written < 6) {
                 return FLB_FALSE;
+            }
+
+            if (i + hex_bytes > str_len) {
+                break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
@@ -628,8 +704,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes, skipping");
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
@@ -645,6 +720,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     }
 
     *off += written;
+
     return FLB_TRUE;
 }
 
@@ -688,6 +764,18 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
     return 0;
 }
 
+static char *flb_copy_host(const char *string, int pos_init, int pos_end)
+{
+    if (string[pos_init] == '[') {            /* IPv6 */
+        if (string[pos_end-1] != ']')
+            return NULL;
+
+        return mk_string_copy_substr(string, pos_init + 1, pos_end - 1);
+    }
+    else
+        return mk_string_copy_substr(string, pos_init, pos_end);
+}
+
 int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri)
 {
@@ -729,7 +817,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     }
 
     if (tmp) {
-        host = mk_string_copy_substr(p, 0, tmp - p);
+        host = flb_copy_host(p, 0, tmp - p);
         if (!host) {
             flb_errno();
             goto error;
@@ -750,12 +838,21 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     else {
         tmp = strchr(p, '/');
         if (tmp) {
-            host = mk_string_copy_substr(p, 0, tmp - p);
+            host = flb_copy_host(p, 0, tmp - p);
             uri = flb_strdup(tmp);
         }
         else {
-            host = flb_strdup(p);
+            host = flb_copy_host(p, 0, strlen(p));
             uri = flb_strdup("/");
+        }
+    }
+
+    if (!port) {
+        if (strcmp(protocol, "http") == 0) {
+            port = flb_strdup("80");
+        }
+        else if (strcmp(protocol, "https") == 0) {
+            port = flb_strdup("443");
         }
     }
 

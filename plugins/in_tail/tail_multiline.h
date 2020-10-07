@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,7 @@
 #define FLB_TAIL_MULT_NA    -1   /* not applicable as a multiline stream */
 #define FLB_TAIL_MULT_DONE   0   /* finished a multiline stream */
 #define FLB_TAIL_MULT_MORE   1   /* expect more lines to come   */
-#define FLB_TAIL_MULT_FLUSH  4   /* max flush time for multiline */
+#define FLB_TAIL_MULT_FLUSH  "4"   /* max flush time for multiline: 4 seconds */
 
 struct flb_tail_mult {
     struct flb_parser *parser;
@@ -38,13 +38,13 @@ struct flb_tail_mult {
 };
 
 int flb_tail_mult_create(struct flb_tail_config *ctx,
-                         struct flb_input_instance *i_ins,
+                         struct flb_input_instance *ins,
                          struct flb_config *config);
 
 int flb_tail_mult_destroy(struct flb_tail_config *ctx);
 
 int flb_tail_mult_process_content(time_t now,
-                                  char *buf, int len,
+                                  char *buf, size_t len,
                                   struct flb_tail_file *file,
                                   struct flb_tail_config *ctx);
 int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf,
@@ -52,7 +52,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf,
                         struct flb_tail_file *file,
                         struct flb_tail_config *ctx);
 
-int flb_tail_mult_pending_flush(struct flb_input_instance *i_ins,
+int flb_tail_mult_pending_flush(struct flb_input_instance *ins,
                                 struct flb_config *config, void *context);
 
 #endif

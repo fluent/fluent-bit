@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -138,7 +138,7 @@ int winlog_read(struct winlog_channel *ch, char *buf, unsigned int size,
         flags = EVENTLOG_SEQUENTIAL_READ | EVENTLOG_FORWARDS_READ;
     }
 
-    if (!ReadEventLogA(ch->h, flags, ch->record_number, buf, size, read, &req)) {
+    if (!ReadEventLogW(ch->h, flags, ch->record_number, buf, size, read, &req)) {
         switch (err = GetLastError()) {
             case ERROR_HANDLE_EOF:
                 break;

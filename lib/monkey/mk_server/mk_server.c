@@ -35,6 +35,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+pthread_key_t mk_server_fifo_key;
+
 /* Return the number of clients that can be attended  */
 unsigned int mk_server_capacity(struct mk_server *server)
 {

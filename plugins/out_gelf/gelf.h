@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@
 #define FLB_GELF_TCP 1
 #define FLB_GELF_TLS 2
 
+#include <fluent-bit/flb_output_plugin.h>
+
 struct flb_out_gelf_config {
 
     struct flb_gelf_fields fields;
@@ -33,10 +35,13 @@ struct flb_out_gelf_config {
     flb_sockfd_t fd;
 
     int pckt_size;
+    char *pckt_buf;
     int compress;
     unsigned int seed;
 
     int mode;
+
+    struct flb_output_instance *ins;
 };
 
 #endif

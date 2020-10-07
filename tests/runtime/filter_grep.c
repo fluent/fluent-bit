@@ -10,14 +10,6 @@ void flb_test_filter_grep_regex(void);
 void flb_test_filter_grep_exclude(void);
 void flb_test_filter_grep_invalid(void);
 
-/* Test list */
-TEST_LIST = {
-    {"regex",   flb_test_filter_grep_regex   },
-    {"exclude", flb_test_filter_grep_exclude },
-    {"invalid", flb_test_filter_grep_invalid },
-    {NULL, NULL}
-};
-
 
 void flb_test_filter_grep_regex(void)
 {
@@ -138,17 +130,23 @@ void flb_test_filter_grep_invalid(void)
     TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(ret == -1);
 
     for (i = 0; i < 256; i++) {
         memset(p, '\0', sizeof(p));
         snprintf(p, sizeof(p), "[%d, {\"val\": \"%d\",\"END_KEY\": \"JSON_END\"}]", i, (i * i));
         bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
-        TEST_CHECK(bytes == strlen(p));
+        TEST_CHECK(bytes == -1);
     }
-
-    sleep(1); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);
 }
+
+/* Test list */
+TEST_LIST = {
+    {"regex",   flb_test_filter_grep_regex   },
+    {"exclude", flb_test_filter_grep_exclude },
+    {"invalid", flb_test_filter_grep_invalid },
+    {NULL, NULL}
+};

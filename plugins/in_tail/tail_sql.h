@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,23 +38,28 @@
     "  rotated INTEGER DEFAULT 0"                                       \
     ");"
 
-#define SQL_GET_FILE "SELECT * from in_tail_files WHERE name='%s'"  \
-    " AND inode=%"PRIu64";"
+#define SQL_GET_FILE "SELECT * from in_tail_files WHERE inode=@inode;"
 
 #define SQL_INSERT_FILE                                             \
     "INSERT INTO in_tail_files (name, offset, inode, created)"      \
-    "  VALUES ('%s', %"PRIu64", %"PRIu64", %"PRIu64");"
+    "  VALUES (@name, @offset, @inode, @created);"
 
-#define SQL_UPDATE_OFFSET                               \
-    "UPDATE in_tail_files set offset=%"PRIu64" WHERE id=%"PRId64";"
+#define SQL_ROTATE_FILE                                                 \
+    "UPDATE in_tail_files set name=@name,rotated=1 WHERE id=@id;"
 
-#define SQL_ROTATE_FILE                         \
-    "UPDATE in_tail_files set name='%s',rotated=1 WHERE id=%"PRId64";"
+#define SQL_UPDATE_OFFSET                                   \
+    "UPDATE in_tail_files set offset=@offset WHERE id=@id;"
+
+#define SQL_DELETE_FILE                                                 \
+    "DELETE FROM in_tail_files WHERE id=@id;"
 
 #define SQL_PRAGMA_SYNC                         \
     "PRAGMA synchronous=%i;"
 
 #define SQL_PRAGMA_JOURNAL_MODE                 \
-    "PRAGMA journal_mode=OFF;"
+    "PRAGMA journal_mode=WAL;"
+
+#define SQL_PRAGMA_LOCKING_MODE                 \
+    "PRAGMA locking_mode=EXCLUSIVE;"
 
 #endif

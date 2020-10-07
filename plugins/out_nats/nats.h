@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,13 +21,14 @@
 #ifndef FLB_OUT_NATS_H
 #define FLB_OUT_NATS_H
 
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_version.h>
 
 #define NATS_CONNECT "CONNECT {\"verbose\":false,\"pedantic\":false,\"ssl_required\":false,\"name\":\"fluent-bit\",\"lang\":\"c\",\"version\":\"" FLB_VERSION_STR "\"}\r\n"
 
 struct flb_out_nats_config {
-    struct flb_output_instance *ins;
     struct flb_upstream *u;
+    struct flb_output_instance *ins;
 };
 
 #endif

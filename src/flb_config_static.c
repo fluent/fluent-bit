@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -111,13 +111,12 @@ struct mk_rconf_section *rconf_section_add(struct mk_rconf *conf,
  * Helper function to simulate a fgets(2) but instead of using
  * a real file stream uses the data buffer provided.
  */
-static int static_fgets(char *out, size_t size, char *data, size_t *off)
+static int static_fgets(char *out, size_t size, const char *data, size_t *off)
 {
     size_t len;
-    char *start;
+    const char *start = data + *off;
     char *end;
 
-    start = data + *off;
     end = strchr(start, '\n');
 
     if (!end || *off >= size) {
@@ -165,7 +164,7 @@ static int flb_config_static_read(struct mk_rconf *conf,
 
     conf->level++;
 
-    /* Allocate temporal buffer to read file content */
+    /* Allocate temporary buffer to read file content */
     buf = mk_mem_alloc(MK_RCONF_KV_SIZE);
     if (!buf) {
         perror("malloc");
@@ -298,7 +297,7 @@ static int flb_config_static_read(struct mk_rconf *conf,
         /* Register entry: key and val are copied as duplicated */
         rconf_section_entry_add(conf, key, val);
 
-        /* Free temporal key and val */
+        /* Free temporary key and val */
         mk_mem_free(key);
         mk_mem_free(val);
 
@@ -356,7 +355,7 @@ static int flb_config_static_read(struct mk_rconf *conf,
  *   include/fluent-bit/conf/flb_static_conf.h
  *
  */
-struct mk_rconf *flb_config_static_open(char *file)
+struct mk_rconf *flb_config_static_open(const char *file)
 {
     int i;
     int ret;
@@ -366,8 +365,8 @@ struct mk_rconf *flb_config_static_open(char *file)
 
     /* Iterate static array and lookup the file name */
     for (i = 0; i < flb_config_files_size; i++) {
-        k = flb_config_files[i][0];
-        v = flb_config_files[i][1];
+        k = (const char *) flb_config_files[i][0];
+        v = (const char *) flb_config_files[i][1];
 
         if (strcmp(k, file) == 0) {
             break;

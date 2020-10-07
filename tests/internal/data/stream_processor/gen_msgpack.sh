@@ -10,21 +10,21 @@ rm -rf samples.mp samples-subkeys.mp
 ../../../../build/bin/fluent-bit -R ../../../../conf/parsers.conf              \
  -i tail -t samples         -p path=samples.json          -p parser=json       \
  -i tail -t samples-subkeys -p path=samples-subkeys.json  -p parser=json       \
- -o file -m samples         -p format=msgpack  -p path=samples.mp              \
- -o file -m samples-subkeys -p format=msgpack  -p path=samples-subkeys.mp -f 1 &
+ -o file -m samples         -p format=msgpack  -p file=samples.mp              \
+ -o file -m samples-subkeys -p format=msgpack  -p file=samples-subkeys.mp -f 1 &
  pid=$!
  sleep 2
  kill -9 $pid
 
  # Generate new msgpack files for hopping window
- files=$(find "samples-hw/" -type f -name "*.mp")
+ files=$(find "samples-hw/" -type f -name "*.mp" | sort)
 
  for file in $files
  do
      rm -f $file
  done
 
- files=$(find "samples-hw/" -type f -name "*.json")
+ files=$(find "samples-hw/" -type f -name "*.json" | sort)
 
  for file in $files
  do
@@ -33,7 +33,7 @@ rm -rf samples.mp samples-subkeys.mp
      echo "=== Generating MessagePack file for $file ... ==="
      ../../../../build/bin/fluent-bit -R ../../../../conf/parsers.conf   \
       -i tail -p path=$file  -p parser=json                              \
-      -o file -p format=msgpack  -p path=$(echo $file | sed s/json/mp/) -f 1 &
+      -o file -p format=msgpack -p file=$(echo $file | sed s/json/mp/) -f 1 &
       pid=$!
       sleep 2
       kill -9 $pid

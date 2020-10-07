@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
@@ -36,7 +35,7 @@ static int cb_splunk_init(struct flb_output_instance *ins,
 
     ctx = flb_splunk_conf_create(ins, config);
     if (!ctx) {
-        flb_error("[out_splunk] configuration failed");
+        flb_plg_error(ins, "configuration failed");
         return -1;
     }
 
@@ -44,9 +43,9 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
-int splunk_format(const void *in_buf, size_t in_bytes,
-                  char **out_buf, size_t *out_size,
-                  struct flb_splunk *ctx)
+static int splunk_format(const void *in_buf, size_t in_bytes,
+                         char **out_buf, size_t *out_size,
+                         struct flb_splunk *ctx)
 {
     int i;
     int map_size;
@@ -75,13 +74,20 @@ int splunk_format(const void *in_buf, size_t in_bytes,
     msgpack_unpacked_init(&result);
 
     while (msgpack_unpack_next(&result, in_buf, in_bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
         root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         t = flb_time_to_double(&tm);
 
-        /* Create temporal msgpack buffer */
+        /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -190,19 +196,26 @@ static void cb_splunk_flush(const void *data, size_t bytes,
                         ctx->auth_header, flb_sds_len(ctx->auth_header));
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[out_splunk] http_do=%i", ret);
-        goto retry;
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
+        ret = FLB_RETRY;
     }
     else {
         if (c->resp.status != 200) {
             if (c->resp.payload_size > 0) {
-                flb_warn("[out_splunk] http_status=%i:\n%s",
+                flb_plg_warn(ctx->ins, "http_status=%i:\n%s",
                          c->resp.status, c->resp.payload);
             }
             else {
-                flb_warn("[out_splunk] http_status=%i", c->resp.status);
+                flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
             }
-            goto retry;
+            /* Requests that get 4xx responses from the Splunk HTTP Event
+               Collector will *always* fail, so there is no point in retrying
+               them: https://docs.splunk.com/Documentation/Splunk/8.0.5/Data/TroubleshootHTTPEventCollector#Possible_error_codes */
+            ret = (c->resp.status < 400 || c->resp.status >= 500) ?
+                FLB_RETRY : FLB_ERROR;
+        }
+        else {
+            ret = FLB_OK;
         }
     }
 
@@ -210,14 +223,7 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     flb_http_client_destroy(c);
     flb_sds_destroy(payload);
     flb_upstream_conn_release(u_conn);
-    FLB_OUTPUT_RETURN(FLB_OK);
-
-    /* Issue a retry */
- retry:
-    flb_http_client_destroy(c);
-    flb_sds_destroy(payload);
-    flb_upstream_conn_release(u_conn);
-    FLB_OUTPUT_RETURN(FLB_RETRY);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_splunk_exit(void *data, struct flb_config *config)

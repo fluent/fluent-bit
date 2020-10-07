@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,24 +32,19 @@
 struct flb_tail_file {
     /* Inotify */
     int watch_fd;
-
     /* file lookup info */
     int fd;
-    off_t size;
-    off_t offset;
-    off_t last_line;
-#ifdef _MSC_VER
-    uint64_t inode;
-#else
-    ino_t inode;
-#endif
+    int64_t size;
+    int64_t offset;
+    int64_t last_line;
+    uint64_t  inode;
+    uint64_t  link_inode;
+    int   is_link;
     char *name;                 /* target file name given by scan routine */
-#if !defined(__linux)
     char *real_name;            /* real file name in the file system */
-#endif
     size_t name_len;
     time_t rotated;
-    off_t pending_bytes;
+    int64_t pending_bytes;
 
     /* dynamic tag for this file */
     int tag_len;
@@ -58,20 +53,23 @@ struct flb_tail_file {
     /* multiline status */
     time_t mult_flush_timeout;  /* time when multiline started           */
     int mult_firstline;         /* bool: mult firstline found ?          */
+    int mult_firstline_append;  /* bool: mult firstline appendable ?     */
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
-    msgpack_sbuffer mult_sbuf;  /* temporal msgpack buffer               */
-    msgpack_packer mult_pck;    /* temporal msgpack packer               */
+    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer               */
+    msgpack_packer mult_pck;    /* temporary msgpack packer               */
     struct flb_time mult_time;  /* multiline time parsed from first line */
 
     /* docker mode */
     time_t dmode_flush_timeout; /* time when docker mode started         */
     flb_sds_t dmode_buf;        /* buffer for docker mode                */
     flb_sds_t dmode_lastline;   /* last incomplete line                  */
+    bool dmode_complete;        /* buffer contains completed log         */
+    bool dmode_firstline;       /* dmode mult firstline found ?          */
 
     /* buffering */
-    off_t parsed;
-    off_t buf_len;
+    size_t parsed;
+    size_t buf_len;
     size_t buf_size;
     char *buf_data;
 

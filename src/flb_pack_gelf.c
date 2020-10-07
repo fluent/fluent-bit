@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,26 +20,6 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pack.h>
-
-static char *str_copy_replace(const char *src, int len, char search, char replace) {
-    char *dst = NULL;
-    int i;
-
-    dst = flb_strndup(src, len);
-
-    if (!dst) {
-        flb_errno();
-        return NULL;
-    }
-
-    for(i = 0; i < len; i++) {
-        if (dst[i] == search) {
-            dst[i] = replace;
-        }
-    }
-
-    return dst;
-}
 
 static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
                                       const char *prefix_key, int prefix_key_len,
@@ -60,108 +40,74 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    char *prefix_key_copy = NULL;
-    char *key_copy = NULL;
-    flb_sds_t ret;
-
-    if (prefix_key_len > 0) {
-        prefix_key_copy = str_copy_replace(prefix_key, prefix_key_len, '/', '_');
-        if (!prefix_key_copy) {
-            ret = NULL;
-            goto cleanup;
-        }
-    }
-
-    if (key_len > 0) {
-        key_copy = str_copy_replace(key, key_len, '/', '_');
-        if (!key_copy) {
-            ret = NULL;
-            goto cleanup;
-        }
-    }
-
-    /* check valid key char [A-Za-z0-9_\.\-] */
-    for(i=0; i < prefix_key_len; i++) {
-        if (!valid_char[(unsigned char)prefix_key_copy[i]]) {
-            flb_error("[%s] invalid prefix key char at pos %d: '%.*s'",  __FUNCTION__,
-                      i, prefix_key_len, prefix_key);
-            ret = NULL;
-            goto cleanup;
-        }
-    }
-    for(i=0; i < key_len; i++) {
-        if (!valid_char[(unsigned char)key_copy[i]]) {
-            flb_error("[%s] invalid key char at pos %d: '%.*s'",  __FUNCTION__,
-                      i, key_len, key);
-            ret = NULL;
-            goto cleanup;
-        }
-    }
+    int start_len, end_len;
 
     if (in_array == FLB_FALSE) {
         tmp = flb_sds_cat(*s, ", \"", 3);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
 
     if (prefix_key_len > 0) {
-        tmp = flb_sds_cat(*s, prefix_key_copy, prefix_key_len);
+        start_len = flb_sds_len(*s);
+
+        tmp = flb_sds_cat(*s, prefix_key, prefix_key_len);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
+
+        end_len = flb_sds_len(*s);
+        for(i=start_len; i < end_len; i++) {
+            if (!valid_char[(unsigned char)(*s)[i]]) {
+                (*s)[i] = '_';
+            }
+        }
     }
 
     if (concat == FLB_TRUE) {
         tmp = flb_sds_cat(*s, "_", 1);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
 
     if (key_len > 0) {
-        tmp = flb_sds_cat(*s, key_copy, key_len);
+        start_len = flb_sds_len(*s);
+
+        tmp = flb_sds_cat(*s, key, key_len);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
+
+        end_len = flb_sds_len(*s);
+        for(i=start_len; i < end_len; i++) {
+            if (!valid_char[(unsigned char)(*s)[i]]) {
+                (*s)[i] = '_';
+            }
+        }
     }
 
     if (in_array == FLB_FALSE) {
         tmp = flb_sds_cat(*s, "\":", 2);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
     else {
         tmp = flb_sds_cat(*s, "=", 1);
         if (tmp == NULL) {
-            ret = NULL;
-            goto cleanup;
+            return NULL;
         }
         *s = tmp;
     }
 
-    ret = *s;
-
-cleanup:
-    if (prefix_key_copy) {
-        flb_free(prefix_key_copy);
-    }
-    if (key_copy) {
-        flb_free(key_copy);
-    }
-
-    return ret;
+    return *s;
 }
 
 static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
@@ -485,6 +431,11 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         return NULL;
     }
 
+    /* Make sure the incoming object is a map */
+    if (o->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
     if (fields != NULL && fields->host_key != NULL) {
         host_key = fields->host_key;
         host_key_len = flb_sds_len(fields->host_key);
@@ -544,12 +495,13 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
             const char *key = NULL;
             int key_len;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
             int quote = FLB_FALSE;
             int custom_key = FLB_FALSE;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
+            msgpack_object vtmp; // used when converting level value from string to int
 
             if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
                 continue;
@@ -602,17 +554,39 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     if ( v->via.u64 > 7 ) {
                         flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
-                                  "but should be in 0..7", v->via.u64);
+                                  "but should be in 0..7 or a syslog keyword", v->via.u64);
                         return NULL;
                     }
                 }
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
-                    if (val_len != 1 || val[0] < '0' || val[0] > '7') {
-                        flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
-                                  "but should be in 0..7", val_len, val);
-                        return NULL;
+                    if (val_len == 1 && val[0] >= '0' && val[0] <= '7') {
+                        v = &vtmp;
+                        v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                        v->via.u64 = (uint64_t)(val[0] - '0');
+                    }
+                    else {
+                        int n;
+                        char* allowed_levels[] = {
+                            "emerg", "alert", "crit", "err",
+                            "warning", "notice", "info", "debug",
+                            NULL
+                        };
+                        for (n = 0; allowed_levels[n] != NULL; ++n) {
+                            if (val_len == strlen(allowed_levels[n]) &&
+                                !strncasecmp(val, allowed_levels[n], val_len)) {
+                                v = &vtmp;
+                                v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                                v->via.u64 = (uint64_t)n;
+                                break;
+                            }
+                        }
+                        if (allowed_levels[n] == NULL) {
+                            flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
+                                      "but should be in 0..7 or a syslog keyword", val_len, val);
+                            return NULL;
+                        }
                     }
                 }
             }
@@ -638,7 +612,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 int prefix_len = 0;
 
                 prefix_len = key_len + 1;
-                prefix = flb_malloc(prefix_len + 1);
+                prefix = flb_calloc(1, prefix_len + 1);
                 if (prefix == NULL) {
                     return NULL;
                 }
@@ -761,7 +735,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         }
         *s = tmp;
 
-        tmp = flb_sds_printf(s, "%f", flb_time_to_double(tm));
+        tmp = flb_sds_printf(s, "%" PRIu32".%lu",
+                             tm->tm.tv_sec, tm->tm.tv_nsec / 1000000);
         if (tmp == NULL) {
             return NULL;
         }
@@ -783,7 +758,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 }
 
 flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
-   struct flb_time *tm, struct flb_gelf_fields *fields)
+                                  struct flb_time *tm, struct flb_gelf_fields *fields)
 {
     int ret;
     size_t off = 0;

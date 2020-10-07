@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
@@ -33,7 +35,7 @@
 #include <msgpack.h>
 
 /* Merge status used by merge_log_handler() */
-#define MERGE_NONE        0 /* merge unescaped string in temporal buffer */
+#define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
 
@@ -129,7 +131,7 @@ static int merge_log_handler(msgpack_object o,
         ret = flb_parser_do(parser, ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0) {
+            if (flb_time_to_double(log_time) == 0.0) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -140,7 +142,7 @@ static int merge_log_handler(msgpack_object o,
                             ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0) {
+            if (flb_time_to_double(log_time) == 0.0) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -150,7 +152,7 @@ static int merge_log_handler(msgpack_object o,
         ret = flb_pack_json(ctx->unesc_buf, ctx->unesc_buf_len,
                             (char **) out_buf, out_size, &root_type);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
-            flb_debug("[filter_kube] could not merge JSON, root_type=%i",
+            flb_plg_debug(ctx->ins, "could not merge JSON, root_type=%i",
                       root_type);
             flb_free(*out_buf);
             return MERGE_NONE;
@@ -158,7 +160,7 @@ static int merge_log_handler(msgpack_object o,
     }
 
     if (ret == -1) {
-        flb_debug("[filter_kube] could not merge JSON log as requested");
+        flb_plg_debug(ctx->ins, "could not merge JSON log as requested");
         return MERGE_NONE;
     }
 
@@ -244,7 +246,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /*
      * If a log_index exists, the application log content inside the
-     * Docker JSON map is a escaped string. Proceed to reserve a temporal
+     * Docker JSON map is a escaped string. Proceed to reserve a temporary
      * buffer and create an unescaped version.
      */
     if (log_index != -1) {
@@ -353,9 +355,9 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
     if (log_index != -1) {
         if (merge_status == MERGE_PARSED) {
             if (ctx->merge_log_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, ctx->merge_log_key_len);
+                msgpack_pack_str(pck, flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_str_body(pck, ctx->merge_log_key,
-                                      ctx->merge_log_key_len);
+                                      flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_map(pck, log_buf_entries);
             }
 
@@ -391,9 +393,9 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
             msgpack_object map;
 
             if (ctx->merge_log_key && log_buf_entries > 0) {
-                msgpack_pack_str(pck, ctx->merge_log_key_len);
+                msgpack_pack_str(pck, flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_str_body(pck, ctx->merge_log_key,
-                                      ctx->merge_log_key_len);
+                                      flb_sds_len(ctx->merge_log_key));
                 msgpack_pack_map(pck, log_buf_entries);
             }
 
@@ -466,7 +468,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         }
     }
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
@@ -478,7 +480,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (root.type != MSGPACK_OBJECT_ARRAY ||
             root.via.array.size != 2 ||
             root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
-            flb_warn("[filter_kube] unexpected record format");
+            flb_plg_warn(ctx->ins, "unexpected record format");
             continue;
         }
 
@@ -492,7 +494,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         if (ctx->use_journal == FLB_TRUE && ctx->dummy_meta == FLB_FALSE) {
             ret = flb_kube_meta_get(ctx,
                                     tag, tag_len,
-                                    data + pre, off - pre,
+                                    (char *) data + pre, off - pre,
                                     &cache_buf, &cache_size, &meta, &props);
             if (ret == -1) {
                 continue;
@@ -605,11 +607,211 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+
+    /* Buffer size for HTTP Client when reading responses from API Server */
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", "32K",
+     0, FLB_TRUE, offsetof(struct flb_kube, buffer_size),
+     "buffer size to receive response from API server",
+    },
+
+    /* TLS: set debug 'level' */
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_debug),
+     "set TLS debug level: 0 (no debug), 1 (error), "
+     "2 (state change), 3 (info) and 4 (verbose)"
+    },
+
+    /* TLS: enable verification */
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_verify),
+     "enable or disable verification of TLS peer certificate"
+    },
+
+    /* TLS: set tls.vhost feature */
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_vhost),
+     "set optional TLS virtual host"
+    },
+
+    /* Merge structured record as independent keys */
+    {
+     FLB_CONFIG_MAP_BOOL, "merge_log", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, merge_log),
+     "merge 'log' key content as individual keys"
+    },
+
+    /* Optional parser for 'log' key content */
+    {
+     FLB_CONFIG_MAP_STR, "merge_parser", NULL,
+     0, FLB_FALSE, 0,
+     "specify a 'parser' name to parse the 'log' key content"
+    },
+
+    /* New key name to merge the structured content of 'log' */
+    {
+     FLB_CONFIG_MAP_STR, "merge_log_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, merge_log_key),
+     "set the 'key' name where the content of 'key' will be placed. Only "
+     "used if the option 'merge_log' is enabled"
+    },
+
+    /* On merge, trim field values (remove possible ending \n or \r) */
+    {
+     FLB_CONFIG_MAP_BOOL, "merge_log_trim", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, merge_log_trim),
+     "remove ending '\\n' or '\\r' characters from the log content"
+    },
+
+    /* Keep original log key after successful merging/parsing */
+    {
+     FLB_CONFIG_MAP_BOOL, "keep_log", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, keep_log),
+     "keep original log content if it was successfully parsed and merged"
+    },
+
+    /* Full Kubernetes API server URL */
+    {
+     FLB_CONFIG_MAP_STR, "kube_url", "https://kubernetes.default.svc",
+     0, FLB_FALSE, 0,
+     "Kubernetes API server URL"
+    },
+
+    /*
+     * If set, meta-data load will be attempted from files in this dir,
+     * falling back to API if not existing.
+     */
+    {
+     FLB_CONFIG_MAP_STR, "kube_meta_preload_cache_dir", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, meta_preload_cache_dir),
+     "set directory with metadata files"
+    },
+
+    /* Kubernetes TLS: CA file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_ca_file", FLB_KUBE_CA,
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_ca_file),
+     "Kubernetes TLS CA file"
+    },
+
+    /* Kubernetes TLS: CA certs path */
+    {
+     FLB_CONFIG_MAP_STR, "kube_ca_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kube, tls_ca_path),
+     "Kubernetes TLS ca path"
+    },
+
+    /* Kubernetes Tag prefix */
+    {
+     FLB_CONFIG_MAP_STR, "kube_tag_prefix", FLB_KUBE_TAG_PREFIX,
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_tag_prefix),
+     "prefix used in tag by the input plugin"
+    },
+
+    /* Kubernetes Token file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_token_file", FLB_KUBE_TOKEN,
+     0, FLB_TRUE, offsetof(struct flb_kube, token_file),
+     "Kubernetes authorization token file"
+    },
+
+    /* Include Kubernetes Labels in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "labels", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, labels),
+     "include Kubernetes labels on every record"
+    },
+
+    /* Include Kubernetes Annotations in the final record ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "annotations", "true",
+     0, FLB_TRUE, offsetof(struct flb_kube, annotations),
+     "include Kubernetes annotations on every record"
+    },
+
+    /*
+     * The Application may 'propose' special configuration keys
+     * to the logging agent (Fluent Bit) through the annotations
+     * set in the Pod definition, e.g:
+     *
+     *  "annotations": {
+     *      "logging": {"parser": "apache"}
+     *  }
+     *
+     * As of now, Fluent Bit/filter_kubernetes supports the following
+     * options under the 'logging' map value:
+     *
+     * - k8s-logging.parser:  propose Fluent Bit to parse the content
+     *                        using the  pre-defined parser in the
+     *                        value (e.g: apache).
+     * - k8s-logging.exclude: Fluent Bit allows Pods to exclude themselves
+     *
+     * By default all options are disabled, so each option needs to
+     * be enabled manually.
+     */
+    {
+     FLB_CONFIG_MAP_BOOL, "k8s-logging.parser", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, k8s_logging_parser),
+     "allow Pods to suggest a parser"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "k8s-logging.exclude", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, k8s_logging_exclude),
+     "allow Pods to exclude themselves from the logging pipeline"
+    },
+
+    /* Use Systemd Journal mode ? */
+    {
+     FLB_CONFIG_MAP_BOOL, "use_journal", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_journal),
+     "use Journald (Systemd) mode"
+    },
+
+    /* Custom Tag Regex */
+    {
+     FLB_CONFIG_MAP_STR, "regex_parser", NULL,
+     0, FLB_FALSE, 0,
+     "optional regex parser to extract metadata from container name or container log file name"
+    },
+
+    /* Generate dummy metadata (only for test/dev purposes) */
+    {
+     FLB_CONFIG_MAP_BOOL, "dummy_meta", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, dummy_meta),
+     "use 'dummy' metadata, do not talk to API server"
+    },
+
+    /*
+     * Poll DNS status to mitigate unreliable network issues.
+     * See fluent/fluent-bit/2144.
+     */
+    {
+     FLB_CONFIG_MAP_INT, "dns_retries", "6",
+     0, FLB_TRUE, offsetof(struct flb_kube, dns_retries),
+     "dns lookup retries N times until the network start working"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "dns_wait_time", "30",
+     0, FLB_TRUE, offsetof(struct flb_kube, dns_wait_time),
+     "dns interval between network status checks"
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_filter_plugin filter_kubernetes_plugin = {
     .name         = "kubernetes",
     .description  = "Filter to append Kubernetes metadata",
     .cb_init      = cb_kube_init,
     .cb_filter    = cb_kube_filter,
     .cb_exit      = cb_kube_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

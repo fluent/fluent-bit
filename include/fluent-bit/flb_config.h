@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,11 +23,13 @@
 
 #include <time.h>
 
-#include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_task_map.h>
+
+#include <monkey/mk_core.h>
 
 #ifdef FLB_HAVE_TLS
 #include <fluent-bit/flb_io_tls.h>
@@ -43,6 +45,7 @@ struct flb_config {
     struct mk_event ch_event;
 
     int support_mode;         /* enterprise support mode ?      */
+    int is_ingestion_active;  /* date ingestion active/allowed  */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
     int grace;                /* Grace on shutdown              */
@@ -64,6 +67,8 @@ struct flb_config {
     struct mk_event_loop *ch_evl;
 
     struct mk_rconf *file;
+
+    flb_sds_t program_name;      /* argv[0] */
 
     /*
      * If a configuration file was used, this variable will contain the
@@ -120,6 +125,9 @@ struct flb_config {
     /* Environment */
     void *env;
 
+    /* Exit status code */
+    int exit_status_code;
+
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;
 
@@ -141,9 +149,11 @@ struct flb_config {
     char *storage_path;
     void *storage_input_plugin;
     char *storage_sync;             /* sync mode */
+    int   storage_metrics;          /* enable/disable storage metrics */
     int   storage_checksum;         /* checksum enabled */
     int   storage_max_chunks_up;    /* max number of chunks 'up' in memory */
     char *storage_bl_mem_limit;     /* storage backlog memory limit */
+    struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
 
     /* Embedded SQL Database support (SQLite3) */
 #ifdef FLB_HAVE_SQLDB
@@ -169,6 +179,9 @@ struct flb_config {
     /* Co-routines */
     unsigned int coro_stack_size;
 
+    /* Upstream contexts created by plugins */
+    struct mk_list upstreams;
+
     /*
      * Input table-id: table to keep a reference of thread-IDs used by the
      * input plugins.
@@ -187,6 +200,9 @@ void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
+int flb_config_set_program_name(struct flb_config *config, char *name);
+
+int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
 struct mk_rconf *flb_config_static_open(const char *file);
 #endif
@@ -224,6 +240,7 @@ enum conf_type {
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
 #define FLB_CONF_STORAGE_SYNC          "storage.sync"
+#define FLB_CONF_STORAGE_METRICS       "storage.metrics"
 #define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
 #define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
 #define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"

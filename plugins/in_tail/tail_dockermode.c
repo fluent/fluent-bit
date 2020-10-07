@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,8 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
 
@@ -26,17 +28,32 @@
 #include "tail_file_internal.h"
 
 int flb_tail_dmode_create(struct flb_tail_config *ctx,
-                          struct flb_input_instance *i_ins,
+                          struct flb_input_instance *ins,
                           struct flb_config *config)
 {
     const char *tmp;
 
     if (ctx->multiline == FLB_TRUE) {
-        flb_error("[in_tail] Docker mode cannot be enabled when multiline is enabled");
+        flb_plg_error(ctx->ins, "Docker mode cannot be enabled when multiline "
+                      "is enabled");
         return -1;
     }
 
-    tmp = flb_input_get_property("docker_mode_flush", i_ins);
+#ifdef FLB_HAVE_REGEX
+    /* First line Parser */
+    tmp = flb_input_get_property("docker_mode_parser", ins);
+    if (tmp) {
+        ctx->docker_mode_parser = flb_parser_get(tmp, config);
+        if (!ctx->docker_mode_parser) {
+            flb_plg_error(ctx->ins, "parser '%s' is not registered", tmp);
+        }
+    }
+    else {
+        ctx->docker_mode_parser = NULL;
+    }
+#endif
+
+    tmp = flb_input_get_property("docker_mode_flush", ins);
     if (!tmp) {
         ctx->docker_mode_flush = FLB_TAIL_DMODE_FLUSH;
     }
@@ -221,11 +238,55 @@ int flb_tail_dmode_process_content(time_t now,
                                    char* line, size_t line_len,
                                    char **repl_line, size_t *repl_line_len,
                                    struct flb_tail_file *file,
-                                   struct flb_tail_config *ctx)
+                                   struct flb_tail_config *ctx,
+                                   msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck
+                                   )
 {
     char* val = NULL;
     size_t val_len;
     int ret;
+    void *out_buf = NULL;
+    size_t out_size;
+    struct flb_time out_time = {0};
+    *repl_line = NULL;
+    *repl_line_len = 0;
+    flb_sds_t tmp;
+    flb_sds_t tmp_copy;
+
+#ifdef FLB_HAVE_REGEX
+    if (ctx->docker_mode_parser) {
+        ret = flb_parser_do(ctx->docker_mode_parser, line, line_len,
+                            &out_buf, &out_size, &out_time);
+        flb_free(out_buf);
+
+        /*
+        * Set dmode_firstline if the line meets the first-line requirement
+        */
+        if(ret >= 0) {
+            file->dmode_firstline = true;
+        }
+
+        /*
+        * Process if buffer contains full log line
+        */
+        if (flb_sds_len(file->dmode_lastline) > 0 && file->dmode_complete) {
+            /*
+            * Buffered log should be flushed out
+            * as current line meets first-line requirement
+            */
+            if(ret >= 0) {
+                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+            }
+
+            /*
+            * Flush the buffer if multiline has not been detected yet
+            */
+            if (!file->dmode_firstline) {
+                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+            }
+        }
+    }
+#endif
 
     ret = modify_json_cond(line, line_len,
                            &val, &val_len,
@@ -233,17 +294,41 @@ int flb_tail_dmode_process_content(time_t now,
                            unesc_ends_with_nl,
                            prepend_sds_to_str, file->dmode_buf);
     if (ret >= 0) {
+        /* line is a valid json */
         flb_sds_len_set(file->dmode_lastline, 0);
 
-        if (ret == 0) {
-            file->dmode_buf = flb_sds_cat(file->dmode_buf, val, val_len);
-            file->dmode_lastline = flb_sds_copy(file->dmode_lastline, line, line_len);
-            file->dmode_flush_timeout = now + (ctx->docker_mode_flush - 1);
-            return ret;
+        /* concatenate current log line with buffered one */
+        tmp = flb_sds_cat(file->dmode_buf, val, val_len);
+        if (!tmp) {
+            flb_errno();
+            return -1;
+        }
+        file->dmode_buf = tmp;
+
+        tmp_copy = flb_sds_copy(file->dmode_lastline, line, line_len);
+        if (!tmp_copy) {
+            flb_errno();
+            return -1;
         }
 
-        flb_sds_len_set(file->dmode_buf, 0);
-        file->dmode_flush_timeout = 0;
+        file->dmode_lastline = tmp_copy;
+        file->dmode_flush_timeout = now + (ctx->docker_mode_flush - 1);
+
+        if (ret == 0) {
+            /* Line not ended with newline */
+            file->dmode_complete = false;
+        }
+        else {
+            /* Line ended with newline */
+            file->dmode_complete = true;
+#ifdef FLB_HAVE_REGEX
+            if (!ctx->docker_mode_parser) {
+                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+            }
+#else
+            flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+#endif
+        }
     }
     return ret;
 }
@@ -303,7 +388,7 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     flb_free(out_buf);
 }
 
-int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
+int flb_tail_dmode_pending_flush(struct flb_input_instance *ins,
                                  struct flb_config *config, void *context)
 {
     time_t now;
@@ -332,7 +417,7 @@ int flb_tail_dmode_pending_flush(struct flb_input_instance *i_ins,
 
         flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
 
-        flb_input_chunk_append_raw(i_ins,
+        flb_input_chunk_append_raw(ins,
                                    file->tag_buf,
                                    file->tag_len,
                                    mp_sbuf.data,

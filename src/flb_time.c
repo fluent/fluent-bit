@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -89,6 +89,25 @@ double flb_time_to_double(struct flb_time *tm)
     return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
 }
 
+int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
+{
+    if (base == NULL || duration == NULL|| result == NULL) {
+        return -1;
+    }
+    result->tm.tv_sec  = base->tm.tv_sec  + duration->tm.tv_sec;
+    result->tm.tv_nsec = base->tm.tv_nsec + duration->tm.tv_nsec;
+
+    if (result->tm.tv_nsec > ONESEC_IN_NSEC) {
+        result->tm.tv_nsec -= ONESEC_IN_NSEC;
+        result->tm.tv_sec++;
+    } else if (result->tm.tv_nsec < 0) {
+        result->tm.tv_nsec += ONESEC_IN_NSEC;
+        result->tm.tv_sec--;
+    }
+
+    return 0;
+}
+
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0,struct flb_time *result)
 {
@@ -171,13 +190,40 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
     return ret;
 }
 
+int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
+{
+    uint32_t tmp;
+
+    switch(obj->type) {
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        time->tm.tv_sec  = obj->via.u64;
+        time->tm.tv_nsec = 0;
+        break;
+    case MSGPACK_OBJECT_FLOAT:
+        time->tm.tv_sec  = obj->via.f64;
+        time->tm.tv_nsec = ((obj->via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        memcpy(&tmp, &obj->via.ext.ptr[0], 4);
+        time->tm.tv_sec = (uint32_t) ntohl(tmp);
+        memcpy(&tmp, &obj->via.ext.ptr[4], 4);
+        time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+        break;
+    default:
+        flb_warn("unknown time format %x", obj->type);
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map)
 {
+    int ret;
     msgpack_object obj;
-    uint32_t tmp;
 
-    if(time == NULL || upk == NULL) {
+    if (time == NULL || upk == NULL) {
         return -1;
     }
 
@@ -188,25 +234,6 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
     obj = upk->data.via.array.ptr[0];
     *map = &upk->data.via.array.ptr[1];
 
-    switch(obj.type){
-    case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        time->tm.tv_sec  = obj.via.u64;
-        time->tm.tv_nsec = 0;
-        break;
-    case MSGPACK_OBJECT_FLOAT:
-        time->tm.tv_sec  = obj.via.f64;
-        time->tm.tv_nsec = ((obj.via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
-        break;
-    case MSGPACK_OBJECT_EXT:
-        memcpy(&tmp, &obj.via.ext.ptr[0], 4);
-        time->tm.tv_sec = (uint32_t)ntohl(tmp);
-        memcpy(&tmp, &obj.via.ext.ptr[4], 4);
-        time->tm.tv_nsec = (uint32_t)ntohl(tmp);
-        break;
-    default:
-        flb_warn("unknown time format %x", obj.type);
-        return -1;
-    }
-
-    return 0;
+    ret = flb_time_msgpack_to_time(time, &obj);
+    return ret;
 }

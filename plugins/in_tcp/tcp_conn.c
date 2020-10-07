@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
@@ -64,7 +64,7 @@ static inline int process_pack(struct tcp_conn *conn,
             msgpack_pack_object(&mp_pck, entry);
         }
         else {
-            flb_debug("[in_tcp] record is not a JSON map or array");
+            flb_plg_debug(conn->ins, "record is not a JSON map or array");
             msgpack_unpacked_destroy(&result);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return -1;
@@ -73,7 +73,7 @@ static inline int process_pack(struct tcp_conn *conn,
 
     msgpack_unpacked_destroy(&result);
 
-    flb_input_chunk_append_raw(conn->in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_chunk_append_raw(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
@@ -89,13 +89,16 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
     ret = flb_pack_json_state(conn->buf_data, conn->buf_len,
                               &pack, &out_size, &conn->pack_state);
     if (ret == FLB_ERR_JSON_PART) {
-        flb_debug("[in_tcp] JSON incomplete, waiting for more data...");
+        flb_plg_debug(conn->ins, "JSON incomplete, waiting for more data...");
         return 0;
     }
     else if (ret == FLB_ERR_JSON_INVAL) {
-        flb_warn("[in_tcp] invalid JSON message, skipping");
+        flb_plg_warn(conn->ins, "invalid JSON message, skipping");
         conn->buf_len = 0;
         conn->pack_state.multiple = FLB_TRUE;
+        return -1;
+    }
+    else if (ret == -1) {
         return -1;
     }
 
@@ -151,7 +154,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
         }
     }
 
-    flb_input_chunk_append_raw(conn->in, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+    flb_input_chunk_append_raw(conn->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     return consumed;
@@ -174,8 +177,9 @@ int tcp_conn_event(void *data)
         available = (conn->buf_size - conn->buf_len) - 1;
         if (available < 1) {
             if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
-                flb_trace("[in_tcp] fd=%i incoming data exceed limit (%i KB)",
-                          event->fd, (ctx->buffer_size / 1024));
+                flb_plg_trace(ctx->ins,
+                              "fd=%i incoming data exceed limit (%zu KB)",
+                              event->fd, (ctx->buffer_size / 1024));
                 tcp_conn_del(conn);
                 return -1;
             }
@@ -186,8 +190,8 @@ int tcp_conn_event(void *data)
                 flb_errno();
                 return -1;
             }
-            flb_trace("[in_tcp] fd=%i buffer realloc %i -> %i",
-                      event->fd, conn->buf_size, size);
+            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+                          event->fd, conn->buf_size, size);
 
             conn->buf_data = tmp;
             conn->buf_size = size;
@@ -195,26 +199,27 @@ int tcp_conn_event(void *data)
         }
 
         /* Read data */
-        bytes = read(conn->fd,
-                     conn->buf_data + conn->buf_len, available);
+        bytes = recv(conn->fd,
+                     conn->buf_data + conn->buf_len, available, 0);
         if (bytes <= 0) {
-            flb_trace("[in_tcp] fd=%i closed connection", event->fd);
+            flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
             tcp_conn_del(conn);
             return -1;
         }
 
-        flb_trace("[in_tcp] read()=%i pre_len=%i now_len=%i",
-                  bytes, conn->buf_len, conn->buf_len + bytes);
+        flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+                      bytes, conn->buf_len, conn->buf_len + bytes);
         conn->buf_len += bytes;
         conn->buf_data[conn->buf_len] = '\0';
 
         /* Strip CR or LF if found at first byte */
         if (conn->buf_data[0] == '\r' || conn->buf_data[0] == '\n') {
             /* Skip message with one byte with CR or LF */
-            flb_trace("[in_tcp] skip one byte message with ASCII code=%i",
+            flb_plg_trace(ctx->ins, "skip one byte message with ASCII code=%i",
                       conn->buf_data[0]);
             consume_bytes(conn->buf_data, 1, conn->buf_len);
             conn->buf_len--;
+            conn->buf_data[conn->buf_len] = '\0';
         }
 
         /* JSON Format handler */
@@ -233,9 +238,12 @@ int tcp_conn_event(void *data)
         }
         else if (ctx->format == FLB_TCP_FMT_NONE) {
             ret_payload = parse_payload_none(conn);
-            if (ret_payload <= 0) {
+            if (ret_payload == 0) {
+                return -1;
+            }
+            else if (ret_payload == -1) {
                 conn->buf_len = 0;
-                return (int) ret_payload;
+                return -1;
             }
         }
 
@@ -254,7 +262,7 @@ int tcp_conn_event(void *data)
     }
 
     if (event->mask & MK_EVENT_CLOSE) {
-        flb_trace("[in_tcp] fd=%i hangup", event->fd);
+        flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
         tcp_conn_del(conn);
         return -1;
     }
@@ -292,13 +300,13 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
         flb_errno();
-        close(fd);
-        flb_error("[in_tcp] could not allocate new connection");
+        flb_socket_close(fd);
+        flb_plg_error(ctx->ins, "could not allocate new connection");
         flb_free(conn);
         return NULL;
     }
     conn->buf_size = ctx->chunk_size;
-    conn->in       = ctx->in;
+    conn->ins      = ctx->ins;
 
     /* Initialize JSON parser */
     if (ctx->format == FLB_TCP_FMT_JSON) {
@@ -309,8 +317,8 @@ struct tcp_conn *tcp_conn_add(int fd, struct flb_in_tcp_config *ctx)
     /* Register instance into the event loop */
     ret = mk_event_add(ctx->evl, fd, FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, conn);
     if (ret == -1) {
-        flb_error("[in_tcp] could not register new connection");
-        close(fd);
+        flb_plg_error(ctx->ins, "could not register new connection");
+        flb_socket_close(fd);
         flb_free(conn->buf_data);
         flb_free(conn);
         return NULL;
@@ -335,7 +343,7 @@ int tcp_conn_del(struct tcp_conn *conn)
 
     /* Release resources */
     mk_list_del(&conn->_head);
-    close(conn->fd);
+    flb_socket_close(conn->fd);
     flb_free(conn->buf_data);
     flb_free(conn);
 

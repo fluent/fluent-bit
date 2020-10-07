@@ -2,6 +2,10 @@
 
 We build Open Source software and we invite everyone to join us and contribute. So if you are interested into participate, please refer to the guidelines below.
 
+## Developer Guide
+
+[Developer Guide with code examples](DEVELOPER_GUIDE.md).
+
 ## GIT Repositories
 
 All code changes and submissions happens on [Github](http://github.com), that means that to start contributing you should clone the target repository, perform local changes and then do a Pull Request. For more details about the workflow we suggest you check the following documents:
@@ -18,6 +22,10 @@ Our development coding style for C is based on the Apache C style guidelines, we
 You have to pay attention to the code indentation, tabs are 4 spaces, spaces on conditionals, etc. If your code submission is not aligned, it will be rejected.
 
 ### General requirements
+
+#### Line Length
+
+Fluent Bit source code lines length should not exceed 90 characters.
 
 #### Braces usage on conditionals, loops and functions:
 
@@ -75,7 +83,7 @@ the proper way is to perform the variable definitions on top:
 int flb_something(int a, int b)
 {
     int ret;
-    
+
     if (a > 10) {
         return 1;
     }
@@ -146,24 +154,24 @@ When you commit your local changes in your repository (before to push to Github)
 
    Common components prefix are:
 
-   - utils: 
+   - utils:
    - pack:
    - sds:
    - http_client:
 
-   As you can see prefixes are basically the file name of the source code file under [src](https://github.com/fluent/fluent-bit/tree/master/src) directory without the file prefix <u>flb_</u>. 
+   As you can see prefixes are basically the file name of the source code file under [src](https://github.com/fluent/fluent-bit/tree/master/src) directory without the file prefix <u>flb_</u>.
 
    When committing changes to code that's related to some plugins, the commit subject must be prefixed with the name of the plugin being changed, e.g:
 
    - in_stdin:
-   - out_http: 
+   - out_http:
    - out_kafka:
 
    please refer to the [plugins](https://github.com/fluent/fluent-bit/tree/master/plugins) directory as a reference
 
 - One single commit **must not** include changes to files that are different from the component specified in the subject, e.g: If you are extending flb_utils.c file, the git patch should not touch any other file than flb_utils.c or flb_utils.h.
 
-- One single commit **must not** include multiple prefixes to specify different areas being touched. 
+- One single commit **must not** include multiple prefixes to specify different areas being touched.
 
  - The subject of the commit **must not** be longer than 80 characters.
 
@@ -180,7 +188,7 @@ When you commit your local changes in your repository (before to push to Github)
 ```
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");

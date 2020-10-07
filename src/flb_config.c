@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +42,8 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+
+const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
 int flb_regex_init();
 
@@ -94,6 +96,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_SYNC,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_sync)},
+    {FLB_CONF_STORAGE_METRICS,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_metrics)},
     {FLB_CONF_STORAGE_CHECKSUM,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_checksum)},
@@ -121,6 +126,7 @@ struct flb_service_config service_configs[] = {
 
 struct flb_config *flb_config_init()
 {
+    int ret;
     struct flb_config *config;
 
     config = flb_calloc(1, sizeof(struct flb_config));
@@ -133,6 +139,10 @@ struct flb_config *flb_config_init()
     MK_EVENT_ZERO(&config->event_flush);
     MK_EVENT_ZERO(&config->event_shutdown);
 
+    /* is data ingestion active ? */
+    config->is_ingestion_active = FLB_TRUE;
+
+    /* Is the engine (event loop) actively running ? */
     config->is_running = FLB_TRUE;
 
     /* Flush */
@@ -142,6 +152,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER
     config->http_ctx     = NULL;
@@ -181,6 +192,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
+    mk_list_init(&config->upstreams);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
@@ -188,7 +200,12 @@ struct flb_config *flb_config_init()
     config->env = flb_env_create();
 
     /* Register static plugins */
-    flb_register_plugins(config);
+    ret = flb_plugins_register(config);
+    if (ret == -1) {
+        flb_error("[config] plugins registration failed");
+        flb_config_exit(config);
+        return NULL;
+    }
 
     /* Create environment for dynamic plugins */
     config->dso_plugins = flb_plugin_create();
@@ -283,6 +300,11 @@ void flb_config_exit(struct flb_config *config)
 
     flb_env_destroy(config->env);
 
+    /* Program name */
+    if (config->program_name) {
+        flb_sds_destroy(config->program_name);
+    }
+
     /* Conf path */
     if (config->conf_path) {
         flb_free(config->conf_path);
@@ -316,6 +338,12 @@ void flb_config_exit(struct flb_config *config)
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
+    if (config->storage_sync) {
+        flb_free(config->storage_sync);
+    }
+    if (config->storage_bl_mem_limit) {
+        flb_free(config->storage_bl_mem_limit);
+    }
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     if (config->stream_processor_file) {
@@ -328,6 +356,9 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
+
+
+    flb_plugins_unregister(config);
     flb_free(config);
 }
 
@@ -375,6 +406,16 @@ static int set_log_level(struct flb_config *config, const char *v_str)
     return 0;
 }
 
+int set_log_level_from_env(struct flb_config *config)
+{
+    const char *val = NULL;
+    val = flb_env_get(config->env, FLB_CONF_ENV_LOGLEVEL);
+    if (val) {
+        return set_log_level(config, val);
+    }
+    return -1;
+}
+
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v)
 {
@@ -390,15 +431,21 @@ int flb_config_set_property(struct flb_config *config,
     while (key != NULL) {
         if (prop_key_check(key, k,len) == 0) {
             if (!strncasecmp(key, FLB_CONF_STR_LOGLEVEL, 256)) {
-                tmp = flb_env_var_translate(config->env, v);
-                if (tmp) {
-                    ret = set_log_level(config, tmp);
-                    flb_sds_destroy(tmp);
-                    tmp = NULL;
+                #ifndef FLB_HAVE_STATIC_CONF
+                if (set_log_level_from_env(config) < 0) {
+                #endif
+                    tmp = flb_env_var_translate(config->env, v);
+                    if (tmp) {
+                        ret = set_log_level(config, tmp);
+                        flb_sds_destroy(tmp);
+                        tmp = NULL;
+                    }
+                    else {
+                        ret = set_log_level(config, v);
+                    }
+                #ifndef FLB_HAVE_STATIC_CONF
                 }
-                else {
-                    ret = set_log_level(config, v);
-                }
+                #endif
             }
             else if (!strncasecmp(key, FLB_CONF_STR_PARSERS_FILE, 32)) {
 #ifdef FLB_HAVE_PARSER
@@ -457,5 +504,16 @@ int flb_config_set_property(struct flb_config *config,
         }
         key = service_configs[++i].key;
     }
+    return 0;
+}
+
+int flb_config_set_program_name(struct flb_config *config, char *name)
+{
+    config->program_name = flb_sds_create(name);
+
+    if (!config->program_name) {
+        return -1;
+    }
+
     return 0;
 }

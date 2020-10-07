@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
@@ -58,7 +57,7 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
-    /* Init temporal buffers */
+    /* Init temporary buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -178,12 +177,12 @@ static int cb_kafka_init(struct flb_output_instance *ins,
 
     ctx = flb_kr_conf_create(ins, config);
     if (!ctx) {
-        flb_error("[out_kafka_rest] cannot initialize plugin");
+        flb_plg_error(ins, "cannot initialize plugin");
         return -1;
     }
 
-    flb_debug("[out_kafka_rest] host=%s port=%i",
-              ins->host.name, ins->host.port);
+    flb_plg_debug(ctx->ins, "host=%s port=%i",
+                  ins->host.name, ins->host.port);
     flb_output_set_context(ins, ctx);
 
     return 0;
@@ -233,23 +232,23 @@ static void cb_kafka_flush(const void *data, size_t bytes,
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[out_kafka_rest] http_do=%i", ret);
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
         goto retry;
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
-        flb_debug("[out_kafka_rest] HTTP Status=%i", c->resp.status);
+        flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
         if (c->resp.status != 200) {
             if (c->resp.payload_size > 0) {
-                flb_debug("[out_kafka_rest] Kafka REST response\n%s",
-                          c->resp.payload);
+                flb_plg_debug(ctx->ins, "Kafka REST response\n%s",
+                              c->resp.payload);
             }
             goto retry;
         }
 
         if (c->resp.payload_size > 0) {
-            flb_debug("[out_kafka_rest] Kafka REST response\n%s",
-                      c->resp.payload);
+            flb_plg_debug(ctx->ins, "Kafka REST response\n%s",
+                          c->resp.payload);
         }
         else {
             goto retry;

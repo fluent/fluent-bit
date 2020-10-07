@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -105,7 +105,7 @@ static int ltsv_parser(struct flb_parser *parser,
 
     while (c < end) {
         label = c;
-        while (ltvs_label[*c] && (c < end)) {
+        while ((c < end) && ltvs_label[*c]) {
             c++;
         }
         label_len = c - label;
@@ -120,7 +120,7 @@ static int ltsv_parser(struct flb_parser *parser,
 
         field = c;
         if (c != end) {
-            while (ltvs_field[*c] && (c < end)) {
+            while ((c < end) && ltvs_field[*c]) {
                 c++;
             }
         }
@@ -136,8 +136,8 @@ static int ltsv_parser(struct flb_parser *parser,
                     ret = flb_parser_time_lookup((const char *) field, field_len,
                                                   0, parser, &tm, tmfrac);
                     if (ret == -1) {
-                       flb_error("[parser:%s] Invalid time format %s.",
-                                 parser->name, parser->time_fmt);
+                       flb_error("[parser:%s] Invalid time format %s",
+                                 parser->name, parser->time_fmt_full);
                        return -1;
                     }
                     *time_lookup = flb_parser_tm2time(&tm);
@@ -222,7 +222,7 @@ int flb_parser_ltsv_do(struct flb_parser *parser,
         time_key = "time";
     }
     time_key_len = strlen(time_key);
-    time_lookup = time(NULL);
+    time_lookup = 0;
 
     /* count the number of key value pairs */
     map_size = 0;

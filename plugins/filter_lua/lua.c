@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,17 +18,34 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_luajit.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <msgpack.h>
 
 #include "lua_config.h"
-#include <msgpack.h>
+
+/* Push timestamp as a Lua table into the stack */
+static void lua_pushtimetable(lua_State *l, struct flb_time *tm)
+{
+    lua_createtable(l, 0, 2);
+
+    /* seconds */
+    lua_pushlstring(l, "sec", 3);
+    lua_pushinteger(l, tm->tm.tv_sec);
+    lua_settable(l, -3);
+
+    /* nanoseconds */
+    lua_pushlstring(l, "nsec", 4);
+    lua_pushinteger(l, tm->tm.tv_nsec);
+    lua_settable(l, -3);
+}
 
 static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
@@ -47,11 +64,11 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
-            lua_pushnumber(l, (double) o->via.u64);
+            lua_pushinteger(l, (double) o->via.u64);
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-            lua_pushnumber(l, (double) o->via.i64);
+            lua_pushinteger(l, (double) o->via.i64);
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
@@ -137,10 +154,10 @@ static void try_to_convert_data_type(struct lua_filter *lf,
     struct mk_list  *head     = NULL;
     struct l2c_type *l2c      = NULL;
 
-    if ((lua_type(l, -2) == LUA_TSTRING) 
+    if ((lua_type(l, -2) == LUA_TSTRING)
         && lua_type(l, -1) == LUA_TNUMBER){
         tmp = lua_tolstring(l, -2, &len);
-        
+
         mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
             l2c = mk_list_entry(head, struct l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len)) {
@@ -154,6 +171,22 @@ static void try_to_convert_data_type(struct lua_filter *lf,
     /* not matched */
     lua_tomsgpack(lf, pck, -1);
     lua_tomsgpack(lf, pck, 0);
+}
+
+static int lua_isinteger(lua_State *L, int index)
+{
+    lua_Number n;
+    lua_Integer i;
+
+    if (lua_type(L, index) == LUA_TNUMBER) {
+        n = lua_tonumber(L, index);
+        i = lua_tointeger(L, index);
+
+        if (i == n) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
@@ -176,8 +209,14 @@ static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
             break;
         case LUA_TNUMBER:
             {
-                double num = lua_tonumber(l, -1 + index);
-                msgpack_pack_double(pck, num);
+                if (lua_isinteger(l, -1 + index)) {
+                    int64_t num = lua_tointeger(l, -1 + index);
+                    msgpack_pack_int64(pck, num);
+                }
+                else {
+                    double num = lua_tonumber(l, -1 + index);
+                    msgpack_pack_double(pck, num);
+                }
             }
             break;
         case LUA_TBOOLEAN:
@@ -285,8 +324,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     lua_pcall(ctx->lua->state, 0, 0, 0);
 
     if (is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
-        flb_error("[filter_lua] function %s is not found", ctx->call);
-
+        flb_plg_error(ctx->ins, "function %s is not found", ctx->call);
         lua_config_destroy(ctx);
         return -1;
     }
@@ -297,7 +335,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
+static int pack_result (struct flb_time *ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
                         char *data, size_t bytes)
 {
     int ret;
@@ -306,7 +344,6 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
     size_t off = 0;
     msgpack_object root;
     msgpack_unpacked result;
-    struct flb_time t;
 
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, data, bytes, &off);
@@ -334,8 +371,7 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
                 msgpack_pack_array(pck, 2);
 
                 /* timestamp: convert from double to Fluent Bit format */
-                flb_time_from_double(&t, ts);
-                flb_time_append_to_msgpack(&t, pck, 0);
+                flb_time_append_to_msgpack(ts, pck, 0);
 
                 /* Pack lua table */
                 msgpack_pack_object(pck, *(map+i));
@@ -363,9 +399,7 @@ static int pack_result (double ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
     /* main array */
     msgpack_pack_array(pck, 2);
 
-    /* timestamp: convert from double to Fluent Bit format */
-    flb_time_from_double(&t, ts);
-    flb_time_append_to_msgpack(&t, pck, 0);
+    flb_time_append_to_msgpack(ts, pck, 0);
 
     /* Pack lua table */
     msgpack_sbuffer_write(sbuf, data, bytes);
@@ -385,19 +419,20 @@ static int cb_lua_filter(const void *data, size_t bytes,
     size_t off = 0;
     (void) f_ins;
     (void) config;
-    double ts;
+    double ts = 0;
     msgpack_object *p;
     msgpack_object root;
     msgpack_unpacked result;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    struct flb_time t_orig;
     struct flb_time t;
     struct lua_filter *ctx = filter_context;
     /* Lua return values */
     int l_code;
     double l_timestamp;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
@@ -413,14 +448,37 @@ static int cb_lua_filter(const void *data, size_t bytes,
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&t, &result, &p);
-        ts = flb_time_to_double(&t);
+        t_orig = t;
 
         /* Prepare function call, pass 3 arguments, expect 3 return values */
         lua_getglobal(ctx->lua->state, ctx->call);
         lua_pushstring(ctx->lua->state, tag);
-        lua_pushnumber(ctx->lua->state, ts);
+
+        /* Timestamp */
+        if (ctx->time_as_table == FLB_TRUE) {
+            lua_pushtimetable(ctx->lua->state, &t);
+        }
+        else {
+            ts = flb_time_to_double(&t);
+            lua_pushnumber(ctx->lua->state, ts);
+        }
+
         lua_pushmsgpack(ctx->lua->state, p);
-        lua_call(ctx->lua->state, 3, 3);
+        if (ctx->protected_mode) {
+            ret = lua_pcall(ctx->lua->state, 3, 3, 0);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "error code %d: %s",
+                              ret, lua_tostring(ctx->lua->state, -1));
+                lua_pop(ctx->lua->state, 1);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_sbuffer_destroy(&data_sbuf);
+                msgpack_unpacked_destroy(&result);
+                return FLB_FILTER_NOTOUCH;
+            }
+        }
+        else {
+            lua_call(ctx->lua->state, 3, 3);
+        }
 
         /* Initialize Return values */
         l_code = 0;
@@ -429,8 +487,28 @@ static int cb_lua_filter(const void *data, size_t bytes,
         lua_tomsgpack(ctx, &data_pck, 0);
         lua_pop(ctx->lua->state, 1);
 
-        l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
-        lua_pop(ctx->lua->state, 1);
+        /* Lua table */
+        if (ctx->time_as_table == FLB_TRUE) {
+            if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                /* Retrieve seconds */
+                lua_getfield(ctx->lua->state, -1, "sec");
+                t.tm.tv_sec = lua_tointeger(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 1);
+
+                /* Retrieve nanoseconds */
+                lua_getfield(ctx->lua->state, -1, "nsec");
+                t.tm.tv_nsec = lua_tointeger(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 2);
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid lua timestamp type returned");
+                t = t_orig;
+            }
+        }
+        else {
+            l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
+            lua_pop(ctx->lua->state, 1);
+        }
 
         l_code = (int) lua_tointeger(ctx->lua->state, -1);
         lua_pop(ctx->lua->state, 1);
@@ -442,12 +520,21 @@ static int cb_lua_filter(const void *data, size_t bytes,
         else if (l_code == 0) { /* Keep record, repack */
             msgpack_pack_object(&tmp_pck, root);
         }
-        else if (l_code == 1) { /* Modified, pack new data */
-            ret = pack_result(l_timestamp, &tmp_pck, &tmp_sbuf,
+        else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
+            if (l_code == 1) {
+                if (ctx->time_as_table == FLB_FALSE) {
+                    flb_time_from_double(&t, l_timestamp);
+                }
+            }
+            else if (l_code == 2) {
+                /* Keep the timestamp */
+                t = t_orig;
+            }
+            ret = pack_result(&t, &tmp_pck, &tmp_sbuf,
                               data_sbuf.data, data_sbuf.size);
             if (ret == FLB_FALSE) {
-                flb_error("[filter_lua] invalid table returned at %s(), %s",
-                          ctx->call, ctx->script);
+                flb_plg_error(ctx->ins, "invalid table returned at %s(), %s",
+                              ctx->call, ctx->script);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
                 msgpack_sbuffer_destroy(&data_sbuf);
                 msgpack_unpacked_destroy(&result);
@@ -455,8 +542,8 @@ static int cb_lua_filter(const void *data, size_t bytes,
             }
         }
         else { /* Unexpected return code, keep original content */
-            flb_error("[filter_lua] unexpected Lua script return code %i, "
-                      "original record will be kept." , l_code);
+            flb_plg_error(ctx->ins, "unexpected Lua script return code %i, "
+                          "original record will be kept." , l_code);
             msgpack_pack_object(&tmp_pck, root);
         }
         msgpack_sbuffer_destroy(&data_sbuf);

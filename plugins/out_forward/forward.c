@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,36 +18,38 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_sha512.h>
+#include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_random.h>
 #include <msgpack.h>
 
 #include "forward.h"
-
-struct flb_output_plugin out_forward_plugin;
+#include "forward_format.h"
 
 #define SECURED_BY "Fluent Bit"
 
 #ifdef FLB_HAVE_TLS
 
-#define secure_forward_tls_error(ret) \
-    _secure_forward_tls_error(ret, __FILE__, __LINE__)
+#define secure_forward_tls_error(ctx, ret)                  \
+    _secure_forward_tls_error(ctx, ret, __FILE__, __LINE__)
 
-void _secure_forward_tls_error(int ret, char *file, int line)
+void _secure_forward_tls_error(struct flb_forward *ctx,
+                               int ret, char *file, int line)
 {
     char err_buf[72];
 
     mbedtls_strerror(ret, err_buf, sizeof(err_buf));
-    flb_error("[io_tls] flb_io_tls.c:%i %s", line, err_buf);
+    flb_plg_error(ctx->ins, "flb_io_tls.c:%i %s", line, err_buf);
 }
 
-static int secure_forward_init(struct flb_forward_config *fc)
+static int secure_forward_init(struct flb_forward *ctx,
+                               struct flb_forward_config *fc)
 {
     int ret;
 
@@ -61,36 +63,35 @@ static int secure_forward_init(struct flb_forward_config *fc)
                                 (const unsigned char *) SECURED_BY,
                                 sizeof(SECURED_BY) -1);
     if (ret == -1) {
-        secure_forward_tls_error(ret);
+        secure_forward_tls_error(ctx, ret);
         return -1;
     }
-
-    /* Gernerate shared key salt */
-    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
     return 0;
 }
 #endif
 
-static inline void print_msgpack_status(int ret, char *context)
+static inline void print_msgpack_status(struct flb_forward *ctx,
+                                        int ret, char *context)
 {
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:
-        flb_error("[out_fw] %s MSGPACK_UNPACK_EXTRA_BYTES", context);
+        flb_plg_error(ctx->ins, "%s MSGPACK_UNPACK_EXTRA_BYTES", context);
         break;
     case MSGPACK_UNPACK_CONTINUE:
-        flb_trace("[out_fw] %s MSGPACK_UNPACK_CONTINUE", context);
+        flb_plg_trace(ctx->ins, "%s MSGPACK_UNPACK_CONTINUE", context);
         break;
     case MSGPACK_UNPACK_PARSE_ERROR:
-        flb_error("[out_fw] %s MSGPACK_UNPACK_PARSE_ERROR", context);
+        flb_plg_error(ctx->ins, "%s MSGPACK_UNPACK_PARSE_ERROR", context);
         break;
     case MSGPACK_UNPACK_NOMEM_ERROR:
-        flb_error("[out_fw] %s MSGPACK_UNPACK_NOMEM_ERROR", context);
+        flb_plg_error(ctx->ins, "%s MSGPACK_UNPACK_NOMEM_ERROR", context);
         break;
     }
 }
 
 /* Read a secure forward msgpack message */
-static int secure_forward_read(struct flb_upstream_conn *u_conn,
+static int secure_forward_read(struct flb_forward *ctx,
+                               struct flb_upstream_conn *u_conn,
                                char *buf, size_t size, size_t *out_len)
 {
     int ret;
@@ -122,7 +123,7 @@ static int secure_forward_read(struct flb_upstream_conn *u_conn,
             *out_len = buf_off;
             return 0;
         default:
-            print_msgpack_status(ret, "handshake");
+            print_msgpack_status(ctx, ret, "handshake");
             goto error;
         };
     }
@@ -130,17 +131,6 @@ static int secure_forward_read(struct flb_upstream_conn *u_conn,
  error:
     msgpack_unpacked_destroy(&result);
     return -1;
-}
-
-static void secure_forward_bin_to_hex(uint8_t *buf, size_t len, char *out)
-{
-    int i;
-    static char map[] = "0123456789abcdef";
-
-	for (i = 0; i < len; i++) {
-		out[i * 2]     = map[buf[i] >> 4];
-        out[i * 2 + 1] = map[buf[i] & 0x0f];
-	}
 }
 
 static void secure_forward_set_ping(struct flb_forward_ping *ping,
@@ -196,7 +186,7 @@ static int secure_forward_hash_shared_key(struct flb_forward_config *fc,
     flb_sha512_update(&sha512, shared_key, strlen(shared_key));
     flb_sha512_sum(&sha512, hash);
 
-    secure_forward_bin_to_hex(hash, 64, buf);
+    flb_forward_format_bin_to_hex(hash, 64, buf);
     return 0;
 }
 
@@ -217,7 +207,7 @@ static int secure_forward_hash_password(struct flb_forward_config *fc,
     flb_sha512_update(&sha512, fc->password, strlen(fc->password));
     flb_sha512_sum(&sha512, hash);
 
-    secure_forward_bin_to_hex(hash, 64, buf);
+    flb_forward_format_bin_to_hex(hash, 64, buf);
     return 0;
 }
 
@@ -237,18 +227,18 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     secure_forward_set_ping(&ping, &map);
 
     if (ping.nonce == NULL) {
-        flb_error("[out_fw] nonce not found");
+        flb_plg_error(ctx->ins, "nonce not found");
         return -1;
     }
 
     if (secure_forward_hash_shared_key(fc, &ping, shared_key_hexdigest, 128)) {
-        flb_error("[out_fw] failed to hash shared_key");
+        flb_plg_error(ctx->ins, "failed to hash shared_key");
         return -1;
     }
 
     if (ping.auth != NULL) {
         if (secure_forward_hash_password(fc, &ping, password_hexdigest, 128)) {
-            flb_error("[out_fw] failed to hash password");
+            flb_plg_error(ctx->ins, "failed to hash password");
             return -1;
         }
     }
@@ -281,7 +271,8 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
         msgpack_pack_str_body(&mp_pck, fc->username, strlen(fc->username));
         msgpack_pack_str(&mp_pck, 128);
         msgpack_pack_str_body(&mp_pck, password_hexdigest, 128);
-    } else {
+    }
+    else {
         msgpack_pack_str(&mp_pck, 0);
         msgpack_pack_str_body(&mp_pck, "", 0);
         msgpack_pack_str(&mp_pck, 0);
@@ -289,7 +280,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     }
 
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
-    flb_debug("[out_fw] PING sent: ret=%i bytes sent=%lu", ret, bytes_sent);
+    flb_plg_debug(ctx->ins, "PING sent: ret=%i bytes sent=%lu", ret, bytes_sent);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
 
@@ -300,7 +291,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
     return -1;
 }
 
-static int secure_forward_pong(char *buf, int buf_size)
+static int secure_forward_pong(struct flb_forward *ctx, char *buf, int buf_size)
 {
     int ret;
     char msg[32] = {0};
@@ -345,7 +336,7 @@ static int secure_forward_pong(char *buf, int buf_size)
     else {
         o = root.via.array.ptr[2];
         memcpy(msg, o.via.str.ptr, o.via.str.size);
-        flb_error("[out_fw] failed authorization: %s", msg);
+        flb_plg_error(ctx->ins, "failed authorization: %s", msg);
     }
 
  error:
@@ -366,9 +357,9 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     msgpack_object o;
 
     /* Wait for server HELO */
-    ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ctx, u_conn, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
-        flb_error("[out_fw] handshake error expecting HELO");
+        flb_plg_error(ctx->ins, "handshake error expecting HELO");
         return -1;
     }
 
@@ -377,52 +368,52 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, out_len, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
-        print_msgpack_status(ret, "HELO");
+        print_msgpack_status(ctx, ret, "HELO");
         return -1;
     }
 
     /* Parse HELO message */
     root = result.data;
     if (root.via.array.size < 2) {
-        flb_error("[out_fw] Invalid HELO message");
+        flb_plg_error(ctx->ins, "Invalid HELO message");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
     o = root.via.array.ptr[0];
     if (o.type != MSGPACK_OBJECT_STR) {
-        flb_error("[out_fw] Invalid HELO type message");
+        flb_plg_error(ctx->ins, "Invalid HELO type message");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
     if (strncmp(o.via.str.ptr, "HELO", 4) != 0 || o.via.str.size != 4) {
-        flb_error("[out_fw] Invalid HELO content message");
+        flb_plg_error(ctx->ins, "Invalid HELO content message");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
-    flb_debug("[out_fw] protocol: received HELO");
+    flb_plg_debug(ctx->ins, "protocol: received HELO");
 
     /* Compose and send PING message */
     o = root.via.array.ptr[1];
     ret = secure_forward_ping(u_conn, o, fc, ctx);
     if (ret == -1) {
-        flb_error("[out_fw] Failed PING");
+        flb_plg_error(ctx->ins, "Failed PING");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
     /* Expect a PONG */
-    ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ctx, u_conn, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
-        flb_error("[out_fw] handshake error expecting HELO");
+        flb_plg_error(ctx->ins, "handshake error expecting HELO");
         msgpack_unpacked_destroy(&result);
         return -1;
     }
 
     /* Process PONG */
-    ret = secure_forward_pong(buf, out_len);
+    ret = secure_forward_pong(ctx, buf, out_len);
     if (ret == -1) {
         msgpack_unpacked_destroy(&result);
         return -1;
@@ -432,60 +423,10 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     return 0;
 }
 
-static int secure_forward_write_options(struct flb_upstream_conn *u_conn,
-                                        struct flb_forward_config *fc,
-                                        struct flb_forward *ctx,
-                                        size_t size,
-                                        char *chunk,
-                                        size_t *bytes_sent_ptr)
-{
-    int ret;
-    int opt_count = 1;
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
-    size_t bytes_sent = 0;
-    size_t chunk_size = 0;
-
-    if(chunk) {
-        chunk_size = strlen(chunk);
-        if(chunk_size > 0) {
-            opt_count++;
-        }
-    }
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    // options is map
-    msgpack_pack_map(&mp_pck,opt_count);
-
-    // "chunk": '<checksum-base-64>'
-    if(chunk && chunk_size > 0) {
-        msgpack_pack_str(&mp_pck, 5);
-        msgpack_pack_str_body(&mp_pck, "chunk", 5);
-        msgpack_pack_str(&mp_pck, chunk_size);
-        msgpack_pack_str_body(&mp_pck, chunk, chunk_size);
-    }
-
-    // "size": entries
-    msgpack_pack_str(&mp_pck, 4);
-    msgpack_pack_str_body(&mp_pck, "size", 4);
-    msgpack_pack_int64(&mp_pck, size);
-
-    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
-    if (ret == -1) {
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        return -1;
-    }
-    if(bytes_sent_ptr) *bytes_sent_ptr = bytes_sent;
-    msgpack_sbuffer_destroy(&mp_sbuf);
-    return 0;
-}
-
-
-static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
-                                   struct flb_forward_config *fc,
-                                   struct flb_forward *ctx,
-                                   char *chunk)
+static int forward_read_ack(struct flb_forward *ctx,
+                            struct flb_forward_config *fc,
+                            struct flb_upstream_conn *u_conn,
+                            char *chunk, int chunk_len)
 {
     int ret;
     int i;
@@ -493,7 +434,6 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
     size_t off;
     const char *ack;
     size_t ack_len;
-    int chunk_len;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object_map map;
@@ -501,14 +441,12 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
     msgpack_object val;
     char buf[512];  /* ack should never be bigger */
 
-    flb_trace("[out_fw] wait ACK (%s)", chunk);
-
-    chunk_len = strlen(chunk);
+    flb_plg_trace(ctx->ins, "wait ACK (%.*s)", chunk_len, chunk);
 
     /* Wait for server ACK */
-    ret = secure_forward_read(u_conn, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ctx, u_conn, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
-        flb_error("[out_fw] cannot get ack");
+        flb_plg_error(ctx->ins, "cannot get ack");
         return -1;
     }
 
@@ -517,14 +455,14 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, out_len, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
-        print_msgpack_status(ret, "ACK");
+        print_msgpack_status(ctx, ret, "ACK");
         goto error;
     }
 
     /* Parse ACK message */
     root = result.data;
     if (root.type != MSGPACK_OBJECT_MAP) {
-        flb_error("[out_fw] ACK response not MAP (type:%d)", root.type);
+        flb_plg_error(ctx->ins, "ACK response not MAP (type:%d)", root.type);
         goto error;
     }
 
@@ -542,31 +480,31 @@ static int secure_forward_read_ack(struct flb_upstream_conn *u_conn,
     }
 
     if (!ack) {
-        flb_error("[out_fw] ack: ack not found");
+        flb_plg_error(ctx->ins, "ack: ack not found");
         goto error;
     }
 
-    if(ack_len != chunk_len) {
-        flb_error("[out_fw] ack: ack len does not match ack(%d)(%.*s) chunk(%d)(%.*s)",
-                  ack_len, ack_len, ack,
-                  chunk_len, chunk_len, chunk);
+    if (ack_len != chunk_len) {
+        flb_plg_error(ctx->ins,
+                      "ack: ack len does not match ack(%ld)(%.*s) chunk(%d)(%.*s)",
+                      ack_len, (int) ack_len, ack,
+                      chunk_len, (int) chunk_len, chunk);
         goto error;
     }
 
     if (strncmp(ack, chunk, ack_len) != 0) {
-        flb_error("[out_fw] ACK: mismatch (%s)", chunk);
+        flb_plg_error(ctx->ins, "ACK: mismatch received=%s, expected=(%.*s)",
+                      ack, chunk_len, chunk);
         goto error;
     }
 
-    flb_debug("[out_fw] protocol: received ACK");
-
+    flb_plg_debug(ctx->ins, "protocol: received ACK %s", ack);
     msgpack_unpacked_destroy(&result);
     return 0;
 
  error:
     msgpack_unpacked_destroy(&result);
     return -1;
-
 }
 
 
@@ -576,11 +514,135 @@ static int forward_config_init(struct flb_forward_config *fc,
 #ifdef FLB_HAVE_TLS
     /* Initialize Secure Forward mode */
     if (fc->secured == FLB_TRUE) {
-        secure_forward_init(fc);
+        secure_forward_init(ctx, fc);
     }
 #endif
 
+    /* Generate the shared key salt */
+    if (flb_random_bytes(fc->shared_key_salt, 16)) {
+        flb_plg_error(ctx->ins, "cannot generate shared key salt");
+        return -1;
+    }
+
     mk_list_add(&fc->_head, &ctx->configs);
+    return 0;
+}
+
+static flb_sds_t config_get_property(char *prop,
+                                     struct flb_upstream_node *node,
+                                     struct flb_forward *ctx)
+{
+    if (node) {
+        return (flb_sds_t) flb_upstream_node_get_property(prop, node);
+    }
+    else {
+        return (flb_sds_t) flb_output_get_property(prop, ctx->ins);
+    }
+}
+
+static int config_set_properties(struct flb_upstream_node *node,
+                                 struct flb_forward_config *fc,
+                                 struct flb_forward *ctx)
+{
+    flb_sds_t tmp;
+
+    /* Shared Key */
+    tmp = config_get_property("empty_shared_key", node, ctx);
+    if (tmp && flb_utils_bool(tmp)) {
+        fc->empty_shared_key = FLB_TRUE;
+    }
+    else {
+        fc->empty_shared_key = FLB_FALSE;
+    }
+
+    tmp = config_get_property("shared_key", node, ctx);
+    if (fc->empty_shared_key) {
+        fc->shared_key = flb_sds_create("");
+    }
+    else if (tmp) {
+        fc->shared_key = flb_sds_create(tmp);
+    }
+    else {
+        fc->shared_key = NULL;
+    }
+
+    tmp = config_get_property("username", node, ctx);
+    if (tmp) {
+        fc->username = tmp;
+    }
+    else {
+        fc->username = "";
+    }
+
+    tmp = config_get_property("password", node, ctx);
+    if (tmp) {
+        fc->password = tmp;
+    }
+    else {
+        fc->password = "";
+    }
+
+    /* Self Hostname */
+    tmp = config_get_property("self_hostname", node, ctx);
+    if (tmp) {
+        fc->self_hostname = flb_sds_create(tmp);
+    }
+    else {
+        fc->self_hostname = flb_sds_create("localhost");
+    }
+
+    /* Backward compatible timing mode */
+    tmp = config_get_property("time_as_integer", node, ctx);
+    if (tmp) {
+        fc->time_as_integer = flb_utils_bool(tmp);
+    }
+    else {
+        fc->time_as_integer = FLB_FALSE;
+    }
+
+    /* send always options (with size) */
+    tmp = config_get_property("send_options", node, ctx);
+    if (tmp) {
+        fc->send_options = flb_utils_bool(tmp);
+    }
+
+    /* require ack response  (implies send_options) */
+    tmp = config_get_property("require_ack_response", node, ctx);
+    if (tmp) {
+        fc->require_ack_response = flb_utils_bool(tmp);
+        if (fc->require_ack_response) {
+            fc->send_options = FLB_TRUE;
+        }
+    }
+
+    /* Tag Overwrite */
+    tmp = config_get_property("tag", node, ctx);
+    if (tmp) {
+        /* Set the tag */
+        fc->tag = flb_sds_create(tmp);
+        if (!fc->tag) {
+            flb_plg_error(ctx->ins, "cannot allocate tag");
+            return -1;
+        }
+
+#ifdef FLB_HAVE_RECORD_ACCESSOR
+        /* Record Accessor */
+        fc->ra_tag = flb_ra_create(fc->tag, FLB_TRUE);
+        if (!fc->ra_tag) {
+            flb_plg_error(ctx->ins, "cannot create record accessor for tag: %s",
+                          fc->tag);
+            return -1;
+        }
+
+        /* Static record accessor ? (no dynamic values from map) */
+        fc->ra_static = flb_ra_is_static(fc->ra_tag);
+#endif
+    }
+    else {
+        fc->tag = NULL;
+
+    }
+
     return 0;
 }
 
@@ -588,6 +650,14 @@ static void forward_config_destroy(struct flb_forward_config *fc)
 {
     flb_sds_destroy(fc->shared_key);
     flb_sds_destroy(fc->self_hostname);
+    flb_sds_destroy(fc->tag);
+
+#ifdef FLB_HAVE_RECORD_ACCESSOR
+    if (fc->ra_tag) {
+        flb_ra_destroy(fc->ra_tag);
+    }
+#endif
+
     flb_free(fc);
 }
 
@@ -597,7 +667,6 @@ static int forward_config_ha(const char *upstream_file,
                              struct flb_config *config)
 {
     int ret;
-    const char *tmp;
     struct mk_list *head;
     struct flb_upstream_node *node;
     struct flb_forward_config *fc = NULL;
@@ -605,7 +674,7 @@ static int forward_config_ha(const char *upstream_file,
     ctx->ha_mode = FLB_TRUE;
     ctx->ha = flb_upstream_ha_from_file(upstream_file, config);
     if (!ctx->ha) {
-        flb_error("[out_forward] cannot load Upstream file");
+        flb_plg_error(ctx->ins, "cannot load Upstream file");
         return -1;
     }
 
@@ -617,7 +686,7 @@ static int forward_config_ha(const char *upstream_file,
         fc = flb_calloc(1, sizeof(struct flb_forward_config));
         if (!fc) {
             flb_errno();
-            flb_error("[out_forward] failed config allocation");
+            flb_plg_error(ctx->ins, "failed config allocation");
             continue;
         }
         fc->secured = FLB_FALSE;
@@ -627,66 +696,8 @@ static int forward_config_ha(const char *upstream_file,
             fc->secured = FLB_TRUE;
         }
 
-        /* Shared key */
-        tmp = flb_upstream_node_get_property("shared_key", node);
-        if (tmp) {
-            fc->shared_key = flb_sds_create(tmp);
-        }
-        else {
-            fc->shared_key = NULL;
-        }
-
-        tmp = flb_upstream_node_get_property("username", node);
-        if (tmp) {
-            fc->username = tmp;
-        }
-        else {
-            fc->username = "";
-        }
-
-        tmp = flb_upstream_node_get_property("password", node);
-        if (tmp) {
-            fc->password = tmp;
-        }
-        else {
-            fc->password = "";
-        }
-
-        /* Self Hostname (Shared key) */
-        tmp = flb_upstream_node_get_property("self_hostname", node);
-        if (tmp) {
-            fc->self_hostname = flb_sds_create(tmp);
-        }
-        else {
-            fc->self_hostname = flb_sds_create("localhost");
-        }
-
-        /* Time_as_Integer */
-        tmp = flb_upstream_node_get_property("time_as_integer", node);
-        if (tmp) {
-            fc->time_as_integer = flb_utils_bool(tmp);
-        }
-        else {
-            fc->time_as_integer = FLB_FALSE;
-        }
-
-        fc->require_ack_response = FLB_FALSE;
-        fc->send_options = FLB_FALSE;
-
-        /* send always options (with size) */
-        tmp = flb_upstream_node_get_property("send_options", node);
-        if (tmp) {
-            fc->send_options = flb_utils_bool(tmp);
-        }
-
-        /* require ack response  (implies send_options) */
-        tmp = flb_upstream_node_get_property("require_ack_response", node);
-        if (tmp) {
-            fc->require_ack_response = flb_utils_bool(tmp);
-            if(fc->require_ack_response) {
-                fc->send_options = FLB_TRUE;
-            }
-        }
+        /* Read properties into 'fc' context */
+        config_set_properties(node, fc, ctx);
 
         /* Initialize and validate forward_config context */
         ret = forward_config_init(fc, ctx);
@@ -710,7 +721,6 @@ static int forward_config_simple(struct flb_forward *ctx,
 {
     int ret;
     int io_flags;
-    const char *tmp;
     struct flb_forward_config *fc = NULL;
     struct flb_upstream *upstream;
 
@@ -720,9 +730,17 @@ static int forward_config_simple(struct flb_forward *ctx,
     /* Configuration context */
     fc = flb_calloc(1, sizeof(struct flb_forward_config));
     if (!fc) {
+        flb_errno();
         return -1;
     }
     fc->secured = FLB_FALSE;
+
+    /* Set default values */
+    ret = flb_output_config_map_set(ins, fc);
+    if (ret == -1) {
+        flb_free(fc);
+        return -1;
+    }
 
     /* Check if TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -752,62 +770,10 @@ static int forward_config_simple(struct flb_forward *ctx,
         return -1;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
-    /* Shared Key */
-    tmp = flb_output_get_property("shared_key", ins);
-    if (tmp) {
-        fc->shared_key = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("username", ins);
-    if (tmp) {
-        fc->username = tmp;
-    }
-    else {
-        fc->username = "";
-    }
-
-    tmp = flb_output_get_property("password", ins);
-    if (tmp) {
-        fc->password = tmp;
-    }
-    else {
-        fc->password = "";
-    }
-
-    /* Self Hostname */
-    tmp = flb_output_get_property("self_hostname", ins);
-    if (tmp) {
-        fc->self_hostname = flb_sds_create(tmp);
-    }
-    else {
-        fc->self_hostname = flb_sds_create("localhost");
-    }
-
-    /* Backward compatible timing mode */
-    fc->time_as_integer = FLB_FALSE;
-    tmp = flb_output_get_property("time_as_integer", ins);
-    if (tmp) {
-        fc->time_as_integer = flb_utils_bool(tmp);
-    }
-
-    fc->require_ack_response = FLB_FALSE;
-    fc->send_options = FLB_FALSE;
-
-    /* send always options (with size) */
-    tmp = flb_output_get_property("send_options", ins);
-    if (tmp) {
-        fc->send_options = flb_utils_bool(tmp);
-    }
-
-    /* require ack response  (implies send_options) */
-    tmp = flb_output_get_property("require_ack_response", ins);
-    if (tmp) {
-        fc->require_ack_response = flb_utils_bool(tmp);
-        if(fc->require_ack_response) {
-            fc->send_options = FLB_TRUE;
-        }
-    }
+    /* Read properties into 'fc' context */
+    config_set_properties(NULL, fc, ctx);
 
     /* Initialize and validate forward_config context */
     ret = forward_config_init(fc, ctx);
@@ -834,6 +800,7 @@ static int cb_forward_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
     mk_list_init(&ctx->configs);
     flb_output_set_context(ins, ctx);
 
@@ -849,61 +816,353 @@ static int cb_forward_init(struct flb_output_instance *ins,
     return ret;
 }
 
-static int data_compose(const void *data, size_t bytes,
-                        void **out_buf, size_t *out_size,
-                        struct flb_forward_config *fc,
-                        struct flb_forward *ctx)
+struct flb_forward_config *flb_forward_target(struct flb_forward *ctx,
+                                              struct flb_upstream_node **node)
 {
-    int entries = 0;
+    struct flb_forward_config *fc = NULL;
+    struct flb_upstream_node *f_node;
+
+    if (ctx->ha_mode == FLB_TRUE) {
+        f_node = flb_upstream_ha_node_get(ctx->ha);
+        if (!f_node) {
+            return NULL;
+        }
+
+        /* Get forward_config stored in node opaque data */
+        fc = flb_upstream_node_get_data(f_node);
+        *node = f_node;
+    }
+    else {
+        fc = mk_list_entry_first(&ctx->configs,
+                                 struct flb_forward_config,
+                                 _head);
+        *node = NULL;
+    }
+    return fc;
+}
+
+static int flush_message_mode(struct flb_forward *ctx,
+                              struct flb_forward_config *fc,
+                              struct flb_upstream_conn *u_conn,
+                              char *buf, size_t size)
+{
+    int ret;
+    int ok = MSGPACK_UNPACK_SUCCESS;
+    size_t sent = 0;
+    size_t rec_size;
+    size_t pre = 0;
     size_t off = 0;
-    msgpack_object   *mp_obj;
+    msgpack_object root;
+    msgpack_object options;
+    msgpack_object chunk;
+    msgpack_unpacked result;
+
+    /* If the sender requires 'ack' from the remote end-point */
+    if (fc->require_ack_response) {
+        msgpack_unpacked_init(&result);
+        while (msgpack_unpack_next(&result, buf, size, &off) == ok) {
+            /* get the record size */
+            rec_size = off - pre;
+
+            /* write single message */
+            ret = flb_io_net_write(u_conn,
+                                   buf + pre, rec_size, &sent);
+            pre = off;
+
+            if (ret == -1) {
+                /*
+                 * FIXME: we might take advantage of 'flush_ctx' and store the
+                 * message that failed it delivery, we could have retries but with
+                 * the flush context.
+                 */
+                flb_plg_error(ctx->ins, "message_mode: error sending message");
+                msgpack_unpacked_destroy(&result);
+                return FLB_RETRY;
+            }
+
+            /* Sucessful delivery, now get message 'chunk' and wait for it */
+            root = result.data;
+            options = root.via.array.ptr[3];
+            chunk = options.via.map.ptr[0].val;
+
+            /* Read ACK */
+            ret = forward_read_ack(ctx, fc, u_conn,
+                                   (char *) chunk.via.str.ptr, chunk.via.str.size);
+            if (ret == -1) {
+                msgpack_unpacked_destroy(&result);
+                return FLB_RETRY;
+            }
+        }
+
+        /* All good */
+        msgpack_unpacked_destroy(&result);
+        return FLB_OK;
+    }
+
+    /* Normal data write */
+    ret = flb_io_net_write(u_conn, buf, size, &sent);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "message_mode: error sending data");
+        return FLB_RETRY;
+    }
+
+    return FLB_OK;
+}
+
+/*
+ * Forward Mode: this is the generic mechanism used in Fluent Bit, it takes
+ * advantage of the internal data representation and avoid re-formatting data,
+ * it only sends a msgpack header, pre-existent 'data' records and options.
+ *
+ * note: if the user has enabled time_as_integer (compat mode for Fluentd <= 0.12),
+ * the 'flush_forward_compat_mode' is used instead.
+ */
+static int flush_forward_mode(struct flb_forward *ctx,
+                              struct flb_forward_config *fc,
+                              struct flb_upstream_conn *u_conn,
+                              const char *tag, int tag_len,
+                              const void *data, size_t bytes,
+                              char *opts_buf, size_t opts_size)
+{
+    int ret;
+    int entries;
+    size_t off = 0;
+    size_t bytes_sent;
+    msgpack_object root;
+    msgpack_object chunk;
+    msgpack_unpacked result;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    /* Pack message header */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
+
+    /* Tag */
+    flb_forward_format_append_tag(ctx, fc, &mp_pck, NULL, tag, tag_len);
+
+    entries = flb_mp_count(data, bytes);
+    msgpack_pack_array(&mp_pck, entries);
+
+    /* Write message header */
+    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not write forward header");
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return FLB_RETRY;
+    }
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* Write entries */
+    ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not write forward entries");
+        return FLB_RETRY;
+    }
+
+    /* Write options */
+    if (fc->send_options == FLB_TRUE) {
+        ret = flb_io_net_write(u_conn, opts_buf, opts_size, &bytes_sent);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not write forward options");
+            return FLB_RETRY;
+        }
+    }
+
+    /* If the sender requires 'ack' from the remote end-point */
+    if (fc->require_ack_response) {
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, opts_buf, opts_size, &off);
+        if (ret != MSGPACK_UNPACK_SUCCESS) {
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
+        /* Sucessful delivery, now get message 'chunk' and wait for it */
+        root = result.data;
+
+        /* 'chunk' is always in the first key of the map */
+        chunk = root.via.map.ptr[0].val;
+
+        /* Read ACK */
+        ret = forward_read_ack(ctx, fc, u_conn,
+                               (char *) chunk.via.str.ptr, chunk.via.str.size);
+        if (ret == -1) {
+            msgpack_unpacked_destroy(&result);
+            return FLB_RETRY;
+        }
+
+        /* All good */
+        msgpack_unpacked_destroy(&result);
+        return FLB_OK;
+    }
+
+    return FLB_OK;
+}
+
+/*
+ * Forward Mode Compat: data is packaged in Forward mode but the timestamps are
+ * integers (compat mode for Fluentd <= 0.12).
+ */
+static int flush_forward_compat_mode(struct flb_forward *ctx,
+                                     struct flb_forward_config *fc,
+                                     struct flb_upstream_conn *u_conn,
+                                     const char *tag, int tag_len,
+                                     const void *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    size_t bytes_sent;
+    msgpack_object root;
+    msgpack_object chunk;
+    msgpack_object map; /* dummy parameter */
+    msgpack_unpacked result;
+
+    /* Write message header */
+    ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not write forward compat mode records");
+        return FLB_RETRY;
+    }
+
+    /* If the sender requires 'ack' from the remote end-point */
+    if (fc->require_ack_response) {
+        msgpack_unpacked_init(&result);
+        ret = msgpack_unpack_next(&result, data, bytes, &off);
+        if (ret != MSGPACK_UNPACK_SUCCESS) {
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
+        /* Sucessful delivery, now get message 'chunk' and wait for it */
+        root = result.data;
+
+        map = root.via.array.ptr[2];
+
+        /* 'chunk' is always in the first key of the map */
+        chunk = map.via.map.ptr[0].val;
+
+        /* Read ACK */
+        ret = forward_read_ack(ctx, fc, u_conn,
+                               (char *) chunk.via.str.ptr, chunk.via.str.size);
+        if (ret == -1) {
+            msgpack_unpacked_destroy(&result);
+            return FLB_RETRY;
+        }
+
+        /* All good */
+        msgpack_unpacked_destroy(&result);
+        return FLB_OK;
+    }
+
+    return FLB_OK;
+}
+
+static void cb_forward_flush(const void *data, size_t bytes,
+                             const char *tag, int tag_len,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
+{
+    int ret = -1;
+    int mode;
     msgpack_packer   mp_pck;
     msgpack_sbuffer  mp_sbuf;
-    msgpack_unpacked result;
-    struct flb_time tm;
+    void *tmp_buf = NULL;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    struct flb_forward *ctx = out_context;
+    struct flb_forward_config *fc = NULL;
+    struct flb_upstream_conn *u_conn;
+    struct flb_upstream_node *node = NULL;
+    struct flb_forward_flush *flush_ctx;
+    (void) i_ins;
+    (void) config;
+
+    fc = flb_forward_target(ctx, &node);
+    if (!fc) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    flb_plg_debug(ctx->ins, "request %lu bytes to flush", bytes);
+
+    /* Initialize packager */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /*
-     * time_as_integer means we are using backward compatible mode for
-     * servers with old timestamp mode in uint64_t (e.g: Fluentd <= v0.12).
+     * Flush context: structure used to pass custom information to the
+     * formatter function.
      */
-    msgpack_unpacked_init(&result);
-    if (fc->time_as_integer == FLB_TRUE) {
-        /*
-         * if the case, we need to compose a new outgoing buffer instead
-         * of use the original one.
-         */
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    flush_ctx = flb_calloc(1, sizeof(struct flb_forward_flush));
+    if (!flush_ctx) {
+        flb_errno();
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+    flush_ctx->fc = fc;
 
-        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-            /* Gather time */
-            flb_time_pop_from_msgpack(&tm, &result, &mp_obj);
+    /* Format the right payload and retrieve the 'forward mode' used */
+    mode = flb_forward_format(config, i_ins, ctx, flush_ctx,
+                              tag, tag_len,
+                              data, bytes, &out_buf, &out_size);
 
-            /* Append data */
-            msgpack_pack_array(&mp_pck, 2);
-            msgpack_pack_uint64(&mp_pck, tm.tm.tv_sec);
-            msgpack_pack_object(&mp_pck, *mp_obj);
-            entries++;
-        }
+    /* Get a TCP connection instance */
+    if (ctx->ha_mode == FLB_TRUE) {
+        u_conn = flb_upstream_conn_get(node->u);
     }
     else {
-        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-            entries++;
+        u_conn = flb_upstream_conn_get(ctx->u);
+    }
+
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "no upstream connections available");
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        if (fc->time_as_integer == FLB_TRUE) {
+            flb_free(tmp_buf);
+        }
+        flb_free(flush_ctx);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /*
+     * Shared Key: if ka_count > 0 it means the handshake has already been done lately
+     */
+    if (fc->shared_key && u_conn->ka_count == 0) {
+        ret = secure_forward_handshake(u_conn, fc, ctx);
+        flb_plg_debug(ctx->ins, "handshake status = %i", ret);
+        if (ret == -1) {
+            flb_upstream_conn_release(u_conn);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            if (fc->time_as_integer == FLB_TRUE) {
+                flb_free(tmp_buf);
+            }
+            flb_free(flush_ctx);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
         }
     }
 
-    /* cleanup */
-    if (fc->time_as_integer == FLB_TRUE) {
-        *out_buf  = mp_sbuf.data;
-        *out_size = mp_sbuf.size;
+    if (mode == MODE_MESSAGE) {
+        ret = flush_message_mode(ctx, fc, u_conn, out_buf, out_size);
+        flb_free(out_buf);
     }
-    else {
-        *out_buf  = NULL;
-        *out_size = 0;
+    else if (mode == MODE_FORWARD) {
+        ret = flush_forward_mode(ctx, fc, u_conn, tag, tag_len,
+                                 data, bytes,
+                                 out_buf, out_size);
+        flb_free(out_buf);
     }
-    msgpack_unpacked_destroy(&result);
+    else if (mode == MODE_FORWARD_COMPAT) {
+        ret = flush_forward_compat_mode(ctx, fc, u_conn, tag, tag_len,
+                                        out_buf, out_size);
+        flb_free(out_buf);
+    }
 
-    return entries;
+    flb_upstream_conn_release(u_conn);
+    flb_free(flush_ctx);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_forward_exit(void *data, struct flb_config *config)
@@ -931,186 +1190,87 @@ static int cb_forward_exit(void *data, struct flb_config *config)
         }
     }
     else {
-        flb_upstream_destroy(ctx->u);
+        if (ctx->u) {
+            flb_upstream_destroy(ctx->u);
+        }
     }
     flb_free(ctx);
 
     return 0;
 }
 
-static void cb_forward_flush(const void *data, size_t bytes,
-                             const char *tag, int tag_len,
-                             struct flb_input_instance *i_ins,
-                             void *out_context,
-                             struct flb_config *config)
-{
-    int ret = -1;
-    int entries = 0;
-    size_t total;
-    size_t bytes_sent;
-    msgpack_packer   mp_pck;
-    msgpack_sbuffer  mp_sbuf;
-    void *tmp_buf = NULL;
-    const void *out_buf = NULL;
-    size_t out_size = 0;
-    struct flb_forward *ctx = out_context;
-    struct flb_forward_config *fc = NULL;
-    struct flb_upstream_conn *u_conn;
-    struct flb_upstream_node *node;
-    (void) i_ins;
-    (void) config;
-    char *chunkptr;
-    struct flb_sha512 sha512;
-    uint8_t checksum[64];
-    char checksum_hex[33];
-
-    if (ctx->ha_mode == FLB_TRUE) {
-        node = flb_upstream_ha_node_get(ctx->ha);
-        if (!node) {
-            flb_error("[out_forward] cannot get an Upstream HA node");
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-
-        /* Get forward_config stored in node opaque data */
-        fc = flb_upstream_node_get_data(node);
-    }
-    else {
-        fc = mk_list_entry_first(&ctx->configs,
-                                 struct flb_forward_config,
-                                 _head);
-    }
-
-    flb_debug("[out_forward] request %lu bytes to flush", bytes);
-
-    /* Initialize packager */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    /* Count number of entries, is there a better way to do this ? */
-    entries = data_compose(data, bytes, &tmp_buf, &out_size, fc, ctx);
-    out_buf = tmp_buf;
-    if (out_buf == NULL && fc->time_as_integer == FLB_FALSE) {
-        out_buf = data;
-        out_size = bytes;
-    }
-
-    flb_debug("[out_fw] %i entries tag='%s' tag_len=%i",
-              entries, tag, tag_len);
-
-    /* Output: root array */
-    msgpack_pack_array(&mp_pck, fc->send_options ? 3 : 2);
-    msgpack_pack_str(&mp_pck, tag_len);
-    msgpack_pack_str_body(&mp_pck, tag, tag_len);
-    msgpack_pack_array(&mp_pck, entries);
-
-    /* Get a TCP connection instance */
-    if (ctx->ha_mode == FLB_TRUE) {
-        u_conn = flb_upstream_conn_get(node->u);
-    }
-    else {
-        u_conn = flb_upstream_conn_get(ctx->u);
-    }
-    if (!u_conn) {
-        flb_error("[out_fw] no upstream connections available");
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(tmp_buf);
-        }
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    /* Shared Key */
-    if (fc->shared_key) {
-        ret = secure_forward_handshake(u_conn, fc, ctx);
-        flb_debug("[out_fw] handshake status = %i", ret);
-        if (ret == -1) {
-            flb_upstream_conn_release(u_conn);
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            if (fc->time_as_integer == FLB_TRUE) {
-                flb_free(tmp_buf);
-            }
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-    }
-
-    /* Write message header */
-    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
-    if (ret == -1) {
-        flb_error("[out_fw] could not write chunk header");
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        flb_upstream_conn_release(u_conn);
-        if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(tmp_buf);
-        }
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    msgpack_sbuffer_destroy(&mp_sbuf);
-    total = ret;
-
-    /* Write body (records) */
-    ret = flb_io_net_write(u_conn, out_buf, out_size, &bytes_sent);
-    if (ret == -1) {
-        flb_error("[out_fw] error writing content body");
-        if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(tmp_buf);
-        }
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    total += bytes_sent;
-
-    if (fc->time_as_integer == FLB_TRUE) {
-        flb_free(tmp_buf);
-    }
-
-    if(fc->send_options) {
-        chunkptr = NULL;
-        if(fc->require_ack_response) {
-            /* for ack we calculate  sha512 of context, take 16 bytes,  make 32 byte hex string of it */
-            flb_sha512_init(&sha512);
-            flb_sha512_update(&sha512,data,bytes);
-            flb_sha512_sum(&sha512,checksum); // => 65 bytes
-            secure_forward_bin_to_hex(checksum, 16, checksum_hex);
-            checksum_hex[32] = '\0';
-            chunkptr = (char*) checksum_hex;
-        }
-
-        flb_debug("[out_fw] send options entries=%d chunk='%s'", entries, chunkptr ? chunkptr : "NULL");
-
-        ret = secure_forward_write_options(u_conn, fc, ctx, entries, chunkptr, &bytes_sent);
-        if(ret < 0) {
-            flb_error("[out_fw] error writing option");
-            flb_upstream_conn_release(u_conn);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-
-        total += bytes_sent;
-
-        if(chunkptr) {
-            ret = secure_forward_read_ack(u_conn, fc, ctx, chunkptr);
-            if(ret < 0) {
-                flb_error("[out_fw] error wait ACK");
-                flb_upstream_conn_release(u_conn);
-                FLB_OUTPUT_RETURN(FLB_RETRY);
-            }
-        }
-    }
-
-    flb_upstream_conn_release(u_conn);
-
-    flb_trace("[out_fw] ended write()=%d bytes", total);
-    FLB_OUTPUT_RETURN(FLB_OK);
-}
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "time_as_integer", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, time_as_integer),
+     "Set timestamp in integer format (compat mode for old Fluentd v0.12)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "shared_key", NULL,
+     0, FLB_FALSE, 0,
+     "Shared key for authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "self_hostname", NULL,
+     0, FLB_FALSE, 0,
+     "Hostname"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, empty_shared_key),
+     "Set an empty shared key for authentication"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "send_options", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, send_options),
+     "Send 'forward protocol options' to remote endpoint"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "require_ack_response", "false",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, require_ack_response),
+     "Require that remote endpoint confirms data reception"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "username", "",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, username),
+     "Username for authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "password", "",
+     0, FLB_TRUE, offsetof(struct flb_forward_config, password),
+     "Password for authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "upstream", NULL,
+     0, FLB_FALSE, 0,
+     "Path to 'upstream' configuration file (define multiple nodes)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag", NULL,
+     0, FLB_FALSE, 0,
+     "Set a custom Tag for the outgoing records"
+    },
+    /* EOF */
+    {0}
+};
 
 /* Plugin reference */
 struct flb_output_plugin out_forward_plugin = {
     .name         = "forward",
     .description  = "Forward (Fluentd protocol)",
+
+    /* Callbacks */
     .cb_init      = cb_forward_init,
     .cb_pre_run   = NULL,
     .cb_flush     = cb_forward_flush,
     .cb_exit      = cb_forward_exit,
+
+    /* Config map validator */
+    .config_map   = config_map,
+
+    /* Test */
+    .test_formatter.callback = flb_forward_format,
+
+    /* Flags */
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
