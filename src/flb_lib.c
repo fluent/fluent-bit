@@ -190,6 +190,10 @@ flb_ctx_t *flb_create()
 /* Release resources associated to the library context */
 void flb_destroy(flb_ctx_t *ctx)
 {
+    if (!ctx) {
+        return;
+    }
+
     if (ctx->event_channel) {
         mk_event_del(ctx->event_loop, ctx->event_channel);
         flb_free(ctx->event_channel);
@@ -198,6 +202,7 @@ void flb_destroy(flb_ctx_t *ctx)
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
     flb_free(ctx);
+    ctx = NULL;
 
 #ifdef FLB_HAVE_MTRACE
     /* Stop tracing malloc and free */
