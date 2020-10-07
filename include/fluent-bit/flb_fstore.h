@@ -40,8 +40,9 @@ struct flb_fstore_file {
 };
 
 struct flb_fstore_stream {
-    struct cio_stream *stream;      /* Chunk I/O stream context */
+    char *name;                     /* reference to stream->name */
     flb_sds_t path;                 /* stream filesystem path */
+    struct cio_stream *stream;      /* Chunk I/O stream context */
     struct mk_list files;
     struct mk_list _head;
 };
@@ -58,7 +59,7 @@ int flb_fstore_destroy(struct flb_fstore *fs);
 
 struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
                                                    char *stream_name);
-void flb_fstore_stream_destroy(struct flb_fstore_stream *stream);
+void flb_fstore_stream_destroy(struct flb_fstore_stream *stream, int delete);
 
 int flb_fstore_file_meta_set(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf,
@@ -80,5 +81,6 @@ int flb_fstore_file_inactive(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf);
 int flb_fstore_file_delete(struct flb_fstore *fs,
                            struct flb_fstore_file *fsf);
+void flb_fstore_dump(struct flb_fstore *fs);
 
 #endif
