@@ -549,7 +549,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "metric_dimensions", NULL,
      0, FLB_FALSE, 0,
-     "Metric dimensions is a list of lsits. If you have only one list of "
+     "Metric dimensions is a list of lists. If you have only one list of "
      "dimensions, put the values as a comma seperated string. If you want to put "
      "list of lists, use the list as semicolon seperated strings. If your value "
      "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
