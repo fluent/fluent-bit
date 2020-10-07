@@ -553,7 +553,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (ctx->timer_ms > UPLOAD_TIMER_MAX_WAIT) {
         ctx->timer_ms = UPLOAD_TIMER_MAX_WAIT;
     }
-    else if (ctx->timer_ms == 0) {
+    else if (ctx->timer_ms < UPLOAD_TIMER_MIN_WAIT) {
         ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
     }
 
