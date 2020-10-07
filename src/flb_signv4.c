@@ -112,6 +112,18 @@ static inline int to_encode(char c)
     return FLB_TRUE;
 }
 
+static inline int to_encode_path(char c)
+{
+    if ((c >= 48 && c <= 57)  ||  /* 0-9 */
+        (c >= 65 && c <= 90)  ||  /* A-Z */
+        (c >= 97 && c <= 122) ||  /* a-z */
+        (c == '-' || c == '_' || c == '.' || c == '~' || c == '/')) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 flb_sds_t flb_signv4_uri_normalize_path(char *uri, size_t len)
 {
     char *p;
@@ -185,6 +197,8 @@ static flb_sds_t uri_encode(const char *uri, size_t len)
     int i;
     flb_sds_t buf = NULL;
     flb_sds_t tmp = NULL;
+    int is_query_string = FLB_FALSE;
+    int do_encode = FLB_FALSE;
 
     buf = flb_sds_create_size(len * 2);
     if (!buf) {
@@ -193,7 +207,18 @@ static flb_sds_t uri_encode(const char *uri, size_t len)
     }
 
     for (i = 0; i < len; i++) {
-        if (to_encode(uri[i]) == FLB_TRUE) {
+        if (uri[i] == '?') {
+            is_query_string = FLB_TRUE;
+        }
+        do_encode = FLB_FALSE;
+
+        if (is_query_string == FLB_FALSE && to_encode_path(uri[i]) == FLB_TRUE) {
+            do_encode = FLB_TRUE;
+        }
+        if (is_query_string == FLB_TRUE && to_encode(uri[i]) == FLB_TRUE) {
+            do_encode = FLB_TRUE;
+        }
+        if (do_encode == FLB_TRUE) {
             tmp = flb_sds_printf(&buf, "%%%02X", (unsigned char) *(uri + i));
             if (!tmp) {
                 flb_error("[signv4] error formatting special character");
