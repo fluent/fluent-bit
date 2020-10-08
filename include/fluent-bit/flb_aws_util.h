@@ -130,8 +130,6 @@ struct flb_aws_client_generator *flb_aws_client_generator();
  */
 char *flb_aws_endpoint(char* service, char* region);
 
-char *flb_s3_endpoint(char* bucket, char* region);
-
 /* Parses AWS XML API Error responses and returns the value of the <code> tag */
 flb_sds_t flb_aws_xml_error(char *response, size_t response_len);
 

@@ -34,12 +34,6 @@
 #define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
 #define AWS_SERVICE_ENDPOINT_BASE_LEN          15
 
-#define S3_SERVICE_GLOBAL_ENDPOINT_FORMAT             "%s.s3.amazonaws.com"
-#define S3_SERVICE_GLOBAL_ENDPOINT_BASE_LEN           17
-
-#define S3_SERVICE_ENDPOINT_FORMAT             "%s.s3.%s.amazonaws.com"
-#define S3_SERVICE_ENDPOINT_BASE_LEN           18
-
 #define TAG_PART_DESCRIPTOR "$TAG[%d]"
 #define TAG_DESCRIPTOR "$TAG"
 #define MAX_TAG_PARTS 10
@@ -148,65 +142,6 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size)
     return 0;
 }
 
-/*
- * https://bucket.s3.amazonaws.com(.cn)
- */
-char *flb_s3_endpoint(char* bucket, char* region)
-{
-    char *endpoint = NULL;
-    size_t len = 0;
-    int is_cn = FLB_FALSE;
-    int bytes;
-
-    if (strcmp("us-east-1", region) == 0) {
-        len = S3_SERVICE_GLOBAL_ENDPOINT_BASE_LEN;
-    }
-    else {
-        len = S3_SERVICE_ENDPOINT_BASE_LEN;
-        len += strlen(region);
-    }
-
-
-    /* In the China regions, ".cn" is appended to the URL */
-    if (strcmp("cn-north-1", region) == 0) {
-        len += 3;
-        is_cn = FLB_TRUE;
-    }
-    if (strcmp("cn-northwest-1", region) == 0) {
-        len += 3;
-        is_cn = FLB_TRUE;
-    }
-
-    len += strlen(bucket);
-    len++; /* null byte */
-
-    endpoint = flb_malloc(len);
-    if (!endpoint) {
-        flb_errno();
-        return NULL;
-    }
-
-    if (strcmp("us-east-1", region) == 0) {
-        bytes = snprintf(endpoint, len, S3_SERVICE_GLOBAL_ENDPOINT_FORMAT, bucket);
-    }
-    else {
-        bytes = snprintf(endpoint, len, S3_SERVICE_ENDPOINT_FORMAT, bucket, region);
-    }
-
-    if (bytes < 0) {
-        flb_errno();
-        flb_free(endpoint);
-        return NULL;
-    }
-
-    if (is_cn) {
-        memcpy(endpoint + bytes, ".cn", 3);
-        endpoint[bytes + 3] = '\0';
-    }
-
-    return endpoint;
-
-}
 
 char *removeProtocol (char *endpoint, char *protocol) {
     if (strncmp(protocol, endpoint, strlen(protocol)) == 0){
@@ -214,7 +149,6 @@ char *removeProtocol (char *endpoint, char *protocol) {
     }
     return endpoint;
 }
-
 
 struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client,
                                                int method, const char *uri,
