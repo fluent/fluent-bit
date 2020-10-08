@@ -438,8 +438,6 @@ int flb_fstore_destroy(struct flb_fstore *fs)
     struct flb_fstore_stream *fs_stream;
     struct flb_fstore_file *fsf;
 
-    flb_fstore_dump(fs);
-
     mk_list_foreach_safe(head, tmp, &fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
 
