@@ -932,6 +932,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         random_alphanumeric = flb_sts_session_name();
         if (!random_alphanumeric) {
             flb_sds_destroy(s3_key);
+            flb_sds_destroy(uri);
             flb_plg_error(ctx->ins, "Failed to create randomness for S3 key %s", tag);
             return -1;
         }
