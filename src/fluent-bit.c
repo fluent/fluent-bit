@@ -102,6 +102,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  -b  --storage_path=PATH\tspecify a storage buffering path\n");
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
+    printf("  -C, --check_configuration\tcheck configration\n");
 #ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
 #endif
@@ -822,7 +823,7 @@ int flb_main(int argc, char **argv)
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:c:df:i:m:o:R:F:p:e:"
+                              "b:c:Cdf:i:m:o:R:F:p:e:"
                               "t:T:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
@@ -832,6 +833,9 @@ int flb_main(int argc, char **argv)
             break;
         case 'c':
             cfg_file = flb_strdup(optarg);
+            break;
+        case 'C':
+            config->check_configuration = FLB_TRUE;
             break;
 #ifdef FLB_HAVE_FORK
         case 'd':
@@ -1025,6 +1029,11 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
     win32_started();
 #endif
+
+    if (config->check_configuration == FLB_TRUE) {
+        fprintf(stderr, "configuration test is successful\n");
+        exit(EXIT_SUCCESS);
+    }
 
     ret = flb_start(ctx);
     if (ret != 0) {
