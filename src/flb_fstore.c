@@ -145,9 +145,9 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     }
     fsf->name = flb_sds_create(name);
     if (!fsf->name) {
-        flb_free(fsf);
         flb_error("[fstore] could not create file: %s:%s",
                   fsf->stream->name, name);
+        flb_free(fsf);
         return NULL;
     }
 
