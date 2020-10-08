@@ -491,6 +491,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                 ctx->sts_endpoint,
                                                 NULL,
                                                 flb_aws_client_generator());
+        flb_free(session_name);
         if (!ctx->provider) {
             flb_plg_error(ctx->ins, "Failed to create AWS STS Credential "
                          "Provider");
