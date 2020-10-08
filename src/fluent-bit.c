@@ -410,8 +410,8 @@ static void flb_signal_handler(int signal)
     case SIGTERM:
         flb_stop(ctx);
         flb_destroy(ctx);
-        break;
-    case SIGSEGV:
+        _exit(EXIT_SUCCESS);
+     case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
         flb_stacktrace_print(&flb_st);
 #endif
