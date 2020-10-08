@@ -277,6 +277,10 @@ int s3_store_exit(struct flb_s3 *ctx)
     struct flb_fstore_file *fsf;
     struct s3_file *s3_file;
 
+    if (!ctx->fs) {
+        return 0;
+    }
+
     /* release local context on non-multi upload files */
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
@@ -309,6 +313,10 @@ int s3_store_has_data(struct flb_s3 *ctx)
     struct mk_list *head;
     struct flb_fstore_stream *fs_stream;
 
+    if (!ctx->fs) {
+        return FLB_FALSE;
+    }
+
     mk_list_foreach(head, &ctx->fs->streams) {
         /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
@@ -326,6 +334,10 @@ int s3_store_has_data(struct flb_s3 *ctx)
 
 int s3_store_has_uploads(struct flb_s3 *ctx)
 {
+    if (!ctx || !ctx->stream_upload) {
+        return FLB_FALSE;
+    }
+
     if (mk_list_size(&ctx->stream_upload->files) > 0) {
         return FLB_TRUE;
     }
