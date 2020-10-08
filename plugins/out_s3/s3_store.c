@@ -69,6 +69,7 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
 {
     struct mk_list *head;
     struct flb_fstore_file *fsf = NULL;
+    struct s3_file *s3_file;
 
     /*
      * Based in the current ctx->stream_name, locate a candidate file to
@@ -76,6 +77,14 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
      */
     mk_list_foreach(head, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+
+        /* skip locked chunks */
+        s3_file = fsf->data;
+        if (s3_file->locked == FLB_TRUE) {
+            fsf = NULL;
+            continue;
+        }
+
         if (fsf->meta_size != tag_len) {
             fsf = NULL;
             continue;
