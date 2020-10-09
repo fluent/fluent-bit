@@ -25,6 +25,16 @@
 #include "s3.h"
 #include "s3_store.h"
 
+static int s3_store_under_travis_ci()
+{
+
+    if (getenv("CI") != NULL && getenv("TRAVIS") != NULL) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /*
  * Simple and fast hashing algorithm to create keys in the local buffer
  */
@@ -216,14 +226,23 @@ static int set_files_context(struct flb_s3 *ctx)
 /* Initialize filesystem storage for S3 plugin */
 int s3_store_init(struct flb_s3 *ctx)
 {
+    int type;
     time_t now;
     char tmp[64];
     struct tm *tm;
     struct flb_fstore *fs;
     struct flb_fstore_stream *fs_stream;
 
+    if (s3_store_under_travis_ci() == FLB_TRUE) {
+        type = FLB_FSTORE_MEM;
+        flb_plg_warn(ctx->ins, "Travis CI test, using s3 store memory backend");
+    }
+    else {
+        type = FLB_FSTORE_FS;
+    }
+
     /* Initialize the storage context */
-    fs = flb_fstore_create(ctx->buffer_dir);
+    fs = flb_fstore_create(ctx->buffer_dir, type);
     if (!fs) {
         return -1;
     }
