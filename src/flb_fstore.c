@@ -282,7 +282,7 @@ struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
 
     if (!stream) {
         /* create file-system based stream */
-        stream = cio_stream_create(fs->cio, stream_name, CIO_STORE_FS);
+        stream = cio_stream_create(fs->cio, stream_name, fs->store_type);
         if (!stream) {
             flb_error("[fstore] cannot create stream %s", stream_name);
             return NULL;
@@ -387,7 +387,7 @@ static int load_references(struct flb_fstore *fs)
     return 0;
 }
 
-struct flb_fstore *flb_fstore_create(char *path)
+struct flb_fstore *flb_fstore_create(char *path, int store_type)
 {
     int ret;
     int flags;
@@ -419,6 +419,7 @@ struct flb_fstore *flb_fstore_create(char *path)
     }
     fs->cio = cio;
     fs->root_path = cio->root_path;
+    fs->store_type = store_type;
     mk_list_init(&fs->streams);
 
     /* Map Chunk I/O streams and chunks into fstore context */

@@ -28,6 +28,9 @@
 #define FLB_FSTORE_LOCK        222
 #define FLB_FSTORE_UNLOCK      333
 
+#define FLB_FSTORE_MEM         CIO_STORE_MEM
+#define FLB_FSTORE_FS          CIO_STORE_FS
+
 struct flb_fstore_file {
     flb_sds_t name;                 /* file name */
 
@@ -48,12 +51,13 @@ struct flb_fstore_stream {
 };
 
 struct flb_fstore {
+    int store_type;
     char *root_path;
     struct cio_ctx *cio;            /* Chunk I/O context */
     struct mk_list streams;
 };
 
-struct flb_fstore *flb_fstore_create(char *path);
+struct flb_fstore *flb_fstore_create(char *path, int store_type);
 
 int flb_fstore_destroy(struct flb_fstore *fs);
 
