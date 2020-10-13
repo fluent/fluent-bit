@@ -1006,6 +1006,18 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
+static int get_trace(flb_sds_t * t, const msgpack_object * o, const flb_sds_t key)
+{
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0) {
+        *t = flb_sds_create_len(tmp.via.str.ptr, tmp.via.str.size);
+        return 0;
+    }
+
+    *t = 0;
+    return -1;
+}
+
 static int get_stream(msgpack_object_map map)
 {
     int i;
@@ -1104,6 +1116,7 @@ static int pack_json_payload(int insert_id_extracted,
         monitored_resource_key,
         local_resource_id_key,
         ctx->labels_key,
+        ctx->trace_key,
         stream
         /* more special fields are required to be added */
     };
@@ -1275,6 +1288,10 @@ static int stackdriver_format(struct flb_config *config,
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
     severity_t severity;
+
+    /* Parameters for trace */
+    int trace_extracted = FLB_FALSE;
+    flb_sds_t trace;
 
     /* Parameters for insertId */
     msgpack_object insert_id_obj;
@@ -1581,7 +1598,8 @@ static int stackdriver_format(struct flb_config *config,
          *  "labels": "...",
          *  "logName": "...",
          *  "jsonPayload": {...},
-         *  "timestamp": "..."
+         *  "timestamp": "...",
+         *  "trace": "..."
          * }
          */
         entry_size = 3;
@@ -1591,6 +1609,14 @@ static int stackdriver_format(struct flb_config *config,
         if (ctx->severity_key
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             severity_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract trace */
+        trace_extracted = FLB_FALSE;
+        if (ctx->trace_key
+            && get_trace(&trace, obj, ctx->trace_key) == 0) {
+            trace_extracted = FLB_TRUE;
             entry_size += 1;
         }
 
@@ -1667,6 +1693,17 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_str_body(&mp_pck, "severity", 8);
             msgpack_pack_int(&mp_pck, severity);
         }
+
+        /* Add trace into the log entry */
+        if (trace_extracted == FLB_TRUE) {
+            msgpack_pack_str(&mp_pck, 5);
+            msgpack_pack_str_body(&mp_pck, "trace", 5);
+
+            len = flb_sds_len(trace);
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, trace, len);
+            flb_sds_destroy(trace); 
+        }               
 
         /* Add insertId field into the log entry */
         if (insert_id_extracted == FLB_TRUE) {
