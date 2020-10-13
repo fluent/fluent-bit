@@ -183,28 +183,54 @@ ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
     return total;
 }
 
+static int cb_resume_thread(struct mk_event* event)
+{
+    struct flb_thread *th;
+    th = (struct flb_thread *)event->data;
+    if (th) {
+        flb_thread_resume(th);
+    }
+}
+
 /* Writes to a non-blocking pipe yielding if no more bytes can be written */
-ssize_t flb_pipe_write_async(int fd, const void *buf, size_t count, struct flb_thread *th)
+ssize_t flb_pipe_write_async(struct mk_event_loop *loop, int fd, const void *buf, size_t count, struct flb_thread *th)
 {
     ssize_t bytes;
     size_t total = 0;
+    int ret;
+    struct mk_event event;
 
     do {
         bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
         if (bytes == -1) {
-            if (FLB_PIPE_WOULDBLOCK()) {
-                flb_thread_yield(th, FLB_FALSE);
-                continue;
+            if (!FLB_PIPE_WOULDBLOCK()) {
+                return -1;
             }
-            return -1;
+
+            MK_EVENT_INIT(&event, fd, th, cb_resume_thread);
+
+            ret = mk_event_add(loop, fd,
+                               FLB_ENGINE_EV_CUSTOM,
+                               MK_EVENT_WRITE, &event);
+            if (ret == -1) {
+                return -1;
+            }
+
+            flb_thread_yield(th, FLB_FALSE);
+
+            ret = mk_event_del(loop, &event);
+            if (ret == -1) {
+                return -1;
+            }
+            continue;
         }
         else if (bytes == 0) {
             /* Broken pipe ? */
             flb_errno();
             return -1;
         }
-        total += bytes;
 
+        total += bytes;
     } while (total < count);
 
     return total;
