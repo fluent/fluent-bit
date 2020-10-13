@@ -7,6 +7,8 @@ set(UNIT_TESTS_FILES
   msgpack_parse_fuzzer.c
   msgpack_to_gelf_fuzzer.c
   pack_json_state_fuzzer.c
+  http_fuzzer.c
+  strp_fuzzer.c
   )
 
 # Prepare list of unit tests
