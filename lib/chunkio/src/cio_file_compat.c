@@ -95,6 +95,12 @@ int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
     return -1;
 }
 
+int cio_file_content_copy(struct cio_chunk *ch,
+                          void **out_buf, size_t *out_size)
+{
+    return -1;
+}
+
 int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf)
 {
     return CIO_FALSE;

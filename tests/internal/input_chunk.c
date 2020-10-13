@@ -73,6 +73,7 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 /* Given a target, lookup the .out file and return it content in a tail_file_lines structure */
 static struct tail_file_lines *get_out_file_content(const char *target)
 {
+    int i;
     int ret;
     char file[PATH_MAX];
     char *p;
@@ -91,8 +92,8 @@ static struct tail_file_lines *get_out_file_content(const char *target)
     }
 
     file_lines->lines[file_lines->lines_c++] = out_buf;
-    
-    for (int i=0; i<out_size; i++) {
+
+    for (i = 0; i < out_size; i++) {
       // Nullify \n and \r characters
       p = (char *)(out_buf + i);
       if (*p == '\n' || *p == '\r') {
@@ -114,6 +115,7 @@ static struct tail_file_lines *get_out_file_content(const char *target)
 
 static int cb_check_result(void *record, size_t size, void *data)
 {
+    int i;
     struct tail_test_result *result;
     struct tail_file_lines *out;
 
@@ -130,7 +132,7 @@ static int cb_check_result(void *record, size_t size, void *data)
     * Our validation is: check that the one of the output lines
     * in the output record.
     */
-    for (int i=0; i<out->lines_c; i++) {
+    for (i = 0; i<out->lines_c; i++) {
       check = strstr(record, out->lines[i]);
       if (check != NULL) {
           result->nMatched++;
@@ -212,7 +214,7 @@ void do_test(char *system, const char *target, ...)
 
     ret = flb_stop(ctx);
     TEST_CHECK_(ret == 0, "stopping engine");
-    
+
     if (ctx) {
         flb_destroy(ctx);
     }
@@ -286,7 +288,7 @@ void flb_test_input_chunk_dropping_chunks()
     i_ins = mk_list_entry_first(&ctx->config->inputs,
                                 struct flb_input_instance,
                                 _head);
-    
+
     /* Ingest data sample */
     for (i = 0; i < 10; ++i) {
         flb_lib_push(ctx, in_ffd, (char *) TEST_BUFFER_DROP_CHUNKS, size);
@@ -295,7 +297,7 @@ void flb_test_input_chunk_dropping_chunks()
         ret = total_bytes > 1000 ? -1 : 0;
         TEST_CHECK(ret == 0);
     }
-    
+
     /* FORCE clean up test tasks*/
     mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);

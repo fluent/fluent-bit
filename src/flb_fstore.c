@@ -145,9 +145,9 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     }
     fsf->name = flb_sds_create(name);
     if (!fsf->name) {
-        flb_free(fsf);
         flb_error("[fstore] could not create file: %s:%s",
                   fsf->stream->name, name);
+        flb_free(fsf);
         return NULL;
     }
 
@@ -282,7 +282,7 @@ struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
 
     if (!stream) {
         /* create file-system based stream */
-        stream = cio_stream_create(fs->cio, stream_name, CIO_STORE_FS);
+        stream = cio_stream_create(fs->cio, stream_name, fs->store_type);
         if (!stream) {
             flb_error("[fstore] cannot create stream %s", stream_name);
             return NULL;
@@ -305,6 +305,7 @@ struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
     }
     path = flb_sds_printf(&path, "%s/%s", fs->root_path, stream->name);
     fs_stream->path = path;
+    fs_stream->name = stream->name;
 
     mk_list_init(&fs_stream->files);
     mk_list_add(&fs_stream->_head, &fs->streams);
@@ -312,13 +313,18 @@ struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
     return fs_stream;
 }
 
-void flb_fstore_stream_destroy(struct flb_fstore_stream *stream)
+void flb_fstore_stream_destroy(struct flb_fstore_stream *stream, int delete)
 {
+    if (delete == FLB_TRUE) {
+        cio_stream_delete(stream->stream);
+    }
+
     /*
      * FYI: in this function we just release the fstore_stream context, the
      * underlaying cio_stream is closed when the main Chunk I/O is destroyed.
      */
     mk_list_del(&stream->_head);
+    flb_sds_destroy(stream->path);
     flb_free(stream);
 }
 
@@ -381,7 +387,7 @@ static int load_references(struct flb_fstore *fs)
     return 0;
 }
 
-struct flb_fstore *flb_fstore_create(char *path)
+struct flb_fstore *flb_fstore_create(char *path, int store_type)
 {
     int ret;
     int flags;
@@ -413,6 +419,7 @@ struct flb_fstore *flb_fstore_create(char *path)
     }
     fs->cio = cio;
     fs->root_path = cio->root_path;
+    fs->store_type = store_type;
     mk_list_init(&fs->streams);
 
     /* Map Chunk I/O streams and chunks into fstore context */
@@ -423,6 +430,8 @@ struct flb_fstore *flb_fstore_create(char *path)
 
 int flb_fstore_destroy(struct flb_fstore *fs)
 {
+    int files = 0;
+    int delete;
     struct mk_list *head;
     struct mk_list *f_head;
     struct mk_list *tmp;
@@ -434,13 +443,21 @@ int flb_fstore_destroy(struct flb_fstore *fs)
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
 
         /* delete file references */
+        files = 0;
         mk_list_foreach_safe(f_head, f_tmp, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             flb_fstore_file_inactive(fs, fsf);
+            files++;
         }
-        mk_list_del(&fs_stream->_head);
-        flb_sds_destroy(fs_stream->path);
-        flb_free(fs_stream);
+
+        if (files == 0) {
+            delete = FLB_TRUE;
+        }
+        else {
+            delete = FLB_FALSE;
+        }
+
+        flb_fstore_stream_destroy(fs_stream, delete);
     }
 
     if (fs->cio) {
@@ -448,4 +465,23 @@ int flb_fstore_destroy(struct flb_fstore *fs)
     }
     flb_free(fs);
     return 0;
+}
+
+void flb_fstore_dump(struct flb_fstore *fs)
+{
+    struct mk_list *head;
+    struct mk_list *f_head;
+    struct flb_fstore_stream *fs_stream;
+    struct flb_fstore_file *fsf;
+
+    printf("===== FSTORE DUMP =====\n");
+    mk_list_foreach(head, &fs->streams) {
+        fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+        printf("- stream: %s\n", fs_stream->name);
+        mk_list_foreach(f_head, &fs_stream->files) {
+            fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
+            printf("          %s/%s\n", fs_stream->name, fsf->name);
+        }
+    }
+    printf("\n");
 }

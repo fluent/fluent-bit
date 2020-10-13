@@ -38,6 +38,7 @@
 #include "data/stackdriver/stackdriver_test_source_location.h"
 #include "data/stackdriver/stackdriver_test_http_request.h"
 #include "data/stackdriver/stackdriver_test_timestamp.h"
+#include "data/stackdriver/stackdriver_test_monitored_resource.h"
 
 
 /*
@@ -287,6 +288,102 @@ static int mp_kv_exists(char *json_data, size_t json_len, char *key_accessor)
         flb_free(mp_buf);
     }
     return ret;
+}
+
+static void cb_check_monitored_resource(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "monitored_resource");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "monitored_resource_project_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "monitored_resource_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['testA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/monitored_resource']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_monitored_resource_priority_higher_than_local_resource_id(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "k8s_container");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "monitored_resource_project_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "monitored_resource_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['cluster_name']", "monitored_resource_cluster_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace_name']", "monitored_resource_namespace_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['pod_name']", "monitored_resource_pod_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['container_name']", "monitored_resource_container_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/monitored_resource']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_monitored_resource_priority_higher_than_gce_instance(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "gce_instance");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "monitored_resource_project_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['zone']", "monitored_resource_zone");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['instance_id']", "monitored_resource_instance_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/monitored_resource']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
 }
 
 static void cb_check_global_resource(void *ctx, int ffd,
@@ -1589,6 +1686,131 @@ static void cb_check_timestamp_format_duo_fields_incorrect_type(void *ctx, int f
     TEST_CHECK(ret == FLB_FALSE);
 
     flb_sds_destroy(res_data);
+}
+
+void flb_test_monitored_resource_common()
+{
+    int ret;
+    int size = sizeof(MONITORED_RESOURCE_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "monitored_resource",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_monitored_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_monitored_resource_priority_higher_than_local_resource_id()
+{
+    int ret;
+    int size = sizeof(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "k8s_container",
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_monitored_resource_priority_higher_than_local_resource_id,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_monitored_resource_priority_higher_than_gce_instance()
+{
+    int ret;
+    int size = sizeof(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_monitored_resource_priority_higher_than_gce_instance,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
 }
 
 void flb_test_resource_global()
@@ -3724,6 +3946,11 @@ TEST_LIST = {
     {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
     {"sourceLocation_subfields_in_incorrect_type", flb_test_source_location_incorrect_type_subfields},
     {"sourceLocation_extra_subfields_exist", flb_test_source_location_extra_subfields},
+
+    /* test monitored resource */
+    {"monitored_resource_common", flb_test_monitored_resource_common},
+    {"monitored_resource_priority_higher_than_local_resource_id", flb_test_monitored_resource_priority_higher_than_local_resource_id},
+    {"monitored_resource_priority_higher_than_gce_instance", flb_test_monitored_resource_priority_higher_than_gce_instance},
 
     /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },

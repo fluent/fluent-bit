@@ -136,6 +136,20 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         goto error;
     }
 
+    tmp = flb_output_get_property("metric_namespace", ins);
+    if (tmp)
+    {
+        flb_plg_info(ctx->ins, "Metric Namespace=%s", tmp);
+        ctx->metric_namespace = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("metric_dimensions", ins);
+    if (tmp)
+    {
+        flb_plg_info(ctx->ins, "Metric Dimensions=%s", tmp);
+        ctx->metric_dimensions = flb_utils_split(tmp, ';', 256);
+    }
+
     ctx->create_group = FLB_FALSE;
     tmp = flb_output_get_property("auto_create_group", ins);
     /* native plugins use On/Off as bool, the old Go plugin used true/false */
@@ -367,7 +381,7 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, ctx->buf, stream, data, bytes);
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream, data, bytes);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -524,6 +538,21 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the STS API, can be used with the role_arn parameter"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_namespace", NULL,
+     0, FLB_FALSE, 0,
+     "Metric namespace for CloudWatch EMF logs"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_dimensions", NULL,
+     0, FLB_FALSE, 0,
+     "Metric dimensions is a list of lists. If you have only one list of "
+     "dimensions, put the values as a comma seperated string. If you want to put "
+     "list of lists, use the list as semicolon seperated strings. If your value "
+     "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
     },
 
     /* EOF */

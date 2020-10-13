@@ -419,8 +419,8 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "%s?uploadId=%s", m_upload->s3_key,
-                         m_upload->upload_id);
+    tmp = flb_sds_printf(&uri, "/%s%s?uploadId=%s", ctx->bucket,
+                         m_upload->s3_key, m_upload->upload_id);
     if (!tmp) {
         flb_sds_destroy(uri);
         return -1;
@@ -484,7 +484,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "%s?uploads=", m_upload->s3_key);
+    tmp = flb_sds_printf(&uri, "/%s%s?uploads=", ctx->bucket, m_upload->s3_key);
     if (!tmp) {
         flb_sds_destroy(uri);
         return -1;
@@ -593,8 +593,8 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         return -1;
     }
 
-    tmp = flb_sds_printf(&uri, "%s?partNumber=%d&uploadId=%s",
-                         m_upload->s3_key, m_upload->part_number,
+    tmp = flb_sds_printf(&uri, "/%s%s?partNumber=%d&uploadId=%s",
+                         ctx->bucket, m_upload->s3_key, m_upload->part_number,
                          m_upload->upload_id);
     if (!tmp) {
         flb_errno();

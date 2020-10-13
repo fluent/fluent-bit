@@ -266,7 +266,14 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
 
  retry:
-    if (queue_full_retries >= 10) {
+    /*
+     * If the local rdkafka queue is full, we retry up to 'queue_full_retries'
+     * times set by the configuration (default: 10). If the configuration
+     * property was set to '0' or 'false', we don't impose a limit. Use that
+     * value under your own risk.
+     */
+    if (ctx->queue_full_retries > 0 &&
+        queue_full_retries >= ctx->queue_full_retries) {
         if (ctx->format == FLB_KAFKA_FMT_JSON) {
             flb_free(out_buf);
         }
@@ -294,8 +301,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
          * otherwise let the caller to issue a main retry againt the engine.
          */
         if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
-            flb_plg_warn(ctx->ins, "internal queue is full, "
-                         "retrying in one second");
+            flb_plg_warn(ctx->ins,
+                         "internal queue is full, retrying in one second");
 
             /*
              * If the queue is full, first make sure to discard any further

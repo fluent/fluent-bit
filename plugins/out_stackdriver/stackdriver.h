@@ -47,6 +47,7 @@
 #define FLB_SDS_RESOURCE_TYPE "global"
 
 #define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
+#define MONITORED_RESOURCE_KEY "logging.googleapis.com/monitored_resource"
 #define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
 #define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
 #define DEFAULT_INSERT_ID_KEY "logging.googleapis.com/insertId"

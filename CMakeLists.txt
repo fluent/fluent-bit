@@ -3,7 +3,7 @@ project(fluent-bit)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  6)
+set(FLB_VERSION_MINOR  7)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -191,6 +191,7 @@ option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
+option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)

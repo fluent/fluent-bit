@@ -163,12 +163,9 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             ctx->aws_region = (char *) tmp;
 
             tmp = flb_output_get_property("aws_sts_endpoint", ins);
-            if (!tmp) {
-                flb_error("[out_es] aws_sts_endpoint not set");
-                flb_es_conf_destroy(ctx);
-                return NULL;
+            if (tmp) {
+                ctx->aws_sts_endpoint = (char *) tmp;
             }
-            ctx->aws_sts_endpoint = (char *) tmp;
 
             ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                                    &ctx->aws_tls,

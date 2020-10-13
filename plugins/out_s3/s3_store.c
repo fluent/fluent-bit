@@ -25,6 +25,16 @@
 #include "s3.h"
 #include "s3_store.h"
 
+static int s3_store_under_travis_ci()
+{
+
+    if (getenv("CI") != NULL && getenv("TRAVIS") != NULL) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /*
  * Simple and fast hashing algorithm to create keys in the local buffer
  */
@@ -69,6 +79,7 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
 {
     struct mk_list *head;
     struct flb_fstore_file *fsf = NULL;
+    struct s3_file *s3_file;
 
     /*
      * Based in the current ctx->stream_name, locate a candidate file to
@@ -76,6 +87,14 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
      */
     mk_list_foreach(head, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+
+        /* skip locked chunks */
+        s3_file = fsf->data;
+        if (s3_file->locked == FLB_TRUE) {
+            fsf = NULL;
+            continue;
+        }
+
         if (fsf->meta_size != tag_len) {
             fsf = NULL;
             continue;
@@ -207,14 +226,23 @@ static int set_files_context(struct flb_s3 *ctx)
 /* Initialize filesystem storage for S3 plugin */
 int s3_store_init(struct flb_s3 *ctx)
 {
+    int type;
     time_t now;
     char tmp[64];
     struct tm *tm;
     struct flb_fstore *fs;
     struct flb_fstore_stream *fs_stream;
 
+    if (s3_store_under_travis_ci() == FLB_TRUE) {
+        type = FLB_FSTORE_MEM;
+        flb_plg_warn(ctx->ins, "Travis CI test, using s3 store memory backend");
+    }
+    else {
+        type = FLB_FSTORE_FS;
+    }
+
     /* Initialize the storage context */
-    fs = flb_fstore_create(ctx->buffer_dir);
+    fs = flb_fstore_create(ctx->buffer_dir, type);
     if (!fs) {
         return -1;
     }
@@ -268,6 +296,10 @@ int s3_store_exit(struct flb_s3 *ctx)
     struct flb_fstore_file *fsf;
     struct s3_file *s3_file;
 
+    if (!ctx->fs) {
+        return 0;
+    }
+
     /* release local context on non-multi upload files */
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
@@ -300,6 +332,10 @@ int s3_store_has_data(struct flb_s3 *ctx)
     struct mk_list *head;
     struct flb_fstore_stream *fs_stream;
 
+    if (!ctx->fs) {
+        return FLB_FALSE;
+    }
+
     mk_list_foreach(head, &ctx->fs->streams) {
         /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
@@ -317,6 +353,10 @@ int s3_store_has_data(struct flb_s3 *ctx)
 
 int s3_store_has_uploads(struct flb_s3 *ctx)
 {
+    if (!ctx || !ctx->stream_upload) {
+        return FLB_FALSE;
+    }
+
     if (mk_list_size(&ctx->stream_upload->files) > 0) {
         return FLB_TRUE;
     }

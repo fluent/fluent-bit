@@ -28,6 +28,9 @@
 #define FLB_FSTORE_LOCK        222
 #define FLB_FSTORE_UNLOCK      333
 
+#define FLB_FSTORE_MEM         CIO_STORE_MEM
+#define FLB_FSTORE_FS          CIO_STORE_FS
+
 struct flb_fstore_file {
     flb_sds_t name;                 /* file name */
 
@@ -40,25 +43,27 @@ struct flb_fstore_file {
 };
 
 struct flb_fstore_stream {
-    struct cio_stream *stream;      /* Chunk I/O stream context */
+    char *name;                     /* reference to stream->name */
     flb_sds_t path;                 /* stream filesystem path */
+    struct cio_stream *stream;      /* Chunk I/O stream context */
     struct mk_list files;
     struct mk_list _head;
 };
 
 struct flb_fstore {
+    int store_type;
     char *root_path;
     struct cio_ctx *cio;            /* Chunk I/O context */
     struct mk_list streams;
 };
 
-struct flb_fstore *flb_fstore_create(char *path);
+struct flb_fstore *flb_fstore_create(char *path, int store_type);
 
 int flb_fstore_destroy(struct flb_fstore *fs);
 
 struct flb_fstore_stream *flb_fstore_stream_create(struct flb_fstore *fs,
                                                    char *stream_name);
-void flb_fstore_stream_destroy(struct flb_fstore_stream *stream);
+void flb_fstore_stream_destroy(struct flb_fstore_stream *stream, int delete);
 
 int flb_fstore_file_meta_set(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf,
@@ -80,5 +85,6 @@ int flb_fstore_file_inactive(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf);
 int flb_fstore_file_delete(struct flb_fstore *fs,
                            struct flb_fstore_file *fsf);
+void flb_fstore_dump(struct flb_fstore *fs);
 
 #endif

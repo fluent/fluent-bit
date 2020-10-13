@@ -40,19 +40,6 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int validate_resource(const char *res)
-{
-    if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0 &&
-        strcasecmp(res, "k8s_container") != 0 &&
-        strcasecmp(res, "k8s_node") &&
-        strcasecmp(res, "k8s_pod")) {
-        return -1;
-    }
-
-    return 0;
-}
-
 static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
 {
     int i;
@@ -269,22 +256,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
-    /* 
-    * Supported resource types:
-    * 'global'
-    * 'gce_instance'
-    * 'k8s_pod'
-    * 'k8s_node'
-    * 'k8s_container'
-    */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
-        if (validate_resource(tmp) != 0) {
-            flb_plg_error(ctx->ins, "unsupported resource type '%s'",
-                          tmp);
-            flb_stackdriver_conf_destroy(ctx);
-            return NULL;
-        }
         ctx->resource = flb_sds_create(tmp);
     }
     else {
@@ -322,7 +295,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             return NULL;
         }
     }
-    
+
     tmp = flb_output_get_property("labels_key", ins);
     if (tmp) {
         ctx->labels_key = flb_sds_create(tmp);

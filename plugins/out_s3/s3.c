@@ -396,7 +396,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
     else {
         /* default endpoint for the given region */
-        ctx->endpoint = flb_s3_endpoint(ctx->bucket, ctx->region);
+        ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
@@ -491,6 +491,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                 ctx->sts_endpoint,
                                                 NULL,
                                                 flb_aws_client_generator());
+        flb_free(session_name);
         if (!ctx->provider) {
             flb_plg_error(ctx->ins, "Failed to create AWS STS Credential "
                          "Provider");
@@ -553,7 +554,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (ctx->timer_ms > UPLOAD_TIMER_MAX_WAIT) {
         ctx->timer_ms = UPLOAD_TIMER_MAX_WAIT;
     }
-    else if (ctx->timer_ms == 0) {
+    else if (ctx->timer_ms < UPLOAD_TIMER_MIN_WAIT) {
         ctx->timer_ms = UPLOAD_TIMER_MIN_WAIT;
     }
 
@@ -906,8 +907,11 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
     char *random_alphanumeric;
+    int append_random = FLB_FALSE;
     int len;
-    char uri[1024]; /* max S3 key length */
+    char *final_key;
+    flb_sds_t uri;
+    flb_sds_t tmp;
 
     s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters);
     if (!s3_key) {
@@ -916,23 +920,40 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     }
 
     len = strlen(s3_key);
-    memcpy(uri, s3_key, len);
     if ((len + 16) <= 1024) {
+        append_random = FLB_TRUE;
+        len += 16;
+    }
+    len += strlen(ctx->bucket + 1);
+
+    uri = flb_sds_create_size(len);
+
+    if (append_random == FLB_TRUE) {
         random_alphanumeric = flb_sts_session_name();
         if (!random_alphanumeric) {
             flb_sds_destroy(s3_key);
+            flb_sds_destroy(uri);
             flb_plg_error(ctx->ins, "Failed to create randomness for S3 key %s", tag);
             return -1;
         }
+        /* only use 8 chars of the random string */
+        random_alphanumeric[8] = '\0';
 
-        memcpy(&uri[len], "-object", 7);
-        memcpy(&uri[len + 7], random_alphanumeric, 8);
-        uri[len + 15] = '\0';
+        tmp = flb_sds_printf(&uri, "/%s%s-object%s", ctx->bucket, s3_key,
+                             random_alphanumeric);
         flb_free(random_alphanumeric);
     }
     else {
-        uri[len] = '\0';
+        tmp = flb_sds_printf(&uri, "/%s%s", ctx->bucket, s3_key);
     }
+
+    if (!tmp) {
+        flb_sds_destroy(s3_key);
+        flb_plg_error(ctx->ins, "Failed to create PutObject URI");
+        return -1;
+    }
+    flb_sds_destroy(s3_key);
+    uri = tmp;
 
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
@@ -946,8 +967,13 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     if (c) {
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
         if (c->resp.status == 200) {
-            flb_plg_info(ctx->ins, "Successfully uploaded object %s", uri);
-            flb_sds_destroy(s3_key);
+            /*
+             * URI contains bucket name, so we must advance over it
+             * to print the object key
+             */
+            final_key = uri + strlen(ctx->bucket) + 1;
+            flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
+            flb_sds_destroy(uri);
             flb_http_client_destroy(c);
             return 0;
         }
@@ -960,7 +986,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     }
 
     flb_plg_error(ctx->ins, "PutObject request failed");
-    flb_sds_destroy(s3_key);
+    flb_sds_destroy(uri);
     return -1;
 }
 
