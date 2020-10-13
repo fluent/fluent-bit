@@ -142,6 +142,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
         return NULL;
     }
     p->decoders = decoders;
+    mk_list_add(&p->_head, &config->parsers);
 
     /* Format lookup */
     if (strcasecmp(format, "regex") == 0) {
@@ -222,7 +223,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
 #else
             flb_error("[parser] timezone offset not supported");
             flb_error("[parser] you cannot use %%z/%%Z on this platform");
-            flb_free(p);
+            flb_parser_destroy(p);
             return NULL;
 #endif
         }
@@ -283,7 +284,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
             len = strlen(time_offset);
             ret = flb_parser_tzone_offset(time_offset, len, &diff);
             if (ret == -1) {
-                flb_free(p);
+                flb_parser_destroy(p);
                 return NULL;
             }
             p->time_offset = diff;
@@ -297,9 +298,6 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     p->time_keep = time_keep;
     p->types = types;
     p->types_len = types_len;
-
-    mk_list_add(&p->_head, &config->parsers);
-
     return p;
 }
 
