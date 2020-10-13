@@ -1,5 +1,6 @@
 set(UNIT_TESTS_FILES
   flb_json_fuzzer.c
+  parser_fuzzer.c
   parse_json_fuzzer.c
   parse_logfmt_fuzzer.c
   parse_ltsv_fuzzer.c
