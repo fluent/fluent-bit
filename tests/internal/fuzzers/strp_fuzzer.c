@@ -26,5 +26,5 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     flb_strptime(buf, fmt, &tt);
 
     flb_free(buf);
-    flb_free(fmt); 
+    flb_free(fmt);
 }
