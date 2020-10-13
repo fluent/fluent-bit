@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_random.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -65,27 +66,15 @@ static inline int consume_byte(flb_pipefd_t fd)
 static int random_uniform(int min, int max)
 {
     int val;
-    int fd;
     int range;
     int copies;
     int limit;
     int ra;
-    int ret;
 
-    fd = open("/dev/urandom", O_RDONLY);
-    if (fd == -1) {
-        srand(time(NULL));
+    if (flb_random_bytes((unsigned char *) &val, sizeof(int))) {
+        val = time(NULL);
     }
-    else {
-        ret = read(fd, &val, sizeof(val));
-        if (ret > 0) {
-            srand(val);
-        }
-        else {
-            srand(time(NULL));
-        }
-        close(fd);
-    }
+    srand(val);
 
     range  = max - min + 1;
     copies = (RAND_MAX / range);
