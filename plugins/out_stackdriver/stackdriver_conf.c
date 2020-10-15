@@ -273,6 +273,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (tmp) {
         ctx->trace_key = flb_sds_create(tmp);
     }
+    else {
+        ctx->trace_key = flb_sds_create(DEFAULT_TRACE_KEY);
+    }
 
     if (flb_sds_cmp(ctx->resource, "k8s_container",
                     flb_sds_len(ctx->resource)) == 0 || 
