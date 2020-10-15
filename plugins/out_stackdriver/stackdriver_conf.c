@@ -268,6 +268,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (tmp) {
         ctx->severity_key = flb_sds_create(tmp);
     }
+    else {
+        ctx->severity_key = flb_sds_create(DEFAULT_SEVERITY_KEY);
+    }
 
     tmp = flb_output_get_property("trace_key", ins);
     if (tmp) {

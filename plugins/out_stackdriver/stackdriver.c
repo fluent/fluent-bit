@@ -1116,6 +1116,7 @@ static int pack_json_payload(int insert_id_extracted,
         monitored_resource_key,
         local_resource_id_key,
         ctx->labels_key,
+        ctx->severity_key,
         ctx->trace_key,
         stream
         /* more special fields are required to be added */
