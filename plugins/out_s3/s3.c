@@ -1067,8 +1067,15 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     int complete;
     int ret;
     time_t now;
+    int async_flags;
 
     flb_plg_debug(ctx->ins, "Running upload timer callback..");
+
+    /* upload timer must use sync mode */
+    if (ctx->use_put_object == FLB_TRUE) {
+        async_flags = ctx->s3_client->upstream->flags;
+        ctx->s3_client->upstream->flags &= ~(FLB_IO_ASYNC);
+    }
 
     now = time(NULL);
 
@@ -1141,6 +1148,10 @@ static void cb_s3_upload(struct flb_config *config, void *data)
                               m_upload->s3_key);
             }
         }
+    }
+
+    if (ctx->use_put_object == FLB_TRUE) {
+        ctx->s3_client->upstream->flags = async_flags;
     }
 }
 
