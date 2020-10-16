@@ -53,6 +53,8 @@ struct flb_upstream {
     int flags;
     int tcp_port;
     char *tcp_host;
+    int proxied_port;
+    char *proxied_host;
 
     int n_connections;
 
