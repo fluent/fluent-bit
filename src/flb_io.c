@@ -63,6 +63,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_http_client.h>
 
 static int net_io_connect_sync(struct flb_upstream *u,
                                struct flb_upstream_conn *u_conn)
@@ -242,6 +243,46 @@ static int net_io_connect_async(struct flb_upstream *u,
     return 0;
 }
 
+static int flb_establish_proxy(struct flb_upstream_conn *u_conn)
+{
+    struct flb_upstream *u = u_conn->u;
+    struct flb_http_client *c;
+    size_t b_sent;
+    int ret = -1;
+
+    // Don't pass proxy when using FLB_HTTP_CONNECT
+    c = flb_http_client(u_conn, FLB_HTTP_CONNECT, "", NULL,
+                        0, u->proxied_host, u->proxied_port, NULL, 0);
+    flb_http_buffer_size(c, 4192);
+
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+
+    /* Send HTTP request */
+    ret = flb_http_do(c, &b_sent);
+
+    /* Validate HTTP response */
+    if (ret != 0) {
+        flb_error("[upstream] error in flb_establish_proxy: %d", ret);
+        ret = -1;
+    }
+    else {
+        /* The request was issued successfully, validate the 'error' field */
+        flb_debug("[upstream] proxy returned %d", c->resp.status);
+        if (c->resp.status == 200) {
+            ret = 0;
+        }
+        else {
+            flb_error("flb_establish_proxy error: %s", c->resp.payload);
+            ret = -1;
+        }
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+
+    return ret;
+}
+
 FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_thread *th)
 {
@@ -355,9 +396,20 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         return -1;
     }
 
+    if (u->proxied_host) {
+        flb_debug("flb_establish_proxy");
+        ret = flb_establish_proxy(u_conn);
+        if (ret == -1) {
+            flb_debug("[proxy] connection #%i failed to %s:%i",
+                      u_conn->fd, u->tcp_host, u->tcp_port);
+          flb_socket_close(fd);
+          return -1;
+        }
+    }
+
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
-    if (u_conn->u->flags & FLB_IO_TLS) {
+    if (u->flags & FLB_IO_TLS) {
         ret = net_io_tls_handshake(u_conn, th);
         if (ret != 0) {
             flb_socket_close(fd);
@@ -610,7 +662,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
     flb_trace("[io thread=%p] [net_write] trying %zd bytes",
               th, len);
 
-    if (u->flags & FLB_IO_TCP) {
+    if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_write_async(th, u_conn, data, len, out_len);
         }
@@ -649,7 +701,7 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     flb_trace("[io thread=%p] [net_read] try up to %zd bytes",
               th, len);
 
-    if (u->flags & FLB_IO_TCP) {
+    if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_read_async(th, u_conn, buf, len);
         }
