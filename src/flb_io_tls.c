@@ -337,6 +337,9 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
     }
     if (!u->tls->context->vhost) {
         u->tls->context->vhost = u->tcp_host;
+        if (u->proxied_host) {
+            u->tls->context->vhost = u->proxied_host;
+        }
     }
     mbedtls_ssl_set_hostname(&session->ssl, u->tls->context->vhost);
 

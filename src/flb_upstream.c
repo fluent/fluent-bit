@@ -81,6 +81,13 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          void *tls)
 {
     struct flb_upstream *u;
+    char* proxy_protocol = NULL;
+    char* proxy_host = NULL;
+    char* proxy_port = NULL;
+    char* proxy_uri;
+    int ret;
+
+
 
     u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
@@ -91,13 +98,35 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     /* Set default networking setup values */
     flb_net_setup_init(&u->net);
 
-    u->tcp_host      = flb_strdup(host);
+    /* Set upstream to the http_proxy if it is specified. */
+    if (config->http_proxy) {
+        flb_debug("config->http_proxy: %s", config->http_proxy);
+        ret = flb_utils_url_split(config->http_proxy, &proxy_protocol, &proxy_host, &proxy_port, &proxy_uri);
+        if (ret == -1) {
+            flb_errno();
+            return NULL;
+        }
+
+        u->tcp_host = flb_strdup(proxy_host);
+        u->tcp_port = atoi(proxy_port);
+        u->proxied_host = flb_strdup(host);
+        u->proxied_port = port;
+
+        flb_free(proxy_protocol);
+        flb_free(proxy_host);
+        flb_free(proxy_port);
+        flb_free(proxy_uri);
+    }
+    else {
+        u->tcp_host = flb_strdup(host);
+        u->tcp_port = port;
+    }
+
     if (!u->tcp_host) {
         flb_free(u);
         return NULL;
     }
 
-    u->tcp_port       = port;
     u->flags          = flags;
     u->evl            = config->evl;
     u->n_connections  = 0;
@@ -312,6 +341,7 @@ int flb_upstream_destroy(struct flb_upstream *u)
     }
 
     flb_free(u->tcp_host);
+    flb_free(u->proxied_host);
     mk_list_del(&u->_head);
     flb_free(u);
 

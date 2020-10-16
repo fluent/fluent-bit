@@ -34,6 +34,7 @@
 #define FLB_HTTP_POST        1
 #define FLB_HTTP_PUT         2
 #define FLB_HTTP_HEAD        3
+#define FLB_HTTP_CONNECT     4
 
 /* HTTP Flags */
 #define FLB_HTTP_10          1

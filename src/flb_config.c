@@ -161,6 +161,12 @@ struct flb_config *flb_config_init()
     config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif
 
+    config->http_proxy = getenv("HTTP_PROXY");
+    if (strcmp(config->http_proxy, "")) {
+        /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
+        config->http_proxy = NULL;
+    }
+
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;

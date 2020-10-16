@@ -36,6 +36,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
@@ -520,7 +521,12 @@ static int add_host_and_content_length(struct flb_http_client *c)
     struct flb_upstream *u = c->u_conn->u;
 
     if (!c->host) {
-        out_host = u->tcp_host;
+        if (u->proxied_host) {
+            out_host = u->proxied_host;
+        }
+        else {
+            out_host = u->tcp_host;
+        }
     }
     else {
         out_host = (char *) c->host;
@@ -534,7 +540,12 @@ static int add_host_and_content_length(struct flb_http_client *c)
     }
 
     if (c->port == 0) {
-        out_port = u->tcp_port;
+        if (u->proxied_port != 0 ) {
+            out_port = u->proxied_port;
+        }
+        else {
+            out_port = u->tcp_port;
+        }
     }
     else {
         out_port = c->port;
@@ -589,6 +600,10 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     char *fmt_proxy =                           \
         "%s http://%s:%i%s HTTP/1.%i\r\n"
         "Proxy-Connection: KeepAlive\r\n";
+    // TODO: IPv6 should have the format of [ip]:port
+    char *fmt_connect =                           \
+        "%s %s:%i HTTP/1.%i\r\n"
+        "Proxy-Connection: KeepAlive\r\n";
 
     struct flb_http_client *c;
 
@@ -605,6 +620,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     case FLB_HTTP_HEAD:
         str_method = "HEAD";
         break;
+    case FLB_HTTP_CONNECT:
+        str_method = "CONNECT";
+        break;
     };
 
     buf = flb_calloc(1, FLB_HTTP_BUF_SIZE);
@@ -614,19 +632,30 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     }
 
     /* FIXME: handler for HTTPS proxy */
-    if (!proxy) {
-        ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
-                       fmt_plain,
-                       str_method,
-                       uri,
-                       flags & FLB_HTTP_10 ? 0 : 1);
-    }
-    else {
+    if (proxy) {
+        flb_debug("[PROXY] using http_proxy %s for header", proxy);
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_proxy,
                        str_method,
                        host,
                        port,
+                       uri,
+                       flags & FLB_HTTP_10 ? 0 : 1);
+    }
+    else if (method == FLB_HTTP_CONNECT) {
+        flb_debug("[PROXY] using HTTP CONNECT for proxy");
+        ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
+                       fmt_connect,
+                       str_method,
+                       host,
+                       port,
+                       flags & FLB_HTTP_10 ? 0 : 1);
+    }
+    else {
+        flb_debug("[PROXY] not using http_proxy for header");
+        ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
+                       fmt_plain,
+                       str_method,
                        uri,
                        flags & FLB_HTTP_10 ? 0 : 1);
     }
@@ -684,8 +713,11 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     /* Check proxy data */
     if (proxy) {
+        flb_debug("[PROXY] Using http_proxy: %s", proxy);
         ret = proxy_parse(proxy, c);
         if (ret != 0) {
+            flb_debug("Something wrong with the http_proxy parsing");
+            flb_free(buf);
             flb_http_client_destroy(c);
             return NULL;
         }
@@ -1066,6 +1098,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     }
 #endif
 
+    flb_debug("HTTP header=%s", c->header_buf);
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
