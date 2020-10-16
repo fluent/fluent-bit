@@ -49,9 +49,23 @@ static void test_sds_cat_utf8()
     flb_sds_destroy(s);
 }
 
+static void test_sds_cat_auto()
+{
+    flb_sds_t s;
+    char *str = "1234567890\n";
+
+    s = flb_sds_create("");
+    flb_sds_cat_auto(s, str);
+    TEST_CHECK(flb_sds_len(s) == 11);
+    TEST_CHECK(strcmp(s, "1234567890\n") == 0);
+
+    flb_sds_destroy(s);
+}
+
 TEST_LIST = {
     { "sds_usage" , test_sds_usage},
     { "sds_printf", test_sds_printf},
     { "sds_cat_utf8", test_sds_cat_utf8},
+    { "sds_cat_auto", test_sds_cat_auto},
     { 0 }
 };

@@ -138,6 +138,14 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     return s;
 }
 
+flb_sds_t flb_sds_cat_auto(flb_sds_t s, const char *str)
+{
+    int len;
+
+    len = strlen(str);
+    return flb_sds_cat(s, str, len);
+}
+
 flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
                                        char *esc, size_t esc_size)
 {
