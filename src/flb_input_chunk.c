@@ -161,7 +161,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 
 /*
  * Find a slot in the output instance to append the new data with size chunk_size, it
- * will drop the the oldest chunks when the limitaion on local disk is reached.
+ * will drop the the oldest chunks when the limitation on local disk is reached.
  *
  * overlimit_routes_mask: A bit mask used to check whether the output instance will
  * reach the limit when buffering the new data
@@ -428,8 +428,8 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     /* Calculate the routes_mask for the input chunk */
     chunk_routes_mask = flb_router_get_routes_mask_by_tag(tag, tag_len, in);
     if (chunk_routes_mask == 0) {
-        flb_warn("[input chunk] no matching route for input chunk %s",
-                 flb_input_chunk_get_name(ic));
+        flb_trace("[input chunk] no matching route for input chunk '%s' with tag '%s'",
+                  flb_input_chunk_get_name(ic), tag);
     }
     ic->routes_mask = chunk_routes_mask;
 
