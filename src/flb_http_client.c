@@ -686,8 +686,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     if (proxy) {
         ret = proxy_parse(proxy, c);
         if (ret != 0) {
-            flb_free(buf);
-            flb_free(c);
+            flb_http_client_destroy(c);
             return NULL;
         }
     }
@@ -696,8 +695,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     c->resp.data = flb_malloc(FLB_HTTP_DATA_SIZE_MAX);
     if (!c->resp.data) {
         flb_errno();
-        flb_free(buf);
-        flb_free(c);
+        flb_http_client_destroy(c);
         return NULL;
     }
     c->resp.data_len  = 0;
