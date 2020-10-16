@@ -65,7 +65,7 @@ static inline int router_match(const char *tag, int tag_len,
             while (*++match == '*'){
                 /* skip successive '*' */
             }
-            if(*match == '\0'){
+            if (*match == '\0') {
                 /*  '*' is last of string */
                 ret = 1;
                 break;
@@ -87,11 +87,11 @@ static inline int router_match(const char *tag, int tag_len,
             }
             break;
         }
-        else if (*tag != *match ) {
+        else if (*tag != *match) {
             /* mismatch! */
             break;
         }
-        else if (*tag == '\0'){
+        else if (*tag == '\0') {
             /* end of tag. so matched! */
             ret = 1;
             break;
@@ -106,7 +106,23 @@ static inline int router_match(const char *tag, int tag_len,
 int flb_router_match(const char *tag, int tag_len, const char *match,
                      void *match_regex)
 {
-    return router_match(tag, tag_len, match, match_regex);
+    int ret;
+    flb_sds_t t;
+
+    if (tag[tag_len] != '\0') {
+        t = flb_sds_create_len(tag, tag_len);
+        if (!t) {
+            return FLB_FALSE;
+        }
+
+        ret = router_match(t, tag_len, match, match_regex);
+        flb_sds_destroy(t);
+    }
+    else {
+        ret = router_match(tag, tag_len, match, match_regex);
+    }
+
+    return ret;
 }
 
 /* Associate and input and output instances due to a previous match */
@@ -117,7 +133,7 @@ static int flb_router_connect(struct flb_input_instance *in,
 
     p = flb_malloc(sizeof(struct flb_router_path));
     if (!p) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
@@ -269,15 +285,15 @@ uint64_t flb_router_get_routes_mask_by_tag(const char *tag, int tag_len,
              *   8:   00001000
              *   16:  00010000
              * We can notice that each binary has only one 1's bit and this also
-             * represents the postion of the output instance. Getting the OR of 
-             * mask_id (given that tag is matched) will tell us the output instances 
+             * represents the postion of the output instance. Getting the OR of
+             * mask_id (given that tag is matched) will tell us the output instances
              * that the given input chunk will flush to.
-             * 
+             *
              * For example: We have two matching output instances with mask_id 1 and 4
              * There are two 1's in the binary with index 0 and 2 (starting from right)
              * and this means that the input chunk will flush to first and third output
              * instances configured in the Fluent Bit configuraion.
-             * 
+             *
              *    0 |= 1 -> 00000 |= 00001 -> 00001
              *    00001 |= 4 -> 00001 |= 00100 -> 00101
              */

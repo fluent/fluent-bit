@@ -632,6 +632,7 @@ int flb_output_init_all(struct flb_config *config)
             ins->log_level = config->log->level;
         }
         p = ins->p;
+        mk_list_init(&ins->th_queue);
 
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -739,7 +740,6 @@ int flb_output_init_all(struct flb_config *config)
 
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
-        mk_list_init(&ins->th_queue);
         if (ret == -1) {
             flb_error("[output] Failed to initialize '%s' plugin",
                       p->name);

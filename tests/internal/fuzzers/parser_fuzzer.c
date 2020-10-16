@@ -5,23 +5,12 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_parser_decoder.h>
 
+#include "flb_fuzz_header.h"
+
 #define TYPES_LEN 5
-#define GET_MOD_EQ(max, idx) (data[0] % max) == idx
-#define MOVE_INPUT(offset) data += offset; size -= offset; 
 
-char *get_null_terminated(size_t size, char **data, *total_data_size) {
-  char *tmp = flb_malloc(size+1);
-  memcpy(tmp, *data, size);
-  tmp[size] = '\0';
-
-  // Modify the fuzz variables
-  *total_data_size -= size;
-  *data += size;
-
-  return tmp;
-}
-
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
     char *format      = NULL;
     char *time_fmt    = NULL;
     char *time_key    = NULL;
@@ -39,7 +28,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
 
     /* json parser */
     fuzz_config = flb_config_init();
-     
+
     /* format + pregex */
     if (GET_MOD_EQ(4,0)) {
         format = "json";
@@ -67,7 +56,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
         time_fmt = get_null_terminated(15, &data, &size);
     }
     MOVE_INPUT(1);
-        
+
     /* time_key */
     if (GET_MOD_EQ(2,1)) {
         time_key = get_null_terminated(15, &data, &size);
@@ -106,10 +95,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
         MOVE_INPUT(1);
         list = flb_malloc(sizeof(struct mk_list));
         mk_list_init(list);
-        
+
         struct flb_parser_dec *dec = malloc(sizeof(struct flb_parser_dec));
         dec->key            = flb_sds_create_len("AAA", 3);
-        dec->buffer         = flb_sds_create_size(FLB_PARSER_DEC_BUF_SIZE); 
+        dec->buffer         = flb_sds_create_size(FLB_PARSER_DEC_BUF_SIZE);
         dec->add_extra_keys = FLB_TRUE;
         mk_list_init(&dec->rules);
         mk_list_add(&dec->_head, list);
@@ -150,7 +139,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
         flb_parser_destroy(fuzz_parser);
     }
     else {
-        /* Parser creation failed but we still need to clean 
+        /* Parser creation failed but we still need to clean
          * up types and decoders */
         if (types != NULL) {
             for (int i=0; i< TYPES_LEN; i++){
