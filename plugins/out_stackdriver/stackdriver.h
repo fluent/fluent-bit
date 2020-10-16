@@ -111,6 +111,7 @@ struct flb_stackdriver {
     flb_sds_t resource;
     flb_sds_t severity_key;
     flb_sds_t trace_key;
+    flb_sds_t log_name_key;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

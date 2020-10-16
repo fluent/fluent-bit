@@ -280,6 +280,11 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->trace_key = flb_sds_create(DEFAULT_TRACE_KEY);
     }
 
+    tmp = flb_output_get_property("log_name_key", ins);
+    if (tmp) {
+        ctx->log_name_key = flb_sds_create(tmp);
+    }
+
     if (flb_sds_cmp(ctx->resource, "k8s_container",
                     flb_sds_len(ctx->resource)) == 0 || 
         flb_sds_cmp(ctx->resource, "k8s_node", 
@@ -356,6 +361,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->resource);
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->trace_key);
+    flb_sds_destroy(ctx->log_name_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
 
