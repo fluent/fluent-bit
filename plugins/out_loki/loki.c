@@ -301,20 +301,22 @@ static int parse_labels(struct flb_loki *ctx)
     }
 
     /* Append label keys set in the configuration */
-    mk_list_foreach(head, ctx->label_keys) {
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
-        if (entry->str[0] != '$') {
-            flb_plg_error(ctx->ins,
-                          "invalid label key, the name must start with '$'");
-            return -1;
-        }
+    if (ctx->label_keys) {
+        mk_list_foreach(head, ctx->label_keys) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            if (entry->str[0] != '$') {
+                flb_plg_error(ctx->ins,
+                              "invalid label key, the name must start with '$'");
+                return -1;
+            }
 
-        ret = flb_loki_kv_append(ctx, entry->str, NULL);
-        if (ret == -1) {
-            return -1;
-        }
-        else if (ret > 0) {
-            ra_used++;
+            ret = flb_loki_kv_append(ctx, entry->str, NULL);
+            if (ret == -1) {
+                return -1;
+            }
+            else if (ret > 0) {
+                ra_used++;
+            }
         }
     }
 
