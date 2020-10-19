@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_mp.h>
 
 #include "loki.h"
 
@@ -132,77 +133,82 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
     }
 }
 
-static flb_sds_t format_logql_labels(struct flb_loki *ctx,
-                                     char *tag, int tag_len,
-                                     msgpack_object *map)
+static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
+                             char *tag, int tag_len,
+                             msgpack_object *map)
 {
     int i;
-    int s;
-    int count = 0;
-    flb_sds_t str;
     flb_sds_t ra_val;
     struct mk_list *head;
     struct flb_ra_value *rval = NULL;
     struct flb_loki_kv *kv;
     msgpack_object k;
     msgpack_object v;
+    struct flb_mp_map_header mh;
 
-    s = (mk_list_size(&ctx->labels_list) * 32) + 2;
-    str = flb_sds_create_size(s);
-    if (!str) {
-        return NULL;
-    }
 
-    flb_sds_cat(str, "{", 1);
+    /* Initialize dynamic map header */
+    flb_mp_map_header_init(&mh, mp_pck);
 
     mk_list_foreach(head, &ctx->labels_list) {
         kv = mk_list_entry(head, struct flb_loki_kv, _head);
-        if (count > 0) {
-            flb_sds_cat(str, ",", 1);
-        }
 
         /* record accessor key/value pair */
         if (kv->ra_key != NULL && kv->ra_val == NULL) {
-            flb_sds_cat(str, kv->key, flb_sds_len(kv->key));
-            flb_sds_cat(str, "=", 1);
             ra_val = flb_ra_translate(kv->ra_key, tag, tag_len, *(map), NULL);
-            if (!ra_val) {
-                flb_plg_warn(ctx->ins, "invalid record accessor key translation");
-                flb_sds_cat(str, "\"\"", 2);
+            if (!ra_val || flb_sds_len(ra_val) == 0) {
+                /* if no value is retruned or if it's empty, just skip it */
+                flb_plg_warn(ctx->ins,
+                             "empty record accessor key translation for pattern: %s",
+                             kv->ra_key->pattern);
             }
             else {
-                flb_sds_cat(str, "\"", 1);
-                flb_sds_cat(str, ra_val, flb_sds_len(ra_val));
-                flb_sds_cat(str, "\"", 1);
+                /* Pack the key and value */
+                flb_mp_map_header_append(&mh);
+
+                /* We skip the first '$' character since it won't be valid in Loki */
+                msgpack_pack_str(mp_pck, flb_sds_len(kv->key) - 1);
+                msgpack_pack_str_body(mp_pck, kv->key + 1, flb_sds_len(kv->key) - 1);
+
+                msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
+                msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
+            }
+
+            if (ra_val) {
                 flb_sds_destroy(ra_val);
             }
-            count++;
             continue;
         }
 
-        flb_sds_cat(str, kv->key, flb_sds_len(kv->key));
-        flb_sds_cat(str, "=", 1);
-
+        /*
+         *The code is a bit duplicated to be able to manage the exception of an
+         * invalid or empty value, on that case the k/v is skipped.
+         */
         if (kv->val_type == FLB_LOKI_KV_STR) {
-            flb_sds_cat(str, "\"", 1);
-            flb_sds_cat(str, kv->str_val, flb_sds_len(kv->str_val));
-            flb_sds_cat(str, "\"", 1);
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_str(mp_pck, flb_sds_len(kv->key));
+            msgpack_pack_str_body(mp_pck, kv->key, flb_sds_len(kv->key));
+            msgpack_pack_str(mp_pck, flb_sds_len(kv->str_val));
+            msgpack_pack_str_body(mp_pck, kv->str_val, flb_sds_len(kv->str_val));
         }
         else if (kv->val_type == FLB_LOKI_KV_RA) {
             /* record accessor type */
             ra_val = flb_ra_translate(kv->ra_val, tag, tag_len, *(map), NULL);
-            if (!ra_val) {
+            if (!ra_val || flb_sds_len(ra_val) == 0) {
                 flb_plg_warn(ctx->ins, "could not translate record accessor");
-                flb_sds_cat(str, "\"\"", 2);
             }
             else {
-                flb_sds_cat(str, "\"", 1);
-                flb_sds_cat(str, ra_val, flb_sds_len(ra_val));
-                flb_sds_cat(str, "\"", 1);
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(mp_pck, flb_sds_len(kv->key));
+                msgpack_pack_str_body(mp_pck, kv->key, flb_sds_len(kv->key));
+                msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
+                msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
+            }
+
+            if (ra_val) {
                 flb_sds_destroy(ra_val);
             }
         }
-        count++;
     }
 
     if (ctx->auto_kubernetes_labels == FLB_TRUE) {
@@ -216,21 +222,28 @@ static flb_sds_t format_logql_labels(struct flb_loki *ctx,
                     continue;
                 }
 
-                if (count > 0) {
-                    flb_sds_cat(str, ",", 1);
-                }
-
-                flb_sds_cat(str, k.via.str.ptr, k.via.str.size);
-                flb_sds_cat(str, "=\"", 2);
-                flb_sds_cat(str, v.via.str.ptr, v.via.str.size);
-                flb_sds_cat(str, "\"", 1);
+                /* append the key/value pair */
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(mp_pck, k.via.str.size);
+                msgpack_pack_str_body(mp_pck, k.via.str.ptr,  k.via.str.size);
+                msgpack_pack_str(mp_pck, v.via.str.size);
+                msgpack_pack_str_body(mp_pck, v.via.str.ptr,  v.via.str.size);
             }
             flb_ra_key_value_destroy(rval);
         }
     }
 
-    flb_sds_cat(str, "}", 1);
-    return str;
+    /* Check if we added any label, if no one has been set, set the defaul 'job' */
+    if (mh.entries == 0) {
+        /* pack the default entry */
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(mp_pck, 3);
+        msgpack_pack_str_body(mp_pck, "job", 3);
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "fluent-bit", 10);
+    }
+    flb_mp_map_header_end(&mh);
+    return 0;
 }
 
 static int parse_labels(struct flb_loki *ctx)
@@ -243,60 +256,58 @@ static int parse_labels(struct flb_loki *ctx)
     struct mk_list *head;
     struct flb_slist_entry *entry;
 
-    if (!ctx->labels) {
-        return -1;
-    }
-
     flb_loki_kv_init(&ctx->labels_list);
 
-    mk_list_foreach(head, ctx->labels) {
-        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+    if (ctx->labels) {
+        mk_list_foreach(head, ctx->labels) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
-        /* record accessor label key ? */
-        if (entry->str[0] == '$') {
-            ret = flb_loki_kv_append(ctx, entry->str, NULL);
+            /* record accessor label key ? */
+            if (entry->str[0] == '$') {
+                ret = flb_loki_kv_append(ctx, entry->str, NULL);
+                if (ret == -1) {
+                    return -1;
+                }
+                else if (ret > 0) {
+                    ra_used++;
+                }
+                continue;
+            }
+
+            p = strchr(entry->str, '=');
+            if (!p) {
+                flb_plg_error(ctx->ins, "invalid key value pair on '%s'",
+                              entry->str);
+                return -1;
+            }
+
+            key = flb_sds_create_size((p - entry->str) + 1);
+            flb_sds_cat(key, entry->str, p - entry->str);
+            val = flb_sds_create(p + 1);
+            if (!key) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->str);
+                return -1;
+            }
+            if (!val || flb_sds_len(val) == 0) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->str);
+                flb_sds_destroy(key);
+                return -1;
+            }
+
+            ret = flb_loki_kv_append(ctx, key, val);
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
+
             if (ret == -1) {
                 return -1;
             }
             else if (ret > 0) {
                 ra_used++;
             }
-            continue;
-        }
-
-        p = strchr(entry->str, '=');
-        if (!p) {
-            flb_plg_error(ctx->ins, "invalid key value pair on '%s'",
-                          entry->str);
-            return -1;
-        }
-
-        key = flb_sds_create_size((p - entry->str) + 1);
-        flb_sds_cat(key, entry->str, p - entry->str);
-        val = flb_sds_create(p + 1);
-        if (!key) {
-            flb_plg_error(ctx->ins,
-                          "invalid key value pair on '%s'",
-                          entry->str);
-            return -1;
-        }
-        if (!val || flb_sds_len(val) == 0) {
-            flb_plg_error(ctx->ins,
-                          "invalid key value pair on '%s'",
-                          entry->str);
-            flb_sds_destroy(key);
-            return -1;
-        }
-
-        ret = flb_loki_kv_append(ctx, key, val);
-        flb_sds_destroy(key);
-        flb_sds_destroy(val);
-
-        if (ret == -1) {
-            return -1;
-        }
-        else if (ret > 0) {
-            ra_used++;
         }
     }
 
@@ -318,11 +329,6 @@ static int parse_labels(struct flb_loki *ctx)
         }
     }
 
-    /* If there is no record accessor keys, we can just cache a fixed string */
-    if (ra_used == 0) {
-        ctx->cache_labels = format_logql_labels(ctx, NULL, 0, NULL);
-    }
-
     if (ctx->auto_kubernetes_labels == FLB_TRUE) {
         ctx->ra_k8s = flb_ra_create("$kubernetes['labels']", FLB_TRUE);
         if (!ctx->ra_k8s) {
@@ -332,6 +338,10 @@ static int parse_labels(struct flb_loki *ctx)
         }
     }
 
+    /* If the variable 'ra_used' is greater than zero, means that record accessor is
+     * being used to compose the stream labels.
+     */
+    ctx->ra_used = ra_used;
     return 0;
 }
 
@@ -341,9 +351,6 @@ static void loki_config_destroy(struct flb_loki *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->cache_labels) {
-        flb_sds_destroy(ctx->cache_labels);
-    }
     if (ctx->ra_k8s) {
         flb_ra_destroy(ctx->ra_k8s);
     }
@@ -484,7 +491,6 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
     int total_records;
     size_t off = 0;
     flb_sds_t json;
-    flb_sds_t labels;
     struct flb_time tms;
     msgpack_unpacked result;
     msgpack_packer mp_pck;
@@ -525,7 +531,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "streams", 7);
 
-    if (ctx->cache_labels && ctx->auto_kubernetes_labels == FLB_FALSE) {
+    if (ctx->ra_used == 0 && ctx->auto_kubernetes_labels == FLB_FALSE) {
         /*
          * If labels are cached, there is no record accessor or custom
          * keys, so it's safe to put one main stream and attach all the
@@ -539,16 +545,9 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          /* streams['stream'] */
          msgpack_pack_str(&mp_pck, 6);
          msgpack_pack_str_body(&mp_pck, "stream", 6);
-         msgpack_pack_map(&mp_pck, 1);
 
-         /* streams['stream']['label'] */
-         msgpack_pack_str(&mp_pck, 5);
-         msgpack_pack_str_body(&mp_pck, "label", 5);
-
-         /* Cached labels */
-         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cache_labels));
-         msgpack_pack_str_body(&mp_pck,
-                               ctx->cache_labels, flb_sds_len(ctx->cache_labels));
+         /* Pack stream labels */
+         pack_labels(ctx, &mp_pck, tag, tag_len, obj);
 
         /* streams['values'] */
          msgpack_pack_str(&mp_pck, 6);
@@ -586,20 +585,9 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
              /* streams['stream'] */
              msgpack_pack_str(&mp_pck, 6);
              msgpack_pack_str_body(&mp_pck, "stream", 6);
-             msgpack_pack_map(&mp_pck, 1);
 
-             /* streams['stream']['label'] */
-             msgpack_pack_str(&mp_pck, 5);
-             msgpack_pack_str_body(&mp_pck, "label", 5);
-
-             /* Custom Labels */
-             labels = format_logql_labels(ctx,tag, tag_len, obj);
-             if (labels) {
-                 msgpack_pack_str(&mp_pck, flb_sds_len(labels));
-                 msgpack_pack_str_body(&mp_pck,
-                                       labels, flb_sds_len(labels));
-                 flb_sds_destroy(labels);
-             }
+             /* Pack stream labels */
+             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
 
              /* streams['values'] */
              msgpack_pack_str(&mp_pck, 6);
@@ -758,9 +746,9 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_CLIST, "labels", "job=\"fluent-bit\"",
+     FLB_CONFIG_MAP_CLIST, "labels", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, labels),
-     "labels for API requests."
+     "labels for API requests. If no value is set, the default label is 'job=fluent-bit'"
     },
 
     {
@@ -777,7 +765,6 @@ static struct flb_config_map config_map[] = {
 
     /* EOF */
     {0}
-
 };
 
 /* Plugin reference */
