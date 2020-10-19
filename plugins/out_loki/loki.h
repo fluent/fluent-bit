@@ -55,9 +55,9 @@ struct flb_loki {
     /* Private */
     int tcp_port;
     char *tcp_host;
-    flb_sds_t cache_labels;
-    struct flb_record_accessor *ra_k8s;
-    struct mk_list labels_list;     /* list of flb_loki_kv nodes */
+    int ra_used;                        /* number of record accessor label keys */
+    struct flb_record_accessor *ra_k8s; /* kubernetes record accessor */
+    struct mk_list labels_list;         /* list of flb_loki_kv nodes */
 
     /* Upstream Context */
     struct flb_upstream *u;
