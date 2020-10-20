@@ -40,6 +40,7 @@ struct flb_loki_kv {
     int val_type;                       /* FLB_LOKI_KV_STR or FLB_LOKI_KV_RA */
     flb_sds_t key;                      /* string key */
     flb_sds_t str_val;                  /* string value */
+    flb_sds_t key_normalized;           /* normalized key name when using ra */
     struct flb_record_accessor *ra_key; /* record accessor key context */
     struct flb_record_accessor *ra_val; /* record accessor value context */
     struct mk_list _head;               /* link to flb_loki->labels_list */

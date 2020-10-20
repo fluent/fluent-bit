@@ -25,7 +25,10 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
+
+#include <ctype.h>
 
 #include "loki.h"
 
@@ -34,9 +37,76 @@ static void flb_loki_kv_init(struct mk_list *list)
     mk_list_init(list);
 }
 
+static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
+{
+    int sub;
+    int len;
+    char tmp[64];
+    struct mk_list *s_head;
+    struct flb_ra_key *key;
+    struct flb_ra_subentry *entry;
+
+    /* Iterate record accessor keys */
+    key = rp->key;
+    if (rp->type == FLB_RA_PARSER_STRING) {
+        flb_sds_cat(name, key->name, flb_sds_len(key->name));
+    }
+    else if (rp->type == FLB_RA_PARSER_KEYMAP) {
+        flb_sds_cat(name, key->name, flb_sds_len(key->name));
+
+        if (mk_list_size(key->subkeys) > 0) {
+            flb_sds_cat(name, "_", 1);
+        }
+
+        sub = 0;
+        mk_list_foreach(s_head, key->subkeys) {
+            entry = mk_list_entry(s_head, struct flb_ra_subentry, _head);
+
+            if (sub > 0) {
+                flb_sds_cat(name, "_", 1);
+            }
+            if (entry->type == FLB_RA_PARSER_STRING) {
+                flb_sds_cat(name, entry->str, flb_sds_len(entry->str));
+            }
+            else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
+                len = snprintf(tmp, sizeof(tmp) -1, "%d",
+                               entry->array_id);
+                flb_sds_cat(name, tmp, len);
+            }
+            sub++;
+        }
+    }
+}
+
+static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
+                                       struct flb_record_accessor *ra)
+{
+    int c = 0;
+    flb_sds_t name;
+    struct mk_list *head;
+    struct flb_ra_parser *rp;
+
+    name = flb_sds_create_size(128);
+    if (!name) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, &ra->list) {
+        rp = mk_list_entry(head, struct flb_ra_parser, _head);
+        if (c > 0) {
+            flb_sds_cat(name, "_", 1);
+        }
+        normalize_cat(rp, name);
+        c++;
+    }
+
+    return name;
+}
+
 int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
 {
     int ra_count = 0;
+    int k_len;
     struct flb_loki_kv *kv;
 
     if (!key) {
@@ -50,6 +120,14 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
     kv = flb_calloc(1, sizeof(struct flb_loki_kv));
     if (!kv) {
         flb_errno();
+        return -1;
+    }
+
+    k_len = strlen(key);
+    if (key[0] == '$' && k_len >= 2 && isdigit(key[1])) {
+        flb_plg_error(ctx->ins,
+                      "key name for record accessor cannot start with a number: %s",
+                      key);
         return -1;
     }
 
@@ -69,6 +147,17 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "invalid key record accessor pattern for key '%s'",
                           key);
+            flb_sds_destroy(kv->key);
+            flb_free(kv);
+            return -1;
+        }
+
+        /* Normalize 'key name' using record accessor pattern */
+        kv->key_normalized = normalize_ra_key_name(ctx, kv->ra_key);
+        if (!kv->key_normalized) {
+            flb_plg_error(ctx->ins,
+                          "could not normalize key pattern name '%s'\n",
+                          kv->ra_key->pattern);
             flb_sds_destroy(kv->key);
             flb_free(kv);
             return -1;
@@ -129,6 +218,10 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
             flb_ra_destroy(kv->ra_key);
         }
 
+        if (kv->key_normalized) {
+            flb_sds_destroy(kv->key_normalized);
+        }
+
         flb_free(kv);
     }
 }
@@ -167,8 +260,10 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
                 flb_mp_map_header_append(&mh);
 
                 /* We skip the first '$' character since it won't be valid in Loki */
-                msgpack_pack_str(mp_pck, flb_sds_len(kv->key) - 1);
-                msgpack_pack_str_body(mp_pck, kv->key + 1, flb_sds_len(kv->key) - 1);
+                msgpack_pack_str(mp_pck, flb_sds_len(kv->key_normalized));
+                msgpack_pack_str_body(mp_pck,
+                                      kv->key_normalized,
+                                      flb_sds_len(kv->key_normalized));
 
                 msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
                 msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
@@ -181,7 +276,7 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
         }
 
         /*
-         *The code is a bit duplicated to be able to manage the exception of an
+         * The code is a bit duplicated to be able to manage the exception of an
          * invalid or empty value, on that case the k/v is skipped.
          */
         if (kv->val_type == FLB_LOKI_KV_STR) {
@@ -338,7 +433,8 @@ static int parse_labels(struct flb_loki *ctx)
         }
     }
 
-    /* If the variable 'ra_used' is greater than zero, means that record accessor is
+    /*
+     * If the variable 'ra_used' is greater than zero, means that record accessor is
      * being used to compose the stream labels.
      */
     ctx->ra_used = ra_used;
