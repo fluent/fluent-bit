@@ -121,6 +121,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     int size;
     int is_epoch = FLB_FALSE;
     char *tmp;
+    char *timeptr;
     struct mk_list *head;
     struct flb_parser *p;
     struct flb_regex *regex;
@@ -239,42 +240,18 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
          * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
          * - http://code.activestate.com/lists/python-list/521885/
          */
-        if (is_epoch == FLB_TRUE) {
-            tmp = strstr(p->time_fmt, "%s.%L");
-        }
-        else if (p->time_with_year == FLB_TRUE) {
-            tmp = strstr(p->time_fmt, "%S.%L");
+        if (is_epoch == FLB_TRUE || p->time_with_year == FLB_TRUE) {
+            timeptr = p->time_fmt;
         }
         else {
-            tmp = strstr(p->time_fmt_year, "%s.%L");
-
-            if (tmp == NULL) {
-                tmp = strstr(p->time_fmt_year, "%S.%L");
-            }
+            timeptr = p->time_fmt_year;
         }
+
+        tmp = strstr(timeptr, "%L");
         if (tmp) {
-            tmp[2] = '\0';
-            p->time_frac_secs = (tmp + 5);
-        }
-        else {
-            /* same as above but with comma seperator */
-            if (p->time_with_year == FLB_TRUE) {
-                tmp = strstr(p->time_fmt, "%S,%L");
-            }
-            else {
-                tmp = strstr(p->time_fmt_year, "%s,%L");
-
-                if (tmp == NULL) {
-                    tmp = strstr(p->time_fmt_year, "%S,%L");
-                }
-            }
-            if (tmp) {
-                tmp[2] = '\0';
-                p->time_frac_secs = (tmp + 5);
-            }
-            else {
-                p->time_frac_secs = NULL;
-            }
+            tmp[0] = '\0';
+            tmp[1] = '\0';
+            p->time_frac_secs = (tmp + 2);
         }
 
         /* Optional fixed timezone offset */
@@ -694,21 +671,49 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
     return 0;
 }
 
+/*
+ * Parse the '%L' (subseconds) part into `subsec`.
+ *
+ *   2020-10-23 12:00:31.415213 JST
+ *                       ----------
+ *
+ * Return the number of characters consumed, or -1 on error.
+ */
+static int parse_subseconds(char *str, int len, double *subsec)
+{
+    char buf[16];
+    char *end;
+    int consumed;
+    int digits = 9;  /* 1 ns = 000000001 (9 digits) */
+
+    if (len < digits) {
+        digits = len;
+    }
+    memcpy(buf, "0.", 2);
+    memcpy(buf + 2, str, digits);
+    buf[digits + 2] = '\0';
+
+    *subsec = strtod(buf, &end);
+
+    consumed = end - buf - 2;
+    if (consumed <= 0) {
+        return -1;
+    }
+    return consumed;
+}
+
 int flb_parser_time_lookup(const char *time_str, size_t tsize,
                            time_t now,
                            struct flb_parser *parser,
                            struct tm *tm, double *ns)
 {
     int ret;
-    int slen;
     time_t time_now;
-    double tmfrac = 0;
     char *p = NULL;
     char *fmt;
     int time_len = tsize;
     const char *time_ptr = time_str;
     char tmp[64];
-    char fs_tmp[32];
     struct tm tmy;
 
     *ns = 0;
@@ -765,80 +770,34 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         p = flb_strptime(time_ptr, parser->time_fmt, tm);
     }
 
-    if (p != NULL) {
-        /* Check if we have fractional seconds */
-        if (parser->time_frac_secs && (*p == '.' || *p == ',')) {
-            /*
-             * Further parser routines needs a null byte, for fractional seconds
-             * we make a safe copy of the content.
-             */
-            slen = time_len - (p - time_ptr);
-            if (slen > 31) {
-                slen = 31;
-            }
-            memcpy(fs_tmp, p, slen);
-            fs_tmp[slen] = '\0';
+    if (p == NULL) {
+        flb_error("[parser] cannot parse '%.*s'", tsize, time_str);
+        return -1;
+    }
 
-            /* Parse fractional seconds */
-            ret = flb_parser_frac(fs_tmp, slen, &tmfrac, &time_ptr);
-            if (ret == -1) {
-                flb_warn("[parser] Error parsing time string");
-                return -1;
-            }
-            *ns = tmfrac;
-
-            p = flb_strptime(time_ptr, parser->time_frac_secs, tm);
-
-            if (p == NULL) {
-                return -1;
-            }
+    if (parser->time_frac_secs) {
+        ret = parse_subseconds(p, time_len - (p - time_ptr), ns);
+        if (ret < 0) {
+            flb_error("[parser] cannot parse %L for '%.*s'", tsize, time_str);
+            return -1;
         }
+        p += ret;
+
+        /* Parse the remaining part after %L */
+        p = flb_strptime(p, parser->time_frac_secs, tm);
+        if (p == NULL) {
+            flb_error("[parser] cannot parse '%.*s' after %L", tsize, time_str);
+            return -1;
+        }
+    }
 
 #ifdef FLB_HAVE_GMTOFF
-        if (parser->time_with_tz == FLB_FALSE) {
-            tm->tm_gmtoff = parser->time_offset;
-        }
+    if (parser->time_with_tz == FLB_FALSE) {
+        tm->tm_gmtoff = parser->time_offset;
+    }
 #endif
 
-        return 0;
-    }
-
-    return -1;
-}
-
-int flb_parser_frac(const char *str, int len, double *frac, const char **end)
-{
-    int ret = 0;
-    char *p;
-    double d;
-    const char *pstr;
-    char *tmp = NULL;
-
-    /* Fractional seconds */
-    /* Normalize the fractional seperator to be '.' since that's what strtod()
-     * expects in standard C locale */
-    if (*str == ',') {
-        tmp = flb_strdup(str);
-        tmp[0] = '.';
-        pstr = tmp;
-    }
-    else {
-        pstr = str;
-    }
-
-    d = strtod(pstr, &p);
-    if ((d == 0 && p == pstr) || !p) {
-        ret = -1;
-        goto free_and_return;
-    }
-    *frac = d;
-    *end = str + (p - pstr);
-
-free_and_return:
-    if (tmp != NULL) {
-        flb_free(tmp);
-    }
-    return ret;
+    return 0;
 }
 
 int flb_parser_typecast(const char *key, int key_len,

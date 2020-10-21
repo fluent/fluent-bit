@@ -104,7 +104,6 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
 
 void flb_parser_exit(struct flb_config *config);
 int flb_parser_tzone_offset(const char *str, int len, int *tmdiff);
-int flb_parser_frac(const char *str, int len, double *frac, const char **end);
 int flb_parser_time_lookup(const char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
                            struct tm *tm, double *ns);
