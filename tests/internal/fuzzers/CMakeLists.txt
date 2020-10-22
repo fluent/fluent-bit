@@ -9,6 +9,7 @@ set(UNIT_TESTS_FILES
   pack_json_state_fuzzer.c
   http_fuzzer.c
   strp_fuzzer.c
+  utils_fuzzer.c
   )
 
 # Prepare list of unit tests
