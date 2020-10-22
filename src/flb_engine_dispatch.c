@@ -201,6 +201,8 @@ static int tasks_start(struct flb_input_instance *in,
         if (hits == 0) {
             task->status = FLB_TASK_NEW;
         }
+
+        hits = 0;
     }
 
     return 0;
