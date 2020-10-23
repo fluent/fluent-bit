@@ -10,6 +10,7 @@ set(UNIT_TESTS_FILES
   http_fuzzer.c
   strp_fuzzer.c
   utils_fuzzer.c
+  config_map_fuzzer.c
   )
 
 # Prepare list of unit tests
