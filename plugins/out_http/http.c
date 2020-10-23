@@ -114,7 +114,7 @@ static int http_post(struct flb_out_http *ctx,
                         ctx->proxy, 0);
 
 
-    flb_debug("[HTTP_OUT] http_client proxy host: %s port: %i", c->proxy.host, c->proxy.port);
+    flb_debug("[http_client] proxy host: %s port: %i", c->proxy.host, c->proxy.port);
 
     /* Allow duplicated headers ? */
     flb_http_allow_duplicated_headers(c, ctx->allow_dup_headers);

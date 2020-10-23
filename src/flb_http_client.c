@@ -633,7 +633,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     /* FIXME: handler for HTTPS proxy */
     if (proxy) {
-        flb_debug("[PROXY] using http_proxy %s for header", proxy);
+        flb_debug("[http_client] using http_proxy %s for header", proxy);
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_proxy,
                        str_method,
@@ -643,7 +643,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                        flags & FLB_HTTP_10 ? 0 : 1);
     }
     else if (method == FLB_HTTP_CONNECT) {
-        flb_debug("[PROXY] using HTTP CONNECT for proxy");
+        flb_debug("[http_client] using HTTP CONNECT for proxy");
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_connect,
                        str_method,
@@ -652,7 +652,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                        flags & FLB_HTTP_10 ? 0 : 1);
     }
     else {
-        flb_debug("[PROXY] not using http_proxy for header");
+        flb_debug("[http_client] not using http_proxy for header");
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_plain,
                        str_method,
@@ -713,10 +713,10 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
 
     /* Check proxy data */
     if (proxy) {
-        flb_debug("[PROXY] Using http_proxy: %s", proxy);
+        flb_debug("[http_client] Using http_proxy: %s", proxy);
         ret = proxy_parse(proxy, c);
         if (ret != 0) {
-            flb_debug("Something wrong with the http_proxy parsing");
+            flb_debug("[http_client] Something wrong with the http_proxy parsing");
             flb_free(buf);
             flb_http_client_destroy(c);
             return NULL;
@@ -1098,7 +1098,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     }
 #endif
 
-    flb_debug("HTTP header=%s", c->header_buf);
+    flb_debug("[http_client] header=%s", c->header_buf);
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
@@ -1200,6 +1200,52 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 #endif
 
     return 0;
+}
+
+/*
+ * flb_http_client_proxy_connect opens a tunnel to a proxy server via
+ * http `CONNECT` method. This is needed for https traffic through a
+ * http proxy.
+ * More: https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/CONNECT
+ */
+int flb_http_client_proxy_connect(struct flb_upstream_conn *u_conn)
+{
+    struct flb_upstream *u = u_conn->u;
+    struct flb_http_client *c;
+    size_t b_sent;
+    int ret = -1;
+
+    /* Don't pass proxy when using FLB_HTTP_CONNECT */
+    c = flb_http_client(u_conn, FLB_HTTP_CONNECT, "", NULL,
+                        0, u->proxied_host, u->proxied_port, NULL, 0);
+    flb_http_buffer_size(c, 4192);
+
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+
+    /* Send HTTP request */
+    ret = flb_http_do(c, &b_sent);
+
+    /* Validate HTTP response */
+    if (ret != 0) {
+        flb_error("[upstream] error in flb_establish_proxy: %d", ret);
+        ret = -1;
+    }
+    else {
+        /* The request was issued successfully, validate the 'error' field */
+        flb_debug("[upstream] proxy returned %d", c->resp.status);
+        if (c->resp.status == 200) {
+            ret = 0;
+        }
+        else {
+            flb_error("flb_establish_proxy error: %s", c->resp.payload);
+            ret = -1;
+        }
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+
+    return ret;
 }
 
 void flb_http_client_destroy(struct flb_http_client *c)
