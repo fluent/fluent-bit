@@ -48,6 +48,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
 {
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
+    net->keepalive_max_recycle = 0;
     net->connect_timeout = 10;
     net->source_address = NULL;
 }

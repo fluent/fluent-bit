@@ -56,6 +56,13 @@ struct flb_config_map upstream_net[] = {
      "Specify network address to bind for data traffic"
     },
 
+    {
+     FLB_CONFIG_MAP_INT, "net.keepalive_max_recycle", "2000",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive_max_recycle),
+     "Set maximum number of times a keepalive connection can be used "
+     "before it is retired."
+    },
+
     /* EOF */
     {0}
 };
@@ -448,6 +455,13 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
                   conn->fd, conn->u->tcp_host, conn->u->tcp_port);
         conn->ka_count++;
+
+        /* if we have exceeded our max number of uses of this connection, destroy it */
+        if (conn->u->net.keepalive_max_recycle > 0 && conn->ka_count > conn->u->net.keepalive_max_recycle) {
+            flb_debug("[upstream] KA count %i exceeded configured limit of %i: closing.", conn->ka_count, conn->u->net.keepalive_max_recycle);
+            return destroy_conn(conn);
+        }
+
         return 0;
     }
 
