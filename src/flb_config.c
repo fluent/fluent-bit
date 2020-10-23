@@ -162,7 +162,7 @@ struct flb_config *flb_config_init()
 #endif
 
     config->http_proxy = getenv("HTTP_PROXY");
-    if (strcmp(config->http_proxy, "")) {
+    if (config->http_proxy != NULL && strcmp(config->http_proxy, "") == 0) {
         /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
         config->http_proxy = NULL;
     }

@@ -243,46 +243,6 @@ static int net_io_connect_async(struct flb_upstream *u,
     return 0;
 }
 
-static int flb_establish_proxy(struct flb_upstream_conn *u_conn)
-{
-    struct flb_upstream *u = u_conn->u;
-    struct flb_http_client *c;
-    size_t b_sent;
-    int ret = -1;
-
-    // Don't pass proxy when using FLB_HTTP_CONNECT
-    c = flb_http_client(u_conn, FLB_HTTP_CONNECT, "", NULL,
-                        0, u->proxied_host, u->proxied_port, NULL, 0);
-    flb_http_buffer_size(c, 4192);
-
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-
-    /* Send HTTP request */
-    ret = flb_http_do(c, &b_sent);
-
-    /* Validate HTTP response */
-    if (ret != 0) {
-        flb_error("[upstream] error in flb_establish_proxy: %d", ret);
-        ret = -1;
-    }
-    else {
-        /* The request was issued successfully, validate the 'error' field */
-        flb_debug("[upstream] proxy returned %d", c->resp.status);
-        if (c->resp.status == 200) {
-            ret = 0;
-        }
-        else {
-            flb_error("flb_establish_proxy error: %s", c->resp.payload);
-            ret = -1;
-        }
-    }
-
-    /* Cleanup */
-    flb_http_client_destroy(c);
-
-    return ret;
-}
-
 FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_thread *th)
 {
@@ -397,14 +357,15 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     }
 
     if (u->proxied_host) {
-        flb_debug("flb_establish_proxy");
-        ret = flb_establish_proxy(u_conn);
+        ret = flb_http_client_proxy_connect(u_conn);
         if (ret == -1) {
-            flb_debug("[proxy] connection #%i failed to %s:%i",
+            flb_debug("[http_client] flb_http_client_proxy_connect connection #%i failed to %s:%i.",
                       u_conn->fd, u->tcp_host, u->tcp_port);
           flb_socket_close(fd);
           return -1;
         }
+        flb_debug("[http_client] flb_http_client_proxy_connect connection #%i connected to %s:%i.",
+                  u_conn->fd, u->tcp_host, u->tcp_port);
     }
 
 #ifdef FLB_HAVE_TLS
