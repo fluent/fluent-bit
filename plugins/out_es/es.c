@@ -796,22 +796,22 @@ static struct flb_config_map config_map[] = {
      "Enable AWS Sigv4 Authentication"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_region", "",
+     FLB_CONFIG_MAP_STR, "aws_region", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_region),
      "AWS Region of your Amazon ElasticSearch Service cluster"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_sts_endpoint", "",
+     FLB_CONFIG_MAP_STR, "aws_sts_endpoint", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_sts_endpoint),
      "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_role_arn", "",
+     FLB_CONFIG_MAP_STR, "aws_role_arn", NULL,
      0, FLB_FALSE, 0,
      "AWS IAM Role to assume to put records to your Amazon ES cluster"
     },
     {
-     FLB_CONFIG_MAP_STR, "aws_external_id", "",
+     FLB_CONFIG_MAP_STR, "aws_external_id", NULL,
      0, FLB_FALSE, 0,
      "External ID for the AWS IAM Role specified with `aws_role_arn`"
     },
