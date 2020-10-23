@@ -39,6 +39,9 @@ struct flb_net_setup {
 
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
+
+    /* maximum of times a keepalive connection can be used */
+    int keepalive_max_recycle;
 };
 
 /* Defines a host service and it properties */
