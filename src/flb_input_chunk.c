@@ -692,7 +692,9 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     int ret;
     int set_down = FLB_FALSE;
     int min;
+    size_t diff;
     size_t size;
+    size_t pre_size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
 
@@ -739,6 +741,12 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
         set_down = FLB_TRUE;
     }
 
+    /*
+     * Previous size from the chunk, used to calculate the difference
+     * after filtering
+     */
+    pre_size = cio_chunk_get_content_size(ic->chunk);
+
     /* Write the new data */
     ret = flb_input_chunk_write(ic, buf, buf_size);
     if (ret == -1) {
@@ -747,8 +755,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
         cio_chunk_tx_rollback(ic->chunk);
         return -1;
     }
-
-    flb_input_chunk_update_output_instances(ic, buf_size);
 
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
@@ -765,6 +771,12 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Get chunk size */
     size = cio_chunk_get_content_size(ic->chunk);
+
+    /* calculate the 'real' new bytes being added after the filtering phase */
+    diff = llabs(size - pre_size);
+
+    /* Update output instance bytes counters */
+    flb_input_chunk_update_output_instances(ic, diff);
 
     /* Lock buffers where size > 2MB */
     if (size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
