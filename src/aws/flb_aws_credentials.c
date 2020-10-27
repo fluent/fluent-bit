@@ -35,6 +35,20 @@
 #define AWS_SECRET_ACCESS_KEY          "AWS_SECRET_ACCESS_KEY"
 #define AWS_SESSION_TOKEN              "AWS_SESSION_TOKEN"
 
+#define EKS_POD_EXECUTION_ROLE         "EKS_POD_EXECUTION_ROLE"
+
+/* declarations */
+static struct flb_aws_provider *standard_chain_create(struct flb_config
+                                                      *config,
+                                                      struct flb_tls *tls,
+                                                      char *region,
+                                                      char *sts_endpoint,
+                                                      char *proxy,
+                                                      struct
+                                                      flb_aws_client_generator
+                                                      *generator,
+                                                      int eks_irsa);
+
 
 /*
  * The standard credential provider chain:
@@ -242,6 +256,66 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             flb_aws_client_generator
                                                             *generator)
 {
+    struct flb_aws_provider *provider;
+    struct flb_aws_provider *tmp_provider;
+    char *eks_pod_role = NULL;
+    char *session_name;
+
+    eks_pod_role = getenv(EKS_POD_EXECUTION_ROLE);
+    if (eks_pod_role && strlen(eks_pod_role) > 0) {
+        /*
+         * eks fargate
+         * standard chain will be base provider used to
+         * assume the EKS_POD_EXECUTION_ROLE
+         */
+        flb_debug("[aws_credentials] Using EKS_POD_EXECUTION_ROLE=%s", eks_pod_role);
+        tmp_provider = standard_chain_create(config, tls, region, sts_endpoint,
+                                             proxy, generator, FLB_FALSE);
+
+        if (!tmp_provider) {
+            return NULL;
+        }
+
+        session_name = flb_sts_session_name();
+        if (!session_name) {
+            flb_error("Failed to generate random STS session name");
+            flb_aws_provider_destroy(tmp_provider);
+            return NULL;
+        }
+
+        provider = flb_sts_provider_create(config, tls, tmp_provider, NULL,
+                                           eks_pod_role, session_name,
+                                           region, sts_endpoint,
+                                           NULL, generator);
+        if (!provider) {
+            flb_error("Failed to create EKS Fargate Credential Provider");
+            flb_aws_provider_destroy(tmp_provider);
+            return NULL;
+        }
+        /* session name can freed after provider is created */
+        flb_free(session_name);
+        session_name = NULL;
+
+        return provider;
+    }
+
+    /* standard case- not in EKS Fargate */
+    provider = standard_chain_create(config, tls, region, sts_endpoint,
+                                     proxy, generator, FLB_TRUE);
+    return provider;
+}
+
+static struct flb_aws_provider *standard_chain_create(struct flb_config
+                                                      *config,
+                                                      struct flb_tls *tls,
+                                                      char *region,
+                                                      char *sts_endpoint,
+                                                      char *proxy,
+                                                      struct
+                                                      flb_aws_client_generator
+                                                      *generator,
+                                                      int eks_irsa)
+{
     struct flb_aws_provider *sub_provider;
     struct flb_aws_provider *provider;
     struct flb_aws_provider_chain *implementation;
@@ -285,11 +359,13 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                   "standard chain");
     }
 
-    sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
-    if (sub_provider) {
-        /* EKS provider can fail if we are not running in k8s */;
-        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
-        flb_debug("[aws_credentials] Initialized EKS Provider in standard chain");
+    if (eks_irsa == FLB_TRUE) {
+        sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
+        if (sub_provider) {
+            /* EKS provider can fail if we are not running in k8s */;
+            mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+            flb_debug("[aws_credentials] Initialized EKS Provider in standard chain");
+        }
     }
 
     sub_provider = flb_ec2_provider_create(config, generator);
