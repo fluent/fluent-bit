@@ -60,19 +60,23 @@ struct flb_hash {
 };
 
 struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries);
+
 void flb_hash_destroy(struct flb_hash *ht);
 
 int flb_hash_add(struct flb_hash *ht,
                  const char *key, int key_len,
                  const char *val, size_t val_size);
+
 int flb_hash_get(struct flb_hash *ht,
                  const char *key, int key_len,
                  const char **out_buf, size_t *out_size);
+
 int flb_hash_get_by_id(struct flb_hash *ht, int id,
                        const char *key,
                        const char **out_buf, size_t *out_size);
+
 int flb_hash_del(struct flb_hash *ht, const char *key);
 
-unsigned int gen_hash(const void *key, int len);
+unsigned int flb_hash_generate(const void *key, int len);
 
 #endif

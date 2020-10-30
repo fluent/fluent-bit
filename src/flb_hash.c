@@ -41,7 +41,7 @@
  * 2. It will not produce the same results on little-endian and big-endian
  *    machines.
  */
-unsigned int gen_hash(const void *key, int len)
+unsigned int flb_hash_generate(const void *key, int len)
 {
     /* 'm' and 'r' are mixing constants generated offline.
        They're not really 'magic', they just happen to work well.  */
@@ -238,7 +238,7 @@ int flb_hash_add(struct flb_hash *ht,
     }
 
     /* Generate hash number */
-    hash = gen_hash(key, key_len);
+    hash = flb_hash_generate(key, key_len);
     id = (hash % ht->size);
 
     /* Allocate the entry */
@@ -310,7 +310,7 @@ int flb_hash_get(struct flb_hash *ht,
         return -1;
     }
 
-    hash = gen_hash(key, key_len);
+    hash = flb_hash_generate(key, key_len);
     id = (hash % ht->size);
 
     table = &ht->table[id];
@@ -418,7 +418,7 @@ int flb_hash_del(struct flb_hash *ht, const char *key)
         return -1;
     }
 
-    hash = gen_hash(key, len);
+    hash = flb_hash_generate(key, len);
     id = (hash % ht->size);
 
     table = &ht->table[id];

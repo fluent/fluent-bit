@@ -29,7 +29,7 @@
  * use `switch` + `hash()` instead of `if ... else` + `strncmp()`.
  *
  * Note, it's arch sensitive, little-endian (LE) ONLY due to the implementation
- * of hash function, see `gen_hash()` in `flb_hash.c`.
+ * of hash function, see `flb_hash_generate()` in `flb_hash.c`.
  */
 #define FLB_FILTER_MODIFY_HASH_NULL   1430504305U
 #define FLB_FILTER_MODIFY_HASH_BOOL   4022539617U
@@ -110,4 +110,5 @@ struct modify_condition
     char *raw_v;
     struct mk_list _head;
 };
+
 #endif
