@@ -409,7 +409,6 @@ static void flb_signal_handler(int signal)
         _exit(EXIT_SUCCESS);
     case SIGTERM:
         flb_stop(ctx);
-        flb_loop(ctx);
         flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
      case SIGSEGV:
