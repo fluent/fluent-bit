@@ -548,9 +548,6 @@ int flb_start(flb_ctx_t *ctx)
 
 int flb_loop(flb_ctx_t *ctx)
 {
-    int ret;
-    pthread_t tid;
-
     while (ctx->config->is_running == FLB_TRUE) {
         sleep(1);
     }
