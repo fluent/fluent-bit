@@ -871,7 +871,16 @@ int flb_parser_typecast(const char *key, int key_len,
                 error = FLB_TRUE;
             }
             if (error == FLB_TRUE) {
-                flb_warn("[PARSER] key=%s cast error. save as string.", key);
+                /* We need to null-terminate key for flb_warn, as it expects
+                 * a null-terminated string, which key is not guaranteed
+                 * to be */
+                char *nt_key = flb_malloc(key_len + 1);
+                if (nt_key != NULL) {
+                    memcpy(nt_key, key, key_len);
+                    nt_key[key_len] = '\0';
+                    flb_warn("[PARSER] key=%s cast error. save as string.", nt_key);
+                    flb_free(nt_key);
+                }
                 msgpack_pack_str(pck, val_len);
                 msgpack_pack_str_body(pck, val, val_len);
             }
