@@ -471,6 +471,9 @@ int flb_utils_time_to_seconds(const char *time)
     size_t val;
 
     len = strlen(time);
+    if (len == 0) {
+        return 0;
+    }
     val = atoi(time);
 
     /* String time to seconds */
