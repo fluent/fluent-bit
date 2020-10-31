@@ -162,6 +162,12 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
+    ctx->log_retention_days = 0;
+    tmp = flb_output_get_property("log_retention_days", ins);
+    if (tmp) {
+        ctx->log_retention_days = atoi(tmp);
+    }
+
     tmp = flb_output_get_property("role_arn", ins);
     if (tmp) {
         ctx->role_arn = tmp;
@@ -542,6 +548,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Automatically create the log group (log streams will always automatically"
      " be created)"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "log_retention_days", "0",
+     0, FLB_FALSE, 0,
+     "If set to a number greater than zero, and newly create log group's "
+     "retention policy is set to this many days. "
+     "Valid values are: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]"
     },
 
     {

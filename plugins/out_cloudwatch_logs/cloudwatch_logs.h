@@ -122,6 +122,9 @@ struct flb_cloudwatch {
     /* Should the plugin create the log group */
     int create_group;
 
+    /* If set to a number greater than zero, and newly create log group's retention policy is set to this many days. */
+    int log_retention_days;
+
     /* has the log group successfully been created */
     int group_created;
 
