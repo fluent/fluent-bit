@@ -647,6 +647,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
                 return FLB_FALSE;
             }
             len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hhx", (unsigned char) c);
+            if ((available - written) < len) {
+                return FLB_FALSE;
+            }
             encoded_to_buf(p, tmp, len);
             p += len;
         }
@@ -677,6 +680,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
+                if ((available - written) < len) {
+                    return FLB_FALSE;
+                }
                 encoded_to_buf(p, tmp, len);
                 p += len;
             }
@@ -708,6 +714,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
+                if ((available - written) < len) {
+                    return FLB_FALSE;
+                }
                 encoded_to_buf(p, tmp, len);
                 p += len;
             }
