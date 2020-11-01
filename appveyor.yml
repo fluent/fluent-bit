@@ -8,13 +8,17 @@ platform:
 
 environment:
   vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Community'
+  winflexbison: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+  PATH: '%PATH%;C:\WinFlexBison'
 
 configuration:
   - Release
 
 install:
-  - cmd: set PATH=%MSYS2_PREFIX%\bin;C:\msys64\usr\bin;%PATH%
-  - cmd: C:\msys64\usr\bin\pacman -Su --noconfirm bison flex
+  - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
+  - ps: Expand-Archive winflexbison.zip -Destination /WinFlexBison
+  - ps: Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
+  - ps: Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
 
 before_build:
   - if %PLATFORM%==Win32 call "%vspath%\VC\Auxiliary\Build\vcvars32.bat"
