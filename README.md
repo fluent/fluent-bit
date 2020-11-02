@@ -146,12 +146,13 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 | [influxdb](https://docs.fluentbit.io/manual/pipeline/outputs/influxdb) | InfluxDB | Flush records to InfluxDB time series database. |
 | [kafka](https://docs.fluentbit.io/manual/pipeline/outputs/kafka) | Apache Kafka | Flush records to Apache Kafka |
 | [kafka-rest](https://docs.fluentbit.io/manual/pipeline/outputs/kafka-rest-proxy) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
-| [nats](https://docs.fluentbit.io/manual/pipeline/outputs/nats) | NATS | flush records to a NATS server. |
-| [null](https://docs.fluentbit.io/manual/pipeline/outputs/null) | NULL | throw away events. |
+| [nats](https://docs.fluentbit.io/manual/pipeline/outputs/nats) | NATS | Flush records to a NATS server. |
+| [null](https://docs.fluentbit.io/manual/pipeline/outputs/null) | NULL | Throw away events. |
+| [s3](https://docs.fluentbit.io/manual/pipeline/outputs/s3) | NULL | Flush records to s3 |
 | [stackdriver](https://docs.fluentbit.io/manual/pipeline/outputs/stackdriver) | Google Stackdriver Logging | Flush records to Google Stackdriver Logging service. |
 | [stdout](https://docs.fluentbit.io/manual/pipeline/outputs/standard-output) | Standard Output | Flush records to the standard output. |
 | [splunk](https://docs.fluentbit.io/manual/pipeline/outputs/splunk) | Splunk | Flush records to a Splunk Enterprise service |
-| [tcp](https://docs.fluentbit.io/manual/pipeline/outputs/tcp-and-tls) | TCP & TLS | flush records to a TCP server. |
+| [tcp](https://docs.fluentbit.io/manual/pipeline/outputs/tcp-and-tls) | TCP & TLS | Flush records to a TCP server. |
 | [td](https://docs.fluentbit.io/manual/pipeline/outputs/treasure-data) | [Treasure Data](http://www.treasuredata.com) | Flush records to the [Treasure Data](http://www.treasuredata.com) cloud service for analytics. |
 
 ## Contributing
