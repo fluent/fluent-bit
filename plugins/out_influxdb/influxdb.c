@@ -198,15 +198,22 @@ static char *influxdb_format(const char *tag, int tag_len,
             }
             else if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64, v->via.u64);
+                if (ctx->influx_uint_support) {
+                    // We cannot parse uint64_t as int64_t because of the overflow
+                    // This will not work with influx of versions less than 2.0.0
+                    // influx requires 'influx_uint_support=true' to be able to parse uints
+                    val_len = snprintf(tmp, sizeof(tmp), "%" PRIu64 "u", v->via.u64);
+                } else {
+                    val_len = snprintf(tmp, sizeof(tmp), "%" PRIu64, v->via.u64);
+                }
             }
             else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%" PRId64, v->via.i64);
+                val_len = snprintf(tmp, sizeof(tmp), "%" PRId64 "i", v->via.i64);
             }
             else if (v->type == MSGPACK_OBJECT_FLOAT || v->type == MSGPACK_OBJECT_FLOAT32) {
                 val = tmp;
-                val_len = snprintf(tmp, sizeof(tmp) - 1, "%f", v->via.f64);
+                val_len = snprintf(tmp, sizeof(tmp), "%f", v->via.f64);
             }
             else if (v->type == MSGPACK_OBJECT_STR) {
                 /* String value */
@@ -280,8 +287,7 @@ static char *influxdb_format(const char *tag, int tag_len,
                 influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
                 goto error;
             }
-        }
-        else {
+        } else {
             flb_plg_warn(ctx->ins, "skip send record, "
                          "since no record available "
                          "or all fields are tagged in record");
@@ -292,7 +298,6 @@ static char *influxdb_format(const char *tag, int tag_len,
         bulk_head->len = 0;
         bulk_body->len = 0;
     }
-
     msgpack_unpacked_destroy(&result);
 
     *out_size = bulk->len;
@@ -363,6 +368,14 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     }
     else {
         io_flags = FLB_IO_TCP;
+    }
+
+    /* check if need enable influx_uint_support */
+    // this will work only with influx versions >= 2.0.0
+    ctx->influx_uint_support = 0;
+    tmp = flb_output_get_property("influx_uint_support", ins);
+    if (tmp) {
+        ctx->influx_uint_support = atoi(tmp);
     }
 
     /* sequence tag */

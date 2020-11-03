@@ -59,6 +59,9 @@ struct flb_influxdb {
     /* auto_tags: on/off */
     int auto_tags;
 
+    /* influx_uint_support: on/off */
+    int influx_uint_support;
+
     /* tag_keys: space separated list of key */
     struct mk_list *tag_keys;
 
