@@ -882,3 +882,96 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 
     return -1;
 }
+
+
+/*
+ * flb_utils_proxy_url_split parses a proxy's information from a http_proxy URL.
+ * The URL is in the form like `http://username:password@myproxy.com:8080`.
+ * Note: currently only HTTP is supported.
+ */
+int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
+                              char **out_username, char **out_password, char **out_host, char **out_port)
+{
+    char *protocol = NULL;
+    char *username = NULL;
+    char *password = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *proto_sep;
+    char *at_sep;
+    char *tmp;
+
+    /*  Parse protocol */
+    proto_sep = strstr(in_url, "://");
+    if (!proto_sep) {
+        return -1;
+    }
+    if (proto_sep == in_url) {
+        return -1;
+    }
+
+    protocol = mk_string_copy_substr(in_url, 0, proto_sep - in_url);
+    if (!protocol) {
+        flb_errno();
+        return -1;
+    }
+    /* Only HTTP proxy is supported for now. */
+    if (strcmp(protocol, "http") != 0) {
+        flb_free(protocol);
+        return -1;
+    }
+
+    /* Advance position after protocol */
+    proto_sep += 3;
+
+    /* Seperate `username:password` and `host:port` */
+    at_sep = strchr(proto_sep, '@');
+    if (at_sep) {
+        /* Parse username:passwrod part. */
+        tmp = strchr(proto_sep, ':');
+        if (!tmp) {
+            return -1;
+        }
+        username = mk_string_copy_substr(proto_sep, 0, tmp - proto_sep);
+        tmp += 1;
+        password = mk_string_copy_substr(tmp, 0, at_sep - tmp);
+
+        /* Parse host:port part. */
+        at_sep += 1;
+        tmp = strchr(at_sep, ':');
+        if (tmp) {
+            host = flb_copy_host(at_sep, 0, tmp - at_sep);
+            tmp += 1;
+            port = strdup(tmp);
+        }
+        else {
+            host = flb_copy_host(at_sep, 0, strlen(at_sep));
+            port = flb_strdup("80");
+        }
+    }
+    else {
+        /* Parse host:port part. */
+        tmp = strchr(proto_sep, ':');
+        if (tmp) {
+            host = flb_copy_host(proto_sep, 0, tmp - proto_sep);
+            tmp += 1;
+            port = strdup(tmp);
+        }
+        else {
+            host = flb_copy_host(proto_sep, 0, strlen(proto_sep));
+            port = flb_strdup("80");
+        }
+    }
+
+    *out_protocol = protocol;
+    *out_host = host;
+    *out_port = port;
+    if (username) {
+        *out_username = username;
+    }
+    if (password) {
+        *out_password = password;
+    }
+
+    return 0;
+}

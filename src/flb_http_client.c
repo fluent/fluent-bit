@@ -643,7 +643,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                        flags & FLB_HTTP_10 ? 0 : 1);
     }
     else if (method == FLB_HTTP_CONNECT) {
-        flb_debug("[http_client] using HTTP CONNECT for proxy");
+        flb_debug("[http_client] using HTTP CONNECT for proxy: proxy host %s, proxy port %i", host, port);
         ret = snprintf(buf, FLB_HTTP_BUF_SIZE,
                        fmt_connect,
                        str_method,
@@ -993,9 +993,8 @@ int flb_http_set_callback_context(struct flb_http_client *c,
     return 0;
 }
 
-int flb_http_basic_auth(struct flb_http_client *c,
-                        const char *user, const char *passwd)
-{
+int flb_http_add_auth_header(struct flb_http_client *c,
+                             const char *user, const char *passwd, const char *header) {
     int ret;
     int len_u;
     int len_p;
@@ -1049,11 +1048,24 @@ int flb_http_basic_auth(struct flb_http_client *c,
     b64_len += 6;
 
     ret = flb_http_add_header(c,
-                              FLB_HTTP_HEADER_AUTH,
-                              sizeof(FLB_HTTP_HEADER_AUTH) - 1,
+                              header,
+                              strlen(header),
                               tmp, b64_len);
     return ret;
 }
+
+int flb_http_basic_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd)
+{
+    return flb_http_add_auth_header(c, user, passwd, FLB_HTTP_HEADER_AUTH);
+}
+
+int flb_http_proxy_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd)
+{
+    return flb_http_add_auth_header(c, user, passwd, FLB_HTTP_HEADER_PROXY_AUTH);
+}
+
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {
@@ -1216,8 +1228,16 @@ int flb_http_client_proxy_connect(struct flb_upstream_conn *u_conn)
     int ret = -1;
 
     /* Don't pass proxy when using FLB_HTTP_CONNECT */
+    flb_debug("[upstream] establishing http tunneling to proxy: host %s port %d", u->tcp_host, u->tcp_port);
     c = flb_http_client(u_conn, FLB_HTTP_CONNECT, "", NULL,
                         0, u->proxied_host, u->proxied_port, NULL, 0);
+
+    /* Setup proxy's username and password */
+    if (u->proxy_username && u->proxy_password) {
+        flb_debug("[upstream] proxy uses username %s password %s", u->proxy_username, u->proxy_password);
+        flb_http_proxy_auth(c, u->proxy_username, u->proxy_password);
+    }
+
     flb_http_buffer_size(c, 4192);
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
