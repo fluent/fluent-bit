@@ -84,7 +84,8 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     char* proxy_protocol = NULL;
     char* proxy_host = NULL;
     char* proxy_port = NULL;
-    char* proxy_uri;
+    char* proxy_username = NULL;
+    char* proxy_password = NULL;
     int ret;
 
 
@@ -100,8 +101,10 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
     /* Set upstream to the http_proxy if it is specified. */
     if (config->http_proxy) {
-        flb_debug("config->http_proxy: %s", config->http_proxy);
-        ret = flb_utils_url_split(config->http_proxy, &proxy_protocol, &proxy_host, &proxy_port, &proxy_uri);
+        flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
+        ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol, &proxy_username, &proxy_password, &proxy_host, &proxy_port);
+        flb_debug("[upstream] parsed http_proxy: protocol %s, host %s port %s username %s password %s",
+                  proxy_protocol, proxy_host, proxy_port, proxy_username, proxy_password);
         if (ret == -1) {
             flb_errno();
             return NULL;
@@ -111,11 +114,16 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
         u->tcp_port = atoi(proxy_port);
         u->proxied_host = flb_strdup(host);
         u->proxied_port = port;
+        if (proxy_username && proxy_password) {
+            u->proxy_username = flb_strdup(proxy_username);
+            u->proxy_password = flb_strdup(proxy_password);
+        }
 
         flb_free(proxy_protocol);
         flb_free(proxy_host);
         flb_free(proxy_port);
-        flb_free(proxy_uri);
+        flb_free(proxy_username);
+        flb_free(proxy_password);
     }
     else {
         u->tcp_host = flb_strdup(host);
@@ -342,6 +350,8 @@ int flb_upstream_destroy(struct flb_upstream *u)
 
     flb_free(u->tcp_host);
     flb_free(u->proxied_host);
+    flb_free(u->proxy_username);
+    flb_free(u->proxy_password);
     mk_list_del(&u->_head);
     flb_free(u);
 
