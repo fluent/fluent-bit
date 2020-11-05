@@ -102,9 +102,9 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     /* Set upstream to the http_proxy if it is specified. */
     if (config->http_proxy) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
-        ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol, &proxy_username, &proxy_password, &proxy_host, &proxy_port);
-        flb_debug("[upstream] parsed http_proxy: protocol %s, host %s port %s username %s password %s",
-                  proxy_protocol, proxy_host, proxy_port, proxy_username, proxy_password);
+        ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
+                                        &proxy_username, &proxy_password,
+                                        &proxy_host, &proxy_port);
         if (ret == -1) {
             flb_errno();
             return NULL;
