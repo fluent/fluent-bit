@@ -890,7 +890,8 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
  * Note: currently only HTTP is supported.
  */
 int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
-                              char **out_username, char **out_password, char **out_host, char **out_port)
+                              char **out_username, char **out_password,
+                              char **out_host, char **out_port)
 {
     char *protocol = NULL;
     char *username = NULL;
