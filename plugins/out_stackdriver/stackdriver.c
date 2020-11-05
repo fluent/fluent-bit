@@ -1862,7 +1862,6 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     else {
         /* The request was issued successfully, validate the 'error' field */
         flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
-        flb_plg_debug(ctx->ins, "HTTP data=%s", c->resp.data);
         if (c->resp.status == 200) {
             ret_code = FLB_OK;
         }
