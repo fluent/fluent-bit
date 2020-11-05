@@ -257,6 +257,14 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         flb_socket_close(u_conn->fd);
     }
 
+    /* Check which connection mode must be done */
+    if (th) {
+        async = flb_upstream_is_async(u);
+    }
+    else {
+        async = FLB_FALSE;
+    }
+
     /*
      * If the net.source_address was set, we need to determinate the address
      * type (for socket type creation) and bind it.
@@ -279,10 +287,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         }
 
         if (res->ai_family == AF_INET) {
-            fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET, async);
         }
         else if (res->ai_family == AF_INET6) {
-            fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET6, async);
         }
         else {
             flb_error("[io] could not create socket for "
@@ -316,10 +324,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     else {
         /* Create the socket */
         if (u_conn->u->flags & FLB_IO_IPV6) {
-            fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET6, async);
         }
         else {
-            fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET, async);
         }
         if (fd == -1) {
             flb_error("[io] could not create socket");
@@ -332,14 +340,6 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
     /* Disable Nagle's algorithm */
     flb_net_socket_tcp_nodelay(fd);
-
-    /* Check which connection mode must be done */
-    if (th) {
-        async = flb_upstream_is_async(u);
-    }
-    else {
-        async = FLB_FALSE;
-    }
 
     /* Connect */
     if (async == FLB_TRUE) {
