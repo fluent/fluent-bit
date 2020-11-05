@@ -998,6 +998,7 @@ int flb_http_add_auth_header(struct flb_http_client *c,
     int ret;
     int len_u;
     int len_p;
+    int len_h;
     int len_out;
     char tmp[1024];
     char *p;
@@ -1047,9 +1048,10 @@ int flb_http_add_auth_header(struct flb_http_client *c,
     flb_free(p);
     b64_len += 6;
 
+    len_h = strlen(header);
     ret = flb_http_add_header(c,
                               header,
-                              strlen(header),
+                              len_h,
                               tmp, b64_len);
     return ret;
 }
