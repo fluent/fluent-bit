@@ -866,10 +866,10 @@ int flb_parser_typecast(const char *key, int key_len,
                 }
                 break;
             case FLB_PARSER_TYPE_BOOL:
-                if (!strncasecmp(val, "true", 4)) {
+                if (val_len >= 4 && !strncasecmp(val, "true", 4)) {
                     msgpack_pack_true(pck);
                 }
-                else if(!strncasecmp(val, "false", 5)){
+                else if(val_len >= 5 && !strncasecmp(val, "false", 5)){
                     msgpack_pack_false(pck);
                 }
                 else {
