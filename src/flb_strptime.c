@@ -185,13 +185,6 @@ literal:
 		if (c != *bp++)
 			return (NULL);
 
-        /*
-         * Having increased bp we need to ensure we are not
-         * moving beyond bounds.
-         */
-        if (*bp == '\0')
-           return (NULL);
-
 		break;
 
 		/*
