@@ -267,7 +267,7 @@ static void test_standard_chain_provider()
         return;
     }
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
