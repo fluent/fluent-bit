@@ -181,7 +181,7 @@ static void test_http_provider()
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -257,7 +257,7 @@ static void test_http_provider_error_case()
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -317,7 +317,7 @@ static void test_http_provider_malformed_response()
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
