@@ -31,10 +31,13 @@
 #define FLB_LOKI_HOST            "127.0.0.1"
 #define FLB_LOKI_PORT            3100
 #define FLB_LOKI_HEADER_SCOPE    "X-Scope-OrgID"
+#define FLB_LOKI_ESCAPE_KUBERNETES_AUTO_KEYS 1
 
 #define FLB_LOKI_KV_STR    0     /* sds string */
 #define FLB_LOKI_KV_RA     1     /* record accessor */
 #define FLB_LOKI_KV_K8S    2     /* kubernetes label */
+
+static const char *flb_loki_escape_chars = "/-.";
 
 struct flb_loki_kv {
     int val_type;                       /* FLB_LOKI_KV_STR or FLB_LOKI_KV_RA */

@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_log.h>
 
 #include <ctype.h>
 
@@ -36,6 +37,23 @@ static void flb_loki_kv_init(struct mk_list *list)
 {
     mk_list_init(list);
 }
+
+#if FLB_LOKI_ESCAPE_KUBERNETES_AUTO_KEYS == 1
+
+#include <fluent-bit/flb_utf8.h>
+
+static inline void escape_utf8_char_sequence(char *str, int len) {
+    if (!str)
+        return;
+    for (int i = 0, l = flb_utf8_len(&str[i]); i < len && l != 0; i += l, l = flb_utf8_len(&str[i])) {
+        if (l != 1)
+            continue;
+        if (strchr(flb_loki_escape_chars, str[i]) != NULL) {
+            str[i] = '_';
+        }
+    }
+}
+#endif
 
 static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
 {
@@ -320,7 +338,17 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
                 /* append the key/value pair */
                 flb_mp_map_header_append(&mh);
                 msgpack_pack_str(mp_pck, k.via.str.size);
+
+#if FLB_LOKI_ESCAPE_KUBERNETES_AUTO_KEYS == 1
+                char *dkey = strndup(k.via.str.ptr, k.via.str.size);
+                escape_utf8_char_sequence(dkey, k.via.str.size);
+                flb_debug("[out_loki] auto_kubernetes_labels escaping key:'%.*s'=>'%s'", k.via.str.size, k.via.str.ptr, dkey);
+
+                msgpack_pack_str_body(mp_pck, dkey, k.via.str.size);
+                free(dkey);
+#else
                 msgpack_pack_str_body(mp_pck, k.via.str.ptr,  k.via.str.size);
+#endif
                 msgpack_pack_str(mp_pck, v.via.str.size);
                 msgpack_pack_str_body(mp_pck, v.via.str.ptr,  v.via.str.size);
             }
