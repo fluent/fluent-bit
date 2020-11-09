@@ -402,7 +402,7 @@ static void test_eks_provider() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -427,7 +427,7 @@ static void test_eks_provider() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+    provider = flb_eks_provider_create(config, NULL, "us-west-2",
                                 "https://sts.us-west-2.amazonaws.com",
                                 NULL, generator_in_test());
 
@@ -478,7 +478,7 @@ static void test_eks_provider_random_session_name() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -552,7 +552,7 @@ static void test_eks_provider_unexpected_api_response() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -573,7 +573,7 @@ static void test_eks_provider_unexpected_api_response() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+    provider = flb_eks_provider_create(config, NULL, "us-west-2",
                                 "https://sts.us-west-2.amazonaws.com",
                                 NULL, generator_in_test());
 
@@ -608,7 +608,7 @@ static void test_eks_provider_api_error() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -629,7 +629,7 @@ static void test_eks_provider_api_error() {
         return;
     }
 
-    provider = flb_eks_provider_create(config, NULL, "us-west-2", 
+    provider = flb_eks_provider_create(config, NULL, "us-west-2",
                                 "https://sts.us-west-2.amazonaws.com",
                                 NULL, generator_in_test());
 
@@ -665,7 +665,7 @@ static void test_sts_provider() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -755,7 +755,7 @@ static void test_sts_provider_api_error() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -831,7 +831,7 @@ static void test_sts_provider_unexpected_api_response() {
 
     g_request_count = 0;
 
-    config = flb_malloc(sizeof(struct flb_config));
+    config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
         flb_errno();
         return;
@@ -866,7 +866,7 @@ static void test_sts_provider_unexpected_api_response() {
     provider = flb_sts_provider_create(config, NULL, base_provider, "external_id",
                                        "arn:aws:iam::123456789012:role/"
                                        "unexpected_api_response",
-                                       "session_name", "cn-north-1", 
+                                       "session_name", "cn-north-1",
                                        "https://sts.us-west-2.amazonaws.com",
                                        NULL,
                                        generator_in_test());
