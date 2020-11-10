@@ -681,7 +681,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
 
             /* Populate value */
             if (m->type == FLB_CONFIG_MAP_STR) {
-                entry->val.str = kv->val;
+                entry->val.str = flb_sds_create(kv->val);
             }
             else if (m->type == FLB_CONFIG_MAP_INT) {
                 entry->val.i_num = atoi(kv->val);
