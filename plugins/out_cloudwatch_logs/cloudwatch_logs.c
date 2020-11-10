@@ -128,6 +128,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->log_key = tmp;
     }
 
+    tmp = flb_output_get_property("extra_user_agent", ins);
+    if (tmp) {
+        ctx->extra_user_agent = tmp;
+    }
+    
     tmp = flb_output_get_property("region", ins);
     if (tmp) {
         ctx->region = tmp;
@@ -289,6 +294,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
+    ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
@@ -505,6 +511,12 @@ static struct flb_config_map config_map[] = {
      "that key will be sent to CloudWatch. For example, if you are using "
      "the Fluentd Docker log driver, you can specify log_key log and only "
      "the log message will be sent to CloudWatch."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "extra_user_agent", NULL,
+     0, FLB_FALSE, 0,
+     "Append the user agent with this string to track usage."
     },
 
     {
