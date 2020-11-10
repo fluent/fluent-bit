@@ -105,6 +105,38 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
                          void **out_buf, size_t *out_size,
                          struct flb_time *out_time);
 
+/*
+ * This function is used to free all aspects of a parser
+ * which is provided by the caller of flb_create_parser.
+ * Specifically, this function frees all but parser.types and
+ * parser.decoders from a parser.
+ *
+ * This function is only to be used in parser creation routines
+ */
+static void flb_interim_parser_destroy(struct flb_parser *parser)
+{
+    int i = 0;
+    if (parser->type == FLB_PARSER_REGEX) {
+        flb_regex_destroy(parser->regex);
+        flb_free(parser->p_regex);
+    }
+
+    flb_free(parser->name);
+    if (parser->time_fmt) {
+        flb_free(parser->time_fmt);
+        flb_free(parser->time_fmt_full);
+    }
+    if (parser->time_fmt_year) {
+        flb_free(parser->time_fmt_year);
+    }
+    if (parser->time_key) {
+        flb_free(parser->time_key);
+    }
+
+    mk_list_del(&parser->_head);
+    flb_free(parser);
+}
+
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
                                      const char *time_fmt, const char *time_key,
@@ -201,7 +233,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
             p->time_fmt_year = flb_malloc(size + 4);
             if (!p->time_fmt_year) {
                 flb_errno();
-                flb_parser_destroy(p);
+                flb_interim_parser_destroy(p);
                 return NULL;
             }
 
@@ -224,7 +256,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
 #else
             flb_error("[parser] timezone offset not supported");
             flb_error("[parser] you cannot use %%z/%%Z on this platform");
-            flb_parser_destroy(p);
+            flb_interim_parser_destroy(p);
             return NULL;
 #endif
         }
@@ -261,7 +293,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
             len = strlen(time_offset);
             ret = flb_parser_tzone_offset(time_offset, len, &diff);
             if (ret == -1) {
-                flb_parser_destroy(p);
+                flb_interim_parser_destroy(p);
                 return NULL;
             }
             p->time_offset = diff;
