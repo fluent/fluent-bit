@@ -111,7 +111,7 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
  * Specifically, this function frees all but parser.types and
  * parser.decoders from a parser.
  *
- * This function is only to be used in parser creation routines
+ * This function is only to be used in parser creation routines.
  */
 static void flb_interim_parser_destroy(struct flb_parser *parser)
 {
