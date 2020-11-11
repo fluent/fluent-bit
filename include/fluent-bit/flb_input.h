@@ -202,6 +202,16 @@ struct flb_input_instance {
     int mem_buf_status;
 
     /*
+     * Queue limit: Optional limit set by configuration so this input instance
+     * cannot queue more than the queue_limit number of its own chunks to
+     * the output instances.
+     *
+     * This is to prevent queueing all of the available up chunks to stalled
+     * or blocked output instance(s).
+     */
+    int queue_limit;
+
+    /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
      * some specific data from it caller.

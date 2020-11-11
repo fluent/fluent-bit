@@ -194,6 +194,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
+        instance->queue_limit = -1;
 
         mk_list_add(&instance->_head, &config->inputs);
     }
@@ -281,6 +282,10 @@ int flb_input_set_property(struct flb_input_instance *ins,
             return -1;
         }
         ins->mem_buf_limit = (size_t) limit;
+    }
+    else if (prop_key_check("queue_limit", k, len) == 0 && tmp) {
+        ins->queue_limit = atoi(tmp);
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("listen", k, len) == 0) {
         ins->host.listen = tmp;
