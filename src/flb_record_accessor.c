@@ -249,6 +249,10 @@ void flb_ra_destroy(struct flb_record_accessor *ra)
         mk_list_del(&rp->_head);
         flb_ra_parser_destroy(rp);
     }
+
+    if (ra->pattern) {
+        flb_sds_destroy(ra->pattern);
+    }
     flb_free(ra);
 }
 
@@ -288,7 +292,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     }
 
     /* Allocate context */
-    ra = flb_malloc(sizeof(struct flb_record_accessor));
+    ra = flb_calloc(1, sizeof(struct flb_record_accessor));
     if (!ra) {
         flb_errno();
         flb_error("[record accessor] cannot create context");
@@ -297,6 +301,16 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         }
         return NULL;
     }
+    ra->pattern = flb_sds_create(str);
+    if (!ra->pattern) {
+        flb_error("[record accessor] could not allocate pattern");
+        flb_free(ra);
+        if (buf) {
+            flb_sds_destroy(buf);
+        }
+        return NULL;
+    }
+
     mk_list_init(&ra->list);
 
     /*

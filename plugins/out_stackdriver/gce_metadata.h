@@ -23,7 +23,7 @@
 #include "stackdriver.h"
 
 /* Project ID metadata URI */
-#define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/numeric-project-id"
+#define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/project-id"
 
 /* Zone metadata URI */
 #define FLB_STD_METADATA_ZONE_URI "/computeMetadata/v1/instance/zone"

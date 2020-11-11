@@ -254,17 +254,34 @@ int flb_tail_dmode_process_content(time_t now,
     flb_sds_t tmp_copy;
 
 #ifdef FLB_HAVE_REGEX
-    if (flb_sds_len(file->dmode_lastline) > 0 && file->dmode_complete) {
-        if (ctx->docker_mode_parser) {
-            ret = flb_parser_do(ctx->docker_mode_parser, line, line_len,
-                                &out_buf, &out_size, &out_time);
-            flb_free(out_buf);
+    if (ctx->docker_mode_parser) {
+        ret = flb_parser_do(ctx->docker_mode_parser, line, line_len,
+                            &out_buf, &out_size, &out_time);
+        flb_free(out_buf);
 
+        /*
+        * Set dmode_firstline if the line meets the first-line requirement
+        */
+        if(ret >= 0) {
+            file->dmode_firstline = true;
+        }
+
+        /*
+        * Process if buffer contains full log line
+        */
+        if (flb_sds_len(file->dmode_lastline) > 0 && file->dmode_complete) {
             /*
             * Buffered log should be flushed out
             * as current line meets first-line requirement
             */
             if(ret >= 0) {
+                flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
+            }
+
+            /*
+            * Flush the buffer if multiline has not been detected yet
+            */
+            if (!file->dmode_firstline) {
                 flb_tail_dmode_flush(mp_sbuf, mp_pck, file, ctx);
             }
         }

@@ -49,9 +49,10 @@
 #endif
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET          32  /* output address may set host and port */
-#define FLB_OUTPUT_PLUGIN_CORE   0
-#define FLB_OUTPUT_PLUGIN_PROXY  1
+#define FLB_OUTPUT_NET           32  /* output address may set host and port */
+#define FLB_OUTPUT_PLUGIN_CORE    0
+#define FLB_OUTPUT_PLUGIN_PROXY   1
+#define FLB_OUTPUT_NO_MULTIPLEX 512
 
 /*
  * Tests callbacks
@@ -293,6 +294,21 @@ struct flb_output_instance {
     /* Tests */
     struct flb_test_out_formatter test_formatter;
 
+    /*
+     * Buffer counter: it counts the total of disk space (filesystem) used by buffers
+     */
+    size_t fs_chunks_size;
+
+    /*
+     * Buffer limit: optional limit set by configuration so this output instance
+     * cannot buffer more than total_limit_size (bytes unit).
+     *
+     * Note that this is the limit set to the filesystem buffer mechanism so the
+     * input instance routered to this output plugin should configure to use
+     * filesystem as buffer type.
+     */
+    size_t total_limit_size;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
@@ -304,7 +320,9 @@ struct flb_output_thread {
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
     struct flb_thread *parent;         /* parent thread addr */
-    struct mk_list _head;              /* Link to struct flb_task->threads */
+    struct mk_list _head_output;       /* Link to flb_output_instance->th_queue */
+    struct mk_list _head;              /* Link to flb_task->threads */
+
 };
 
 static FLB_INLINE
@@ -333,6 +351,7 @@ static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task
         return -1;
     }
 
+    mk_list_del(&out_th->_head_output);
     mk_list_del(&out_th->_head);
     thread = out_th->parent;
 
@@ -352,6 +371,7 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
     flb_debug("[out thread] cb_destroy thread_id=%i", out_th->id);
 
     out_th->task->users--;
+    mk_list_del(&out_th->_head_output);
     mk_list_del(&out_th->_head);
 }
 
@@ -495,6 +515,8 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
     th->valgrind_stack_id = VALGRIND_STACK_REGISTER(th->callee,
                                                     ((char *)th->callee) + stack_size);
 #endif
+
+    mk_list_add(&out_th->_head_output, &o_ins->th_queue);
 
     /* Workaround for makecontext() */
     output_params_set(th,

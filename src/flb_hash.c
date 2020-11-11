@@ -371,6 +371,10 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id,
     struct flb_hash_entry *entry = NULL;
     struct flb_hash_table *table;
 
+    if (ht->size <= id) {
+        return -1;
+    }
+
     table = &ht->table[id];
     if (table->count == 0) {
         return -1;

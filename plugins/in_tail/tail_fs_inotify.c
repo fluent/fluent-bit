@@ -145,8 +145,8 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
         return -1;
     }
     file->watch_fd = watch_fd;
-    flb_info("inotify_fs_add(): inode=%"PRIu64" watch_fd=%i name=%s",
-             file->inode, watch_fd, file->name);
+    flb_plg_info(ctx->ins, "inotify_fs_add(): inode=%"PRIu64" watch_fd=%i name=%s",
+                 file->inode, watch_fd, file->name);
     return 0;
 }
 
@@ -159,7 +159,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    off_t offset;
+    int64_t offset;
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_tail_config *ctx = in_context;
@@ -345,11 +345,13 @@ int flb_tail_fs_add(struct flb_tail_file *file)
 
 int flb_tail_fs_remove(struct flb_tail_file *file)
 {
+    struct flb_tail_config *ctx = file->config;
+
     if (file->watch_fd == -1) {
         return 0;
     }
 
-    flb_info("inotify_fs_remove(): inode=%"PRIu64" watch_fd=%i",
+    flb_plg_info(ctx->ins, "inotify_fs_remove(): inode=%"PRIu64" watch_fd=%i",
              file->inode, file->watch_fd);
 
     inotify_rm_watch(file->config->fd_notify, file->watch_fd);

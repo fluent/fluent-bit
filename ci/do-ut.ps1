@@ -19,6 +19,7 @@ cmake -G "NMake Makefiles" `
                      -D FLB_WITHOUT_flb-it-aws_credentials_profile=On `
                      -D FLB_WITHOUT_flb-it-aws_credentials_sts=On `
                      -D FLB_WITHOUT_flb-it-aws_util=On `
+                     -D FLB_WITHOUT_flb-it-input_chunk=On `
                      ../
 
 # COMPILE

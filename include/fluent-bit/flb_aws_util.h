@@ -25,9 +25,6 @@
 
 #define FLB_AWS_UTIL_H
 
-#define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
-#define AWS_SERVICE_ENDPOINT_BASE_LEN          15
-
 #define FLB_AWS_CREDENTIAL_REFRESH_LIMIT       60
 
 /*
@@ -71,6 +68,7 @@ struct flb_aws_client {
 
     /* Sigv4 */
     int has_auth;
+    int s3_mode;
     struct flb_aws_provider *provider;
     char *region;
     char *service;
@@ -121,6 +119,9 @@ struct flb_aws_client_generator {
     flb_aws_client_create_fn *create;
 };
 
+/* Remove protocol from endpoint */
+char *removeProtocol (char *endpoint, char *protocol);
+
 /* Get the flb_aws_client_generator */
 struct flb_aws_client_generator *flb_aws_client_generator();
 
@@ -129,23 +130,36 @@ struct flb_aws_client_generator *flb_aws_client_generator();
  */
 char *flb_aws_endpoint(char* service, char* region);
 
+/* Parses AWS XML API Error responses and returns the value of the <code> tag */
+flb_sds_t flb_aws_xml_error(char *response, size_t response_len);
+
 /*
- * Parses an AWS API error type returned by a request.
+ * Parses an AWS JSON API error type returned by a request.
  */
 flb_sds_t flb_aws_error(char *response, size_t response_len);
 
 /*
- * Similar to 'flb_aws_error', except it prints the error type and message
+ * Similar to 'flb_aws_error', except it prints the JSON error type and message
  * to the user in a error log.
  * 'api' is the name of the API that was called; this is used in the error log.
  */
 void flb_aws_print_error(char *response, size_t response_len,
                          char *api, struct flb_output_instance *ins);
 
+/* Similar to 'flb_aws_print_error', but for APIs that return XML */
+void flb_aws_print_xml_error(char *response, size_t response_len,
+                             char *api, struct flb_output_instance *ins);
+
 /*
  * Parses the JSON and gets the value for 'key'
  */
 flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
+
+/*
+ * Parses an XML document and returns the value of the given tag
+ * Param `tag` should include angle brackets; ex "<code>"
+ */
+flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag);
 
 /*
  * Request data from an IMDS path.
@@ -158,6 +172,10 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
  */
 int flb_aws_is_auth_error(char *payload, size_t payload_size);
 
+int flb_read_file(const char *path, char **out_buf, size_t *out_size);
+
+//* Constructs S3 object key as per the format. */
+flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char *tag_delimiter);
 
 #endif
 #endif /* FLB_HAVE_AWS */

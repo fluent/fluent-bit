@@ -30,7 +30,7 @@
 #define FLB_ES_DEFAULT_TIME_KEY   "@timestamp"
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
-#define FLB_ES_DEFAULT_HTTP_MAX   "4096"
+#define FLB_ES_DEFAULT_HTTP_MAX   "512k"
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -45,6 +45,7 @@ struct flb_elasticsearch {
 #ifdef FLB_HAVE_AWS
     int has_aws_auth;
     char *aws_region;
+    char *aws_sts_endpoint;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */

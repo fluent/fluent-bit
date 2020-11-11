@@ -113,6 +113,10 @@ static int http_post(struct flb_out_http *ctx,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
+
+    flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
+                  c->proxy.host, c->proxy.port);
+
     /* Allow duplicated headers ? */
     flb_http_allow_duplicated_headers(c, ctx->allow_dup_headers);
 
@@ -183,8 +187,15 @@ static int http_post(struct flb_out_http *ctx,
          *
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                          ctx->host, ctx->port, c->resp.status);
+            if (c->resp.payload && c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->host, ctx->port,
+                              c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->host, ctx->port, c->resp.status);
+            }
             out_ret = FLB_RETRY;
         }
         else {

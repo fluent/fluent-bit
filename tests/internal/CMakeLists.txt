@@ -15,11 +15,18 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
-  gelf.c
   random.c
   config_map.c
   mp.c
+  input_chunk.c
   )
+
+if (NOT WIN32)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    gelf.c
+    )
+endif()
 
 if(FLB_PARSER)
   set(UNIT_TESTS_FILES
@@ -73,6 +80,8 @@ set(UNIT_TESTS_DATA
   data/pack/json_single_map_002.json
   data/parser/json.conf
   data/parser/regex.conf
+  data/input_chunk/log/a_thousand_plus_one_bytes.log
+  data/input_chunk/log/test_buffer_valid.log
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)

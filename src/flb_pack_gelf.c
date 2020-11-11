@@ -321,6 +321,10 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
                 msgpack_object *k = &((p+i)->key);
                 msgpack_object *v = &((p+i)->val);
 
+                if (k->type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+
                 const char *key = k->via.str.ptr;
                 int key_len = k->via.str.size;
 
@@ -495,7 +499,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
             const char *key = NULL;
             int key_len;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
             int quote = FLB_FALSE;
             int custom_key = FLB_FALSE;
 

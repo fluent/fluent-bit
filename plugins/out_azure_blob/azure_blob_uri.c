@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
 
 #include "azure_blob.h"

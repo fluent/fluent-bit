@@ -456,9 +456,9 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
         for (i = 0; i < loop; i++) {
             char temp[48] = {0};
             const char *key = NULL;
-            int key_len;
+            int key_len = 0;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
@@ -877,7 +877,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn;
+    struct flb_upstream_conn *u_conn = NULL;
     int ret;
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {

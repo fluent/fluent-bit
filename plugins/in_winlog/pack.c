@@ -315,17 +315,38 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     return -1;
 }
 
+static void pack_strings(msgpack_packer *mp_pck, PEVENTLOGRECORD evt)
+{
+    int i;
+    int len;
+    wchar_t *wstr = (wchar_t *) ((char *) evt + evt->StringOffset);
+
+    msgpack_pack_array(mp_pck, evt->NumStrings);
+
+    for (i = 0; i < evt->NumStrings; i++) {
+        if (pack_wstr(mp_pck, wstr)) {
+            pack_nullstr(mp_pck);
+        }
+        wstr += wcslen(wstr) + 1;
+    }
+}
+
 void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
                        struct winlog_channel *ch, struct winlog_config *ctx)
 {
     wchar_t *source_name = SRCNAME(evt);
     wchar_t *computer_name = source_name + wcslen(source_name) + 1;
     size_t len;
+    int count = 12;
+
+    if (ctx->string_inserts) {
+        count++;
+    }
 
     msgpack_pack_array(mp_pck, 2);
     flb_pack_time_now(mp_pck);
 
-    msgpack_pack_map(mp_pck, 12);
+    msgpack_pack_map(mp_pck, count);
 
     /* RecordNumber */
     msgpack_pack_str(mp_pck, 12);
@@ -408,5 +429,12 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     msgpack_pack_str_body(mp_pck, "Message", 7);
     if (pack_message(mp_pck, evt, ch, ctx)) {
         pack_nullstr(mp_pck);
+    }
+
+    /* StringInserts (optional) */
+    if (ctx->string_inserts) {
+        msgpack_pack_str(mp_pck, 13);
+        msgpack_pack_str_body(mp_pck, "StringInserts", 13);
+        pack_strings(mp_pck, evt, ch, ctx);
     }
 }

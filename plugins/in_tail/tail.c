@@ -43,13 +43,13 @@
 #include "tail_dockermode.h"
 #include "tail_multiline.h"
 
-static inline int consume_byte(int fd)
+static inline int consume_byte(flb_pipefd_t fd)
 {
     int ret;
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = flb_pipe_r(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, (char *) &val, sizeof(val));
     if (ret <= 0) {
         flb_errno();
         return -1;
@@ -231,7 +231,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
     struct flb_tail_file *file;
     (void) config;
 
-#ifndef _MSC_VER
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         if (file->is_link == FLB_TRUE) {
@@ -244,8 +243,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
     }
-
-#endif
     return ret;
 }
 
@@ -298,6 +295,14 @@ static int in_tail_init(struct flb_input_instance *in,
 
     /* Scan path */
     flb_tail_scan(ctx->path_list, ctx);
+
+    /*
+     * After the first scan (on start time), all new files discovered needs to be
+     * read from head, so we switch the 'read_from_head' flag to true so any
+     * other file discovered after a scan or a rotation are read from the
+     * beginning.
+     */
+    ctx->read_from_head = FLB_TRUE;
 
     /* Set plugin context */
     flb_input_set_context(in, ctx);
@@ -475,6 +480,12 @@ static struct flb_config_map config_map[] = {
      "alternative name for that key."
     },
     {
+     FLB_CONFIG_MAP_BOOL, "read_from_head", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, read_from_head),
+     "For new discovered files on start (without a database offset/position), read the "
+     "content from the head of the file, not tail."
+    },
+    {
      FLB_CONFIG_MAP_STR, "refresh_interval", "60",
      0, FLB_FALSE, 0,
      "interval to refresh the list of watched files expressed in seconds."
@@ -484,7 +495,7 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
     },
     {
-     FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
+     FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
      "specify the number of extra time in seconds to monitor a file once is "
      "rotated in case some pending data is flushed."
@@ -570,9 +581,15 @@ static struct flb_config_map config_map[] = {
      "set a database file to keep track of monitored files and it offsets."
     },
     {
-     FLB_CONFIG_MAP_STR, "db.sync", "full",
+     FLB_CONFIG_MAP_STR, "db.sync", "normal",
      0, FLB_FALSE, 0,
      "set a database sync method. values: extra, full, normal and off."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.locking", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, db_locking),
+     "set exclusive locking mode, increase performance but don't allow "
+     "external connections to the database file."
     },
 #endif
 

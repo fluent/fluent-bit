@@ -63,6 +63,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_http_client.h>
 
 static int net_io_connect_sync(struct flb_upstream *u,
                                struct flb_upstream_conn *u_conn)
@@ -257,6 +258,14 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         flb_socket_close(u_conn->fd);
     }
 
+    /* Check which connection mode must be done */
+    if (th) {
+        async = flb_upstream_is_async(u);
+    }
+    else {
+        async = FLB_FALSE;
+    }
+
     /*
      * If the net.source_address was set, we need to determinate the address
      * type (for socket type creation) and bind it.
@@ -279,10 +288,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         }
 
         if (res->ai_family == AF_INET) {
-            fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET, async);
         }
         else if (res->ai_family == AF_INET6) {
-            fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET6, async);
         }
         else {
             flb_error("[io] could not create socket for "
@@ -316,10 +325,10 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     else {
         /* Create the socket */
         if (u_conn->u->flags & FLB_IO_IPV6) {
-            fd = flb_net_socket_create(AF_INET6, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET6, async);
         }
         else {
-            fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+            fd = flb_net_socket_create(AF_INET, async);
         }
         if (fd == -1) {
             flb_error("[io] could not create socket");
@@ -332,14 +341,6 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
     /* Disable Nagle's algorithm */
     flb_net_socket_tcp_nodelay(fd);
-
-    /* Check which connection mode must be done */
-    if (th) {
-        async = flb_upstream_is_async(u);
-    }
-    else {
-        async = FLB_FALSE;
-    }
 
     /* Connect */
     if (async == FLB_TRUE) {
@@ -355,9 +356,21 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
         return -1;
     }
 
+    if (u->proxied_host) {
+        ret = flb_http_client_proxy_connect(u_conn);
+        if (ret == -1) {
+            flb_debug("[http_client] flb_http_client_proxy_connect connection #%i failed to %s:%i.",
+                      u_conn->fd, u->tcp_host, u->tcp_port);
+          flb_socket_close(fd);
+          return -1;
+        }
+        flb_debug("[http_client] flb_http_client_proxy_connect connection #%i connected to %s:%i.",
+                  u_conn->fd, u->tcp_host, u->tcp_port);
+    }
+
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
-    if (u_conn->u->flags & FLB_IO_TLS) {
+    if (u->flags & FLB_IO_TLS) {
         ret = net_io_tls_handshake(u_conn, th);
         if (ret != 0) {
             flb_socket_close(fd);
@@ -610,7 +623,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
     flb_trace("[io thread=%p] [net_write] trying %zd bytes",
               th, len);
 
-    if (u->flags & FLB_IO_TCP) {
+    if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_write_async(th, u_conn, data, len, out_len);
         }
@@ -649,7 +662,7 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     flb_trace("[io thread=%p] [net_read] try up to %zd bytes",
               th, len);
 
-    if (u->flags & FLB_IO_TCP) {
+    if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_read_async(th, u_conn, buf, len);
         }

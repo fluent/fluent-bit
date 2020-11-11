@@ -31,7 +31,7 @@
  * On Unix, we use /dev/urandom as a secure random source.
  */
 
-int flb_randombytes(unsigned char *buf, int len)
+int flb_random_bytes(unsigned char *buf, int len)
 {
 #ifdef FLB_SYSTEM_WINDOWS
     NTSTATUS ret;

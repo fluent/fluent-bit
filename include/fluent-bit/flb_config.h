@@ -45,6 +45,7 @@ struct flb_config {
     struct mk_event ch_event;
 
     int support_mode;         /* enterprise support mode ?      */
+    int is_ingestion_active;  /* date ingestion active/allowed  */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
     int grace;                /* Grace on shutdown              */
@@ -142,6 +143,17 @@ struct flb_config {
     char *http_listen;        /* Interface Address      */
     void *http_ctx;           /* Monkey HTTP context    */
 #endif
+
+    /*
+     * There are two ways to use proxy in fluent-bit:
+     * 1. Similar with http and datadog plugin, passing proxy directly to
+     *    flb_http_client and use proxy host and port when creating upstream.
+     *    HTTPS traffic is not supported this way.
+     * 2. Similar with stackdriver plugin, passing http_proxy in flb_config
+     *    (or by setting HTTP_PROXY env variable). HTTPS is supported this way. But
+     *    proxy shouldn't be passed when calling flb_http_client().
+     */
+    char *http_proxy;
 
     /* Chunk I/O Buffering */
     void *cio;

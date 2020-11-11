@@ -95,7 +95,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
     }
 
     /* Set Blob type */
-    tmp = flb_output_get_property("blob_type", ins);
+    tmp = (char *) flb_output_get_property("blob_type", ins);
     if (!tmp) {
         ctx->btype = AZURE_BLOB_APPENDBLOB;
     }

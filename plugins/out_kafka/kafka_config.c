@@ -186,6 +186,19 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Config: queue_full_retries */
+    tmp = flb_output_get_property("queue_full_retries", ins);
+    if (!tmp) {
+        ctx->queue_full_retries = FLB_KAFKA_QUEUE_FULL_RETRIES;
+    }
+    else {
+        /* set number of retries: note that if the number is zero, means forever */
+        ctx->queue_full_retries = atoi(tmp);
+        if (ctx->queue_full_retries < 0) {
+            ctx->queue_full_retries = 0;
+        }
+    }
+
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);
     if (tmp) {

@@ -27,6 +27,22 @@
 
 #include <jsmn/jsmn.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#define AWS_SERVICE_ENDPOINT_FORMAT            "%s.%s.amazonaws.com"
+#define AWS_SERVICE_ENDPOINT_BASE_LEN          15
+
+#define TAG_PART_DESCRIPTOR "$TAG[%d]"
+#define TAG_DESCRIPTOR "$TAG"
+#define MAX_TAG_PARTS 10
+#define S3_KEY_SIZE 1024
+
+#define TAG_PART_DESCRIPTOR "$TAG[%d]"
+#define TAG_DESCRIPTOR "$TAG"
+#define MAX_TAG_PARTS 10
+#define S3_KEY_SIZE 1024
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -79,6 +95,59 @@ char *flb_aws_endpoint(char* service, char* region)
 
     return endpoint;
 
+}
+
+int flb_read_file(const char *path, char **out_buf, size_t *out_size)
+{
+    int ret;
+    long bytes;
+    char *buf = NULL;
+    struct stat st;
+    int fd;
+
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return -1;
+    }
+
+    ret = fstat(fd, &st);
+    if (ret == -1) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    buf = flb_malloc(st.st_size + sizeof(char));
+    if (!buf) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    bytes = read(fd, buf, st.st_size);
+    if (bytes < 0) {
+        flb_errno();
+        flb_free(buf);
+        close(fd);
+        return -1;
+    }
+
+    /* fread does not add null byte */
+    buf[st.st_size] = '\0';
+
+    close(fd);
+    *out_buf = buf;
+    *out_size = st.st_size;
+
+    return 0;
+}
+
+
+char *removeProtocol (char *endpoint, char *protocol) {
+    if (strncmp(protocol, endpoint, strlen(protocol)) == 0){
+        endpoint = endpoint + strlen(protocol);
+    }
+    return endpoint;
 }
 
 struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client,
@@ -195,6 +264,7 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     struct flb_upstream_conn *u_conn = NULL;
     flb_sds_t signature = NULL;
     int i;
+    int normalize_uri;
     struct flb_aws_header header;
     struct flb_http_client *c = NULL;
 
@@ -272,8 +342,15 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     }
 
     if (aws_client->has_auth) {
-        signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
+        if (aws_client->s3_mode == S3_MODE_NONE) {
+            normalize_uri = FLB_TRUE;
+        }
+        else {
+            normalize_uri = FLB_FALSE;
+        }
+        signature = flb_signv4_do(c, normalize_uri, FLB_TRUE, time(NULL),
                                   aws_client->region, aws_client->service,
+                                  aws_client->s3_mode,
                                   aws_client->provider);
         if (!signature) {
             if (aws_client->debug_only == FLB_TRUE) {
@@ -294,6 +371,11 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                   aws_client->host, ret, c->resp.status);
     }
 
+    if (ret != 0 && c != NULL) {
+        flb_http_client_destroy(c);
+        c = NULL;
+    }
+
     flb_upstream_conn_release(u_conn);
     flb_sds_destroy(signature);
     return c;
@@ -309,6 +391,76 @@ error:
         flb_http_client_destroy(c);
     }
     return NULL;
+}
+
+void flb_aws_print_xml_error(char *response, size_t response_len,
+                             char *api, struct flb_output_instance *ins)
+{
+    flb_sds_t error;
+    flb_sds_t message;
+
+    error = flb_xml_get_val(response, response_len, "<Code>");
+    if (!error) {
+        flb_plg_error(ins, "%s: Could not parse response", api);
+        return;
+    }
+
+    message = flb_xml_get_val(response, response_len, "<Message>");
+    if (!message) {
+        /* just print the error */
+        flb_plg_error(ins, "%s API responded with error='%s'", api, error);
+    }
+    else {
+        flb_plg_error(ins, "%s API responded with error='%s', message='%s'",
+                      api, error, message);
+        flb_sds_destroy(message);
+    }
+
+    flb_sds_destroy(error);
+}
+
+/* Parses AWS XML API Error responses and returns the value of the <code> tag */
+flb_sds_t flb_aws_xml_error(char *response, size_t response_len)
+{
+    return flb_xml_get_val(response, response_len, "<code>");
+}
+
+/*
+ * Parses an XML document and returns the value of the given tag
+ * Param `tag` should include angle brackets; ex "<code>"
+ */
+flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag)
+{
+    flb_sds_t val = NULL;
+    char *node = NULL;
+    char *end;
+    int len;
+
+    if (response_len == 0) {
+        return NULL;
+    }
+    node = strstr(response, tag);
+    if (!node) {
+        flb_debug("[aws] Could not find '%s' tag in API response", tag);
+        return NULL;
+    }
+
+    /* advance to end of tag */
+    node += strlen(tag);
+
+    end = strchr(node, '<');
+    if (!end) {
+        flb_error("[aws] Could not find end of '%s' node in xml", tag);
+        return NULL;
+    }
+    len = end - node;
+    val = flb_sds_create_len(node, len);
+    if (!val) {
+        flb_errno();
+        return NULL;
+    }
+
+    return val;
 }
 
 void flb_aws_print_error(char *response, size_t response_len,
@@ -336,7 +488,7 @@ void flb_aws_print_error(char *response, size_t response_len,
     flb_sds_destroy(error);
 }
 
-/* parses AWS API error responses and returns the value of the __type field */
+/* parses AWS JSON API error responses and returns the value of the __type field */
 flb_sds_t flb_aws_error(char *response, size_t response_len)
 {
     return flb_json_get_val(response, response_len, "__type");
@@ -349,7 +501,7 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key)
     const jsmntok_t *t = NULL;
     char *current_token = NULL;
     jsmn_parser parser;
-    int tokens_size = 10;
+    int tokens_size = 50;
     size_t size;
     int ret;
     int i = 0;
@@ -458,4 +610,207 @@ int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
     flb_http_client_destroy(c);
     return -1;
 
+}
+
+/* Generic replace function for strings. */
+static char* replace_uri_tokens(const char* original_string, const char* current_word,
+                         const char* new_word)
+{
+    char *result;
+    int i = 0;
+    int count = 0;
+    int new_word_len = strlen(new_word);
+    int old_word_len = strlen(current_word);
+
+    for (i = 0; original_string[i] != '\0'; i++) {
+        if (strstr(&original_string[i], current_word) == &original_string[i]) {
+            count++;
+            i += old_word_len - 1;
+        }
+    }
+
+    result = flb_sds_create_size(i + count * (new_word_len - old_word_len) + 1);
+    if (!result) {
+        flb_errno();
+        return NULL;
+    }
+
+    i = 0;
+    while (*original_string) {
+        if (strstr(original_string, current_word) == original_string) {
+            strcpy(&result[i], new_word);
+            i += new_word_len;
+            original_string += old_word_len;
+        }
+        else
+            result[i++] = *original_string++;
+    }
+
+    result[i] = '\0';
+    return result;
+}
+
+/* Constructs S3 object key as per the format. */
+flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char *tag_delimiter)
+{
+    int i = 0;
+    int ret = 0;
+    char *tag_token = NULL;
+    char *key;
+    int len;
+    flb_sds_t tmp = NULL;
+    flb_sds_t buf = NULL;
+    flb_sds_t s3_key = NULL;
+    flb_sds_t tmp_key = NULL;
+    flb_sds_t tmp_tag = NULL;
+    struct tm *gmt = NULL;
+
+    if (strlen(format) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    tmp_tag = flb_sds_create_len(tag, strlen(tag));
+    if(!tmp_tag){
+        goto error;
+    }
+
+    s3_key = flb_sds_create_len(format, strlen(format));
+    if (!s3_key) {
+        goto error;
+    }
+
+    /* Check if delimiter(s) specifed exists in the tag. */
+    for (i = 0; i < strlen(tag_delimiter); i++){
+        if (strchr(tag, tag_delimiter[i])){
+            ret = 1;
+            break;
+        }
+    }
+
+    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
+    if (!tmp) {
+        goto error;
+    }
+    if (strstr(s3_key, tmp)){
+        if(ret == 0){
+            flb_warn("[s3_key] Invalid Tag delimiter: does not exist in tag. "
+                    "tag=%s, format=%s", tag, format);
+        }
+    }
+
+    flb_sds_destroy(tmp);
+    tmp = NULL;
+
+    /* Split the string on the delimiters */
+    tag_token = strtok(tmp_tag, tag_delimiter);
+
+    /* Find all occurences of $TAG[*] and
+     * replaces it with the right token from tag.
+     */
+    i = 0;
+    while(tag_token != NULL && i < MAX_TAG_PARTS) {
+        buf = flb_sds_create_size(10);
+        if (!buf) {
+            goto error;
+        }
+        tmp = flb_sds_printf(&buf, TAG_PART_DESCRIPTOR, i);
+        if (!tmp) {
+            goto error;
+        }
+
+        tmp_key = replace_uri_tokens(s3_key, tmp, tag_token);
+        if (!tmp_key) {
+            goto error;
+        }
+
+        if(strlen(tmp_key) > S3_KEY_SIZE){
+            flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+        }
+
+        flb_sds_destroy(tmp);
+        tmp = NULL;
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+        tmp_key = NULL;
+
+        tag_token = strtok(NULL, tag_delimiter);
+        i++;
+    }
+
+    tmp = flb_sds_create_len(TAG_PART_DESCRIPTOR, 5);
+    if (!tmp) {
+        goto error;
+    }
+
+    /* A match against "$TAG[" indicates an invalid or out of bounds tag part. */
+    if (strstr(s3_key, tmp)){
+        flb_warn("[s3_key] Invalid / Out of bounds tag part: At most 10 tag parts "
+                 "($TAG[0] - $TAG[9]) can be processed. tag=%s, format=%s, delimiters=%s",
+                 tag, format, tag_delimiter);
+    }
+
+    /* Find all occurences of $TAG and replace with the entire tag. */
+    tmp_key = replace_uri_tokens(s3_key, TAG_DESCRIPTOR, tag);
+    if (!tmp_key) {
+        goto error;
+    }
+
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+
+    gmt = gmtime(&time);
+
+    flb_sds_destroy(tmp);
+    tmp = NULL;
+
+    /* A string no longer than S3_KEY_SIZE is created to store the formatted timestamp. */
+    key = flb_calloc(1, S3_KEY_SIZE * sizeof(char));
+    if (!key) {
+        goto error;
+    }
+
+    ret = strftime(key, S3_KEY_SIZE, s3_key, gmt);
+    if(ret == 0){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+    flb_sds_destroy(s3_key);
+
+    len = strlen(key);
+    if (len > S3_KEY_SIZE) {
+        len = S3_KEY_SIZE;
+    }
+
+    s3_key = flb_sds_create_len(key, len);
+    flb_free(key);
+    if (!s3_key) {
+        goto error;
+    }
+
+    flb_sds_destroy(tmp_tag);
+    tmp_tag = NULL;
+    return s3_key;
+
+    error:
+        flb_errno();
+        if (tmp_tag){
+            flb_sds_destroy(tmp_tag);
+        }
+        if (s3_key){
+            flb_sds_destroy(s3_key);
+        }
+        if (buf){
+            flb_sds_destroy(buf);
+        }
+        if (tmp){
+            flb_sds_destroy(tmp);
+        }
+        if (tmp_key){
+            flb_sds_destroy(tmp_key);
+        }
+        return NULL;
 }

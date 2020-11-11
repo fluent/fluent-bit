@@ -4,7 +4,7 @@
 
 #include "flb_tests_internal.h"
 
-void test_randombytes()
+void test_random_bytes()
 {
     int ret;
     unsigned char buf1[64] = {0};
@@ -18,16 +18,16 @@ void test_randombytes()
      * These tests are probabilistic by nature; If we assume an ideal random
      * generator, they are expected to fail once in 2^192 (= 10^57) runs.
      */
-    ret = flb_randombytes(buf1, 64);
+    ret = flb_random_bytes(buf1, 64);
     TEST_CHECK(ret == 0);
     TEST_CHECK(memcmp(buf1, buf2, 64) != 0);
 
-    ret = flb_randombytes(buf2, 64);
+    ret = flb_random_bytes(buf2, 64);
     TEST_CHECK(ret == 0);
     TEST_CHECK(memcmp(buf1, buf2, 64) != 0);
 }
 
 TEST_LIST = {
-    {"randombytes", test_randombytes},
+    {"random_bytes", test_random_bytes},
     { 0 }
 };

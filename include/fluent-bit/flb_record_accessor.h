@@ -28,6 +28,7 @@
 
 struct flb_record_accessor {
     size_t size_hint;
+    flb_sds_t pattern;
     struct mk_list list;         /* List of parsed strings */
 };
 

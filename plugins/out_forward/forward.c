@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_sha512.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_random.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -65,9 +66,6 @@ static int secure_forward_init(struct flb_forward *ctx,
         secure_forward_tls_error(ctx, ret);
         return -1;
     }
-
-    /* Gernerate shared key salt */
-    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
     return 0;
 }
 #endif
@@ -519,6 +517,12 @@ static int forward_config_init(struct flb_forward_config *fc,
         secure_forward_init(ctx, fc);
     }
 #endif
+
+    /* Generate the shared key salt */
+    if (flb_random_bytes(fc->shared_key_salt, 16)) {
+        flb_plg_error(ctx->ins, "cannot generate shared key salt");
+        return -1;
+    }
 
     mk_list_add(&fc->_head, &ctx->configs);
     return 0;
@@ -1015,13 +1019,11 @@ static int flush_forward_compat_mode(struct flb_forward *ctx,
     msgpack_object chunk;
     msgpack_object map; /* dummy parameter */
     msgpack_unpacked result;
-    msgpack_sbuffer mp_sbuf;
 
     /* Write message header */
     ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward compat mode records");
-        msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
     }
 

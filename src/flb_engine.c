@@ -234,7 +234,7 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
 
             /* Let the scheduler to retry the failed task/thread */
             retry_seconds = flb_sched_request_create(config,
-                                                     retry, retry->attemps);
+                                                     retry, retry->attempts);
 
             /*
              * If for some reason the Scheduler could not include this retry,
@@ -683,6 +683,8 @@ int flb_engine_exit(struct flb_config *config)
 {
     int ret;
     uint64_t val = FLB_ENGINE_EV_STOP;
+
+    config->is_ingestion_active = FLB_FALSE;
 
     flb_input_pause_all(config);
 

@@ -337,6 +337,9 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
     }
     if (!u->tls->context->vhost) {
         u->tls->context->vhost = u->tcp_host;
+        if (u->proxied_host) {
+            u->tls->context->vhost = u->proxied_host;
+        }
     }
     mbedtls_ssl_set_hostname(&session->ssl, u->tls->context->vhost);
 
@@ -357,13 +360,12 @@ int net_io_tls_handshake(void *_u_conn, void *_th)
             goto error;
         }
 
+        flag = 0;
         if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
             flag = MK_EVENT_WRITE;
         }
         else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
             flag = MK_EVENT_READ;
-        }
-        else {
         }
 
         /*

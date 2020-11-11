@@ -44,7 +44,8 @@ struct flb_file_conf {
     const char *delimiter;
     const char *label_delimiter;
     const char *template;
-    int  format;
+    int format;
+    int csv_column_names;
     struct flb_output_instance *ins;
 };
 
@@ -141,7 +142,8 @@ static int cb_file_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int csv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
+static int csv_output(FILE *fp, int column_names,
+                      struct flb_time *tm, msgpack_object *obj,
                       struct flb_file_conf *ctx)
 {
     int i;
@@ -151,7 +153,20 @@ static int csv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
     if (obj->type == MSGPACK_OBJECT_MAP && obj->via.map.size > 0) {
         kv = obj->via.map.ptr;
         map_size = obj->via.map.size;
-        fprintf(fp, "%f%s", flb_time_to_double(tm), ctx->delimiter);
+
+        if (column_names == FLB_TRUE) {
+            fprintf(fp, "timestamp%s", ctx->delimiter);
+            for (i = 0; i < map_size; i++) {
+                msgpack_object_print(fp, (kv+i)->key);
+                if (i + 1 < map_size) {
+                    fprintf(fp, "%s", ctx->delimiter);
+                }
+            }
+            fprintf(fp, NEWLINE);
+        }
+
+        fprintf(fp, "%lld.%.09ld%s",
+                (long long) tm->tm.tv_sec, tm->tm.tv_nsec, ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
             msgpack_object_print(fp, (kv+i)->val);
@@ -310,6 +325,7 @@ static void cb_file_flush(const void *data, size_t bytes,
                           struct flb_config *config)
 {
     int ret;
+    int column_names;
     FILE * fp;
     msgpack_unpacked result;
     size_t off = 0;
@@ -319,6 +335,7 @@ static void cb_file_flush(const void *data, size_t bytes,
     char out_file[PATH_MAX];
     char *buf;
     char *tag_buf;
+    long file_pos;
     msgpack_object *obj;
     struct flb_file_conf *ctx = out_context;
     struct flb_time tm;
@@ -352,6 +369,12 @@ static void cb_file_flush(const void *data, size_t bytes,
         flb_plg_error(ctx->ins, "error opening: %s", out_file);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
+
+    /*
+     * Get current file stream position, we gather this in case 'csv' format
+     * needs to write the column names.
+     */
+    file_pos = ftell(fp);
 
     tag_buf = flb_malloc(tag_len + 1);
     if (!tag_buf) {
@@ -415,7 +438,14 @@ static void cb_file_flush(const void *data, size_t bytes,
             }
             break;
         case FLB_OUT_FILE_FMT_CSV:
-            csv_output(fp, &tm, obj, ctx);
+            if (ctx->csv_column_names == FLB_TRUE && file_pos == 0) {
+                column_names = FLB_TRUE;
+                file_pos = 1;
+            }
+            else {
+                column_names = FLB_FALSE;
+            }
+            csv_output(fp, column_names, &tm, obj, ctx);
             break;
         case FLB_OUT_FILE_FMT_LTSV:
             ltsv_output(fp, &tm, obj, ctx);
@@ -453,32 +483,46 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_path),
-     NULL
+     "Absolute path to store the files. This parameter is optional"
     },
+
     {
      FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
-     NULL
+     "Name of the target file to write the records. If 'path' is specified, "
+     "the value is prefixed"
     },
+
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specify the output data format, the available options are: plain (json), "
+     "csv, ltsv and template. If no value is set the outgoing data is formatted "
+     "using the tag and the record in json"
     },
+
     {
      FLB_CONFIG_MAP_STR, "delimiter", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set a custom delimiter for the records"
     },
+
     {
      FLB_CONFIG_MAP_STR, "label_delimiter", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set a custom label delimiter, to be used with 'ltsv' format"
     },
+
     {
      FLB_CONFIG_MAP_STR, "template", "{time} {message}",
      0, FLB_TRUE, offsetof(struct flb_file_conf, template),
-     NULL
+     "Set a custom template format for the data"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "csv_column_names", "false",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, csv_column_names),
+     "Add column names (keys) in the first line of the target file"
     },
 
     /* EOF */

@@ -26,8 +26,6 @@
 #include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <time.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 #define TEN_MINUTES    600
 #define TWELVE_HOURS   43200
@@ -238,6 +236,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             *config,
                                                             struct flb_tls *tls,
                                                             char *region,
+                                                            char *sts_endpoint,
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
@@ -286,7 +285,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                   "standard chain");
     }
 
-    sub_provider = flb_eks_provider_create(config, tls, region, proxy, generator);
+    sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
     if (sub_provider) {
         /* EKS provider can fail if we are not running in k8s */;
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);
@@ -533,53 +532,6 @@ time_t flb_aws_cred_expiration(const char *timestamp)
                   timestamp);
      }
      return expiration;
-}
-
-int flb_read_file(const char *path, char **out_buf, size_t *out_size)
-{
-    int ret;
-    long bytes;
-    char *buf = NULL;
-    FILE *fp = NULL;
-    struct stat st;
-    int fd;
-
-    fp = fopen(path, "r");
-    if (!fp) {
-        return -1;
-    }
-
-    fd = fileno(fp);
-    ret = fstat(fd, &st);
-    if (ret == -1) {
-        flb_errno();
-        fclose(fp);
-        return -1;
-    }
-
-    buf = flb_malloc(st.st_size + sizeof(char));
-    if (!buf) {
-        flb_errno();
-        fclose(fp);
-        return -1;
-    }
-
-    bytes = fread(buf, st.st_size, 1, fp);
-    if (bytes != 1) {
-        flb_errno();
-        flb_free(buf);
-        fclose(fp);
-        return -1;
-    }
-
-    /* fread does not add null byte */
-    buf[st.st_size] = '\0';
-
-    fclose(fp);
-    *out_buf = buf;
-    *out_size = st.st_size;
-
-    return 0;
 }
 
 /*

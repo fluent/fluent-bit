@@ -162,9 +162,15 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             }
             ctx->aws_region = (char *) tmp;
 
+            tmp = flb_output_get_property("aws_sts_endpoint", ins);
+            if (tmp) {
+                ctx->aws_sts_endpoint = (char *) tmp;
+            }
+
             ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                                    &ctx->aws_tls,
                                                                    ctx->aws_region,
+                                                                   ctx->aws_sts_endpoint,
                                                                    NULL,
                                                                    flb_aws_client_generator());
             if (!ctx->aws_provider) {
@@ -215,6 +221,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                             aws_role_arn,
                                                             aws_session_name,
                                                             ctx->aws_region,
+                                                            ctx->aws_sts_endpoint,
                                                             NULL,
                                                             flb_aws_client_generator());
                 /* Session name can be freed once provider is created */

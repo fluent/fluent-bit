@@ -34,6 +34,14 @@
 #define FLB_PGSQL_POOL_SIZE 4
 #define FLB_PGSQL_MIN_POOL_SIZE 1
 #define FLB_PGSQL_SYNC FLB_FALSE
+#define FLB_PGSQL_COCKROACH FLB_FALSE
+
+#define FLB_PGSQL_INSERT "INSERT INTO %s SELECT %s, "   \
+    "to_timestamp(CAST(value->>'%s' as FLOAT)),"        \
+    " * FROM json_array_elements(%s);"
+#define FLB_PGSQL_INSERT_COCKROACH "INSERT INTO %s SELECT %s,"  \
+    "CAST(value->>'%s' AS INTERVAL) + DATE'1970-01-01',"        \
+    " * FROM json_array_elements(%s);"
 
 struct flb_pgsql_conn {
     struct mk_list _head;
@@ -70,6 +78,9 @@ struct flb_pgsql_config {
 
     /* async mode or sync mode */
     int async;
+
+    /* cockroachdb */
+    int cockroachdb;
 };
 
 void pgsql_conf_destroy(struct flb_pgsql_config *ctx);

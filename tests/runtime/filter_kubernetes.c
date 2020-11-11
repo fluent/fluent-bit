@@ -227,6 +227,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
                             "Path", path,
                             "Parser", "docker",
                             "Docker_Mode", "On",
+                            "read_from_head", "on",
                             NULL);
         TEST_CHECK_(ret == 0, "setting input options");
     }

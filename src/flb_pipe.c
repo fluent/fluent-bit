@@ -97,6 +97,14 @@ void flb_pipe_destroy(flb_pipefd_t pipefd[2])
 
 int flb_pipe_close(flb_pipefd_t fd)
 {
+    /* 
+     *  when chunk file is destroyed, the fd for file will be -1, we should avoid
+     *  deleting chunk file with fd -1
+     */
+    if (fd == -1) {
+        return -1;
+    }
+
     return close(fd);
 }
 

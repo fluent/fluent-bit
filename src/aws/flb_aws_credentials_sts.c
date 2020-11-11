@@ -67,6 +67,7 @@ static flb_sds_t get_node(char *cred_node, char* node_name, int node_len);
  * and assume an IAM Role.
  */
 struct flb_aws_provider_sts {
+    int custom_endpoint;
     struct flb_aws_provider *base_provider;
 
     struct flb_aws_credentials *creds;
@@ -236,7 +237,7 @@ void destroy_fn_sts(struct flb_aws_provider *provider) {
             flb_sds_destroy(implementation->uri);
         }
 
-        if (implementation->endpoint) {
+        if (implementation->custom_endpoint == FLB_FALSE) {
             flb_free(implementation->endpoint);
         }
 
@@ -264,6 +265,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
                                                  char *role_arn,
                                                  char *session_name,
                                                  char *region,
+                                                 char *sts_endpoint,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator
@@ -293,8 +295,16 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
         goto error;
     }
 
-    implementation->endpoint = flb_aws_endpoint("sts", region);
-    if (!implementation->endpoint) {
+    if (sts_endpoint) {
+        implementation->endpoint = removeProtocol(sts_endpoint, "https://");
+        implementation->custom_endpoint = FLB_TRUE;
+    }
+    else {
+        implementation->endpoint = flb_aws_endpoint("sts", region);
+        implementation->custom_endpoint = FLB_FALSE;
+    }
+
+    if(!implementation->endpoint) {
         goto error;
     }
 
@@ -342,6 +352,7 @@ error:
  * location of the OIDC token from an environment variable.
  */
 struct flb_aws_provider_eks {
+    int custom_endpoint;
     struct flb_aws_credentials *creds;
     /*
      * Time to auto-refresh creds before they expire. A negative value disables
@@ -489,7 +500,7 @@ void destroy_fn_eks(struct flb_aws_provider *provider) {
             flb_aws_client_destroy(implementation->sts_client);
         }
 
-        if (implementation->endpoint) {
+        if (implementation->custom_endpoint == FLB_FALSE) {
             flb_free(implementation->endpoint);
         }
         if (implementation->free_session_name == FLB_TRUE) {
@@ -514,7 +525,9 @@ static struct flb_aws_provider_vtable eks_provider_vtable = {
 
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  struct flb_tls *tls,
-                                                 char *region, char *proxy,
+                                                 char *region,
+                                                 char *sts_endpoint,
+                                                 char *proxy,
                                                  struct
                                                  flb_aws_client_generator
                                                  *generator)
@@ -568,8 +581,16 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
         return NULL;
     }
 
-    implementation->endpoint = flb_aws_endpoint("sts", region);
-    if (!implementation->endpoint) {
+    if (sts_endpoint) {
+        implementation->endpoint = removeProtocol(sts_endpoint, "https://");
+        implementation->custom_endpoint = FLB_TRUE;
+    }
+    else {
+        implementation->endpoint = flb_aws_endpoint("sts", region);
+        implementation->custom_endpoint = FLB_FALSE;
+    }
+
+    if(!implementation->endpoint) {
         goto error;
     }
 

@@ -34,6 +34,7 @@
 #define FLB_HTTP_POST        1
 #define FLB_HTTP_PUT         2
 #define FLB_HTTP_HEAD        3
+#define FLB_HTTP_CONNECT     4
 
 /* HTTP Flags */
 #define FLB_HTTP_10          1
@@ -53,6 +54,7 @@
 
 /* Useful headers */
 #define FLB_HTTP_HEADER_AUTH             "Authorization"
+#define FLB_HTTP_HEADER_PROXY_AUTH       "Proxy-Authorization"
 #define FLB_HTTP_HEADER_CONTENT_TYPE     "Content-Type"
 #define FLB_HTTP_HEADER_CONTENT_ENCODING "Content-Encoding"
 #define FLB_HTTP_HEADER_CONNECTION       "Connection"
@@ -145,12 +147,15 @@ int flb_http_add_header(struct flb_http_client *c,
                         const char *val, size_t val_len);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
+int flb_http_proxy_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd);
 int flb_http_set_keepalive(struct flb_http_client *c);
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
 int flb_http_set_callback_context(struct flb_http_client *c,
                                   struct flb_callback *cb_ctx);
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
+int flb_http_client_proxy_connect(struct flb_upstream_conn *u_conn);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);
 size_t flb_http_buffer_available(struct flb_http_client *c);

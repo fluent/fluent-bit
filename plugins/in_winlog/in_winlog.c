@@ -50,13 +50,11 @@ static int in_winlog_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
-    /* Collection time setting */
-    ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-
-    tmp = flb_input_get_property("interval_sec", in);
-    if (tmp != NULL && atoi(tmp) > 0) {
-        ctx->interval_sec = atoi(tmp);
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
     }
 
     /* Read Buffer */
@@ -221,6 +219,36 @@ static int in_winlog_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_STR, "channels", NULL,
+      0, FLB_FALSE, 0,
+      "Specify a comma-separated list of channels to read from"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "db", NULL,
+      0, FLB_FALSE, 0,
+      "Specify DB file to save read offsets"
+    },
+    {
+      FLB_CONFIG_MAP_TIME, "interval_sec", "1s",
+      0, FLB_TRUE, offsetof(struct winlog_config, interval_sec),
+      "Set the polling interval for each channel"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", "0",
+      0, FLB_TRUE, offsetof(struct winlog_config, interval_nsec),
+      "Set the polling interval for each channel (sub seconds)"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "string_inserts", "true",
+      0, FLB_TRUE, offsetof(struct winlog_config, string_inserts),
+      "Whether to include StringInserts in output records"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_input_plugin in_winlog_plugin = {
     .name         = "winlog",
     .description  = "Windows Event Log",
@@ -230,5 +258,6 @@ struct flb_input_plugin in_winlog_plugin = {
     .cb_flush_buf = NULL,
     .cb_pause     = in_winlog_pause,
     .cb_resume    = in_winlog_resume,
-    .cb_exit      = in_winlog_exit
+    .cb_exit      = in_winlog_exit,
+    .config_map   = config_map
 };
