@@ -229,6 +229,7 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     struct flb_input_plugin *p;
     struct flb_input_chunk *ic;
     struct flb_task *task = NULL;
+    int total_chunks_busy = 0;
 
     p = in->p;
     if (!p) {
@@ -239,11 +240,19 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
     mk_list_foreach_safe(head, tmp, &in->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         if (ic->busy == FLB_TRUE) {
+            total_chunks_busy++;
+            continue;
+        }
+
+        /* Limit the number of chunk queued if a limit was set */
+        if (in->queue_limit > 0 && total_chunks_busy >= in->queue_limit) {
             continue;
         }
 
         /* There is a match, get the buffer */
         buf_data = flb_input_chunk_flush(ic, &buf_size);
+        /* Consider this chunk as a now additional busy chunk */
+        total_chunks_busy++;
         if (buf_size == 0) {
             /*
              * Do not release the buffer since if allocated, it will be
