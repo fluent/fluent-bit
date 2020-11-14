@@ -1298,6 +1298,8 @@ static int stackdriver_format(struct flb_config *config,
     /* Parameters for trace */
     int trace_extracted = FLB_FALSE;
     flb_sds_t trace;
+    char stackdriver_trace[PATH_MAX];
+    const char *new_trace;
 
     /* Parameters for log name */
     int log_name_extracted = FLB_FALSE;
@@ -1716,9 +1718,18 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_str(&mp_pck, 5);
             msgpack_pack_str_body(&mp_pck, "trace", 5);
 
-            len = flb_sds_len(trace);
+            if (ctx->autoformat_stackdriver_trace) {
+                len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
+                    "projects/%s/traces/%s", ctx->project_id, trace);
+                new_trace = stackdriver_trace;
+            }
+            else {
+                len = flb_sds_len(trace);
+                new_trace = trace;
+            }
+
             msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, trace, len);
+            msgpack_pack_str_body(&mp_pck, new_trace, len);
             flb_sds_destroy(trace); 
         }               
 
