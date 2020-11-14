@@ -308,6 +308,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             void *chunk)
 {
     uint64_t chunk_routes_mask;
+    ssize_t bytes;
 
 #ifdef FLB_HAVE_METRICS
     int ret;
@@ -350,6 +351,9 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                  flb_input_chunk_get_name(ic));
     }
     ic->routes_mask = chunk_routes_mask;
+
+    bytes = flb_input_chunk_get_size(ic);
+    flb_input_chunk_update_output_instances(ic, bytes);
 
     return ic;
 }
