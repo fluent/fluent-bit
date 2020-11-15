@@ -85,10 +85,13 @@ struct flb_syslog *flb_syslog_config_create(struct flb_output_instance *ins,
     }
 
     /* syslog maxsize */
-    if (ctx->maxsize < 0) {
-        flb_plg_error(ctx->ins, "invalid 'syslog_maxsize' value %i",
-                      ctx->maxsize);
-        return NULL;
+    if (ctx->maxsize <= 0) {
+        if (ctx->parsed_format == FLB_SYSLOG_RFC3164) {
+            ctx->maxsize = 1024;
+        }
+        else if (ctx->parsed_format == FLB_SYSLOG_RFC5424) {
+            ctx->maxsize = 2048;
+        }
     }
 
     return ctx;
