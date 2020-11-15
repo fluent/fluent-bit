@@ -861,7 +861,8 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
 
     ctx->fd = -1;
     if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
-        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port);
+        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port,
+                                      ins->net_setup.source_address);
         if (ctx->fd < 0) {
             flb_syslog_config_destroy(ctx);
             return -1;
