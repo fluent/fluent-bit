@@ -79,7 +79,9 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  void *async_ctx,
                                  struct flb_upstream_conn *u_conn);
 
-flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port);
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
+                                 char *source_addr);
+
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
 flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
 flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);

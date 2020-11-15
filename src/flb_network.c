@@ -430,6 +430,27 @@ int flb_net_bind_address(int fd, char *source_addr)
     return 0;
 }
 
+static void set_ip_family(const char *host, struct addrinfo *hints)
+{
+
+    int ret;
+    struct in6_addr serveraddr;
+
+    /* check if the given 'host' is a network address, adjust ai_flags */
+    ret = inet_pton(AF_INET, host, &serveraddr);
+    if (ret == 1) {    /* valid IPv4 text address ? */
+        hints->ai_family = AF_INET;
+        hints->ai_flags |= AI_NUMERICHOST;
+    }
+    else {
+        ret = inet_pton(AF_INET6, host, &serveraddr);
+        if (ret == 1) { /* valid IPv6 text address ? */
+            hints->ai_family = AF_INET6;
+            hints->ai_flags |= AI_NUMERICHOST;
+        }
+    }
+}
+
 /* Connect to a TCP socket server and returns the file descriptor */
 flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  char *source_addr, int connect_timeout,
@@ -442,30 +463,18 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     char _port[6];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
-    struct in6_addr serveraddr;
 
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
         return -1;
     }
 
-    memset(&hints, 0, sizeof hints);
+    memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    /* check if the given 'host' is a network address, adjust ai_flags */
-    ret = inet_pton(AF_INET, host, &serveraddr);
-    if (ret == 1) {    /* valid IPv4 text address ? */
-        hints.ai_family = AF_INET;
-        hints.ai_flags |= AI_NUMERICHOST;
-    }
-    else {
-        ret = inet_pton(AF_INET6, host, &serveraddr);
-        if (ret == 1) { /* valid IPv6 text address ? */
-            hints.ai_family = AF_INET6;
-            hints.ai_flags |= AI_NUMERICHOST;
-        }
-    }
+    /* Set hints */
+    set_ip_family(host, &hints);
 
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
@@ -500,9 +509,9 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
             if (ret == -1) {
                 flb_warn("[net] falling back to random interface");
             }
-        }
-        else {
-            flb_trace("[net] client connect bind address: %s", source_addr);
+            else {
+                flb_trace("[net] client connect bind address: %s", source_addr);
+            }
         }
 
         /* Disable Nagle's algorithm */
@@ -542,33 +551,61 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 }
 
 /* "Connect" to a UDP socket server and returns the file descriptor */
-flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port)
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
+                                 char *source_addr)
 {
-    flb_sockfd_t fd = -1;
     int ret;
+    flb_sockfd_t fd = -1;
+    char _port[6];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
-    char _port[6];
 
-    memset(&hints, 0, sizeof hints);
+    memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
 
+    /* Set hints */
+    set_ip_family(host, &hints);
+
+    /* Format UDP port */
     snprintf(_port, sizeof(_port), "%lu", port);
+
+    /* retrieve DNS info */
     ret = getaddrinfo(host, _port, &hints, &res);
     if (ret != 0) {
-        flb_warn("net_udp_connect: getaddrinfo(host='%s'): %s",
+        flb_warn("net]: getaddrinfo(host='%s'): %s",
                  host, gai_strerror(ret));
         return -1;
     }
 
     for (rp = res; rp != NULL; rp = rp->ai_next) {
-        fd = flb_net_socket_create_udp(rp->ai_family, 0);
+        /* create socket */
+        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if (fd == -1) {
-            flb_error("Error creating client socket, retrying");
+            flb_error("[net] coult not create client socket, retrying");
             continue;
         }
 
+        /* Bind a specific network interface ? */
+        if (source_addr != NULL) {
+            ret = flb_net_bind_address(fd, source_addr);
+            if (ret == -1) {
+                flb_warn("[net] falling back to random interface");
+            }
+            else {
+                flb_trace("[net] client connect bind address: %s", source_addr);
+            }
+        }
+
+        /*
+         * Why do we connect(2) an UDP socket ?, is this useful ?: Yes. Despite
+         * an UDP socket it's not in a connection state, connecting through the
+         * API it helps the Kernel to configure the destination address and
+         * is totally valid, so then you don't need to use sendto(2).
+         *
+         * For our use case this is quite helpful, since the caller keeps using
+         * the same Fluent Bit I/O API to deliver a message.
+         */
         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
             flb_error("Cannot connect to %s port %s", host, _port);
             flb_socket_close(fd);
