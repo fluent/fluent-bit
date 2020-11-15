@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_upstream.h>
 
 #include <monkey/mk_core.h>
 
@@ -116,8 +117,8 @@ int flb_net_socket_reset(flb_sockfd_t fd)
     int status = 1;
 
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &status, sizeof(int)) == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
+        flb_errno();
+        return -1;
     }
 
     return 0;
@@ -130,7 +131,7 @@ int flb_net_socket_tcp_nodelay(flb_sockfd_t fd)
 
     ret = setsockopt(fd, SOL_TCP, TCP_NODELAY, &on, sizeof(on));
     if (ret == -1) {
-        perror("setsockopt");
+        flb_errno();
         return -1;
     }
 
@@ -145,7 +146,7 @@ int flb_net_socket_nonblocking(flb_sockfd_t fd)
 #else
     if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1) {
 #endif
-        perror("fcntl");
+        flb_errno();
         return -1;
     }
 
@@ -160,7 +161,7 @@ int flb_net_socket_blocking(flb_sockfd_t fd)
 #else
     if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK) == -1) {
 #endif
-        perror("fcntl");
+        flb_errno();
         return -1;
     }
 
@@ -186,7 +187,7 @@ flb_sockfd_t flb_net_socket_create(int family, int nonblock)
     /* create the socket and set the nonblocking flag status */
     fd = socket(family, SOCK_STREAM, 0);
     if (fd == -1) {
-        perror("socket");
+        flb_errno();
         return -1;
     }
 
@@ -204,7 +205,7 @@ flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock)
     /* create the socket and set the nonblocking flag status */
     fd = socket(family, SOCK_DGRAM, 0);
     if (fd == -1) {
-        perror("socket");
+        flb_errno();
         return -1;
     }
 
@@ -215,42 +216,322 @@ flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock)
     return fd;
 }
 
-/* Connect to a TCP socket server and returns the file descriptor */
-flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port)
+/*
+ * Perform TCP connection for a blocking socket. This interface set's the socket
+ * to non-blocking mode temporary in order to add a timeout to the connection,
+ * the blocking mode is restored at the end.
+ */
+static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrlen,
+                            char *host, int port, int connect_timeout)
 {
-    flb_sockfd_t fd = -1;
     int ret;
+    int err;
+    fd_set wait_set;
+    struct timeval timeout;
+
+    /* Set socket to non-blocking mode */
+    flb_net_socket_nonblocking(fd);
+
+    /* connect(2) */
+    ret = connect(fd, addr, addrlen);
+    if (ret == -1) {
+        /*
+         * An asynchronous connect can return -1, but what is important is the
+         * socket status, getting a EINPROGRESS is expected, but any other case
+         * means a failure.
+         */
+        err = flb_socket_error(u_conn->fd);
+        if (!FLB_EINPROGRESS(err)) {
+            flb_error("[net] connection #%i failed to: %s:%i",
+                      fd, host, port);
+            goto exit_error;
+        }
+
+        /* The connection is still in progress, implement a socket timeout */
+        flb_trace("[net] connection #%i in process to %s:%i",
+                  fd, host, port);
+
+        /*
+         * Prepare a timeout using select(2): we could use our own
+         * event loop mechanism for this, but it will require an
+         * extra file descriptor, the select(2) call is straightforward
+         * for this use case.
+         */
+        FD_ZERO(&wait_set);
+        FD_SET(fd, &wait_set);
+
+        /* Wait 'connect_timeout' seconds for an event */
+        timeout.tv_sec = connect_timeout;
+        timeout.tv_usec = 0;
+        ret = select(fd + 1, NULL, &wait_set, NULL, &timeout);
+        if (ret == 0) {
+            /* Timeout */
+            flb_error("[net] connection #%i timeout after %i seconds to: "
+                      "%s:%i",
+                      fd, timeout, host, port);
+            goto exit_error;
+        }
+        else if (ret < 0) {
+            /* Generic error */
+            flb_errno();
+            flb_error("[net] connection #%i failed to: %s:%i",
+                      fd, host, port);
+            goto exit_error;
+        }
+    }
+
+    /*
+     * No exception, the connection succeeded, return the normal
+     * non-blocking mode to the socket.
+     */
+    flb_net_socket_blocking(fd);
+    return 0;
+
+ exit_error:
+    flb_net_socket_blocking(fd);
+    return -1;
+}
+
+
+/*
+ * Asynchronous socket connection: this interface might be called from a co-routine,
+ * so in order to perform a real async connection and get notified back, it needs
+ * access to the event loop context and the connection context 'upstream connection.
+ */
+static int net_connect_async(int fd,
+                             const struct sockaddr *addr, socklen_t addrlen,
+                             char *host, int port, int connect_timeout,
+                             void *async_ctx, struct flb_upstream_conn *u_conn)
+{
+    int ret;
+    int err;
+    int error = 0;
+    uint32_t mask;
+    char so_error_buf[256];
+    socklen_t len = sizeof(error);
+    struct flb_upstream *u = u_conn->u;
+
+    /* connect(2) */
+    ret = connect(fd, addr, addrlen);
+    if (ret == 0) {
+        return 0;
+    }
+
+    /*
+     * An asynchronous connect can return -1, but what is important is the
+     * socket status, getting a EINPROGRESS is expected, but any other case
+     * means a failure.
+     */
+    err = flb_socket_error(fd);
+    if (!FLB_EINPROGRESS(err) && err != 0) {
+        flb_error("[net] connection #%i failed to: %s:%i",
+                  fd, host, port);
+        return -1;
+    }
+
+    /* The connection is still in progress, implement a socket timeout */
+    flb_trace("[net] connection #%i in process to %s:%i",
+              fd, host, port);
+
+    /* Register the connection socket into the main event loop */
+    MK_EVENT_ZERO(&u_conn->event);
+    u_conn->thread = async_ctx;
+    ret = mk_event_add(u_conn->u->evl,
+                       fd,
+                       FLB_ENGINE_EV_THREAD,
+                       MK_EVENT_WRITE, &u_conn->event);
+    if (ret == -1) {
+        /*
+         * If we failed here there no much that we can do, just
+         * let the caller know that we failed.
+         */
+        return -1;
+    }
+
+    /*
+     * Return the control to the parent caller, we need to wait for
+     * the event loop to get back to us.
+     */
+    flb_thread_yield(async_ctx, FLB_FALSE);
+
+    /* Save the mask before the event handler do a reset */
+    mask = u_conn->event.mask;
+
+    /* We got a notification, remove the event registered */
+    ret = mk_event_del(u_conn->u->evl, &u_conn->event);
+    if (ret == -1) {
+        flb_error("[io] connect event handler error");
+        return -1;
+    }
+
+    /* Check the connection status */
+    if (mask & MK_EVENT_WRITE) {
+        ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &len);
+        if (ret == -1) {
+            flb_error("[io] could not validate socket status");
+            return -1;
+        }
+
+        /* Check the exception */
+        if (error != 0) {
+            /*
+             * The upstream connection might want to override the
+             * exception (mostly used for local timeouts: ETIMEDOUT.
+             */
+            if (u_conn->net_error > 0) {
+                error = u_conn->net_error;
+            }
+
+            /* Connection is broken, not much to do here */
+            strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
+            flb_error("[io] TCP connection failed: %s:%i (%s)",
+                      u->tcp_host, u->tcp_port, so_error_buf);
+            return -1;
+        }
+    }
+    else {
+        flb_error("[io] TCP connection, unexpected error: %s:%i",
+                  u->tcp_host, u->tcp_port);
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_net_bind_address(int fd, char *source_addr)
+{
+    int ret;
+    struct addrinfo hint;
+    struct addrinfo *res = NULL;
+    struct sockaddr_storage addr;
+
+    memset(&hint, '\0', sizeof hint);
+
+    hint.ai_family = PF_UNSPEC;
+    hint.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV | AI_PASSIVE;
+
+    ret = getaddrinfo(source_addr, NULL, &hint, &res);
+    if (ret == -1) {
+        flb_errno();
+        flb_error("[net] cannot read source_address=%s", source_addr);
+        return -1;
+    }
+
+    /* Bind the address */
+    memcpy(&addr, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+    ret = bind(fd, (struct sockaddr *) &addr, sizeof(addr));
+    if (ret == -1) {
+        flb_errno();
+        flb_error("[net] could not bind source_address=%s", source_addr);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Connect to a TCP socket server and returns the file descriptor */
+flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
+                                 char *source_addr, int connect_timeout,
+                                 int is_async,
+                                 void *async_ctx,
+                                 struct flb_upstream_conn *u_conn)
+{
+    int ret;
+    flb_sockfd_t fd = -1;
+    char _port[6];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
-    char _port[6];
+    struct in6_addr serveraddr;
+
+    if (is_async == FLB_TRUE && !u_conn) {
+        flb_error("[net] invalid async mode with not set upstream connection");
+        return -1;
+    }
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
+    /* check if the given 'host' is a network address, adjust ai_flags */
+    ret = inet_pton(AF_INET, host, &serveraddr);
+    if (ret == 1) {    /* valid IPv4 text address ? */
+        hints.ai_family = AF_INET;
+        hints.ai_flags |= AI_NUMERICHOST;
+    }
+    else {
+        ret = inet_pton(AF_INET6, host, &serveraddr);
+        if (ret == 1) { /* valid IPv6 text address ? */
+            hints.ai_family = AF_INET6;
+            hints.ai_flags |= AI_NUMERICHOST;
+        }
+    }
+
+    /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
+
+    /* retrieve DNS info */
     ret = getaddrinfo(host, _port, &hints, &res);
     if (ret != 0) {
-        flb_warn("net_tcp_connect: getaddrinfo(host='%s'): %s",
-                 host, gai_strerror(ret));
+        flb_warn("[net] getaddrinfo(host='%s'): %s", host, gai_strerror(ret));
         return -1;
     }
 
+    /*
+     * Try to connect: on this iteration we try to connect to the first
+     * available address.
+     */
     for (rp = res; rp != NULL; rp = rp->ai_next) {
-        fd = flb_net_socket_create(rp->ai_family, 0);
+        /* create socket */
+        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if (fd == -1) {
-            flb_error("Error creating client socket, retrying");
+            flb_error("[net] coult not create client socket, retrying");
             continue;
         }
 
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
+        /* asynchronous socket ? */
+        if (is_async == FLB_TRUE) {
+            flb_net_socket_nonblocking(fd);
+        }
+
+        /* Bind a specific network interface ? */
+        if (source_addr != NULL) {
+            ret = flb_net_bind_address(fd, source_addr);
+            if (ret == -1) {
+                flb_warn("[net] falling back to random interface");
+            }
+        }
+        else {
+            flb_trace("[net] client connect bind address: %s", source_addr);
+        }
+
+        /* Disable Nagle's algorithm */
+        flb_net_socket_tcp_nodelay(fd);
+
+        if (u_conn) {
+            u_conn->fd = fd;
+            u_conn->event.fd = fd;
+        }
+
+        /* Perform TCP connection */
+        if (is_async == FLB_TRUE) {
+            ret = net_connect_async(fd, rp->ai_addr, rp->ai_addrlen,
+                                    (char *) host, port, connect_timeout,
+                                    async_ctx, u_conn);
+
+        }
+        else {
+            ret = net_connect_sync(fd, rp->ai_addr, rp->ai_addrlen,
+                                   (char *) host, port, connect_timeout);
+        }
+
+        if (ret == -1) {
             flb_error("Cannot connect to %s port %s", host, _port);
             flb_socket_close(fd);
             continue;
         }
         break;
     }
-
     freeaddrinfo(res);
 
     if (rp == NULL) {
