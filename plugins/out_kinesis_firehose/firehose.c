@@ -258,6 +258,8 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     }
 
     ctx->firehose_client->upstream = upstream;
+    flb_output_upstream_set(upstream, ctx->ins);
+
     ctx->firehose_client->host = ctx->endpoint;
 
     /* Export context */
