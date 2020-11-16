@@ -14,7 +14,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     size_t outsize;
     int type;
     int len;
-    char *json;
     size_t off = 0;
     msgpack_object map;
 
@@ -25,12 +24,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     struct flb_record_accessor *ra = NULL;
     
     /* Sample JSON message */
-    json ="{\"key1\": \"something\", \"kubernetes\": {\"annotations\": {\"fluentbit.io/tag\": \"thetag\"}}}";
+    len = 60;
+    char *json_raw = get_null_terminated(len, &data, &size);
 
     /* Convert to msgpack */
-    len = strlen(json);
-    int ret = flb_pack_json(json, len, &outbuf, &outsize, &type);
+    int ret = flb_pack_json(json_raw, len, &outbuf, &outsize, &type);
     if (ret == -1) {
+        flb_free(json_raw);
         return 0;
     }
 
@@ -42,6 +42,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_free(null_terminated);
         return 0;
     }
+
+    flb_ra_is_static(ra);
 
     msgpack_unpacked result;
     msgpack_unpacked_init(&result);
@@ -55,8 +57,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
         /* General cleanup */
         flb_free(null_terminated);
+		flb_free(json_raw);
         return 0;
     }
+    flb_ra_dump(ra);
 
     flb_sds_destroy(str);
     flb_ra_destroy(ra);
@@ -64,5 +68,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* General cleanup */
     flb_free(null_terminated);
+	flb_free(json_raw);
     return 0;
 }
