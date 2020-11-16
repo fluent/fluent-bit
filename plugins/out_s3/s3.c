@@ -542,6 +542,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
     }
+    flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
 
     ctx->s3_client->host = ctx->endpoint;
 
