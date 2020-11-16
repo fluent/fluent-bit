@@ -312,6 +312,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     upstream->flags &= ~(FLB_IO_ASYNC);
 
     ctx->cw_client->upstream = upstream;
+    flb_output_upstream_set(upstream, ctx->ins);
     ctx->cw_client->host = ctx->endpoint;
 
     /* alloc the payload/processing buffer */
