@@ -68,6 +68,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* General cleanup */
     flb_free(null_terminated);
-	flb_free(json_raw);
+    flb_free(json_raw);
     return 0;
 }
