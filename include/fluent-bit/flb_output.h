@@ -188,6 +188,7 @@ struct flb_output_plugin {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_output_instance {
+    struct mk_event event;               /* events handler               */
     uint64_t mask_id;                    /* internal bitmask for routing */
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
@@ -195,8 +196,10 @@ struct flb_output_instance {
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
     int test_mode;                       /* running tests? (default:off) */
+    flb_pipefd_t ch_events[2];           /* channel for events           */
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
+
 
     /* Plugin properties */
     int retry_limit;                     /* max of retries allowed       */
@@ -564,7 +567,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
-    n = flb_pipe_w(task->config->ch_manager[1], (void *) &val, sizeof(val));
+    n = flb_pipe_w(out_th->o_ins->ch_events[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
