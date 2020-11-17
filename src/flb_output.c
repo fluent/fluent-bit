@@ -165,6 +165,14 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_config_map_destroy(ins->net_config_map);
     }
 
+    if (ins->ch_events[0] > 0) {
+        mk_event_closesocket(ins->ch_events[0]);
+    }
+
+    if (ins->ch_events[1] > 0) {
+        mk_event_closesocket(ins->ch_events[1]);
+    }
+
     /* release properties */
     flb_output_free_properties(ins);
 
@@ -633,6 +641,28 @@ int flb_output_init_all(struct flb_config *config)
         }
         p = ins->p;
         mk_list_init(&ins->th_queue);
+
+        /* Output Events Channel */
+        ret = mk_event_channel_create(config->evl,
+                                      &ins->ch_events[0],
+                                      &ins->ch_events[1],
+                                      ins);
+        if (ret != 0) {
+            flb_error("could not create events channels for '%s'",
+                      flb_output_name(ins));
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        flb_debug("[%s:%s] created event channels: read=%i write=%i",
+                  ins->p->name, flb_output_name(ins),
+                  ins->ch_events[0], ins->ch_events[1]);
+
+        /*
+         * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+         * default, we need to overwrite this value so we can do a clean check
+         * into the Engine when the event is triggered.
+         */
+        ins->event.type = FLB_ENGINE_EV_OUTPUT;
 
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
