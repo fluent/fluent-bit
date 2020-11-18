@@ -148,7 +148,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 | [kafka-rest](https://docs.fluentbit.io/manual/pipeline/outputs/kafka-rest-proxy) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
 | [nats](https://docs.fluentbit.io/manual/pipeline/outputs/nats) | NATS | Flush records to a NATS server. |
 | [null](https://docs.fluentbit.io/manual/pipeline/outputs/null) | NULL | Throw away events. |
-| [s3](https://docs.fluentbit.io/manual/pipeline/outputs/s3) | NULL | Flush records to s3 |
+| [s3](https://docs.fluentbit.io/manual/pipeline/outputs/s3) | S3 | Flush records to s3 |
 | [stackdriver](https://docs.fluentbit.io/manual/pipeline/outputs/stackdriver) | Google Stackdriver Logging | Flush records to Google Stackdriver Logging service. |
 | [stdout](https://docs.fluentbit.io/manual/pipeline/outputs/standard-output) | Standard Output | Flush records to the standard output. |
 | [splunk](https://docs.fluentbit.io/manual/pipeline/outputs/splunk) | Splunk | Flush records to a Splunk Enterprise service |
