@@ -490,6 +490,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     int have_labels = -1;
     int have_annotations = -1;
     int have_nodename = -1;
+    int have_podip = -1;
     size_t off = 0;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -611,6 +612,19 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 }
             }
 
+            /* Process status map value for podIP */
+            if (status_found == FLB_TRUE) {
+                for (i = 0; i < status_val.via.map.size; i++) {
+                    k = status_val.via.map.ptr[i].key;
+                    if (k.via.str.size == 5 &&
+                        strncmp(k.via.str.ptr, "podIP", 5) == 0) {
+                        have_podip = i;
+                        map_size++;
+                        break;
+                    }
+                }
+            }
+
             if ((!meta->container_hash || !meta->docker_id || !meta->container_image) && status_found) {
                 extract_container_hash(meta, status_val);
             }
@@ -665,6 +679,14 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
 
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "host", 4);
+        msgpack_pack_object(&mp_pck, v);
+    }
+
+    if (have_podip >= 0) {
+        v = status_val.via.map.ptr[have_podip].val;
+
+        msgpack_pack_str(&mp_pck, 6);
+        msgpack_pack_str_body(&mp_pck, "pod_ip", 6);
         msgpack_pack_object(&mp_pck, v);
     }
 
