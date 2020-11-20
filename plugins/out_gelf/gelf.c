@@ -416,7 +416,8 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
     ctx->pckt_buf = NULL;
 
     if (ctx->mode == FLB_GELF_UDP) {
-        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port);
+        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port,
+                                      ins->net_setup.source_address);
         if (ctx->fd < 0) {
             flb_free(ctx);
             return -1;

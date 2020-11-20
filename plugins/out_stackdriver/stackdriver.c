@@ -994,6 +994,18 @@ static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
     return -1;
 }
 
+static int get_string(flb_sds_t * s, const msgpack_object * o, const flb_sds_t key)
+{
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0) {
+        *s = flb_sds_create_len(tmp.via.str.ptr, tmp.via.str.size);
+        return 0;
+    }
+
+    *s = 0;
+    return -1;
+}
+
 static int get_severity_level(severity_t * s, const msgpack_object * o,
                               const flb_sds_t key)
 {
@@ -1005,6 +1017,7 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     *s = 0;
     return -1;
 }
+
 
 static int get_stream(msgpack_object_map map)
 {
@@ -1104,8 +1117,13 @@ static int pack_json_payload(int insert_id_extracted,
         monitored_resource_key,
         local_resource_id_key,
         ctx->labels_key,
+        ctx->severity_key,
+        ctx->trace_key,
+        ctx->log_name_key,
         stream
-        /* more special fields are required to be added */
+        /* more special fields are required to be added, but, if this grows with more 
+           than a few records, it might need to be converted to flb_hash
+         */
     };
 
     if (insert_id_extracted == FLB_TRUE) {
@@ -1138,7 +1156,7 @@ static int pack_json_payload(int insert_id_extracted,
              * check length of key to avoid partial matching
              * e.g. labels key = labels && kv->key = labelss
              */
-            if (flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
+            if (removed && flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
                 to_remove += 1;
                 break;
             }
@@ -1215,7 +1233,7 @@ static int pack_json_payload(int insert_id_extracted,
         len = kv->key.via.str.size;
         for (j = 0; j < len_to_be_removed; j++) {
             removed = to_be_removed[j];
-            if (flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
+            if (removed && flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
                 key_not_found = 0;
                 break;
             }
@@ -1264,6 +1282,7 @@ static int stackdriver_format(struct flb_config *config,
     char path[PATH_MAX];
     char time_formatted[255];
     const char *newtag;
+    const char *new_log_name;
     msgpack_object *obj;
     msgpack_object *labels_ptr;
     msgpack_unpacked result;
@@ -1275,6 +1294,16 @@ static int stackdriver_format(struct flb_config *config,
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
     severity_t severity;
+
+    /* Parameters for trace */
+    int trace_extracted = FLB_FALSE;
+    flb_sds_t trace;
+    char stackdriver_trace[PATH_MAX];
+    const char *new_trace;
+
+    /* Parameters for log name */
+    int log_name_extracted = FLB_FALSE;
+    flb_sds_t log_name;
 
     /* Parameters for insertId */
     msgpack_object insert_id_obj;
@@ -1581,7 +1610,8 @@ static int stackdriver_format(struct flb_config *config,
          *  "labels": "...",
          *  "logName": "...",
          *  "jsonPayload": {...},
-         *  "timestamp": "..."
+         *  "timestamp": "...",
+         *  "trace": "..."
          * }
          */
         entry_size = 3;
@@ -1592,6 +1622,21 @@ static int stackdriver_format(struct flb_config *config,
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             severity_extracted = FLB_TRUE;
             entry_size += 1;
+        }
+
+        /* Extract trace */
+        trace_extracted = FLB_FALSE;
+        if (ctx->trace_key
+            && get_string(&trace, obj, ctx->trace_key) == 0) {
+            trace_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract log name */
+        log_name_extracted = FLB_FALSE;
+        if (ctx->log_name_key
+            && get_string(&log_name, obj, ctx->log_name_key) == 0) {
+            log_name_extracted = FLB_TRUE;
         }
 
         /* Extract insertId */
@@ -1668,6 +1713,26 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_int(&mp_pck, severity);
         }
 
+        /* Add trace into the log entry */
+        if (trace_extracted == FLB_TRUE) {
+            msgpack_pack_str(&mp_pck, 5);
+            msgpack_pack_str_body(&mp_pck, "trace", 5);
+
+            if (ctx->autoformat_stackdriver_trace) {
+                len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
+                    "projects/%s/traces/%s", ctx->project_id, trace);
+                new_trace = stackdriver_trace;
+            }
+            else {
+                len = flb_sds_len(trace);
+                new_trace = trace;
+            }
+
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, new_trace, len);
+            flb_sds_destroy(trace); 
+        }               
+
         /* Add insertId field into the log entry */
         if (insert_id_extracted == FLB_TRUE) {
             msgpack_pack_str(&mp_pck, 8);
@@ -1729,9 +1794,21 @@ static int stackdriver_format(struct flb_config *config,
                 newtag = "stderr";
             }
         }
+
+        if (log_name_extracted == FLB_FALSE) {
+            new_log_name = newtag;
+        }  
+        else {
+            new_log_name = log_name;
+        }
+
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->project_id, newtag);
+                       "projects/%s/logs/%s", ctx->project_id, new_log_name);
+
+        if (log_name_extracted == FLB_TRUE) {
+            flb_sds_destroy(log_name); 
+        }
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);

@@ -226,7 +226,47 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
     }
 }
 
-static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
+/* Pack a label key, it also perform sanitization of the characters */
+static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                          char *key, int key_len)
+{
+    int i;
+    int k_len = key_len;
+    int is_digit = FLB_FALSE;
+    char *p;
+
+    /* Normalize key name using the packed value */
+    if (isdigit(*key)) {
+        is_digit = FLB_TRUE;
+        k_len++;
+    }
+
+    /* key: pack the length */
+    msgpack_pack_str(mp_pck, k_len);
+    if (is_digit) {
+        msgpack_pack_str_body(mp_pck, "_", 1);
+    }
+
+    /*
+     * 'p' will point to the next memory area where the key will be
+     * written.
+     */
+    p = (char *) (mp_sbuf->data + mp_sbuf->size);
+
+    /* Pack the key name */
+    msgpack_pack_str_body(mp_pck, key, key_len);
+
+    for (i = 0; i < key_len; i++) {
+        if (!isalnum(p[i]) && p[i] != '_') {
+            p[i] = '_';
+        }
+    }
+
+    return 0;
+}
+
+static flb_sds_t pack_labels(struct flb_loki *ctx,
+                             msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                              char *tag, int tag_len,
                              msgpack_object *map)
 {
@@ -260,10 +300,8 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
                 flb_mp_map_header_append(&mh);
 
                 /* We skip the first '$' character since it won't be valid in Loki */
-                msgpack_pack_str(mp_pck, flb_sds_len(kv->key_normalized));
-                msgpack_pack_str_body(mp_pck,
-                                      kv->key_normalized,
-                                      flb_sds_len(kv->key_normalized));
+                pack_label_key(mp_sbuf, mp_pck,
+                               kv->key_normalized, flb_sds_len(kv->key_normalized));
 
                 msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
                 msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
@@ -319,8 +357,11 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
 
                 /* append the key/value pair */
                 flb_mp_map_header_append(&mh);
-                msgpack_pack_str(mp_pck, k.via.str.size);
-                msgpack_pack_str_body(mp_pck, k.via.str.ptr,  k.via.str.size);
+
+                /* Pack key */
+                pack_label_key(mp_sbuf, mp_pck, (char *) k.via.str.ptr, k.via.str.size);
+
+                /* Pack the value */
                 msgpack_pack_str(mp_pck, v.via.str.size);
                 msgpack_pack_str_body(mp_pck, v.via.str.ptr,  v.via.str.size);
             }
@@ -645,7 +686,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          msgpack_pack_str_body(&mp_pck, "stream", 6);
 
          /* Pack stream labels */
-         pack_labels(ctx, &mp_pck, tag, tag_len, obj);
+         pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, obj);
 
         /* streams['values'] */
          msgpack_pack_str(&mp_pck, 6);
@@ -685,7 +726,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
              msgpack_pack_str_body(&mp_pck, "stream", 6);
 
              /* Pack stream labels */
-             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
+             pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, obj);
 
              /* streams['values'] */
              msgpack_pack_str(&mp_pck, 6);
@@ -755,6 +796,11 @@ static void cb_loki_flush(const void *data, size_t bytes,
 
     /* User Agent */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+
+    /* Basic Auth headers */
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
 
     /* Add Content-Type header */
     flb_http_add_header(c,
@@ -859,6 +905,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_CLIST, "label_keys", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, label_keys),
      "Comma separated list of keys to use as stream labels."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, http_user),
+     "Set HTTP auth user"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
+     "Set HTTP auth password"
     },
 
     /* EOF */

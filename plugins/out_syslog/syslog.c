@@ -147,11 +147,12 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     flb_sds_t tmp;
     uint8_t prival;
 
-    prival =  (msg->facility << 3) + msg->severity;
+    prival = (msg->facility << 3) + msg->severity;
 
     if (gmtime_r(&(tms->tm.tv_sec), &tm) == NULL) {
         return NULL;
     }
+
     tmp = flb_sds_printf(s, "<%i>%i %d-%02d-%02dT%02d:%02d:%02d.%06"PRIu64"Z ",
                             prival, 1, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
                             tm.tm_hour, tm.tm_min, tm.tm_sec,
@@ -860,7 +861,8 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
 
     ctx->fd = -1;
     if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
-        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port);
+        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port,
+                                      ins->net_setup.source_address);
         if (ctx->fd < 0) {
             flb_syslog_config_destroy(ctx);
             return -1;
