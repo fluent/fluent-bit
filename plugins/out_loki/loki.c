@@ -756,6 +756,11 @@ static void cb_loki_flush(const void *data, size_t bytes,
     /* User Agent */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
+    /* Basic Auth headers */
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
     /* Add Content-Type header */
     flb_http_add_header(c,
                         FLB_LOKI_CT, sizeof(FLB_LOKI_CT) - 1,
@@ -859,6 +864,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_CLIST, "label_keys", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, label_keys),
      "Comma separated list of keys to use as stream labels."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, http_user),
+     "Set HTTP auth user"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
+     "Set HTTP auth password"
     },
 
     /* EOF */
