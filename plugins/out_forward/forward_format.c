@@ -105,6 +105,12 @@ static int append_options(struct flb_forward *ctx,
         opt_count++;
     }
 
+    if (entries > 0 &&                      /* not message mode */
+        fc->time_as_integer == FLB_FALSE && /* not compat mode */
+        fc->compress == COMPRESS_GZIP) {
+        opt_count++;
+    }
+
     /* options is map */
     msgpack_pack_map(mp_pck, opt_count);
 
@@ -121,6 +127,15 @@ static int append_options(struct flb_forward *ctx,
         msgpack_pack_str(mp_pck, 4);
         msgpack_pack_str_body(mp_pck, "size", 4);
         msgpack_pack_int64(mp_pck, entries);
+    }
+
+    if (entries > 0 &&                      /* not message mode */
+        fc->time_as_integer == FLB_FALSE && /* not compat mode */
+        fc->compress == COMPRESS_GZIP) {
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "compressed", 10);
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "gzip", 4);
     }
 
     flb_plg_debug(ctx->ins,
