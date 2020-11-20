@@ -50,6 +50,12 @@ struct flb_loki {
     /* Public configuration properties */
     int auto_kubernetes_labels;
     flb_sds_t tenant_id;
+
+    /* HTTP Auth */
+    flb_sds_t http_user;
+    flb_sds_t http_passwd;
+
+    /* Labels */
     struct mk_list *labels;
     struct mk_list *label_keys;
 
