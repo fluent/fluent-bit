@@ -35,13 +35,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     else if (GET_MOD_EQ(4,1)) {
         format = "regex";
-        /*
+#ifdef PREG_FUZZ
         pregex = malloc(30);
         pregex[29] = '\0';
         memcpy(pregex, data, 29);
         data += 29;
         size -= 29;
-        */
+#else
+        pregex = "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$";
+#endif
     }
     else if (GET_MOD_EQ(4,2)) {
         format = "ltsv";
@@ -163,9 +165,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (time_offset != NULL) {
         flb_free(time_offset);
     }
+#ifdef PREG_FUZZ
     if (pregex != NULL) {
         flb_free(pregex);
     }
+#endif
 
     return 0;
 }

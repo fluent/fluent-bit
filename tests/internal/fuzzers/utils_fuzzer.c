@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_uri.h>
+#include <fluent-bit/flb_sha512.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
@@ -97,6 +98,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
     }
 
+    /* sds */
+    flb_sds_t fs = flb_sds_create_len((const char*)data, size);
+    if (fs != NULL) {
+        fs = flb_sds_cat_esc(fs, "AAABBBCCC", 9, "ABC", 3);
+        if (fs != NULL) {
+            flb_sds_destroy(fs);
+        }
+    }
+
     /* Fuzzing of flb_gzip.c */
     void *str = NULL;
     size_t len;
@@ -117,6 +127,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (out_data2 != NULL) {
         flb_free(out_data2);
     }
+
+    /* Fuzzing the sha routines */
+    struct flb_sha512 sha512;
+    uint8_t buf[64];
+    flb_sha512_init(&sha512);
+    flb_sha512_update(&sha512, null_terminated, 32);
+    flb_sha512_update(&sha512, null_terminated+32, 32);
+    flb_sha512_update(&sha512, null_terminated+64, 32);
+    flb_sha512_sum(&sha512, buf);
+
+
 
     /* General cleanup */
     flb_free(null_terminated);
