@@ -36,6 +36,10 @@
 #define FLB_LOKI_KV_RA     1     /* record accessor */
 #define FLB_LOKI_KV_K8S    2     /* kubernetes label */
 
+/* Output line format */
+#define FLB_LOKI_FMT_JSON  0
+#define FLB_LOKI_FMT_KV    1
+
 struct flb_loki_kv {
     int val_type;                       /* FLB_LOKI_KV_STR or FLB_LOKI_KV_RA */
     flb_sds_t key;                      /* string key */
@@ -49,6 +53,7 @@ struct flb_loki_kv {
 struct flb_loki {
     /* Public configuration properties */
     int auto_kubernetes_labels;
+    flb_sds_t line_format;
     flb_sds_t tenant_id;
 
     /* HTTP Auth */
@@ -62,6 +67,7 @@ struct flb_loki {
     /* Private */
     int tcp_port;
     char *tcp_host;
+    int out_line_format;
     int ra_used;                        /* number of record accessor label keys */
     struct flb_record_accessor *ra_k8s; /* kubernetes record accessor */
     struct mk_list labels_list;         /* list of flb_loki_kv nodes */

@@ -532,6 +532,19 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* Line Format */
+    if (strcasecmp(ctx->line_format, "json") == 0) {
+        ctx->out_line_format = FLB_LOKI_FMT_JSON;
+    }
+    else if (strcasecmp(ctx->line_format, "key_value") == 0) {
+        ctx->out_line_format = FLB_LOKI_FMT_KV;
+    }
+    else {
+        flb_plg_error(ctx->ins, "invalid 'line_format' value: %s",
+                      ctx->line_format);
+        return NULL;
+    }
+
     /* use TLS ? */
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
@@ -581,19 +594,149 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
     msgpack_pack_str_body(mp_pck, buf, len);
 }
 
-static int pack_record(msgpack_packer *mp_pck, msgpack_object *rec)
+static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
 {
-    int len;
-    char *line;
+    flb_sds_t tmp;
 
-    line = flb_msgpack_to_json_str(1024, rec);
-    if (!line) {
-        return -1;
+    tmp = flb_sds_cat(*buf, str, len);
+    if (tmp) {
+        *buf = tmp;
     }
-    len = strlen(line);
-    msgpack_pack_str(mp_pck, len);
-    msgpack_pack_str_body(mp_pck, line, len);
-    flb_free(line);
+}
+
+static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
+{
+    int i;
+    int len;
+    char temp[512];
+    msgpack_object k;
+    msgpack_object v;
+
+    if (val->type == MSGPACK_OBJECT_STR) {
+        safe_sds_cat(&buf, "\"", 1);
+        safe_sds_cat(&buf, val->via.str.ptr, val->via.str.size);
+        safe_sds_cat(&buf, "\"", 1);
+    }
+    else if (val->type == MSGPACK_OBJECT_NIL) {
+        safe_sds_cat(&buf, "null", 4);
+    }
+    else if (val->type == MSGPACK_OBJECT_BOOLEAN) {
+        if (val->via.boolean) {
+            safe_sds_cat(&buf, "true", 4);
+        }
+        else {
+            safe_sds_cat(&buf, "false", 5);
+        }
+    }
+    else if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        len = snprintf(temp, sizeof(temp)-1, "%"PRIu64, val->via.u64);
+        safe_sds_cat(&buf, temp, len);
+    }
+    else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        len = snprintf(temp, sizeof(temp)-1, "%"PRId64, val->via.i64);
+        safe_sds_cat(&buf, temp, len);
+    }
+    else if (val->type == MSGPACK_OBJECT_FLOAT32 ||
+             val->type == MSGPACK_OBJECT_FLOAT64) {
+        if (val->via.f64 == (double)(long long int) val->via.f64) {
+            len = snprintf(temp, sizeof(temp)-1, "%.1f", val->via.f64);
+        }
+        else {
+            len = snprintf(temp, sizeof(temp)-1, "%.16g", val->via.f64);
+        }
+    }
+    else if (val->type == MSGPACK_OBJECT_ARRAY) {
+        safe_sds_cat(&buf, "\"[", 2);
+        for (i = 0; i < val->via.array.size; i++) {
+            v = val->via.array.ptr[i];
+            if (i > 0) {
+                safe_sds_cat(&buf, " ", 1);
+            }
+            pack_format_line_value(buf, &v);
+        }
+        safe_sds_cat(&buf, "]\"", 2);
+    }
+    else if (val->type == MSGPACK_OBJECT_MAP) {
+        safe_sds_cat(&buf, "\"map[", 5);
+
+        for (i = 0; i < val->via.map.size; i++) {
+            k = val->via.map.ptr[i].key;
+            v = val->via.map.ptr[i].val;
+
+            if (k.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+
+            if (i > 0) {
+                safe_sds_cat(&buf, " ", 1);
+            }
+
+            safe_sds_cat(&buf, k.via.str.ptr, k.via.str.size);
+            safe_sds_cat(&buf, ":", 1);
+            pack_format_line_value(buf, &v);
+        }
+        safe_sds_cat(&buf, "]\"", 2);
+    }
+    else {
+
+        return;
+    }
+}
+
+
+static int pack_record(struct flb_loki *ctx,
+                       msgpack_packer *mp_pck, msgpack_object *rec)
+{
+    int i;
+    int len;
+    int size_hint = 1024;
+    char *line;
+    flb_sds_t buf;
+    msgpack_object key;
+    msgpack_object val;
+
+    if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
+        line = flb_msgpack_to_json_str(size_hint, rec);
+        if (!line) {
+            return -1;
+        }
+        len = strlen(line);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, line, len);
+        flb_free(line);
+    }
+    else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
+        if (rec->type != MSGPACK_OBJECT_MAP) {
+            return -1;
+        }
+
+        buf = flb_sds_create_size(size_hint);
+        if (!buf) {
+            return -1;
+        }
+
+        for (i = 0; i < rec->via.map.size; i++) {
+            key = rec->via.map.ptr[i].key;
+            val = rec->via.map.ptr[i].val;
+
+            if (key.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+
+            if (i > 0) {
+                safe_sds_cat(&buf, " ", 1);
+            }
+
+            flb_sds_cat(buf, key.via.str.ptr, key.via.str.size);
+            flb_sds_cat(buf, "=", 1);
+            pack_format_line_value(buf, &val);
+        }
+
+        msgpack_pack_str(mp_pck, flb_sds_len(buf));
+        msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
+        flb_sds_destroy(buf);
+    }
+
     return 0;
 }
 
@@ -702,7 +845,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(&mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj);
          }
     }
     else {
@@ -737,7 +880,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(&mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj);
          }
     }
 
@@ -905,6 +1048,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_CLIST, "label_keys", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, label_keys),
      "Comma separated list of keys to use as stream labels."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "line_format", "json",
+     0, FLB_TRUE, offsetof(struct flb_loki, line_format),
+     "Format to use when flattening the record to a log line. Valid values are "
+     "'json' or 'key_value'. If set to 'json' the log line sent to Loki will be "
+     "the Fluent Bit record dumped as json. If set to 'key_value', the log line "
+     "will be each item in the record concatenated together (separated by a "
+     "single space) in the format '='."
     },
 
     {
