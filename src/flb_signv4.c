@@ -135,10 +135,11 @@ flb_sds_t flb_signv4_uri_normalize_path(char *uri, size_t len)
     struct flb_split_entry *entry;
     flb_sds_t out;
 
-    out = flb_sds_create_len(uri, len);
+    out = flb_sds_create_len(uri, len+1);
     if (!out) {
         return NULL;
     }
+    out[len] = '\0';
 
     if (uri[len - 1] == '/') {
         end_slash = FLB_TRUE;
