@@ -433,6 +433,10 @@ static void in_tail_pause(void *data, struct flb_config *config)
 
     if (ctx->multiline == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->ins);
+        if (config->is_ingestion_active == FLB_FALSE) {
+            flb_plg_info(ctx->ins, "flushing pending multiline data...");
+            flb_tail_mult_pending_flush_all(ctx);
+        }
     }
 
     /* Pause file system backend handlers */
