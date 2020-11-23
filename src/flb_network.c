@@ -308,6 +308,7 @@ static int net_connect_async(int fd,
     int error = 0;
     uint32_t mask;
     char so_error_buf[256];
+    char *str;
     socklen_t len = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
@@ -383,14 +384,14 @@ static int net_connect_async(int fd,
             }
 
             /* Connection is broken, not much to do here */
-            strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
-            flb_error("[io] TCP connection failed: %s:%i (%s)",
-                      u->tcp_host, u->tcp_port, so_error_buf);
+            str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
+            flb_error("[net] TCP connection failed: %s:%i (%s)",
+                      u->tcp_host, u->tcp_port, str);
             return -1;
         }
     }
     else {
-        flb_error("[io] TCP connection, unexpected error: %s:%i",
+        flb_error("[net] TCP connection, unexpected error: %s:%i",
                   u->tcp_host, u->tcp_port);
         return -1;
     }
@@ -535,7 +536,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         if (ret == -1) {
-            flb_error("Cannot connect to %s port %s", host, _port);
+            flb_error("[net] cannot connect to %s:%s", host, _port);
             flb_socket_close(fd);
             continue;
         }
