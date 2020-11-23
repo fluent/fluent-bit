@@ -55,7 +55,7 @@ static void cb_results(const char *name, const char *value,
     struct tm tm = {0};
     (void) data;
 
-    if (vlen == 0) {
+    if (vlen == 0 && parser->skip_empty) {
         pcb->num_skipped++;
         return;
     }
