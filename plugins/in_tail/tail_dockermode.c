@@ -388,41 +388,76 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     flb_free(out_buf);
 }
 
+static void file_pending_flush(struct flb_tail_config *ctx,
+                               struct flb_tail_file *file, time_t now)
+{
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    if (file->dmode_flush_timeout > now) {
+        return;
+    }
+
+    if (flb_sds_len(file->dmode_lastline) == 0) {
+        return;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
+
+    flb_input_chunk_append_raw(ctx->ins,
+                               file->tag_buf,
+                               file->tag_len,
+                               mp_sbuf.data,
+                               mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
+int flb_tail_dmode_pending_flush_all(struct flb_tail_config *ctx)
+{
+    time_t expired;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    expired = time(NULL) + 3600;
+
+    /* Iterate promoted event files with pending bytes */
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        file_pending_flush(ctx, file, expired);
+    }
+
+    /* Iterate promoted event files with pending bytes */
+    mk_list_foreach(head, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        file_pending_flush(ctx, file, expired);
+    }
+
+    return 0;
+}
+
 int flb_tail_dmode_pending_flush(struct flb_input_instance *ins,
                                  struct flb_config *config, void *context)
 {
     time_t now;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     struct mk_list *head;
     struct flb_tail_file *file;
     struct flb_tail_config *ctx = context;
 
     now = time(NULL);
 
+    /* Iterate static event files with pending bytes */
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        file_pending_flush(ctx, file, now);
+    }
+
     /* Iterate promoted event files with pending bytes */
     mk_list_foreach(head, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-
-        if (file->dmode_flush_timeout > now) {
-            continue;
-        }
-
-        if (flb_sds_len(file->dmode_lastline) == 0) {
-            continue;
-        }
-
-        msgpack_sbuffer_init(&mp_sbuf);
-        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-        flb_tail_dmode_flush(&mp_sbuf, &mp_pck, file, ctx);
-
-        flb_input_chunk_append_raw(ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   mp_sbuf.data,
-                                   mp_sbuf.size);
-        msgpack_sbuffer_destroy(&mp_sbuf);
+        file_pending_flush(ctx, file, now);
     }
 
     return 0;
