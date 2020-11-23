@@ -736,7 +736,6 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 if (tmp == NULL) {
                     return NULL;
                 }
-
                 *s = tmp;
 
                 if (v->type == MSGPACK_OBJECT_EXT) {
