@@ -671,16 +671,37 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                     val = temp;
                     val_len = snprintf(temp, sizeof(temp) - 1,
                                        "%" PRIu64, v->via.u64);
+                    /*
+                     * Check if the value length is larger than our string.
+                     * this is needed to avoid stack-based overflows.
+                     */
+                    if (val_len > sizeof(temp)) {
+                        return NULL;
+                    }
                 }
                 else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                     val = temp;
                     val_len = snprintf(temp, sizeof(temp) - 1,
                                        "%" PRId64, v->via.i64);
+                    /*
+                     * Check if the value length is larger than our string.
+                     * this is needed to avoid stack-based overflows.
+                     */
+                    if (val_len > sizeof(temp)) {
+                        return NULL;
+                    }
                 }
                 else if (v->type == MSGPACK_OBJECT_FLOAT) {
                     val = temp;
                     val_len = snprintf(temp, sizeof(temp) - 1,
                                        "%f", v->via.f64);
+                    /*
+                     * Check if the value length is larger than our string.
+                     * this is needed to avoid stack-based overflows.
+                     */
+                    if (val_len > sizeof(temp)) {
+                        return NULL;
+                    }
                 }
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     /* String value */
@@ -715,6 +736,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 if (tmp == NULL) {
                     return NULL;
                 }
+
                 *s = tmp;
 
                 if (v->type == MSGPACK_OBJECT_EXT) {
