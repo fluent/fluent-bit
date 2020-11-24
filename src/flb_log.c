@@ -179,7 +179,7 @@ int flb_log_get_level_str(char *str)
     else if (strcasecmp(str, "error") == 0) {
         return FLB_LOG_ERROR;
     }
-    else if (strcasecmp(str, "warn") == 0) {
+    else if (strcasecmp(str, "warn") == 0 || strcasecmp(str, "warning") == 0) {
         return FLB_LOG_WARN;
     }
     else if (strcasecmp(str, "info") == 0) {
