@@ -83,6 +83,24 @@ int s3_plugin_under_test()
     return FLB_FALSE;
 }
 
+struct flb_aws_header *create_canned_acl_header(char *canned_acl)
+{
+    struct flb_aws_header *acl_header = NULL;
+    
+    acl_header = flb_malloc(sizeof(struct flb_aws_header));
+    if (acl_header == NULL) {
+        flb_errno();
+        return NULL;
+    } 
+   
+    acl_header->key = "x-amz-acl";
+    acl_header->key_len = 9;
+    acl_header->val = canned_acl;
+    acl_header->val_len = strlen(canned_acl);
+
+    return acl_header;
+};
+
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
 {
     /* create an http client so that we can set the response */
@@ -409,6 +427,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->sts_endpoint = (char *) tmp;
     }
 
+    tmp = flb_output_get_property("canned_acl", ins);
+    if (tmp) {
+        ctx->canned_acl = (char *) tmp;
+    }
+    
     ctx->client_tls.context = flb_tls_context_new(FLB_TRUE,
                                                   ins->tls_debug,
                                                   ins->tls_vhost,
@@ -907,6 +930,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_t s3_key = NULL;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    struct flb_aws_header *canned_acl_header;
     char *random_alphanumeric;
     int append_random = FLB_FALSE;
     int len;
@@ -961,9 +985,23 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
     }
     else {
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                              uri, body, body_size,
-                                              NULL, 0);
+        if (ctx->canned_acl == NULL) {
+            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
+                                                  uri, body, body_size,
+                                                  NULL, 0);
+        }
+        else {
+            canned_acl_header = create_canned_acl_header(ctx->canned_acl);
+            if (canned_acl_header == NULL) {
+                flb_sds_destroy(uri);
+                flb_plg_error(ctx->ins, "Failed to create canned ACL header");
+                return -1;
+            }
+            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
+                                                  uri, body, body_size,
+                                                  canned_acl_header, 1);
+            flb_free(canned_acl_header);
+        }
     }
     if (c) {
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
@@ -1403,6 +1441,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, sts_endpoint),
     "Custom endpoint for the STS API."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "canned_acl", NULL,
+     0, FLB_FALSE, 0,
+    "Predefined Canned ACL policy for S3 objects."
     },
 
     {

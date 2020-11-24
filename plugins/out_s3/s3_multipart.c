@@ -477,6 +477,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t tmp;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    struct flb_aws_header *canned_acl_header;
 
     uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
     if (!uri) {
@@ -496,8 +497,21 @@ int create_multipart_upload(struct flb_s3 *ctx,
         c = mock_s3_call("TEST_CREATE_MULTIPART_UPLOAD_ERROR", "CreateMultipartUpload");
     }
     else {
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
-                                              uri, NULL, 0, NULL, 0);
+        if (ctx->canned_acl == NULL) {
+            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                                  uri, NULL, 0, NULL, 0);
+        }
+        else {
+            canned_acl_header = create_canned_acl_header(ctx->canned_acl);
+            if (canned_acl_header == NULL) {
+                flb_sds_destroy(uri);
+                flb_plg_error(ctx->ins, "Failed to create canned ACL header");
+                return -1;
+            }
+            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                                  uri, NULL, 0, canned_acl_header, 1);
+            flb_free(canned_acl_header);
+        }
     }
     flb_sds_destroy(uri);
     if (c) {
