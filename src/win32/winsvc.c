@@ -35,7 +35,7 @@ static void svc_notify(DWORD status)
 {
     SERVICE_STATUS ss;
 
-    ss.dwServiceType = SERVICE_USER_OWN_PROCESS;
+    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     ss.dwCurrentState = status;
     ss.dwWin32ExitCode = NO_ERROR;
     ss.dwServiceSpecificExitCode = NO_ERROR;
