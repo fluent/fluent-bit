@@ -368,6 +368,13 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
         }
     }
 
+    sub_provider = flb_ecs_provider_create(config, generator);
+    if (sub_provider) {
+        /* ECS Provider will fail creation if we are not running in ECS */
+        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+        flb_debug("[aws_credentials] Initialized ECS Provider in standard chain");
+    }
+
     sub_provider = flb_ec2_provider_create(config, generator);
     if (!sub_provider) {
         /* EC2 provider will only fail creation if a memory alloc failed */
@@ -376,13 +383,6 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     }
     mk_list_add(&sub_provider->_head, &implementation->sub_providers);
     flb_debug("[aws_credentials] Initialized EC2 Provider in standard chain");
-
-    sub_provider = flb_ecs_provider_create(config, generator);
-    if (sub_provider) {
-        /* ECS Provider will fail creation if we are not running in ECS */
-        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
-        flb_debug("[aws_credentials] Initialized ECS Provider in standard chain");
-    }
 
     return provider;
 }
