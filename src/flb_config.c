@@ -390,7 +390,8 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         if (strcasecmp(v_str, "error") == 0) {
             config->verbose = 1;
         }
-        else if (strcasecmp(v_str, "warning") == 0) {
+        else if (strcasecmp(v_str, "warn") == 0 ||
+                 strcasecmp(v_str, "warning") == 0) {
             config->verbose = 2;
         }
         else if (strcasecmp(v_str, "info") == 0) {
