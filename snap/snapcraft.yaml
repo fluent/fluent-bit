@@ -30,7 +30,7 @@ parts:
   fluent-bit:
     source: https://github.com/fluent/fluent-bit
     source-type: git
-    source-branch: 1.6
+    source-branch: '1.6'
     plugin: cmake
     stage-packages:
         - libsasl2-2
