@@ -130,8 +130,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     void *out_data2 = NULL;
     size_t out2_len;
-    flb_gzip_uncompress((char*)data, size, &out_data2, &out2_len);
-    if (out_data2 != NULL) {
+    int uncompress_ret = flb_gzip_uncompress((char*)data, size, &out_data2, &out2_len);
+    if (uncompress_ret != -1 && out_data2 != NULL) {
         flb_free(out_data2);
     }
 
