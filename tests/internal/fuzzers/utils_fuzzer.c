@@ -31,16 +31,20 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     char *uri     = NULL;
     char *new_dst = NULL;
 
-    new_dst = (char*)malloc(size * 2);
-    flb_utils_write_str_buf(null_terminated, size, &new_dst, &new_size);
-    flb_free(new_dst);
+    if (flb_utils_write_str_buf(null_terminated, size, &new_dst, &new_size) == 0) {
+        flb_free(new_dst);
+    }
 
     struct mk_list *list = flb_utils_split(null_terminated, 'A', 3);
     if (list != NULL) {
         flb_utils_split_free(list);
     }
 
-    flb_utils_url_split(null_terminated, &prot, &host, &port, &uri);
+    if (flb_utils_url_split(null_terminated, &prot, &host, &port, &uri) == 0) {
+        flb_free(prot);
+        flb_free(port);
+        flb_free(host);
+    }
     flb_utils_size_to_bytes(null_terminated);
     flb_utils_time_split(null_terminated, &sec, &nsec);
     flb_utils_time_to_seconds(null_terminated);
@@ -55,7 +59,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_uri_dump(uri2);
         flb_uri_destroy(uri2);
     }
-    flb_uri_encode((char*)data, size);
+    flb_sds_t encoded = flb_uri_encode((char*)data, size);
+    if (encoded != NULL) {
+        flb_sds_destroy(encoded);
+    }
 
     /* Fuzzing of flb_hash.c */
     struct flb_hash *ht = NULL;
