@@ -309,9 +309,11 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 {
     uint64_t chunk_routes_mask;
     ssize_t bytes;
+    const char *tag_buf;
+    int tag_len;
+    int ret;
 
 #ifdef FLB_HAVE_METRICS
-    int ret;
     char *buf_data;
     size_t buf_size;
 #endif
@@ -345,7 +347,14 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     }
 #endif
 
-    chunk_routes_mask = flb_router_get_routes_mask_by_tag(in->tag, in->tag_len, in);
+    /* Get the the tag reference (chunk metadata) */
+    ret = flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
+    if (ret == -1) {
+	flb_error("[input chunk] error retrieving tag of input chunk");
+	return ic;
+    }
+
+    chunk_routes_mask = flb_router_get_routes_mask_by_tag(tag_buf, tag_len, in);
     if (chunk_routes_mask == 0) {
         flb_warn("[input chunk] no matching route for backoff log chunk %s",
                  flb_input_chunk_get_name(ic));
