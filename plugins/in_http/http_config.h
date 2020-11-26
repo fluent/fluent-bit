@@ -18,25 +18,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_HTTP_H
-#define FLB_IN_HTTP_H
+#ifndef FLB_IN_HTTP_CONFIG_H
+#define FLB_IN_HTTP_CONFIG_H
 
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_input_plugin.h>
+#include "http.h"
 
-/* Default configuration for the HTTP server */
-#define FLB_HTTP_CONFIG    "in_http.conf"
-#define FLB_HTTP_SITES     "sites/"
-#define FLB_HTTP_MIMES     "mimetypes.conf"
-
-struct flb_in_http_config {
-
-    /* MessagePack buffers */
-    msgpack_packer  mp_pck;
-    msgpack_sbuffer mp_sbuf;
-};
-
-extern struct flb_input_plugin in_http_plugin;
+struct flb_http *http_config_create(struct flb_input_instance *ins);
+int http_config_destroy(struct flb_http *ctx);
 
 #endif

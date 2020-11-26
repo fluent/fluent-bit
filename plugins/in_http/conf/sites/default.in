@@ -1,3 +1,0 @@
-[HOST]
-    ServerName   @MK_VH_SERVERNAME@
-    DocumentRoot @MK_PATH_WWW@
