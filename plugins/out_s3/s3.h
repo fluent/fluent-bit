@@ -95,6 +95,8 @@ struct flb_s3 {
     char *endpoint;
     char *sts_endpoint;
     char *canned_acl;
+    char *compression;
+    char *content_type;
     int free_endpoint;
     int use_put_object;
 
@@ -151,7 +153,6 @@ void multipart_read_uploads_from_fs(struct flb_s3 *ctx);
 void multipart_upload_destroy(struct multipart_upload *m_upload);
 
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api);
-struct flb_aws_header *create_canned_acl_header(char *canned_acl);
 int s3_plugin_under_test();
 
 #endif
