@@ -37,6 +37,24 @@
 
 flb_sds_t get_etag(char *response, size_t size);
 
+static struct flb_aws_header *create_canned_acl_header(char *canned_acl)
+{
+    struct flb_aws_header *acl_header = NULL;
+    
+    acl_header = flb_malloc(sizeof(struct flb_aws_header));
+    if (acl_header == NULL) {
+        flb_errno();
+        return NULL;
+    } 
+   
+    acl_header->key = "x-amz-acl";
+    acl_header->key_len = 9;
+    acl_header->val = canned_acl;
+    acl_header->val_len = strlen(canned_acl);
+
+    return acl_header;
+};
+
 static inline int try_to_write(char *buf, int *off, size_t left,
                                const char *str, size_t str_len)
 {
