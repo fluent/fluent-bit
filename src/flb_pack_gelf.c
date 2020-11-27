@@ -557,9 +557,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 key_len = 5;
                 if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     if ( v->via.u64 > 7 ) {
-                        flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
+                        flb_warn("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
                                   "but should be in 0..7 or a syslog keyword", v->via.u64);
-                        return NULL;
                     }
                 }
                 else if (v->type == MSGPACK_OBJECT_STR) {
@@ -587,11 +586,14 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                             }
                         }
                         if (allowed_levels[n] == NULL) {
-                            flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
+                            flb_warn("[flb_msgpack_to_gelf] level is '%.*s', "
                                       "but should be in 0..7 or a syslog keyword", val_len, val);
-                            return NULL;
                         }
                     }
+                }
+                else {
+                    flb_error("[flb_msgpack_to_gelf] level must be a non-negative integer or a string");
+                    return NULL;
                 }
             }
             else if ((key_len == full_message_key_len) &&
