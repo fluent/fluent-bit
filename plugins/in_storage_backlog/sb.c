@@ -25,7 +25,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
+#endif
 
 struct sb_chunk {
     struct cio_chunk *chunk;
