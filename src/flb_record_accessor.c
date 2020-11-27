@@ -503,10 +503,10 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
             tmp = ra_translate_regex_id(rp, result, buf);
         }
-        else if (rp->type == FLB_RA_PARSER_TAG) {
+        else if (rp->type == FLB_RA_PARSER_TAG && tag) {
             tmp = ra_translate_tag(rp, buf, tag, tag_len);
         }
-        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+        else if (rp->type == FLB_RA_PARSER_TAG_PART && tag) {
             tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
         }
         else {
