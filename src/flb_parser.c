@@ -110,6 +110,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
                                      int time_keep,
+                                     int time_strict,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct mk_list *decoders,
@@ -273,6 +274,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     }
 
     p->time_keep = time_keep;
+    p->time_strict = time_strict;
     p->types = types;
     p->types_len = types_len;
     return p;
@@ -420,6 +422,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     flb_sds_t types_str;
     flb_sds_t tmp_str;
     int time_keep;
+    int time_strict;
     int types_len;
     struct mk_rconf *fconf;
     struct mk_rconf_section *section;
@@ -507,6 +510,14 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
             flb_sds_destroy(tmp_str);
         }
 
+        /* Time_Strict */
+        time_strict = FLB_TRUE;
+        tmp_str = get_parser_key("Time_Strict", config, section);
+        if (tmp_str) {
+            time_strict = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
+
         /* Time_Offset (UTC offset) */
         time_offset = get_parser_key("Time_Offset", config, section);
 
@@ -524,7 +535,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
 
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex,
-                               time_fmt, time_key, time_offset, time_keep,
+                               time_fmt, time_key, time_offset, time_keep, time_strict,
                                types, types_len, decoders, config)) {
             goto fconf_error;
         }
@@ -782,23 +793,35 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     }
 
     if (p == NULL) {
-        flb_error("[parser] cannot parse '%.*s'", tsize, time_str);
-        return -1;
+        if (parser->time_strict) {
+            flb_error("[parser] cannot parse '%.*s'", tsize, time_str);
+            return -1;
+        }
+        flb_debug("[parser] non-exact match '%.*s'", tsize, time_str);
+        return 0;
     }
 
     if (parser->time_frac_secs) {
         ret = parse_subseconds(p, time_len - (p - time_ptr), ns);
         if (ret < 0) {
-            flb_error("[parser] cannot parse %L for '%.*s'", tsize, time_str);
-            return -1;
+            if (parser->time_strict) {
+                flb_error("[parser] cannot parse %%L for '%.*s'", tsize, time_str);
+                return -1;
+            }
+            flb_debug("[parser] non-exact match on %%L '%.*s'", tsize, time_str);
+            return 0;
         }
         p += ret;
 
         /* Parse the remaining part after %L */
         p = flb_strptime(p, parser->time_frac_secs, tm);
         if (p == NULL) {
-            flb_error("[parser] cannot parse '%.*s' after %L", tsize, time_str);
-            return -1;
+            if (parser->time_strict) {
+                flb_error("[parser] cannot parse '%.*s' after %%L", tsize, time_str);
+                return -1;
+            }
+            flb_debug("[parser] non-exact match after %%L '%.*s'", tsize, time_str);
+            return 0;
         }
     }
 

@@ -14,8 +14,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     /* json parser */
     fuzz_config = flb_config_init();
     fuzz_parser = flb_parser_create("fuzzer", "json", NULL, NULL,
-                                    NULL, NULL, MK_FALSE, NULL,
-                                    0, NULL, fuzz_config);
+                                    NULL, NULL, MK_FALSE, MK_TRUE,
+                                    NULL, 0, NULL, fuzz_config);
     flb_parser_do(fuzz_parser, (char*)data, size, 
                   &out_buf, &out_size, &out_time);
 
