@@ -240,7 +240,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
-        err = flb_socket_error(u_conn->fd);
+        err = flb_socket_error(fd);
         if (!FLB_EINPROGRESS(err)) {
             flb_error("[net] connection #%i failed to: %s:%i",
                       fd, host, port);
