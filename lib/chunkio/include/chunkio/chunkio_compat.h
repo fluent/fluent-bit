@@ -53,6 +53,14 @@ static inline char* dirname(const char *path)
 
     _makepath_s(buf, _MAX_PATH, drive, dir, "", "");
 
+    /*
+     * If path does not contain a separator, dirname() must
+     * return the string ".".
+     */
+    if (strlen(buf) == 0) {
+        strcpy_s(buf, _MAX_PATH, ".");
+    }
+
     return buf;
 }
 

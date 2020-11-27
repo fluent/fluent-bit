@@ -54,4 +54,9 @@ int cio_errno_print(int errnum, const char *file, int line);
 #define cio_errno() cio_errno_print(errno, __FILE__, __LINE__)
 #endif
 
+#ifdef _WIN32
+void cio_winapi_error_print(const char *func, int line);
+#define cio_winapi_error() cio_winapi_error_print(__func__, __LINE__)
+#endif
+
 #endif
