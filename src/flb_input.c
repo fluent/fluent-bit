@@ -821,6 +821,7 @@ int flb_input_pause_all(struct flb_config *config)
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 {
     int ret;
+    flb_pipefd_t fd;
     struct flb_config *config;
     struct flb_input_collector *coll;
 
@@ -839,10 +840,14 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          * For a collector time, it's better to just remove the file
          * descriptor associated to the time out, when resumed a new
          * one can be created.
+         *
+         * Note: Invalidate fd_timer first in case closing a socket
+         * invokes another event.
          */
-        mk_event_timeout_destroy(config->evl, &coll->event);
-        mk_event_closesocket(coll->fd_timer);
+        fd = coll->fd_timer;
         coll->fd_timer = -1;
+        mk_event_timeout_destroy(config->evl, &coll->event);
+        mk_event_closesocket(fd);
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {
         ret = mk_event_del(config->evl, &coll->event);
