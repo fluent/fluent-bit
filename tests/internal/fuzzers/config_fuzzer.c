@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_slist.h>
+#include "flb_fuzz_header.h"
 
 /* A sample of configurations */
 char conf_file[] = "# Parser: no_year\n"
@@ -322,6 +324,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     fwrite(conf_file, strlen(conf_file), 1, fp);
     fclose(fp);
 
+
     /* Now parse random data based on the config files */
     struct flb_config *config = NULL;
     config = flb_config_init();
@@ -341,6 +344,71 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             }
         }
     }
+    flb_parser_exit(config);
+    flb_config_exit(config);
+
+    if (size > 100) {
+        /* Now let's do a second run where we also call flb_config_set_property */
+        config = flb_config_init();
+        ret = flb_parser_conf_file(filename, config);
+        char *key_1 = get_null_terminated(15, &data, &size);
+        char *val_1 = get_null_terminated(15, &data, &size);
+        char *key_2 = get_null_terminated(15, &data, &size);
+        char *val_2 = get_null_terminated(15, &data, &size);
+        char *progname = get_null_terminated(15, &data, &size);
+
+        flb_config_set_property(config, key_1, val_1);
+        flb_config_set_property(config, key_2, val_2);
+        flb_config_set_program_name(config, progname);
+        set_log_level_from_env(config);
+
+        struct mk_list prop;
+        flb_kv_init(&prop);
+        flb_kv_item_create(&prop, key_1, val_1);
+        flb_config_prop_get(progname, &prop);
+        flb_slist_entry_get(&prop, (int)data[0]);
+        flb_slist_dump(&prop);
+        
+        if (ret == 0) {
+            struct mk_list *head = NULL;
+            mk_list_foreach(head, &config->parsers) {
+                size_t out_size;
+                char *out_buf = NULL;
+                struct flb_parser *parser = NULL;
+                struct flb_time out_time;
+                
+                parser = mk_list_entry(head, struct flb_parser, _head);
+                flb_parser_do(parser, data, size, &out_buf,
+                              &out_size, &out_time);
+                if (out_buf != NULL) {
+                    free(out_buf);
+                }
+            }
+        }
+        flb_parser_exit(config);
+        flb_config_exit(config);
+        flb_free(key_1);
+        flb_free(val_1);
+        flb_free(key_2);
+        flb_free(val_2);
+        flb_free(progname);
+        flb_kv_release(&prop);
+    }
+
+    /* clean up the file */
+    unlink(filename);
+
+    /* finally try to parser a random file */
+    fp = fopen(filename, "wb");
+    if (!fp) {
+        return 0;
+    }
+    fwrite(data, size, 1, fp);
+    fclose(fp);
+
+    config = NULL;
+    config = flb_config_init();
+    flb_parser_conf_file(filename, config);
     flb_parser_exit(config);
     flb_config_exit(config);
 
