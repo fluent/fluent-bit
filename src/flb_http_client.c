@@ -447,6 +447,19 @@ static int process_data(struct flb_http_client *c)
     return FLB_HTTP_MORE;
 }
 
+#if defined FLB_TESTS_OSSFUZZ
+int fuzz_process_data(struct flb_http_client *c);
+int fuzz_process_data(struct flb_http_client *c) {
+	return process_data(c);
+}
+
+int fuzz_check_connection(struct flb_http_client *c);
+int fuzz_check_connection(struct flb_http_client *c) {
+    return check_connection(c);
+}
+
+#endif
+
 static int proxy_parse(const char *proxy, struct flb_http_client *c)
 {
     int len;
