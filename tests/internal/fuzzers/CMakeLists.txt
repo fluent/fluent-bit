@@ -1,4 +1,5 @@
 set(UNIT_TESTS_FILES
+  engine_fuzzer.c
   config_fuzzer.c
   signv4_fuzzer.c
   flb_json_fuzzer.c
