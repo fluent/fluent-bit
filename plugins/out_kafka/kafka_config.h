@@ -29,15 +29,6 @@
 
 #include "rdkafka.h"
 
-<<<<<<< HEAD
-#define FLB_KAFKA_FMT_JSON            0
-#define FLB_KAFKA_FMT_MSGP            1
-#define FLB_KAFKA_FMT_GELF            2
-#define FLB_KAFKA_BROKERS             "127.0.0.1"
-#define FLB_KAFKA_TOPIC               "fluent-bit"
-#define FLB_KAFKA_TS_KEY              "@timestamp"
-#define FLB_KAFKA_QUEUE_FULL_RETRIES  10
-=======
 #define FLB_KAFKA_FMT_JSON  0
 #define FLB_KAFKA_FMT_MSGP  1
 #define FLB_KAFKA_FMT_GELF  2
@@ -47,7 +38,7 @@
 #define FLB_KAFKA_BROKERS   "127.0.0.1"
 #define FLB_KAFKA_TOPIC     "fluent-bit"
 #define FLB_KAFKA_TS_KEY    "@timestamp"
->>>>>>> c770424a... out_kafka: adds avro support into out_kafka without tests
+#define FLB_KAFKA_QUEUE_FULL_RETRIES  10
 
 /* rdkafka log levels based on syslog(3) */
 #define FLB_KAFKA_LOG_EMERG   0

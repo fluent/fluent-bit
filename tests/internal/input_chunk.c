@@ -92,8 +92,8 @@ static struct tail_file_lines *get_out_file_content(const char *target)
     }
 
     file_lines->lines[file_lines->lines_c++] = out_buf;
-
-    for (i = 0; i < out_size; i++) {
+    
+    for (i=0; i<out_size; i++) {
       // Nullify \n and \r characters
       p = (char *)(out_buf + i);
       if (*p == '\n' || *p == '\r') {
@@ -132,7 +132,7 @@ static int cb_check_result(void *record, size_t size, void *data)
     * Our validation is: check that the one of the output lines
     * in the output record.
     */
-    for (i = 0; i<out->lines_c; i++) {
+    for (i=0; i<out->lines_c; i++) {
       check = strstr(record, out->lines[i]);
       if (check != NULL) {
           result->nMatched++;
