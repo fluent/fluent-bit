@@ -143,7 +143,7 @@ static void test_flb_get_s3_key_invalid_key_length()
     char tmp[1024] = "";
     flb_sds_t s3_key_format = NULL;
 
-    for (i = 0; i <= 975; i++){
+    for (i=0; i <= 975; i++){
         tmp[i] = 'a';
     }
     snprintf(buf, sizeof(buf), "%s%s", S3_KEY_FORMAT_SPECIAL_CHARCATERS_TAG, tmp);
