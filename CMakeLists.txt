@@ -253,6 +253,10 @@ if(FLB_HTTP_CLIENT_DEBUG)
   FLB_DEFINITION(FLB_HAVE_HTTP_CLIENT_DEBUG)
 endif()
 
+if (FLB_TESTS_OSSFUZZ)
+  FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
+endif()
+
 # Set Fluent Bit dependency libraries path
 include(cmake/libraries.cmake)
 
