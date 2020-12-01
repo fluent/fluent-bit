@@ -33,7 +33,7 @@ static inline void flb_hash_entry_free(struct flb_hash *ht,
     entry->table->count--;
     ht->total_count--;
     flb_free(entry->key);
-    if (entry->val) {
+    if (entry->val && entry->val_size > 0) {
         flb_free(entry->val);
     }
     flb_free(entry);
@@ -76,6 +76,40 @@ struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
 
     return ht;
 }
+
+int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
+                     void *ptr)
+{
+    int id;
+    uint64_t hash;
+    struct mk_list *head;
+    struct flb_hash_entry *entry = NULL;
+    struct flb_hash_table *table;
+
+    /* Generate hash number */
+    hash = XXH3_64bits(key, key_len);
+    id = (hash % ht->size);
+
+    /* Link the new entry in our table at the end of the list */
+    table = &ht->table[id];
+
+    mk_list_foreach(head, &table->chains) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head);
+        if (strncmp(entry->key, key, key_len) == 0 && entry->val == ptr) {
+            break;
+        }
+        entry = NULL;
+    }
+
+    if (!entry) {
+        return -1;
+    }
+
+    /* delete the entry */
+    flb_hash_entry_free(ht, entry);
+    return 0;
+}
+
 
 void flb_hash_destroy(struct flb_hash *ht)
 {
@@ -246,11 +280,7 @@ int flb_hash_add(struct flb_hash *ht,
     int id;
     int ret;
     uint64_t hash;
-    char *ptr;
-    struct mk_list *tmp;
-    struct mk_list *head;
     struct flb_hash_entry *entry;
-    struct flb_hash_entry *old;
     struct flb_hash_table *table;
 
     if (!key || key_len <= 0) {

@@ -76,4 +76,7 @@ void *flb_hash_get_ptr(struct flb_hash *ht, const char *key, int key_len);
 
 int flb_hash_del(struct flb_hash *ht, const char *key);
 
+int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
+                     void *ptr);
+
 #endif
