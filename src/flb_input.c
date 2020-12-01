@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_hash.h>
 
 struct flb_libco_in_params libco_in_param;
 
@@ -140,6 +141,13 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         /* Get an ID */
         id =  instance_id(plugin, config);
+
+        /* Index for Chunks (hash table) */
+        instance->ht_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        if (!instance->ht_chunks) {
+            flb_free(instance);
+            return NULL;
+        }
 
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
@@ -392,8 +400,14 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_config_map_destroy(ins->config_map);
     }
 
+    /* hash table for chunks */
+    if (ins->ht_chunks) {
+        flb_hash_destroy(ins->ht_chunks);
+    }
+
     /* Unlink and release */
     mk_list_del(&ins->_head);
+
     flb_free(ins);
 }
 
