@@ -57,7 +57,7 @@ static int ht_add(struct flb_hash *ht, char *key, char *val)
   int idn;
   int klen;
   int vlen;
-  const char *out_buf;
+  char *out_buf;
   size_t out_size;
 
   klen = strlen(key);
@@ -68,7 +68,7 @@ static int ht_add(struct flb_hash *ht, char *key, char *val)
   TEST_CHECK(id >=0);
 
   /* Retrieve the value of the recently added key */
-  idn = flb_hash_get(ht, key, klen, &out_buf, &out_size);
+  idn = flb_hash_get(ht, key, klen, (void *) &out_buf, &out_size);
   TEST_CHECK(idn == id);
   TEST_CHECK(strcmp(out_buf, val) == 0);
 
@@ -97,10 +97,10 @@ void test_single()
     ret = ht_add(ht, "key", "value");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key", 3, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key", 3, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "NOT", 3, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "NOT", 3, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
     flb_hash_destroy(ht);
@@ -232,10 +232,10 @@ void test_random_eviction()
     ret = ht_add(ht, "key2", "value2");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
     flb_hash_destroy(ht);
@@ -257,25 +257,25 @@ void test_less_used_eviction()
     ret = ht_add(ht, "key2", "value2");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
     ret = ht_add(ht, "key3", "value3");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key3", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key3", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
     flb_hash_destroy(ht);
@@ -297,25 +297,25 @@ void test_older_eviction()
     ret = ht_add(ht, "key1", "value1");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
     ret = ht_add(ht, "key3", "value3");
     TEST_CHECK(ret != -1);
 
-    ret = flb_hash_get(ht, "key3", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key3", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
-    ret = flb_hash_get(ht, "key2", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret == -1);
 
-    ret = flb_hash_get(ht, "key1", 4, &out_buf, &out_size);
+    ret = flb_hash_get(ht, "key1", 4, (void *) &out_buf, &out_size);
     TEST_CHECK(ret >= 0);
 
     flb_hash_destroy(ht);
