@@ -321,6 +321,36 @@ void test_older_eviction()
     flb_hash_destroy(ht);
 }
 
+void test_pointer()
+{
+    int ret;
+    const char *out_buf;
+    size_t out_size;
+    struct flb_hash *ht;
+
+    char *val1 = "val1";
+    char *val2 = "val2";
+
+    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+    TEST_CHECK(ht != NULL);
+
+    ret = flb_hash_add(ht, "key1", 4, (void *) val1, 0);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_add(ht, "key2", 4, (void *) val2, 0);
+    TEST_CHECK(ret >= 0);
+
+    ret = flb_hash_get(ht, "key2", 4, (void *) &out_buf, &out_size);
+    TEST_CHECK(ret >= 0);
+    TEST_CHECK((void *) out_buf == (void *) val2);
+
+    ret = flb_hash_del_ptr(ht, "key2", 4, (void *) out_buf);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(ht->total_count == 1);
+    flb_hash_destroy(ht);
+}
+
 TEST_LIST = {
     { "zero_size", test_create_zero },
     { "single",    test_single },
@@ -331,5 +361,6 @@ TEST_LIST = {
     { "random_eviction", test_random_eviction },
     { "less_used_eviction", test_less_used_eviction },
     { "older_eviction", test_older_eviction },
+    { "pointer", test_pointer },
     { 0 }
 };
