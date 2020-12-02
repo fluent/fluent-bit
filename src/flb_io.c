@@ -211,11 +211,7 @@ static int net_io_connect_async(struct flb_upstream *u,
 
         /* Check the connection status */
         if (mask & MK_EVENT_WRITE) {
-            ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &len);
-            if (ret == -1) {
-                flb_error("[io] could not validate socket status");
-                return -1;
-            }
+            error = flb_socket_error(u_conn->fd);
 
             /* Check the exception */
             if (error != 0) {
