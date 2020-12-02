@@ -18,28 +18,25 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_SOCKET_H
-#define FLB_SOCKET_H
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_socket.h>
 
-#include <fluent-bit/flb_compat.h>
+int flb_socket_error(int fd)
+{
+    int ret;
+    int error = 0;
+    socklen_t slen = sizeof(error);
 
-#ifdef _WIN32
-#include <event.h>
-#define flb_sockfd_t         evutil_socket_t
-#define flb_socket_close(fd) evutil_closesocket(fd)
-#define flb_socket_error(fd) evutil_socket_geterror(fd)
-#define FLB_EINPROGRESS(e)   ((e) == WSAEWOULDBLOCK)
-#define FLB_WOULDBLOCK()     (WSAGetLastError() == WSAEWOULDBLOCK)
-#else
-#include <sys/types.h>
-#include <sys/socket.h>
-#define flb_sockfd_t         int
-#define flb_socket_close(fd) close(fd)
-#define FLB_EINPROGRESS(e)   ((e) == EINTR || (e) == EINPROGRESS)
-#define FLB_WOULDBLOCK()     (errno == EAGAIN || errno == EWOULDBLOCK)
+    ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &slen);
+    if (ret == -1) {
+        flb_error("[socket] could not validate socket status for #i", fd);
+        return -1;
+    }
 
-int flb_socket_error(int fd);
+    if (error != 0) {
+        return error;
+    }
 
-#endif
-
-#endif
+    return 0;
+}
