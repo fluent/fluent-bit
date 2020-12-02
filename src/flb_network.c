@@ -309,7 +309,6 @@ static int net_connect_async(int fd,
     uint32_t mask;
     char so_error_buf[256];
     char *str;
-    socklen_t len = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
     /* connect(2) */
@@ -367,11 +366,7 @@ static int net_connect_async(int fd,
 
     /* Check the connection status */
     if (mask & MK_EVENT_WRITE) {
-        ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &len);
-        if (ret == -1) {
-            flb_error("[io] could not validate socket status");
-            return -1;
-        }
+        error = flb_socket_error(u_conn->fd);
 
         /* Check the exception */
         if (error != 0) {
