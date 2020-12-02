@@ -502,12 +502,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 
             /* Check the connection status */
             if (mask & MK_EVENT_WRITE) {
-                ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &slen);
-                if (ret == -1) {
-                    flb_error("[io] could not validate socket status");
-                    return -1;
-                }
-
+                error = flb_socket_error(u_conn->fd);
                 if (error != 0) {
                     /* Connection is broken, not much to do here */
                     strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
