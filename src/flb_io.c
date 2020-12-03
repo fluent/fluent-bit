@@ -70,6 +70,7 @@ static int net_io_connect_sync(struct flb_upstream *u,
 {
     int ret;
     int err;
+    int socket_errno;
     int restore_sync = FLB_FALSE;
     fd_set wait_set;
     struct timeval timeout;
@@ -91,8 +92,9 @@ static int net_io_connect_sync(struct flb_upstream *u,
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
+        socket_errno = errno;
         err = flb_socket_error(u_conn->fd);
-        if (!FLB_EINPROGRESS(err)) {
+        if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
             flb_error("[io] connection #%i failed to: %s:%i",
                       u_conn->fd, u->tcp_host, u->tcp_port);
             goto exit_error;
@@ -155,9 +157,9 @@ static int net_io_connect_async(struct flb_upstream *u,
     int ret;
     int err;
     int error = 0;
+    int socket_errno;
     uint32_t mask;
     char so_error_buf[256];
-    socklen_t len = sizeof(error);
 
     /* connect(2) */
     ret = flb_net_tcp_fd_connect(u_conn->fd, u->tcp_host, u->tcp_port);
@@ -167,8 +169,9 @@ static int net_io_connect_async(struct flb_upstream *u,
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
+        socket_errno = errno;
         err = flb_socket_error(u_conn->fd);
-        if (!FLB_EINPROGRESS(err) && err != 0) {
+        if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
             flb_error("[io] connection #%i failed to: %s:%i",
                       u_conn->fd, u->tcp_host, u->tcp_port);
             return -1;
@@ -440,7 +443,6 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     ssize_t bytes;
     size_t total = 0;
     size_t to_send;
-    socklen_t slen = sizeof(error);
     char so_error_buf[256];
     struct flb_upstream *u = u_conn->u;
 
