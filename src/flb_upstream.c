@@ -407,7 +407,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
         conn->net_error = -1;
 
         err = flb_socket_error(conn->fd);
-        if (!FLB_EINPROGRESS(err) && err != 0) {
+        if (err != 0) {
             flb_debug("[upstream] KA connection #%i is in a failed state "
                       "to: %s:%i, cleaning up",
                       conn->fd, u->tcp_host, u->tcp_port);
