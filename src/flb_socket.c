@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_socket.h>
 
+#ifndef _WIN32
+
 int flb_socket_error(int fd)
 {
     int ret;
@@ -40,3 +42,5 @@ int flb_socket_error(int fd)
 
     return 0;
 }
+
+#endif
