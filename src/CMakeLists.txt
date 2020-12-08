@@ -260,7 +260,7 @@ set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
   jsmn
-  msgpackc-static
+  msgpack-c-static
   mpack-static
   chunkio-static
   miniz
