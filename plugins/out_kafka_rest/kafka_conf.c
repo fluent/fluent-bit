@@ -35,6 +35,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
     char *endptr;
     struct flb_upstream *upstream;
     struct flb_kafka_rest *ctx;
+    int ret;
 
     /* Allocate context */
     ctx = flb_calloc(1, sizeof(struct flb_kafka_rest));
@@ -43,6 +44,12 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Get network configuration */
     flb_output_net_default("127.0.0.1", 8082, ins);
@@ -71,6 +78,8 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->u = upstream;
+
+    flb_output_upstream_set(ctx->u, ins);
 
     /* HTTP Auth */
     tmp = flb_output_get_property("http_user", ins);
@@ -163,7 +172,14 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
     }
 
     /* Set partition based on topic */
-    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/topics/%s", ctx->topic);
+    tmp = flb_output_get_property("url_path", ins);
+    if (tmp) {
+        ctx->url_path = flb_strdup(tmp);
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/topics/%s", ctx->url_path, ctx->topic);
+    } else {
+        ctx->url_path = NULL;
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/topics/%s", ctx->topic);
+    }
 
     /* Kafka: message key */
     tmp = flb_output_get_property("message_key", ins);
@@ -187,6 +203,10 @@ int flb_kr_conf_destroy(struct flb_kafka_rest *ctx)
 
     flb_free(ctx->time_key);
     flb_free(ctx->time_key_format);
+
+    if (ctx->url_path) {
+        flb_free(ctx->url_path);
+    }
 
     if (ctx->include_tag_key) {
         flb_free(ctx->tag_key);
