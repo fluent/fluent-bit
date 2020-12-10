@@ -115,7 +115,6 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
  */
 static void flb_interim_parser_destroy(struct flb_parser *parser)
 {
-    int i = 0;
     if (parser->type == FLB_PARSER_REGEX) {
         flb_regex_destroy(parser->regex);
         flb_free(parser->p_regex);
