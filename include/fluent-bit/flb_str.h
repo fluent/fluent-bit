@@ -58,17 +58,4 @@ static inline char *flb_strndup(const char *s, size_t n)
     return str;
 }
 
-static inline const char *flb_strnchr(const char *s, int c, size_t n)
-{
-    for (size_t i = 0; i < n; i++) {
-        if (s[i] == '\0') {
-            return NULL;
-        }
-        if (s[i] == c) {
-            return &s[i];
-        }
-    }
-    return NULL;
-}
-
 #endif
