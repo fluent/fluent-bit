@@ -241,8 +241,13 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
+#ifdef FLB_SYSTEM_WINDOWS
+        socket_errno = flb_socket_error(fd);
+        err = -1;
+#else
         socket_errno = errno;
         err = flb_socket_error(fd);
+#endif
         if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
             flb_error("[net] connection #%i failed to: %s:%i",
                       fd, host, port);
@@ -325,8 +330,13 @@ static int net_connect_async(int fd,
      * socket status, getting a EINPROGRESS is expected, but any other case
      * means a failure.
      */
+#ifdef FLB_SYSTEM_WINDOWS
+    socket_errno = flb_socket_error(fd);
+    err = -1;
+#else
     socket_errno = errno;
     err = flb_socket_error(fd);
+#endif
     if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
         flb_error("[net] connection #%i failed to: %s:%i",
                   fd, host, port);
