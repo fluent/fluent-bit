@@ -202,6 +202,8 @@ struct flb_config {
     void *sched;
 
     struct flb_task_map tasks_map[2048];
+
+    int dry_run;
 };
 
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
