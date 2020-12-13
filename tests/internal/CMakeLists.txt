@@ -132,7 +132,7 @@ foreach(source_file ${UNIT_TESTS_FILES})
     target_link_libraries(${source_file_we} fluent-bit-static)
 
     if(FLB_AVRO_ENCODER)
-      target_link_libraries(${source_file_we} avro-static jansson-static)
+      target_link_libraries(${source_file_we} avro-static jansson)
     endif()
 
     add_test(NAME ${source_file_we}
