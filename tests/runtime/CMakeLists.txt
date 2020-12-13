@@ -103,7 +103,7 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${SYSTEMD_LIB}
       )
       if(FLB_AVRO_ENCODER)
-        target_link_libraries(${source_file_we} avro-static jansson-static)
+        target_link_libraries(${source_file_we} avro-static jansson)
       endif()
     add_test(NAME ${source_file_we}
             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
