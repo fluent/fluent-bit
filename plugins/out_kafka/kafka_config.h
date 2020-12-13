@@ -29,25 +29,16 @@
 
 #include "rdkafka.h"
 
-<<<<<<< HEAD
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1
 #define FLB_KAFKA_FMT_GELF            2
+#ifdef FLB_HAVE_AVRO_ENCODER
+#define FLB_KAFKA_FMT_AVRO            3
+#endif
 #define FLB_KAFKA_BROKERS             "127.0.0.1"
 #define FLB_KAFKA_TOPIC               "fluent-bit"
 #define FLB_KAFKA_TS_KEY              "@timestamp"
 #define FLB_KAFKA_QUEUE_FULL_RETRIES  10
-=======
-#define FLB_KAFKA_FMT_JSON  0
-#define FLB_KAFKA_FMT_MSGP  1
-#define FLB_KAFKA_FMT_GELF  2
-#ifdef FLB_HAVE_AVRO_ENCODER
-#define FLB_KAFKA_FMT_AVRO  3
-#endif
-#define FLB_KAFKA_BROKERS   "127.0.0.1"
-#define FLB_KAFKA_TOPIC     "fluent-bit"
-#define FLB_KAFKA_TS_KEY    "@timestamp"
->>>>>>> c770424a... out_kafka: adds avro support into out_kafka without tests
 
 /* rdkafka log levels based on syslog(3) */
 #define FLB_KAFKA_LOG_EMERG   0
@@ -121,7 +112,7 @@ struct flb_kafka {
 #ifdef FLB_HAVE_AVRO_ENCODER
     // avro serialization requires a schema
     // the schema is stored in json in avro_schema_str
-    // 
+    //
     // optionally the schema ID can be stashed in the avro data stream
     // the schema ID is stored in avro_schema_id
     // this is common at this time with large kafka installations and schema registries
