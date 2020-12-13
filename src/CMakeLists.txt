@@ -23,6 +23,7 @@ set(src
   flb_output.c
   flb_config.c
   flb_config_map.c
+  flb_socket.c
   flb_network.c
   flb_utils.c
   flb_slist.c
@@ -274,10 +275,11 @@ set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
   jsmn
-  msgpackc-static
+  msgpack-c-static
   mpack-static
   chunkio-static
   miniz
+  xxhash
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}

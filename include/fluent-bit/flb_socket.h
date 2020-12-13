@@ -35,9 +35,11 @@
 #include <sys/socket.h>
 #define flb_sockfd_t         int
 #define flb_socket_close(fd) close(fd)
-#define flb_socket_error(fd) errno
 #define FLB_EINPROGRESS(e)   ((e) == EINTR || (e) == EINPROGRESS)
 #define FLB_WOULDBLOCK()     (errno == EAGAIN || errno == EWOULDBLOCK)
+
+int flb_socket_error(int fd);
+
 #endif
 
 #endif

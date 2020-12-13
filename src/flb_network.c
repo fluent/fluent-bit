@@ -226,6 +226,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
 {
     int ret;
     int err;
+    int socket_errno;
     fd_set wait_set;
     struct timeval timeout;
 
@@ -240,8 +241,14 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
+#ifdef FLB_SYSTEM_WINDOWS
+        socket_errno = flb_socket_error(fd);
+        err = -1;
+#else
+        socket_errno = errno;
         err = flb_socket_error(fd);
-        if (!FLB_EINPROGRESS(err)) {
+#endif
+        if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
             flb_error("[net] connection #%i failed to: %s:%i",
                       fd, host, port);
             goto exit_error;
@@ -306,10 +313,10 @@ static int net_connect_async(int fd,
     int ret;
     int err;
     int error = 0;
+    int socket_errno;
     uint32_t mask;
     char so_error_buf[256];
     char *str;
-    socklen_t len = sizeof(error);
     struct flb_upstream *u = u_conn->u;
 
     /* connect(2) */
@@ -323,8 +330,14 @@ static int net_connect_async(int fd,
      * socket status, getting a EINPROGRESS is expected, but any other case
      * means a failure.
      */
+#ifdef FLB_SYSTEM_WINDOWS
+    socket_errno = flb_socket_error(fd);
+    err = -1;
+#else
+    socket_errno = errno;
     err = flb_socket_error(fd);
-    if (!FLB_EINPROGRESS(err) && err != 0) {
+#endif
+    if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
         flb_error("[net] connection #%i failed to: %s:%i",
                   fd, host, port);
         return -1;
@@ -367,11 +380,7 @@ static int net_connect_async(int fd,
 
     /* Check the connection status */
     if (mask & MK_EVENT_WRITE) {
-        ret = getsockopt(u_conn->fd, SOL_SOCKET, SO_ERROR, &error, &len);
-        if (ret == -1) {
-            flb_error("[io] could not validate socket status");
-            return -1;
-        }
+        error = flb_socket_error(u_conn->fd);
 
         /* Check the exception */
         if (error != 0) {

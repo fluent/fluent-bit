@@ -350,8 +350,8 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     /* Get the the tag reference (chunk metadata) */
     ret = flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
     if (ret == -1) {
-	flb_error("[input chunk] error retrieving tag of input chunk");
-	return ic;
+        flb_error("[input chunk] error retrieving tag of input chunk");
+        return ic;
     }
 
     chunk_routes_mask = flb_router_get_routes_mask_by_tag(tag_buf, tag_len, in);
@@ -453,14 +453,21 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         cio_chunk_down(chunk);
     }
 
+    flb_hash_add(in->ht_chunks, tag, tag_len, ic, 0);
     return ic;
 }
 
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 {
+    int tag_len;
     ssize_t bytes;
+    const char *tag_buf;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
+
+    if (flb_input_chunk_is_up(ic) == FLB_FALSE) {
+        flb_input_chunk_set_up(ic);
+    }
 
     mk_list_foreach(head, &ic->in->config->outputs) {
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
@@ -475,6 +482,19 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
     }
 
+    /* Retrieve Tag */
+    flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
+
+    if (del == CIO_TRUE) {
+        /*
+         * "TRY" to delete any reference to this chunk ('ic') from the hash
+         * table. Note that maybe the value is not longer available in the
+         * entries if it was replaced: note that we always keep the last
+         * chunk for a specific Tag.
+         */
+        flb_hash_del_ptr(ic->in->ht_chunks, tag_buf, tag_len, (void *) ic);
+    }
+
     cio_chunk_close(ic->chunk, del);
     mk_list_del(&ic->_head);
     flb_free(ic);
@@ -487,28 +507,23 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
                                                struct flb_input_instance *in,
                                                size_t chunk_size)
 {
+    int id;
+    int ret;
     int new_chunk = FLB_FALSE;
-    struct mk_list *head;
+    size_t out_size;
     struct flb_input_chunk *ic = NULL;
 
-    /* Try to find a current chunk context to append the data */
-    mk_list_foreach_r(head, &in->chunks) {
-        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+    id = flb_hash_get(in->ht_chunks, tag, tag_len, (void *) &ic, &out_size);
+    if (id >= 0) {
         if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk)) {
             ic = NULL;
-            continue;
         }
-
-        if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
-            ic = NULL;
-            continue;
+        else if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
+            ret = cio_chunk_up_force(ic->chunk);
+            if (ret == -1) {
+                ic = NULL;
+            }
         }
-
-        if (cio_meta_cmp(ic->chunk, (char *) tag, tag_len) != 0) {
-            ic = NULL;
-            continue;
-        }
-        break;
     }
 
     /* No chunk was found, we need to create a new one */

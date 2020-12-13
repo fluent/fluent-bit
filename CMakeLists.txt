@@ -253,6 +253,10 @@ if(FLB_HTTP_CLIENT_DEBUG)
   FLB_DEFINITION(FLB_HAVE_HTTP_CLIENT_DEBUG)
 endif()
 
+if (FLB_TESTS_OSSFUZZ)
+  FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
+endif()
+
 # Set Fluent Bit dependency libraries path
 include(cmake/libraries.cmake)
 
@@ -380,6 +384,12 @@ endif()
 if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
+
+# xxHash
+FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
+set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
+set(XXHASH_BUILD_XXHSUM OFF)
+add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)

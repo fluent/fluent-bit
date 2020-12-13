@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_parser_decoder.h>
@@ -124,8 +125,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
     }
     MOVE_INPUT(1);
+    /* print our config struct */
+    flb_utils_print_setup(fuzz_config);
+
+    /* now call into the parser */
     fuzz_parser = flb_parser_create("fuzzer", format, pregex,
-            time_fmt, time_key, time_offset, time_keep,
+            time_fmt, time_key, time_offset, time_keep, 0,
             types, types_len, list, fuzz_config);
 
     /* Second step is to use the random parser to parse random input */
