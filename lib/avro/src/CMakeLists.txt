@@ -108,6 +108,13 @@ install(DIRECTORY
         DESTINATION include
         FILES_MATCHING PATTERN "*.h")
 
+# added by mcqueen to get the headers into the fluent-bit build root 07OCT2020
+file (COPY ${CMAKE_CURRENT_SOURCE_DIR}/avro.h
+           DESTINATION ${CMAKE_BINARY_DIR}/include/)
+file (COPY ${CMAKE_CURRENT_SOURCE_DIR}/avro
+           DESTINATION ${CMAKE_BINARY_DIR}/include/
+           FILES_MATCHING PATTERN "*.h")
+
 include(GNUInstallDirs)
 
 if (WIN32)

@@ -178,6 +178,7 @@ endif (LZMA_FOUND)
 set(CODEC_LIBRARIES ${ZLIB_LIBRARIES} ${LZMA_LIBRARIES} ${SNAPPY_LIBRARIES})
 set(CODEC_PKG "@ZLIB_PKG@ @LZMA_PKG@ @SNAPPY_PKG@")
 
+# commented out by mcqueen because jansson is now embedded here 07OCT2020
 # Jansson JSON library
 #pkg_check_modules(JANSSON jansson>=2.3)
 #if (JANSSON_FOUND)
@@ -187,6 +188,8 @@ set(CODEC_PKG "@ZLIB_PKG@ @LZMA_PKG@ @SNAPPY_PKG@")
 #else (JANSSON_FOUND)
     #message(FATAL_ERROR "libjansson >=2.3 not found")
 #endif (JANSSON_FOUND)
+# added by mcqueen to get the headers into the fluent-bit build root 07OCT2020
+include_directories(${CMAKE_BINARY_DIR}/lib/jansson/include/)
 
 add_subdirectory(src)
 #add_subdirectory(examples)
