@@ -266,7 +266,7 @@ if(FLB_AVRO_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   avro-static
-  jansson-static
+  jansson
   )
 endif()
 
