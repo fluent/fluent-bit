@@ -85,7 +85,7 @@ source_group(Avro FILES ${AVRO_SRC})
 string(REPLACE ":" "." LIBAVRO_DOT_VERSION ${LIBAVRO_VERSION})
 
 add_library(avro-static STATIC ${AVRO_SRC})
-target_link_libraries(avro-static jansson-static)
+target_link_libraries(avro-static jansson)
 #find_library(JANSSON_PATH NAMES jansson PATHS ${CMAKE_SOURCE_DIR}/lib)
 #target_link_libraries(avro-static ${JANSSON_LIBRARIES} ${CODEC_LIBRARIES} ${THREADS_LIBRARIES} ${JANSSON_PATH})
 set_target_properties(avro-static PROPERTIES OUTPUT_NAME avro-static)

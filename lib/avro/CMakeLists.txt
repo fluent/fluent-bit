@@ -197,7 +197,7 @@ add_subdirectory(src)
 #add_subdirectory(docs)
 
 #added mcqueen 8/16/2020 for fluent-bit compatability
-add_dependencies(avro-static jansson-static)
+add_dependencies(avro-static jansson)
 
 add_custom_target(pretty
     "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_pretty.cmake")
