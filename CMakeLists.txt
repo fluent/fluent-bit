@@ -370,14 +370,14 @@ add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 # Avro
 if(FLB_AVRO_ENCODER)
   # jansson
-  set(JANSSON_BUILD_DOCS Off)
-  set(JANSSON_EXAMPLES Off)
-  set(JANSSON_WITHOUT_TESTS  On)
-  set(JANSSON_BUILD_SHARED_LIBS  Off)
+  option(JANSSON_BUILD_DOCS         OFF)
+  option(JANSSON_EXAMPLES           OFF)
+  option(JANSSON_WITHOUT_TESTS       ON)
+  option(JANSSON_BUILD_SHARED_LIBS  OFF)
   add_subdirectory(${FLB_PATH_LIB_JANSSON})
 
   #avro
-  add_subdirectory(${FLB_PATH_LIB_AVRO})
+  add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
 endif()
 
 # tutf8e
