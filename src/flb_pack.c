@@ -667,7 +667,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     flb_sds_t out_buf;
     flb_sds_t tmp_buf;
 
-    out_size = in_size * 1.5;
+    out_size = in_size * 3 / 2;
     out_buf = flb_sds_create_size(out_size);
     if (!out_buf) {
         flb_errno();
@@ -783,7 +783,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
-        out_buf = flb_sds_create_size(bytes * 1.25);
+        out_buf = flb_sds_create_size(bytes + bytes / 4);
         if (!out_buf) {
             flb_errno();
             return NULL;
