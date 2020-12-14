@@ -52,11 +52,12 @@ set(src
   flb_fstore.c
   )
 
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
-set(src
-  ${src}
-  flb_dlfcn_win32.c
-  )
+if(FLB_SYSTEM_WINDOWS)
+  set(src
+    ${src}
+    flb_dlfcn_win32.c
+    )
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 endif()
 
 if(FLB_PARSER)

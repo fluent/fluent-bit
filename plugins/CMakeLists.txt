@@ -148,6 +148,7 @@ endif()
 
 if (FLB_SYSTEM_WINDOWS)
   REGISTER_IN_PLUGIN("in_winlog")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 else()
   REGISTER_IN_PLUGIN("in_serial")
 endif()
