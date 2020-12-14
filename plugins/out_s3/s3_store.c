@@ -261,7 +261,13 @@ int s3_store_init(struct flb_s3 *ctx)
      */
     now = time(NULL);
     tm = localtime(&now);
+
+#ifdef FLB_SYSTEM_WINDOWS
+    /* Windows does not allow ':' in directory names */
+    strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H-%M-%S", tm);
+#else
     strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H:%M:%S", tm);
+#endif
 
     /* Create the stream */
     fs_stream = flb_fstore_stream_create(ctx->fs, tmp);
