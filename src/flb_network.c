@@ -275,7 +275,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
             /* Timeout */
             flb_error("[net] connection #%i timeout after %i seconds to: "
                       "%s:%i",
-                      fd, timeout, host, port);
+                      fd, connect_timeout, host, port);
             goto exit_error;
         }
         else if (ret < 0) {
