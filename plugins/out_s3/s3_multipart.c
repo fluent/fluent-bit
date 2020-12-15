@@ -138,7 +138,7 @@ static void parse_etags(struct multipart_upload *m_upload, char *data)
             flb_debug("[s3 restart parser] Did not find tab separator in line %s", start);
             return;
         }
-        end = '\0';
+        *end = '\0';
         part_num = atoi(start);
         if (part_num <= 0) {
             flb_debug("[s3 restart parser] Could not parse part_number from %s", start);
