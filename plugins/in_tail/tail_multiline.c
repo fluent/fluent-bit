@@ -545,8 +545,6 @@ int flb_tail_mult_pending_flush(struct flb_input_instance *ins,
                                 struct flb_config *config, void *context)
 {
     time_t now;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     struct mk_list *head;
     struct flb_tail_file *file;
     struct flb_tail_config *ctx = context;
