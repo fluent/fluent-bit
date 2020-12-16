@@ -306,7 +306,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
      * (no oauth2 service)
      */
     ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE,
-                                     io_flags, &ins->tls);
+                                     io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
