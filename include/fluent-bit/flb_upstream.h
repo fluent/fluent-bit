@@ -87,7 +87,6 @@ struct flb_upstream {
     struct mk_list destroy_queue;
 
 #ifdef FLB_HAVE_TLS
-    /* context with mbedTLS data to handle certificates and keys */
     struct flb_tls *tls;
 #endif
 
@@ -96,10 +95,10 @@ struct flb_upstream {
 
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          const char *host, int port, int flags,
-                                         void *tls);
+                                         struct flb_tls *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
                                              const char *url, int flags,
-                                             void *tls);
+                                             struct flb_tls *tls);
 
 int flb_upstream_destroy(struct flb_upstream *u);
 
