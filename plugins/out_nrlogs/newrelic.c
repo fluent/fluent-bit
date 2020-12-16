@@ -307,7 +307,7 @@ static struct flb_newrelic *newrelic_config_create(struct flb_output_instance *i
     upstream = flb_upstream_create(config,
                                    ctx->nr_host,
                                    ctx->nr_port,
-                                   FLB_IO_TLS, (void *) &ins->tls);
+                                   FLB_IO_TLS, ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return NULL;
