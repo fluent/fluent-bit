@@ -49,9 +49,9 @@ struct flb_elasticsearch {
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
-    struct flb_tls aws_tls;
+    struct flb_tls *aws_tls;
     /* one for the standard chain provider, one for sts assume role */
-    struct flb_tls aws_sts_tls;
+    struct flb_tls *aws_sts_tls;
     char *aws_session_name;
 #endif
 
