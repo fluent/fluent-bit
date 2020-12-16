@@ -104,13 +104,13 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
-                                       io_flags, (void *)&ins->tls);
+                                       io_flags, ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,
                                        ins->host.name,
                                        ins->host.port,
-                                       io_flags, (void *)&ins->tls);
+                                       io_flags, ins->tls);
     }
 
     if (!upstream) {
