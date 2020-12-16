@@ -31,10 +31,6 @@
 
 #include <monkey/mk_core.h>
 
-#ifdef FLB_HAVE_TLS
-#include <fluent-bit/flb_io_tls.h>
-#endif
-
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"

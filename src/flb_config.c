@@ -35,7 +35,6 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_slist.h>
-#include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
