@@ -318,7 +318,7 @@ static struct flb_logdna *logdna_config_create(struct flb_output_instance *ins,
     upstream = flb_upstream_create(config,
                                    ctx->logdna_host,
                                    ctx->logdna_port,
-                                   FLB_IO_TLS, (void *) &ins->tls);
+                                   FLB_IO_TLS, ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return NULL;
