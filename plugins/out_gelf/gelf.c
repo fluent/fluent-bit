@@ -441,7 +441,7 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
         }
 
         ctx->u = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                             io_flags, (void *) &ins->tls);
+                                             io_flags, ins->tls);
         if (!(ctx->u)) {
             flb_free(ctx);
             return -1;
