@@ -206,22 +206,22 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     }
 
     /* Create TLS context */
-    ctx->tls.context = flb_tls_context_new(FLB_TRUE,  /* verify */
-                                           -1,        /* debug */
-                                           NULL,      /* vhost */
-                                           NULL,      /* ca_path */
-                                           NULL,      /* ca_file */
-                                           NULL,      /* crt_file */
-                                           NULL,      /* key_file */
-                                           NULL);     /* key_passwd */
-    if (!ctx->tls.context) {
+    ctx->tls = flb_tls_create(FLB_TRUE,  /* verify */
+                              -1,        /* debug */
+                              NULL,      /* vhost */
+                              NULL,      /* ca_path */
+                              NULL,      /* ca_file */
+                              NULL,      /* crt_file */
+                              NULL,      /* key_file */
+                              NULL);     /* key_passwd */
+    if (!ctx->tls) {
         flb_error("[oauth2] error initializing TLS context");
         goto error;
     }
 
     /* Create Upstream context */
     ctx->u = flb_upstream_create_url(config, auth_url,
-                                     FLB_IO_TLS, &ctx->tls);
+                                     FLB_IO_TLS, ctx->tls);
     if (!ctx->u) {
         flb_error("[oauth2] error creating upstream context");
         goto error;
@@ -287,8 +287,6 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 
 void flb_oauth2_destroy(struct flb_oauth2 *ctx)
 {
-    flb_tls_context_destroy(ctx->tls.context);
-
     flb_sds_destroy(ctx->auth_url);
     flb_sds_destroy(ctx->payload);
 
@@ -300,6 +298,8 @@ void flb_oauth2_destroy(struct flb_oauth2 *ctx)
     flb_sds_destroy(ctx->token_type);
 
     flb_upstream_destroy(ctx->u);
+    flb_tls_destroy(ctx->tls);
+
     flb_free(ctx);
 }
 
