@@ -880,7 +880,7 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         }
 
         ctx->u = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                             io_flags, (void *) &ins->tls);
+                                             io_flags, ins->tls);
         if (!(ctx->u)) {
             flb_syslog_config_destroy(ctx);
             return -1;
