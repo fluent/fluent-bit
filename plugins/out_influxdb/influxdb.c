@@ -284,7 +284,7 @@ static char *influxdb_format(const char *tag, int tag_len,
                 influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
                 goto error;
             }
-        } 
+        }
         else {
             flb_plg_warn(ctx->ins, "skip send record, "
                          "since no record available "
@@ -419,7 +419,7 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
                                    ins->host.name,
                                    ins->host.port,
                                    io_flags,
-                                   &ins->tls);
+                                   ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return -1;
