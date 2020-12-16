@@ -168,7 +168,7 @@ static int cb_td_init(struct flb_output_instance *ins, struct flb_config *config
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   FLB_IO_TLS, (void *) &ins->tls);
+                                   FLB_IO_TLS, ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return -1;
