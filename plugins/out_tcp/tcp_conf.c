@@ -72,7 +72,7 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags, (void *) &ins->tls);
+                                   io_flags, ins->tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "could not create upstream context");
         flb_free(ctx);
