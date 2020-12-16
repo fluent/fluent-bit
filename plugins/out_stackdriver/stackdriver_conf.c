@@ -280,7 +280,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     else {
         ctx->autoformat_stackdriver_trace = FLB_FALSE;
     }
-    
+
     tmp = flb_output_get_property("trace_key", ins);
     if (tmp) {
         ctx->trace_key = flb_sds_create(tmp);
@@ -298,12 +298,12 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     if (flb_sds_cmp(ctx->resource, "k8s_container",
-                    flb_sds_len(ctx->resource)) == 0 || 
-        flb_sds_cmp(ctx->resource, "k8s_node", 
                     flb_sds_len(ctx->resource)) == 0 ||
-        flb_sds_cmp(ctx->resource, "k8s_pod", 
+        flb_sds_cmp(ctx->resource, "k8s_node",
+                    flb_sds_len(ctx->resource)) == 0 ||
+        flb_sds_cmp(ctx->resource, "k8s_pod",
                     flb_sds_len(ctx->resource)) == 0) {
-        
+
         ctx->k8s_resource_type = FLB_TRUE;
 
         tmp = flb_output_get_property("k8s_cluster_name", ins);
@@ -377,10 +377,6 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
 
-    if (ctx->o) {
-        flb_oauth2_destroy(ctx->o);
-    }
-
     if (ctx->metadata_server_auth) {
         flb_sds_destroy(ctx->zone);
         flb_sds_destroy(ctx->instance_id);
@@ -393,6 +389,11 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
+
+    if (ctx->o) {
+        flb_oauth2_destroy(ctx->o);
+    }
+
     flb_free(ctx);
 
     return 0;

@@ -857,9 +857,9 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
 
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
-                                     io_flags, &ins->tls);
+                                     io_flags, ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
-                                     FLB_IO_TCP, NULL);
+                                              FLB_IO_TCP, NULL);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
@@ -1121,7 +1121,7 @@ static int pack_json_payload(int insert_id_extracted,
         ctx->trace_key,
         ctx->log_name_key,
         stream
-        /* more special fields are required to be added, but, if this grows with more 
+        /* more special fields are required to be added, but, if this grows with more
            than a few records, it might need to be converted to flb_hash
          */
     };
@@ -1730,8 +1730,8 @@ static int stackdriver_format(struct flb_config *config,
 
             msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, new_trace, len);
-            flb_sds_destroy(trace); 
-        }               
+            flb_sds_destroy(trace);
+        }
 
         /* Add insertId field into the log entry */
         if (insert_id_extracted == FLB_TRUE) {
@@ -1797,7 +1797,7 @@ static int stackdriver_format(struct flb_config *config,
 
         if (log_name_extracted == FLB_FALSE) {
             new_log_name = newtag;
-        }  
+        }
         else {
             new_log_name = log_name;
         }
@@ -1807,7 +1807,7 @@ static int stackdriver_format(struct flb_config *config,
                        "projects/%s/logs/%s", ctx->project_id, new_log_name);
 
         if (log_name_extracted == FLB_TRUE) {
-            flb_sds_destroy(log_name); 
+            flb_sds_destroy(log_name);
         }
 
         msgpack_pack_str(&mp_pck, 7);
