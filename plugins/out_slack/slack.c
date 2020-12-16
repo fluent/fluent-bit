@@ -101,7 +101,7 @@ static int cb_slack_init(struct flb_output_instance *ins,
     ctx->u = flb_upstream_create(config,
                                  ctx->host,
                                  ctx->port,
-                                 FLB_IO_TLS, (void *) &ins->tls);
+                                 FLB_IO_TLS, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "error creating upstream context");
         goto error;
