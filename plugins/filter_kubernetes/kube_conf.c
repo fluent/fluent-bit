@@ -187,8 +187,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
 #ifdef FLB_HAVE_TLS
-    if (ctx->tls.context) {
-        flb_tls_context_destroy(ctx->tls.context);
+    if (ctx->tls) {
+        flb_tls_destroy(ctx->tls);
     }
 #endif
 

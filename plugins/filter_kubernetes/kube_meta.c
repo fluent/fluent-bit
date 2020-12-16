@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -941,13 +942,13 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
             ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
         }
-        ctx->tls.context = flb_tls_context_new(ctx->tls_verify,
-                                               ctx->tls_debug,
-                                               ctx->tls_vhost,
-                                               ctx->tls_ca_path,
-                                               ctx->tls_ca_file,
-                                               NULL, NULL, NULL);
-        if (!ctx->tls.context) {
+        ctx->tls = flb_tls_create(ctx->tls_verify,
+                                  ctx->tls_debug,
+                                  ctx->tls_vhost,
+                                  ctx->tls_ca_path,
+                                  ctx->tls_ca_file,
+                                  NULL, NULL, NULL);
+        if (!ctx->tls) {
             return -1;
         }
         io_type = FLB_IO_TLS;
