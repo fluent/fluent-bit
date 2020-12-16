@@ -138,8 +138,8 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
-        if (ins->tls.context) {
-            flb_tls_context_destroy(ins->tls.context);
+        if (ins->tls) {
+            flb_tls_destroy(ins->tls);
         }
     }
 #endif
@@ -359,7 +359,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
 
 #ifdef FLB_HAVE_TLS
-    instance->tls.context           = NULL;
+    instance->tls                   = NULL;
     instance->tls_debug             = -1;
     instance->tls_verify            = FLB_TRUE;
     instance->tls_vhost             = NULL;
@@ -697,15 +697,15 @@ int flb_output_init_all(struct flb_config *config)
 
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
-            ins->tls.context = flb_tls_context_new(ins->tls_verify,
-                                                   ins->tls_debug,
-                                                   ins->tls_vhost,
-                                                   ins->tls_ca_path,
-                                                   ins->tls_ca_file,
-                                                   ins->tls_crt_file,
-                                                   ins->tls_key_file,
-                                                   ins->tls_key_passwd);
-            if (!ins->tls.context) {
+            ins->tls = flb_tls_create(ins->tls_verify,
+                                      ins->tls_debug,
+                                      ins->tls_vhost,
+                                      ins->tls_ca_path,
+                                      ins->tls_ca_file,
+                                      ins->tls_crt_file,
+                                      ins->tls_key_file,
+                                      ins->tls_key_passwd);
+            if (!ins->tls) {
                 flb_error("[output %s] error initializing TLS context",
                           ins->name);
                 flb_output_instance_destroy(ins);

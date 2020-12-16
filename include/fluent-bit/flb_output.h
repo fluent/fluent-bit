@@ -43,6 +43,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -257,7 +258,7 @@ struct flb_output_instance {
     struct mk_list th_queue;
 
 #ifdef FLB_HAVE_TLS
-    struct flb_tls tls;
+    struct flb_tls *tls;
 #else
     void *tls;
 #endif
