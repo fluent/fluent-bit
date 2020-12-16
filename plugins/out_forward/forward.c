@@ -797,7 +797,7 @@ static int forward_config_simple(struct flb_forward *ctx,
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags, (void *) &ins->tls);
+                                   io_flags, ins->tls);
     if (!upstream) {
         flb_free(fc);
         flb_free(ctx);
