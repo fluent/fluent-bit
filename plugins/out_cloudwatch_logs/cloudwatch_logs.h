@@ -101,9 +101,9 @@ struct flb_cloudwatch {
      * - STS Assume role provider
      * - The CloudWatch Logs client for this plugin
      */
-    struct flb_tls cred_tls;
-    struct flb_tls sts_tls;
-    struct flb_tls client_tls;
+    struct flb_tls *cred_tls;
+    struct flb_tls *sts_tls;
+    struct flb_tls *client_tls;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     struct flb_aws_client *cw_client;
@@ -142,7 +142,7 @@ struct flb_cloudwatch {
     /* The namespace to use for the metric */
     flb_sds_t metric_namespace;
 
-    /* Metric dimensions is a list of lsits. If you have only one list of 
+    /* Metric dimensions is a list of lists. If you have only one list of
     dimensions, put the values as a comma seperated string. If you want to put
     list of lists, use the list as semicolon seperated strings. If your value
     is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]*/
