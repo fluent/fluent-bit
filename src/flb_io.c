@@ -52,9 +52,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
-#include <fluent-bit/flb_io_tls.h>
-#include <fluent-bit/flb_io_tls_rw.h>
-#include <fluent-bit/flb_tls.h>
+#include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_upstream.h>
 
@@ -107,7 +105,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
     if (u->flags & FLB_IO_TLS) {
-        ret = net_io_tls_handshake(u_conn, th);
+        ret = flb_tls_session_create(u->tls, u_conn, th);
         if (ret != 0) {
             flb_socket_close(fd);
             return -1;
@@ -116,7 +114,6 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 #endif
 
     flb_trace("[io] connection OK");
-
     return 0;
 }
 
@@ -180,7 +177,6 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     ssize_t bytes;
     size_t total = 0;
     size_t to_send;
-    socklen_t slen = sizeof(error);
     char so_error_buf[256];
     struct flb_upstream *u = u_conn->u;
 
@@ -365,10 +361,10 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_io_tls_net_write_async(th, u_conn, data, len, out_len);
+            ret = flb_tls_net_write_async(th, u_conn, data, len, out_len);
         }
         else {
-            ret = flb_io_tls_net_write(u_conn, data, len, out_len);
+            ret = flb_tls_net_write(u_conn, data, len, out_len);
         }
     }
 #endif
@@ -404,10 +400,10 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_io_tls_net_read_async(th, u_conn, buf, len);
+            ret = flb_tls_net_read_async(th, u_conn, buf, len);
         }
         else {
-            ret = flb_io_tls_net_read(u_conn, buf, len);
+            ret = flb_tls_net_read(u_conn, buf, len);
         }
     }
 #endif
