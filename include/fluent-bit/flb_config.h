@@ -51,6 +51,9 @@ struct flb_config {
     int grace;                /* Grace on shutdown              */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
 
+    int backoff_base;
+    int backoff_cap;
+
     int daemon;               /* Run as a daemon ?              */
     flb_pipefd_t shutdown_fd; /* Shutdown FD, 5 seconds         */
 
@@ -236,6 +239,8 @@ enum conf_type {
 
 #define FLB_CONF_STR_FLUSH        "Flush"
 #define FLB_CONF_STR_GRACE        "Grace"
+#define FLB_CONF_STR_BACKOFF_BASE "Backoff_Base"
+#define FLB_CONF_STR_BACKOFF_CAP  "Backoff_Cap"
 #define FLB_CONF_STR_DAEMON       "Daemon"
 #define FLB_CONF_STR_LOGFILE      "Log_File"
 #define FLB_CONF_STR_LOGLEVEL     "Log_Level"

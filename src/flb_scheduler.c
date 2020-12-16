@@ -266,8 +266,12 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->event.mask = MK_EVENT_EMPTY;
 
     /* Get suggested wait_time for this request */
-    seconds = backoff_full_jitter(FLB_SCHED_BASE, FLB_SCHED_CAP, tries);
-    seconds += 1;
+    if (config->backoff_base <= 0 || config->backoff_cap <= 0 || config->backoff_base > config->backoff_cap) {
+        flb_error("[sched] invalid backoff limits");
+        return -1;
+    }
+
+    seconds = backoff_full_jitter(config->backoff_base, config->backoff_cap, tries);
 
     /* Populare request */
     request->fd      = -1;

@@ -178,6 +178,8 @@ void flb_utils_print_setup(struct flb_config *config)
     flb_info(" flush time     | %f seconds", config->flush);
     flb_info(" grace          | %i seconds", config->grace);
     flb_info(" daemon         | %i", config->daemon);
+    flb_info(" backoff base   | %i seconds", config->backoff_base);
+    flb_info(" backoff cap    | %i seconds", config->backoff_cap);
 
     /* Inputs */
     flb_info("___________");
