@@ -101,10 +101,10 @@ struct flb_s3 {
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */
-    struct flb_tls provider_tls;
+    struct flb_tls *provider_tls;
     /* one for the standard chain provider, one for sts assume role */
-    struct flb_tls sts_provider_tls;
-    struct flb_tls client_tls;
+    struct flb_tls *sts_provider_tls;
+    struct flb_tls *client_tls;
 
     struct flb_aws_client *s3_client;
     int json_date_format;

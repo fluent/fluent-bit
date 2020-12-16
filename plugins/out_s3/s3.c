@@ -86,13 +86,13 @@ int s3_plugin_under_test()
 struct flb_aws_header *create_canned_acl_header(char *canned_acl)
 {
     struct flb_aws_header *acl_header = NULL;
-    
+
     acl_header = flb_malloc(sizeof(struct flb_aws_header));
     if (acl_header == NULL) {
         flb_errno();
         return NULL;
-    } 
-   
+    }
+
     acl_header->key = "x-amz-acl";
     acl_header->key_len = 9;
     acl_header->val = canned_acl;
@@ -230,16 +230,16 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_aws_provider_destroy(ctx->provider);
     }
 
-    if (ctx->provider_tls.context) {
-        flb_tls_context_destroy(ctx->provider_tls.context);
+    if (ctx->provider_tls) {
+        flb_tls_destroy(ctx->provider_tls);
     }
 
-    if (ctx->sts_provider_tls.context) {
-        flb_tls_context_destroy(ctx->sts_provider_tls.context);
+    if (ctx->sts_provider_tls) {
+        flb_tls_destroy(ctx->sts_provider_tls);
     }
 
-    if (ctx->client_tls.context) {
-        flb_tls_context_destroy(ctx->client_tls.context);
+    if (ctx->client_tls) {
+        flb_tls_destroy(ctx->client_tls);
     }
 
     if (ctx->s3_client) {
@@ -431,36 +431,36 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (tmp) {
         ctx->canned_acl = (char *) tmp;
     }
-    
-    ctx->client_tls.context = flb_tls_context_new(FLB_TRUE,
-                                                  ins->tls_debug,
-                                                  ins->tls_vhost,
-                                                  ins->tls_ca_path,
-                                                  ins->tls_ca_file,
-                                                  ins->tls_crt_file,
-                                                  ins->tls_key_file,
-                                                  ins->tls_key_passwd);
-    if (!ctx->client_tls.context) {
+
+    ctx->client_tls = flb_tls_create(FLB_TRUE,
+                                     ins->tls_debug,
+                                     ins->tls_vhost,
+                                     ins->tls_ca_path,
+                                     ins->tls_ca_file,
+                                     ins->tls_crt_file,
+                                     ins->tls_key_file,
+                                     ins->tls_key_passwd);
+    if (!ctx->client_tls) {
         flb_plg_error(ctx->ins, "Failed to create tls context");
         return -1;
     }
 
     /* AWS provider needs a separate TLS instance */
-    ctx->provider_tls.context = flb_tls_context_new(FLB_TRUE,
-                                                    ins->tls_debug,
-                                                    ins->tls_vhost,
-                                                    ins->tls_ca_path,
-                                                    ins->tls_ca_file,
-                                                    ins->tls_crt_file,
-                                                    ins->tls_key_file,
-                                                    ins->tls_key_passwd);
-    if (!ctx->provider_tls.context) {
+    ctx->provider_tls = flb_tls_create(FLB_TRUE,
+                                       ins->tls_debug,
+                                       ins->tls_vhost,
+                                       ins->tls_ca_path,
+                                       ins->tls_ca_file,
+                                       ins->tls_crt_file,
+                                       ins->tls_key_file,
+                                       ins->tls_key_passwd);
+    if (!ctx->provider_tls) {
         flb_errno();
         return -1;
     }
 
     ctx->provider = flb_standard_chain_provider_create(config,
-                                                       &ctx->provider_tls,
+                                                       ctx->provider_tls,
                                                        ctx->region,
                                                        ctx->sts_endpoint,
                                                        NULL,
@@ -482,16 +482,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_provider_tls.context = flb_tls_context_new(FLB_TRUE,
-                                                            ins->tls_debug,
-                                                            ins->tls_vhost,
-                                                            ins->tls_ca_path,
-                                                            ins->tls_ca_file,
-                                                            ins->tls_crt_file,
-                                                            ins->tls_key_file,
-                                                            ins->tls_key_passwd);
+        ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
+                                               ins->tls_debug,
+                                               ins->tls_vhost,
+                                               ins->tls_ca_path,
+                                               ins->tls_ca_file,
+                                               ins->tls_crt_file,
+                                               ins->tls_key_file,
+                                               ins->tls_key_passwd);
 
-        if (!ctx->sts_provider_tls.context) {
+        if (!ctx->sts_provider_tls) {
             flb_errno();
             return -1;
         }
@@ -505,7 +505,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
 
         ctx->provider = flb_sts_provider_create(config,
-                                                &ctx->sts_provider_tls,
+                                                ctx->sts_provider_tls,
                                                 ctx->base_provider,
                                                 external_id,
                                                 role_arn,
@@ -560,7 +560,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
 
     ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
-                                                   FLB_IO_TLS, &ctx->client_tls);
+                                                   FLB_IO_TLS, ctx->client_tls);
     if (!ctx->s3_client->upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
