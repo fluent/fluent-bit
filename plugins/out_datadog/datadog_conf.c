@@ -196,10 +196,10 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
                                        io_flags,
-                                       &ins->tls);
+                                       ins->tls);
     }
     else {
-        upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
+        upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, ins->tls);
     }
 
     if (!upstream) {
