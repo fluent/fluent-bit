@@ -75,9 +75,11 @@ struct flb_upstream_conn {
     struct mk_list _head;
 
 #ifdef FLB_HAVE_TLS
+    /* TLS context (general context for the Upstream) */
+    struct flb_tls *tls;
+
     /* Each TCP connections using TLS needs a session */
     struct flb_tls_session *tls_session;
-    mbedtls_net_context tls_net_context;
 #endif
 };
 

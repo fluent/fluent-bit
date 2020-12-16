@@ -25,8 +25,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
-#include <fluent-bit/flb_io_tls.h>
-#include <fluent-bit/flb_tls.h>
+#include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_utils.h>
 
 /* Config map for Upstream networking setup */
@@ -78,7 +77,7 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
 /* Creates a new upstream context */
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          const char *host, int port, int flags,
-                                         void *tls)
+                                         struct flb_tls *tls)
 {
     struct flb_upstream *u;
     char* proxy_protocol = NULL;
@@ -145,7 +144,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     mk_list_init(&u->destroy_queue);
 
 #ifdef FLB_HAVE_TLS
-    u->tls      = (struct flb_tls *) tls;
+    u->tls = tls;
 #endif
 
     mk_list_add(&u->_head, &config->upstreams);
@@ -155,7 +154,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 /* Create an upstream context using a valid URL (protocol, host and port) */
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
                                              const char *url, int flags,
-                                             void *tls)
+                                             struct flb_tls *tls)
 {
     int ret;
     int tmp_port = 0;
@@ -233,8 +232,7 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
 
 #ifdef FLB_HAVE_TLS
     if (u_conn->tls_session) {
-        flb_tls_session_destroy(u_conn->tls_session);
-        u_conn->tls_session = NULL;
+        flb_tls_session_destroy(u_conn->tls, u_conn);
     }
 #endif
 
@@ -283,6 +281,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     }
 
 #ifdef FLB_HAVE_TLS
+    conn->tls = NULL;
     conn->tls_session   = NULL;
 #endif
     conn->ts_created = time(NULL);

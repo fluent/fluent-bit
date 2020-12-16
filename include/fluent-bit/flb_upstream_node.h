@@ -45,7 +45,7 @@ struct flb_upstream_node {
     char *tls_key_passwd;     /* Cert Key Password            */
 
     /* context with mbedTLS contexts and data */
-    struct flb_tls tls;
+    struct flb_tls *tls;
 #else
     void *tls;
 #endif
