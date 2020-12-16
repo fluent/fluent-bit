@@ -64,7 +64,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
                                    ins->host.name,
                                    ins->host.port,
                                    io_flags,
-                                   &ins->tls);
+                                   ins->tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_kr_conf_destroy(ctx);
