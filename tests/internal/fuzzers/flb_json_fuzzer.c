@@ -17,8 +17,8 @@
  */
 #include <stdlib.h>
 #include <stdint.h>
-
-int flb_pack_json(char*, int, char**, size_t*, int*);
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_str.h>
 
 int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
 {
@@ -29,6 +29,18 @@ int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
     int ret = flb_pack_json((char*)data, size, &out_buf, &out_size, &root_type);
 
     if (ret == 0) {
+        size_t off = 0;
+        msgpack_unpacked result;
+        msgpack_unpacked_init(&result);
+        int ret2 = msgpack_unpack_next(&result, out_buf, out_size, &off);
+        if (ret2 == MSGPACK_UNPACK_SUCCESS) {
+            msgpack_object root = result.data;
+            flb_msgpack_to_json_str(0, &root);
+        }
+
+        flb_pack_msgpack_to_json_format(out_buf, out_size,
+                FLB_PACK_JSON_FORMAT_LINES,
+                FLB_PACK_JSON_DATE_EPOCH, NULL);
         free(out_buf);
     }
 

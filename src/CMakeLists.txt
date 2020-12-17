@@ -23,6 +23,7 @@ set(src
   flb_output.c
   flb_config.c
   flb_config_map.c
+  flb_socket.c
   flb_network.c
   flb_utils.c
   flb_slist.c
@@ -42,11 +43,13 @@ set(src
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
+  flb_random.c
   flb_plugin.c
   flb_gzip.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
+  flb_fstore.c
   )
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -65,6 +68,13 @@ if(FLB_PARSER)
     flb_parser_decoder.c
     flb_parser_ltsv.c
     flb_parser_logfmt.c
+    )
+endif()
+
+if(FLB_AVRO_ENCODER)
+  set(src
+    ${src}
+    flb_avro.c
     )
 endif()
 
@@ -188,6 +198,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_DEPS
     "ws2_32.lib"
     "crypt32.lib"
+    "Bcrypt.lib"
     )
 else()
   set(FLB_DEPS
@@ -250,16 +261,25 @@ if(FLB_HTTP_SERVER)
     flb-http-server)
 endif()
 
+# AVRO Encoding
+if(FLB_AVRO_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  avro-static
+  jansson
+  )
+endif()
 
 # Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
   jsmn
-  msgpackc-static
+  msgpack-c-static
   mpack-static
   chunkio-static
   miniz
+  xxhash
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}

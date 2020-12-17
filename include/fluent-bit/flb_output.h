@@ -49,9 +49,10 @@
 #endif
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET          32  /* output address may set host and port */
-#define FLB_OUTPUT_PLUGIN_CORE   0
-#define FLB_OUTPUT_PLUGIN_PROXY  1
+#define FLB_OUTPUT_NET           32  /* output address may set host and port */
+#define FLB_OUTPUT_PLUGIN_CORE    0
+#define FLB_OUTPUT_PLUGIN_PROXY   1
+#define FLB_OUTPUT_NO_MULTIPLEX 512
 
 /*
  * Tests callbacks
@@ -187,6 +188,7 @@ struct flb_output_plugin {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_output_instance {
+    struct mk_event event;               /* events handler               */
     uint64_t mask_id;                    /* internal bitmask for routing */
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
@@ -194,8 +196,10 @@ struct flb_output_instance {
     char *alias;                         /* alias name for the instance  */
     int flags;                           /* inherit flags from plugin    */
     int test_mode;                       /* running tests? (default:off) */
+    flb_pipefd_t ch_events[2];           /* channel for events           */
     struct flb_output_plugin *p;         /* original plugin              */
     void *context;                       /* plugin configuration context */
+
 
     /* Plugin properties */
     int retry_limit;                     /* max of retries allowed       */
@@ -293,6 +297,21 @@ struct flb_output_instance {
     /* Tests */
     struct flb_test_out_formatter test_formatter;
 
+    /*
+     * Buffer counter: it counts the total of disk space (filesystem) used by buffers
+     */
+    size_t fs_chunks_size;
+
+    /*
+     * Buffer limit: optional limit set by configuration so this output instance
+     * cannot buffer more than total_limit_size (bytes unit).
+     *
+     * Note that this is the limit set to the filesystem buffer mechanism so the
+     * input instance routered to this output plugin should configure to use
+     * filesystem as buffer type.
+     */
+    size_t total_limit_size;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
@@ -304,7 +323,9 @@ struct flb_output_thread {
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
     struct flb_thread *parent;         /* parent thread addr */
-    struct mk_list _head;              /* Link to struct flb_task->threads */
+    struct mk_list _head_output;       /* Link to flb_output_instance->th_queue */
+    struct mk_list _head;              /* Link to flb_task->threads */
+
 };
 
 static FLB_INLINE
@@ -333,6 +354,7 @@ static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task
         return -1;
     }
 
+    mk_list_del(&out_th->_head_output);
     mk_list_del(&out_th->_head);
     thread = out_th->parent;
 
@@ -352,6 +374,7 @@ static FLB_INLINE void cb_output_thread_destroy(void *data)
     flb_debug("[out thread] cb_destroy thread_id=%i", out_th->id);
 
     out_th->task->users--;
+    mk_list_del(&out_th->_head_output);
     mk_list_del(&out_th->_head);
 }
 
@@ -496,6 +519,8 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
                                                     ((char *)th->callee) + stack_size);
 #endif
 
+    mk_list_add(&out_th->_head_output, &o_ins->th_queue);
+
     /* Workaround for makecontext() */
     output_params_set(th,
                       buf,
@@ -542,7 +567,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
-    n = flb_pipe_w(task->config->ch_manager[1], (void *) &val, sizeof(val));
+    n = flb_pipe_w(out_th->o_ins->ch_events[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }

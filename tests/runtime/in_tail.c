@@ -41,7 +41,7 @@ struct tail_test_result {
 
 struct tail_file_lines {
   char *lines[MAX_LINES];
-  int lines_c; 
+  int lines_c;
 };
 
 
@@ -113,8 +113,9 @@ static struct tail_file_lines *get_out_file_content(const char *target)
     }
 
     file_lines->lines[file_lines->lines_c++] = out_buf;
-    
-    for (int i=0; i<out_size; i++) {
+
+    int i;
+    for (i=0; i<out_size; i++) {
       // Nullify \n and \r characters
       p = (char *)(out_buf + i);
       if (*p == '\n' || *p == '\r') {
@@ -130,7 +131,6 @@ static struct tail_file_lines *get_out_file_content(const char *target)
       }
     }
 
-    // printf("Just before return: %s\n", file_lines.lines[0]);
     return file_lines;
 }
 
@@ -144,7 +144,6 @@ static int cb_check_result(void *record, size_t size, void *data)
     char *check;
 
     out = get_out_file_content(result->target);
-    // printf("What we got from function: %s\n", out.lines[0]);
     if (!out->lines_c) {
         goto exit;
     }
@@ -152,7 +151,8 @@ static int cb_check_result(void *record, size_t size, void *data)
       * Our validation is: check that the one of the output lines
       * in the output record.
       */
-    for (int i=0; i<out->lines_c; i++) {
+    int i;
+    for (i=0; i<out->lines_c; i++) {
       check = strstr(record, out->lines[i]);
       if (check != NULL) {
           result->nMatched++;
@@ -210,10 +210,11 @@ void do_test(char *system, const char *target, int tExpected, int nExpected, ...
     TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
 
     TEST_CHECK(flb_input_set(ctx, in_ffd,
-                            "Path", path,
-                            "Docker_Mode", "On",
-                            "Parser", "docker",
-                            NULL) == 0);
+                             "path"          , path,
+                             "docker_mode"   , "on",
+                             "parser"        , "docker",
+                             "read_from_head", "true",
+                             NULL) == 0);
 
     va_start(va, nExpected);
     while ((key = va_arg(va, char *))) {
@@ -249,7 +250,7 @@ void do_test(char *system, const char *target, int tExpected, int nExpected, ...
 
     ret = flb_stop(ctx);
     TEST_CHECK_(ret == 0, "stopping engine");
-    
+
     if (ctx) {
         flb_destroy(ctx);
     }
@@ -281,14 +282,22 @@ void flb_test_in_tail_dockermode_splitted_multiple_lines()
             NULL);
 }
 
+void flb_test_in_tail_dockermode_firstline_detection()
+{
+    do_test("tail", "dockermode_firstline_detection", 20000, 5,
+            "Docker_Mode_Parser", "docker_multiline",
+            NULL);
+}
+
 
 /* Test list */
 TEST_LIST = {
 #ifdef in_tail
-    {"in_tail_dockermode",    flb_test_in_tail_dockermode},
-    {"in_tail_dockermode_splitted_line",    flb_test_in_tail_dockermode_splitted_line},
-    {"in_tail_dockermode_multiple_lines",    flb_test_in_tail_dockermode_multiple_lines},
-    {"in_tail_dockermode_splitted_multiple_lines",    flb_test_in_tail_dockermode_splitted_multiple_lines},
+    {"in_tail_dockermode",                          flb_test_in_tail_dockermode},
+    {"in_tail_dockermode_splitted_line",            flb_test_in_tail_dockermode_splitted_line},
+    {"in_tail_dockermode_multiple_lines",           flb_test_in_tail_dockermode_multiple_lines},
+    {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
+    {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
 #endif
     {NULL, NULL}
 };

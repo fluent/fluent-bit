@@ -34,10 +34,13 @@
 #include "data/stackdriver/stackdriver_test_operation.h"
 #include "data/stackdriver/stackdriver_test_k8s_resource.h"
 #include "data/stackdriver/stackdriver_test_labels.h"
+#include "data/stackdriver/stackdriver_test_trace.h"
+#include "data/stackdriver/stackdriver_test_log_name.h"
 #include "data/stackdriver/stackdriver_test_insert_id.h"
 #include "data/stackdriver/stackdriver_test_source_location.h"
 #include "data/stackdriver/stackdriver_test_http_request.h"
 #include "data/stackdriver/stackdriver_test_timestamp.h"
+#include "data/stackdriver/stackdriver_test_monitored_resource.h"
 
 
 /*
@@ -289,6 +292,102 @@ static int mp_kv_exists(char *json_data, size_t json_len, char *key_accessor)
     return ret;
 }
 
+static void cb_check_monitored_resource(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "monitored_resource");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "monitored_resource_project_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "monitored_resource_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['testA']", "valA");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/monitored_resource']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_monitored_resource_priority_higher_than_local_resource_id(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "k8s_container");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "monitored_resource_project_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "monitored_resource_location");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['cluster_name']", "monitored_resource_cluster_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace_name']", "monitored_resource_namespace_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['pod_name']", "monitored_resource_pod_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['container_name']", "monitored_resource_container_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/monitored_resource']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_monitored_resource_priority_higher_than_gce_instance(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "gce_instance");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "monitored_resource_project_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['zone']", "monitored_resource_zone");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['instance_id']", "monitored_resource_instance_id");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_exists(res_data, res_size,
+                       "$entries[0]['jsonPayload']['logging.googleapis.com/monitored_resource']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_global_resource(void *ctx, int ffd,
                                      int res_ret, void *res_data, size_t res_size,
                                      void *data)
@@ -313,7 +412,7 @@ static void cb_check_gce_instance(void *ctx, int ffd,
 
     /* project id */
     ret = mp_kv_cmp(res_data, res_size,
-                    "$resource['labels']['project_id']", "111222333");
+                    "$resource['labels']['project_id']", "fluent-bit-test");
     TEST_CHECK(ret == FLB_TRUE);
 
     /* zone */
@@ -469,6 +568,76 @@ static void cb_check_k8s_container_resource_default_regex(void *ctx, int ffd,
     ret = mp_kv_exists(res_data, res_size,
                        "$entries[0]['jsonPayload']['logging.googleapis.com/local_resource_id']");
     TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_trace_no_autoformat(void *ctx, int ffd,
+                                         int res_ret, void *res_data, size_t res_size,
+                                         void *data)
+{
+    int ret;
+
+    /* trace in the entries */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['trace']", "test-trace-id-xyz");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* trace has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['trace']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_trace_stackdriver_autoformat(void *ctx, int ffd,
+                                                  int res_ret, void *res_data, size_t res_size,
+                                                  void *data)
+{
+    int ret;
+
+    /* trace in the entries */
+    ret = mp_kv_cmp(
+        res_data, 
+        res_size, 
+        "$entries[0]['trace']", 
+        "projects/fluent-bit-test/traces/test-trace-id-xyz");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* trace has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['trace']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_log_name_override(void *ctx, int ffd,
+                                       int res_ret, void *res_data, size_t res_size,
+                                       void *data)
+{
+    int ret;
+
+    /* logName in the entries is created using the value under log_name_key */
+    ret = mp_kv_cmp(
+        res_data, res_size, "$entries[0]['logName']", "projects/fluent-bit-test/logs/custom_log_name");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* log_name_key has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['custom_log_name_key']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_log_name_no_override(void *ctx, int ffd,
+                                          int res_ret, void *res_data, size_t res_size,
+                                          void *data)
+{
+    int ret;
+
+    /* logName in the entries is created using the tag */
+    ret = mp_kv_cmp(
+        res_data, res_size, "$entries[0]['logName']", "projects/fluent-bit-test/logs/test");
+    TEST_CHECK(ret == FLB_TRUE);
 
     flb_sds_destroy(res_data);
 }
@@ -943,11 +1112,19 @@ static void cb_check_multi_entries_severity(void *ctx, int ffd,
     ret = mp_kv_cmp(res_data, res_size, "$entries[0]['severity']", "INFO");
     TEST_CHECK(ret == FLB_TRUE);
 
+    // verifies that severity is removed from jsonPayload
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['severity']");
+    TEST_CHECK(ret == FLB_FALSE);
+
     ret = mp_kv_exists(res_data, res_size, "$entries[1]['severity']");
     TEST_CHECK(ret == FLB_FALSE);
 
     ret = mp_kv_cmp(res_data, res_size, "$entries[2]['severity']", "DEBUG");
     TEST_CHECK(ret == FLB_TRUE);
+
+    // verifies that severity is removed from jsonPayload
+    ret = mp_kv_exists(res_data, res_size, "$entries[2]['jsonPayload']['severity']");
+    TEST_CHECK(ret == FLB_FALSE);
 
     ret = mp_kv_exists(res_data, res_size, "$entries[3]['severity']");
     TEST_CHECK(ret == FLB_FALSE);
@@ -1591,6 +1768,131 @@ static void cb_check_timestamp_format_duo_fields_incorrect_type(void *ctx, int f
     flb_sds_destroy(res_data);
 }
 
+void flb_test_monitored_resource_common()
+{
+    int ret;
+    int size = sizeof(MONITORED_RESOURCE_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "monitored_resource",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_monitored_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_monitored_resource_priority_higher_than_local_resource_id()
+{
+    int ret;
+    int size = sizeof(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "k8s_container",
+                   "k8s_cluster_name", "test_cluster_name",
+                   "k8s_cluster_location", "test_cluster_location",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_monitored_resource_priority_higher_than_local_resource_id,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_LOCAL_RESOURCE_ID, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_monitored_resource_priority_higher_than_gce_instance()
+{
+    int ret;
+    int size = sizeof(MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_monitored_resource_priority_higher_than_gce_instance,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) MONITORED_RESOURCE_PRIORITY_HIGHER_THAN_GCE_INSTANCE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_resource_global()
 {
     int ret;
@@ -1626,6 +1928,171 @@ void flb_test_resource_global()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_trace_no_autoformat()
+{
+    int ret;
+    int size = sizeof(TRACE_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "trace_key", "trace",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_trace_no_autoformat,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_trace_stackdriver_autoformat()
+{
+    int ret;
+    int size = sizeof(TRACE_COMMON_CASE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "trace_key", "trace",
+                   "autoformat_stackdriver_trace", "true",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_trace_stackdriver_autoformat,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) TRACE_COMMON_CASE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_log_name_override()
+{
+    int ret;
+    int size = sizeof(LOG_NAME_OVERRIDE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "log_name_key", "custom_log_name_key",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_log_name_override,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_OVERRIDE, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_log_name_no_override()
+{
+    int ret;
+    int size = sizeof(LOG_NAME_NO_OVERRIDE) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "log_name_key", "custom_log_name_key",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_log_name_no_override,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) LOG_NAME_NO_OVERRIDE, size);
 
     sleep(2);
     flb_stop(ctx);
@@ -2708,6 +3175,7 @@ void flb_test_multi_entries_severity()
     ret = flb_input_set(ctx, in_ffd,
                         "Path", STACKDRIVER_DATA_PATH "/stackdriver_multi_entries_severity.log",
                         "tag", "test",
+                        "read_from_head", "true",
                         NULL);
     TEST_CHECK_(ret == 0, "setting input options");
 
@@ -3702,6 +4170,14 @@ TEST_LIST = {
     {"resource_global_custom_prefix", flb_test_resource_global_custom_prefix },
     {"resource_gce_instance", flb_test_resource_gce_instance },
 
+    /* test trace */
+    {"trace_no_autoformat", flb_test_trace_no_autoformat},
+    {"trace_stackdriver_autoformat", flb_test_trace_stackdriver_autoformat},
+
+    /* test log name */
+    {"log_name_override", flb_test_log_name_override},
+    {"log_name_no_override", flb_test_log_name_no_override},
+
     /* test insertId */
     {"insertId_common_case", flb_test_insert_id_common_case},
     {"empty_insertId", flb_test_empty_insert_id},
@@ -3723,6 +4199,11 @@ TEST_LIST = {
     {"sourceLocation_partial_subfields", flb_test_source_location_partial_subfields},
     {"sourceLocation_subfields_in_incorrect_type", flb_test_source_location_incorrect_type_subfields},
     {"sourceLocation_extra_subfields_exist", flb_test_source_location_extra_subfields},
+
+    /* test monitored resource */
+    {"monitored_resource_common", flb_test_monitored_resource_common},
+    {"monitored_resource_priority_higher_than_local_resource_id", flb_test_monitored_resource_priority_higher_than_local_resource_id},
+    {"monitored_resource_priority_higher_than_gce_instance", flb_test_monitored_resource_priority_higher_than_gce_instance},
 
     /* test k8s */
     {"resource_k8s_container_common", flb_test_resource_k8s_container_common },

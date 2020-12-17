@@ -131,6 +131,14 @@ int flb_parser_json_do(struct flb_parser *parser,
             continue;
         }
 
+        /* Ensure the pointer we are about to read is not NULL */
+        if (k->via.str.ptr == NULL) {
+            flb_free(mp_buf);
+            *out_buf = NULL;
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
         if (strncmp(k->via.str.ptr, time_key, k->via.str.size) == 0) {
             /* We found the key, break the loop and keep the index */
             if (parser->time_keep == FLB_FALSE) {

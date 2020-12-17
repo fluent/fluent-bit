@@ -38,8 +38,8 @@ struct flb_hash_entry {
     uint64_t hits;
     char *key;
     size_t key_len;
-    char *val;
-    size_t val_size;
+    void *val;
+    ssize_t val_size;
     struct flb_hash_table *table; /* link to parent flb_hash_table */
     struct mk_list _head;         /* link to flb_hash_table->chains */
     struct mk_list _head_parent;  /* link to flb_hash->entries */
@@ -64,13 +64,19 @@ void flb_hash_destroy(struct flb_hash *ht);
 
 int flb_hash_add(struct flb_hash *ht,
                  const char *key, int key_len,
-                 const char *val, size_t val_size);
+                 void *val, ssize_t val_size);
 int flb_hash_get(struct flb_hash *ht,
                  const char *key, int key_len,
-                 const char **out_buf, size_t *out_size);
+                 void **out_buf, size_t *out_size);
 int flb_hash_get_by_id(struct flb_hash *ht, int id,
                        const char *key,
                        const char **out_buf, size_t *out_size);
+
+void *flb_hash_get_ptr(struct flb_hash *ht, const char *key, int key_len);
+
 int flb_hash_del(struct flb_hash *ht, const char *key);
+
+int flb_hash_del_ptr(struct flb_hash *ht, const char *key, int key_len,
+                     void *ptr);
 
 #endif

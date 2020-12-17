@@ -341,6 +341,93 @@ static flb_sds_t get_str_value_from_msgpack_map(msgpack_object_map map,
     return ptr;
 }
 
+/* parse_monitored_resource is to extract the monitoired resource labels
+ * from "logging.googleapis.com/monitored_resource" in log data
+ * and append to 'resource'/'labels' in log entry.
+ * Monitored resource type is already read from resource field in stackdriver
+ * output plugin configuration parameters.
+ *
+ * The structure of monitored_resource is:
+ * {
+ *   "logging.googleapis.com/monitored_resource": {
+ *      "labels": {
+ *         "resource_label": <label_value>,
+ *      }
+ *    }
+ * }
+ * See https://cloud.google.com/logging/docs/api/v2/resource-list#resource-types
+ * for required labels for each monitored resource.
+ */
+
+static int parse_monitored_resource(struct flb_stackdriver *ctx, const void *data, size_t bytes, msgpack_packer *mp_pck)
+{
+    int ret = -1;
+    size_t off = 0;
+    msgpack_object *obj;
+    msgpack_unpacked result;
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+        if (result.data.via.array.size != 2) {
+            continue;
+        }
+        obj = &result.data.via.array.ptr[1];
+        if (obj->type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+        msgpack_object_kv *kv = obj->via.map.ptr;
+        msgpack_object_kv *const kvend = obj->via.map.ptr + obj->via.map.size;
+        for (; kv < kvend; ++kv) {
+          if (kv->val.type == MSGPACK_OBJECT_MAP && kv->key.type == MSGPACK_OBJECT_STR
+          && strncmp (MONITORED_RESOURCE_KEY, kv->key.via.str.ptr, kv->key.via.str.size) == 0) {
+            msgpack_object subobj = kv->val;
+            msgpack_object_kv *p = subobj.via.map.ptr;
+            msgpack_object_kv *pend = subobj.via.map.ptr + subobj.via.map.size;
+            for (; p < pend; ++p) {
+              if (p->key.type != MSGPACK_OBJECT_STR || p->val.type != MSGPACK_OBJECT_MAP) {
+                continue;
+              }
+              if (strncmp("labels", p->key.via.str.ptr, p->key.via.str.size) == 0) {
+                  msgpack_object labels = p->val;
+                  msgpack_object_kv *q = labels.via.map.ptr;
+                  msgpack_object_kv *qend = labels.via.map.ptr + labels.via.map.size;
+                  int fields = 0;
+                  for (; q < qend; ++q) {
+                    if (q->key.type != MSGPACK_OBJECT_STR || q->val.type != MSGPACK_OBJECT_STR) {
+                        flb_plg_error(ctx->ins, "Key and value should be string in the %s/labels", MONITORED_RESOURCE_KEY);
+                    }
+                    ++fields;
+                  }
+                  if (fields > 0) {
+                    msgpack_pack_map(mp_pck, fields);
+                    q = labels.via.map.ptr;
+                    for (; q < qend; ++q) {
+                      if (q->key.type != MSGPACK_OBJECT_STR || q->val.type != MSGPACK_OBJECT_STR) {
+                          continue;
+                      }
+                      flb_plg_debug(ctx->ins, "[%s] found in the payload", MONITORED_RESOURCE_KEY);
+                      msgpack_pack_str(mp_pck, q->key.via.str.size);
+                      msgpack_pack_str_body(mp_pck, q->key.via.str.ptr, q->key.via.str.size);
+                      msgpack_pack_str(mp_pck, q->val.via.str.size);
+                      msgpack_pack_str_body(mp_pck, q->val.via.str.ptr, q->val.via.str.size);
+                    }
+                    msgpack_unpacked_destroy(&result);
+                    ret = 0;
+                    return ret;
+                  }
+              }
+            }
+          }
+        }
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_plg_debug(ctx->ins, "[%s] not found in the payload", MONITORED_RESOURCE_KEY);
+    return ret;
+}
+
 /*
  * Given a local_resource_id, split the content using the proper separator generating
  * a linked list to store the spliited string
@@ -382,7 +469,7 @@ static struct mk_list *parse_local_resource_id_to_list(char *local_resource_id, 
     ret = flb_slist_split_string(list, local_resource_id, '.', max_split);
 
     if (ret == -1 || mk_list_size(list) != max_split) {
-        flb_error("error parsing local_resource_id for type %s", type);
+        flb_error("error parsing local_resource_id [%s] for type %s", local_resource_id, type);
         flb_slist_destroy(list);
         flb_free(list);
         return NULL;
@@ -907,6 +994,18 @@ static int get_msgpack_obj(msgpack_object * subobj, const msgpack_object * o,
     return -1;
 }
 
+static int get_string(flb_sds_t * s, const msgpack_object * o, const flb_sds_t key)
+{
+    msgpack_object tmp;
+    if (get_msgpack_obj(&tmp, o, key, flb_sds_len(key), MSGPACK_OBJECT_STR) == 0) {
+        *s = flb_sds_create_len(tmp.via.str.ptr, tmp.via.str.size);
+        return 0;
+    }
+
+    *s = 0;
+    return -1;
+}
+
 static int get_severity_level(severity_t * s, const msgpack_object * o,
                               const flb_sds_t key)
 {
@@ -918,6 +1017,7 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     *s = 0;
     return -1;
 }
+
 
 static int get_stream(msgpack_object_map map)
 {
@@ -999,11 +1099,13 @@ static int pack_json_payload(int insert_id_extracted,
     int len_to_be_removed;
     int key_not_found;
     flb_sds_t removed;
+    flb_sds_t monitored_resource_key;
     flb_sds_t local_resource_id_key;
     flb_sds_t stream;
     msgpack_object_kv *kv = obj->via.map.ptr;
     msgpack_object_kv *const kvend = obj->via.map.ptr + obj->via.map.size;
 
+    monitored_resource_key = flb_sds_create(MONITORED_RESOURCE_KEY);
     local_resource_id_key = flb_sds_create(LOCAL_RESOURCE_ID_KEY);
     stream = flb_sds_create("stream");
     /*
@@ -1012,10 +1114,16 @@ static int pack_json_payload(int insert_id_extracted,
      */
     flb_sds_t to_be_removed[] =
     {
+        monitored_resource_key,
         local_resource_id_key,
         ctx->labels_key,
+        ctx->severity_key,
+        ctx->trace_key,
+        ctx->log_name_key,
         stream
-        /* more special fields are required to be added */
+        /* more special fields are required to be added, but, if this grows with more 
+           than a few records, it might need to be converted to flb_hash
+         */
     };
 
     if (insert_id_extracted == FLB_TRUE) {
@@ -1048,7 +1156,7 @@ static int pack_json_payload(int insert_id_extracted,
              * check length of key to avoid partial matching
              * e.g. labels key = labels && kv->key = labelss
              */
-            if (flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
+            if (removed && flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
                 to_remove += 1;
                 break;
             }
@@ -1125,7 +1233,7 @@ static int pack_json_payload(int insert_id_extracted,
         len = kv->key.via.str.size;
         for (j = 0; j < len_to_be_removed; j++) {
             removed = to_be_removed[j];
-            if (flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
+            if (removed && flb_sds_cmp(removed, kv->key.via.str.ptr, len) == 0) {
                 key_not_found = 0;
                 break;
             }
@@ -1143,11 +1251,13 @@ static int pack_json_payload(int insert_id_extracted,
         }
     }
 
+    flb_sds_destroy(monitored_resource_key);
     flb_sds_destroy(local_resource_id_key);
     flb_sds_destroy(stream);
     return 0;
 
     error:
+        flb_sds_destroy(monitored_resource_key);
         flb_sds_destroy(local_resource_id_key);
         flb_sds_destroy(stream);
         return ret;
@@ -1172,6 +1282,7 @@ static int stackdriver_format(struct flb_config *config,
     char path[PATH_MAX];
     char time_formatted[255];
     const char *newtag;
+    const char *new_log_name;
     msgpack_object *obj;
     msgpack_object *labels_ptr;
     msgpack_unpacked result;
@@ -1183,6 +1294,16 @@ static int stackdriver_format(struct flb_config *config,
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
     severity_t severity;
+
+    /* Parameters for trace */
+    int trace_extracted = FLB_FALSE;
+    flb_sds_t trace;
+    char stackdriver_trace[PATH_MAX];
+    const char *new_trace;
+
+    /* Parameters for log name */
+    int log_name_extracted = FLB_FALSE;
+    flb_sds_t log_name;
 
     /* Parameters for insertId */
     msgpack_object insert_id_obj;
@@ -1275,190 +1396,199 @@ static int stackdriver_format(struct flb_config *config,
         ret = extract_local_resource_id(data, bytes, ctx, tag);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "fail to construct local_resource_id");
+            msgpack_sbuffer_destroy(&mp_sbuf);
             return -1;
         }
     }
 
-    if (strcmp(ctx->resource, "global") == 0) {
-      /* global resource has field project_id */
-      msgpack_pack_map(&mp_pck, 1);
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
-    }
-    else if (strcmp(ctx->resource, "gce_instance") == 0) {
-      /* gce_instance resource has fields project_id, zone, instance_id */
-      msgpack_pack_map(&mp_pck, 3);
+    ret = parse_monitored_resource(ctx, data, bytes, &mp_pck);
+    if (ret != 0) {
+        if (strcmp(ctx->resource, "global") == 0) {
+            /* global resource has field project_id */
+            msgpack_pack_map(&mp_pck, 1);
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
+        }
+        else if (strcmp(ctx->resource, "gce_instance") == 0) {
+            /* gce_instance resource has fields project_id, zone, instance_id */
+            msgpack_pack_map(&mp_pck, 3);
 
-      msgpack_pack_str(&mp_pck, 10);
-      msgpack_pack_str_body(&mp_pck, "project_id", 10);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->project_id, flb_sds_len(ctx->project_id));
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
 
-      msgpack_pack_str(&mp_pck, 4);
-      msgpack_pack_str_body(&mp_pck, "zone", 4);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-      msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+            msgpack_pack_str(&mp_pck, 4);
+            msgpack_pack_str_body(&mp_pck, "zone", 4);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+            msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
 
-      msgpack_pack_str(&mp_pck, 11);
-      msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-      msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-      msgpack_pack_str_body(&mp_pck,
-                            ctx->instance_id, flb_sds_len(ctx->instance_id));
-    }
-    else if (strcmp(ctx->resource, K8S_CONTAINER) == 0) {
-        /* k8s_container resource has fields project_id, location, cluster_name,
-         *                                   namespace_name, pod_name, container_name
-         *
-         * The local_resource_id for k8s_container is in format:
-         *    k8s_container.<namespace_name>.<pod_name>.<container_name>
-         */
+            msgpack_pack_str(&mp_pck, 11);
+            msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->instance_id, flb_sds_len(ctx->instance_id));
+        }
+        else if (strcmp(ctx->resource, K8S_CONTAINER) == 0) {
+            /* k8s_container resource has fields project_id, location, cluster_name,
+             *                                   namespace_name, pod_name, container_name
+             *
+             * The local_resource_id for k8s_container is in format:
+             *    k8s_container.<namespace_name>.<pod_name>.<container_name>
+             */
 
-        if (is_tag_match_regex(ctx, tag, tag_len) > 0) {
-            ret = extract_resource_labels_from_regex(ctx, tag, tag_len);
+            if (is_tag_match_regex(ctx, tag, tag_len) > 0) {
+                ret = extract_resource_labels_from_regex(ctx, tag, tag_len);
+            }
+            else {
+                ret = process_local_resource_id(ctx, K8S_CONTAINER);
+            }
+
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "fail to extract resource labels "
+                              "for k8s_container resource type");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+
+            msgpack_pack_map(&mp_pck, 6);
+
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "location", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+
+            msgpack_pack_str(&mp_pck, 12);
+            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+
+            msgpack_pack_str(&mp_pck, 14);
+            msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->namespace_name, flb_sds_len(ctx->namespace_name));
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->pod_name, flb_sds_len(ctx->pod_name));
+
+            msgpack_pack_str(&mp_pck, 14);
+            msgpack_pack_str_body(&mp_pck, "container_name", 14);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->container_name, flb_sds_len(ctx->container_name));
+        }
+        else if (strcmp(ctx->resource, K8S_NODE) == 0) {
+            /* k8s_node resource has fields project_id, location, cluster_name, node_name
+             *
+             * The local_resource_id for k8s_node is in format:
+             *      k8s_node.<node_name>
+             */
+
+            ret = process_local_resource_id(ctx, K8S_NODE);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "fail to process local_resource_id from "
+                              "log entry for k8s_node");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+
+            msgpack_pack_map(&mp_pck, 4);
+
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "location", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+
+            msgpack_pack_str(&mp_pck, 12);
+            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+
+            msgpack_pack_str(&mp_pck, 9);
+            msgpack_pack_str_body(&mp_pck, "node_name", 9);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->node_name, flb_sds_len(ctx->node_name));
+        }
+        else if (strcmp(ctx->resource, K8S_POD) == 0) {
+            /* k8s_pod resource has fields project_id, location, cluster_name,
+             *                             namespace_name, pod_name.
+             *
+             * The local_resource_id for k8s_pod is in format:
+             *      k8s_pod.<namespace_name>.<pod_name>
+             */
+
+            ret = process_local_resource_id(ctx, K8S_POD);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "fail to process local_resource_id from "
+                              "log entry for k8s_pod");
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return -1;
+            }
+
+            msgpack_pack_map(&mp_pck, 5);
+
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "location", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+
+            msgpack_pack_str(&mp_pck, 12);
+            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+
+            msgpack_pack_str(&mp_pck, 14);
+            msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->namespace_name, flb_sds_len(ctx->namespace_name));
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->pod_name, flb_sds_len(ctx->pod_name));
         }
         else {
-            ret = process_local_resource_id(ctx, K8S_CONTAINER);
-        }
-
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "fail to extract resource labels "
-                          "for k8s_container resource type");
+            flb_plg_error(ctx->ins, "unsupported resource type '%s'",
+                          ctx->resource);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return -1;
         }
-
-        msgpack_pack_map(&mp_pck, 6);
-
-        msgpack_pack_str(&mp_pck, 10);
-        msgpack_pack_str_body(&mp_pck, "project_id", 10);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->project_id, flb_sds_len(ctx->project_id));
-
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "location", 8);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->cluster_location, flb_sds_len(ctx->cluster_location));
-
-        msgpack_pack_str(&mp_pck, 12);
-        msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->cluster_name, flb_sds_len(ctx->cluster_name));
-
-        msgpack_pack_str(&mp_pck, 14);
-        msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->namespace_name, flb_sds_len(ctx->namespace_name));
-
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->pod_name, flb_sds_len(ctx->pod_name));
-
-        msgpack_pack_str(&mp_pck, 14);
-        msgpack_pack_str_body(&mp_pck, "container_name", 14);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->container_name, flb_sds_len(ctx->container_name));
     }
-    else if (strcmp(ctx->resource, K8S_NODE) == 0) {
-        /* k8s_node resource has fields project_id, location, cluster_name, node_name
-         *
-         * The local_resource_id for k8s_node is in format:
-         *      k8s_node.<node_name>
-         */
-
-        ret = process_local_resource_id(ctx, K8S_NODE);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "fail to process local_resource_id from "
-                          "log entry for k8s_node");
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            return -1;
-        }
-
-        msgpack_pack_map(&mp_pck, 4);
-
-        msgpack_pack_str(&mp_pck, 10);
-        msgpack_pack_str_body(&mp_pck, "project_id", 10);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->project_id, flb_sds_len(ctx->project_id));
-
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "location", 8);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->cluster_location, flb_sds_len(ctx->cluster_location));
-
-        msgpack_pack_str(&mp_pck, 12);
-        msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->cluster_name, flb_sds_len(ctx->cluster_name));
-
-        msgpack_pack_str(&mp_pck, 9);
-        msgpack_pack_str_body(&mp_pck, "node_name", 9);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->node_name, flb_sds_len(ctx->node_name));
-    }
-    else if (strcmp(ctx->resource, K8S_POD) == 0) {
-        /* k8s_pod resource has fields project_id, location, cluster_name,
-         *                             namespace_name, pod_name.
-         *
-         * The local_resource_id for k8s_pod is in format:
-         *      k8s_pod.<namespace_name>.<pod_name>
-         */
-
-        ret = process_local_resource_id(ctx, K8S_POD);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "fail to process local_resource_id from "
-                          "log entry for k8s_pod");
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            return -1;
-        }
-
-        msgpack_pack_map(&mp_pck, 5);
-
-        msgpack_pack_str(&mp_pck, 10);
-        msgpack_pack_str_body(&mp_pck, "project_id", 10);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->project_id, flb_sds_len(ctx->project_id));
-
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "location", 8);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->cluster_location, flb_sds_len(ctx->cluster_location));
-
-        msgpack_pack_str(&mp_pck, 12);
-        msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->cluster_name, flb_sds_len(ctx->cluster_name));
-
-        msgpack_pack_str(&mp_pck, 14);
-        msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->namespace_name, flb_sds_len(ctx->namespace_name));
-
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-        msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
-        msgpack_pack_str_body(&mp_pck,
-                              ctx->pod_name, flb_sds_len(ctx->pod_name));
-    }
-
     msgpack_pack_str(&mp_pck, 7);
     msgpack_pack_str_body(&mp_pck, "entries", 7);
 
@@ -1480,7 +1610,8 @@ static int stackdriver_format(struct flb_config *config,
          *  "labels": "...",
          *  "logName": "...",
          *  "jsonPayload": {...},
-         *  "timestamp": "..."
+         *  "timestamp": "...",
+         *  "trace": "..."
          * }
          */
         entry_size = 3;
@@ -1491,6 +1622,21 @@ static int stackdriver_format(struct flb_config *config,
             && get_severity_level(&severity, obj, ctx->severity_key) == 0) {
             severity_extracted = FLB_TRUE;
             entry_size += 1;
+        }
+
+        /* Extract trace */
+        trace_extracted = FLB_FALSE;
+        if (ctx->trace_key
+            && get_string(&trace, obj, ctx->trace_key) == 0) {
+            trace_extracted = FLB_TRUE;
+            entry_size += 1;
+        }
+
+        /* Extract log name */
+        log_name_extracted = FLB_FALSE;
+        if (ctx->log_name_key
+            && get_string(&log_name, obj, ctx->log_name_key) == 0) {
+            log_name_extracted = FLB_TRUE;
         }
 
         /* Extract insertId */
@@ -1567,6 +1713,26 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_int(&mp_pck, severity);
         }
 
+        /* Add trace into the log entry */
+        if (trace_extracted == FLB_TRUE) {
+            msgpack_pack_str(&mp_pck, 5);
+            msgpack_pack_str_body(&mp_pck, "trace", 5);
+
+            if (ctx->autoformat_stackdriver_trace) {
+                len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
+                    "projects/%s/traces/%s", ctx->project_id, trace);
+                new_trace = stackdriver_trace;
+            }
+            else {
+                len = flb_sds_len(trace);
+                new_trace = trace;
+            }
+
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, new_trace, len);
+            flb_sds_destroy(trace); 
+        }               
+
         /* Add insertId field into the log entry */
         if (insert_id_extracted == FLB_TRUE) {
             msgpack_pack_str(&mp_pck, 8);
@@ -1628,9 +1794,21 @@ static int stackdriver_format(struct flb_config *config,
                 newtag = "stderr";
             }
         }
+
+        if (log_name_extracted == FLB_FALSE) {
+            new_log_name = newtag;
+        }  
+        else {
+            new_log_name = log_name;
+        }
+
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->project_id, newtag);
+                       "projects/%s/logs/%s", ctx->project_id, new_log_name);
+
+        if (log_name_extracted == FLB_TRUE) {
+            flb_sds_destroy(log_name); 
+        }
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);

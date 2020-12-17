@@ -78,6 +78,9 @@ int cio_meta_size(struct cio_chunk *ch) {
         return mf->meta_len;
     }
     else if (ch->st->type == CIO_STORE_FS) {
+        if (cio_file_read_prepare(ch->ctx, ch)) {
+            return -1;
+        }
         struct cio_file *cf = ch->backend;
         return cio_file_st_get_meta_len(cf->map);
     }
@@ -107,8 +110,11 @@ int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len)
         return 0;
     }
     else if (ch->st->type == CIO_STORE_FS) {
-        cf = ch->backend;
+        if (cio_file_read_prepare(ch->ctx, ch)) {
+            return -1;
+        }
 
+        cf = ch->backend;
         len = cio_file_st_get_meta_len(cf->map);
         if (len <= 0) {
             return -1;
@@ -151,6 +157,10 @@ int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len)
             return 0;
         }
 
+        return -1;
+    }
+
+    if (cio_file_read_prepare(ch->ctx, ch)) {
         return -1;
     }
 

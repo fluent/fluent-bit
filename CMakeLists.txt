@@ -3,7 +3,7 @@ project(fluent-bit)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  6)
+set(FLB_VERSION_MINOR  7)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -91,6 +91,7 @@ option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STATIC_BINARY       "Build static binary           No")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
+option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -172,9 +173,12 @@ option(FLB_OUT_LIB            "Enable library mode output plugin"   Yes)
 option(FLB_OUT_NULL           "Enable dev null output plugin"       Yes)
 option(FLB_OUT_FLOWCOUNTER    "Enable flowcount output plugin"      Yes)
 option(FLB_OUT_LOGDNA         "Enable LogDNA output plugin"         Yes)
+option(FLB_OUT_LOKI           "Enable Loki output plugin"           Yes)
 option(FLB_OUT_KAFKA          "Enable Kafka output plugin"           No)
 option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"     Yes)
 option(FLB_OUT_CLOUDWATCH_LOGS "Enable AWS CloudWatch output plugin" Yes)
+option(FLB_OUT_KINESIS_FIREHOSE "Enable AWS Firehose output plugin" Yes)
+option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
 option(FLB_FILTER_ALTER_SIZE  "Enable alter_size filter"            Yes)
 option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
 option(FLB_FILTER_EXPECT      "Enable expect filter"                Yes)
@@ -189,6 +193,7 @@ option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
+option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
@@ -225,6 +230,7 @@ if(FLB_ALL)
   set(FLB_OUT_RETRY    1)
   set(FLB_OUT_TD       1)
   set(FLB_OUT_STDOUT   1)
+  set(FLB_OUT_S3       1)
   set(FLB_OUT_SYSLOG   1)
   set(FLB_OUT_LIB      1)
   set(FLB_OUT_FLOWCOUNTER 1)
@@ -246,6 +252,10 @@ endif()
 
 if(FLB_HTTP_CLIENT_DEBUG)
   FLB_DEFINITION(FLB_HAVE_HTTP_CLIENT_DEBUG)
+endif()
+
+if (FLB_TESTS_OSSFUZZ)
+  FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
 endif()
 
 # Set Fluent Bit dependency libraries path
@@ -283,7 +293,12 @@ if(FLEX_FOUND AND BISON_FOUND)
 endif()
 
 if(FLB_SMALL)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 -s -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
+  if(CMAKE_COMPILER_IS_GNUCC)
+    set(strip_flag  " -s ")
+  else()
+    set(strip_flag  "")
+  endif()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 ${strip_flag} -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
 endif()
 
 if(FLB_STATIC_BINARY)
@@ -358,10 +373,29 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
+# Avro
+if(FLB_AVRO_ENCODER)
+  # jansson
+  option(JANSSON_BUILD_DOCS         OFF)
+  option(JANSSON_EXAMPLES           OFF)
+  option(JANSSON_WITHOUT_TESTS       ON)
+  option(JANSSON_BUILD_SHARED_LIBS  OFF)
+  add_subdirectory(${FLB_PATH_LIB_JANSSON})
+
+  #avro
+  add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+endif()
+
 # tutf8e
 if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
+
+# xxHash
+FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
+set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
+set(XXHASH_BUILD_XXHSUM OFF)
+add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
@@ -620,6 +654,12 @@ endif()
 # =====================
 if(FLB_UTF8_ENCODER)
   FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
+endif()
+
+# avro-c (Avro Encoding)
+# =====================
+if(FLB_AVRO_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_AVRO_ENCODER)
 endif()
 
 # LuaJIT (Scripting Support)

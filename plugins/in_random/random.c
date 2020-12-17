@@ -22,17 +22,14 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_random.h>
 #include <msgpack.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#  include <event2/util.h>
-#else
-#  include <fcntl.h>
-#endif
+#include <fcntl.h>
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
@@ -53,8 +50,6 @@ struct flb_in_random_config {
 static int in_random_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context)
 {
-    int fd;
-    int ret;
     uint64_t val;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
@@ -68,23 +63,9 @@ static int in_random_collect(struct flb_input_instance *ins,
         return -1;
     }
 
-#ifdef _WIN32
-    evutil_secure_rng_get_bytes(&val, sizeof(val));
-#else
-    fd = open("/dev/urandom", O_RDONLY);
-    if (fd == -1) {
+    if (flb_random_bytes((unsigned char *) &val, sizeof(uint64_t))) {
         val = time(NULL);
     }
-    else {
-        ret = read(fd, &val, sizeof(val));
-        if (ret == -1) {
-            perror("read");
-            close(fd);
-            return -1;
-        }
-        close(fd);
-    }
-#endif
 
     /* Initialize local msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);

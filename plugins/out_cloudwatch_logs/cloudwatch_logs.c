@@ -117,7 +117,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
         ctx->custom_endpoint = FLB_TRUE;
-        ctx->endpoint = (char *) tmp;
+        ctx->endpoint = removeProtocol((char *) tmp, "https://");
     }
     else {
         ctx->custom_endpoint = FLB_FALSE;
@@ -128,12 +128,31 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->log_key = tmp;
     }
 
+    tmp = flb_output_get_property("extra_user_agent", ins);
+    if (tmp) {
+        ctx->extra_user_agent = tmp;
+    }
+    
     tmp = flb_output_get_property("region", ins);
     if (tmp) {
         ctx->region = tmp;
     } else {
         flb_plg_error(ctx->ins, "'region' is a required field");
         goto error;
+    }
+
+    tmp = flb_output_get_property("metric_namespace", ins);
+    if (tmp)
+    {
+        flb_plg_info(ctx->ins, "Metric Namespace=%s", tmp);
+        ctx->metric_namespace = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("metric_dimensions", ins);
+    if (tmp)
+    {
+        flb_plg_info(ctx->ins, "Metric Dimensions=%s", tmp);
+        ctx->metric_dimensions = flb_utils_split(tmp, ';', 256);
     }
 
     ctx->create_group = FLB_FALSE;
@@ -143,11 +162,21 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
+    ctx->log_retention_days = 0;
+    tmp = flb_output_get_property("log_retention_days", ins);
+    if (tmp) {
+        ctx->log_retention_days = atoi(tmp);
+    }
+
     tmp = flb_output_get_property("role_arn", ins);
     if (tmp) {
         ctx->role_arn = tmp;
     }
 
+    tmp = flb_output_get_property("sts_endpoint", ins);
+    if (tmp) {
+        ctx->sts_endpoint = (char *) tmp;
+    }
 
     ctx->group_created = FLB_FALSE;
 
@@ -191,7 +220,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
 
     ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                            &ctx->cred_tls,
-                                                           "us-west-2",
+                                                           (char *) ctx->region,
+                                                           (char *) ctx->sts_endpoint,
                                                            NULL,
                                                            flb_aws_client_generator());
     if (!ctx->aws_provider) {
@@ -231,6 +261,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
+                                                    (char *) ctx->sts_endpoint,
                                                     NULL,
                                                     flb_aws_client_generator());
         if (!ctx->aws_provider) {
@@ -269,6 +300,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
+    ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
@@ -286,6 +318,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     upstream->flags &= ~(FLB_IO_ASYNC);
 
     ctx->cw_client->upstream = upstream;
+    flb_output_upstream_set(upstream, ctx->ins);
     ctx->cw_client->host = ctx->endpoint;
 
     /* alloc the payload/processing buffer */
@@ -347,6 +380,8 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
+    ctx->buf->put_events_calls = 0;
+
     if (ctx->create_group == FLB_TRUE && ctx->group_created == FLB_FALSE) {
         ret = create_log_group(ctx);
         if (ret < 0) {
@@ -359,7 +394,7 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, ctx->buf, stream, data, bytes);
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream, data, bytes);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -486,6 +521,15 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "extra_user_agent", NULL,
+     0, FLB_FALSE, 0,
+     "This option appends a string to the default user agent. "
+     "AWS asks that you not manually set this field yourself, "
+     "it is reserved for use in our vended configurations, "
+     "for example, EKS Container Insights."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "log_format", NULL,
      0, FLB_FALSE, 0,
      "An optional parameter that can be used to tell CloudWatch the format "
@@ -507,9 +551,38 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_INT, "log_retention_days", "0",
+     0, FLB_FALSE, 0,
+     "If set to a number greater than zero, and newly create log group's "
+     "retention policy is set to this many days. "
+     "Valid values are: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the CloudWatch Logs API"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
+     0, FLB_FALSE, 0,
+     "Specify a custom endpoint for the STS API, can be used with the role_arn parameter"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_namespace", NULL,
+     0, FLB_FALSE, 0,
+     "Metric namespace for CloudWatch EMF logs"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "metric_dimensions", NULL,
+     0, FLB_FALSE, 0,
+     "Metric dimensions is a list of lists. If you have only one list of "
+     "dimensions, put the values as a comma seperated string. If you want to put "
+     "list of lists, use the list as semicolon seperated strings. If your value "
+     "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
     },
 
     /* EOF */

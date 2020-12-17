@@ -9,6 +9,7 @@ set(FLB_LUAJIT                Yes)
 set(FLB_EXAMPLES              Yes)
 set(FLB_PARSER                Yes)
 set(FLB_TLS                   Yes)
+set(FLB_AWS                   Yes)
 
 # INPUT plugins
 # =============
@@ -36,19 +37,20 @@ set(FLB_IN_NETIF               No)
 set(FLB_IN_WINLOG             Yes)
 set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STATSD             Yes)
-set(FLB_IN_STORAGE_BACKLOG     No)
+set(FLB_IN_STORAGE_BACKLOG    Yes)
 set(FLB_IN_EMITTER            Yes)
 
 # OUTPUT plugins
 # ==============
 set(FLB_OUT_AZURE             Yes)
+set(FLB_OUT_AZURE_BLOB        Yes)
 set(FLB_OUT_BIGQUERY           No)
 set(FLB_OUT_COUNTER           Yes)
 set(FLB_OUT_DATADOG           Yes)
 set(FLB_OUT_ES                Yes)
 set(FLB_OUT_EXIT               No)
 set(FLB_OUT_FORWARD           Yes)
-set(FLB_OUT_GELF               No)
+set(FLB_OUT_GELF              Yes)
 set(FLB_OUT_HTTP              Yes)
 set(FLB_OUT_INFLUXDB          Yes)
 set(FLB_OUT_NATS               No)
@@ -65,6 +67,8 @@ set(FLB_OUT_FLOWCOUNTER       Yes)
 set(FLB_OUT_KAFKA              No)
 set(FLB_OUT_KAFKA_REST         No)
 set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
+set(FLB_OUT_S3                Yes)
+set(FLB_OUT_KINESIS_FIREHOSE   No)
 
 # FILTER plugins
 # ==============

@@ -56,6 +56,13 @@ struct flb_config_map upstream_net[] = {
      "Specify network address to bind for data traffic"
     },
 
+    {
+     FLB_CONFIG_MAP_INT, "net.keepalive_max_recycle", "2000",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive_max_recycle),
+     "Set maximum number of times a keepalive connection can be used "
+     "before it is retired."
+    },
+
     /* EOF */
     {0}
 };
@@ -74,6 +81,14 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          void *tls)
 {
     struct flb_upstream *u;
+    char* proxy_protocol = NULL;
+    char* proxy_host = NULL;
+    char* proxy_port = NULL;
+    char* proxy_username = NULL;
+    char* proxy_password = NULL;
+    int ret;
+
+
 
     u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
@@ -84,13 +99,42 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     /* Set default networking setup values */
     flb_net_setup_init(&u->net);
 
-    u->tcp_host      = flb_strdup(host);
+    /* Set upstream to the http_proxy if it is specified. */
+    if (config->http_proxy) {
+        flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
+        ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
+                                        &proxy_username, &proxy_password,
+                                        &proxy_host, &proxy_port);
+        if (ret == -1) {
+            flb_errno();
+            return NULL;
+        }
+
+        u->tcp_host = flb_strdup(proxy_host);
+        u->tcp_port = atoi(proxy_port);
+        u->proxied_host = flb_strdup(host);
+        u->proxied_port = port;
+        if (proxy_username && proxy_password) {
+            u->proxy_username = flb_strdup(proxy_username);
+            u->proxy_password = flb_strdup(proxy_password);
+        }
+
+        flb_free(proxy_protocol);
+        flb_free(proxy_host);
+        flb_free(proxy_port);
+        flb_free(proxy_username);
+        flb_free(proxy_password);
+    }
+    else {
+        u->tcp_host = flb_strdup(host);
+        u->tcp_port = port;
+    }
+
     if (!u->tcp_host) {
         flb_free(u);
         return NULL;
     }
 
-    u->tcp_port       = port;
     u->flags          = flags;
     u->evl            = config->evl;
     u->n_connections  = 0;
@@ -305,6 +349,9 @@ int flb_upstream_destroy(struct flb_upstream *u)
     }
 
     flb_free(u->tcp_host);
+    flb_free(u->proxied_host);
+    flb_free(u->proxy_username);
+    flb_free(u->proxy_password);
     mk_list_del(&u->_head);
     flb_free(u);
 
@@ -448,6 +495,13 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
                   conn->fd, conn->u->tcp_host, conn->u->tcp_port);
         conn->ka_count++;
+
+        /* if we have exceeded our max number of uses of this connection, destroy it */
+        if (conn->u->net.keepalive_max_recycle > 0 && conn->ka_count > conn->u->net.keepalive_max_recycle) {
+            flb_debug("[upstream] KA count %i exceeded configured limit of %i: closing.", conn->ka_count, conn->u->net.keepalive_max_recycle);
+            return destroy_conn(conn);
+        }
+
         return 0;
     }
 

@@ -33,6 +33,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_thread.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_hash.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics.h>
@@ -227,6 +228,13 @@ struct flb_input_instance {
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
+
+    /*
+     * Index for generated chunks: simple hash table that keeps the latest
+     * available chunks for writing data operations. This optimize the
+     * lookup for candidates chunks to write data.
+     */
+    struct flb_hash *ht_chunks;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;

@@ -15,10 +15,18 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
-  gelf.c
+  random.c
   config_map.c
   mp.c
+  input_chunk.c
   )
+
+if (NOT WIN32)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    gelf.c
+    )
+endif()
 
 if(FLB_PARSER)
   set(UNIT_TESTS_FILES
@@ -55,6 +63,13 @@ if(FLB_SIGNV4)
     )
 endif()
 
+if(FLB_AVRO_ENCODER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    avro.c
+    )
+endif()
+
 if(FLB_AWS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
@@ -72,6 +87,8 @@ set(UNIT_TESTS_DATA
   data/pack/json_single_map_002.json
   data/parser/json.conf
   data/parser/regex.conf
+  data/input_chunk/log/a_thousand_plus_one_bytes.log
+  data/input_chunk/log/test_buffer_valid.log
   )
 
 set(FLB_TESTS_DATA_PATH ${CMAKE_CURRENT_SOURCE_DIR}/)
@@ -113,6 +130,10 @@ foreach(source_file ${UNIT_TESTS_FILES})
     endif()
 
     target_link_libraries(${source_file_we} fluent-bit-static)
+
+    if(FLB_AVRO_ENCODER)
+      target_link_libraries(${source_file_we} avro-static jansson)
+    endif()
 
     add_test(NAME ${source_file_we}
             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}

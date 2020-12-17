@@ -49,6 +49,7 @@ struct flb_parser {
     char *time_key;       /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
+    int time_strict;      /* parse time field strictly */
     char *time_frac_secs; /* time format have fractional seconds ? */
     struct flb_parser_types *types; /* type casting */
     int types_len;
@@ -92,6 +93,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
                                      int time_keep,
+                                     int time_strict,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct mk_list *decoders,
@@ -104,7 +106,6 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
 
 void flb_parser_exit(struct flb_config *config);
 int flb_parser_tzone_offset(const char *str, int len, int *tmdiff);
-int flb_parser_frac(const char *str, int len, double *frac, const char **end);
 int flb_parser_time_lookup(const char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
                            struct tm *tm, double *ns);

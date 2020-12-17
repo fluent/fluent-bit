@@ -25,6 +25,7 @@ struct winlog_config {
     unsigned int interval_sec;
     unsigned int interval_nsec;
     unsigned int bufsize;
+    int string_inserts;
     char *buf;
     struct mk_list *active_channel;
     struct flb_sqldb *db;

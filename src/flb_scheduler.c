@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_random.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -44,7 +45,7 @@ static inline int consume_byte(flb_pipefd_t fd)
 
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, &val, sizeof(val));
-#ifdef __APPLE__
+#if defined(__APPLE__) || __FreeBSD__ >= 12
     if (ret < 0) {
 #else
     if (ret <= 0) {
@@ -65,27 +66,15 @@ static inline int consume_byte(flb_pipefd_t fd)
 static int random_uniform(int min, int max)
 {
     int val;
-    int fd;
     int range;
     int copies;
     int limit;
     int ra;
-    int ret;
 
-    fd = open("/dev/urandom", O_RDONLY);
-    if (fd == -1) {
-        srand(time(NULL));
+    if (flb_random_bytes((unsigned char *) &val, sizeof(int))) {
+        val = time(NULL);
     }
-    else {
-        ret = read(fd, &val, sizeof(val));
-        if (ret > 0) {
-            srand(val);
-        }
-        else {
-            srand(time(NULL));
-        }
-        close(fd);
-    }
+    srand(val);
 
     range  = max - min + 1;
     copies = (RAND_MAX / range);
@@ -347,6 +336,23 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data)
 
     sched = config->sched;
     mk_list_foreach_safe(head, tmp, &sched->requests) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        if (request->data == data) {
+            flb_sched_request_destroy(config, request);
+            return 0;
+        }
+    }
+
+    /*
+     *  Clean up retry tasks that are scheduled more than 60s.
+     *  Task might be destroyed when there are still retry 
+     *  scheduled but no thread is running for the task.
+     * 
+     *  We need to drop buffered chunks when the filesystem buffer
+     *  limit is reached. We need to make sure that all requests
+     *  should be destroyed to avoid invoke an invlidated request.
+     */
+    mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
         if (request->data == data) {
             flb_sched_request_destroy(config, request);

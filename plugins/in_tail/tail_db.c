@@ -29,7 +29,7 @@
 struct query_status {
     int id;
     int rows;
-    off_t offset;
+    int64_t offset;
 };
 
 /* Open or create database required by tail plugin */
@@ -67,12 +67,20 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         }
     }
 
-
     ret = flb_sqldb_query(db, SQL_PRAGMA_JOURNAL_MODE, NULL, NULL);
     if (ret != FLB_OK) {
         flb_plg_error(ctx->ins, "db: could not set pragma 'journal_mode'");
         flb_sqldb_close(db);
         return NULL;
+    }
+
+    if (ctx->db_locking == FLB_TRUE) {
+        ret = flb_sqldb_query(db, SQL_PRAGMA_LOCKING_MODE, NULL, NULL);
+        if (ret != FLB_OK) {
+            flb_plg_error(ctx->ins, "db: could not set pragma 'locking_mode'");
+            flb_sqldb_close(db);
+            return NULL;
+        }
     }
 
     return db;
@@ -143,10 +151,15 @@ static int db_file_insert(struct flb_tail_file *file, struct flb_tail_config *ct
     /* Run the insert */
     ret = sqlite3_step(ctx->stmt_insert_file);
     if (ret != SQLITE_DONE) {
+        sqlite3_clear_bindings(ctx->stmt_insert_file);
+        sqlite3_reset(ctx->stmt_insert_file);
         flb_plg_error(ctx->ins, "cannot execute insert file %s inode=%lu",
                       file->name, file->inode);
         return -1;
     }
+
+    sqlite3_clear_bindings(ctx->stmt_insert_file);
+    sqlite3_reset(ctx->stmt_insert_file);
 
     /* Get the database ID for this file */
     return flb_sqldb_last_id(ctx->db);

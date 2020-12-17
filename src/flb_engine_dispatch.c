@@ -128,6 +128,8 @@ static void test_run_formatter(struct flb_config *config,
 static int tasks_start(struct flb_input_instance *in,
                        struct flb_config *config)
 {
+    int hits = 0;
+    int retry = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *r_head;
@@ -140,6 +142,10 @@ static int tasks_start(struct flb_input_instance *in,
     /* At this point the input instance should have some tasks linked */
     mk_list_foreach_safe(head, tmp, &in->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
+
+        if (mk_list_is_empty(&task->retries) != 0) {
+            retry++;
+        }
 
         /* Only process recently created tasks */
         if (task->status != FLB_TASK_NEW) {
@@ -171,6 +177,19 @@ static int tasks_start(struct flb_input_instance *in,
             }
 
             /*
+             * If the plugin don't allow multiplexing Tasks, check if it's
+             * running something.
+             */
+            if (out->flags & FLB_OUTPUT_NO_MULTIPLEX) {
+                if (mk_list_size(&route->out->th_queue) > 0 ||
+                    retry > 0) {
+                    continue;
+                }
+            }
+
+            hits++;
+
+            /*
              * We have the Task and the Route, created a thread context for the
              * data handling.
              */
@@ -184,6 +203,12 @@ static int tasks_start(struct flb_input_instance *in,
             flb_task_add_thread(th, task);
             flb_thread_resume(th);
         }
+
+        if (hits == 0) {
+            task->status = FLB_TASK_NEW;
+        }
+
+        hits = 0;
     }
 
     return 0;

@@ -351,12 +351,12 @@ static int ensure_container(struct flb_azure_blob *ctx)
     c = flb_http_client(u_conn, FLB_HTTP_GET,
                         uri,
                         NULL, 0, NULL, 0, NULL, 0);
-    flb_http_strip_port_from_host(c);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
         flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
+    flb_http_strip_port_from_host(c);
 
     /* Prepare headers and authentication */
     azb_http_client_setup(ctx, c, -1, FLB_FALSE, FLB_FALSE);

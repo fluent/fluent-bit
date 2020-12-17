@@ -39,4 +39,6 @@ int win32_fstat(const char *path, struct win32_stat *wst);
 #define WIN32_S_IFLNK 0xc000
 #define WIN32_S_IFMT  0xf000
 
+#define lseek _lseeki64
+
 #endif

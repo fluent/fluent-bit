@@ -190,6 +190,10 @@ flb_ctx_t *flb_create()
 /* Release resources associated to the library context */
 void flb_destroy(flb_ctx_t *ctx)
 {
+    if (!ctx) {
+        return;
+    }
+
     if (ctx->event_channel) {
         mk_event_del(ctx->event_loop, ctx->event_channel);
         flb_free(ctx->event_channel);
@@ -198,6 +202,7 @@ void flb_destroy(flb_ctx_t *ctx)
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
     flb_free(ctx);
+    ctx = NULL;
 
 #ifdef FLB_HAVE_MTRACE
     /* Stop tracing malloc and free */
@@ -476,13 +481,17 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
 static void flb_lib_worker(void *data)
 {
     int ret;
-    struct flb_config *config = data;
+    flb_ctx_t *ctx = data;
+    struct flb_config *config;
 
+    config = ctx->config;
+    mk_utils_worker_rename("flb-pipeline");
     ret = flb_engine_start(config);
     if (ret == -1) {
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    ctx->status = FLB_LIB_NONE;
 }
 
 /* Return the current time to be used by lib callers */
@@ -508,7 +517,7 @@ int flb_start(flb_ctx_t *ctx)
     pthread_once(&flb_lib_once, flb_init_env);
 
     config = ctx->config;
-    ret = mk_utils_worker_spawn(flb_lib_worker, config, &tid);
+    ret = mk_utils_worker_spawn(flb_lib_worker, ctx, &tid);
     if (ret == -1) {
         return -1;
     }
@@ -536,6 +545,14 @@ int flb_start(flb_ctx_t *ctx)
         }
     }
 
+    return 0;
+}
+
+int flb_loop(flb_ctx_t *ctx)
+{
+    while (ctx->status == FLB_LIB_OK) {
+        sleep(1);
+    }
     return 0;
 }
 

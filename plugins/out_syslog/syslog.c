@@ -147,11 +147,12 @@ static flb_sds_t syslog_rfc5424(flb_sds_t *s, struct flb_time *tms,
     flb_sds_t tmp;
     uint8_t prival;
 
-    prival =  (msg->facility << 3) + msg->severity;
+    prival = (msg->facility << 3) + msg->severity;
 
     if (gmtime_r(&(tms->tm.tv_sec), &tm) == NULL) {
         return NULL;
     }
+
     tmp = flb_sds_printf(s, "<%i>%i %d-%02d-%02dT%02d:%02d:%02d.%06"PRIu64"Z ",
                             prival, 1, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
                             tm.tm_hour, tm.tm_min, tm.tm_sec,
@@ -397,9 +398,9 @@ static flb_sds_t msgpack_to_sd(flb_sds_t *s, const char *sd, int sd_len,
         for (i = 0; i < loop; i++) {
             char temp[48] = {0};
             const char *key = NULL;
-            int key_len;
+            int key_len = 0;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
@@ -518,9 +519,9 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
         for (i = 0; i < loop; i++) {
             char temp[48] = {0};
             const char *key = NULL;
-            int key_len;
+            int key_len = 0;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
@@ -760,7 +761,7 @@ static void cb_syslog_flush(const void *data, size_t bytes,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    struct flb_upstream_conn *u_conn;
+    struct flb_upstream_conn *u_conn = NULL;
     int ret;
 
     if (ctx->parsed_mode != FLB_SYSLOG_UDP) {
@@ -860,7 +861,8 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
 
     ctx->fd = -1;
     if (ctx->parsed_mode == FLB_SYSLOG_UDP) {
-        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port);
+        ctx->fd = flb_net_udp_connect(ins->host.name, ins->host.port,
+                                      ins->net_setup.source_address);
         if (ctx->fd < 0) {
             flb_syslog_config_destroy(ctx);
             return -1;

@@ -52,6 +52,17 @@ struct cw_flush {
     /* buffer used to temporarily hold an event during processing */
     char *event_buf;
     size_t event_buf_size;
+
+    /*
+     * According to the docs:
+     * PutLogEvents: 5 requests per second per log stream.
+     * Additional requests are throttled. This quota can't be changed.
+     * This plugin fast. A single flush might make more than 5 calls,
+     * Then fail, then retry, then be too fast again, on and on.
+     * I have seen this happen.
+     * So we throttle ourselves if more than 5 calls are made per flush
+     */
+    int put_events_calls;
 };
 
 struct cw_event {
@@ -102,12 +113,17 @@ struct flb_cloudwatch {
     const char *log_stream_prefix;
     const char *log_group;
     const char *region;
+    const char *sts_endpoint;
     const char *log_format;
     const char *role_arn;
     const char *log_key;
+    const char *extra_user_agent;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;
+
+    /* If set to a number greater than zero, and newly create log group's retention policy is set to this many days. */
+    int log_retention_days;
 
     /* has the log group successfully been created */
     int group_created;
@@ -123,6 +139,14 @@ struct flb_cloudwatch {
 
     /* buffers for data processing and request payload */
     struct cw_flush *buf;
+    /* The namespace to use for the metric */
+    flb_sds_t metric_namespace;
+
+    /* Metric dimensions is a list of lsits. If you have only one list of 
+    dimensions, put the values as a comma seperated string. If you want to put
+    list of lists, use the list as semicolon seperated strings. If your value
+    is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]*/
+    struct mk_list *metric_dimensions;
 
     /* Plugin output instance reference */
     struct flb_output_instance *ins;

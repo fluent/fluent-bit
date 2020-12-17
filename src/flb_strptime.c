@@ -116,6 +116,21 @@ static	char *_flb_strptime(const char *, const char *, struct tm *, int);
 static	const u_char *_find_string(const u_char *, int *, const char * const *,
 	    const char * const *, int);
 
+/*
+ * FreeBSD does not support `timezone` in time.h.
+ * https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=24590
+ */
+#ifdef __FreeBSD__
+int flb_timezone(void)
+{
+    struct tm tm;
+    time_t t = 0;
+    tzset();
+    localtime_r(&t, &tm);
+    return -(tm.tm_gmtoff);
+}
+#define timezone (flb_timezone())
+#endif
 
 char *
 flb_strptime(const char *buf, const char *fmt, struct tm *tm)
@@ -128,7 +143,7 @@ _flb_strptime(const char *buf, const char *fmt, struct tm *tm, int initialize)
 {
 	unsigned char c;
 	const unsigned char *bp, *ep;
-	size_t len;
+	size_t len = 0;
 	int alt_format, i, offs;
 	int neg = 0;
 	static int century, relyear, fields;
@@ -152,6 +167,13 @@ _flb_strptime(const char *buf, const char *fmt, struct tm *tm, int initialize)
 			fmt++;
 			continue;
 		}
+
+        /*
+         * Having increased bp we need to ensure we are not
+         * moving beyond bounds.
+         */
+        if (*bp == '\0')
+           return (NULL);
 
 		if ((c = *fmt++) != '%')
 			goto literal;

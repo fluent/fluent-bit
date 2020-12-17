@@ -31,6 +31,22 @@
 
 #include "lua_config.h"
 
+/* Push timestamp as a Lua table into the stack */
+static void lua_pushtimetable(lua_State *l, struct flb_time *tm)
+{
+    lua_createtable(l, 0, 2);
+
+    /* seconds */
+    lua_pushlstring(l, "sec", 3);
+    lua_pushinteger(l, tm->tm.tv_sec);
+    lua_settable(l, -3);
+
+    /* nanoseconds */
+    lua_pushlstring(l, "nsec", 4);
+    lua_pushinteger(l, tm->tm.tv_nsec);
+    lua_settable(l, -3);
+}
+
 static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 {
     int i;
@@ -48,11 +64,11 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
             break;
 
         case MSGPACK_OBJECT_POSITIVE_INTEGER:
-            lua_pushnumber(l, (double) o->via.u64);
+            lua_pushinteger(l, (double) o->via.u64);
             break;
 
         case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-            lua_pushnumber(l, (double) o->via.i64);
+            lua_pushinteger(l, (double) o->via.i64);
             break;
 
         case MSGPACK_OBJECT_FLOAT32:
@@ -157,6 +173,22 @@ static void try_to_convert_data_type(struct lua_filter *lf,
     lua_tomsgpack(lf, pck, 0);
 }
 
+static int lua_isinteger(lua_State *L, int index)
+{
+    lua_Number n;
+    lua_Integer i;
+
+    if (lua_type(L, index) == LUA_TNUMBER) {
+        n = lua_tonumber(L, index);
+        i = lua_tointeger(L, index);
+
+        if (i == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
 {
     int len;
@@ -177,8 +209,14 @@ static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index)
             break;
         case LUA_TNUMBER:
             {
-                double num = lua_tonumber(l, -1 + index);
-                msgpack_pack_double(pck, num);
+                if (lua_isinteger(l, -1 + index)) {
+                    int64_t num = lua_tointeger(l, -1 + index);
+                    msgpack_pack_int64(pck, num);
+                }
+                else {
+                    double num = lua_tonumber(l, -1 + index);
+                    msgpack_pack_double(pck, num);
+                }
             }
             break;
         case LUA_TBOOLEAN:
@@ -381,7 +419,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
     size_t off = 0;
     (void) f_ins;
     (void) config;
-    double ts;
+    double ts = 0;
     msgpack_object *p;
     msgpack_object root;
     msgpack_unpacked result;
@@ -411,12 +449,20 @@ static int cb_lua_filter(const void *data, size_t bytes,
         /* Get timestamp */
         flb_time_pop_from_msgpack(&t, &result, &p);
         t_orig = t;
-        ts = flb_time_to_double(&t);
 
         /* Prepare function call, pass 3 arguments, expect 3 return values */
         lua_getglobal(ctx->lua->state, ctx->call);
         lua_pushstring(ctx->lua->state, tag);
-        lua_pushnumber(ctx->lua->state, ts);
+
+        /* Timestamp */
+        if (ctx->time_as_table == FLB_TRUE) {
+            lua_pushtimetable(ctx->lua->state, &t);
+        }
+        else {
+            ts = flb_time_to_double(&t);
+            lua_pushnumber(ctx->lua->state, ts);
+        }
+
         lua_pushmsgpack(ctx->lua->state, p);
         if (ctx->protected_mode) {
             ret = lua_pcall(ctx->lua->state, 3, 3, 0);
@@ -441,8 +487,28 @@ static int cb_lua_filter(const void *data, size_t bytes,
         lua_tomsgpack(ctx, &data_pck, 0);
         lua_pop(ctx->lua->state, 1);
 
-        l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
-        lua_pop(ctx->lua->state, 1);
+        /* Lua table */
+        if (ctx->time_as_table == FLB_TRUE) {
+            if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                /* Retrieve seconds */
+                lua_getfield(ctx->lua->state, -1, "sec");
+                t.tm.tv_sec = lua_tointeger(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 1);
+
+                /* Retrieve nanoseconds */
+                lua_getfield(ctx->lua->state, -1, "nsec");
+                t.tm.tv_nsec = lua_tointeger(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 2);
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid lua timestamp type returned");
+                t = t_orig;
+            }
+        }
+        else {
+            l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
+            lua_pop(ctx->lua->state, 1);
+        }
 
         l_code = (int) lua_tointeger(ctx->lua->state, -1);
         lua_pop(ctx->lua->state, 1);
@@ -456,9 +522,11 @@ static int cb_lua_filter(const void *data, size_t bytes,
         }
         else if (l_code == 1 || l_code == 2) { /* Modified, pack new data */
             if (l_code == 1) {
-                flb_time_from_double(&t, l_timestamp);
+                if (ctx->time_as_table == FLB_FALSE) {
+                    flb_time_from_double(&t, l_timestamp);
+                }
             }
-            else if(l_code == 2) {
+            else if (l_code == 2) {
                 /* Keep the timestamp */
                 t = t_orig;
             }

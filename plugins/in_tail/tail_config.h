@@ -39,13 +39,8 @@
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
-#ifdef _WIN32
-    intptr_t ch_manager[2];    /* pipe: channel manager    */
-    intptr_t ch_pending[2];    /* pipe: pending events     */
-#else
-    int ch_manager[2];         /* pipe: channel manager    */
-    int ch_pending[2];         /* pipe: pending events     */
-#endif
+    flb_pipefd_t ch_manager[2];    /* pipe: channel manager    */
+    flb_pipefd_t ch_pending[2];    /* pipe: pending events     */
     int ch_reads;              /* count number if signal reads */
     int ch_writes;             /* count number of signal writes */
 
@@ -73,6 +68,7 @@ struct flb_tail_config {
 #endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
+    int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
     int watcher_interval;      /* watcher interval             */
     int ignore_older;          /* ignore fields older than X seconds        */
@@ -87,6 +83,7 @@ struct flb_tail_config {
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     int db_sync;
+    int db_locking;
     sqlite3_stmt *stmt_get_file;
     sqlite3_stmt *stmt_insert_file;
     sqlite3_stmt *stmt_delete_file;

@@ -53,6 +53,10 @@ struct flb_upstream {
     int flags;
     int tcp_port;
     char *tcp_host;
+    int proxied_port;
+    char *proxied_host;
+    char *proxy_username;
+    char *proxy_password;
 
     int n_connections;
 
@@ -90,58 +94,6 @@ struct flb_upstream {
     struct mk_list _head;
 };
 
-/* Upstream TCP connection */
-struct flb_upstream_conn {
-    struct mk_event event;
-    struct flb_thread *thread;
-
-    /* Socker */
-    flb_sockfd_t fd;
-
-    /*
-     * Recycle: if the connection is keepalive, this flag is always on, but if
-     * the caller wants to drop the connection once is released, it can set
-     * recycle to false.
-     */
-    int recycle;
-
-    /* Keepalive */
-    int ka_count;        /* how many times this connection has been used */
-
-    /*
-     * Custom 'error' for the connection file descriptor. Commonly used to
-     * specify a reason for an exception that was generated locally: consider
-     * a connect timeout, we shutdown(2) the connection but in reallity we
-     * might want to express an 'ETIMEDOUT'
-     */
-    int net_error;
-
-    /* Timestamps */
-    time_t ts_assigned;
-    time_t ts_created;
-    time_t ts_available;  /* sets the 'start' available time */
-
-    /* Connect */
-    time_t ts_connect_start;
-    time_t ts_connect_timeout;
-
-    /* Upstream parent */
-    struct flb_upstream *u;
-
-    /*
-     * Link to list head on flb_upstream, if the connection is busy,
-     * it's linked to 'busy_queue', otherwise it resides in 'av_queue'
-     * so it can be used by a plugin.
-     */
-    struct mk_list _head;
-
-#ifdef FLB_HAVE_TLS
-    /* Each TCP connections using TLS needs a session */
-    struct flb_tls_session *tls_session;
-    mbedtls_net_context tls_net_context;
-#endif
-};
-
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          const char *host, int port, int flags,
                                          void *tls);
@@ -151,11 +103,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
 
 int flb_upstream_destroy(struct flb_upstream *u);
 
-int flb_upstream_conn_recycle(struct flb_upstream_conn *conn, int val);
-struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u);
-int flb_upstream_conn_release(struct flb_upstream_conn *u_conn);
-int flb_upstream_conn_timeouts(struct flb_config *ctx);
-int flb_upstream_conn_pending_destroy(struct flb_config *ctx);
 int flb_upstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
 int flb_upstream_is_async(struct flb_upstream *u);

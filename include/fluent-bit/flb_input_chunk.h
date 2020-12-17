@@ -50,6 +50,8 @@ struct flb_input_chunk {
     off_t stream_off;               /* stream offset */
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
+    struct flb_task *task;          /* reference to the outgoing task */
+    uint64_t routes_mask;           /* track the output plugin the chunk routes to */
     struct mk_list _head;
 };
 
@@ -80,5 +82,7 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic);
 int flb_input_chunk_set_up(struct flb_input_chunk *ic);
 int flb_input_chunk_down(struct flb_input_chunk *ic);
 int flb_input_chunk_is_up(struct flb_input_chunk *ic);
+void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
+                                             size_t chunk_size);
 
 #endif

@@ -376,7 +376,6 @@ int flb_pack_json_state(const char *js, size_t len,
 
 static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
 {
-    double unix_time;
     msgpack_object o;
     msgpack_object *obj;
     msgpack_object root;
@@ -398,8 +397,8 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     /* This is a Fluent Bit record, just do the proper unpacking/printing */
     flb_time_pop_from_msgpack(&tms, &result, &obj);
 
-    unix_time = flb_time_to_double(&tms);
-    fprintf(stdout, "[%zd] [%f, ", cnt, unix_time);
+    fprintf(stdout, "[%zd] [%"PRIu32".%09lu, ", cnt,
+            (uint32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
     msgpack_object_print(stdout, *obj);
     fprintf(stdout, "]\n");
 
@@ -442,12 +441,46 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
+
+/*
+ * Check if a key exists in the map using the 'offset' as an index to define
+ * which element needs to start looking from
+ */
+static inline int key_exists_in_map(msgpack_object key, msgpack_object map, int offset)
+{
+    int i;
+    msgpack_object p;
+
+    if (key.type != MSGPACK_OBJECT_STR) {
+        return FLB_FALSE;
+    }
+
+    for (i = offset; i < map.via.map.size; i++) {
+        p = map.via.map.ptr[i].key;
+        if (p.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (key.via.str.size != p.via.str.size) {
+            continue;
+        }
+
+        if (memcmp(key.via.str.ptr, p.via.str.ptr, p.via.str.size) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int msgpack2json(char *buf, int *off, size_t left,
                         const msgpack_object *o)
 {
-    int ret = FLB_FALSE;
     int i;
+    int dup;
+    int ret = FLB_FALSE;
     int loop;
+    int packed;
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
@@ -463,7 +496,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRIu64, o->via.u64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -471,7 +504,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRId64, o->via.i64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -479,7 +512,12 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_FLOAT64:
         {
             char temp[512] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
+            if (o->via.f64 == (double)(long long int)o->via.f64) {
+                i = snprintf(temp, sizeof(temp)-1, "%.1f", o->via.f64);
+            }
+            else {
+                i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
+            }
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -554,21 +592,33 @@ static int msgpack2json(char *buf, int *off, size_t left,
             goto msg2json_end;
         }
         if (loop != 0) {
+            msgpack_object k;
             msgpack_object_kv *p = o->via.map.ptr;
-            if (!msgpack2json(buf, off, left, &p->key) ||
-                !try_to_write(buf, off, left, ":", 1)  ||
-                !msgpack2json(buf, off, left, &p->val)) {
-                goto msg2json_end;
-            }
-            for (i = 1; i < loop; i++) {
+
+            packed = 0;
+            dup = FLB_FALSE;
+
+            k = o->via.map.ptr[0].key;
+            for (i = 0; i < loop; i++) {
+                k = o->via.map.ptr[i].key;
+                dup = key_exists_in_map(k, *o, i + 1);
+                if (dup == FLB_TRUE) {
+                    continue;
+                }
+
+                if (packed > 0) {
+                    if (!try_to_write(buf, off, left, ",", 1)) {
+                        goto msg2json_end;
+                    }
+                }
+
                 if (
-                    !try_to_write(buf, off, left, ",", 1) ||
                     !msgpack2json(buf, off, left, &(p+i)->key) ||
                     !try_to_write(buf, off, left, ":", 1)  ||
                     !msgpack2json(buf, off, left, &(p+i)->val) ) {
                     goto msg2json_end;
-
                 }
+                packed++;
             }
         }
 
@@ -625,9 +675,13 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     }
 
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, in_buf, in_size, &off);
-    root = &result.data;
+    ret = msgpack_unpack_next(&result, in_buf, in_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_sds_destroy(out_buf);
+        return NULL;
+    }
 
+    root = &result.data;
     while (1) {
         ret = flb_msgpack_to_json(out_buf, out_size, root);
         if (ret <= 0) {
@@ -897,6 +951,11 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     }
     else {
         msgpack_sbuffer_destroy(&tmp_sbuf);
+    }
+
+    if (out_buf && flb_sds_len(out_buf) == 0) {
+        flb_sds_destroy(out_buf);
+        return NULL;
     }
 
     return out_buf;

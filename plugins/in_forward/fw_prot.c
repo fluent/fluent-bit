@@ -69,6 +69,9 @@ static int is_gzip_compressed(msgpack_object options)
             if (strncmp(v.via.str.ptr, "gzip", 4) == 0) {
                 return FLB_TRUE;
             }
+            else if (strncmp(v.via.str.ptr, "text", 4) == 0) {
+                return FLB_FALSE;
+            }
 
             return -1;
         }

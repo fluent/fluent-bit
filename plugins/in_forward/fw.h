@@ -36,6 +36,7 @@ struct flb_in_fw_config {
     /* Unix Socket (TCP only) */
     char *unix_path;                /* Unix path for socket        */
 
+    int coll_fd;
     struct mk_list connections;     /* List of active connections */
     struct mk_event_loop *evl;      /* Event loop file descriptor */
     struct flb_input_instance *ins; /* Input plugin instace       */

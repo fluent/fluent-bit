@@ -647,6 +647,9 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
      */
     mk_list_foreach(head, properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
+        if (kv->val == NULL) {
+            continue;
+        }
 
         mk_list_foreach(m_head, map) {
             m = mk_list_entry(m_head, struct flb_config_map, _head);
@@ -678,7 +681,7 @@ int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *co
 
             /* Populate value */
             if (m->type == FLB_CONFIG_MAP_STR) {
-                entry->val.str = kv->val;
+                entry->val.str = flb_sds_create(kv->val);
             }
             else if (m->type == FLB_CONFIG_MAP_INT) {
                 entry->val.i_num = atoi(kv->val);

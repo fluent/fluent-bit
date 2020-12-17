@@ -56,10 +56,27 @@ int cio_os_mkpath(const char *dir, mode_t mode)
         return 1;
     }
 
+    if (strlen(dir) == 0) {
+        errno = EINVAL;
+        return 1;
+    }
+
     if (!stat(dir, &st)) {
         return 0;
     }
 
+#ifdef _WIN32
+    char path[MAX_PATH];
+
+    if (_fullpath(path, dir, MAX_PATH) == NULL) {
+        return 1;
+    }
+
+    if (SHCreateDirectoryExA(NULL, path, NULL) != ERROR_SUCCESS) {
+        return 1;
+    }
+    return 0;
+#else
     dup_dir = strdup(dir);
     if (!dup_dir) {
         return 1;
@@ -67,4 +84,5 @@ int cio_os_mkpath(const char *dir, mode_t mode)
     cio_os_mkpath(dirname(dup_dir), mode);
     free(dup_dir);
     return mkdir(dir, mode);
+#endif
 }

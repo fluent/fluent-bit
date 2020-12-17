@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <jsmn/jsmn.h>
 
@@ -38,19 +39,6 @@ static inline int key_cmp(const char *str, int len, const char *cmp) {
     }
 
     return strncasecmp(str, cmp, len);
-}
-
-static int validate_resource(const char *res)
-{
-    if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0 &&
-        strcasecmp(res, "k8s_container") != 0 &&
-        strcasecmp(res, "k8s_node") &&
-        strcasecmp(res, "k8s_pod")) {
-        return -1;
-    }
-
-    return 0;
 }
 
 static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
@@ -269,22 +257,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
-    /* 
-    * Supported resource types:
-    * 'global'
-    * 'gce_instance'
-    * 'k8s_pod'
-    * 'k8s_node'
-    * 'k8s_container'
-    */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
-        if (validate_resource(tmp) != 0) {
-            flb_plg_error(ctx->ins, "unsupported resource type '%s'",
-                          tmp);
-            flb_stackdriver_conf_destroy(ctx);
-            return NULL;
-        }
         ctx->resource = flb_sds_create(tmp);
     }
     else {
@@ -295,8 +269,35 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (tmp) {
         ctx->severity_key = flb_sds_create(tmp);
     }
+    else {
+        ctx->severity_key = flb_sds_create(DEFAULT_SEVERITY_KEY);
+    }
 
-    if (flb_sds_cmp(ctx->resource, "k8s_container", 
+    tmp = flb_output_get_property("autoformat_stackdriver_trace", ins);
+    if (tmp) {
+        ctx->autoformat_stackdriver_trace = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->autoformat_stackdriver_trace = FLB_FALSE;
+    }
+    
+    tmp = flb_output_get_property("trace_key", ins);
+    if (tmp) {
+        ctx->trace_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->trace_key = flb_sds_create(DEFAULT_TRACE_KEY);
+    }
+
+    tmp = flb_output_get_property("log_name_key", ins);
+    if (tmp) {
+        ctx->log_name_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
+    }
+
+    if (flb_sds_cmp(ctx->resource, "k8s_container",
                     flb_sds_len(ctx->resource)) == 0 || 
         flb_sds_cmp(ctx->resource, "k8s_node", 
                     flb_sds_len(ctx->resource)) == 0 ||
@@ -322,7 +323,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             return NULL;
         }
     }
-    
+
     tmp = flb_output_get_property("labels_key", ins);
     if (tmp) {
         ctx->labels_key = flb_sds_create(tmp);
@@ -371,6 +372,8 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->resource);
     flb_sds_destroy(ctx->severity_key);
+    flb_sds_destroy(ctx->trace_key);
+    flb_sds_destroy(ctx->log_name_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
 

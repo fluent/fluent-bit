@@ -49,6 +49,7 @@ void flb_utils_split_free_entry(struct flb_split_entry *entry);
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
 int64_t flb_utils_size_to_bytes(const char *size);
+int flb_utils_hex2int(char *hex, int len);
 int flb_utils_time_to_seconds(const char *time);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
 int flb_utils_bool(const char *val);
@@ -62,5 +63,7 @@ int flb_utils_write_str_buf(const char *str, size_t str_len,
 
 int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri);
-
+int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
+                              char **out_username, char **out_password,
+                              char **out_host, char **out_port);
 #endif

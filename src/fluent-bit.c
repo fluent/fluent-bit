@@ -46,7 +46,7 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
-
+#include <fluent-bit/flb_lib.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -57,6 +57,7 @@ extern int win32_main(int, char**);
 extern void win32_started(void);
 #endif
 
+flb_ctx_t *ctx;
 struct flb_config *config;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
@@ -101,6 +102,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  -b  --storage_path=PATH\tspecify a storage buffering path\n");
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
+    printf("  -D, --dry-run\tdry run\n");
 #ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
 #endif
@@ -366,9 +368,24 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
 
 static void flb_signal_handler(int signal)
 {
+    int len;
+    char ts[32];
     char s[] = "[engine] caught signal (";
+    time_t now;
+    struct tm *cur;
+
+    now = time(NULL);
+    cur = localtime(&now);
+    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+                   cur->tm_year + 1900,
+                   cur->tm_mon + 1,
+                   cur->tm_mday,
+                   cur->tm_hour,
+                   cur->tm_min,
+                   cur->tm_sec);
 
     /* write signal number */
+    write(STDERR_FILENO, ts, len);
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         flb_print_signal(SIGINT);
@@ -388,23 +405,21 @@ static void flb_signal_handler(int signal)
     case SIGQUIT:
     case SIGHUP:
 #endif
-        flb_engine_shutdown(config);
-#ifdef FLB_HAVE_MTRACE
-        /* Stop tracing malloc and free */
-        muntrace();
-#endif
+        flb_stop(ctx);
+        flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
     case SIGTERM:
-        flb_engine_exit(config);
-        break;
-    case SIGSEGV:
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        _exit(EXIT_SUCCESS);
+     case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
         flb_stacktrace_print(&flb_st);
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
-        flb_dump(config);
+        flb_dump(ctx->config);
         break;
 #endif
     default:
@@ -759,6 +774,7 @@ int flb_main(int argc, char **argv)
 #ifdef FLB_HAVE_FORK
         { "daemon",          no_argument      , NULL, 'd' },
 #endif
+        { "dry-run",         no_argument      , NULL, 'D' },
         { "flush",           required_argument, NULL, 'f' },
         { "http",            no_argument      , NULL, 'H' },
         { "log_file",        required_argument, NULL, 'l' },
@@ -790,41 +806,24 @@ int flb_main(int argc, char **argv)
         { NULL, 0, NULL, 0 }
     };
 
-#ifdef FLB_HAVE_MTRACE
-    /* Start tracing malloc and free */
-    mtrace();
-#endif
-
-
-#ifdef _WIN32
-    /* Initialize sockets */
-    WSADATA wsaData;
-    int err;
-
-    err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (err != 0) {
-        fprintf(stderr, "WSAStartup failed with error: %d\n", err);
-        exit(EXIT_FAILURE);
-    }
-#endif
-
     /* Signal handler */
     flb_signal_init();
 
     /* Initialize Monkey Core library */
     mk_core_init();
 
-    /* Create configuration context */
-    config = flb_config_init();
-    if (!config) {
+    /* Create Fluent Bit context */
+    ctx = flb_create();
+    if (!ctx) {
         exit(EXIT_FAILURE);
     }
+    config = ctx->config;
 
 #ifndef FLB_HAVE_STATIC_CONF
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:c:df:i:m:o:R:F:p:e:"
+                              "b:c:dDf:i:m:o:R:F:p:e:"
                               "t:T:l:vqVhL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
@@ -840,6 +839,9 @@ int flb_main(int argc, char **argv)
             config->daemon = FLB_TRUE;
             break;
 #endif
+        case 'D':
+            config->dry_run = FLB_TRUE;
+            break;
         case 'e':
             ret = flb_plugin_load_router(optarg, config);
             if (ret == -1) {
@@ -1024,18 +1026,23 @@ int flb_main(int argc, char **argv)
     }
 #endif
 
-    /* Prepare pthread keys */
-    flb_thread_prepare();
-    flb_output_prepare();
-
 #ifdef FLB_SYSTEM_WINDOWS
     win32_started();
 #endif
 
-    ret = flb_engine_start(config);
-    if (ret == -1 && config) {
-        flb_engine_shutdown(config);
+    if (config->dry_run == FLB_TRUE) {
+        fprintf(stderr, "configuration test is successful\n");
+        exit(EXIT_SUCCESS);
     }
+
+    ret = flb_start(ctx);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return ret;
+    }
+
+    flb_loop(ctx);
+    flb_destroy(ctx);
 
     return ret;
 }

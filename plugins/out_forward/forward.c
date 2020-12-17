@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_sha512.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_random.h>
+#include <fluent-bit/flb_gzip.h>
 #include <msgpack.h>
 
 #include "forward.h"
@@ -65,9 +67,6 @@ static int secure_forward_init(struct flb_forward *ctx,
         secure_forward_tls_error(ctx, ret);
         return -1;
     }
-
-    /* Gernerate shared key salt */
-    mbedtls_ctr_drbg_random(&fc->tls_ctr_drbg, fc->shared_key_salt, 16);
     return 0;
 }
 #endif
@@ -520,6 +519,12 @@ static int forward_config_init(struct flb_forward_config *fc,
     }
 #endif
 
+    /* Generate the shared key salt */
+    if (flb_random_bytes(fc->shared_key_salt, 16)) {
+        flb_plg_error(ctx->ins, "cannot generate shared key salt");
+        return -1;
+    }
+
     mk_list_add(&fc->_head, &ctx->configs);
     return 0;
 }
@@ -638,6 +643,39 @@ static int config_set_properties(struct flb_upstream_node *node,
         fc->tag = NULL;
 
     }
+
+    /* compress (implies send_options) */
+    tmp = config_get_property("compress", node, ctx);
+    if (tmp) {
+        if (!strcasecmp(tmp, "text")) {
+            fc->compress = COMPRESS_NONE;
+        }
+        else if (!strcasecmp(tmp, "gzip")) {
+            fc->compress = COMPRESS_GZIP;
+            fc->send_options = FLB_TRUE;
+        }
+        else {
+            flb_plg_error(ctx->ins, "invalid compress mode: %s", tmp);
+            return -1;
+        }
+    }
+    else {
+        fc->compress = COMPRESS_NONE;
+    }
+
+    if (fc->compress != COMPRESS_NONE && fc->time_as_integer == FLB_TRUE) {
+        flb_plg_error(ctx->ins, "compress mode %s is incompatible with "
+                      "time_as_integer", tmp);
+        return -1;
+    }
+
+#ifdef FLB_HAVE_RECORD_ACCESSOR
+    if (fc->compress != COMPRESS_NONE && fc->ra_static == FLB_FALSE) {
+        flb_plg_error(ctx->ins, "compress mode %s is incompatible with dynamic "
+                      "tags", tmp);
+        return -1;
+    }
+#endif
 
     return 0;
 }
@@ -929,6 +967,8 @@ static int flush_forward_mode(struct flb_forward *ctx,
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    void *final_data;
+    size_t final_bytes;
 
     /* Pack message header */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -939,23 +979,51 @@ static int flush_forward_mode(struct flb_forward *ctx,
     /* Tag */
     flb_forward_format_append_tag(ctx, fc, &mp_pck, NULL, tag, tag_len);
 
-    entries = flb_mp_count(data, bytes);
-    msgpack_pack_array(&mp_pck, entries);
+    if (fc->compress == COMPRESS_GZIP) {
+        /* When compress is set, we switch from using Forward mode to using
+         * CompressedPackedForward mode.
+         */
+        ret = flb_gzip_compress((void *) data, bytes, &final_data, &final_bytes);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not compress entries");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_RETRY;
+        }
+
+        msgpack_pack_bin(&mp_pck, final_bytes);
+
+    } else {
+        final_data = (void *) data;
+        final_bytes = bytes;
+
+        entries = flb_mp_count(data, bytes);
+        msgpack_pack_array(&mp_pck, entries);
+    }
 
     /* Write message header */
     ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward header");
         msgpack_sbuffer_destroy(&mp_sbuf);
+        if (fc->compress == COMPRESS_GZIP) {
+            flb_free(final_data);
+        }
         return FLB_RETRY;
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* Write entries */
-    ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+    ret = flb_io_net_write(u_conn, final_data, final_bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward entries");
+        if (fc->compress == COMPRESS_GZIP) {
+            flb_free(final_data);
+        }
         return FLB_RETRY;
+    }
+
+    if (fc->compress == COMPRESS_GZIP) {
+        flb_free(final_data);
     }
 
     /* Write options */
@@ -1015,13 +1083,11 @@ static int flush_forward_compat_mode(struct flb_forward *ctx,
     msgpack_object chunk;
     msgpack_object map; /* dummy parameter */
     msgpack_unpacked result;
-    msgpack_sbuffer mp_sbuf;
 
     /* Write message header */
     ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward compat mode records");
-        msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
     }
 
@@ -1247,6 +1313,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "tag", NULL,
      0, FLB_FALSE, 0,
      "Set a custom Tag for the outgoing records"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Compression mode"
     },
     /* EOF */
     {0}

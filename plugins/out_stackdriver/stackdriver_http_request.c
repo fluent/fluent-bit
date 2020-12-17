@@ -193,14 +193,20 @@ void add_http_request_field(struct http_request_field *http_request,
  */
 static void validate_latency(msgpack_object_str latency_in_payload,
                              struct http_request_field *http_request) {
-    flb_sds_t pattern = flb_sds_create("^\\s*\\d+(.\\d+)?\\s*s\\s*$");
+    int i = 0;
+    int j = 0;
+    int status = 0;
     char extract_latency[32];
+    flb_sds_t pattern;
     struct flb_regex *regex;
 
-    int status = 0;
-    int i = 0, j = 0;
+    pattern = flb_sds_create("^\\s*\\d+(.\\d+)?\\s*s\\s*$");
+    if (!pattern) {
+        return;
+    }
 
     if (latency_in_payload.size > sizeof(extract_latency)) {
+        flb_sds_destroy(pattern);
         return;
     }
 

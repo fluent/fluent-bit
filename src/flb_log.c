@@ -114,6 +114,8 @@ static void log_worker_collector(void *data)
     FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
+    mk_utils_worker_rename("flb-logger");
+
     /* Signal the caller */
     pthread_mutex_lock(&log->pth_mutex);
     log->pth_init = FLB_TRUE;
@@ -177,7 +179,7 @@ int flb_log_get_level_str(char *str)
     else if (strcasecmp(str, "error") == 0) {
         return FLB_LOG_ERROR;
     }
-    else if (strcasecmp(str, "warn") == 0) {
+    else if (strcasecmp(str, "warn") == 0 || strcasecmp(str, "warning") == 0) {
         return FLB_LOG_WARN;
     }
     else if (strcasecmp(str, "info") == 0) {

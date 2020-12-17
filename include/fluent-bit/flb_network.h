@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_uri.h>
+#include <fluent-bit/flb_upstream_conn.h>
 
 /* Network connection setup */
 struct flb_net_setup {
@@ -39,6 +40,9 @@ struct flb_net_setup {
 
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
+
+    /* maximum of times a keepalive connection can be used */
+    int keepalive_max_recycle;
 };
 
 /* Defines a host service and it properties */
@@ -69,8 +73,15 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
 flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock);
-flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port);
-flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port);
+flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
+                                 char *source_addr, int connect_timeout,
+                                 int is_async,
+                                 void *async_ctx,
+                                 struct flb_upstream_conn *u_conn);
+
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
+                                 char *source_addr);
+
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
 flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
 flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);

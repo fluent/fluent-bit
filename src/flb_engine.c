@@ -97,8 +97,7 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
     flb_upstream_conn_timeouts(ctx);
 }
 
-
-static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
+static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config)
 {
     int ret;
     int bytes;
@@ -124,6 +123,167 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     type = FLB_BITS_U64_HIGH(val);
     key  = FLB_BITS_U64_LOW(val);
 
+    if (type != FLB_ENGINE_TASK) {
+        flb_error("[engine] invalid event type %i for output handler",
+                  type);
+        return -1;
+    }
+
+    /*
+     * The notion of ENGINE_TASK is associated to outputs. All thread
+     * references below belongs to flb_output_thread's.
+     */
+    ret       = FLB_TASK_RET(key);
+    task_id   = FLB_TASK_ID(key);
+    thread_id = FLB_TASK_TH(key);
+
+#ifdef FLB_HAVE_TRACE
+    char *trace_st = NULL;
+
+    if (ret == FLB_OK) {
+        trace_st = "OK";
+    }
+    else if (ret == FLB_ERROR) {
+        trace_st = "ERROR";
+    }
+    else if (ret == FLB_RETRY) {
+        trace_st = "RETRY";
+    }
+
+    flb_trace("%s[engine] [task event]%s task_id=%i thread_id=%i return=%s",
+              ANSI_YELLOW, ANSI_RESET,
+              task_id, thread_id, trace_st);
+#endif
+
+    task   = config->tasks_map[task_id].task;
+    out_th = flb_output_thread_get(thread_id, task);
+    ins    = out_th->o_ins;
+
+    /* A thread has finished, delete it */
+    if (ret == FLB_OK) {
+        /* Inform the user if a 'retry' succedeed */
+        if (mk_list_size(&task->retries) > 0) {
+            retries = flb_task_retry_count(task, out_th->parent);
+            if (retries > 0) {
+                flb_info("[engine] flush chunk '%s' succeeded at retry %i: "
+                         "task_id=%i, input=%s > output=%s",
+                         flb_input_chunk_get_name(task->ic),
+                         retries, out_th->id,
+                         flb_input_name(task->i_ins),
+                         flb_output_name(ins));
+            }
+        }
+        else if (flb_task_from_fs_storage(task) == FLB_TRUE) {
+            flb_info("[engine] flush backlog chunk '%s' succeeded: "
+                     "task_id=%i, input=%s > output=%s",
+                     flb_input_chunk_get_name(task->ic),
+                     out_th->id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins));
+        }
+        flb_task_retry_clean(task, out_th->parent);
+        flb_output_thread_destroy_id(thread_id, task);
+        if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+            flb_task_destroy(task, FLB_TRUE);
+        }
+    }
+    else if (ret == FLB_RETRY) {
+        /* Create a Task-Retry */
+        retry = flb_task_retry_create(task, out_th);
+        if (!retry) {
+            /*
+             * It can fail in two situations:
+             *
+             * - No enough memory (unlikely)
+             * - It reached the maximum number of re-tries
+             */
+#ifdef FLB_HAVE_METRICS
+            flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1,
+                            out_th->o_ins->metrics);
+#endif
+            /* Notify about this failed retry */
+            flb_warn("[engine] chunk '%s' cannot be retried: "
+                     "task_id=%i, input=%s > output=%s",
+                     flb_input_chunk_get_name(task->ic),
+                     task_id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins));
+
+            flb_output_thread_destroy_id(thread_id, task);
+            if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+                flb_task_destroy(task, FLB_TRUE);
+            }
+
+            return 0;
+        }
+
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, out_th->o_ins->metrics);
+#endif
+
+        /* Always destroy the old thread */
+        flb_output_thread_destroy_id(thread_id, task);
+
+        /* Let the scheduler to retry the failed task/thread */
+        retry_seconds = flb_sched_request_create(config,
+                                                 retry, retry->attempts);
+
+        /*
+         * If for some reason the Scheduler could not include this retry,
+         * we need to get rid of it, likely this is because of not enough
+         * memory available or we ran out of file descriptors.
+         */
+        if (retry_seconds == -1) {
+            flb_warn("[engine] retry for chunk '%s' could not be scheduled: "
+                     "input=%s > output=%s",
+                     flb_input_chunk_get_name(task->ic),
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins));
+
+            flb_task_retry_destroy(retry);
+            if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+                flb_task_destroy(task, FLB_TRUE);
+            }
+        }
+        else {
+            /* Inform the user 'retry' has been scheduled */
+            flb_warn("[engine] failed to flush chunk '%s', retry in %i seconds: "
+                     "task_id=%i, input=%s > output=%s",
+                     flb_input_chunk_get_name(task->ic),
+                     retry_seconds,
+                     task->id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins));
+        }
+    }
+    else if (ret == FLB_ERROR) {
+        flb_output_thread_destroy_id(thread_id, task);
+        if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+            flb_task_destroy(task, FLB_TRUE);
+        }
+    }
+
+    return 0;
+}
+
+static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
+{
+    int bytes;
+    uint32_t type;
+    uint32_t key;
+    uint64_t val;
+
+    /* read the event */
+    bytes = flb_pipe_r(fd, &val, sizeof(val));
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Get type and key */
+    type = FLB_BITS_U64_HIGH(val);
+    key  = FLB_BITS_U64_LOW(val);
+
     /* Flush all remaining data */
     if (type == 1) {                  /* Engine type */
         if (key == FLB_ENGINE_STOP) {
@@ -135,141 +295,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     else if (type == FLB_ENGINE_IN_THREAD) {
         /* Event coming from an input thread */
         flb_input_thread_destroy_id(key, config);
-    }
-    else if (type == FLB_ENGINE_TASK) {
-        /*
-         * The notion of ENGINE_TASK is associated to outputs. All thread
-         * references below belongs to flb_output_thread's.
-         */
-        ret       = FLB_TASK_RET(key);
-        task_id   = FLB_TASK_ID(key);
-        thread_id = FLB_TASK_TH(key);
-
-#ifdef FLB_HAVE_TRACE
-        char *trace_st = NULL;
-
-        if (ret == FLB_OK) {
-            trace_st = "OK";
-        }
-        else if (ret == FLB_ERROR) {
-            trace_st = "ERROR";
-        }
-        else if (ret == FLB_RETRY) {
-            trace_st = "RETRY";
-        }
-
-        flb_trace("%s[engine] [task event]%s task_id=%i thread_id=%i return=%s",
-                  ANSI_YELLOW, ANSI_RESET,
-                  task_id, thread_id, trace_st);
-#endif
-
-        task   = config->tasks_map[task_id].task;
-        out_th = flb_output_thread_get(thread_id, task);
-        ins    = out_th->o_ins;
-
-        /* A thread has finished, delete it */
-        if (ret == FLB_OK) {
-            /* Inform the user if a 'retry' succedeed */
-            if (mk_list_size(&task->retries) > 0) {
-                retries = flb_task_retry_count(task, out_th->parent);
-                if (retries > 0) {
-                    flb_info("[engine] flush chunk '%s' succeeded at retry %i: "
-                             "task_id=%i, input=%s > output=%s",
-                             flb_input_chunk_get_name(task->ic),
-                             retries, out_th->id,
-                             flb_input_name(task->i_ins),
-                             flb_output_name(ins));
-                }
-            }
-            else if (flb_task_from_fs_storage(task) == FLB_TRUE) {
-                flb_info("[engine] flush backlog chunk '%s' succeeded: "
-                         "task_id=%i, input=%s > output=%s",
-                         flb_input_chunk_get_name(task->ic),
-                         out_th->id,
-                         flb_input_name(task->i_ins),
-                         flb_output_name(ins));
-            }
-            flb_task_retry_clean(task, out_th->parent);
-            flb_output_thread_destroy_id(thread_id, task);
-            if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                flb_task_destroy(task, FLB_TRUE);
-            }
-        }
-        else if (ret == FLB_RETRY) {
-            /* Create a Task-Retry */
-            retry = flb_task_retry_create(task, out_th);
-            if (!retry) {
-                /*
-                 * It can fail in two situations:
-                 *
-                 * - No enough memory (unlikely)
-                 * - It reached the maximum number of re-tries
-                 */
-#ifdef FLB_HAVE_METRICS
-                flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1,
-                                out_th->o_ins->metrics);
-#endif
-                /* Notify about this failed retry */
-                flb_warn("[engine] chunk '%s' cannot be retried: "
-                         "task_id=%i, input=%s > output=%s",
-                         flb_input_chunk_get_name(task->ic),
-                         task_id,
-                         flb_input_name(task->i_ins),
-                         flb_output_name(ins));
-
-                flb_output_thread_destroy_id(thread_id, task);
-                if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                    flb_task_destroy(task, FLB_TRUE);
-                }
-
-                return 0;
-            }
-
-#ifdef FLB_HAVE_METRICS
-            flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, out_th->o_ins->metrics);
-#endif
-
-            /* Always destroy the old thread */
-            flb_output_thread_destroy_id(thread_id, task);
-
-            /* Let the scheduler to retry the failed task/thread */
-            retry_seconds = flb_sched_request_create(config,
-                                                     retry, retry->attemps);
-
-            /*
-             * If for some reason the Scheduler could not include this retry,
-             * we need to get rid of it, likely this is because of not enough
-             * memory available or we ran out of file descriptors.
-             */
-            if (retry_seconds == -1) {
-                flb_warn("[engine] retry for chunk '%s' could not be scheduled: "
-                         "input=%s > output=%s",
-                         flb_input_chunk_get_name(task->ic),
-                         flb_input_name(task->i_ins),
-                         flb_output_name(ins));
-
-                flb_task_retry_destroy(retry);
-                if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                    flb_task_destroy(task, FLB_TRUE);
-                }
-            }
-            else {
-                /* Inform the user 'retry' has been scheduled */
-                flb_warn("[engine] failed to flush chunk '%s', retry in %i seconds: "
-                         "task_id=%i, input=%s > output=%s",
-                         flb_input_chunk_get_name(task->ic),
-                         retry_seconds,
-                         task->id,
-                         flb_input_name(task->i_ins),
-                         flb_output_name(ins));
-            }
-        }
-        else if (ret == FLB_ERROR) {
-            flb_output_thread_destroy_id(thread_id, task);
-            if (task->users == 0 && mk_list_size(&task->retries) == 0) {
-                flb_task_destroy(task, FLB_TRUE);
-            }
-        }
     }
 
     return 0;
@@ -406,12 +431,6 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
-    /* Start the Logging service */
-    ret = flb_engine_log_start(config);
-    if (ret == -1) {
-        return -1;
-    }
-
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
@@ -419,6 +438,11 @@ int flb_engine_start(struct flb_config *config)
     }
     config->evl = evl;
 
+    /* Start the Logging service */
+    ret = flb_engine_log_start(config);
+    if (ret == -1) {
+        return -1;
+    }
 
     flb_info("[engine] started (pid=%i)", getpid());
 
@@ -622,6 +646,13 @@ int flb_engine_start(struct flb_config *config)
                     flb_thread_resume(th);
                 }
             }
+            else if (event->type == FLB_ENGINE_EV_OUTPUT) {
+                /*
+                 * Event originated by an output plugin. likely a Task return
+                 * status.
+                 */
+                handle_output_event(event->fd, config);
+            }
         }
 
         /* Cleanup functions associated to events and timers */
@@ -683,6 +714,8 @@ int flb_engine_exit(struct flb_config *config)
 {
     int ret;
     uint64_t val = FLB_ENGINE_EV_STOP;
+
+    config->is_ingestion_active = FLB_FALSE;
 
     flb_input_pause_all(config);
 
