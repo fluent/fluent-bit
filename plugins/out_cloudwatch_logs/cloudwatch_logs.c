@@ -304,7 +304,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
-                                                        &ctx->client_tls);
+                                                        ctx->client_tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         goto error;
