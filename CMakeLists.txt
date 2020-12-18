@@ -67,7 +67,7 @@ option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
 option(FLB_PARSER              "Build with Parser support"    Yes)
-option(FLB_TLS                 "Build with SSL/TLS support"    No)
+option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
 option(FLB_BINARY              "Build executable binary"      Yes)
 option(FLB_EXAMPLES            "Build examples"               Yes)
 option(FLB_SHARED_LIB          "Build shared library"         Yes)
@@ -420,10 +420,18 @@ endif()
 
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
+
+  # Build mbedtls: yes, in this transition period we always enable it
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+
+  # find OpenSSL (our preferred choice now)
+  find_package(OpenSSL)
+  if(OPENSSL_FOUND)
+    FLB_DEFINITION(FLB_HAVE_OPENSSL)
+  endif()
 endif()
 
 # Metrics

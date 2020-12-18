@@ -76,7 +76,6 @@ if(FLB_TLS)
   # Register the TLS interface and functions
   set(src
     ${src}
-    "tls/mbedtls.c"
     "tls/flb_tls.c"
     "flb_oauth2.c"
     )
@@ -84,7 +83,6 @@ if(FLB_TLS)
   # Make sure our output targets links to the TLS library
   set(extra_libs
     ${extra_libs}
-    "mbedtls"
     )
 endif()
 
@@ -269,7 +267,15 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
+  mbedtls
   )
+
+if(OPENSSL_FOUND)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    OpenSSL::SSL
+    )
+endif()
 
 # UTF8 Encoding
 if(FLB_UTF8_ENCODER)
