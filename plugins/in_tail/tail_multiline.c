@@ -539,14 +539,14 @@ int flb_tail_mult_pending_flush_all(struct flb_tail_config *ctx)
         file = mk_list_entry(head, struct flb_tail_file, _head);
         file_pending_flush(ctx, file, expired);
     }
+
+    return 0;
 }
 
 int flb_tail_mult_pending_flush(struct flb_input_instance *ins,
                                 struct flb_config *config, void *context)
 {
     time_t now;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     struct mk_list *head;
     struct flb_tail_file *file;
     struct flb_tail_config *ctx = context;
