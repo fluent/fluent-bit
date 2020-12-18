@@ -564,7 +564,7 @@ int mk_sched_drop_connection(struct mk_sched_conn *conn,
                              struct mk_sched_worker *sched,
                              struct mk_server *server)
 {
-    mk_sched_threads_destroy_all(sched);
+    mk_sched_threads_destroy_conn(sched, conn);
     return mk_sched_remove_client(conn, sched, server);
 }
 
@@ -633,6 +633,31 @@ int mk_sched_threads_destroy_all(struct mk_sched_worker *sched)
     c = sched_thread_cleanup(sched, &sched->threads_purge);
     c += sched_thread_cleanup(sched, &sched->threads);
 
+    return c;
+}
+
+/*
+ * Destroy the thread contexts associated to the particular
+ * connection.
+ *
+ * Return the number of contexts destroyed.
+ */
+int mk_sched_threads_destroy_conn(struct mk_sched_worker *sched,
+                                  struct mk_sched_conn *conn)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_http_thread *mth;
+    (void) sched;
+
+    mk_list_foreach_safe(head, tmp, &sched->threads) {
+        mth = mk_list_entry(head, struct mk_http_thread, _head);
+        if (mth->session->conn == conn) {
+            mk_http_thread_destroy(mth);
+            c++;
+        }
+    }
     return c;
 }
 

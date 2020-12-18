@@ -43,7 +43,6 @@ static void mk_config_error(const char *path, int line, const char *msg)
 {
     mk_err("File %s", path);
     mk_err("Error in line %i: %s", line, msg);
-    exit(EXIT_FAILURE);
 }
 
 /* Raise a warning */
@@ -247,6 +246,8 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
              */
             if (!feof(f)) {
                 mk_config_error(path, line, "Length of content has exceeded limit");
+                mk_mem_free(buf);
+                return -1;
             }
         }
 
@@ -315,6 +316,8 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             }
             else {
                 mk_config_error(path, line, "Bad header definition");
+                mk_mem_free(buf);
+                return -1;
             }
         }
 
@@ -350,6 +353,9 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
 
         if (!key || !val || i < 0) {
             mk_config_error(path, line, "Each key must have a value");
+            mk_mem_free(key);
+            mk_mem_free(val);
+            return -1;
         }
 
         /* Trim strings */
@@ -358,6 +364,9 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
 
         if (strlen(val) == 0) {
             mk_config_error(path, line, "Key has an empty value");
+            mk_mem_free(key);
+            mk_mem_free(val);
+            return -1;
         }
 
         /* Register entry: key and val are copied as duplicated */
