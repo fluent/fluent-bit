@@ -959,7 +959,7 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
                                         ctx->api_host,
                                         ctx->api_port,
                                         io_type,
-                                        &ctx->tls);
+                                        ctx->tls);
     if (!ctx->upstream) {
         /* note: if ctx->tls.context is set, it's destroyed upon context exit */
         return -1;
