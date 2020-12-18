@@ -21,7 +21,11 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_time.h>
 
+#ifdef FLB_HAVE_OPENSSL
+#include "openssl.c"
+#else
 #include "mbedtls.c"
+#endif
 
 static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
                                       int mask)
@@ -76,7 +80,12 @@ struct flb_tls *flb_tls_create(int verify,
         tls->vhost = flb_strdup(vhost);
     }
     tls->ctx = backend;
+
+#ifdef FLB_HAVE_OPENSSL
+    tls->api = &tls_openssl;
+#else
     tls->api = &tls_mbedtls;
+#endif
 
     return tls;
 }
