@@ -155,7 +155,7 @@ struct flb_upstream_node *flb_upstream_node_create(const char *name, const char 
 
     /* upstream context */
     node->u = flb_upstream_create(config, node->host, i_port,
-                                  io_flags, &node->tls);
+                                  io_flags, node->tls);
     if (!node->u) {
         flb_error("[upstream_node] error creating upstream context "
                   "for node '%s'", name);
