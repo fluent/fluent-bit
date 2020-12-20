@@ -55,6 +55,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, grace)},
 
+    {FLB_CONF_STR_MAX_GRACE_RETRIES,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, max_grace_retries)},
+
     {FLB_CONF_STR_DAEMON,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, daemon)},
@@ -151,6 +155,8 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->max_grace_retries = 5;
+    config->num_shutdowns_attempted = 0;
     config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER

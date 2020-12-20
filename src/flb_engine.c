@@ -610,11 +610,12 @@ int flb_engine_start(struct flb_config *config)
                      * wait again for the grace period and re-check again.
                      */
                     ret = flb_task_running_count(config);
-                    if (ret > 0) {
+                    if (ret > 0 && config->num_shutdowns_attempted < config->max_grace_retries) {
                         flb_warn("[engine] shutdown delayed, grace period has "
                                  "finished but some tasks are still running.");
                         flb_task_running_print(config);
                         flb_engine_exit(config);
+                        config->num_shutdowns_attempted++;
                     }
                     else {
                         ret = config->exit_status_code;
