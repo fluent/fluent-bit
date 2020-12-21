@@ -398,7 +398,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data)
 {
     int ret = -1;
-    uint64_t mask_id;
     int flags = 0;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
@@ -406,17 +405,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     if (!output) {
         return NULL;
-    }
-
-    /* Get the last mask_id reported by an output instance plugin */
-    if (mk_list_is_empty(&config->outputs) == 0) {
-        mask_id = 0;
-    }
-    else {
-        instance = mk_list_entry_last(&config->outputs,
-                                      struct flb_output_instance,
-                                      _head);
-        mask_id = (instance->mask_id);
     }
 
     mk_list_foreach(head, &config->out_plugins) {
@@ -442,20 +430,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
 
-    /*
-     * Set mask_id: the mask_id is an unique number assigned to this
-     * output instance that is used later to set in an 'unsigned 64
-     * bit number' where a specific task (buffer/records) should be
-     * routed.
-     *
-     * note: This value is different than instance id.
-     */
-    if (mask_id == 0) {
-        instance->mask_id = 1;
-    }
-    else {
-        instance->mask_id = (mask_id * 2);
-    }
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
