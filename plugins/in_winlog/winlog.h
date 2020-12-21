@@ -102,7 +102,7 @@ int winlog_sqlite_save(struct winlog_channel *ch, struct flb_sqldb *db);
 #define SQL_UPDATE_CHANNEL                                          \
     "INSERT INTO in_winlog_channels"                                \
     "  (name, record_number, time_written, created)"                \
-    "  VALUES ('%s', %u, %u, %u)"                                   \
+    "  VALUES ('%s', %u, %u, %llu)"                                   \
     "  ON CONFLICT(name) DO UPDATE"                                 \
     "  SET record_number = excluded.record_number,"                 \
     "      time_written = excluded.time_written"
