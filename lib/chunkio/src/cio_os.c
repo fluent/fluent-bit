@@ -27,6 +27,10 @@
 
 #include <chunkio/chunkio_compat.h>
 
+#ifdef _WIN32
+#include <Shlobj.h>
+#endif
+
 /* Check if a path is a directory */
 int cio_os_isdir(const char *dir)
 {
