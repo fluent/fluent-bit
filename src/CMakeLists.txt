@@ -53,6 +53,7 @@ set(src
   flb_strptime.c
   flb_fstore.c
   flb_thread_pool.c
+  flb_routes_mask.c
   )
 
 if(FLB_SYSTEM_WINDOWS)
