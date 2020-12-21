@@ -45,7 +45,7 @@ struct flb_config {
     int is_running;            /* service running ?              */
     double flush;              /* Flush timeout                  */
     int grace;                 /* Grace on shutdown              */
-    int max_grace_retries;     /* Max times to retry service shutdown grace period with tasks still running */
+    int max_shutdown_retries;  /* Max times to retry service shutdown grace period with tasks still running */
     flb_pipefd_t flush_fd;     /* Timer FD associated to flush   */
 
     int daemon;               /* Run as a daemon ?              */
@@ -233,15 +233,15 @@ enum conf_type {
     FLB_CONF_TYPE_OTHER,
 };
 
-#define FLB_CONF_STR_FLUSH             "Flush"
-#define FLB_CONF_STR_GRACE             "Grace"
-#define FLB_CONF_STR_MAX_GRACE_RETRIES "Max_Grace_Retries"
-#define FLB_CONF_STR_DAEMON            "Daemon"
-#define FLB_CONF_STR_LOGFILE           "Log_File"
-#define FLB_CONF_STR_LOGLEVEL          "Log_Level"
-#define FLB_CONF_STR_PARSERS_FILE      "Parsers_File"
-#define FLB_CONF_STR_PLUGINS_FILE      "Plugins_File"
-#define FLB_CONF_STR_STREAMS_FILE      "Streams_File"
+#define FLB_CONF_STR_FLUSH                "Flush"
+#define FLB_CONF_STR_GRACE                "Grace"
+#define FLB_CONF_STR_MAX_SHUTDOWN_RETRIES "Max_Shutdown_Retries"
+#define FLB_CONF_STR_DAEMON               "Daemon"
+#define FLB_CONF_STR_LOGFILE              "Log_File"
+#define FLB_CONF_STR_LOGLEVEL             "Log_Level"
+#define FLB_CONF_STR_PARSERS_FILE         "Parsers_File"
+#define FLB_CONF_STR_PLUGINS_FILE         "Plugins_File"
+#define FLB_CONF_STR_STREAMS_FILE         "Streams_File"
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
