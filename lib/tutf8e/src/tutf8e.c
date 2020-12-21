@@ -37,10 +37,14 @@ int tutf8e_string_encode(const uint16_t *table, const char *input, const char *i
   int ret;
   size_t input_length = 0;
   size_t encoded_length = 0;
-  if (!(ret = tutf8e_string_length(table, input, invalid, &input_length, &encoded_length)))
+
+  ret = tutf8e_string_length(table, input, invalid, &input_length, &encoded_length);
+  if (!ret)
   {
     if (encoded_length+1 > *output_length) return TUTF8E_TOOLONG;
-    if (!(ret = tutf8e_buffer_encode(table, input, input_length, invalid, output, output_length)))
+
+    ret = tutf8e_buffer_encode(table, input, input_length, invalid, output, output_length);
+    if (!ret)
     {
       output[encoded_length] = 0;
       return TUTF8E_OK;
@@ -104,14 +108,14 @@ int tutf8e_buffer_encode
     const uint16_t c = table[*i];
     if (c<0x80) {
       if (left<1) return TUTF8E_TOOLONG;
-      *(o++) = c;
+      *(o++) = (uint8_t) c;
       left -= 1;
       continue;
     }
     if (c<0x800) {
       if (left<2) return TUTF8E_TOOLONG;
-      *(o++) = 0xc0 | (c>>6);
-      *(o++) = 0x80 | (c&0x3f);
+      *(o++) = 0xc0 | (uint8_t) (c>>6);
+      *(o++) = 0x80 | (uint8_t) (c&0x3f);
       left -= 2;
       continue;
     }
