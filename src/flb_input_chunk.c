@@ -261,7 +261,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
  * after buffering the new data
  */
 int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
-                                                   size_t chunk_size)
+                                         size_t chunk_size)
 {
     int overlimit = 0;
     struct mk_list *head;
