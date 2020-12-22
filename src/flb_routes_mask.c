@@ -139,6 +139,6 @@ int flb_routes_mask_is_empty(uint64_t *routes_mask)
     uint64_t empty[FLB_ROUTES_MASK_ELEMENTS];
 
     /* Clear the tmp bitfield */
-    memset(empty, 0, sizeof(uint64_t) * FLB_ROUTES_MASK_ELEMENTS);
-    return memcmp(routes_mask, empty, sizeof(uint64_t) * FLB_ROUTES_MASK_ELEMENTS) == 0;
+    memset(empty, 0, sizeof(empty));
+    return memcmp(routes_mask, empty, sizeof(empty)) == 0;
 }
