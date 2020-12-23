@@ -295,17 +295,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
      */
     if (ctx->queue_full_retries > 0 &&
         queue_full_retries >= ctx->queue_full_retries) {
-        if (ctx->format == FLB_KAFKA_FMT_JSON) {
-            flb_free(out_buf);
-        }
-        if (ctx->format == FLB_KAFKA_FMT_GELF) {
+        if (ctx->format != FLB_KAFKA_FMT_MSGP) {
             flb_sds_destroy(s);
         }
-#ifdef FLB_HAVE_AVRO_ENCODER
-        if (ctx->format == FLB_KAFKA_FMT_AVRO) {
-            flb_sds_destroy(s);
-        }
-#endif
         msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_RETRY;
     }
