@@ -19,6 +19,6 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 
-pthread_key_t flb_thread_key;
+pthread_key_t flb_coro_key;

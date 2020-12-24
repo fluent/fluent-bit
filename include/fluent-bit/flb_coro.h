@@ -18,13 +18,22 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_THREAD_LIBCO_H
-#define FLB_THREAD_LIBCO_H
+#ifndef FLB_CORO_H
+#define FLB_CORO_H
+
+/* Required by OSX */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
 
 #include <monkey/mk_core.h>
 
@@ -36,7 +45,13 @@
 #include <valgrind/valgrind.h>
 #endif
 
-struct flb_thread {
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern FLB_EXPORT pthread_key_t flb_coro_key;
+
+struct flb_coro {
 
 #ifdef FLB_HAVE_VALGRIND
     unsigned int valgrind_stack_id;
@@ -50,35 +65,35 @@ struct flb_thread {
 
     /*
      * Callback invoked before the thread is destroyed. Used to release
-     * any pending info in FLB_THREAD_DATA(...).
+     * any pending info in FLB_CORO_DATA(...).
      */
     void (*cb_destroy) (void *);
 };
 
 #ifdef FLB_CORO_STACK_SIZE
-#define FLB_THREAD_STACK_SIZE      FLB_CORO_STACK_SIZE
+#define FLB_CORO_STACK_SIZE      FLB_CORO_STACK_SIZE
 #else
-#define FLB_THREAD_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
+#define FLB_CORO_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
 #endif
 
-#define FLB_THREAD_DATA(th)        (((char *) th) + sizeof(struct flb_thread))
+#define FLB_CORO_DATA(th)        (((char *) th) + sizeof(struct flb_coro))
 
-static FLB_INLINE void flb_thread_prepare(void)
+static FLB_INLINE void flb_coro_prepare(void)
 {
-    pthread_key_create(&flb_thread_key, NULL);
+    pthread_key_create(&flb_coro_key, NULL);
 }
 
-static FLB_INLINE void flb_thread_yield(struct flb_thread *th, int ended)
+static FLB_INLINE void flb_coro_yield(struct flb_coro *th, int ended)
 {
     co_switch(th->caller);
 }
 
-static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
+static FLB_INLINE void flb_coro_destroy(struct flb_coro *th)
 {
     if (th->cb_destroy) {
-        th->cb_destroy(FLB_THREAD_DATA(th));
+        th->cb_destroy(FLB_CORO_DATA(th));
     }
-    flb_trace("[thread] destroy thread=%p data=%p", th, FLB_THREAD_DATA(th));
+    flb_trace("[thread] destroy thread=%p data=%p", th, FLB_CORO_DATA(th));
 
 #ifdef FLB_HAVE_VALGRIND
     VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
@@ -88,11 +103,11 @@ static FLB_INLINE void flb_thread_destroy(struct flb_thread *th)
     flb_free(th);
 }
 
-#define flb_thread_return(th) co_switch(th->caller)
+#define flb_coro_return(th) co_switch(th->caller)
 
-static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
+static FLB_INLINE void flb_coro_resume(struct flb_coro *th)
 {
-    pthread_setspecific(flb_thread_key, (void *) th);
+    pthread_setspecific(flb_coro_key, (void *) th);
 
     /*
      * In the past we used to have a flag to mark when a coroutine
@@ -108,27 +123,31 @@ static FLB_INLINE void flb_thread_resume(struct flb_thread *th)
     co_switch(th->callee);
 }
 
-static FLB_INLINE struct flb_thread *flb_thread_new(size_t data_size,
-                                         void (*cb_destroy) (void *))
+static FLB_INLINE struct flb_coro *flb_coro_new(size_t data_size,
+                                                void (*cb_destroy) (void *))
 
 {
     void *p;
-    struct flb_thread *th;
+    struct flb_coro *th;
 
     /* Create a thread context and initialize */
-    p = flb_malloc(sizeof(struct flb_thread) + data_size);
+    p = flb_malloc(sizeof(struct flb_coro) + data_size);
     if (!p) {
         flb_errno();
         return NULL;
     }
 
-    th = (struct flb_thread *) p;
+    th = (struct flb_coro *) p;
     th->cb_destroy = NULL;
 
     flb_trace("[thread %p] created (custom data at %p, size=%lu",
-              th, FLB_THREAD_DATA(th), data_size);
+              th, FLB_CORO_DATA(th), data_size);
 
     return th;
 }
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* !FLB_CORO_H */
