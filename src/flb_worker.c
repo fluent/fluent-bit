@@ -71,7 +71,7 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
 
     worker = flb_malloc(sizeof(struct flb_worker));
     if (!worker) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
     MK_EVENT_ZERO(&worker->event);
