@@ -969,7 +969,7 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector = NULL;
-    struct flb_thread *th;
+    struct flb_coro *co;
 
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
@@ -994,11 +994,11 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 
     /* Trigger the collector callback */
     if (collector->instance->threaded == FLB_TRUE) {
-        th = flb_input_thread_collect(collector, config);
-        if (!th) {
+        co = flb_input_thread_collect(collector, config);
+        if (!co) {
             return -1;
         }
-        flb_thread_resume(th);
+        flb_coro_resume(co);
     }
     else {
         collector->cb_collect(collector->instance, config,
