@@ -48,8 +48,6 @@
 
 /* Upstream handler */
 struct flb_upstream {
-    struct mk_event_loop *evl;
-
     int flags;
     int tcp_port;
     char *tcp_host;
@@ -70,6 +68,13 @@ struct flb_upstream {
      */
     int ha_mode;
     void *ha_ctx;
+
+    /*
+       If the connections will be in separate threads, this flag is
+     * enabled and all lists management are protected through mutexes.
+     */
+    int thread_safe;
+    pthread_mutex_t mutex_lists;
 
     /*
      * This field is a linked-list-head for upstream connections that
@@ -105,6 +110,7 @@ int flb_upstream_destroy(struct flb_upstream *u);
 int flb_upstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);
 int flb_upstream_is_async(struct flb_upstream *u);
+int flb_upstream_thread_safe(struct flb_upstream *u);
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config);
 
 #endif
