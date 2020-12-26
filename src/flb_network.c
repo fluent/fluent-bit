@@ -349,8 +349,8 @@ static int net_connect_async(int fd,
 
     /* Register the connection socket into the main event loop */
     MK_EVENT_ZERO(&u_conn->event);
-    u_conn->thread = async_ctx;
-    ret = mk_event_add(u_conn->u->evl,
+    u_conn->coro = async_ctx;
+    ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
                        MK_EVENT_WRITE, &u_conn->event);
@@ -366,13 +366,13 @@ static int net_connect_async(int fd,
      * Return the control to the parent caller, we need to wait for
      * the event loop to get back to us.
      */
-    flb_thread_yield(async_ctx, FLB_FALSE);
+    flb_coro_yield(async_ctx, FLB_FALSE);
 
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
 
     /* We got a notification, remove the event registered */
-    ret = mk_event_del(u_conn->u->evl, &u_conn->event);
+    ret = mk_event_del(u_conn->evl, &u_conn->event);
     if (ret == -1) {
         flb_error("[io] connect event handler error");
         return -1;
