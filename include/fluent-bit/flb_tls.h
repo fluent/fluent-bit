@@ -23,17 +23,18 @@
 
 #ifdef FLB_HAVE_TLS
 
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_upstream.h>
 
-int net_io_tls_write(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int net_io_tls_write(struct flb_coro *co, struct flb_upstream_conn *u_conn,
                      const void *data, size_t len, size_t *out_len);
-int net_io_tls_read(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int net_io_tls_read(struct flb_coro *co, struct flb_upstream_conn *u_conn,
                     void *buf, size_t len);
 
 int flb_io_tls_connect(struct flb_upstream_conn *u_conn,
-                       struct flb_thread *th);
+                       struct flb_coro *co);
 
 #endif /* FLB_HAVE_TLS */
 #endif

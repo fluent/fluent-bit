@@ -89,16 +89,16 @@ int flb_tls_destroy(struct flb_tls *tls);
 
 int flb_tls_session_create(struct flb_tls *tls,
                            struct flb_upstream_conn *u_conn,
-                           struct flb_thread *th);
+                           struct flb_coro *th);
 int flb_tls_session_destroy(struct flb_tls *tls, struct flb_upstream_conn *u_conn);
 
 int flb_tls_load_system_certificates(struct flb_tls *tls);
 int flb_tls_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len);
-int flb_tls_net_read_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_tls_net_read_async(struct flb_coro *th, struct flb_upstream_conn *u_conn,
                            void *buf, size_t len);
 int flb_tls_net_write(struct flb_upstream_conn *u_conn,
                       const void *data, size_t len, size_t *out_len);
-int flb_tls_net_write_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_tls_net_write_async(struct flb_coro *th, struct flb_upstream_conn *u_conn,
                             const void *data, size_t len, size_t *out_len);
 
 #endif
