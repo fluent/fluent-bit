@@ -106,7 +106,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  struct flb_config *config,
                                  int *err);
 
-void flb_task_add_thread(struct flb_thread *thread,
+void flb_task_add_thread(struct flb_coro *thread,
                          struct flb_task *task);
 
 void flb_task_destroy(struct flb_task *task, int del);

@@ -192,7 +192,7 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     struct flb_output_instance *o_ins;
     struct flb_output_thread *out_th;
 
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    out_th = (struct flb_output_thread *) FLB_CORO_DATA(data);
     o_ins = out_th->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
@@ -215,7 +215,7 @@ int flb_task_retry_clean(struct flb_task *task, void *data)
     struct flb_output_instance *o_ins;
     struct flb_output_thread *out_th;
 
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
+    out_th = (struct flb_output_thread *) FLB_CORO_DATA(data);
     o_ins = out_th->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
@@ -395,7 +395,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
-        
+
         if ((((struct flb_input_chunk *) ic)->routes_mask & o_ins->mask_id) > 0) {
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
@@ -462,12 +462,12 @@ void flb_task_destroy(struct flb_task *task, int del)
 }
 
 /* Register a thread into the tasks list */
-void flb_task_add_thread(struct flb_thread *thread,
+void flb_task_add_thread(struct flb_coro *thread,
                          struct flb_task *task)
 {
     struct flb_output_thread *out_th;
 
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(thread);
+    out_th = (struct flb_output_thread *) FLB_CORO_DATA(thread);
 
     /* Always set an incremental thread_id */
     out_th->id = task->n_threads;
