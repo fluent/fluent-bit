@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
 
@@ -36,7 +36,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 {
     int ret;
     size_t buf_size;
-    struct flb_thread *th;
+    struct flb_coro *co;
     struct flb_task *task;
     struct flb_input_instance *i_ins;
 
@@ -74,18 +74,18 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         return -1;
     }
 
-    th = flb_output_thread(task,
+    co = flb_output_thread(task,
                            i_ins,
                            retry->o_ins,
                            config,
                            task->buf, task->size,
                            task->tag, task->tag_len);
-    if (!th) {
+    if (!co) {
         return -1;
     }
 
-    flb_task_add_thread(th, task);
-    flb_thread_resume(th);
+    flb_task_add_thread(co, task);
+    flb_coro_resume(co);
 
     return 0;
 }
@@ -135,7 +135,6 @@ static int tasks_start(struct flb_input_instance *in,
     struct mk_list *r_head;
     struct mk_list *r_tmp;
     struct flb_task *task;
-    struct flb_thread *th;
     struct flb_task_route *route;
     struct flb_output_instance *out;
 
@@ -193,6 +192,9 @@ static int tasks_start(struct flb_input_instance *in,
              * We have the Task and the Route, created a thread context for the
              * data handling.
              */
+            flb_output_task_flush(task, route->out, config);
+
+            /*
             th = flb_output_thread(task,
                                    in,
                                    route->out,
@@ -202,6 +204,7 @@ static int tasks_start(struct flb_input_instance *in,
                                    task->tag_len);
             flb_task_add_thread(th, task);
             flb_thread_resume(th);
+            */
         }
 
         if (hits == 0) {
