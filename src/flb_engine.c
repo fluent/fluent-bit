@@ -52,6 +52,27 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #endif
 
+FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
+
+
+void flb_engine_evl_init()
+{
+    FLB_TLS_INIT(flb_engine_evl);
+}
+
+struct mk_event_loop *flb_engine_evl_get()
+{
+    struct mk_event_loop *evl;
+
+    evl = FLB_TLS_GET(flb_engine_evl);
+    return evl;
+}
+
+void flb_engine_evl_set(struct mk_event_loop *evl)
+{
+    FLB_TLS_SET(flb_engine_evl, evl);
+}
+
 int flb_engine_destroy_tasks(struct mk_list *tasks)
 {
     int c = 0;
@@ -409,7 +430,7 @@ static int flb_engine_log_start(struct flb_config *config)
         type = FLB_LOG_STDERR;
     }
 
-    if (flb_log_init(config, type, level, config->log_file) == NULL) {
+    if (flb_log_create(config, type, level, config->log_file) == NULL) {
         return -1;
     }
 
@@ -437,6 +458,10 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
     config->evl = evl;
+
+    /* Register the event loop on this thread */
+    flb_engine_evl_init();
+    flb_engine_evl_set(evl);
 
     /* Start the Logging service */
     ret = flb_engine_log_start(config);
@@ -633,17 +658,17 @@ int flb_engine_start(struct flb_config *config)
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
-                struct flb_thread *th;
+                struct flb_coro *co;
 
                 /*
                  * Check if we have some co-routine associated to this event,
                  * if so, resume the co-routine
                  */
                 u_conn = (struct flb_upstream_conn *) event;
-                th = u_conn->thread;
-                if (th) {
-                    flb_trace("[engine] resuming thread=%p", th);
-                    flb_thread_resume(th);
+                co = u_conn->coro;
+                if (co) {
+                    flb_trace("[engine] resuming coroutine=%p", co);
+                    flb_coro_resume(co);
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
