@@ -32,7 +32,7 @@
 /* Upstream TCP connection */
 struct flb_upstream_conn {
     struct mk_event event;
-    struct flb_thread *thread;
+    struct flb_coro *coro;
 
     /* Socker */
     flb_sockfd_t fd;
@@ -63,6 +63,9 @@ struct flb_upstream_conn {
     /* Connect */
     time_t ts_connect_start;
     time_t ts_connect_timeout;
+
+    /* Event loop */
+    struct mk_event_loop *evl;
 
     /* Upstream parent */
     struct flb_upstream *u;
