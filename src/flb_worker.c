@@ -132,6 +132,16 @@ struct flb_worker *flb_worker_get()
     return FLB_TLS_GET(flb_worker_ctx);
 }
 
+void flb_worker_destroy(struct flb_worker *worker)
+{
+    if (!worker) {
+        return;
+    }
+
+    mk_list_del(&worker->_head);
+    flb_free(worker);
+}
+
 int flb_worker_exit(struct flb_config *config)
 {
     int c = 0;
@@ -141,8 +151,7 @@ int flb_worker_exit(struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &config->workers) {
         worker = mk_list_entry(head, struct flb_worker, _head);
-        mk_list_del(&worker->_head);
-        flb_free(worker);
+        flb_worker_destroy(worker);
         c++;
     }
 
