@@ -183,7 +183,7 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_THREAD_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE;
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
@@ -243,7 +243,7 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->log) {
-        flb_log_stop(config->log, config);
+        flb_log_destroy(config->log, config);
     }
 
     if (config->parsers_file) {
@@ -361,7 +361,6 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
-
 
     flb_plugins_unregister(config);
     flb_free(config);
