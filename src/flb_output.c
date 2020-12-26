@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_io.h>
@@ -36,6 +36,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_output_thread.h>
 
 FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
 
@@ -112,6 +113,40 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
         flb_sds_destroy(ins->tls_key_passwd);
     }
 #endif
+}
+
+/*
+ * Flush a task through the output plugin, either using a worker thread + coroutine
+ * or a simple co-routine in the current thread.
+ */
+int flb_output_task_flush(struct flb_task *task,
+                          struct flb_output_instance *out_ins,
+                          struct flb_config *config)
+{
+    struct flb_coro *co;
+
+    if (out_ins->tp && out_ins->tp_workers > 0) {
+        /* Dispatch the task to the thread pool */
+        flb_output_thread_pool_flush(task, out_ins, config);
+    }
+    else {
+        /* Direct co-routine handling */
+        co = flb_output_thread(task,
+                               task->i_ins,
+                               out_ins,
+                               config,
+                               task->buf, task->size,
+                               task->tag,
+                               task->tag_len);
+        if (!co) {
+            return -1;
+        }
+
+        flb_task_add_thread(co, task);
+        flb_coro_resume(co);
+    }
+
+    return 0;
 }
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
@@ -195,6 +230,11 @@ void flb_output_exit(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        /* Stop any worker thread */
+        if (ins->tp && ins->tp_workers > 0) {
+            flb_output_thread_pool_destroy(ins);
+        }
+
         /* Check a exit callback */
         if (p->cb_exit) {
             if(!p->proxy) {
@@ -204,11 +244,6 @@ void flb_output_exit(struct flb_config *config)
                 p->cb_exit(p, ins->context);
             }
         }
-
-        if (ins->upstream) {
-            flb_upstream_destroy(ins->upstream);
-        }
-
         flb_output_instance_destroy(ins);
     }
 
@@ -331,7 +366,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->alias       = NULL;
     instance->flags       = instance->p->flags;
     instance->data        = data;
-    instance->upstream    = NULL;
     instance->match       = NULL;
 #ifdef FLB_HAVE_REGEX
     instance->match_regex = NULL;
@@ -574,6 +608,11 @@ int flb_output_set_property(struct flb_output_instance *ins,
         flb_sds_destroy(tmp);
         ins->total_limit_size = (size_t) limit;
     }
+    else if (prop_key_check("workers", k, len) == 0 && tmp) {
+        /* Set the number of workers */
+        ins->tp_workers = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -775,6 +814,18 @@ int flb_output_init_all(struct flb_config *config)
                       p->name);
             return -1;
         }
+
+        /* Multi-threading enabled ? (through 'workers' property) */
+        if (ins->tp_workers > 0) {
+            ret = flb_output_thread_pool_create(config, ins);
+            if (ret == -1) {
+                flb_error("[output] could not start thread pool for '%s' plugin",
+                          p->name);
+                return -1;
+            }
+
+            flb_output_thread_pool_start(ins);
+        }
     }
 
     return 0;
@@ -828,6 +879,14 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
 
     /* Set flags */
     u->flags |= flags;
+
+    /*
+     * If the output plugin flush callbacks will run in multiple threads, enable
+     * the thread safe mode for the Upstream context.
+     */
+    if (ins->tp && ins->tp_workers > 0) {
+        flb_upstream_thread_safe(u);
+    }
 
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));

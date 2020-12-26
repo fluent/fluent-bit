@@ -38,7 +38,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -248,9 +248,6 @@ struct flb_output_instance {
     /* Output handler configuration */
     void *out_context;
 
-    /* IO upstream context, if flags & (FLB_OUTPUT_TCP | FLB_OUTPUT TLS)) */
-    struct flb_upstream *upstream;
-
     /*
      * The threads_queue is the head for the linked list that holds co-routines
      * nodes information that needs to be processed.
@@ -313,6 +310,10 @@ struct flb_output_instance {
      */
     size_t total_limit_size;
 
+    /* Thread Pool: this is optional for the caller */
+    int tp_workers;
+    struct flb_tp *tp;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
@@ -323,7 +324,7 @@ struct flb_output_thread {
     struct flb_task *task;             /* Parent flb_task    */
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
-    struct flb_thread *parent;         /* parent thread addr */
+    struct flb_coro *parent;           /* parent thread addr */
     struct mk_list _head_output;       /* Link to flb_output_instance->th_queue */
     struct mk_list _head;              /* Link to flb_task->threads */
 
@@ -348,7 +349,7 @@ struct flb_output_thread *flb_output_thread_get(int id, struct flb_task *task)
 static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task)
 {
     struct flb_output_thread *out_th;
-    struct flb_thread *thread;
+    struct flb_coro *coro;
 
     out_th = flb_output_thread_get(id, task);
     if (!out_th) {
@@ -357,9 +358,9 @@ static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task
 
     mk_list_del(&out_th->_head_output);
     mk_list_del(&out_th->_head);
-    thread = out_th->parent;
+    coro = out_th->parent;
 
-    flb_thread_destroy(thread);
+    flb_coro_destroy(coro);
     task->users--;
 
     return 0;
@@ -394,12 +395,12 @@ struct flb_libco_out_params {
     void *out_context;
     struct flb_config *config;
     struct flb_output_plugin *out_plugin;
-    struct flb_thread *th;
+    struct flb_coro *th;
 };
 
 extern FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
 
-static FLB_INLINE void output_params_set(struct flb_thread *th,
+static FLB_INLINE void output_params_set(struct flb_coro *th,
                               const void *data, size_t bytes,
                               const char *tag, int tag_len,
                               struct flb_input_instance *i_ins,
@@ -443,7 +444,7 @@ static FLB_INLINE void output_pre_cb_flush(void)
     struct flb_output_plugin *out_p;
     void *out_context;
     struct flb_config *config;
-    struct flb_thread *th;
+    struct flb_coro *th;
     struct flb_libco_out_params *params;
 
     params = (struct flb_libco_out_params *) FLB_TLS_GET(flb_libco_params);
@@ -474,26 +475,26 @@ static FLB_INLINE void output_pre_cb_flush(void)
 }
 
 static FLB_INLINE
-struct flb_thread *flb_output_thread(struct flb_task *task,
-                                     struct flb_input_instance *i_ins,
-                                     struct flb_output_instance *o_ins,
-                                     struct flb_config *config,
-                                     const void *buf, size_t size,
-                                     const char *tag, int tag_len)
+struct flb_coro *flb_output_thread(struct flb_task *task,
+                                   struct flb_input_instance *i_ins,
+                                   struct flb_output_instance *o_ins,
+                                   struct flb_config *config,
+                                   const void *buf, size_t size,
+                                   const char *tag, int tag_len)
 {
     size_t stack_size;
     struct flb_output_thread *out_th;
-    struct flb_thread *th;
+    struct flb_coro *th;
 
     /* Create a new thread */
-    th = flb_thread_new(sizeof(struct flb_output_thread),
+    th = flb_coro_new(sizeof(struct flb_output_thread),
                         cb_output_thread_destroy);
     if (!th) {
         return NULL;
     }
 
     /* Custom output-thread info */
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    out_th = (struct flb_output_thread *) FLB_CORO_DATA(th);
     if (!out_th) {
         flb_errno();
         return NULL;
@@ -543,7 +544,7 @@ struct flb_thread *flb_output_thread(struct flb_task *task,
  * The signal emmited indicate the 'Task' number that have finished plus
  * a return value. The return value is either FLB_OK, FLB_RETRY or FLB_ERROR.
  */
-static inline void flb_output_return(int ret, struct flb_thread *th) {
+static inline void flb_output_return(int ret, struct flb_coro *co) {
     int n;
     uint32_t set;
     uint64_t val;
@@ -553,7 +554,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     int records;
 #endif
 
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(th);
+    out_th = (struct flb_output_thread *) FLB_CORO_DATA(co);
     task = out_th->task;
 
     /*
@@ -568,6 +569,7 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
     set = FLB_TASK_SET(ret, task->id, out_th->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
+    /* Notify the main event loop about our return status */
     n = flb_pipe_w(out_th->o_ins->ch_events[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
@@ -597,14 +599,15 @@ static inline void flb_output_return(int ret, struct flb_thread *th) {
 
 static inline void flb_output_return_do(int x)
 {
-    struct flb_thread *th;
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-    flb_output_return(x, th);
+    struct flb_coro *co;
+
+    co = (struct flb_coro *) pthread_getspecific(flb_coro_key);
+    flb_output_return(x, co);
     /*
      * Each co-routine handler have different ways to handle a return,
      * just use the wrapper.
      */
-    flb_thread_yield(th, FLB_TRUE);
+    flb_coro_yield(co, FLB_TRUE);
 }
 
 #define FLB_OUTPUT_RETURN(x)                                            \
@@ -648,5 +651,9 @@ int flb_output_check(struct flb_config *config);
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
 void flb_output_prepare();
 int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
+
+int flb_output_task_flush(struct flb_task *task,
+                          struct flb_output_instance *out_ins,
+                          struct flb_config *config);
 
 #endif
