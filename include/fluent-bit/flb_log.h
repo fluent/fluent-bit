@@ -96,14 +96,14 @@ static inline int flb_log_check(int l) {
     return FLB_TRUE;
 }
 
-struct flb_log *flb_log_init(struct flb_config *config, int type,
-                             int level, char *out);
+struct flb_log *flb_log_create(struct flb_config *config, int type,
+                               int level, char *out);
 int flb_log_set_level(struct flb_config *config, int level);
 int flb_log_get_level_str(char *str);
 
 int flb_log_set_file(struct flb_config *config, char *out);
 
-int flb_log_stop(struct flb_log *log, struct flb_config *config);
+int flb_log_destroy(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 

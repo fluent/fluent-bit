@@ -148,7 +148,7 @@ int flb_log_worker_init(void *data)
     /* Pipe to communicate Thread with worker log-collector */
     ret = flb_pipe_create(worker->log);
     if (ret == -1) {
-        perror("pipe");
+        flb_errno();
         return -1;
     }
 
@@ -211,8 +211,8 @@ int flb_log_set_file(struct flb_config *config, char *out)
     return 0;
 }
 
-struct flb_log *flb_log_init(struct flb_config *config, int type,
-                             int level, char *out)
+struct flb_log *flb_log_create(struct flb_config *config, int type,
+                               int level, char *out)
 {
     int ret;
     struct flb_log *log;
@@ -221,7 +221,7 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
 
     log = flb_malloc(sizeof(struct flb_log));
     if (!log) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     config->log = log;
@@ -440,7 +440,7 @@ int flb_errno_print(int errnum, const char *file, int line)
     return 0;
 }
 
-int flb_log_stop(struct flb_log *log, struct flb_config *config)
+int flb_log_destroy(struct flb_log *log, struct flb_config *config)
 {
     uint64_t val = FLB_TRUE;
 
