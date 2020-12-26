@@ -20,7 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_pipe.h>
@@ -345,9 +345,9 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data)
 
     /*
      *  Clean up retry tasks that are scheduled more than 60s.
-     *  Task might be destroyed when there are still retry 
+     *  Task might be destroyed when there are still retry
      *  scheduled but no thread is running for the task.
-     * 
+     *
      *  We need to drop buffered chunks when the filesystem buffer
      *  limit is reached. We need to make sure that all requests
      *  should be destroyed to avoid invoke an invlidated request.
