@@ -22,16 +22,16 @@
 #define FLB_TIME_UTILS_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_scheduler.h>
 
 static void flb_time_thread_wakeup(struct flb_config *config, void *data)
 {
     (void) config;
-    struct flb_thread *th;
+    struct flb_coro *th;
 
-    th = (struct flb_thread *) data;
-    flb_thread_resume(th);
+    th = (struct flb_coro *) data;
+    flb_coro_resume(th);
 }
 
 /*
@@ -47,9 +47,9 @@ static void flb_time_thread_wakeup(struct flb_config *config, void *data)
 static FLB_INLINE void flb_time_sleep(int ms, struct flb_config *config)
 {
     int ret;
-    struct flb_thread *th;
+    struct flb_coro *th;
 
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
+    th = (struct flb_coro *) pthread_getspecific(flb_coro_key);
     if (!th) {
         flb_error("[thread] invalid context for thread_sleep()");
         return;
@@ -61,7 +61,7 @@ static FLB_INLINE void flb_time_sleep(int ms, struct flb_config *config)
         return;
     }
 
-    flb_thread_yield(th, FLB_FALSE);
+    flb_coro_yield(th, FLB_FALSE);
 }
 
 #endif
