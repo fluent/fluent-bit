@@ -318,7 +318,7 @@ struct flb_output_instance {
     struct flb_config *config;
 };
 
-struct flb_output_thread {
+struct flb_output_coro {
     int id;                            /* out-thread ID      */
     const void *buffer;                /* output buffer      */
     struct flb_task *task;             /* Parent flb_task    */
@@ -331,34 +331,34 @@ struct flb_output_thread {
 };
 
 static FLB_INLINE
-struct flb_output_thread *flb_output_thread_get(int id, struct flb_task *task)
+struct flb_output_coro *flb_output_coro_get(int id, struct flb_task *task)
 {
     struct mk_list *head;
-    struct flb_output_thread *out_th = NULL;
+    struct flb_output_coro *out_coro = NULL;
 
-    mk_list_foreach(head, &task->threads) {
-        out_th = mk_list_entry(head, struct flb_output_thread, _head);
-        if (out_th->id == id) {
-            return out_th;
+    mk_list_foreach(head, &task->coros) {
+        out_coro = mk_list_entry(head, struct flb_output_coro, _head);
+        if (out_coro->id == id) {
+            return out_coro;
         }
     }
 
     return NULL;
 }
 
-static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task)
+static FLB_INLINE int flb_output_coro_destroy_id(int id, struct flb_task *task)
 {
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
     struct flb_coro *coro;
 
-    out_th = flb_output_thread_get(id, task);
-    if (!out_th) {
+    out_coro = flb_output_coro_get(id, task);
+    if (!out_coro) {
         return -1;
     }
 
-    mk_list_del(&out_th->_head_output);
-    mk_list_del(&out_th->_head);
-    coro = out_th->parent;
+    mk_list_del(&out_coro->_head_output);
+    mk_list_del(&out_coro->_head);
+    coro = out_coro->parent;
 
     flb_coro_destroy(coro);
     task->users--;
@@ -367,17 +367,17 @@ static FLB_INLINE int flb_output_thread_destroy_id(int id, struct flb_task *task
 }
 
 /* When an output_thread is going to be destroyed, this callback is triggered */
-static FLB_INLINE void cb_output_thread_destroy(void *data)
+static FLB_INLINE void cb_output_coro_destroy(void *data)
 {
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 
-    out_th = (struct flb_output_thread *) data;
+    out_coro = (struct flb_output_coro *) data;
 
-    flb_debug("[out thread] cb_destroy thread_id=%i", out_th->id);
+    flb_debug("[out thread] cb_destroy thread_id=%i", out_coro->id);
 
-    out_th->task->users--;
-    mk_list_del(&out_th->_head_output);
-    mk_list_del(&out_th->_head);
+    out_coro->task->users--;
+    mk_list_del(&out_coro->_head_output);
+    mk_list_del(&out_coro->_head);
 }
 
 /*
@@ -483,19 +483,19 @@ struct flb_coro *flb_output_thread(struct flb_task *task,
                                    const char *tag, int tag_len)
 {
     size_t stack_size;
-    struct flb_output_thread *out_th;
-    struct flb_coro *th;
+    struct flb_output_coro *out_coro;
+    struct flb_coro *coro;
 
     /* Create a new thread */
-    th = flb_coro_new(sizeof(struct flb_output_thread),
-                        cb_output_thread_destroy);
-    if (!th) {
+    coro = flb_coro_new(sizeof(struct flb_output_coro),
+                        cb_output_coro_destroy);
+    if (!coro) {
         return NULL;
     }
 
     /* Custom output-thread info */
-    out_th = (struct flb_output_thread *) FLB_CORO_DATA(th);
-    if (!out_th) {
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(coro);
+    if (!out_coro) {
         flb_errno();
         return NULL;
     }
@@ -505,26 +505,26 @@ struct flb_coro *flb_output_thread(struct flb_task *task,
      * is linked into the parent Task by flb_task_add_thread(...). The
      * 'id' is always incremental.
      */
-    out_th->id      = 0;
-    out_th->o_ins   = o_ins;
-    out_th->task    = task;
-    out_th->buffer  = buf;
-    out_th->config  = config;
-    out_th->parent  = th;
+    out_coro->id      = 0;
+    out_coro->o_ins   = o_ins;
+    out_coro->task    = task;
+    out_coro->buffer  = buf;
+    out_coro->config  = config;
+    out_coro->parent  = coro;
 
-    th->caller = co_active();
-    th->callee = co_create(config->coro_stack_size,
-                           output_pre_cb_flush, &stack_size);
+    coro->caller = co_active();
+    coro->callee = co_create(config->coro_stack_size,
+                             output_pre_cb_flush, &stack_size);
 
 #ifdef FLB_HAVE_VALGRIND
-    th->valgrind_stack_id = VALGRIND_STACK_REGISTER(th->callee,
-                                                    ((char *)th->callee) + stack_size);
+    coro->valgrind_stack_id = \
+        VALGRIND_STACK_REGISTER(coro->callee, ((char *) coro->callee) + stack_size);
 #endif
 
-    mk_list_add(&out_th->_head_output, &o_ins->th_queue);
+    mk_list_add(&out_coro->_head_output, &o_ins->th_queue);
 
     /* Workaround for makecontext() */
-    output_params_set(th,
+    output_params_set(coro,
                       buf,
                       size,
                       tag,
@@ -533,7 +533,7 @@ struct flb_coro *flb_output_thread(struct flb_task *task,
                       o_ins->p,
                       o_ins->context,
                       config);
-    return th;
+    return coro;
 }
 
 /*
@@ -549,13 +549,13 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     uint32_t set;
     uint64_t val;
     struct flb_task *task;
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 #ifdef FLB_HAVE_METRICS
     int records;
 #endif
 
-    out_th = (struct flb_output_thread *) FLB_CORO_DATA(co);
-    task = out_th->task;
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(co);
+    task = out_coro->task;
 
     /*
      * To compose the signal event the relevant info is:
@@ -566,26 +566,26 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
      *
      * We put together the return value with the task_id on the 32 bits at right
      */
-    set = FLB_TASK_SET(ret, task->id, out_th->id);
+    set = FLB_TASK_SET(ret, task->id, out_coro->id);
     val = FLB_BITS_U64_SET(2 /* FLB_ENGINE_TASK */, set);
 
     /* Notify the main event loop about our return status */
-    n = flb_pipe_w(out_th->o_ins->ch_events[1], (void *) &val, sizeof(val));
+    n = flb_pipe_w(out_coro->o_ins->ch_events[1], (void *) &val, sizeof(val));
     if (n == -1) {
         flb_errno();
     }
 
 #ifdef FLB_HAVE_METRICS
-    if (out_th->o_ins->metrics) {
+    if (out_coro->o_ins->metrics) {
         if (ret == FLB_OK) {
             records = task->records;
             flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, records,
-                            out_th->o_ins->metrics);
+                            out_coro->o_ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size,
-                            out_th->o_ins->metrics);
+                            out_coro->o_ins->metrics);
         }
         else if (ret == FLB_ERROR) {
-            flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, out_th->o_ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, out_coro->o_ins->metrics);
         }
         else if (ret == FLB_RETRY) {
             /*
