@@ -119,10 +119,10 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     struct mk_list *tmp;
     struct flb_task_retry *retry = NULL;
     struct flb_output_instance *o_ins;
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 
-    out_th = (struct flb_output_thread *) data;
-    o_ins = out_th->o_ins;
+    out_coro = (struct flb_output_coro *) data;
+    o_ins = out_coro->o_ins;
 
     /* First discover if is there any previous retry context in the task */
     mk_list_foreach_safe(head, tmp, &task->retries) {
@@ -153,12 +153,12 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
         mk_list_add(&retry->_head, &task->retries);
 
         flb_debug("[retry] new retry created for task_id=%i attempts=%i",
-                  out_th->task->id, retry->attempts);
+                  out_coro->task->id, retry->attempts);
     }
     else {
         retry->attempts++;
         flb_debug("[retry] re-using retry for task_id=%i attempts=%i",
-                  out_th->task->id, retry->attempts);
+                  out_coro->task->id, retry->attempts);
     }
 
     /*
@@ -190,10 +190,10 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     struct mk_list *head;
     struct flb_task_retry *retry;
     struct flb_output_instance *o_ins;
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 
-    out_th = (struct flb_output_thread *) FLB_CORO_DATA(data);
-    o_ins = out_th->o_ins;
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(data);
+    o_ins = out_coro->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
     mk_list_foreach(head, &task->retries) {
@@ -213,10 +213,10 @@ int flb_task_retry_clean(struct flb_task *task, void *data)
     struct mk_list *head;
     struct flb_task_retry *retry;
     struct flb_output_instance *o_ins;
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 
-    out_th = (struct flb_output_thread *) FLB_CORO_DATA(data);
-    o_ins = out_th->o_ins;
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(data);
+    o_ins = out_coro->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
     mk_list_foreach_safe(head, tmp, &task->retries) {
@@ -259,7 +259,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     task->status    = FLB_TASK_NEW;
     task->n_threads = 0;
     task->users     = 0;
-    mk_list_init(&task->threads);
+    mk_list_init(&task->coros);
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
 
@@ -465,13 +465,13 @@ void flb_task_destroy(struct flb_task *task, int del)
 void flb_task_add_thread(struct flb_coro *thread,
                          struct flb_task *task)
 {
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 
-    out_th = (struct flb_output_thread *) FLB_CORO_DATA(thread);
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(thread);
 
     /* Always set an incremental thread_id */
-    out_th->id = task->n_threads;
+    out_coro->id = task->n_threads;
     task->n_threads++;
     task->users++;
-    mk_list_add(&out_th->_head, &task->threads);
+    mk_list_add(&out_coro->_head, &task->coros);
 }

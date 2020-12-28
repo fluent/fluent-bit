@@ -86,7 +86,7 @@ struct flb_task {
 #ifdef FLB_HAVE_METRICS
     int records;                        /* numbers of records in 'buf'   */
 #endif
-    struct mk_list threads;             /* ref flb_input_instance->tasks */
+    struct mk_list coros;               /* ref flb_input_instance->tasks */
     struct mk_list routes;              /* routes to dispatch data       */
     struct mk_list retries;             /* queued in-memory retries      */
     struct mk_list _head;               /* link to input_instance        */
