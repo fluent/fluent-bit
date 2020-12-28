@@ -48,6 +48,7 @@ static void output_thread(void *data)
     int running = FLB_TRUE;
     int thread_id;
     void *ptr;
+    char tmp[64];
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_coro *co;
@@ -65,6 +66,9 @@ static void output_thread(void *data)
     if (!evl) {
         return;
     }
+
+    snprintf(tmp, sizeof(tmp) - 1, "flb-out-%s-w%i", ins->name, thread_id);
+    mk_utils_worker_rename(tmp);
 
     /*
      * Expose the event loop to the I/O interfaces: since we are in a separate
@@ -103,11 +107,8 @@ static void output_thread(void *data)
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             /*
-             * FIXME:
-             *
-             * - receive a flush request from the parent process, this needs to be
-             *   done from flb_engine_dispatch.c
-             *
+             * FIXME
+             * -----
              * - handle return status by plugin flush callback.
              */
             if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
@@ -132,6 +133,9 @@ static void output_thread(void *data)
 
                 flb_task_add_thread(co, task);
                 flb_coro_resume(co);
+            }
+            else if (event->type == FLB_ENGINE_EV_CUSTOM) {
+                event->handler(event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 /*
