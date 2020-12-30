@@ -118,6 +118,9 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         ctx->splunk_send_raw = FLB_FALSE;
     }
 
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
+
     return ctx;
 }
 
