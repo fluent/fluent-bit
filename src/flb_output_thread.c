@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
@@ -33,6 +34,17 @@ struct thread_instance {
     struct flb_tp_thread *th;
     struct mk_list _head;
 };
+
+/* Cleanup function that runs every 1.5 second */
+static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
+{
+    (void) ctx;
+    struct flb_output_instance *ins;
+
+    /* Upstream connections timeouts handling */
+    ins = (struct flb_output_instance *) data;
+    flb_upstream_conn_timeouts(&ins->upstreams);
+}
 
 /*
  * This is the worker function that creates an event loop and synchronize
@@ -51,6 +63,7 @@ static void output_thread(void *data)
     char tmp[64];
     struct mk_event *event;
     struct mk_event_loop *evl;
+    struct flb_sched *sched;
     struct flb_coro *co;
     struct flb_task *task;
     struct flb_upstream_conn *u_conn;
@@ -64,6 +77,27 @@ static void output_thread(void *data)
     /* Create the event loop for this thread */
     evl = mk_event_loop_create(64);
     if (!evl) {
+        flb_plg_error(ins, "could not create thread event loop");
+        return;
+    }
+
+    /* Create a scheduler context */
+    sched = flb_sched_create(ins->config, evl);
+    if (!sched) {
+        flb_plg_error(ins, "could not create thread scheduler");
+        mk_event_loop_destroy(evl);
+        return;
+    }
+
+    /*
+     * Sched a permanent callback triggered every 1.5 second to let other
+     * components of this thread run tasks at that interval.
+     */
+    ret = flb_sched_timer_cb_create(sched,
+                                    FLB_SCHED_TIMER_CB_PERM,
+                                    1500, cb_thread_sched_timer, ins);
+    if (ret == -1) {
+        flb_plg_error(ins, "could not schedule permanent callback");
         return;
     }
 
@@ -100,7 +134,7 @@ static void output_thread(void *data)
     }
     th_ins->event.type = FLB_ENGINE_EV_THREAD_OUTPUT;
 
-    flb_plg_info(th_ins->ins, "worker started");
+    flb_plg_info(th_ins->ins, "worker #%i started", thread_id);
 
     /* Thread event loop */
     while (running) {
@@ -111,7 +145,19 @@ static void output_thread(void *data)
              * -----
              * - handle return status by plugin flush callback.
              */
-            if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
+            if (event->type == FLB_ENGINE_EV_CORE) {
+
+            }
+            else if (event->type & FLB_ENGINE_EV_SCHED) {
+                /* Note that this scheduler event handler has more
+                 * features designed to be used from the parent thread,
+                 * on this specific use case we just care about simple
+                 * timers created on this thread or threaded by some
+                 * output plugin.
+                 */
+                flb_sched_event_handler(sched->config, event);
+            }
+            else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
 
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
 
@@ -150,9 +196,11 @@ static void output_thread(void *data)
                 }
             }
             else {
-                printf("unhandled event type => %i\n", event->type);
+                flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
         }
+
+        flb_upstream_conn_pending_destroy_list(&ins->upstreams);
     }
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
