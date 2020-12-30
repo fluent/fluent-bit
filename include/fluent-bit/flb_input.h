@@ -335,44 +335,44 @@ int flb_input_thread_destroy_id(int id, struct flb_config *config)
 
 static FLB_INLINE
 struct flb_coro *flb_input_thread(struct flb_input_instance *i_ins,
-                                    struct flb_config *config)
+                                  struct flb_config *config)
 {
     int id;
-    struct flb_coro *th;
+    struct flb_coro *coro;
     struct flb_input_thread *in_th;
 
-    th = flb_coro_new(sizeof(struct flb_input_thread), NULL);
-    if (!th) {
+    coro = flb_coro_create(sizeof(struct flb_input_thread), NULL);
+    if (!coro) {
         return NULL;
     }
 
     /* Try to obtain an id */
     id = flb_input_thread_get_id(config);
     if (id == -1) {
-        flb_coro_destroy(th);
+        flb_coro_destroy(coro);
         return NULL;
     }
 
     /* Setup thread specific data */
-    in_th = (struct flb_input_thread *) FLB_CORO_DATA(th);
+    in_th = (struct flb_input_thread *) FLB_CORO_DATA(coro);
     in_th->id         = id;
     in_th->start_time = time(NULL);
-    in_th->parent     = th;
+    in_th->parent     = coro;
     in_th->config     = config;
     mk_list_add(&in_th->_head, &i_ins->threads);
 
-    return th;
+    return coro;
 }
 
 struct flb_libco_in_params {
     struct flb_config *config;
     struct flb_input_collector *coll;
-    struct flb_coro *th;
+    struct flb_coro *coro;
 };
 
 extern struct flb_libco_in_params libco_in_param;
 
-static FLB_INLINE void input_params_set(struct flb_coro *th,
+static FLB_INLINE void input_params_set(struct flb_coro *coro,
                              struct flb_input_collector *coll,
                              struct flb_config *config,
                              void *context)
@@ -380,44 +380,44 @@ static FLB_INLINE void input_params_set(struct flb_coro *th,
     /* Set callback parameters */
     libco_in_param.coll    = coll;
     libco_in_param.config  = config;
-    libco_in_param.th      = th;
-    co_switch(th->callee);
+    libco_in_param.coro    = coro;
+    co_switch(coro->callee);
 }
 
 static FLB_INLINE void input_pre_cb_collect(void)
 {
     struct flb_input_collector *coll = libco_in_param.coll;
     struct flb_config *config = libco_in_param.config;
-    struct flb_coro *th     = libco_in_param.th;
+    struct flb_coro *coro     = libco_in_param.coro;
 
-    co_switch(th->caller);
+    co_switch(coro->caller);
     coll->cb_collect(coll->instance, config, coll->instance->context);
 }
 
 static FLB_INLINE
 struct flb_coro *flb_input_thread_collect(struct flb_input_collector *coll,
-                                            struct flb_config *config)
+                                          struct flb_config *config)
 {
     size_t stack_size;
-    struct flb_coro *th;
+    struct flb_coro *coro;
 
-    th = flb_input_thread(coll->instance, config);
-    if (!th) {
+    coro = flb_input_thread(coll->instance, config);
+    if (!coro) {
         return NULL;
     }
 
-    th->caller = co_active();
-    th->callee = co_create(config->coro_stack_size,
-                           input_pre_cb_collect, &stack_size);
+    coro->caller = co_active();
+    coro->callee = co_create(config->coro_stack_size,
+                             input_pre_cb_collect, &stack_size);
 
 #ifdef FLB_HAVE_VALGRIND
-    th->valgrind_stack_id = VALGRIND_STACK_REGISTER(th->callee,
-                                                    ((char *)th->callee) + stack_size);
+    coro->valgrind_stack_id = VALGRIND_STACK_REGISTER(coro->callee,
+                                                      ((char *)coro->callee) + stack_size);
 #endif
 
     /* Set parameters */
-    input_params_set(th, coll, config, coll->instance->context);
-    return th;
+    input_params_set(coro, coll, config, coll->instance->context);
+    return coro;
 }
 
 /*
@@ -432,12 +432,12 @@ struct flb_coro *flb_input_thread_collect(struct flb_input_collector *coll,
  * number of retries, if it have exceed the 'retry_limit' option, a FLB_ERROR
  * will be returned instead.
  */
-static inline void flb_input_return(struct flb_coro *th) {
+static inline void flb_input_return(struct flb_coro *coro) {
     int n;
     uint64_t val;
     struct flb_input_thread *in_th;
 
-    in_th = (struct flb_input_thread *) FLB_CORO_DATA(th);
+    in_th = (struct flb_input_thread *) FLB_CORO_DATA(coro);
 
     /*
      * To compose the signal event the relevant info is:
@@ -466,10 +466,10 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
 
 static inline void FLB_INPUT_RETURN()
 {
-    struct flb_coro *th;
-    th = (struct flb_coro *) pthread_getspecific(flb_coro_key);
-    flb_input_return(th);
-    flb_coro_return(th);
+    struct flb_coro *coro;
+    coro = (struct flb_coro *) pthread_getspecific(flb_coro_key);
+    flb_input_return(coro);
+    flb_coro_return(coro);
 }
 
 static inline int flb_input_config_map_set(struct flb_input_instance *ins,
