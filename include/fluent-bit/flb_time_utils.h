@@ -44,10 +44,11 @@ static void flb_time_thread_wakeup(struct flb_config *config, void *data)
  * A context that invokes flb_time_sleep() will resume upon an
  * internal call to flb_time_thread_wakeup().
  */
-static FLB_INLINE void flb_time_sleep(int ms, struct flb_config *config)
+static FLB_INLINE void flb_time_sleep(int ms)
 {
     int ret;
     struct flb_coro *th;
+    struct flb_sched *sched;
 
     th = (struct flb_coro *) pthread_getspecific(flb_coro_key);
     if (!th) {
@@ -55,7 +56,11 @@ static FLB_INLINE void flb_time_sleep(int ms, struct flb_config *config)
         return;
     }
 
-    ret = flb_sched_timer_cb_create(config, FLB_SCHED_TIMER_CB_ONESHOT,
+    /* Get the scheduler context */
+    sched = flb_sched_ctx_get();
+    assert(sched != NULL);
+
+    ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
                                     ms, flb_time_thread_wakeup, th);
     if (ret == -1) {
         return;
