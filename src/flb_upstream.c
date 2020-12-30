@@ -67,10 +67,18 @@ struct flb_config_map upstream_net[] = {
 };
 
 /* Enable thread-safe mode for upstream connection */
-int flb_upstream_thread_safe(struct flb_upstream *u)
+void flb_upstream_thread_safe(struct flb_upstream *u)
 {
     u->thread_safe = FLB_TRUE;
     pthread_mutex_init(&u->mutex_lists, NULL);
+
+    /*
+     * Upon upstream creation, automatically the upstream is linked into
+     * the main Fluent Bit context (struct flb_config *)->upstreams. We
+     * have to avoid any access to this context outside of the worker
+     * thread.
+     */
+    mk_list_del(&u->_head);
 }
 
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
@@ -542,7 +550,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
     return destroy_conn(conn);
 }
 
-int flb_upstream_conn_timeouts(struct flb_config *ctx)
+int flb_upstream_conn_timeouts(struct mk_list *list)
 {
     time_t now;
     int drop;
@@ -554,8 +562,12 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
     now = time(NULL);
 
     /* Iterate all upstream contexts */
-    mk_list_foreach(head, &ctx->upstreams) {
+    mk_list_foreach(head, list) {
         u = mk_list_entry(head, struct flb_upstream, _head);
+
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_lock(&u->mutex_lists);
+        }
 
         /* Iterate every busy connection */
         mk_list_foreach(u_head, &u->busy_queue) {
@@ -597,29 +609,47 @@ int flb_upstream_conn_timeouts(struct flb_config *ctx)
             }
         }
 
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_unlock(&u->mutex_lists);
+        }
     }
 
     return 0;
 }
 
-int flb_upstream_conn_pending_destroy(struct flb_config *ctx)
+int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
 {
-    struct mk_list *head;
     struct mk_list *tmp;
-    struct mk_list *u_head;
-    struct flb_upstream *u;
+    struct mk_list *head;
     struct flb_upstream_conn *u_conn;
 
-    /* Iterate all upstream contexts */
-    mk_list_foreach(head, &ctx->upstreams) {
-        u = mk_list_entry(head, struct flb_upstream, _head);
+    if (u->thread_safe == FLB_TRUE) {
+        pthread_mutex_lock(&u->mutex_lists);
+    }
 
-        /* Real destroy of connections context */
-        mk_list_foreach_safe(u_head, tmp, &u->destroy_queue) {
-            u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
-            mk_list_del(&u_conn->_head);
-            flb_free(u_conn);
-        }
+    /* Real destroy of connections context */
+    mk_list_foreach_safe(head, tmp, &u->destroy_queue) {
+        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+        mk_list_del(&u_conn->_head);
+        flb_free(u_conn);
+    }
+
+    if (u->thread_safe == FLB_TRUE) {
+        pthread_mutex_unlock(&u->mutex_lists);
+    }
+
+    return 0;
+}
+
+int flb_upstream_conn_pending_destroy_list(struct mk_list *list)
+{
+    struct mk_list *head;
+    struct flb_upstream *u;
+
+    /* Iterate all upstream contexts */
+    mk_list_foreach(head, list) {
+        u = mk_list_entry(head, struct flb_upstream, _head);
+        flb_upstream_conn_pending_destroy(u);
     }
 
     return 0;
