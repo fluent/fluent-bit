@@ -59,7 +59,6 @@ static void output_thread(void *data)
     int ret;
     int running = FLB_TRUE;
     int thread_id;
-    void *ptr;
     char tmp[64];
     struct mk_event *event;
     struct mk_event_loop *evl;
@@ -160,19 +159,23 @@ static void output_thread(void *data)
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
 
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
+                if (n <= 0) {
+                    flb_errno();
+                    continue;
+                }
 
                 if ((uint64_t) task == 0xdeadbeef) {
                     running = FLB_FALSE;
                     continue;
                 }
 
-                co = flb_output_thread(task,
-                                       task->i_ins,
-                                       th_ins->ins,
-                                       th_ins->config,
-                                       task->buf, task->size,
-                                       task->tag,
-                                       task->tag_len);
+                co = flb_output_coro(task,
+                                     task->i_ins,
+                                     th_ins->ins,
+                                     th_ins->config,
+                                     task->buf, task->size,
+                                     task->tag,
+                                     task->tag_len);
                 if (!co) {
                     continue;
                 }
@@ -212,7 +215,6 @@ int flb_output_thread_pool_flush(struct flb_task *task,
 {
     int n;
     struct flb_tp_thread *th;
-    struct flb_tp *tp = out_ins->tp;
     struct thread_instance *th_ins;
 
     /* Choose the worker that will handle the Task (round-robin) */
@@ -230,6 +232,7 @@ int flb_output_thread_pool_flush(struct flb_task *task,
         flb_errno();
     }
 
+    return 0;
 }
 
 int flb_output_thread_pool_create(struct flb_config *config,
@@ -319,6 +322,12 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 
         th_ins = th->params.data;
         n = write(th_ins->ch_parent_events[1], &stop, sizeof(stop));
+        if (n < 0) {
+            flb_errno();
+            flb_plg_error(th_ins->ins, "could not signal worker thread");
+            flb_free(th_ins);
+            continue;
+        }
         pthread_join(th->tid, NULL);
         flb_free(th_ins);
     }

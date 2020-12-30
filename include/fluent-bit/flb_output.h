@@ -326,7 +326,7 @@ struct flb_output_coro {
     struct flb_task *task;             /* Parent flb_task    */
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
-    struct flb_coro *parent;           /* parent thread addr */
+    struct flb_coro *parent;           /* parent coro   addr */
     struct mk_list _head_output;       /* Link to flb_output_instance->th_queue */
     struct mk_list _head;              /* Link to flb_task->threads */
 
@@ -477,20 +477,20 @@ static FLB_INLINE void output_pre_cb_flush(void)
 }
 
 static FLB_INLINE
-struct flb_coro *flb_output_thread(struct flb_task *task,
-                                   struct flb_input_instance *i_ins,
-                                   struct flb_output_instance *o_ins,
-                                   struct flb_config *config,
-                                   const void *buf, size_t size,
-                                   const char *tag, int tag_len)
+struct flb_coro *flb_output_coro(struct flb_task *task,
+                                 struct flb_input_instance *i_ins,
+                                 struct flb_output_instance *o_ins,
+                                 struct flb_config *config,
+                                 const void *buf, size_t size,
+                                 const char *tag, int tag_len)
 {
     size_t stack_size;
     struct flb_output_coro *out_coro;
     struct flb_coro *coro;
 
     /* Create a new thread */
-    coro = flb_coro_new(sizeof(struct flb_output_coro),
-                        cb_output_coro_destroy);
+    coro = flb_coro_create(sizeof(struct flb_output_coro),
+                           cb_output_coro_destroy);
     if (!coro) {
         return NULL;
     }

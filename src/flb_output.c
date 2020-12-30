@@ -131,13 +131,13 @@ int flb_output_task_flush(struct flb_task *task,
     }
     else {
         /* Direct co-routine handling */
-        co = flb_output_thread(task,
-                               task->i_ins,
-                               out_ins,
-                               config,
-                               task->buf, task->size,
-                               task->tag,
-                               task->tag_len);
+        co = flb_output_coro(task,
+                             task->i_ins,
+                             out_ins,
+                             config,
+                             task->buf, task->size,
+                             task->tag,
+                             task->tag_len);
         if (!co) {
             return -1;
         }
