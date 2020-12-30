@@ -74,12 +74,12 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         return -1;
     }
 
-    co = flb_output_thread(task,
-                           i_ins,
-                           retry->o_ins,
-                           config,
-                           task->buf, task->size,
-                           task->tag, task->tag_len);
+    co = flb_output_coro(task,
+                         i_ins,
+                         retry->o_ins,
+                         config,
+                         task->buf, task->size,
+                         task->tag, task->tag_len);
     if (!co) {
         return -1;
     }
