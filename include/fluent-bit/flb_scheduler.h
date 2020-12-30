@@ -113,29 +113,36 @@ struct flb_sched {
     /* Frame timer context */
     flb_pipefd_t frame_fd;
 
+    struct mk_event_loop *evl;
     struct flb_config *config;
 };
 
 int flb_sched_request_create(struct flb_config *config,
                              void *data, int tries);
-int flb_sched_request_destroy(struct flb_config *config,
-                              struct flb_sched_request *req);
+int flb_sched_request_destroy(struct flb_sched_request *req);
 int flb_sched_event_handler(struct flb_config *config, struct mk_event *event);
 
-int flb_sched_init(struct flb_config *config);
-int flb_sched_exit(struct flb_config *config);
+struct flb_sched *flb_sched_create(struct flb_config *config,
+                                   struct mk_event_loop *evl);
+
+int flb_sched_exit(struct flb_sched *sched);
 
 struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched);
 int flb_sched_timer_destroy(struct flb_sched_timer *timer);
 
 int flb_sched_request_invalidate(struct flb_config *config, void *data);
 
-int flb_sched_timer_cb_create(struct flb_config *config, int type, int ms,
+int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
                               void *data);
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer);
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer);
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer);
 int flb_sched_timer_cleanup(struct flb_sched *sched);
+
+/* Sched context api for multithread environment */
+void flb_sched_ctx_init();
+struct flb_sched *flb_sched_ctx_get();
+void flb_sched_ctx_set(struct flb_sched *sched);
 
 #endif
