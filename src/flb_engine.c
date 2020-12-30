@@ -115,7 +115,7 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
     (void) data;
 
     /* Upstream connections timeouts handling */
-    flb_upstream_conn_timeouts(ctx);
+    flb_upstream_conn_timeouts(&ctx->upstreams);
 }
 
 static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config)
@@ -444,6 +444,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
+    struct flb_sched *sched;
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP
@@ -536,11 +537,16 @@ int flb_engine_start(struct flb_config *config)
     }
 
     /* Initialize the scheduler */
-    ret = flb_sched_init(config);
-    if (ret == -1) {
+    sched = flb_sched_create(config, config->evl);
+    if (!sched) {
         flb_error("[engine] scheduler could not start");
         return -1;
     }
+    config->sched = sched;
+
+    /* Register the scheduler context */
+    flb_sched_ctx_init();
+    flb_sched_ctx_set(sched);
 
 #ifdef FLB_HAVE_METRICS
     if (config->storage_metrics == FLB_TRUE) {
@@ -590,7 +596,7 @@ int flb_engine_start(struct flb_config *config)
      * Sched a permanent callback triggered every 1.5 second to let other
      * Fluent Bit components run tasks at that interval.
      */
-    ret = flb_sched_timer_cb_create(config,
+    ret = flb_sched_timer_cb_create(config->sched,
                                     FLB_SCHED_TIMER_CB_PERM,
                                     1500, cb_engine_sched_timer, config);
     if (ret == -1) {
@@ -683,7 +689,7 @@ int flb_engine_start(struct flb_config *config)
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
             flb_sched_timer_cleanup(config->sched);
-            flb_upstream_conn_pending_destroy(config);
+            flb_upstream_conn_pending_destroy_list(&config->upstreams);
         }
     }
 }
