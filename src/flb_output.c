@@ -414,6 +414,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
+    mk_list_init(&instance->upstreams);
     mk_list_add(&instance->_head, &config->outputs);
 
     /* Tests */
@@ -884,8 +885,9 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
      * If the output plugin flush callbacks will run in multiple threads, enable
      * the thread safe mode for the Upstream context.
      */
-    if (ins->tp && ins->tp_workers > 0) {
+    if (ins->tp_workers > 0) {
         flb_upstream_thread_safe(u);
+        mk_list_add(&u->_head, &ins->upstreams);
     }
 
     /* Set networking options 'net.*' received through instance properties */

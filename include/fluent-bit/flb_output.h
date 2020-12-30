@@ -314,6 +314,8 @@ struct flb_output_instance {
     int tp_workers;
     struct flb_tp *tp;
 
+    struct mk_list upstreams;
+
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
