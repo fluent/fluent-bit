@@ -76,55 +76,45 @@ struct flb_coro {
 #define FLB_CORO_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
 #endif
 
-#define FLB_CORO_DATA(th)        (((char *) th) + sizeof(struct flb_coro))
+#define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))
 
 static FLB_INLINE void flb_coro_prepare(void)
 {
     pthread_key_create(&flb_coro_key, NULL);
 }
 
-static FLB_INLINE void flb_coro_yield(struct flb_coro *th, int ended)
+static FLB_INLINE void flb_coro_yield(struct flb_coro *coro, int ended)
 {
-    co_switch(th->caller);
+    co_switch(coro->caller);
 }
 
-static FLB_INLINE void flb_coro_destroy(struct flb_coro *th)
+static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
 {
-    if (th->cb_destroy) {
-        th->cb_destroy(FLB_CORO_DATA(th));
+    if (coro->cb_destroy) {
+        coro->cb_destroy(FLB_CORO_DATA(coro));
     }
-    flb_trace("[thread] destroy thread=%p data=%p", th, FLB_CORO_DATA(th));
+    flb_trace("[coro] destroy coroutine=%p data=%p", coro,
+              FLB_CORO_DATA(coro));
 
 #ifdef FLB_HAVE_VALGRIND
-    VALGRIND_STACK_DEREGISTER(th->valgrind_stack_id);
+    VALGRIND_STACK_DEREGISTER(coro->valgrind_stack_id);
 #endif
 
-    co_delete(th->callee);
-    flb_free(th);
+    co_delete(coro->callee);
+    flb_free(coro);
 }
 
 #define flb_coro_return(th) co_switch(th->caller)
 
-static FLB_INLINE void flb_coro_resume(struct flb_coro *th)
+static FLB_INLINE void flb_coro_resume(struct flb_coro *coro)
 {
-    pthread_setspecific(flb_coro_key, (void *) th);
-
-    /*
-     * In the past we used to have a flag to mark when a coroutine
-     * has finished (th->ended == MK_TRUE), now we let the coroutine
-     * to submit an event to the event loop indicating what's going on
-     * through the call FLB_OUTPUT_RETURN(...).
-     *
-     * So we just swap context and let the event loop to handle all
-     * the cleanup required.
-     */
-
-    th->caller = co_active();
-    co_switch(th->callee);
+    pthread_setspecific(flb_coro_key, (void *) coro);
+    coro->caller = co_active();
+    co_switch(coro->callee);
 }
 
-static FLB_INLINE struct flb_coro *flb_coro_new(size_t data_size,
-                                                void (*cb_destroy) (void *))
+static FLB_INLINE struct flb_coro *flb_coro_create(size_t data_size,
+                                                   void (*cb_destroy) (void *))
 
 {
     void *p;
