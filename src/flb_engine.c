@@ -182,6 +182,14 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
 
     /* A thread has finished, delete it */
     if (ret == FLB_OK) {
+
+        /* Update metrics */
+#ifdef FLB_HAVE_METRICS
+        if (ins->metrics) {
+            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, task->records, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size, ins->metrics);
+        }
+#endif
         /* Inform the user if a 'retry' succedeed */
         if (mk_list_size(&task->retries) > 0) {
             retries = flb_task_retry_count(task, out_coro->parent);
@@ -219,8 +227,7 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
              * - It reached the maximum number of re-tries
              */
 #ifdef FLB_HAVE_METRICS
-            flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1,
-                            out_coro->o_ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, ins->metrics);
 #endif
             /* Notify about this failed retry */
             flb_warn("[engine] chunk '%s' cannot be retried: "
@@ -242,7 +249,7 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, out_coro->o_ins->metrics);
 #endif
 
-        /* Always destroy the old thread */
+        /* Always destroy the old coroutine */
         flb_output_coro_destroy_id(thread_id, task);
 
         /* Let the scheduler to retry the failed task/thread */
@@ -278,6 +285,9 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         }
     }
     else if (ret == FLB_ERROR) {
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
+#endif
         flb_output_coro_destroy_id(thread_id, task);
         if (task->users == 0 && mk_list_size(&task->retries) == 0) {
             flb_task_destroy(task, FLB_TRUE);
