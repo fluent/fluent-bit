@@ -84,7 +84,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         return -1;
     }
 
-    flb_task_add_thread(co, task);
+    flb_task_add_coro(task, co);
     flb_coro_resume(co);
 
     return 0;
