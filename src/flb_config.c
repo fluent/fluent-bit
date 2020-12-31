@@ -328,7 +328,7 @@ void flb_config_exit(struct flb_config *config)
     mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
-    flb_sched_exit(config->sched);
+    flb_sched_destroy(config->sched);
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_listen) {
