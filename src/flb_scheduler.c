@@ -565,7 +565,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
 }
 
 /* Release all resources used by the Scheduler */
-int flb_sched_exit(struct flb_sched *sched)
+int flb_sched_destroy(struct flb_sched *sched)
 {
     int c = 0;
     struct mk_list *tmp;

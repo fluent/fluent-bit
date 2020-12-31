@@ -125,7 +125,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event);
 struct flb_sched *flb_sched_create(struct flb_config *config,
                                    struct mk_event_loop *evl);
 
-int flb_sched_exit(struct flb_sched *sched);
+int flb_sched_destroy(struct flb_sched *sched);
 
 struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched);
 int flb_sched_timer_destroy(struct flb_sched_timer *timer);
