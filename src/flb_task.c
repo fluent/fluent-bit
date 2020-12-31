@@ -257,7 +257,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     task->id        = task_id;
     task->config    = config;
     task->status    = FLB_TASK_NEW;
-    task->n_threads = 0;
+    task->n_coros   = 0;
     task->users     = 0;
     mk_list_init(&task->coros);
     mk_list_init(&task->routes);
@@ -462,16 +462,15 @@ void flb_task_destroy(struct flb_task *task, int del)
 }
 
 /* Register a thread into the tasks list */
-void flb_task_add_thread(struct flb_coro *thread,
-                         struct flb_task *task)
+void flb_task_add_coro(struct flb_task *task, struct flb_coro *coro)
 {
     struct flb_output_coro *out_coro;
 
-    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(thread);
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(coro);
 
     /* Always set an incremental thread_id */
-    out_coro->id = task->n_threads;
-    task->n_threads++;
+    out_coro->id = task->n_coros;
+    task->n_coros++;
     task->users++;
     mk_list_add(&out_coro->_head, &task->coros);
 }

@@ -76,7 +76,7 @@ struct flb_task {
     int id;                             /* task id                   */
     uint64_t ref_id;                    /* external reference id     */
     uint8_t status;                     /* new task or running ?     */
-    int n_threads;                      /* number number of threads  */
+    int n_coros;                        /* number number of threads  */
     int users;                          /* number of users (threads) */
     char *tag;                          /* record tag                */
     int tag_len;                        /* tag length                */
@@ -106,8 +106,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  struct flb_config *config,
                                  int *err);
 
-void flb_task_add_thread(struct flb_coro *thread,
-                         struct flb_task *task);
+void flb_task_add_coro(struct flb_task *task, struct flb_coro *coro);
 
 void flb_task_destroy(struct flb_task *task, int del);
 
