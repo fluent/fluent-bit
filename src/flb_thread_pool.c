@@ -120,9 +120,8 @@ struct flb_tp_thread *flb_tp_thread_get_rr(struct flb_tp *tp)
 int flb_tp_thread_start(struct flb_tp *tp, struct flb_tp_thread *th)
 {
     int ret;
-    pthread_t tid;
 
-    ret = flb_worker_create(th->params.func, th->params.data, &tid,
+    ret = flb_worker_create(th->params.func, th->params.data, &th->tid,
                             th->config);
     if (ret == -1) {
         th->status = FLB_THREAD_POOL_ERROR;
@@ -134,7 +133,7 @@ int flb_tp_thread_start(struct flb_tp *tp, struct flb_tp_thread *th)
      * id or the context, so we use the created pthread_t (task id)
      * to obtain the reference.
      */
-    th->worker = flb_worker_lookup(tid, tp->config);
+    th->worker = flb_worker_lookup(th->tid, tp->config);
     th->status = FLB_THREAD_POOL_RUNNING;
 
     return 0;
@@ -172,6 +171,7 @@ int flb_tp_thread_start_all(struct flb_tp *tp)
         flb_tp_thread_start(tp, th);
     }
 
+    return 0;
 }
 
 int flb_tp_thread_stop(struct flb_tp *tp, struct flb_tp_thread *th)
@@ -205,9 +205,11 @@ int flb_tp_thread_stop_all(struct flb_tp *tp)
 
         }
     }
+
+    return 0;
 }
 
 int flb_tp_thread_destroy()
 {
-
+    return 0;
 }
