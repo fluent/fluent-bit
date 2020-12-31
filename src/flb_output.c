@@ -142,7 +142,7 @@ int flb_output_task_flush(struct flb_task *task,
             return -1;
         }
 
-        flb_task_add_thread(co, task);
+        flb_task_add_coro(task, co);
         flb_coro_resume(co);
     }
 
