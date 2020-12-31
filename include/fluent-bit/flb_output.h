@@ -350,8 +350,8 @@ struct flb_output_coro *flb_output_coro_get(int id, struct flb_task *task)
 
 static FLB_INLINE int flb_output_coro_destroy_id(int id, struct flb_task *task)
 {
-    struct flb_output_coro *out_coro;
     struct flb_coro *coro;
+    struct flb_output_coro *out_coro;
 
     out_coro = flb_output_coro_get(id, task);
     if (!out_coro) {
@@ -552,9 +552,6 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     uint64_t val;
     struct flb_task *task;
     struct flb_output_coro *out_coro;
-#ifdef FLB_HAVE_METRICS
-    int records;
-#endif
 
     out_coro = (struct flb_output_coro *) FLB_CORO_DATA(co);
     task = out_coro->task;
@@ -576,27 +573,6 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     if (n == -1) {
         flb_errno();
     }
-
-#ifdef FLB_HAVE_METRICS
-    if (out_coro->o_ins->metrics) {
-        if (ret == FLB_OK) {
-            records = task->records;
-            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, records,
-                            out_coro->o_ins->metrics);
-            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size,
-                            out_coro->o_ins->metrics);
-        }
-        else if (ret == FLB_ERROR) {
-            flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, out_coro->o_ins->metrics);
-        }
-        else if (ret == FLB_RETRY) {
-            /*
-             * Counting retries is happening in the event loop/scheduler side
-             * since it also needs to count if some retry fails to re-schedule.
-             */
-        }
-    }
-#endif
 }
 
 static inline void flb_output_return_do(int x)
