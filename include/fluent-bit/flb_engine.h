@@ -59,5 +59,6 @@ int flb_engine_exit(struct flb_config *config);
 int flb_engine_exit_status(struct flb_config *config, int status);
 int flb_engine_shutdown(struct flb_config *config);
 int flb_engine_destroy_tasks(struct mk_list *tasks);
+void flb_engine_invalidate_running_tasks(struct flb_config *config);
 
 #endif

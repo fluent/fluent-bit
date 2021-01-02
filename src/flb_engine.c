@@ -68,6 +68,35 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
     return c;
 }
 
+void flb_engine_invalidate_running_tasks(struct flb_config *config) {
+    struct mk_list *head;
+    struct mk_list *t_head;
+    struct mk_list *th_head;
+    struct mk_list *tmp_task;
+    struct mk_list *tmp_thread;
+    struct flb_task *task;
+    struct flb_input_instance *ins;
+    struct flb_output_thread *out_th;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+       	mk_list_foreach_safe(t_head, tmp_task, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+            if (task->users > 0) {
+                mk_list_foreach_safe(th_head, tmp_thread, &task->threads) {
+		            out_th = mk_list_entry(th_head, struct flb_output_thread, _head);
+                    // clean all task retries
+                    flb_task_retry_clean(task, out_th->parent);
+                    // destroy the output thread
+                    flb_output_thread_destroy_id(out_th->id, task);
+                }
+                // destroy the task
+                flb_task_destroy(task, FLB_TRUE);
+            }
+        }
+    }
+}
+
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
@@ -618,6 +647,10 @@ int flb_engine_start(struct flb_config *config)
                         config->num_shutdowns_attempted++;
                     }
                     else {
+                        if (config->num_shutdowns_attempted >= config->max_shutdown_retries) {
+                            // Invalidate any running tasks
+                            flb_engine_invalidate_running_tasks(config);
+                        }
                         ret = config->exit_status_code;
                         flb_engine_shutdown(config);
                         config = NULL;
