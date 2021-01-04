@@ -176,11 +176,6 @@ int flb_tp_thread_start_all(struct flb_tp *tp)
 
 int flb_tp_thread_stop(struct flb_tp *tp, struct flb_tp_thread *th)
 {
-    //int ret;
-    //(void) pthread_t tid;
-    //(void) struct flb_worker *w;
-
-
     return 0;
 }
 
