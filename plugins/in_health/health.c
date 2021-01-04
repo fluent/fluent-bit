@@ -255,5 +255,5 @@ struct flb_input_plugin in_health_plugin = {
     .cb_collect   = in_health_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_health_exit,
-    .flags        = FLB_INPUT_NET | FLB_INPUT_THREAD,
+    .flags        = FLB_INPUT_NET | FLB_INPUT_CORO,
 };
