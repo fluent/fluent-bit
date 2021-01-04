@@ -21,13 +21,27 @@
 #ifndef FLB_OUTPUT_THREAD_H
 #define FLB_OUTPUT_THREAD_H
 
+struct flb_out_thread_instance {
+    struct mk_event event;               /* event context to associate events */
+    flb_pipefd_t ch_parent_events[2];    /* channel to receive parent notifications */
+    flb_pipefd_t ch_thread_events[2];    /* channel to send messages local event loop */
+    struct flb_output_instance *ins;     /* output plugin instance */
+    struct flb_config *config;
+    struct flb_tp_thread *th;
+    struct mk_list _head;
+};
+
 int flb_output_thread_pool_create(struct flb_config *config,
                                   struct flb_output_instance *ins);
-
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins);
 int flb_output_thread_pool_start(struct flb_output_instance *ins);
 int flb_output_thread_pool_flush(struct flb_task *task,
                                  struct flb_output_instance *out_ins,
                                  struct flb_config *config);
+
+
+void flb_output_thread_instance_init();
+struct flb_out_thread_instance *flb_output_thread_instance_get();
+void flb_output_thread_instance_set(struct flb_out_thread_instance *th_ins);
 
 #endif

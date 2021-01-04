@@ -25,15 +25,25 @@
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
 
-struct thread_instance {
-    struct mk_event event;               /* event context to associate events */
-    flb_pipefd_t ch_parent_events[2];    /* channel to receive parent notifications */
-    flb_pipefd_t ch_thread_events[2];    /* channel to send messages to main engine */
-    struct flb_output_instance *ins;     /* output plugin instance */
-    struct flb_config *config;
-    struct flb_tp_thread *th;
-    struct mk_list _head;
-};
+FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
+
+void flb_output_thread_instance_init()
+{
+    FLB_TLS_INIT(local_thread_instance);
+}
+
+struct flb_out_thread_instance *flb_output_thread_instance_get()
+{
+    struct flb_out_thread_instance *th_ins;
+
+    th_ins = FLB_TLS_GET(local_thread_instance);
+    return th_ins;
+}
+
+void flb_output_thread_instance_set(struct flb_out_thread_instance *th_ins)
+{
+    FLB_TLS_SET(local_thread_instance, th_ins);
+}
 
 /* Cleanup function that runs every 1.5 second */
 static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
@@ -45,6 +55,52 @@ static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
     ins = (struct flb_output_instance *) data;
     flb_upstream_conn_timeouts(&ins->upstreams);
 }
+
+static inline int handle_output_event(struct flb_config *config,
+                                      int ch_parent, flb_pipefd_t fd)
+{
+    int ret;
+    int bytes;
+    int out_id;
+    uint32_t type;
+    uint32_t key;
+    uint64_t val;
+
+    bytes = flb_pipe_r(fd, &val, sizeof(val));
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Get type and key */
+    type = FLB_BITS_U64_HIGH(val);
+    key  = FLB_BITS_U64_LOW(val);
+
+    if (type != FLB_ENGINE_TASK) {
+        flb_error("[engine] invalid event type %i for output handler",
+                  type);
+        return -1;
+    }
+
+    ret     = FLB_TASK_RET(key);
+    out_id  = FLB_TASK_OUT(key);
+
+    /* Destroy the output co-routine context */
+    flb_output_flush_finished(config, out_id);
+
+    /*
+     * Notify the parent event loop the return status, just forward the same
+     * 64 bits value.
+     */
+    ret = write(ch_parent, &val, sizeof(val));
+    if (ret == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
 
 /*
  * This is the worker function that creates an event loop and synchronize
@@ -60,15 +116,19 @@ static void output_thread(void *data)
     int running = FLB_TRUE;
     int thread_id;
     char tmp[64];
+    struct mk_event event_local;
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_sched *sched;
-    struct flb_coro *co;
     struct flb_task *task;
     struct flb_upstream_conn *u_conn;
     struct flb_output_instance *ins;
-    struct thread_instance *th_ins = (struct thread_instance *) data;
+    struct flb_output_coro *out_coro;
+    struct flb_out_thread_instance *th_ins = data;
+    struct flb_out_coro_params *params;
 
+    /* Register thread instance */
+    flb_output_thread_instance_set(th_ins);
 
     ins = th_ins->ins;
     thread_id = th_ins->th->id;
@@ -87,6 +147,7 @@ static void output_thread(void *data)
         mk_event_loop_destroy(evl);
         return;
     }
+    flb_sched_ctx_set(sched);
 
     /*
      * Sched a permanent callback triggered every 1.5 second to let other
@@ -131,7 +192,21 @@ static void output_thread(void *data)
         mk_event_loop_destroy(evl);
         return;
     }
+    /* Signal type to indicate a "flush" request */
     th_ins->event.type = FLB_ENGINE_EV_THREAD_OUTPUT;
+
+    /* Channel used by flush callbacks to notify it return status */
+    ret = mk_event_channel_create(evl,
+                                  &th_ins->ch_thread_events[0],
+                                  &th_ins->ch_thread_events[1],
+                                  &event_local);
+    if (ret == -1) {
+        flb_plg_error(th_ins->ins, "could not create thread channel");
+        flb_engine_evl_set(NULL);
+        mk_event_loop_destroy(evl);
+        return;
+    }
+    event_local.type = FLB_ENGINE_EV_OUTPUT;
 
     flb_plg_info(th_ins->ins, "worker #%i started", thread_id);
 
@@ -148,40 +223,43 @@ static void output_thread(void *data)
 
             }
             else if (event->type & FLB_ENGINE_EV_SCHED) {
-                /* Note that this scheduler event handler has more
-                 * features designed to be used from the parent thread,
-                 * on this specific use case we just care about simple
-                 * timers created on this thread or threaded by some
-                 * output plugin.
+                /*
+                 * Note that this scheduler event handler has more features
+                 * designed to be used from the parent thread, on this specific
+                 * use case we just care about simple timers created on this
+                 * thread or threaded by some output plugin.
                  */
                 flb_sched_event_handler(sched->config, event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_OUTPUT) {
-
+                /* Read the task reference */
                 n = flb_pipe_r(event->fd, &task, sizeof(struct flb_task *));
                 if (n <= 0) {
                     flb_errno();
                     continue;
                 }
 
+                /*
+                 * If the address receives 0xdeadbeef, means the thread must
+                 * be terminated.
+                 */
                 if ((uint64_t) task == 0xdeadbeef) {
                     running = FLB_FALSE;
                     continue;
                 }
 
-                co = flb_output_coro(task,
-                                     task->i_ins,
-                                     th_ins->ins,
-                                     th_ins->config,
-                                     task->buf, task->size,
-                                     task->tag,
-                                     task->tag_len);
-                if (!co) {
+                /* Start the co-routine with the flush callback */
+                out_coro = flb_output_coro_create(task,
+                                                  task->i_ins,
+                                                  th_ins->ins,
+                                                  th_ins->config,
+                                                  task->buf, task->size,
+                                                  task->tag,
+                                                  task->tag_len);
+                if (!out_coro) {
                     continue;
                 }
-
-                flb_task_add_thread(co, task);
-                flb_coro_resume(co);
+                flb_coro_resume(out_coro->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
@@ -192,11 +270,20 @@ static void output_thread(void *data)
                  * if so, resume the co-routine
                  */
                 u_conn = (struct flb_upstream_conn *) event;
-                co = u_conn->coro;
-                if (co) {
-                    flb_trace("[engine] resuming coroutine=%p", co);
-                    flb_coro_resume(co);
+                if (u_conn->coro) {
+                    flb_trace("[engine] resuming coroutine=%p", u_conn->coro);
+                    flb_coro_resume(u_conn->coro);
                 }
+            }
+            else if (event->type == FLB_ENGINE_EV_OUTPUT) {
+                /*
+                 * The flush callback has finished working and delivered it
+                 * return status. At this intermediary step we cleanup the
+                 * co-routine resources created before and then forward
+                 * the return message to the parent event loop so the Task
+                 * can be updated.
+                 */
+                handle_output_event(th_ins->config, ins->ch_events[1], event->fd);
             }
             else {
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
@@ -204,6 +291,14 @@ static void output_thread(void *data)
         }
 
         flb_upstream_conn_pending_destroy_list(&ins->upstreams);
+    }
+
+    flb_sched_destroy(sched);
+    mk_event_loop_destroy(evl);
+
+    params = FLB_TLS_GET(out_coro_params);
+    if (params) {
+        flb_free(params);
     }
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
@@ -215,7 +310,7 @@ int flb_output_thread_pool_flush(struct flb_task *task,
 {
     int n;
     struct flb_tp_thread *th;
-    struct thread_instance *th_ins;
+    struct flb_out_thread_instance *th_ins;
 
     /* Choose the worker that will handle the Task (round-robin) */
     th = flb_tp_thread_get_rr(out_ins->tp);
@@ -230,6 +325,7 @@ int flb_output_thread_pool_flush(struct flb_task *task,
     n = write(th_ins->ch_parent_events[1], &task, sizeof(struct flb_task *));
     if (n == -1) {
         flb_errno();
+        return -1;
     }
 
     return 0;
@@ -239,53 +335,32 @@ int flb_output_thread_pool_create(struct flb_config *config,
                                   struct flb_output_instance *ins)
 {
     int i;
-    int ret;
     struct flb_tp *tp;
     struct flb_tp_thread *th;
-    struct thread_instance *th_ins;
+    struct flb_out_thread_instance *th_ins;
 
+    /* Create the thread pool context */
     tp = flb_tp_create(config);
     if (!tp) {
         return -1;
     }
     ins->tp = tp;
+    ins->is_threaded = FLB_TRUE;
 
+    /*
+     * Initialize thread-local-storage, every worker thread has it owns
+     * context with relevant info populated inside the thread.
+     */
+    flb_output_thread_instance_init();
+
+    /* Create workers */
     for (i = 0; i < ins->tp_workers; i++) {
-        th_ins = flb_malloc(sizeof(struct thread_instance));
+        th_ins = flb_malloc(sizeof(struct flb_out_thread_instance));
         if (!th_ins) {
             flb_errno();
             continue;
         }
         th_ins->config = config;
-
-        /*
-         * Create the communication channel: each created thread has two pairs
-         * of pipes, one to receive messages from the parent engine, and another
-         * to send messages back.
-         *
-         * Here we just create the channel to receive messages from the parent
-         * engine (the other pipe is set inside the thread).
-         *
-         * Map:
-         *
-         * 1.
-         *  - FLB engine uses 'ch_parent_events[1]' to dispatch tasks to thread
-         *  - Thread receive message on ch_parent_events[0]
-         *
-         */
-        ret = mk_event_channel_create(config->evl,
-                                      &th_ins->ch_parent_events[0],
-                                      &th_ins->ch_parent_events[1],
-                                      th_ins);
-        if (ret != 0) {
-            flb_plg_error(ins, "could not create event channels for thread #%i",
-                          i);
-            flb_free(th_ins);
-            continue;
-        }
-
-        /* Override the event notification type */
-        th_ins->event.type = FLB_ENGINE_EV_THREAD_OUTPUT;
         th_ins->ins = ins;
 
         /* Spawn the thread */
@@ -306,7 +381,7 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
     uint64_t stop = 0xdeadbeef;
     struct flb_tp *tp = ins->tp;
     struct mk_list *head;
-    struct thread_instance *th_ins;
+    struct flb_out_thread_instance *th_ins;
     struct flb_tp_thread *th;
 
     if (!tp) {
