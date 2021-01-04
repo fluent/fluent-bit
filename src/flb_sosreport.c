@@ -74,8 +74,8 @@ static void input_flags(int flags)
         printf("NET ");
     }
 
-    if (flags & FLB_INPUT_THREAD) {
-        printf("THREAD ");
+    if (flags & FLB_INPUT_CORO) {
+        printf("CORO ");
     }
 
     printf("\n");
