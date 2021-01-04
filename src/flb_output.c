@@ -38,11 +38,11 @@
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
 
-FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
+FLB_TLS_DEFINE(struct flb_out_coro_params, out_coro_params);
 
 void flb_output_prepare()
 {
-    FLB_TLS_INIT(flb_libco_params);
+    FLB_TLS_INIT(out_coro_params);
 }
 
 /* Validate the the output address protocol */
@@ -115,6 +115,56 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 #endif
 }
 
+void flb_output_coro_prepare_destroy(struct flb_output_coro *out_coro)
+{
+    struct flb_output_instance *ins = out_coro->o_ins;
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        pthread_mutex_lock(&ins->coro_mutex);
+    }
+
+    /* Move output coroutine context from active list to the destroy one */
+    mk_list_del(&out_coro->_head);
+    mk_list_add(&out_coro->_head, &ins->coros_destroy);
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        pthread_mutex_unlock(&ins->coro_mutex);
+    }
+}
+
+int flb_output_coro_id_get(struct flb_output_instance *ins)
+{
+    int id;
+    int max = (2 << 13) - 1; /* max for 14 bits */
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        pthread_mutex_lock(&ins->coro_mutex);
+    }
+
+    /* retrieve the next coro_id and increment the counter */
+    id = ins->coro_id;
+    ins->coro_id++;
+
+    /* reset once it reach the maximum allowed */
+    if (ins->coro_id > max) {
+        ins->coro_id = 0;
+    }
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        pthread_mutex_unlock(&ins->coro_mutex);
+    }
+
+    return id;
+}
+
+void flb_output_coro_add(struct flb_output_instance *ins, struct flb_coro *coro)
+{
+    struct flb_output_coro *out_coro;
+
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(coro);
+    mk_list_add(&out_coro->_head, &ins->coros);
+}
+
 /*
  * Flush a task through the output plugin, either using a worker thread + coroutine
  * or a simple co-routine in the current thread.
@@ -123,27 +173,33 @@ int flb_output_task_flush(struct flb_task *task,
                           struct flb_output_instance *out_ins,
                           struct flb_config *config)
 {
-    struct flb_coro *co;
+    int ret;
+    struct flb_output_coro *out_coro;
 
-    if (out_ins->tp && out_ins->tp_workers > 0) {
+    if (flb_output_is_threaded(out_ins) == FLB_TRUE) {
+        flb_task_users_inc(task);
+
         /* Dispatch the task to the thread pool */
-        flb_output_thread_pool_flush(task, out_ins, config);
+        ret = flb_output_thread_pool_flush(task, out_ins, config);
+        if (ret == -1) {
+            flb_task_users_dec(task, FLB_FALSE);
+        }
     }
     else {
         /* Direct co-routine handling */
-        co = flb_output_coro(task,
-                             task->i_ins,
-                             out_ins,
-                             config,
-                             task->buf, task->size,
-                             task->tag,
-                             task->tag_len);
-        if (!co) {
+        out_coro = flb_output_coro_create(task,
+                                          task->i_ins,
+                                          out_ins,
+                                          config,
+                                          task->buf, task->size,
+                                          task->tag,
+                                          task->tag_len);
+        if (!out_coro) {
             return -1;
         }
 
-        flb_task_add_coro(task, co);
-        flb_coro_resume(co);
+        flb_task_users_inc(task);
+        flb_coro_resume(out_coro->coro);
     }
 
     return 0;
@@ -231,7 +287,7 @@ void flb_output_exit(struct flb_config *config)
         p = ins->p;
 
         /* Stop any worker thread */
-        if (ins->tp && ins->tp_workers > 0) {
+        if (flb_output_is_threaded(ins) == FLB_TRUE) {
             flb_output_thread_pool_destroy(ins);
         }
 
@@ -247,7 +303,7 @@ void flb_output_exit(struct flb_config *config)
         flb_output_instance_destroy(ins);
     }
 
-    params = FLB_TLS_GET(flb_libco_params);
+    params = FLB_TLS_GET(out_coro_params);
     if (params) {
         flb_free(params);
     }
@@ -265,6 +321,61 @@ static inline int instance_id(struct flb_config *config)
                              _head);
     return (ins->id + 1);
 }
+
+struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
+                                                    int out_id)
+{
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if (ins->id == out_id) {
+            break;
+        }
+        ins = NULL;
+    }
+
+    if (!ins) {
+        return NULL;
+    }
+
+    return ins;
+}
+
+/*
+ * Invoked everytime a flush callback has finished (returned). This function
+ * is called from the event loop.
+ */
+int flb_output_flush_finished(struct flb_config *config, int out_id)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+    struct flb_output_coro *out_coro;
+
+    ins = flb_output_get_instance(config, out_id);
+    if (!ins) {
+        return -1;
+    }
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        pthread_mutex_lock(&ins->coro_mutex);
+    }
+
+    /* Look for output coroutines that needs to be destroyed */
+    mk_list_foreach_safe(head, tmp, &ins->coros_destroy) {
+        out_coro = mk_list_entry(head, struct flb_output_coro, _head);
+        flb_output_coro_destroy(out_coro);
+    }
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        pthread_mutex_unlock(&ins->coro_mutex);
+    }
+
+    return 0;
+}
+
 
 /*
  * It validate an output type given the string, it return the
@@ -316,6 +427,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->config = config;
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
+    instance->is_threaded = FLB_FALSE;
 
     /*
      * Set mask_id: the mask_id is an unique number assigned to this
@@ -415,6 +527,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
     mk_list_init(&instance->upstreams);
+    mk_list_init(&instance->coros);
+    mk_list_init(&instance->coros_destroy);
+
     mk_list_add(&instance->_head, &config->outputs);
 
     /* Tests */
@@ -680,7 +795,6 @@ int flb_output_init_all(struct flb_config *config)
             ins->log_level = config->log->level;
         }
         p = ins->p;
-        mk_list_init(&ins->th_queue);
 
         /* Output Events Channel */
         ret = mk_event_channel_create(config->evl,
