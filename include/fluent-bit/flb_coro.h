@@ -62,12 +62,6 @@ struct flb_coro {
     cothread_t callee;
 
     void *data;
-
-    /*
-     * Callback invoked before the thread is destroyed. Used to release
-     * any pending info in FLB_CORO_DATA(...).
-     */
-    void (*cb_destroy) (void *);
 };
 
 #ifdef FLB_CORO_STACK_SIZE
@@ -90,9 +84,6 @@ static FLB_INLINE void flb_coro_yield(struct flb_coro *coro, int ended)
 
 static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
 {
-    if (coro->cb_destroy) {
-        coro->cb_destroy(FLB_CORO_DATA(coro));
-    }
     flb_trace("[coro] destroy coroutine=%p data=%p", coro,
               FLB_CORO_DATA(coro));
 
@@ -113,27 +104,18 @@ static FLB_INLINE void flb_coro_resume(struct flb_coro *coro)
     co_switch(coro->callee);
 }
 
-static FLB_INLINE struct flb_coro *flb_coro_create(size_t data_size,
-                                                   void (*cb_destroy) (void *))
-
+static FLB_INLINE struct flb_coro *flb_coro_create(void *data)
 {
-    void *p;
-    struct flb_coro *th;
+    struct flb_coro *coro;
 
     /* Create a thread context and initialize */
-    p = flb_malloc(sizeof(struct flb_coro) + data_size);
-    if (!p) {
+    coro = (struct flb_coro *) flb_malloc(sizeof(struct flb_coro));
+    if (!coro) {
         flb_errno();
         return NULL;
     }
-
-    th = (struct flb_coro *) p;
-    th->cb_destroy = NULL;
-
-    flb_trace("[thread %p] created (custom data at %p, size=%lu",
-              th, FLB_CORO_DATA(th), data_size);
-
-    return th;
+    coro->data = data;
+    return coro;
 }
 
 #ifdef __cplusplus
