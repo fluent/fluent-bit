@@ -179,7 +179,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
         mk_list_init(&instance->collectors);
-        mk_list_init(&instance->threads);
+        mk_list_init(&instance->coros);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
@@ -194,7 +194,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* Plugin requires a Thread context */
-        if (plugin->flags & FLB_INPUT_THREAD) {
+        if (plugin->flags & FLB_INPUT_CORO) {
             instance->threaded = FLB_TRUE;
         }
 
@@ -994,7 +994,7 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 
     /* Trigger the collector callback */
     if (collector->instance->threaded == FLB_TRUE) {
-        co = flb_input_thread_collect(collector, config);
+        co = flb_input_coro_collect(collector, config);
         if (!co) {
             return -1;
         }
