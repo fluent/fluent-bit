@@ -36,8 +36,8 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 {
     int ret;
     size_t buf_size;
-    struct flb_coro *co;
     struct flb_task *task;
+    struct flb_output_coro *out_coro;
     struct flb_input_instance *i_ins;
 
     task = retry->parent;
@@ -74,18 +74,18 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         return -1;
     }
 
-    co = flb_output_coro(task,
-                         i_ins,
-                         retry->o_ins,
-                         config,
-                         task->buf, task->size,
-                         task->tag, task->tag_len);
-    if (!co) {
+    out_coro = flb_output_coro_create(task,
+                                      i_ins,
+                                      retry->o_ins,
+                                      config,
+                                      task->buf, task->size,
+                                      task->tag, task->tag_len);
+    if (!out_coro) {
         return -1;
     }
 
-    flb_task_add_coro(task, co);
-    flb_coro_resume(co);
+    flb_task_users_inc(task);
+    flb_coro_resume(out_coro->coro);
 
     return 0;
 }
@@ -180,8 +180,7 @@ static int tasks_start(struct flb_input_instance *in,
              * running something.
              */
             if (out->flags & FLB_OUTPUT_NO_MULTIPLEX) {
-                if (mk_list_size(&route->out->th_queue) > 0 ||
-                    retry > 0) {
+                if (flb_output_coros_size(route->out) > 0 || retry > 0) {
                     continue;
                 }
             }
