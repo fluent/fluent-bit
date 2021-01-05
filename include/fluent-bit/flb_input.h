@@ -471,8 +471,7 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
 
 static inline void FLB_INPUT_RETURN()
 {
-    struct flb_coro *coro;
-    coro = (struct flb_coro *) pthread_getspecific(flb_coro_key);
+    struct flb_coro *coro = flb_coro_get();
     flb_input_return(coro);
     flb_coro_return(coro);
 }
