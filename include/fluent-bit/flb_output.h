@@ -550,7 +550,6 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     struct flb_output_instance *o_ins;
     struct flb_out_thread_instance *th_ins;
 
-
     out_coro = (struct flb_output_coro *) co->data;
     o_ins = out_coro->o_ins;
     task = out_coro->task;
@@ -616,15 +615,15 @@ static inline int flb_output_coros_size(struct flb_output_instance *ins)
 
 static inline void flb_output_return_do(int x)
 {
-    struct flb_coro *co;
+    struct flb_coro *coro;
 
-    co = (struct flb_coro *) pthread_getspecific(flb_coro_key);
-    flb_output_return(x, co);
+    coro = flb_coro_get();
+    flb_output_return(x, coro);
     /*
      * Each co-routine handler have different ways to handle a return,
      * just use the wrapper.
      */
-    flb_coro_yield(co, FLB_TRUE);
+    flb_coro_yield(coro, FLB_TRUE);
 }
 
 #define FLB_OUTPUT_RETURN(x)                                            \
