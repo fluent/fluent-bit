@@ -50,6 +50,10 @@ struct flb_worker {
 
 int flb_worker_init(struct flb_config *config);
 struct flb_worker *flb_worker_get();
+
+struct flb_worker *flb_worker_context_create(void (*func) (void *), void *arg,
+                                             struct flb_config *config);
+
 int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
                       struct flb_config *config);
 struct flb_worker *flb_worker_lookup(pthread_t tid, struct flb_config *config);
