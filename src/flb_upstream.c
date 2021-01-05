@@ -283,7 +283,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     int ret;
     time_t now;
     struct flb_upstream_conn *conn;
-    struct flb_coro *co = pthread_getspecific(flb_coro_key);
+    struct flb_coro *coro = flb_coro_get();
     struct mk_event_loop *evl;
 
     now = time(NULL);
@@ -316,7 +316,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->ts_assigned = time(NULL);
     conn->ts_available = 0;
     conn->ka_count = 0;
-    conn->coro = co;
+    conn->coro = coro;
 
     if (u->net.keepalive == FLB_TRUE) {
         flb_upstream_conn_recycle(conn, FLB_TRUE);
@@ -342,7 +342,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     u->n_connections++;
 
     /* Start connection */
-    ret = flb_io_net_connect(conn, co);
+    ret = flb_io_net_connect(conn, coro);
     if (ret == -1) {
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
