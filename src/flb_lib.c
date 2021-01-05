@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 
 #include <signal.h>
@@ -105,7 +106,7 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
-    flb_coro_prepare();
+    flb_coro_init();
     flb_output_prepare();
 }
 
