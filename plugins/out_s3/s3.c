@@ -412,6 +412,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
     flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
 
+    if (ctx->use_put_object == FLB_FALSE && ctx->file_size < 2 * MIN_CHUNKED_UPLOAD_SIZE) {
+            flb_plg_info(ctx->ins,
+                         "total_file_size is less than 10 MB, will use PutObject API");
+            ctx->use_put_object = FLB_TRUE;
+    }
 
     if (ctx->use_put_object == FLB_FALSE) {
         /* upload_chunk_size */
@@ -431,12 +436,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         if (ctx->upload_chunk_size > MAX_CHUNKED_UPLOAD_SIZE) {
             flb_plg_error(ctx->ins, "Max upload_chunk_size is 50M");
             return -1;
-        }
-
-        if (ctx->file_size < 2 * MIN_CHUNKED_UPLOAD_SIZE) {
-            flb_plg_info(ctx->ins,
-                         "total_file_size is less than 10 MB, will use PutObject API");
-            ctx->use_put_object = FLB_TRUE;
         }
     }
 
