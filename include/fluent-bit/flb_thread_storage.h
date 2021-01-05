@@ -23,6 +23,10 @@
 
 #include <fluent-bit/flb_info.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <monkey/mk_core/external/winpthreads.h>
+#endif
+
 /* Ideal case when the compiler support direct storage through __thread */
 #ifdef FLB_HAVE_C_TLS
 #define FLB_TLS_SET(key, val)      key=val
