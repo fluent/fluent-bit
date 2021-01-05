@@ -47,11 +47,11 @@ static void flb_time_thread_wakeup(struct flb_config *config, void *data)
 static FLB_INLINE void flb_time_sleep(int ms)
 {
     int ret;
-    struct flb_coro *th;
+    struct flb_coro *coro;
     struct flb_sched *sched;
 
-    th = (struct flb_coro *) pthread_getspecific(flb_coro_key);
-    if (!th) {
+    coro = flb_coro_get();
+    if (!coro) {
         flb_error("[thread] invalid context for thread_sleep()");
         return;
     }
@@ -61,12 +61,12 @@ static FLB_INLINE void flb_time_sleep(int ms)
     assert(sched != NULL);
 
     ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
-                                    ms, flb_time_thread_wakeup, th);
+                                    ms, flb_time_thread_wakeup, coro);
     if (ret == -1) {
         return;
     }
 
-    flb_coro_yield(th, FLB_FALSE);
+    flb_coro_yield(coro, FLB_FALSE);
 }
 
 #endif
