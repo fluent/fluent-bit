@@ -91,7 +91,7 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
      */
     bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
     if (bytes <= 0) {
-        perror("bytes");
+        flb_errno();
         return -1;
     }
     if (msg.size > sizeof(msg.msg)) {
@@ -138,10 +138,9 @@ static void log_worker_collector(void *data)
     pthread_exit(NULL);
 }
 
-int flb_log_worker_init(void *data)
+int flb_log_worker_init(struct flb_worker *worker)
 {
     int ret;
-    struct flb_worker *worker = data;
     struct flb_config *config = worker->config;
     struct flb_log *log = config->log;
 
@@ -153,7 +152,6 @@ int flb_log_worker_init(void *data)
     }
 
     /* Register the read-end of the pipe (log[0]) into the event loop */
-    MK_EVENT_ZERO(&worker->event);
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
@@ -219,7 +217,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     struct flb_worker *worker;
     struct mk_event_loop *evl;
 
-    log = flb_malloc(sizeof(struct flb_log));
+    log = flb_calloc(1, sizeof(struct flb_log));
     if (!log) {
         flb_errno();
         return NULL;
@@ -227,7 +225,7 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
     config->log = log;
 
     /* Create event loop to be used by the collector worker */
-    evl = mk_event_loop_create(16);
+    evl = mk_event_loop_create(32);
     if (!evl) {
         fprintf(stderr, "[log] could not create event loop\n");
         flb_free(log);
@@ -268,20 +266,16 @@ struct flb_log *flb_log_create(struct flb_config *config, int type,
      * it will need a 'worker-like' context, here we create a fake worker
      * context just for messaging purposes.
      */
-    worker = flb_malloc(sizeof(struct flb_worker));
+    worker = flb_worker_context_create(NULL, NULL, config);
     if (!worker) {
         flb_errno();
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
-        return NULL;
     }
-    worker->func    = NULL;
-    worker->data    = NULL;
-    worker->log_ctx = log;
-    worker->config  = config;
 
     /* Set the worker context global */
+    FLB_TLS_INIT(flb_worker_ctx);
     FLB_TLS_SET(flb_worker_ctx, worker);
 
     ret = flb_log_worker_init(worker);

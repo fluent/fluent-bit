@@ -139,7 +139,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 #define flb_trace(fmt, ...)  do {} while(0)
 #endif
 
-int flb_log_worker_init(void *data);
+int flb_log_worker_init(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
 #ifdef __FILENAME__
