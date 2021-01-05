@@ -74,19 +74,10 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
         return -1;
     }
 
-    out_coro = flb_output_coro_create(task,
-                                      i_ins,
-                                      retry->o_ins,
-                                      config,
-                                      task->buf, task->size,
-                                      task->tag, task->tag_len);
-    if (!out_coro) {
+    ret = flb_output_task_flush(task, retry->o_ins, config);
+    if (ret == -1) {
         return -1;
     }
-
-    flb_task_users_inc(task);
-    flb_coro_resume(out_coro->coro);
-
     return 0;
 }
 
