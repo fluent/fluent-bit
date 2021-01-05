@@ -1,8 +1,17 @@
 cd build
 
+if ( "x64" -eq $env:PLATFORM ) {
+    $OPENSSL_DIR = "C:\OpenSSL-v11-Win64"
+}
+else {
+    $OPENSSL_DIR = "C:\OpenSSL-v11-Win32"
+}
+
+
 # CACHE GENERATION
 cmake -G "NMake Makefiles" `
                      -D FLB_TESTS_INTERNAL=On `
+                     -D OPENSSL_ROOT_DIR=$OPENSSL_DIR `
                      -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
                      -D FLB_WITHOUT_flb-rt-out_td=On `
                      -D FLB_WITHOUT_flb-rt-out_forward=On `
