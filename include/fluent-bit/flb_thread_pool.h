@@ -28,7 +28,11 @@
 #define FLB_THREAD_POOL_STOPPED   2
 
 #include <fluent-bit/flb_info.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <monkey/mk_core/external/winpthreads.h>
+#else
 #include <pthread.h>
+#endif
 
 struct worker_params {
     void (*func) (void *);
