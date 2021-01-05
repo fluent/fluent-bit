@@ -49,8 +49,6 @@
 extern "C" {
 #endif
 
-extern FLB_EXPORT pthread_key_t flb_coro_key;
-
 struct flb_coro {
 
 #ifdef FLB_HAVE_VALGRIND
@@ -72,11 +70,6 @@ struct flb_coro {
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))
 
-static FLB_INLINE void flb_coro_prepare(void)
-{
-    pthread_key_create(&flb_coro_key, NULL);
-}
-
 static FLB_INLINE void flb_coro_yield(struct flb_coro *coro, int ended)
 {
     co_switch(coro->caller);
@@ -97,9 +90,13 @@ static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
 
 #define flb_coro_return(th) co_switch(th->caller)
 
+void flb_coro_init();
+struct flb_coro *flb_coro_get();
+void flb_coro_set(struct flb_coro *coro);
+
 static FLB_INLINE void flb_coro_resume(struct flb_coro *coro)
 {
-    pthread_setspecific(flb_coro_key, (void *) coro);
+    flb_coro_set(coro);
     coro->caller = co_active();
     co_switch(coro->callee);
 }

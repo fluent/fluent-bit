@@ -19,6 +19,25 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_thread_storage.h>
 #include <fluent-bit/flb_coro.h>
 
-pthread_key_t flb_coro_key;
+FLB_TLS_DEFINE(struct flb_coro, flb_coro_key);
+
+void flb_coro_init()
+{
+    FLB_TLS_INIT(flb_coro_key);
+}
+
+struct flb_coro *flb_coro_get()
+{
+    struct flb_coro *coro;
+
+    coro = FLB_TLS_GET(flb_coro_key);
+    return coro;
+}
+
+void flb_coro_set(struct flb_coro *coro)
+{
+    FLB_TLS_SET(flb_coro_key, coro);
+}
