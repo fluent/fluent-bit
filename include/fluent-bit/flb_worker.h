@@ -37,13 +37,14 @@ struct flb_worker {
 #ifdef _WIN32
     intptr_t log[2];
 #else
-    int log[2];
+    flb_pipefd_t log[2];
 #endif
 
     /* Runtime context */
     void *config;
     void *log_ctx;
 
+    pthread_mutex_t mutex;
     struct mk_list _head;    /* link to head at config->workers */
 };
 

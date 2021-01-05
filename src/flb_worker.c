@@ -35,23 +35,35 @@ FLB_TLS_DEFINE(struct flb_worker, flb_worker_ctx);
  */
 static void step_callback(void *data)
 {
-    int ret;
     struct flb_worker *worker = data;
 
     /* Set the worker context global */
     FLB_TLS_SET(flb_worker_ctx, worker);
-
-    /* Initialize worker-required data */
-    ret = flb_log_worker_init(worker);
-    if (ret == -1) {
-        fprintf(stderr, "[worker] error initializing log-worker context\n");
-    }
 
     /* not too scary :) */
     worker->func(worker->data);
 
     /* FIXME: add a good plan for pthread_exit and 'worker' release */
     pthread_exit(NULL);
+}
+
+struct flb_worker *flb_worker_context_create(void (*func) (void *), void *arg,
+                                             struct flb_config *config)
+{
+    struct flb_worker *worker;
+
+    worker = flb_calloc(1, sizeof(struct flb_worker));
+    if (!worker) {
+        flb_errno();
+        return NULL;
+    }
+    MK_EVENT_ZERO(&worker->event);
+    worker->func   = func;
+    worker->data   = arg;
+    worker->config = config;
+    worker->log_ctx = config->log;
+
+    return worker;
 }
 
 /*
@@ -69,17 +81,10 @@ int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
     int ret;
     struct flb_worker *worker;
 
-    worker = flb_malloc(sizeof(struct flb_worker));
+    worker = flb_worker_context_create(func, arg, config);
     if (!worker) {
-        flb_errno();
         return -1;
     }
-    MK_EVENT_ZERO(&worker->event);
-
-    worker->func   = func;
-    worker->data   = arg;
-    worker->config = config;
-    worker->log_ctx = config->log;
 
     /* Initialize log-specific */
     ret = flb_log_worker_init(worker);
