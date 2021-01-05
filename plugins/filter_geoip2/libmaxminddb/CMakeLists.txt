@@ -32,7 +32,7 @@ endif()
 configure_file(${PROJECT_SOURCE_DIR}/include/maxminddb_config.h.cmake.in 
                ${PROJECT_SOURCE_DIR}/include/maxminddb_config.h)
 
-add_library(maxminddb
+add_library(maxminddb STATIC
   src/maxminddb.c
   src/data-pool.c
 )
@@ -81,17 +81,17 @@ set(MAXMINDB_HEADERS
 )
 set_target_properties(maxminddb PROPERTIES PUBLIC_HEADER "${MAXMINDB_HEADERS}")
 
-install(TARGETS maxminddb
-        EXPORT maxminddb
-        ARCHIVE DESTINATION lib
-        PUBLIC_HEADER DESTINATION include/
-)
-
-# This is required to work with FetchContent
-install(EXPORT maxminddb
-        FILE maxminddb-config.cmake
-        NAMESPACE maxminddb::
-        DESTINATION lib/cmake/maxminddb)
+#install(TARGETS maxminddb
+#        EXPORT maxminddb
+#        ARCHIVE DESTINATION lib
+#        PUBLIC_HEADER DESTINATION include/
+#)
+#
+## This is required to work with FetchContent
+#install(EXPORT maxminddb
+#        FILE maxminddb-config.cmake
+#        NAMESPACE maxminddb::
+#        DESTINATION lib/cmake/maxminddb)
 
 # We always want to build mmdblookup
 add_subdirectory(bin)

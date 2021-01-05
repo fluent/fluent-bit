@@ -10,6 +10,7 @@
 #
 option(BUILD_TESTING "" OFF)
 add_subdirectory(libmaxminddb EXCLUDE_FROM_ALL)
+include_directories(libmaxminddb/include/)
 
 set(src
   geoip2.c)
