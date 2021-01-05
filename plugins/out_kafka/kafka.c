@@ -347,7 +347,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * to enqueue this message, if we exceed 10 times, we just
              * issue a full retry of the data chunk.
              */
-            flb_time_sleep(1000, config);
+            flb_time_sleep(1000);
             rd_kafka_poll(ctx->producer, 0);
 
             /* Issue a re-try */
