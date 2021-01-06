@@ -884,6 +884,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         return -1;
     }
+    flb_output_upstream_set(ctx->u, ins);
+    flb_output_upstream_set(ctx->metadata_u, ins);
 
     /* Metadata Upstream Sync flags */
     ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
