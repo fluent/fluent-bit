@@ -92,8 +92,14 @@ static int net_io_connect_sync(struct flb_upstream *u,
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
+#ifdef FLB_SYSTEM_WINDOWS
+        socket_errno = flb_socket_error(u_conn->fd);
+        err = -1;
+#else
         socket_errno = errno;
         err = flb_socket_error(u_conn->fd);
+#endif
+
         if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
             flb_error("[io] connection #%i failed to: %s:%i",
                       u_conn->fd, u->tcp_host, u->tcp_port);
@@ -169,8 +175,14 @@ static int net_io_connect_async(struct flb_upstream *u,
          * socket status, getting a EINPROGRESS is expected, but any other case
          * means a failure.
          */
+#ifdef FLB_SYSTEM_WINDOWS
+        socket_errno = flb_socket_error(u_conn->fd);
+        err = -1;
+#else
         socket_errno = errno;
         err = flb_socket_error(u_conn->fd);
+#endif
+
         if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
             flb_error("[io] connection #%i failed to: %s:%i",
                       u_conn->fd, u->tcp_host, u->tcp_port);
