@@ -55,8 +55,8 @@ static int meta_set(struct flb_fstore_file *fsf, void *meta, size_t size)
     p = flb_calloc(1, size + 1);
     if (!p) {
         flb_errno();
-        flb_error("[fstore] could not cache metadata in file: %s:%s",
-                  fsf->stream->name, fsf->chunk->name);
+        flb_error("[fstore] could not cache metadata in file: %s",
+                  fsf->chunk->name);
         return -1;
     }
 
@@ -79,8 +79,8 @@ int flb_fstore_file_meta_set(struct flb_fstore *fs,
 
     ret = cio_meta_write(fsf->chunk, meta, size);
     if (ret == -1) {
-        flb_error("[fstore] could not write metadata to file: %s:%s",
-                  fsf->stream->name, fsf->chunk->name);
+        flb_error("[fstore] could not write metadata to file: %s, root_dir=%s",
+                  fsf->chunk->name, fs->root_path);
         return -1;
     }
 
@@ -145,8 +145,8 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     }
     fsf->name = flb_sds_create(name);
     if (!fsf->name) {
-        flb_error("[fstore] could not create file: %s:%s",
-                  fsf->stream->name, name);
+        flb_error("[fstore] could not create file: %s:%s", 
+                  fs_stream->path, name);
         flb_free(fsf);
         return NULL;
     }
@@ -155,7 +155,7 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
                            CIO_OPEN, size, &err);
     if (!chunk) {
         flb_error("[fstore] could not create file: %s:%s",
-                  fsf->stream->name, name);
+                  fs_stream->path, name);
         flb_sds_destroy(fsf->name);
         flb_free(fsf);
         return NULL;
