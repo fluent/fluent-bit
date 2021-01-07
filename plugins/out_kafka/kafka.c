@@ -307,6 +307,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         }
 #endif
         msgpack_sbuffer_destroy(&mp_sbuf);
+        /*
+         * Unblock the flush requests so that the
+         * engine could try sending data again.
+         */
+        ctx->blocked = FLB_FALSE;
         return FLB_RETRY;
     }
 
