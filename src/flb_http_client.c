@@ -1135,7 +1135,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                            c->header_buf, c->header_len,
                            &bytes_header);
     if (ret == -1) {
-        flb_errno();
+        /* errno might be changed from the original call */
+        if (errno != 0) {
+            flb_errno();
+        }
         return -1;
     }
 
