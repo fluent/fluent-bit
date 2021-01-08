@@ -27,7 +27,7 @@
 
 #include <monkey/monkey.h>
 
-#define HTTP_BUFFER_MAX_SIZE    "2M"
+#define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
 struct flb_http {
