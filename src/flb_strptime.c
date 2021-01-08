@@ -698,7 +698,7 @@ _conv_num(const unsigned char **buf, int *dest, int llim, int ulim)
 static int
 _conv_num64(const unsigned char **buf, int64_t *dest, int64_t llim, int64_t ulim)
 {
-	int result = 0;
+	int64_t result = 0;
 	int64_t rulim = ulim;
 
 	if (**buf < '0' || **buf > '9')
