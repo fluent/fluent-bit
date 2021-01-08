@@ -248,8 +248,6 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
         flb_socket_close(u_conn->fd);
     }
 
-    u->n_connections--;
-
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_lock(&u->mutex_lists);
     }
@@ -259,6 +257,8 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
 
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &u->destroy_queue);
+
+    u->n_connections--;
 
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&u->mutex_lists);
@@ -327,12 +327,12 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     /* Link new connection to the busy queue */
     mk_list_add(&conn->_head, &u->busy_queue);
 
+    /* Increase counter */
+    u->n_connections++;
+
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
-
-    /* Increase counter */
-    u->n_connections++;
 
     /* Start connection */
     ret = flb_io_net_connect(conn, coro);
@@ -508,7 +508,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         }
 
         mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &conn->u->av_queue);
+        mk_list_add(&conn->_head, &u->av_queue);
 
         if (u->thread_safe == FLB_TRUE) {
             pthread_mutex_unlock(&u->mutex_lists);
