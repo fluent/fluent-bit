@@ -31,8 +31,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-
+#ifdef FLB_SYSTEM_WINDOWS
+/* Not yet implemented! */
+#else
 #define FSF_STORE_PATH "/tmp/flb-fstore"
+#endif
 
 void cb_all()
 {

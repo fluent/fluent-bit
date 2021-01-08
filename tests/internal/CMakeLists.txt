@@ -19,13 +19,13 @@ set(UNIT_TESTS_FILES
   config_map.c
   mp.c
   input_chunk.c
-  fstore.c
   )
 
 if (NOT WIN32)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     gelf.c
+    fstore.c
     )
 endif()
 
