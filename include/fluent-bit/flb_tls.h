@@ -28,8 +28,6 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_upstream.h>
 
-int flb_tls_init(void);
-
 int net_io_tls_write(struct flb_coro *co, struct flb_upstream_conn *u_conn,
                      const void *data, size_t len, size_t *out_len);
 int net_io_tls_read(struct flb_coro *co, struct flb_upstream_conn *u_conn,

@@ -84,6 +84,7 @@ struct flb_tls {
     struct flb_tls_backend *api;      /* backend API */
 };
 
+int flb_tls_init();
 struct flb_tls *flb_tls_create();
 int flb_tls_destroy(struct flb_tls *tls);
 
