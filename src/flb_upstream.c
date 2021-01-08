@@ -434,9 +434,17 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
     mk_list_foreach_safe(head, tmp, &u->av_queue) {
         conn = mk_list_entry(head, struct flb_upstream_conn, _head);
 
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_lock(&u->mutex_lists);
+        }
+
         /* This connection works, let's move it to the busy queue */
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &u->busy_queue);
+
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_unlock(&u->mutex_lists);
+        }
 
         /* Reset errno */
         conn->net_error = -1;
