@@ -103,20 +103,6 @@ option(FLB_METRICS            "Enable metrics support"       No)
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
-# Advanced options for Flushing methods
-# =====================================
-# Flush methods defines under what kind of context/environment the plugins
-# flush callback is invoked. Since this is done through co-routines
-# there are two options available:
-#
-# FLB_FLUSH_LIBCO: set by default, use lib/flb_libco implementation which
-# supports amd64, arm, x86 and ppc.
-#
-# FLB_FLUSH_UCONTEXT (DEPRECATED): It uses POSIX ucontext for co-routines
-# implementation.
-# Despites this is POSIX deprecated, it's supported on Linux and BSD
-# systems, but specific old-toolchains do not implement it.
-
 # Build-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
