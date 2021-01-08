@@ -2,6 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,9 +18,11 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_HTTP_INFO_H
-#define FLB_IN_HTTP_INFO_H
+#ifndef FLB_IN_HTTP_PROT
+#define FLB_IN_HTTP_PROT
 
-#define FLB_HTTP_CONF_PATH  "@IN_HTTP_CONF_PATH@"
+int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
+                     struct mk_http_session *session,
+                     struct mk_http_request *request);
 
 #endif
