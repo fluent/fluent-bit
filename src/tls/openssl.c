@@ -23,6 +23,15 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/opensslv.h>
+
+/*
+ * OPENSSL_VERSION_NUMBER has the following semantics
+ *
+ *     0x010100000L   M = major  F = fix    S = status
+ *       MMNNFFPPS    N = minor  P = patch
+ */
+#define OPENSSL_1_1_0 0x010100000L
 
 struct tls_session {
     SSL *ssl;
@@ -33,6 +42,22 @@ struct tls_context {
     int debug_level;
     SSL_CTX *ctx;
 };
+
+static int tls_init(void)
+{
+/*
+ * Explicit initialization is needed for older versions of
+ * OpenSSL (before v1.1.0).
+ *
+ * https://wiki.openssl.org/index.php/Library_Initialization
+ */
+#if OPENSSL_VERSION_NUMBER < OPENSSL_1_1_0
+    OPENSSL_add_all_algorithms_noconf();
+    SSL_load_error_strings();
+    SSL_library_init();
+#endif
+    return 0;
+}
 
 static void tls_info_callback(const SSL *s, int where, int ret)
 {
@@ -127,7 +152,17 @@ static void *tls_context_create(int verify, int debug,
      */
 
     /* Create OpenSSL context */
+#if OPENSSL_VERSION_NUMBER < OPENSSL_1_1_0
+    /*
+     * SSLv23_method() is actually an equivalent of TLS_client_method()
+     * in OpenSSL v1.0.x.
+     *
+     * https://www.openssl.org/docs/man1.0.2/man3/SSLv23_method.html
+     */
+    ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+#else
     ssl_ctx = SSL_CTX_new(TLS_client_method());
+#endif
     if (!ssl_ctx) {
         flb_error("[openssl] could not create context");
         return NULL;
@@ -144,6 +179,9 @@ static void *tls_context_create(int verify, int debug,
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
         SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, NULL);
+    }
+    else {
+        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
     }
 
     /* ca_path | ca_file */
