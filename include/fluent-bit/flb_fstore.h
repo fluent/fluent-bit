@@ -38,7 +38,7 @@ struct flb_fstore_file {
     size_t meta_size;               /* metadata size */
     void *data;                     /* opaque data type for user/caller context */
     struct cio_chunk *chunk;        /* chunk context */
-    struct cio_chunk *stream;       /* parent stream that owns this file */
+    struct cio_stream *stream;      /* parent stream that owns this file */
     struct mk_list _head;           /* link to parent flb_fstore->files */
 };
 
