@@ -185,8 +185,15 @@ static void *tls_context_create(int verify, int debug,
     }
 
     /* ca_path | ca_file */
-    if (!ca_path) {
-        load_system_certificates(ctx);
+    if (ca_path) {
+        ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
+        if (ret != 1) {
+            flb_error("[tls] ca_path'%s' %lu: %s",
+                      ca_path,
+                      ERR_get_error(),
+                      ERR_error_string(ERR_get_error(), NULL));
+            goto error;
+        }
     }
     else if (ca_file) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, ca_file, NULL);
@@ -197,6 +204,9 @@ static void *tls_context_create(int verify, int debug,
                       ERR_error_string(ERR_get_error(), NULL));
             goto error;
         }
+    }
+    else {
+        load_system_certificates(ctx);
     }
 
     /* crt_file */
