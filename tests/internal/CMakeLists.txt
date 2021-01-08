@@ -19,6 +19,7 @@ set(UNIT_TESTS_FILES
   config_map.c
   mp.c
   input_chunk.c
+  fstore.c
   )
 
 if (NOT WIN32)
