@@ -327,12 +327,12 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     /* Link new connection to the busy queue */
     mk_list_add(&conn->_head, &u->busy_queue);
 
+    /* Increase counter */
+    u->n_connections++;
+
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
-
-    /* Increase counter */
-    u->n_connections++;
 
     /* Start connection */
     ret = flb_io_net_connect(conn, coro);
