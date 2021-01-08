@@ -35,6 +35,7 @@
 
 struct tls_session {
     SSL *ssl;
+    int fd;
 };
 
 /* OpenSSL library context */
@@ -271,6 +272,7 @@ static void *tls_session_create(struct flb_tls *tls,
         return NULL;
     }
     session->ssl = ssl;
+    session->fd = u_conn->fd;
     SSL_set_fd(ssl, u_conn->fd);
 
     /*
@@ -297,7 +299,9 @@ static int tls_session_destroy(void *session)
         return 0;
     }
 
-    SSL_shutdown(ptr->ssl);
+    if (flb_socket_error(ptr->fd) == 0) {
+        SSL_shutdown(ptr->ssl);
+    }
     SSL_free(ptr->ssl);
     flb_free(ptr);
 
