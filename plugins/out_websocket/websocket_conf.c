@@ -149,7 +149,7 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
 
 void flb_ws_conf_destroy(struct flb_out_ws *ctx)
 {
-    flb_info("[out_ws] flb_ws_conf_destroy ");
+    flb_info("[out_ws] flb_ws_conf_destroy");
     if (!ctx) {
         return;
     }
