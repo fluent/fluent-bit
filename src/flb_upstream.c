@@ -244,13 +244,6 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     if (u->flags & FLB_IO_ASYNC) {
         mk_event_del(u_conn->evl, &u_conn->event);
     }
-
-#ifdef FLB_HAVE_TLS
-    if (u_conn->tls_session) {
-        flb_tls_session_destroy(u_conn->tls, u_conn);
-    }
-#endif
-
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
     }
@@ -639,6 +632,11 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
     mk_list_foreach_safe(head, tmp, &u->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
         mk_list_del(&u_conn->_head);
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session) {
+            flb_tls_session_destroy(u_conn->tls, u_conn);
+        }
+#endif
         flb_free(u_conn);
     }
 
