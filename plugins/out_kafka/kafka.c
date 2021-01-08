@@ -274,10 +274,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
      */
     if (ctx->queue_full_retries > 0 &&
         queue_full_retries >= ctx->queue_full_retries) {
-        if (ctx->format == FLB_KAFKA_FMT_JSON) {
-            flb_free(out_buf);
-        }
-        if (ctx->format == FLB_KAFKA_FMT_GELF) {
+        if (ctx->format != FLB_KAFKA_FMT_MSGP) {
             flb_sds_destroy(s);
         }
         msgpack_sbuffer_destroy(&mp_sbuf);
