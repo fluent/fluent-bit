@@ -248,8 +248,6 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
         flb_socket_close(u_conn->fd);
     }
 
-    u->n_connections--;
-
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_lock(&u->mutex_lists);
     }
@@ -259,6 +257,8 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
 
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &u->destroy_queue);
+
+    u->n_connections--;
 
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&u->mutex_lists);
