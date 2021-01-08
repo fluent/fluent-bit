@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_compat.h>
 
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_utils.h>
@@ -29,7 +30,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
+
 
 #define FSF_STORE_PATH "/tmp/flb-fstore"
 
