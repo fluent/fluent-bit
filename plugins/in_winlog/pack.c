@@ -435,6 +435,6 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     if (ctx->string_inserts) {
         msgpack_pack_str(mp_pck, 13);
         msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_strings(mp_pck, evt, ch, ctx);
+        pack_strings(mp_pck, evt);
     }
 }

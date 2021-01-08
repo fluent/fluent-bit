@@ -18,14 +18,17 @@ endif()
 # Update CFLAGS
 if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
 
   # Use custom CFLAGS for MSVC
   #
-  #   /W3 ...... Show up to 'production quality' msgs.
   #   /Zi ...... Generate pdb files.
   #   /MT ...... Static link C runtimes.
+  #   /wd4711 .. C4711 (function selected for inline expansion)
+  #   /wd4100 .. C4100 (unreferenced formal parameter)
+  #   /wd5045 .. C5045 (Spectre mitigation)
   #
-  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /W3 /O2 /Zi")
+  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
   set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
 
