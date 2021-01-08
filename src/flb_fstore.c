@@ -480,7 +480,7 @@ void flb_fstore_dump(struct flb_fstore *fs)
         printf("- stream: %s\n", fs_stream->name);
         mk_list_foreach(f_head, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
-            printf("          %s/%s\n", fs_stream->name, fsf->name);
+            printf("          %s/%s\n", fsf->stream->name, fsf->name);
         }
     }
     printf("\n");
