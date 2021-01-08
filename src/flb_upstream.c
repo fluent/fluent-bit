@@ -497,6 +497,18 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
     int ret;
     struct flb_upstream *u = conn->u;
 
+    if (conn->u->net.keepalive == FLB_FALSE) {
+        printf("NO KA!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    if (conn->recycle == FLB_FALSE) {
+        printf("NO RECYCLE!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
     /* If this is a valid KA connection just recycle */
     if (conn->u->net.keepalive == FLB_TRUE && conn->recycle == FLB_TRUE && conn->fd > -1) {
         /*
@@ -548,6 +560,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
     }
 
     /* No keepalive connections must be destroyed */
+    printf("DESTROY BECAUSE OF KA_COUNT=%i\n", conn->ka_count);
     return destroy_conn(conn);
 }
 
