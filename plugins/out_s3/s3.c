@@ -1204,6 +1204,7 @@ static void cb_s3_flush(const void *data, size_t bytes,
     flb_sds_t json = NULL;
     struct s3_file *chunk = NULL;
     struct multipart_upload *m_upload = NULL;
+    struct flb_sched *sched;
     char *buffer = NULL;
     size_t buffer_size;
     int timeout_check = FLB_FALSE;
@@ -1232,6 +1233,9 @@ static void cb_s3_flush(const void *data, size_t bytes,
         }
     }
 
+    /* Get the scheduler context */
+    sched = flb_sched_ctx_get();
+
     /*
      * create a timer that will run periodically and check if uploads
      * are ready for completion
@@ -1242,7 +1246,7 @@ static void cb_s3_flush(const void *data, size_t bytes,
                       "Creating upload timer with frequency %ds",
                       ctx->timer_ms / 1000);
 
-        ret = flb_sched_timer_cb_create(config, FLB_SCHED_TIMER_CB_PERM,
+        ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
                                         ctx->timer_ms,
                                         cb_s3_upload,
                                         ctx);
