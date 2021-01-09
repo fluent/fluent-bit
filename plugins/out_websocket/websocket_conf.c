@@ -149,7 +149,7 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
 
 void flb_ws_conf_destroy(struct flb_out_ws *ctx)
 {
-    flb_info("[out_ws] flb_ws_conf_destroy");
+    flb_info("[out_ws] flb_ws_conf_destroy ");
     if (!ctx) {
         return;
     }
@@ -157,11 +157,10 @@ void flb_ws_conf_destroy(struct flb_out_ws *ctx)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
-    
+
     if (ctx->json_date_key) {
         flb_sds_destroy(ctx->json_date_key);
     }
-
     flb_free(ctx->uri);
     flb_free(ctx);
     ctx = NULL;

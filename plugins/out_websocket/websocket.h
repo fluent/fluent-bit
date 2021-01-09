@@ -45,8 +45,8 @@ struct flb_out_ws {
     flb_sds_t json_date_key;
     size_t buffer_size;
     struct flb_upstream *u;
-    bool handShake;
-    time_t lastInputTimestamp;
+    int handshake;
+    time_t last_input_timestamp;
     int idle_interval;
 };
 

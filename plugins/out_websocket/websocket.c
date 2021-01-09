@@ -52,7 +52,7 @@ static int flb_ws_handshake(struct flb_upstream_conn *u_conn,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_GET, ctx->uri,
                         NULL, 0, NULL, 0, NULL, 0);
-    if(!c) {
+    if (!c) {
        flb_upstream_conn_release(u_conn);
        return -1;
     }
@@ -100,9 +100,13 @@ static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
     unsigned long long payloadSize = bytes;
     
     flb_ws_mask((char *)data, payloadSize, masking_key);
-    if(payloadSize < 126)
+    if (payloadSize < 126)
     {
         data_frame_head = (char *)flb_malloc(6);
+        if (!data_frame_head) {
+            flb_errno();
+            return -1;
+        }
         data_frame_head[0] = 0x81;
         data_frame_head[1] = (payloadSize & 0xff) | 0x80;
         data_frame_head[2] = masking_key[0];
@@ -111,9 +115,13 @@ static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
         data_frame_head[5] = masking_key[3];
         data_frame_head_len = 6;
     }
-    else if(payloadSize < 65536)
+    else if (payloadSize < 65536)
     {
         data_frame_head = (char *)flb_malloc(8);
+        if (!data_frame_head) {
+            flb_errno();
+            return -1;
+        }
         data_frame_head[0] = 0x81;
         data_frame_head[1] = 126 | 0x80;
         data_frame_head[2] = (payloadSize >> 8) & 0xff;
@@ -127,6 +135,10 @@ static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
     else
     {
         data_frame_head = (char *)flb_malloc(14);
+        if (!data_frame_head) {
+            flb_errno();
+            return -1;
+        }
         data_frame_head[0] = 0x81;
         data_frame_head[1] = 127 | 0x80;
         data_frame_head[2] = (payloadSize >> 56) & 0xff;
@@ -162,12 +174,12 @@ static int cb_ws_init(struct flb_output_instance *ins,
     struct flb_out_ws *ctx = NULL;
     
     ctx = flb_ws_conf_create(ins, config);
-    if(!ctx) {
+    if (!ctx) {
         return -1;
     }
 
-    ctx->handShake = true;
-    ctx->lastInputTimestamp = time(NULL);
+    ctx->handshake = 1;
+    ctx->last_input_timestamp = time(NULL);
     flb_output_set_context(ins, ctx);
     return 0;
 }
@@ -199,22 +211,22 @@ static void cb_ws_flush(const void *data, size_t bytes,
     
     if (!u_conn) {
         flb_error("[out_ws] no upstream connections available to %s:%i", u->tcp_host, u->tcp_port);
-        ctx->handShake = true;
+        ctx->handshake = 1;
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     now = time(NULL);
 
     //TODO how to determine the interval? conn disconnet is about 30 sec, so we set 20 ssecnds here. 
-    flb_debug("[out_ws] interval is  %ld and handShake is %s", now - ctx->lastInputTimestamp, ctx->handShake?"true":"false");
-    if((now - ctx->lastInputTimestamp > ctx->idle_interval) && (ctx->handShake == false)) {
-        ctx->handShake = true;
+    flb_debug("[out_ws] interval is  %ld and handshake is %d", now - ctx->last_input_timestamp, ctx->handshake);
+    if((now - ctx->last_input_timestamp > ctx->idle_interval) && (ctx->handshake == 0)) {
+        ctx->handshake = 1;
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     } 
-    ctx->lastInputTimestamp = now;
+    ctx->last_input_timestamp = now;
 
-    if(ctx->handShake == true) {
+    if (ctx->handshake == 1) {
         /* Handshake with websocket server*/
         flb_info("[out_ws] handshake for ws");
         ret = flb_ws_handshake(u_conn, ctx);
@@ -222,7 +234,7 @@ static void cb_ws_flush(const void *data, size_t bytes,
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
-        ctx->handShake = false;
+        ctx->handshake = 0;
     }
 
     /* Data format process*/
@@ -279,5 +291,5 @@ struct flb_output_plugin out_websocket_plugin = {
     .cb_init      = cb_ws_init,
     .cb_flush     = cb_ws_flush,
     .cb_exit      = cb_ws_exit,
-    .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_IO_TCP_KA,
+    .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
