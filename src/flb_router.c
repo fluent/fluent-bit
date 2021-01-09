@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,10 +21,16 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
+
+#ifdef FLB_HAVE_REGEX
+#include <onigmo.h>
+#endif
 
 #include <string.h>
 
@@ -42,9 +48,9 @@ static inline int router_match(const char *tag, int tag_len,
     int n;
     if (match_regex) {
         n = onig_match(match_regex->regex,
-                       (unsigned char *) tag,
-                       (unsigned char *) tag + tag_len,
-                       (unsigned char *) tag, 0,
+                       (const unsigned char *) tag,
+                       (const unsigned char *) tag + tag_len,
+                       (const unsigned char *) tag, 0,
                        ONIG_OPTION_NONE);
         if (n > 0) {
             return 1;
@@ -59,7 +65,7 @@ static inline int router_match(const char *tag, int tag_len,
             while (*++match == '*'){
                 /* skip successive '*' */
             }
-            if(*match == '\0'){
+            if (*match == '\0') {
                 /*  '*' is last of string */
                 ret = 1;
                 break;
@@ -81,11 +87,11 @@ static inline int router_match(const char *tag, int tag_len,
             }
             break;
         }
-        else if (*tag != *match ) {
+        else if (*tag != *match) {
             /* mismatch! */
             break;
         }
-        else if (*tag == '\0'){
+        else if (*tag == '\0') {
             /* end of tag. so matched! */
             ret = 1;
             break;
@@ -97,21 +103,27 @@ static inline int router_match(const char *tag, int tag_len,
     return ret;
 }
 
-#ifdef FLB_HAVE_REGEX
-int flb_router_match(const char *tag, int tag_len,
-                     const char *match,
-                     struct flb_regex *match_regex)
+int flb_router_match(const char *tag, int tag_len, const char *match,
+                     void *match_regex)
 {
-    return router_match(tag, tag_len, match, match_regex);
-}
+    int ret;
+    flb_sds_t t;
 
-#else
-int flb_router_match(const char *tag, int tag_len, const char *match)
-{
-    return router_match(tag, tag_len, match, NULL);
-}
-#endif
+    if (tag[tag_len] != '\0') {
+        t = flb_sds_create_len(tag, tag_len);
+        if (!t) {
+            return FLB_FALSE;
+        }
 
+        ret = router_match(t, tag_len, match, match_regex);
+        flb_sds_destroy(t);
+    }
+    else {
+        ret = router_match(tag, tag_len, match, match_regex);
+    }
+
+    return ret;
+}
 
 /* Associate and input and output instances due to a previous match */
 static int flb_router_connect(struct flb_input_instance *in,
@@ -121,7 +133,7 @@ static int flb_router_connect(struct flb_input_instance *in,
 
     p = flb_malloc(sizeof(struct flb_router_path));
     if (!p) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
@@ -166,7 +178,7 @@ int flb_router_io_set(struct flb_config *config)
             ) {
             flb_debug("[router] default match rule %s:%s",
                       i_ins->name, o_ins->name);
-            o_ins->match = flb_strdup("*");
+            o_ins->match = flb_sds_create_len("*", 1);
             flb_router_connect(i_ins, o_ins);
             return 0;
         }
@@ -203,6 +215,8 @@ int flb_router_io_set(struct flb_config *config)
             if (flb_router_match(i_ins->tag, i_ins->tag_len, o_ins->match
 #ifdef FLB_HAVE_REGEX
                 , o_ins->match_regex
+#else
+                , NULL
 #endif
             )) {
                 flb_debug("[router] match rule %s:%s",
@@ -235,4 +249,57 @@ void flb_router_exit(struct flb_config *config)
             flb_free(r);
         }
     }
+}
+
+/*
+ * Calculate the routes_mask for input chunk with a router_match on tag
+ */
+uint64_t flb_router_get_routes_mask_by_tag(const char *tag, int tag_len,
+                                           struct flb_input_instance *in) {
+    uint64_t routes_mask = 0;
+    struct mk_list *o_head;
+    struct flb_output_instance *o_ins;
+    if (!in) {
+        return -1;
+    }
+
+    /* Find all matching routes for the given tag */
+    mk_list_foreach(o_head, &in->config->outputs) {
+        o_ins = mk_list_entry(o_head,
+                              struct flb_output_instance, _head);
+
+        if (flb_router_match(tag, tag_len, o_ins->match
+#ifdef FLB_HAVE_REGEX
+                             , o_ins->match_regex
+#else
+                             , NULL
+#endif
+                             )) {
+            /*
+             * mask_id for each output instance is a unique number starting from 1
+             * and multple by 2 each time. (e.g 1, 2 ,4 ,8, 16 ...)
+             * Let's take a look of the binary of the mask_id:
+             *   1:   00000001
+             *   2:   00000010
+             *   4:   00000100
+             *   8:   00001000
+             *   16:  00010000
+             * We can notice that each binary has only one 1's bit and this also
+             * represents the postion of the output instance. Getting the OR of
+             * mask_id (given that tag is matched) will tell us the output instances
+             * that the given input chunk will flush to.
+             *
+             * For example: We have two matching output instances with mask_id 1 and 4
+             * There are two 1's in the binary with index 0 and 2 (starting from right)
+             * and this means that the input chunk will flush to first and third output
+             * instances configured in the Fluent Bit configuraion.
+             *
+             *    0 |= 1 -> 00000 |= 00001 -> 00001
+             *    00001 |= 4 -> 00001 |= 00100 -> 00101
+             */
+            routes_mask |= o_ins->mask_id;
+        }
+    }
+
+    return routes_mask;
 }

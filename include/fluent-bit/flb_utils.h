@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_sds.h>
 
 struct flb_split_entry {
     char *value;
@@ -35,7 +36,7 @@ struct flb_split_entry {
 void flb_utils_error(int err);
 void flb_utils_error_c(const char *msg);
 void flb_utils_warn_c(const char *msg);
-void flb_message(int type, char *file, int line, const char *fmt, ...);
+void flb_message(int type, const char *file, int line, const char *fmt, ...);
 
 #ifdef FLB_HAVE_FORK
 int flb_utils_set_daemon();
@@ -43,22 +44,26 @@ int flb_utils_set_daemon();
 
 void flb_utils_print_setup(struct flb_config *config);
 
-struct mk_list *flb_utils_split(char *line, int separator, int max_split);
-
+struct mk_list *flb_utils_split(const char *line, int separator, int max_split);
+void flb_utils_split_free_entry(struct flb_split_entry *entry);
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
-ssize_t flb_utils_size_to_bytes(char *size);
-int flb_utils_time_to_seconds(char *time);
+int64_t flb_utils_size_to_bytes(const char *size);
+int flb_utils_hex2int(char *hex, int len);
+int flb_utils_time_to_seconds(const char *time);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
-int flb_utils_bool(char *val);
+int flb_utils_bool(const char *val);
 void flb_utils_bytes_to_human_readable_size(size_t bytes,
                                             char *out_buf, size_t size);
-int flb_utils_time_split(char *time, int *sec, long *nsec);
+int flb_utils_time_split(const char *time, int *sec, long *nsec);
 int flb_utils_write_str(char *buf, int *off, size_t size,
-                        char *str, size_t str_len);
-int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size);
+                        const char *str, size_t str_len);
+int flb_utils_write_str_buf(const char *str, size_t str_len,
+                            char **out, size_t *out_size);
 
-int flb_utils_url_split(char *in_url, char **out_protocol,
+int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri);
-
+int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
+                              char **out_username, char **out_password,
+                              char **out_host, char **out_port);
 #endif

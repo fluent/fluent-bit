@@ -53,6 +53,7 @@ static inline int64_t time_in_ms()
 int callback_test(void* data, size_t size, void* cb_data)
 {
     if (size > 0) {
+        flb_info("[test] flush triggered");
         flb_lib_free(data);
         set_result(time_in_ms()); /* success */
     }
@@ -62,7 +63,6 @@ int callback_test(void* data, size_t size, void* cb_data)
 void do_test(char *system, ...)
 {
     int64_t ret;
-    int64_t start;
     flb_ctx_t    *ctx    = NULL;
     int in_ffd;
     int out_ffd;
@@ -95,79 +95,81 @@ void do_test(char *system, ...)
     TEST_CHECK(out_ffd >= 0);
     TEST_CHECK(flb_output_set(ctx, out_ffd, "match", "test", NULL) == 0);
 
-    TEST_CHECK(flb_service_set(ctx, "Flush", "2",
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
                                     "Grace", "1",
                                     NULL) == 0);
 
+    /* The following test tries to check if an input plugin generates
+     * data in a timely manner.
+     *
+     *    0     1     2     3     4   (sec)
+     *    |--F--F--F--C--F--F--F--C--|
+     *
+     *    F ... Flush (0.5 sec interval)
+     *    C ... Condition checks
+     *
+     * Since CI servers can be sometimes very slow, we wait slightly a
+     * little more before checking the condition.
+     */
 
-    start = time_in_ms();
+    /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    /* start test */
-    ret = get_result(); /* No data should be flushed */
-    TEST_CHECK(ret == false);
+    /* 2 sec passed. It must have flushed */
+    sleep(2);
+    flb_info("[test] check status 1");
+    ret = get_result();
+    TEST_CHECK(ret > 0);
 
-    while ( (ret = get_result()) == 0 && (time_in_ms() - start < 4000))
-        usleep(10);
+    /* 4 sec passed. It must have flushed */
+    sleep(2);
+    flb_info("[test] check status 2");
+    ret = get_result();
+    TEST_CHECK(ret > 0);
 
-    /* We allow some slop. It should not be less than 2 seconds.
-     * But ... the CI system might be slow etc, so allow up
-     * to 4 seconds
-     */
-    TEST_CHECK(ret > start + 900 && ret < start + 4000);
-    set_result(0); /* clear flag */
-    start = time_in_ms();
-
-    usleep(0.5e06);
-    ret = get_result(); /* 1sec passed, no data should be flushed */
-    TEST_CHECK(ret == 0);
-
-    while ( (ret = get_result()) == 0 && (time_in_ms() - start < 4000))
-        usleep(10);
-    ret = get_result(); /* 1sec passed, data should be flushed */
-    TEST_CHECK(ret > start + 900 && ret < start + 4000);
-
-    /* finalize */
     flb_stop(ctx);
     flb_destroy(ctx);
 }
 
-void flb_test_in_disk_flush_2s_2times()
+void flb_test_in_disk_flush()
 {
     do_test("disk",
             "interval_sec", "0",
+            "interval_nsec", "500000000",
             NULL);
 }
-void flb_test_in_proc_flush_2s_2times()
+void flb_test_in_proc_flush()
 {
     do_test("proc",
-            "interval_sec", "1",
+            "interval_sec", "0",
+            "interval_nsec", "500000000",
             "proc_name", "flb_test_in_proc",
             "alert", "true",
             "mem", "on",
             "fd", "on",
             NULL);
 }
-void flb_test_in_head_flush_2s_2times()
+void flb_test_in_head_flush()
 {
     do_test("head", 
-            "Interval_Sec", "1",
+            "interval_sec", "0",
+            "interval_nsec", "500000000",
             "File", "/dev/urandom",
             NULL);
 }
-void flb_test_in_cpu_flush_2s_2times()
+void flb_test_in_cpu_flush()
 {
     do_test("cpu", NULL);
 }
-void flb_test_in_random_flush_2s_2times()
+void flb_test_in_random_flush()
 {
     do_test("random", NULL);
 }
-void flb_test_in_dummy_flush_2s_2times()
+void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
 }
-void flb_test_in_mem_flush_2s_2times()
+void flb_test_in_mem_flush()
 {
     do_test("mem", NULL);
 }
@@ -209,26 +211,26 @@ void flb_test_in_proc_absent_process(void)
 /* Test list */
 TEST_LIST = {
 #ifdef in_disk
-    {"disk_flush_2s_2times",    flb_test_in_disk_flush_2s_2times },
+    {"disk_flush",    flb_test_in_disk_flush},
 #endif
 #ifdef in_proc
-    {"proc_flush_2s_2times",    flb_test_in_proc_flush_2s_2times },
-    {"proc_absent_process",     flb_test_in_proc_absent_process },
+    {"proc_flush",    flb_test_in_proc_flush},
+    {"proc_absent_process",     flb_test_in_proc_absent_process},
 #endif
 #ifdef in_head
-    {"head_flush_2s_2times",    flb_test_in_head_flush_2s_2times },
+    {"head_flush",    flb_test_in_head_flush},
 #endif
 #ifdef in_cpu
-    {"cpu_flush_2s_2times",     flb_test_in_cpu_flush_2s_2times },
+    {"cpu_flush",     flb_test_in_cpu_flush},
 #endif
 #ifdef in_random
-    {"random_flush_2s_2times",  flb_test_in_random_flush_2s_2times },
+    {"random_flush",  flb_test_in_random_flush},
 #endif
 #ifdef in_dummy
-    {"dummy_flush_2s_2times",   flb_test_in_dummy_flush_2s_2times },
+    {"dummy_flush",   flb_test_in_dummy_flush},
 #endif
 #ifdef in_mem
-    {"mem_flush_2s_2times",     flb_test_in_mem_flush_2s_2times },
+    {"mem_flush",     flb_test_in_mem_flush},
 #endif
     {NULL, NULL}
 };

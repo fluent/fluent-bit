@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_utils.h>
 
 #include "kafka_config.h"
@@ -31,13 +32,13 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     char errstr[512];
     struct mk_list *head;
     struct mk_list *topics;
     struct flb_split_entry *entry;
     struct flb_kafka *ctx;
-    struct flb_config_prop *prop;
+    struct flb_kv *kv;
 
     /* Configuration context */
     ctx = flb_calloc(1, sizeof(struct flb_kafka));
@@ -45,12 +46,13 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
 
     /* rdkafka config context */
     ctx->conf = rd_kafka_conf_new();
     if (!ctx->conf) {
-        flb_error("[out_kafka] error creating context");
+        flb_plg_error(ctx->ins, "error creating context");
         flb_free(ctx);
         return NULL;
     }
@@ -59,7 +61,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     ret = rd_kafka_conf_set(ctx->conf, "client.id", "fluent-bit",
                             errstr, sizeof(errstr));
     if (ret != RD_KAFKA_CONF_OK) {
-        flb_error("[out_kafka] cannot configure client.id");
+        flb_plg_error(ctx->ins, "cannot configure client.id");
     }
 
     /* Config: Brokers */
@@ -70,32 +72,35 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
                                 tmp,
                                 errstr, sizeof(errstr));
         if (ret != RD_KAFKA_CONF_OK) {
-            flb_error("[out_kafka] config: %s", errstr);
+            flb_plg_error(ctx->ins, "config: %s", errstr);
             flb_free(ctx);
             return NULL;
         }
         ctx->brokers = flb_strdup(tmp);
     }
     else {
-        flb_error("[out_kafka] config: no brokers defined");
+        flb_plg_error(ctx->ins, "config: no brokers defined");
         flb_free(ctx);
         return NULL;
     }
 
     /* Iterate custom rdkafka properties */
     mk_list_foreach(head, &ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
-        if (strncasecmp(prop->key, "rdkafka.", 8) == 0 &&
-            strlen(prop->key) > 8) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strncasecmp(kv->key, "rdkafka.", 8) == 0 &&
+            flb_sds_len(kv->key) > 8) {
 
-            ret = rd_kafka_conf_set(ctx->conf, prop->key + 8, prop->val,
+            ret = rd_kafka_conf_set(ctx->conf, kv->key + 8, kv->val,
                                     errstr, sizeof(errstr));
             if (ret != RD_KAFKA_CONF_OK) {
-                flb_error("[out_kafka] cannot configure '%s' property",
-                          prop->key + 8);
+                flb_plg_error(ctx->ins, "cannot configure '%s' property",
+                              kv->key + 8);
             }
         }
     }
+
+    /* Set our global opaque data (plugin context*/
+    rd_kafka_conf_set_opaque(ctx->conf, ctx);
 
     /* Callback: message delivery */
     rd_kafka_conf_set_dr_msg_cb(ctx->conf, cb_kafka_msg);
@@ -113,6 +118,15 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->topic_key = NULL;
     }
 
+    /* Config: dynamic_topic */
+    tmp = flb_output_get_property("dynamic_topic", ins);
+    if (tmp) {
+        ctx->dynamic_topic = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->dynamic_topic = FLB_FALSE;
+    }
+
     /* Config: Format */
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
@@ -125,6 +139,11 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "gelf") == 0) {
             ctx->format = FLB_KAFKA_FMT_GELF;
         }
+#ifdef FLB_HAVE_AVRO_ENCODER
+        else if (strcasecmp(tmp, "avro") == 0) {
+            ctx->format = FLB_KAFKA_FMT_AVRO;
+        }
+#endif
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
@@ -137,8 +156,19 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->message_key_len = strlen(tmp);
     }
     else {
-        ctx->timestamp_key = NULL;
-        ctx->timestamp_key_len = 0;
+        ctx->message_key = NULL;
+        ctx->message_key_len = 0;
+    }
+
+    /* Config: Message_Key_Field */
+    tmp = flb_output_get_property("message_key_field", ins);
+    if (tmp) {
+        ctx->message_key_field = flb_strdup(tmp);
+        ctx->message_key_field_len = strlen(tmp);
+    }
+    else {
+        ctx->message_key_field = NULL;
+        ctx->message_key_field_len = 0;
     }
 
     /* Config: Timestamp_Key */
@@ -158,6 +188,19 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     if (tmp) {
         if (strcasecmp(tmp, "iso8601") == 0) {
             ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
+        }
+    }
+
+    /* Config: queue_full_retries */
+    tmp = flb_output_get_property("queue_full_retries", ins);
+    if (!tmp) {
+        ctx->queue_full_retries = FLB_KAFKA_QUEUE_FULL_RETRIES;
+    }
+    else {
+        /* set number of retries: note that if the number is zero, means forever */
+        ctx->queue_full_retries = atoi(tmp);
+        if (ctx->queue_full_retries < 0) {
+            ctx->queue_full_retries = 0;
         }
     }
 
@@ -195,11 +238,23 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     ctx->producer = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
                                  errstr, sizeof(errstr));
     if (!ctx->producer) {
-        flb_error("[out_kafka] failed to create producer: %s",
-                  errstr);
+        flb_plg_error(ctx->ins, "failed to create producer: %s",
+                      errstr);
         flb_kafka_conf_destroy(ctx);
         return NULL;
     }
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    /* Config AVRO */
+    tmp = flb_output_get_property("schema_str", ins);
+    if (tmp) {
+        ctx->avro_fields.schema_str = flb_sds_create(tmp);
+    }
+    tmp = flb_output_get_property("schema_id", ins);
+    if (tmp) {
+        ctx->avro_fields.schema_id = flb_sds_create(tmp);
+    }
+#endif
 
     /* Config: Topic */
     mk_list_init(&ctx->topics);
@@ -210,7 +265,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     else {
         topics = flb_utils_split(tmp, ',', -1);
         if (!topics) {
-            flb_warn("[out_kafka] invalid topics defined, setting default");
+            flb_plg_warn(ctx->ins, "invalid topics defined, setting default");
             flb_kafka_topic_create(FLB_KAFKA_TOPIC, ctx);
         }
         else {
@@ -218,15 +273,19 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
             mk_list_foreach(head, topics) {
                 entry = mk_list_entry(head, struct flb_split_entry, _head);
                 if (!flb_kafka_topic_create(entry->value, ctx)) {
-                    flb_error("[out_kafka] cannot register topic '%s'",
-                              entry->value);
+                    flb_plg_error(ctx->ins, "cannot register topic '%s'",
+                                  entry->value);
                 }
             }
             flb_utils_split_free(topics);
         }
     }
 
-    flb_info("[out_kafka] brokers='%s' topics='%s'", ctx->brokers, tmp);
+    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->brokers, tmp);
+#ifdef FLB_HAVE_AVRO_ENCODER
+    flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
+#endif
+
     return ctx;
 }
 
@@ -254,11 +313,21 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
         flb_free(ctx->message_key);
     }
 
+    if (ctx->message_key_field) {
+        flb_free(ctx->message_key_field);
+    }
+
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);
     flb_sds_destroy(ctx->gelf_fields.host_key);
     flb_sds_destroy(ctx->gelf_fields.short_message_key);
     flb_sds_destroy(ctx->gelf_fields.full_message_key);
     flb_sds_destroy(ctx->gelf_fields.level_key);
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    // avro
+    flb_sds_destroy(ctx->avro_fields.schema_id);
+    flb_sds_destroy(ctx->avro_fields.schema_str);
+#endif
 
     flb_free(ctx);
     return 0;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,13 +29,17 @@
 #define flb_socket_close(fd) evutil_closesocket(fd)
 #define flb_socket_error(fd) evutil_socket_geterror(fd)
 #define FLB_EINPROGRESS(e)   ((e) == WSAEWOULDBLOCK)
+#define FLB_WOULDBLOCK()     (WSAGetLastError() == WSAEWOULDBLOCK)
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
 #define flb_sockfd_t         int
 #define flb_socket_close(fd) close(fd)
-#define flb_socket_error(fd) errno
 #define FLB_EINPROGRESS(e)   ((e) == EINTR || (e) == EINPROGRESS)
+#define FLB_WOULDBLOCK()     (errno == EAGAIN || errno == EWOULDBLOCK)
+
+int flb_socket_error(int fd);
+
 #endif
 
 #endif

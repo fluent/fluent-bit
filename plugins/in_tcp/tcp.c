@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,9 +18,9 @@
  *  limitations under the License.
  */
 
-#include <msgpack.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
+#include <msgpack.h>
 
 #include "tcp.h"
 #include "tcp_conn.h"
@@ -41,11 +41,11 @@ static int in_tcp_collect(struct flb_input_instance *in,
     /* Accept the new connection */
     fd = flb_net_accept(ctx->server_fd);
     if (fd == -1) {
-        flb_error("[in_tcp] could not accept new connection");
+        flb_plg_error(ctx->ins, "could not accept new connection");
         return -1;
     }
 
-    flb_trace("[in_tcp] new TCP connection arrived FD=%i", fd);
+    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", fd);
     conn = tcp_conn_add(fd, ctx);
     if (!conn) {
         return -1;
@@ -66,7 +66,7 @@ static int in_tcp_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-    ctx->in = in;
+    ctx->ins = in;
     mk_list_init(&ctx->connections);
 
     /* Set the context */
@@ -75,11 +75,11 @@ static int in_tcp_init(struct flb_input_instance *in,
     /* Create TCP server */
     ctx->server_fd = flb_net_server(ctx->tcp_port, ctx->listen);
     if (ctx->server_fd > 0) {
-        flb_info("[in_tcp] binding %s:%s", ctx->listen, ctx->tcp_port);
+        flb_plg_info(ctx->ins, "listening on %s:%s", ctx->listen, ctx->tcp_port);
     }
     else {
-        flb_error("[in_tcp] could not bind address %s:%s. Aborting",
-                  ctx->listen, ctx->tcp_port);
+        flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
+                      ctx->listen, ctx->tcp_port);
         tcp_config_destroy(ctx);
         return -1;
     }
@@ -89,11 +89,11 @@ static int in_tcp_init(struct flb_input_instance *in,
 
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_socket(in,
-                                        in_tcp_collect,
-                                        ctx->server_fd,
-                                        config);
+                                         in_tcp_collect,
+                                         ctx->server_fd,
+                                         config);
     if (ret == -1) {
-        flb_error("Could not set collector for IN_TCP input plugin");
+        flb_plg_error(ctx->ins, "Could not set collector for IN_TCP input plugin");
         tcp_config_destroy(ctx);
         return -1;
     }

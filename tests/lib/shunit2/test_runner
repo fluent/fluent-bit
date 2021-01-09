@@ -1,0 +1,171 @@
+#! /bin/sh
+# vim:et:ft=sh:sts=2:sw=2
+#
+# Unit test suite runner.
+#
+# Copyright 2008-2018 Kate Ward. All Rights Reserved.
+# Released under the Apache 2.0 license.
+#
+# Author: kate.ward@forestent.com (Kate Ward)
+# https://github.com/kward/shlib
+#
+# This script runs all the unit tests that can be found, and generates a nice
+# report of the tests.
+#
+### ShellCheck (http://www.shellcheck.net/)
+# Disable source following.
+#   shellcheck disable=SC1090,SC1091
+# expr may be antiquated, but it is the only solution in some cases.
+#   shellcheck disable=SC2003
+# $() are not fully portable (POSIX != portable).
+#   shellcheck disable=SC2006
+
+# Return if test_runner already loaded.
+[ -z "${RUNNER_LOADED:-}" ] || return 0
+RUNNER_LOADED=0
+
+RUNNER_ARGV0=`basename "$0"`
+RUNNER_SHELLS='/bin/sh ash /bin/bash /bin/dash /bin/ksh /bin/pdksh /bin/zsh'
+RUNNER_TEST_SUFFIX='_test.sh'
+true; RUNNER_TRUE=$?
+false; RUNNER_FALSE=$?
+
+runner_warn() { echo "runner:WARN $*" >&2; }
+runner_error() { echo "runner:ERROR $*" >&2; }
+runner_fatal() { echo "runner:FATAL $*" >&2; exit 1; }
+
+runner_usage() {
+  echo "usage: ${RUNNER_ARGV0} [-e key=val ...] [-s shell(s)] [-t test(s)]"
+}
+
+_runner_tests() { echo ./*${RUNNER_TEST_SUFFIX} |sed 's#./##g'; }
+_runner_testName() {
+  # shellcheck disable=SC1117
+  _runner_testName_=`expr "${1:-}" : "\(.*\)${RUNNER_TEST_SUFFIX}"`
+  if [ -n "${_runner_testName_}" ]; then
+    echo "${_runner_testName_}"
+  else
+    echo 'unknown'
+  fi
+  unset _runner_testName_
+}
+
+main() {
+  # Find and load versions library.
+  for _runner_dir_ in . ${LIB_DIR:-lib}; do
+    if [ -r "${_runner_dir_}/versions" ]; then
+      _runner_lib_dir_="${_runner_dir_}"
+      break
+    fi
+  done
+  [ -n "${_runner_lib_dir_}" ] || runner_fatal 'Unable to find versions library.'
+  . "${_runner_lib_dir_}/versions" || runner_fatal 'Unable to load versions library.'
+  unset _runner_dir_ _runner_lib_dir_
+
+  # Process command line flags.
+  env=''
+  while getopts 'e:hs:t:' opt; do
+    case ${opt} in
+      e)  # set an environment variable
+        key=`expr "${OPTARG}" : '\([^=]*\)='`
+        val=`expr "${OPTARG}" : '[^=]*=\(.*\)'`
+        # shellcheck disable=SC2166
+        if [ -z "${key}" -o -z "${val}" ]; then
+          runner_usage
+          exit 1
+        fi
+        eval "${key}='${val}'"
+        eval "export ${key}"
+        env="${env:+${env} }${key}"
+        ;;
+      h) runner_usage; exit 0 ;;  # help output
+      s) shells=${OPTARG} ;;  # list of shells to run
+      t) tests=${OPTARG} ;;  # list of tests to run
+      *) runner_usage; exit 1 ;;
+    esac
+  done
+  shift "`expr ${OPTIND} - 1`"
+
+  # Fill shells and/or tests.
+  shells=${shells:-${RUNNER_SHELLS}}
+  [ -z "${tests}" ] && tests=`_runner_tests`
+
+  # Error checking.
+  if [ -z "${tests}" ]; then
+    runner_error 'no tests found to run; exiting'
+    exit 1
+  fi
+
+  cat <<EOF
+#------------------------------------------------------------------------------
+# System data.
+#
+
+$ uname -mprsv
+`uname -mprsv`
+
+OS Name: `versions_osName`
+OS Version: `versions_osVersion`
+
+### Test run info.
+shells: ${shells}
+tests: ${tests}
+EOF
+for key in ${env}; do
+  eval "echo \"${key}=\$${key}\""
+done
+
+# Run tests.
+runner_passing_=${RUNNER_TRUE}
+for shell in ${shells}; do
+  echo
+
+  cat <<EOF
+
+#------------------------------------------------------------------------------
+# Running the test suite with ${shell}.
+#
+EOF
+
+    # Check for existence of shell.
+    shell_bin=${shell}
+    shell_name=''
+    shell_present=${RUNNER_FALSE}
+    case ${shell} in
+      ash)
+        shell_bin=`command -v busybox`
+        [ $? -eq "${RUNNER_TRUE}" ] && shell_present="${RUNNER_TRUE}"
+        shell_bin="${shell_bin:+${shell_bin} }ash"
+        shell_name=${shell}
+        ;;
+      *)
+        [ -x "${shell_bin}" ] && shell_present="${RUNNER_TRUE}"
+        shell_name=`basename "${shell}"`
+        ;;
+    esac
+    if [ "${shell_present}" -eq "${RUNNER_FALSE}" ]; then
+      runner_warn "unable to run tests with the ${shell_name} shell"
+      continue
+    fi
+
+    shell_version=`versions_shellVersion "${shell}"`
+
+    echo "shell name: ${shell_name}"
+    echo "shell version: ${shell_version}"
+
+    # Execute the tests.
+    for t in ${tests}; do
+      echo
+      echo "--- Executing the '`_runner_testName "${t}"`' test suite. ---"
+      # ${shell_bin} needs word splitting.
+      #   shellcheck disable=SC2086
+      ( exec ${shell_bin} "./${t}" 2>&1; )
+      test "${runner_passing_}" -eq ${RUNNER_TRUE} -a $? -eq ${RUNNER_TRUE}
+      runner_passing_=$?
+    done
+  done
+  return ${runner_passing_}
+}
+
+# Execute main() if this is run in standalone mode (i.e. not from a unit test).
+[ -z "${SHUNIT_VERSION}" ] && main "$@"

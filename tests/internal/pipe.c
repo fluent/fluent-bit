@@ -2,6 +2,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <fluent-bit/flb_compat.h>
+#endif
 
 #include <inttypes.h>
 #include "flb_tests_internal.h"
@@ -20,7 +23,13 @@ static void test_pipe_usage()
     flb_pipefd_t p[2];
     struct data data;
     struct data rec;
+#ifdef FLB_SYSTEM_WINDOWS
+    WSADATA wsa_data;
+#endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+    WSAStartup(0x0201, &wsa_data);
+#endif
     /* Create pipe */
     ret = flb_pipe_create(p);
     TEST_CHECK(ret == 0);
@@ -69,6 +78,9 @@ static void test_pipe_usage()
     /* Close pipe channels */
     flb_pipe_close(p[0]);
     flb_pipe_close(p[1]);
+#ifdef FLB_SYSTEM_WINDOWS
+    WSACleanup();
+#endif
 }
 
 TEST_LIST = {

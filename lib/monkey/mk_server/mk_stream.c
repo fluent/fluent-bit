@@ -75,7 +75,7 @@ int mk_channel_flush(struct mk_channel *channel)
         ret = mk_channel_write(channel, &count);
         total += count;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
         MK_TRACE("Channel flush: %d bytes", count);
         if (ret & MK_CHANNEL_DONE) {
             MK_TRACE("Channel was empty");

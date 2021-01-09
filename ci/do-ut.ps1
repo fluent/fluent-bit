@@ -1,30 +1,38 @@
-$SKIP_TESTS=@("flb-rt-out_elasticsearch",
-              "flb-rt-out_td",
-              "flb-rt-out_forward",
-              "flb-rt-in_disk",
-              "flb-rt-in_proc")
-$TODO_TESTS=@("flb-it-pipe",
-              "flb-it-parser",
-              "flb-it-unit_sizes"
-              "flb-it-http_client",
-              "flb-it-network",
-              "flb-it-pack")
+cd build
 
-$SKIP_TESTS = $SKIP_TESTS + $TODO_TESTS
-$SKIP=""
-
-foreach ($SKIP_TEST in $SKIP_TESTS) {
-    $SKIP += " -DFLB_WITHOUT_${SKIP_TEST}=1"
+if ( "x64" -eq $env:PLATFORM ) {
+    $OPENSSL_DIR = "C:\OpenSSL-v11-Win64"
+}
+else {
+    $OPENSSL_DIR = "C:\OpenSSL-v11-Win32"
 }
 
-$GLOBAL_OPTS="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_ALL=On -DFLB_DEBUG=On -DFLB_EXAMPLES=Off"
-mkdir build -Force
-cd build
-Write-Host cmake -G """$ENV:msvc""" -DCMAKE_BUILD_TYPE="$ENV:configuration" $GLOBAL_OPTS -DFLB_TESTS_INTERNAL=On -DCIO_BACKEND_FILESYSTEM=Off $SKIP ../
-# Use Start-Process to pass 9 or more arguments
-# TODO: Enable -DFLB_TESTS_RUNTIME=On
-$build = Start-Process cmake -ArgumentList "-G ""$ENV:msvc"" -DCMAKE_BUILD_TYPE=""$ENV:configuration"" $GLOBAL_OPTS -DFLB_TESTS_INTERNAL=On -DCIO_BACKEND_FILESYSTEM=Off $SKIP ../" -NoNewWindow -PassThru
-Wait-Process -InputObject $build
+
+# CACHE GENERATION
+cmake -G "NMake Makefiles" `
+                     -D FLB_TESTS_INTERNAL=On `
+                     -D OPENSSL_ROOT_DIR=$OPENSSL_DIR `
+                     -D FLB_WITHOUT_flb-rt-out_elasticsearch=On `
+                     -D FLB_WITHOUT_flb-rt-out_td=On `
+                     -D FLB_WITHOUT_flb-rt-out_forward=On `
+                     -D FLB_WITHOUT_flb-rt-in_disk=On `
+                     -D FLB_WITHOUT_flb-rt-in_proc=On `
+                     -D FLB_WITHOUT_flb-it-parser=On `
+                     -D FLB_WITHOUT_flb-it-unit_sizes=On `
+                     -D FLB_WITHOUT_flb-it-network=On `
+                     -D FLB_WITHOUT_flb-it-pack=On `
+                     -D FLB_WITHOUT_flb-it-signv4=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_ec2=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_http=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_profile=On `
+                     -D FLB_WITHOUT_flb-it-aws_credentials_sts=On `
+                     -D FLB_WITHOUT_flb-it-aws_util=On `
+                     -D FLB_WITHOUT_flb-it-input_chunk=On `
+                     ../
+
+# COMPILE
 cmake --build .
 
-ctest -C "$ENV:configuration" --build-run-dir $PWD --output-on-failure
+# RUNNING TESTS
+ctest --build-run-dir $PWD --output-on-failure

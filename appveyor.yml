@@ -6,13 +6,31 @@ platform:
   - Win32
   - x64
 
+environment:
+  vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Community'
+  winflexbison: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+  PATH: '%PATH%;C:\WinFlexBison'
+
 configuration:
-  - Debug
-  # - Release # TODO
+  - Release
+
+install:
+  - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
+  - ps: Expand-Archive winflexbison.zip -Destination /WinFlexBison
+  - ps: Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
+  - ps: Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
 
 before_build:
-  - cmd: if "%platform%"=="Win32" set msvc=Visual Studio 15 2017
-  - cmd: if "%platform%"=="x64"   set msvc=Visual Studio 15 2017 Win64
+  - if %PLATFORM%==Win32 call "%vspath%\VC\Auxiliary\Build\vcvars32.bat"
+  - if %PLATFORM%==x64   call "%vspatH%\VC\Auxiliary\Build\vcvars64.bat"
 
 build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
+  - cd build
+  - cpack
+
+artifacts:
+  - path: build/td-agent-bit-*.exe
+    name: td-agent-bit
+  - path: build/td-agent-bit-*.zip
+    name: td-agent-bit-zip

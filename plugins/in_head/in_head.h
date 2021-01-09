@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,22 +31,24 @@
 #define DEFAULT_INTERVAL_NSEC 0
 
 struct flb_in_head_config {
-    size_t    buf_size; /* size of buf */
-    ssize_t   buf_len;  /* read size */
-    char     *buf;      /* read buf */
-    char     *key;
-    int      key_len;
+    int          coll_fd;
+    size_t       buf_size; /* size of buf */
+    ssize_t      buf_len;  /* read size */
+    char         *buf;      /* read buf */
+    const char   *key;
+    int          key_len;
 
-    char     *filepath; /* to read */
+    const char   *filepath; /* to read */
 
-    char     add_path; /* add path mode */
-    size_t   path_len;
+    char         add_path; /* add path mode */
+    size_t       path_len;
 
-    int      lines; /* line num to read */
-    int      split_line;
+    int          lines; /* line num to read */
+    int          split_line;
 
-    int      interval_sec;
-    int      interval_nsec;
+    int          interval_sec;
+    int          interval_nsec;
+    struct flb_input_instance *ins;
 };
 
 extern struct flb_input_plugin in_head_plugin;

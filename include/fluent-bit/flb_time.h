@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,7 +65,7 @@ static inline void flb_time_copy(struct flb_time *dst, struct flb_time *src)
 static inline void flb_time_from_double(struct flb_time *dst, double d)
 {
     dst->tm.tv_sec = (int) d;
-    dst->tm.tv_nsec = (d - dst->tm.tv_sec) * 1000000000L;
+    dst->tm.tv_nsec = (long) ((d - dst->tm.tv_sec) * 1000000000L);
 }
 
 static inline int flb_time_equal(struct flb_time *t0, struct flb_time *t1) {
@@ -75,9 +75,12 @@ static inline int flb_time_equal(struct flb_time *t0, struct flb_time *t1) {
 int flb_time_get(struct flb_time *tm);
 int flb_time_msleep(uint32_t ms);
 double flb_time_to_double(struct flb_time *tm);
+int flb_time_add(struct flb_time *base, struct flb_time *duration,
+                 struct flb_time *result);
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0, struct flb_time *result);
 int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt);
+int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
 

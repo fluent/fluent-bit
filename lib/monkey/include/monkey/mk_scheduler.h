@@ -211,9 +211,6 @@ struct mk_sched_ctx {
     struct mk_sched_worker *workers;
 };
 
-extern pthread_mutex_t mutex_worker_init;
-extern pthread_mutex_t mutex_worker_exit;
-pthread_mutex_t mutex_port_init;
 
 struct mk_sched_worker *mk_sched_next_target(struct mk_server *server);
 int mk_sched_init(struct mk_server *server);

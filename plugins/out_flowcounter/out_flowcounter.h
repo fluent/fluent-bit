@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,7 @@
 #ifndef FLB_OUT_FLOWCOUNTER
 #define FLB_OUT_FLOWCOUNTER
 
+#include <fluent-bit/flb_output.h>
 #include <stdint.h>
 
 #define FLB_UNIT_SEC  "second"
@@ -34,14 +35,16 @@ struct flb_out_fcount_buffer {
     uint64_t bytes;
 };
 
-struct flb_out_fcount_config {
-    char*     unit;
+struct flb_flowcounter {
+    char     *unit;
     int32_t   tick;
     int       event_based;
 
     struct flb_out_fcount_buffer *buf;
     int index;
     int size;
+
+    struct flb_output_instance *ins;
 };
 
 #endif

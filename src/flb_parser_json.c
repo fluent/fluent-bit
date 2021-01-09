@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_parser_decoder.h>
 
 int flb_parser_json_do(struct flb_parser *parser,
-                       char *in_buf, size_t in_size,
+                       const char *in_buf, size_t in_size,
                        void **out_buf, size_t *out_size,
                        struct flb_time *out_time)
 {
@@ -131,6 +131,14 @@ int flb_parser_json_do(struct flb_parser *parser,
             continue;
         }
 
+        /* Ensure the pointer we are about to read is not NULL */
+        if (k->via.str.ptr == NULL) {
+            flb_free(mp_buf);
+            *out_buf = NULL;
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
         if (strncmp(k->via.str.ptr, time_key, k->via.str.size) == 0) {
             /* We found the key, break the loop and keep the index */
             if (parser->time_keep == FLB_FALSE) {
@@ -154,7 +162,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
 
     /* Lookup time */
-    ret = flb_parser_time_lookup((char *) v->via.str.ptr, v->via.str.size,
+    ret = flb_parser_time_lookup(v->via.str.ptr, v->via.str.size,
                                  0, parser, &tm, &tmfrac);
     if (ret == -1) {
         len = v->via.str.size;
@@ -163,9 +171,9 @@ int flb_parser_json_do(struct flb_parser *parser,
         }
         memcpy(tmp, v->via.str.ptr, len);
         tmp[len] = '\0';
-        flb_warn("[parser:%s] Invalid time format %s for '%s'.",
-                 parser->name, parser->time_fmt, tmp);
-        time_lookup = time(NULL);
+        flb_warn("[parser:%s] invalid time format %s for '%s'",
+                 parser->name, parser->time_fmt_full, tmp);
+        time_lookup = 0;
     }
     else {
         time_lookup = flb_parser_tm2time(&tm);

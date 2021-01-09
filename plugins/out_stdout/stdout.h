@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,19 +21,15 @@
 #ifndef FLB_OUT_STDOUT
 #define FLB_OUT_STDOUT
 
-#define FLB_STDOUT_OUT_MSGPACK      0
-#define FLB_STDOUT_OUT_JSON_LINES   1
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_sds.h>
 
-#define FLB_STDOUT_JSON_DATE_DOUBLE      0
-#define FLB_STDOUT_JSON_DATE_ISO8601     1
-#define FLB_STDOUT_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
-
-struct flb_out_stdout_config {
+struct flb_stdout {
     int out_format;
-
     int json_date_format;
-    char *json_date_key;
-    size_t json_date_key_len;
+    flb_sds_t json_date_key;
+    flb_sds_t date_key;
+    struct flb_output_instance *ins;
 };
 
 #endif

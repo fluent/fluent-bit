@@ -38,8 +38,8 @@
 #include <signal.h>
 #include <sys/syscall.h>
 
-struct mk_sched_handler mk_http_handler;
-struct mk_sched_handler mk_http2_handler;
+extern struct mk_sched_handler mk_http_handler;
+extern struct mk_sched_handler mk_http2_handler;
 
 pthread_mutex_t mutex_worker_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_exit = PTHREAD_MUTEX_INITIALIZER;
@@ -646,7 +646,7 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
 {
     int ret = 0;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
     MK_TRACE("[FD %i] Connection Handler / read", conn->event.fd);
 #endif
 

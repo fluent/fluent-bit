@@ -2,8 +2,8 @@
  * \file
  * Functions and types for CRC checks.
  *
- * Generated on Tue Oct 30 22:09:48 2018
- * by pycrc v0.9.1, https://pycrc.org
+ * Generated on Wed Mar 18 12:41:20 2020
+ * by pycrc v0.9.2, https://pycrc.org
  * using the configuration:
  *  - Width         = 32
  *  - Poly          = 0x04c11db7

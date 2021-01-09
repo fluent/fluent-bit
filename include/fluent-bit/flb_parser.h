@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,9 +45,11 @@ struct flb_parser {
     char *name;           /* format name */
     char *p_regex;        /* pattern for main regular expression */
     char *time_fmt;       /* time format */
+    char *time_fmt_full;  /* original given time format */
     char *time_key;       /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
+    int time_strict;      /* parse time field strictly */
     char *time_frac_secs; /* time format have fractional seconds ? */
     struct flb_parser_types *types; /* type casting */
     int types_len;
@@ -86,29 +88,29 @@ static inline time_t flb_parser_tm2time(const struct tm *src)
 }
 
 
-struct flb_parser *flb_parser_create(char *name, char *format,
-                                     char *p_regex,
-                                     char *time_fmt, char *time_key,
-                                     char *time_offset,
+struct flb_parser *flb_parser_create(const char *name, const char *format,
+                                     const char *p_regex,
+                                     const char *time_fmt, const char *time_key,
+                                     const char *time_offset,
                                      int time_keep,
+                                     int time_strict,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct mk_list *decoders,
                                      struct flb_config *config);
-int flb_parser_conf_file(char *file, struct flb_config *config);
+int flb_parser_conf_file(const char *file, struct flb_config *config);
 void flb_parser_destroy(struct flb_parser *parser);
-struct flb_parser *flb_parser_get(char *name, struct flb_config *config);
-int flb_parser_do(struct flb_parser *parser, char *buf, size_t length,
+struct flb_parser *flb_parser_get(const char *name, struct flb_config *config);
+int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
                   void **out_buf, size_t *out_size, struct flb_time *out_time);
 
 void flb_parser_exit(struct flb_config *config);
-int flb_parser_tzone_offset(char *str, int len, int *tmdiff);
-int flb_parser_frac(char *str, int len, double *frac, char **end);
-int flb_parser_time_lookup(char *time, size_t tsize, time_t now,
+int flb_parser_tzone_offset(const char *str, int len, int *tmdiff);
+int flb_parser_time_lookup(const char *time, size_t tsize, time_t now,
                            struct flb_parser *parser,
                            struct tm *tm, double *ns);
-int flb_parser_typecast(char *key, int key_len,
-                        char *val, int val_len,
+int flb_parser_typecast(const char *key, int key_len,
+                        const char *val, int val_len,
                         msgpack_packer *pck,
                         struct flb_parser_types *types,
                         int types_len);

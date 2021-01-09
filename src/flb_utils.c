@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,7 @@ void flb_utils_error(int err)
         msg = "Configuration file contains format errors";
         break;
     case FLB_ERR_CFG_FILE_STOP:
-        msg = "Configuration file contain errors";
+        msg = "Configuration file contains errors";
         break;
     case FLB_ERR_CFG_FLUSH:
         msg = "Invalid flush value";
@@ -154,7 +154,7 @@ int flb_utils_set_daemon(struct flb_config *config)
 	}
 
     /* Our last STDOUT messages */
-    flb_info("switching to background mode (PID=%lu)", getpid());
+    flb_info("switching to background mode (PID=%ld)", (long) getpid());
 
     fclose(stderr);
     fclose(stdout);
@@ -169,39 +169,61 @@ void flb_utils_print_setup(struct flb_config *config)
     struct flb_input_plugin *plugin;
     struct flb_input_collector *collector;
     struct flb_input_instance *in;
+    struct flb_filter_instance *f;
+    struct flb_output_instance *out;
 
-    flb_info("Configuration");
+    flb_info("Configuration:");
 
     /* general */
-    flb_info(" flush time     : %i seconds", config->flush);
+    flb_info(" flush time     | %f seconds", config->flush);
+    flb_info(" grace          | %i seconds", config->grace);
+    flb_info(" daemon         | %i", config->daemon);
 
     /* Inputs */
-    flb_info(" input plugins  : ");
+    flb_info("___________");
+    flb_info(" inputs:");
     mk_list_foreach(head, &config->inputs) {
         in = mk_list_entry(head, struct flb_input_instance, _head);
-        flb_info("%s ", in->p->name);
+        flb_info("     %s", in->p->name);
+    }
+
+    /* Filters */
+    flb_info("___________");
+    flb_info(" filters:");
+    mk_list_foreach(head, &config->filters) {
+        f = mk_list_entry(head, struct flb_filter_instance, _head);
+        flb_info("     %s", f->name);
+    }
+
+    /* Outputs */
+    flb_info("___________");
+    flb_info(" outputs:");
+    mk_list_foreach(head, &config->outputs) {
+        out = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_info("     %s", out->name);
     }
 
     /* Collectors */
-    flb_info(" collectors     : ");
+    flb_info("___________");
+    flb_info(" collectors:");
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
         plugin = collector->instance->p;
 
         if (collector->seconds > 0) {
             flb_info("[%s %lus,%luns] ",
-                     plugin->name,
-                     collector->seconds,
-                     collector->nanoseconds);
+                      plugin->name,
+                      collector->seconds,
+                      collector->nanoseconds);
         }
         else {
-            printf("[%s] ", plugin->name);
+            flb_info("     [%s] ", plugin->name);
         }
 
     }
 }
 
-struct mk_list *flb_utils_split(char *line, int separator, int max_split)
+struct mk_list *flb_utils_split(const char *line, int separator, int max_split)
 {
     int i = 0;
     int count = 0;
@@ -285,6 +307,13 @@ struct mk_list *flb_utils_split(char *line, int separator, int max_split)
     return list;
 }
 
+void flb_utils_split_free_entry(struct flb_split_entry *entry)
+{
+    mk_list_del(&entry->_head);
+    flb_free(entry->value);
+    flb_free(entry);
+}
+
 void flb_utils_split_free(struct mk_list *list)
 {
     struct mk_list *tmp;
@@ -293,9 +322,7 @@ void flb_utils_split_free(struct mk_list *list)
 
     mk_list_foreach_safe(head, tmp, list) {
         entry = mk_list_entry(head, struct flb_split_entry, _head);
-        mk_list_del(&entry->_head);
-        flb_free(entry->value);
-        flb_free(entry);
+        flb_utils_split_free_entry(entry);
     }
 
     flb_free(list);
@@ -337,12 +364,12 @@ int flb_utils_pipe_byte_consume(flb_pipefd_t fd)
     return 0;
 }
 
-ssize_t flb_utils_size_to_bytes(char *size)
+int64_t flb_utils_size_to_bytes(const char *size)
 {
     int i;
     int len;
     int plen = 0;
-    size_t val;
+    int64_t val;
     char c;
     char tmp[3] = {0};
     int64_t KB = 1000;
@@ -351,6 +378,10 @@ ssize_t flb_utils_size_to_bytes(char *size)
 
     if (!size) {
         return -1;
+    }
+
+    if (strcasecmp(size, "false") == 0) {
+        return 0;
     }
 
     len = strlen(size);
@@ -403,12 +434,46 @@ ssize_t flb_utils_size_to_bytes(char *size)
     return val;
 }
 
-int flb_utils_time_to_seconds(char *time)
+int flb_utils_hex2int(char *hex, int len)
+{
+    int i = 0;
+    int res = 0;
+    char c;
+
+    while ((c = *hex++) && i < len) {
+        res *= 0x10;
+
+        if (c >= 'a' && c <= 'f') {
+            res += (c - 0x57);
+        }
+        else if (c >= 'A' && c <= 'F') {
+            res += (c - 0x37);
+        }
+        else if (c >= '0' && c <= '9') {
+            res += (c - 0x30);
+        }
+        else {
+            return -1;
+        }
+        i++;
+    }
+
+    if (res < 0) {
+        return -1;
+    }
+
+    return res;
+}
+
+int flb_utils_time_to_seconds(const char *time)
 {
     int len;
     size_t val;
 
     len = strlen(time);
+    if (len == 0) {
+        return 0;
+    }
     val = atoi(time);
 
     /* String time to seconds */
@@ -425,19 +490,24 @@ int flb_utils_time_to_seconds(char *time)
     return val;
 }
 
-int flb_utils_bool(char *val)
+int flb_utils_bool(const char *val)
 {
     if (strcasecmp(val, "true") == 0 ||
         strcasecmp(val, "on") == 0 ||
         strcasecmp(val, "yes") == 0) {
         return FLB_TRUE;
     }
+    else if (strcasecmp(val, "false") == 0 ||
+             strcasecmp(val, "off") == 0 ||
+             strcasecmp(val, "no") == 0) {
+        return FLB_FALSE;
+    }
 
-    return FLB_FALSE;
+    return -1;
 }
 
 /* Convert a 'string' time seconds.nanoseconds to int and long values */
-int flb_utils_time_split(char *time, int *sec, long *nsec)
+int flb_utils_time_split(const char *time, int *sec, long *nsec)
 {
     char *p;
     char *end;
@@ -501,7 +571,7 @@ void flb_utils_bytes_to_human_readable_size(size_t bytes,
 }
 
 
-static inline void encoded_to_buf(char *out, char *in, int len)
+static inline void encoded_to_buf(char *out, const char *in, int len)
 {
     int i;
     char *p = out;
@@ -517,7 +587,7 @@ static inline void encoded_to_buf(char *out, char *in, int len)
  * representation.
  */
 int flb_utils_write_str(char *buf, int *off, size_t size,
-                        char *str, size_t str_len)
+                        const char *str, size_t str_len)
 {
     int i;
     int b;
@@ -547,52 +617,58 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
 
         c = (uint32_t) str[i];
-        if (c == '\\' || c == '"') {
+        if (c == '\"') {
             *p++ = '\\';
-            *p++ = c;
+            *p++ = '\"';
         }
-        else if (c >= '\a' && c <= '\r') {
+        else if (c == '\\') {
             *p++ = '\\';
-            switch (c) {
-            case '\n':
-                *p++ = 'n';
-                break;
-            case '\t':
-                *p++ = 't';
-                break;
-            case '\b':
-                *p++ = 'b';
-                break;
-            case '\f':
-                *p++ = 'f';
-                break;
-            case '\r':
-                *p++ = 'r';
-                break;
-            case '\a':
-                *p++ = 'a';
-                break;
-            case '\v':
-                *p++ = 'v';
-                break;
-            }
+            *p++ = '\\';
+        }
+        else if (c == '\n') {
+            *p++ = '\\';
+            *p++ = 'n';
+        }
+        else if (c == '\r') {
+            *p++ = '\\';
+            *p++ = 'r';
+        }
+        else if (c == '\t') {
+            *p++ = '\\';
+            *p++ = 't';
+        }
+        else if (c == '\b') {
+            *p++ = '\\';
+            *p++ = 'b';
+        }
+        else if (c == '\f') {
+            *p++ = '\\';
+            *p++ = 'f';
         }
         else if (c < 32 || c == 0x7f) {
             if ((available - written) < 6) {
                 return FLB_FALSE;
             }
             len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hhx", (unsigned char) c);
+            if ((available - written) < len) {
+                return FLB_FALSE;
+            }
             encoded_to_buf(p, tmp, len);
             p += len;
         }
         else if (c >= 0x80 && c <= 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (2 + hex_bytes)) {
+            if (available - written < 6) {
                 return FLB_FALSE;
+            }
+
+            if (i + hex_bytes > str_len) {
+                break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
             codepoint = 0;
+
             for (b = 0; b < hex_bytes; b++) {
                 s = (unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &codepoint, *s);
@@ -603,10 +679,13 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
+                if ((available - written) < len) {
+                    return FLB_FALSE;
+                }
                 encoded_to_buf(p, tmp, len);
                 p += len;
             }
@@ -614,8 +693,12 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
         }
         else if (c > 0xFFFF) {
             hex_bytes = flb_utf8_len(str + i);
-            if ((available - written) < (4 + hex_bytes)) {
+            if (available - written < 6) {
                 return FLB_FALSE;
+            }
+
+            if (i + hex_bytes > str_len) {
+                break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
@@ -630,11 +713,13 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes, skipping");
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
+                if ((available - written) < len) {
+                    return FLB_FALSE;
+                }
                 encoded_to_buf(p, tmp, len);
                 p += len;
             }
@@ -647,11 +732,12 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     }
 
     *off += written;
+
     return FLB_TRUE;
 }
 
 
-int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_size)
+int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t *out_size)
 {
     int ret;
     int off;
@@ -690,7 +776,19 @@ int flb_utils_write_str_buf(char *str, size_t str_len, char **out, size_t *out_s
     return 0;
 }
 
-int flb_utils_url_split(char *in_url, char **out_protocol,
+static char *flb_copy_host(const char *string, int pos_init, int pos_end)
+{
+    if (string[pos_init] == '[') {            /* IPv6 */
+        if (string[pos_end-1] != ']')
+            return NULL;
+
+        return mk_string_copy_substr(string, pos_init + 1, pos_end - 1);
+    }
+    else
+        return mk_string_copy_substr(string, pos_init, pos_end);
+}
+
+int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri)
 {
     char *protocol = NULL;
@@ -731,7 +829,7 @@ int flb_utils_url_split(char *in_url, char **out_protocol,
     }
 
     if (tmp) {
-        host = mk_string_copy_substr(p, 0, tmp - p);
+        host = flb_copy_host(p, 0, tmp - p);
         if (!host) {
             flb_errno();
             goto error;
@@ -752,12 +850,21 @@ int flb_utils_url_split(char *in_url, char **out_protocol,
     else {
         tmp = strchr(p, '/');
         if (tmp) {
-            host = mk_string_copy_substr(p, 0, tmp - p);
+            host = flb_copy_host(p, 0, tmp - p);
             uri = flb_strdup(tmp);
         }
         else {
-            host = flb_strdup(p);
+            host = flb_copy_host(p, 0, strlen(p));
             uri = flb_strdup("/");
+        }
+    }
+
+    if (!port) {
+        if (strcmp(protocol, "http") == 0) {
+            port = flb_strdup("80");
+        }
+        else if (strcmp(protocol, "https") == 0) {
+            port = flb_strdup("443");
         }
     }
 
@@ -774,4 +881,98 @@ int flb_utils_url_split(char *in_url, char **out_protocol,
     }
 
     return -1;
+}
+
+
+/*
+ * flb_utils_proxy_url_split parses a proxy's information from a http_proxy URL.
+ * The URL is in the form like `http://username:password@myproxy.com:8080`.
+ * Note: currently only HTTP is supported.
+ */
+int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
+                              char **out_username, char **out_password,
+                              char **out_host, char **out_port)
+{
+    char *protocol = NULL;
+    char *username = NULL;
+    char *password = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *proto_sep;
+    char *at_sep;
+    char *tmp;
+
+    /*  Parse protocol */
+    proto_sep = strstr(in_url, "://");
+    if (!proto_sep) {
+        return -1;
+    }
+    if (proto_sep == in_url) {
+        return -1;
+    }
+
+    protocol = mk_string_copy_substr(in_url, 0, proto_sep - in_url);
+    if (!protocol) {
+        flb_errno();
+        return -1;
+    }
+    /* Only HTTP proxy is supported for now. */
+    if (strcmp(protocol, "http") != 0) {
+        flb_free(protocol);
+        return -1;
+    }
+
+    /* Advance position after protocol */
+    proto_sep += 3;
+
+    /* Seperate `username:password` and `host:port` */
+    at_sep = strchr(proto_sep, '@');
+    if (at_sep) {
+        /* Parse username:passwrod part. */
+        tmp = strchr(proto_sep, ':');
+        if (!tmp) {
+            return -1;
+        }
+        username = mk_string_copy_substr(proto_sep, 0, tmp - proto_sep);
+        tmp += 1;
+        password = mk_string_copy_substr(tmp, 0, at_sep - tmp);
+
+        /* Parse host:port part. */
+        at_sep += 1;
+        tmp = strchr(at_sep, ':');
+        if (tmp) {
+            host = flb_copy_host(at_sep, 0, tmp - at_sep);
+            tmp += 1;
+            port = strdup(tmp);
+        }
+        else {
+            host = flb_copy_host(at_sep, 0, strlen(at_sep));
+            port = flb_strdup("80");
+        }
+    }
+    else {
+        /* Parse host:port part. */
+        tmp = strchr(proto_sep, ':');
+        if (tmp) {
+            host = flb_copy_host(proto_sep, 0, tmp - proto_sep);
+            tmp += 1;
+            port = strdup(tmp);
+        }
+        else {
+            host = flb_copy_host(proto_sep, 0, strlen(proto_sep));
+            port = flb_strdup("80");
+        }
+    }
+
+    *out_protocol = protocol;
+    *out_host = host;
+    *out_port = port;
+    if (username) {
+        *out_username = username;
+    }
+    if (password) {
+        *out_password = password;
+    }
+
+    return 0;
 }

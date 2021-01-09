@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@
  * SDS library created by Antirez at https://github.com/antirez/sds.
  */
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
@@ -52,7 +53,7 @@ static flb_sds_t sds_alloc(size_t size)
     return s;
 }
 
-flb_sds_t flb_sds_create_len(char *str, int len)
+flb_sds_t flb_sds_create_len(const char *str, int len)
 {
     flb_sds_t s;
     struct flb_sds *head;
@@ -72,7 +73,7 @@ flb_sds_t flb_sds_create_len(char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_create(char *str)
+flb_sds_t flb_sds_create(const char *str)
 {
     size_t len;
 
@@ -107,18 +108,14 @@ flb_sds_t flb_sds_increase(flb_sds_t s, size_t len)
         flb_errno();
         return NULL;
     }
-
-    if (tmp != head) {
-        head = tmp;
-    }
-
+    head = (struct flb_sds *) tmp;
     head->alloc += len;
     out = head->buf;
 
     return out;
 }
 
-flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len)
+flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
 {
     size_t avail;
     struct flb_sds *head;
@@ -141,7 +138,51 @@ flb_sds_t flb_sds_cat(flb_sds_t s, char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
+flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
+                                       char *esc, size_t esc_size)
+{
+    size_t avail;
+    struct flb_sds *head;
+    flb_sds_t tmp = NULL;
+    uint32_t c;
+    int i;
+
+    avail = flb_sds_avail(s);
+    if (avail < len) {
+        tmp = flb_sds_increase(s, len);
+        if (!tmp) {
+            return NULL;
+        }
+        s = tmp;
+    }
+    head = FLB_SDS_HEADER(s);
+
+    for (i = 0; i < len; i++) {
+        if (flb_sds_avail(s) < 8) {
+            tmp = flb_sds_increase(s, 8);
+            if (tmp == NULL) {
+                return NULL;
+            }
+            s = tmp;
+            head = FLB_SDS_HEADER(s);
+        }
+        c = (unsigned char) str[i];
+        if (esc != NULL && c < esc_size && esc[c] != 0) {
+            s[head->len++] = '\\';
+            s[head->len++] = esc[c];
+        }
+        else {
+            s[head->len++] = c;
+        }
+    }
+
+    s[head->len] = '\0';
+
+    return s;
+}
+
+
+flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len)
 {
     size_t avail;
     struct flb_sds *head;
@@ -164,7 +205,7 @@ flb_sds_t flb_sds_copy(flb_sds_t s, char *str, int len)
     return s;
 }
 
-flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
+flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
 {
     static const char int2hex[] = "0123456789abcdef";
     int i;
@@ -173,8 +214,8 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
     int hex_bytes;
     uint32_t cp;
     uint32_t state = 0;
-    uint32_t c;
-    uint8_t *p;
+    unsigned char c;
+    const uint8_t *p;
     struct flb_sds *head;
     flb_sds_t tmp;
     flb_sds_t s;
@@ -184,20 +225,24 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
 
     if (flb_sds_avail(s) <= str_len) {
         tmp = flb_sds_increase(s, str_len);
-        if (tmp == NULL) return NULL;
+        if (tmp == NULL) {
+            return NULL;
+        }
         *sds = s = tmp;
         head = FLB_SDS_HEADER(s);
     }
 
     for (i = 0; i < str_len; i++) {
-        if (flb_sds_avail(s) < 6) {
-            tmp = flb_sds_increase(s, 6);
-            if (tmp == NULL) return NULL;
+        if (flb_sds_avail(s) < 8) {
+            tmp = flb_sds_increase(s, 8);
+            if (tmp == NULL) {
+                return NULL;
+            }
             *sds = s = tmp;
             head = FLB_SDS_HEADER(s);
         }
 
-        c = (uint32_t) str[i];
+        c = (unsigned char)str[i];
         if (c == '\\' || c == '"') {
             s[head->len++] = '\\';
             s[head->len++] = c;
@@ -230,12 +275,6 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
             }
         }
         else if (c < 32 || c == 0x7f) {
-            if (flb_sds_avail(s) < 6) {
-                tmp = flb_sds_increase(s, 6);
-                if (tmp == NULL) return NULL;
-                *sds = s = tmp;
-                head = FLB_SDS_HEADER(s);
-            }
             s[head->len++] = '\\';
             s[head->len++] = 'u';
             s[head->len++] = '0';
@@ -243,52 +282,12 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
             s[head->len++] = int2hex[ (unsigned char) ((c & 0xf0) >> 4)];
             s[head->len++] = int2hex[ (unsigned char) (c & 0x0f)];
         }
-        else if (c >= 0x80 && c <= 0xFFFF) {
+        else if (c >= 0x80) {
             hex_bytes = flb_utf8_len(str + i);
-            if (flb_sds_avail(s) < 6) {
-                tmp = flb_sds_increase(s, 2 + 6);
-                if (tmp == NULL) return NULL;
-                *sds = s = tmp;
-                head = FLB_SDS_HEADER(s);
-            }
-
             state = FLB_UTF8_ACCEPT;
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
-                p = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &cp, *p);
-                if (ret == 0) {
-                    break;
-                }
-            }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                break;
-            }
-            else {
-                s[head->len++] = '\\';
-                s[head->len++] = 'u';
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
-                s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
-            }
-            i += (hex_bytes - 1);
-        }
-        else if (c > 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if (flb_sds_avail(s) < 10) {
-                tmp = flb_sds_increase(s, 10);
-                if (tmp == NULL) return NULL;
-                *sds = s = tmp;
-                head = FLB_SDS_HEADER(s);
-            }
-
-            state = FLB_UTF8_ACCEPT;
-            cp = 0;
-            for (b = 0; b < hex_bytes; b++) {
-                p = (unsigned char *) str + i + b;
+                p = (const unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &cp, *p);
                 if (ret == 0) {
                     break;
@@ -300,18 +299,23 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, char *str, int str_len)
                 flb_warn("[pack] invalid UTF-8 bytes, skipping");
                 break;
             }
-            else {
-                s[head->len++] = '\\';
-                s[head->len++] = 'u';
-                s[head->len++] = '0';
-                s[head->len++] = '0';
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf00000) >> 20)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f0000) >> 16)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
-                s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
-                s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
+
+            s[head->len++] = '\\';
+            s[head->len++] = 'u';
+            if (cp > 0xFFFF) {
+                c = (unsigned char) ((cp & 0xf00000) >> 20);
+                if (c > 0) {
+                    s[head->len++] = int2hex[c];
+                }
+                c = (unsigned char) ((cp & 0x0f0000) >> 16);
+                if (c > 0) {
+                    s[head->len++] = int2hex[c];
+                }
             }
+            s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf000) >> 12)];
+            s[head->len++] = int2hex[ (unsigned char) ((cp & 0x0f00) >> 8)];
+            s[head->len++] = int2hex[ (unsigned char) ((cp & 0xf0) >> 4)];
+            s[head->len++] = int2hex[ (unsigned char) (cp & 0x0f)];
             i += (hex_bytes - 1);
         }
         else {
@@ -345,33 +349,34 @@ flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
     }
 
     va_start(ap, fmt);
-
     size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
     if (size < 0) {
         flb_warn("[%s] buggy vsnprintf return %d", __FUNCTION__, size);
         va_end(ap);
         return NULL;
     }
+    va_end(ap);
+
     if (size > flb_sds_avail(s)) {
         tmp = flb_sds_increase(s, size);
         if (!tmp) {
-            va_end(ap);
             return NULL;
         }
         *sds = s = tmp;
+
+        va_start(ap, fmt);
         size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
         if (size > flb_sds_avail(s)) {
             flb_warn("[%s] vsnprintf is insatiable ", __FUNCTION__);
             va_end(ap);
             return NULL;
         }
+        va_end(ap);
     }
 
     head = FLB_SDS_HEADER(s);
     head->len += size;
     s[head->len] = '\0';
-
-    va_end(ap);
 
     return s;
 }

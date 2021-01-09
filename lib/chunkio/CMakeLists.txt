@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 2.8)
 project(chunk-io)
 
+set(CIO_VERSION_MAJOR  1)
+set(CIO_VERSION_MINOR  1)
+set(CIO_VERSION_PATCH  0)
+set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
+
 # CFLAGS
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
@@ -26,7 +31,7 @@ option(CIO_BACKEND_FILESYSTEM "Enable filesystem backend"   On)
 
 # Force Option value
 macro(CIO_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
+  set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
 
 # Development/Test mode
@@ -63,6 +68,25 @@ endif()
 if(CIO_BACKEND_FILESYSTEM)
   CIO_DEFINITION(CIO_HAVE_BACKEND_FILESYSTEM)
 endif()
+
+include(CheckCSourceCompiles)
+
+# fallocate support
+check_c_source_compiles("
+  #include <fcntl.h>
+  int main() {
+     fallocate(0,0,0);
+     return 0;
+  }" CIO_HAVE_FALLOCATE)
+
+if(CIO_HAVE_FALLOCATE)
+  CIO_DEFINITION(CIO_HAVE_FALLOCATE)
+endif()
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/chunkio/cio_version.h.in"
+  "${PROJECT_SOURCE_DIR}/include/chunkio/cio_version.h"
+  )
 
 include_directories(
   include

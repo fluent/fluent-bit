@@ -30,9 +30,7 @@
 static int endpoint_root(struct flb_hs *hs)
 {
     int c;
-    int ret;
-    char *out_buf;
-    size_t out_size;
+    flb_sds_t out_buf;
     msgpack_packer mp_pck;
     msgpack_sbuffer mp_sbuf;
     struct mk_list *head;
@@ -96,16 +94,15 @@ static int endpoint_root(struct flb_hs *hs)
     flb_utils_split_free(list);
 
     /* export as JSON */
-    ret = flb_msgpack_raw_to_json_str(mp_sbuf.data, mp_sbuf.size,
-                                      &out_buf, &out_size);
+    out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret == 0) {
+    if (out_buf) {
         hs->ep_root_buf  = out_buf;
-        hs->ep_root_size = out_size;
+        hs->ep_root_size = flb_sds_len(out_buf);
     }
 
-    return ret;
+    return -1;
 }
 
 int flb_hs_endpoints(struct flb_hs *hs)
@@ -118,7 +115,7 @@ int flb_hs_endpoints(struct flb_hs *hs)
 int flb_hs_endpoints_free(struct flb_hs *hs)
 {
     if (hs->ep_root_buf) {
-        flb_free(hs->ep_root_buf);
+        flb_sds_destroy(hs->ep_root_buf);
     }
 
     return 0;

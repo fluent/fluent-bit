@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@
 
 #include <stdio.h>
 
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
@@ -34,7 +34,7 @@
 static int configure(struct flb_out_lib_config *ctx,
                      struct flb_output_instance *ins)
 {
-    char *tmp;
+    const char *tmp;
 
     tmp = flb_output_get_property("format", ins);
     if (!tmp) {
@@ -84,6 +84,7 @@ static int out_lib_init(struct flb_output_instance *ins,
         flb_errno();
         return -1;
     }
+    ctx->ins = ins;
 
     if (cb_data) {
         /* Set user callback and data */
@@ -91,7 +92,7 @@ static int out_lib_init(struct flb_output_instance *ins,
         ctx->cb_data = cb_data->data;
     }
     else {
-        flb_error("[out_lib] Callback is not set");
+        flb_plg_error(ctx->ins, "Callback is not set");
         flb_free(ctx);
         return -1;
     }
@@ -102,8 +103,8 @@ static int out_lib_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void out_lib_flush(void *data, size_t bytes,
-                          char *tag, int tag_len,
+static void out_lib_flush(const void *data, size_t bytes,
+                          const char *tag, int tag_len,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -167,7 +168,7 @@ static void out_lib_flush(void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            len = snprintf(out_buf, out_size, "[%f, %s]",
+            len = snprintf(out_buf, out_size, "[%f,%s]",
                            flb_time_to_double(&tm),
                            buf);
             flb_free(buf);

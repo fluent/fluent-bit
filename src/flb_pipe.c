@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,12 +78,6 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 {
     return evutil_make_socket_nonblocking(fd);
 }
-
-int flb_pipe_check_eagain(void)
-{
-    return WSAGetLastError() == WSAEWOULDBLOCK;
-}
-
 #else
 /* All other flavors of Unix/BSD are OK */
 
@@ -103,6 +97,14 @@ void flb_pipe_destroy(flb_pipefd_t pipefd[2])
 
 int flb_pipe_close(flb_pipefd_t fd)
 {
+    /* 
+     *  when chunk file is destroyed, the fd for file will be -1, we should avoid
+     *  deleting chunk file with fd -1
+     */
+    if (fd == -1) {
+        return -1;
+    }
+
     return close(fd);
 }
 
@@ -115,11 +117,6 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
         return 0;
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
-
-int flb_pipe_check_eagain(void)
-{
-    return errno == EAGAIN || errno == EWOULDBLOCK;
-}
 #endif
 
 /* Blocking read until receive 'count' bytes */
@@ -131,7 +128,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
     do {
         bytes = flb_pipe_r(fd, (char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
@@ -140,6 +137,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
                 flb_time_msleep(50);
                 continue;
             }
+            return -1;
         }
         else if (bytes == 0) {
             /* Broken pipe ? */
@@ -154,7 +152,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
 }
 
 /* Blocking write until send 'count bytes */
-ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
+ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
@@ -162,7 +160,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
     do {
         bytes = flb_pipe_w(fd, (const char *) buf + total, count - total);
         if (bytes == -1) {
-            if (errno == EAGAIN) {
+            if (FLB_PIPE_WOULDBLOCK()) {
                 /*
                  * This could happen, since this function goal is not to
                  * return until all data have been read, just sleep a little
@@ -171,6 +169,7 @@ ssize_t flb_pipe_write_all(int fd, void *buf, size_t count)
                 flb_time_msleep(50);
                 continue;
             }
+            return -1;
         }
         else if (bytes == 0) {
             /* Broken pipe ? */

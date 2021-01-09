@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,7 +47,7 @@ struct tcp_conn {
     int  buf_size;                    /* Buffer size                       */
     size_t rest;                      /* Unpacking offset                  */
 
-    struct flb_input_instance *in;    /* Parent plugin instance            */
+    struct flb_input_instance *ins;   /* Parent plugin instance            */
     struct flb_in_tcp_config *ctx;    /* Plugin configuration context      */
     struct flb_pack_state pack_state; /* Internal JSON parser              */
 

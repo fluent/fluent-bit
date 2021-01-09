@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,7 @@
 #define FLB_PARSER_DEC_JSON          0  /* decode_json()    */
 #define FLB_PARSER_DEC_ESCAPED       1  /* decode_escaped() */
 #define FLB_PARSER_DEC_ESCAPED_UTF8  2  /* decode_escaped_utf8() */
+#define FLB_PARSER_DEC_MYSQL_QUOTED  3  /* decode_mysql_quoted() */
 
 /* Decoder actions */
 #define FLB_PARSER_ACT_NONE     0
@@ -52,7 +53,7 @@ struct flb_parser_dec_rule {
 
 struct flb_parser_dec {
     flb_sds_t key;
-    flb_sds_t buffer;        /* temporal buffer for decoding work */
+    flb_sds_t buffer;        /* temporary buffer for decoding work */
     int add_extra_keys;      /* if type == FLB_PARSER_DEC_DEFAULT, flag is True */
     struct mk_list rules;    /* list head for decoder key rules */
     struct mk_list _head;    /* link to parser->decoders */
@@ -61,7 +62,7 @@ struct flb_parser_dec {
 struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section);
 int flb_parser_decoder_list_destroy(struct mk_list *list);
 int flb_parser_decoder_do(struct mk_list *decoders,
-                          char *in_buf, size_t in_size,
+                          const char *in_buf, size_t in_size,
                           char **out_buf, size_t *out_size);
 
 #endif

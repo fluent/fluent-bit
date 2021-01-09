@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,7 +45,7 @@ struct flb_upstream_node {
     char *tls_key_passwd;     /* Cert Key Password            */
 
     /* context with mbedTLS contexts and data */
-    struct flb_tls tls;
+    struct flb_tls *tls;
 #else
     void *tls;
 #endif
@@ -63,19 +63,20 @@ struct flb_upstream_node {
 };
 
 
-struct flb_upstream_node *flb_upstream_node_create(char *name, char *host,
-                                                   char *port,
+struct flb_upstream_node *flb_upstream_node_create(const char *name, const char *host,
+                                                   const char *port,
                                                    int tls, int tls_verify,
                                                    int tls_debug,
-                                                   char *tls_ca_path,
-                                                   char *tls_ca_file,
-                                                   char *tls_crt_file,
-                                                   char *tls_key_file,
-                                                   char *tls_key_passwd,
+                                                   const char *tls_vhost,
+                                                   const char *tls_ca_path,
+                                                   const char *tls_ca_file,
+                                                   const char *tls_crt_file,
+                                                   const char *tls_key_file,
+                                                   const char *tls_key_passwd,
                                                    struct flb_hash *ht,
                                                    struct flb_config *config);
-char *flb_upstream_node_get_property(char *prop,
-                                     struct flb_upstream_node *node);
+const char *flb_upstream_node_get_property(const char *prop,
+                                           struct flb_upstream_node *node);
 
 static inline void flb_upstream_node_set_data(void *data,
                                               struct flb_upstream_node *node)

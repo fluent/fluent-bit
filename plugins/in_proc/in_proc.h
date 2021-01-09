@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,8 +70,8 @@ struct flb_in_proc_config {
 
     /* File descriptor */
     uint8_t fds;
-};
 
-extern struct flb_input_plugin in_proc_plugin;
+    struct flb_input_instance *ins;
+};
 
 #endif /*FLB_IN_PROC_H*/

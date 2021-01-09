@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,18 +21,34 @@
 #ifndef FLB_OUT_KAFKA_CONFIG_H
 #define FLB_OUT_KAFKA_CONFIG_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_pack.h>
+#ifdef FLB_HAVE_AVRO_ENCODER
+#include <fluent-bit/flb_avro.h>
+#endif
 
 #include "rdkafka.h"
 
-#define FLB_KAFKA_FMT_JSON  0
-#define FLB_KAFKA_FMT_MSGP  1
-#define FLB_KAFKA_FMT_GELF  2
-#define FLB_KAFKA_BROKERS   "127.0.0.1"
-#define FLB_KAFKA_TOPIC     "fluent-bit"
-#define FLB_KAFKA_TS_KEY    "@timestamp"
+#define FLB_KAFKA_FMT_JSON            0
+#define FLB_KAFKA_FMT_MSGP            1
+#define FLB_KAFKA_FMT_GELF            2
+#ifdef FLB_HAVE_AVRO_ENCODER
+#define FLB_KAFKA_FMT_AVRO            3
+#endif
+#define FLB_KAFKA_BROKERS             "127.0.0.1"
+#define FLB_KAFKA_TOPIC               "fluent-bit"
+#define FLB_KAFKA_TS_KEY              "@timestamp"
+#define FLB_KAFKA_QUEUE_FULL_RETRIES  10
+
+/* rdkafka log levels based on syslog(3) */
+#define FLB_KAFKA_LOG_EMERG   0
+#define FLB_KAFKA_LOG_ALERT   1
+#define FLB_KAFKA_LOG_CRIT    2
+#define FLB_KAFKA_LOG_ERR     3
+#define FLB_KAFKA_LOG_WARNING 4
+#define FLB_KAFKA_LOG_NOTICE  5
+#define FLB_KAFKA_LOG_INFO    6
+#define FLB_KAFKA_LOG_DEBUG   7
 
 #define FLB_JSON_DATE_DOUBLE      0
 #define FLB_JSON_DATE_ISO8601     1
@@ -61,6 +77,9 @@ struct flb_kafka {
     int message_key_len;
     char *message_key;
 
+    int message_key_field_len;
+    char *message_key_field;
+
     /* Gelf Keys */
     struct flb_gelf_fields gelf_fields;
 
@@ -79,9 +98,29 @@ struct flb_kafka {
      */
     int blocked;
 
+    int dynamic_topic;
+
+    int queue_full_retries;
+
     /* Internal */
     rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    // avro serialization requires a schema
+    // the schema is stored in json in avro_schema_str
+    //
+    // optionally the schema ID can be stashed in the avro data stream
+    // the schema ID is stored in avro_schema_id
+    // this is common at this time with large kafka installations and schema registries
+    // flb_sds_t avro_schema_str;
+    // flb_sds_t avro_schema_id;
+    struct flb_avro_fields avro_fields;
+#endif
+
 };
 
 struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,

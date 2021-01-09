@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,25 +33,27 @@
 
 /* Decode a stringified JSON message */
 static int decode_json(struct flb_parser_dec *dec,
-                       char *in_buf, size_t in_size,
+                       const char *in_buf, size_t in_size,
                        char **out_buf, size_t *out_size, int *out_type)
 {
-    int len;
     int ret;
     int root_type;
     char *buf;
+    const char *p;
     size_t size;
+    size_t len;
 
-    /* JSON Decoder: content may be escaped */
-    len = flb_unescape_string(in_buf, in_size, &dec->buffer);
+    p = in_buf;
+    while (*p == ' ') p++;
+
+    len = in_size - (p - in_buf);
 
     /* It must be a map or array */
-    if (dec->buffer[0] != '{' && dec->buffer[0] != '[') {
+    if (p[0] != '{' && p[0] != '[') {
         return -1;
     }
 
-    /* Convert from unescaped JSON to MessagePack */
-    ret = flb_pack_json(dec->buffer, len, &buf, &size, &root_type);
+    ret = flb_pack_json(p, len, &buf, &size, &root_type);
     if (ret != 0) {
         return -1;
     }
@@ -70,7 +72,7 @@ static int decode_json(struct flb_parser_dec *dec,
 }
 
 static int decode_escaped(struct flb_parser_dec *dec,
-                          char *in_buf, size_t in_size,
+                          const char *in_buf, size_t in_size,
                           char **out_buf, size_t *out_size, int *out_type)
 {
     int len;
@@ -85,8 +87,8 @@ static int decode_escaped(struct flb_parser_dec *dec,
 }
 
 static int decode_escaped_utf8(struct flb_parser_dec *dec,
-                          char *in_buf, size_t in_size,
-                          char **out_buf, size_t *out_size, int *out_type)
+                               const char *in_buf, size_t in_size,
+                               char **out_buf, size_t *out_size, int *out_type)
 {
     int len;
 
@@ -98,8 +100,43 @@ static int decode_escaped_utf8(struct flb_parser_dec *dec,
     return 0;
 }
 
-static int merge_record_and_extra_keys(char *in_buf, size_t in_size,
-                                       char *extra_buf, size_t extra_size,
+static int decode_mysql_quoted(struct flb_parser_dec *dec,
+                               char *in_buf, size_t in_size,
+                               char **out_buf, size_t *out_size, int *out_type)
+{
+    int len;
+    if(in_size < 2) {
+        dec->buffer[0] = in_buf[0];
+        dec->buffer[1] = 0;
+        *out_buf = dec->buffer;
+        *out_size = in_size;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else if(in_buf[0] == '\'' && in_buf[in_size-1] == '\'') {
+        len = flb_mysql_unquote_string(in_buf+1, in_size-2, &dec->buffer);
+        *out_buf = dec->buffer;
+        *out_size = len;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else if(in_buf[0] == '\"' && in_buf[in_size-1] == '\"') {
+        len = flb_mysql_unquote_string(in_buf+1, in_size-2, &dec->buffer);
+        *out_buf = dec->buffer;
+        *out_size = len;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else {
+        memcpy(dec->buffer, in_buf, in_size);
+        dec->buffer[in_size] = 0;
+        *out_buf = dec->buffer;
+        *out_size = in_size;
+        *out_type = TYPE_OUT_STRING;
+    }
+
+    return 0;
+}
+
+static int merge_record_and_extra_keys(const char *in_buf, size_t in_size,
+                                       const char *extra_buf, size_t extra_size,
                                        char **out_buf, size_t *out_size)
 {
     int i;
@@ -165,7 +202,7 @@ static int merge_record_and_extra_keys(char *in_buf, size_t in_size,
  * a new msgpack buffer.
  */
 int flb_parser_decoder_do(struct mk_list *decoders,
-                          char *in_buf, size_t in_size,
+                          const char *in_buf, size_t in_size,
                           char **out_buf, size_t *out_size)
 {
     int i;
@@ -223,7 +260,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /* Try to match this key name with decoder's rule */
         mk_list_foreach(head, decoders) {
             dec = mk_list_entry(head, struct flb_parser_dec, _head);
-            if (flb_sds_cmp(dec->key, (char *) k.via.str.ptr,
+            if (flb_sds_cmp(dec->key, k.via.str.ptr,
                             k.via.str.size) == 0) {
                 /* we have a match, stop the check */
                 matched = i;
@@ -285,7 +322,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /* Lookup for decoders associated to the current 'key' */
         mk_list_foreach(head, decoders) {
             dec = mk_list_entry(head, struct flb_parser_dec, _head);
-            if (flb_sds_cmp(dec->key, (char *) k.via.str.ptr,
+            if (flb_sds_cmp(dec->key, k.via.str.ptr,
                             k.via.str.size) == 0) {
                 break;
             }
@@ -312,7 +349,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         }
 
         /* Copy original content */
-        tmp_sds = flb_sds_copy(data_sds, (char *) v.via.str.ptr,
+        tmp_sds = flb_sds_copy(data_sds, v.via.str.ptr,
                                v.via.str.size);
         if (tmp_sds != data_sds) {
             data_sds = tmp_sds;
@@ -320,7 +357,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
 
         /*
          * We got a match: 'key name' == 'decoder field name', validate
-         * that we have enough space in our temporal buffer.
+         * that we have enough space in our temporary buffer.
          */
         if (flb_sds_alloc(dec->buffer) < flb_sds_alloc(data_sds)) {
             /* Increase buffer size */
@@ -343,7 +380,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /*
          * If some rule type is FLB_PARSER_DEC_DEFAULT, means that it will
          * try to register some extra fields as part of the record. For such
-         * case we prepare a temporal buffer to hold these extra keys.
+         * case we prepare a temporary buffer to hold these extra keys.
          *
          * The content of this buffer is just a serialized number of maps.
          */
@@ -381,6 +418,11 @@ int flb_parser_decoder_do(struct mk_list *decoders,
                 ret = decode_escaped_utf8(dec,
                                      (char *) data_sds, flb_sds_len(data_sds),
                                      &dec_buf, &dec_size, &dec_type);
+            }
+            else if (rule->backend == FLB_PARSER_DEC_MYSQL_QUOTED) {
+                ret = decode_mysql_quoted(dec,
+                                          (char *) data_sds, flb_sds_len(data_sds),
+                                          &dec_buf, &dec_size, &dec_type);
             }
 
             /* Check decoder status */
@@ -495,7 +537,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
  * Iterate decoders list and lookup for an existing context for 'key_name',
  * if it does not exists, create and link a new one
  */
-static struct flb_parser_dec *get_decoder_key_context(char *key_name, int key_len,
+static struct flb_parser_dec *get_decoder_key_context(const char *key_name, int key_len,
                                                       struct mk_list *list)
 {
     struct mk_list *head;
@@ -627,6 +669,9 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         else if (strcasecmp(decoder->value, "escaped_utf8") == 0) {
             backend = FLB_PARSER_DEC_ESCAPED_UTF8;
         }
+        else if (strcasecmp(decoder->value, "mysql_quoted") == 0) {
+            backend = FLB_PARSER_DEC_MYSQL_QUOTED;
+        }
         else {
             flb_error("[parser] field decoder '%s' unknown", decoder->value);
             flb_utils_split_free(split);
@@ -671,7 +716,7 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
             }
         }
 
-        /* Remove temporal split */
+        /* Remove temporary split */
         flb_utils_split_free(split);
         mk_list_add(&dec_rule->_head, &dec->rules);
         c++;

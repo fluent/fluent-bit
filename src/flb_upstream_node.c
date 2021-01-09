@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,15 +26,16 @@
 #include <fluent-bit/flb_upstream_node.h>
 
 /* Create a new Upstream Node context */
-struct flb_upstream_node *flb_upstream_node_create(char *name, char *host,
-                                                   char *port,
+struct flb_upstream_node *flb_upstream_node_create(const char *name, const char *host,
+                                                   const char *port,
                                                    int tls, int tls_verify,
                                                    int tls_debug,
-                                                   char *tls_ca_path,
-                                                   char *tls_ca_file,
-                                                   char *tls_crt_file,
-                                                   char *tls_key_file,
-                                                   char *tls_key_passwd,
+                                                   const char *tls_vhost,
+                                                   const char *tls_ca_path,
+                                                   const char *tls_ca_file,
+                                                   const char *tls_crt_file,
+                                                   const char *tls_key_file,
+                                                   const char *tls_key_passwd,
                                                    struct flb_hash *ht,
                                                    struct flb_config *config)
 {
@@ -125,14 +126,15 @@ struct flb_upstream_node *flb_upstream_node_create(char *name, char *host,
 #ifdef FLB_HAVE_TLS
     /* TLS setup */
     if (tls == FLB_TRUE) {
-        node->tls.context = flb_tls_context_new(tls_verify,
-                                                tls_debug,
-                                                tls_ca_path,
-                                                tls_ca_file,
-                                                tls_crt_file,
-                                                tls_key_file,
-                                                tls_key_passwd);
-        if (!node->tls.context) {
+        node->tls = flb_tls_create(tls_verify,
+                                   tls_debug,
+                                   tls_vhost,
+                                   tls_ca_path,
+                                   tls_ca_file,
+                                   tls_crt_file,
+                                   tls_key_file,
+                                   tls_key_passwd);
+        if (!node->tls) {
             flb_error("[upstream_node] error initializing TLS context "
                       "on node '%s'", name);
             flb_upstream_node_destroy(node);
@@ -153,7 +155,7 @@ struct flb_upstream_node *flb_upstream_node_create(char *name, char *host,
 
     /* upstream context */
     node->u = flb_upstream_create(config, node->host, i_port,
-                                  io_flags, &node->tls);
+                                  io_flags, node->tls);
     if (!node->u) {
         flb_error("[upstream_node] error creating upstream context "
                   "for node '%s'", name);
@@ -164,12 +166,12 @@ struct flb_upstream_node *flb_upstream_node_create(char *name, char *host,
     return node;
 }
 
-char *flb_upstream_node_get_property(char *prop,
+const char *flb_upstream_node_get_property(const char *prop,
                                      struct flb_upstream_node *node)
 {
     int ret;
     int len;
-    char *value;
+    const char *value;
     size_t size;
 
     len = strlen(prop);
@@ -194,8 +196,8 @@ void flb_upstream_node_destroy(struct flb_upstream_node *node)
     flb_sds_destroy(node->tls_crt_file);
     flb_sds_destroy(node->tls_key_file);
     flb_sds_destroy(node->tls_key_passwd);
-    if (node->tls.context) {
-        flb_tls_context_destroy(node->tls.context);
+    if (node->tls) {
+        flb_tls_destroy(node->tls);
     }
 #endif
 

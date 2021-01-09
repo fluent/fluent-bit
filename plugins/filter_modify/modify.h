@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,9 @@
 
 #ifndef FLB_FILTER_MODIFY_H
 #define FLB_FILTER_MODIFY_H
+
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_filter.h>
 
 enum FLB_FILTER_MODIFY_RULETYPE {
   RENAME,
@@ -48,41 +51,42 @@ enum FLB_FILTER_MODIFY_CONDITIONTYPE {
 
 struct filter_modify_ctx
 {
-  int rules_cnt;
-  struct mk_list rules;
-  int conditions_cnt;
-  struct mk_list conditions;
+    int rules_cnt;
+    struct mk_list rules;
+    int conditions_cnt;
+    struct mk_list conditions;
+    struct flb_filter_instance *ins;
 };
 
 struct modify_rule
 {
-  enum FLB_FILTER_MODIFY_RULETYPE ruletype;
-  int key_len;
-  int val_len;
-  char *key;
-  char *val;
-  bool key_is_regex;
-  bool val_is_regex;
-  struct flb_regex *key_regex;
-  struct flb_regex *val_regex;
-  char *raw_k;
-  char *raw_v;
-  struct mk_list _head;
+    enum FLB_FILTER_MODIFY_RULETYPE ruletype;
+    int key_len;
+    int val_len;
+    char *key;
+    char *val;
+    bool key_is_regex;
+    bool val_is_regex;
+    struct flb_regex *key_regex;
+    struct flb_regex *val_regex;
+    char *raw_k;
+    char *raw_v;
+    struct mk_list _head;
 };
 
 struct modify_condition
 {
-  enum FLB_FILTER_MODIFY_CONDITIONTYPE conditiontype;
-  int a_len;
-  int b_len;
-  char *a;
-  char *b;
-  bool a_is_regex;
-  bool b_is_regex;
-  struct flb_regex *a_regex;
-  struct flb_regex *b_regex;
-  char *raw_k;
-  char *raw_v;
-  struct mk_list _head;
+    enum FLB_FILTER_MODIFY_CONDITIONTYPE conditiontype;
+    int a_len;
+    int b_len;
+    char *a;
+    char *b;
+    bool a_is_regex;
+    bool b_is_regex;
+    struct flb_regex *a_regex;
+    struct flb_regex *b_regex;
+    char *raw_k;
+    char *raw_v;
+    struct mk_list _head;
 };
 #endif

@@ -2,7 +2,7 @@
 
 /*  Chunk I/O
  *  =========
- *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
+ *  Copyright 2019 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,12 +26,13 @@ struct cio_stream {
     int type;                 /* type: CIO_STORE_FS or CIO_STORE_MEM */
     char *name;               /* stream name */
     struct mk_list _head;     /* head link to ctx->streams list */
-    struct mk_list files;
+    struct mk_list chunks;
     void *parent;             /* ref to parent ctx */
 };
 
 struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
                                      int type);
+int cio_stream_delete(struct cio_stream *st);
 void cio_stream_destroy(struct cio_stream *st);
 void cio_stream_destroy_all(struct cio_ctx *ctx);
 

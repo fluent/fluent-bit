@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dlfcn.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
@@ -38,25 +37,25 @@
 /* Proxies */
 #include "proxy/go/go.h"
 
-static void flb_proxy_cb_flush(void *data, size_t bytes,
-                               char *tag, int tag_len,
+static void flb_proxy_cb_flush(const void *data, size_t bytes,
+                               const char *tag, int tag_len,
                                struct flb_input_instance *i_ins,
                                void *out_context,
                                struct flb_config *config)
 {
     int ret = FLB_ERROR;
-    struct flb_plugin_proxy *p = out_context;
+    struct flb_plugin_proxy_context *ctx = out_context;
     (void) tag_len;
     (void) i_ins;
     (void) config;
 
 #ifdef FLB_HAVE_PROXY_GO
-    if (p->proxy == FLB_PROXY_GOLANG) {
+    if (ctx->proxy->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_flush()");
-        ret = proxy_go_flush(p, data, bytes, tag, tag_len);
+        ret = proxy_go_flush(ctx, data, bytes, tag, tag_len);
     }
 #else
-    (void) p;
+    (void) ctx;
 #endif
 
     if (ret != FLB_OK && ret != FLB_RETRY && ret != FLB_ERROR) {
@@ -66,6 +65,28 @@ static void flb_proxy_cb_flush(void *data, size_t bytes,
     FLB_OUTPUT_RETURN(ret);
 }
 
+
+static int flb_proxy_cb_exit(void *data, struct flb_config *config)
+{
+    struct flb_output_plugin *instance = data;
+    struct flb_plugin_proxy *proxy = (instance->proxy);
+    struct flbgo_output_plugin *plugin;
+    void *inst;
+
+    inst = proxy->data;
+
+    plugin = (struct flbgo_output_plugin *) inst;
+    flb_debug("[GO] running exit callback");
+
+    if (plugin->cb_exit_ctx) {
+        return plugin->cb_exit_ctx(plugin->context->remote_context);
+    }
+    else if (plugin->cb_exit) {
+        return plugin->cb_exit();
+    }
+
+    return 0;
+}
 
 static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
                                      struct flb_plugin_proxy_def *def,
@@ -93,6 +114,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
      * we put our proxy-middle callbacks to do the translation properly.
      */
     out->cb_flush = flb_proxy_cb_flush;
+    out->cb_exit = flb_proxy_cb_exit;
     return 0;
 }
 
@@ -120,7 +142,7 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
 
     /*
-     * Create a temporal definition used for registration. This definition
+     * Create a temporary definition used for registration. This definition
      * aims to be be populated by plugin in the registration phase with:
      *
      * - plugin type (or proxy type, e.g: Golang)
@@ -195,7 +217,8 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     /* Load shared library */
     handle = dlopen(dso_path, RTLD_LAZY);
     if (!handle) {
-        fprintf(stderr, "[proxy] error opening plugin %s: \"%s\"\n", dso_path, dlerror());
+        fprintf(stderr, "[proxy] error opening plugin %s: '%s'\n",
+                dso_path, dlerror());
         return NULL;
     }
 
@@ -225,70 +248,6 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     flb_plugin_proxy_register(proxy, config);
 
     return proxy;
-}
-
-/* Load plugins from a configuration file */
-int flb_plugin_proxy_conf_file(char *file, struct flb_config *config)
-{
-    int ret;
-    char tmp[PATH_MAX + 1];
-    char *cfg = NULL;
-    struct mk_rconf *fconf;
-    struct mk_rconf_section *section;
-    struct mk_rconf_entry *entry;
-    struct mk_list *head;
-    struct mk_list *head_e;
-    struct stat st;
-
-#ifndef FLB_HAVE_STATIC_CONF
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_utils_error(FLB_ERR_CFG_PLUGIN_FILE);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = tmp;
-        }
-    }
-    else {
-        cfg = file;
-    }
-
-    flb_debug("[plugin] opening configuration file %s", cfg);
-    fconf = mk_rconf_open(cfg);
-#else
-    fconf = flb_config_static_open(file);
-#endif
-
-    if (!fconf) {
-        return -1;
-    }
-
-    /* Read all [PLUGINS] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "PLUGINS") != 0) {
-            continue;
-        }
-
-        mk_list_foreach(head_e, &section->entries) {
-            entry = mk_list_entry(head_e, struct mk_rconf_entry, _head);
-            if (strcmp(entry->key, "Path") != 0) {
-                continue;
-            }
-
-            if (flb_plugin_proxy_create(entry->val, 0, config) == NULL) {
-                return -1;
-            }
-        }
-    }
-
-    mk_rconf_free(fconf);
-    return 0;
 }
 
 void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)

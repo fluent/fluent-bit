@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentbit-config
+data:
+  fluent-bit.conf: |-
+    [SERVICE]
+      Flush             5
+      Daemon            off
+      Log_Level         info
+
+    [INPUT]
+      Name              tail
+      Path              c:\\logs\\*.log
+      Refresh_Interval  60
+      Ignore_Older      10s
+      Rotate_Wait       5
+      DB                c:\\state\\logs.db
+
+    [OUTPUT]
+      Name              stdout
+      Match             *
+      Format            json_lines
+      json_date_format  iso8601

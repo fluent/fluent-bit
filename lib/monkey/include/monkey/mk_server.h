@@ -43,7 +43,7 @@ struct mk_server_timeout {
     struct mk_event event;
 };
 
-pthread_key_t mk_server_fifo_key;
+extern pthread_key_t mk_server_fifo_key;
 
 #ifdef MK_HAVE_C_TLS
 extern __thread struct mk_list *server_listen;

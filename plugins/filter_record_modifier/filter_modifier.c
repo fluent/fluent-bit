@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,12 +17,15 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
@@ -33,9 +36,9 @@
 static int configure(struct record_modifier_ctx *ctx,
                          struct flb_filter_instance *f_ins)
 {
+    struct flb_kv *kv = NULL;
     struct mk_list *head = NULL;
     struct mk_list *split;
-    struct flb_config_prop *prop = NULL;
     struct modifier_key    *mod_key;
     struct modifier_record *mod_record;
     struct flb_split_entry *sentry;
@@ -46,16 +49,16 @@ static int configure(struct record_modifier_ctx *ctx,
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
-        prop = mk_list_entry(head, struct flb_config_prop, _head);
+        kv = mk_list_entry(head, struct flb_kv, _head);
 
-        if (!strcasecmp(prop->key, "remove_key")) {
+        if (!strcasecmp(kv->key, "remove_key")) {
             mod_key = flb_malloc(sizeof(struct modifier_key));
             if (!mod_key) {
                 flb_errno();
                 continue;
             }
-            mod_key->key     = prop->val;
-            mod_key->key_len = strlen(prop->val);
+            mod_key->key     = kv->val;
+            mod_key->key_len = flb_sds_len(kv->val);
             if (mod_key->key[mod_key->key_len - 1] == '*') {
                 mod_key->dynamic_key = FLB_TRUE;
                 mod_key->key_len--;
@@ -66,14 +69,14 @@ static int configure(struct record_modifier_ctx *ctx,
             mk_list_add(&mod_key->_head, &ctx->remove_keys);
             ctx->remove_keys_num++;
         }
-        else if (!strcasecmp(prop->key, "whitelist_key")) {
+        else if (!strcasecmp(kv->key, "whitelist_key")) {
             mod_key = flb_malloc(sizeof(struct modifier_key));
             if (!mod_key) {
                 flb_errno();
                 continue;
             }
-            mod_key->key     = prop->val;
-            mod_key->key_len = strlen(prop->val);
+            mod_key->key     = kv->val;
+            mod_key->key_len = flb_sds_len(kv->val);
             if (mod_key->key[mod_key->key_len - 1] == '*') {
                 mod_key->dynamic_key = FLB_TRUE;
                 mod_key->key_len--;
@@ -84,16 +87,16 @@ static int configure(struct record_modifier_ctx *ctx,
             mk_list_add(&mod_key->_head, &ctx->whitelist_keys);
             ctx->whitelist_keys_num++;
         }
-        else if (!strcasecmp(prop->key, "record")) {
+        else if (!strcasecmp(kv->key, "record")) {
             mod_record = flb_malloc(sizeof(struct modifier_record));
             if (!mod_record) {
                 flb_errno();
                 continue;
             }
-            split = flb_utils_split(prop->val, ' ', 1);
+            split = flb_utils_split(kv->val, ' ', 1);
             if (mk_list_size(split) != 2) {
-                flb_error("[%s] invalid record parameters, expects 'KEY VALUE'",
-                          PLUGIN_NAME);
+                flb_plg_error(ctx->ins, "invalid record parameters, "
+                              "expects 'KEY VALUE'");
                 flb_free(mod_record);
                 flb_utils_split_free(split);
                 continue;
@@ -114,7 +117,8 @@ static int configure(struct record_modifier_ctx *ctx,
     }
 
     if (ctx->remove_keys_num > 0 && ctx->whitelist_keys_num > 0) {
-        flb_error("remove_keys and whitelist_keys are exclusive with each other.");
+        flb_plg_error(ctx->ins, "remove_keys and whitelist_keys are exclusive "
+                      "with each other.");
         return -1;
     }
     return 0;
@@ -164,6 +168,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
     mk_list_init(&ctx->records);
     mk_list_init(&ctx->remove_keys);
     mk_list_init(&ctx->whitelist_keys);
+    ctx->ins = f_ins;
 
     if ( configure(ctx, f_ins) < 0 ){
         delete_list(ctx);
@@ -243,12 +248,12 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
-static int cb_modifier_filter(void *data, size_t bytes,
-                                  char *tag, int tag_len,
-                                  void **out_buf, size_t *out_size,
-                                  struct flb_filter_instance *f_ins,
-                                  void *context,
-                                  struct flb_config *config)
+static int cb_modifier_filter(const void *data, size_t bytes,
+                              const char *tag, int tag_len,
+                              void **out_buf, size_t *out_size,
+                              struct flb_filter_instance *f_ins,
+                              void *context,
+                              struct flb_config *config)
 {
     struct record_modifier_ctx *ctx = context;
     char is_modified = FLB_FALSE;
@@ -269,7 +274,7 @@ static int cb_modifier_filter(void *data, size_t bytes,
     struct mk_list *tmp;
     struct mk_list *head;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 

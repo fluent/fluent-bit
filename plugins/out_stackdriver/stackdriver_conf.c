@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,9 +18,11 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <jsmn/jsmn.h>
 
@@ -30,7 +32,7 @@
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 
-static inline int key_cmp(char *str, int len, char *cmp) {
+static inline int key_cmp(const char *str, int len, const char *cmp) {
 
     if (strlen(cmp) != len) {
         return -1;
@@ -39,17 +41,7 @@ static inline int key_cmp(char *str, int len, char *cmp) {
     return strncasecmp(str, cmp, len);
 }
 
-static int validate_resource(char *res)
-{
-    if (strcasecmp(res, "global") != 0 &&
-        strcasecmp(res, "gce_instance") != 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
-static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
+static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
 {
     int i;
     int ret;
@@ -69,22 +61,22 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
     ret = stat(creds, &st);
     if (ret == -1) {
         flb_errno();
-        flb_error("[out_stackdriver] cannot open credentials file: %s",
-                  creds);
+        flb_plg_error(ctx->ins, "cannot open credentials file: %s",
+                      creds);
         return -1;
     }
 
     if (!S_ISREG(st.st_mode) && !S_ISLNK(st.st_mode)) {
-        flb_error("[out_stackdriver] credentials file "
-                  "is not a valid file: %s", creds);
+        flb_plg_error(ctx->ins, "credentials file "
+                      "is not a valid file: %s", creds);
         return -1;
     }
 
     /* Read file content */
     buf = mk_file_to_buffer(creds);
     if (!buf) {
-        flb_error("[out_stackdriver] error reading credentials file: %s",
-                  creds);
+        flb_plg_error(ctx->ins, "error reading credentials file: %s",
+                      creds);
         return -1;
     }
 
@@ -99,7 +91,7 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
 
     ret = jsmn_parse(&parser, buf, st.st_size, tokens, tok_size);
     if (ret <= 0) {
-        flb_error("[out_stackdriver] invalid JSON credentials file: %s",
+        flb_plg_error(ctx->ins, "invalid JSON credentials file: %s",
                   creds);
         flb_free(buf);
         flb_free(tokens);
@@ -108,7 +100,7 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
 
     t = &tokens[0];
     if (t->type != JSMN_OBJECT) {
-        flb_error("[out_stackdriver] invalid JSON map on file: %s",
+        flb_plg_error(ctx->ins, "invalid JSON map on file: %s",
                   creds);
         flb_free(buf);
         flb_free(tokens);
@@ -149,7 +141,7 @@ static int read_credentials_file(char *creds, struct flb_stackdriver *ctx)
             tmp = flb_sds_create_len(val, val_len);
             if (tmp) {
                 /* Unescape private key */
-                ctx->private_key = flb_sds_create_size(flb_sds_alloc(tmp));
+                ctx->private_key = flb_sds_create_size(val_len);
                 flb_unescape_string(tmp, flb_sds_len(tmp),
                                     &ctx->private_key);
                 flb_sds_destroy(tmp);
@@ -179,7 +171,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                               struct flb_config *config)
 {
     int ret;
-    char *tmp;
+    const char *tmp;
     struct flb_stackdriver *ctx;
 
     /* Allocate config context */
@@ -188,6 +180,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
     ctx->config = config;
 
     /* Lookup credentials file */
@@ -248,35 +241,105 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
      * metadata server for default account.
      */
     if (!ctx->client_email && ctx->private_key) {
-        flb_error("[out_stackdriver] client_email is not defined");
+        flb_plg_error(ctx->ins, "client_email is not defined");
         flb_stackdriver_conf_destroy(ctx);
         return NULL;
     }
 
     if (!ctx->client_email) {
-        flb_warn("[out_stackdriver] client_email is not defined, using "
-                 "a default one");
+        flb_plg_warn(ctx->ins, "client_email is not defined, using "
+                     "a default one");
         ctx->client_email = flb_sds_create("default");
     }
     if (!ctx->private_key) {
-        flb_warn("[out_stackdriver] private_key is not defined, fetching "
-                 "it from metadata server");
+        flb_plg_warn(ctx->ins, "private_key is not defined, fetching "
+                     "it from metadata server");
         ctx->metadata_server_auth = true;
     }
 
-    /* Resource type (only 'global' and 'gce_instance' are supported) */
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
-        if (validate_resource(tmp) != 0) {
-            flb_error("[out_stackdriver] unsupported resource type '%s'",
-                      tmp);
-            flb_stackdriver_conf_destroy(ctx);
-            return NULL;
-        }
         ctx->resource = flb_sds_create(tmp);
     }
     else {
         ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
+    }
+
+    tmp = flb_output_get_property("severity_key", ins);
+    if (tmp) {
+        ctx->severity_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->severity_key = flb_sds_create(DEFAULT_SEVERITY_KEY);
+    }
+
+    tmp = flb_output_get_property("autoformat_stackdriver_trace", ins);
+    if (tmp) {
+        ctx->autoformat_stackdriver_trace = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->autoformat_stackdriver_trace = FLB_FALSE;
+    }
+
+    tmp = flb_output_get_property("trace_key", ins);
+    if (tmp) {
+        ctx->trace_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->trace_key = flb_sds_create(DEFAULT_TRACE_KEY);
+    }
+
+    tmp = flb_output_get_property("log_name_key", ins);
+    if (tmp) {
+        ctx->log_name_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
+    }
+
+    if (flb_sds_cmp(ctx->resource, "k8s_container",
+                    flb_sds_len(ctx->resource)) == 0 ||
+        flb_sds_cmp(ctx->resource, "k8s_node",
+                    flb_sds_len(ctx->resource)) == 0 ||
+        flb_sds_cmp(ctx->resource, "k8s_pod",
+                    flb_sds_len(ctx->resource)) == 0) {
+
+        ctx->k8s_resource_type = FLB_TRUE;
+
+        tmp = flb_output_get_property("k8s_cluster_name", ins);
+        if (tmp) {
+            ctx->cluster_name = flb_sds_create(tmp);
+        }
+
+        tmp = flb_output_get_property("k8s_cluster_location", ins);
+        if (tmp) {
+            ctx->cluster_location = flb_sds_create(tmp);
+        }
+
+        if (!ctx->cluster_name || !ctx->cluster_location) {
+            flb_plg_error(ctx->ins, "missing k8s_cluster_name "
+                          "or k8s_cluster_location in configuration");
+            flb_stackdriver_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    tmp = flb_output_get_property("labels_key", ins);
+    if (tmp) {
+        ctx->labels_key = flb_sds_create(tmp);
+    }
+    else {
+        ctx->labels_key = flb_sds_create(DEFAULT_LABELS_KEY);
+    }
+
+    tmp = flb_output_get_property("tag_prefix", ins);
+    if (tmp) {
+        ctx->tag_prefix = flb_sds_create(tmp);
+    }
+    else {
+        if (ctx->k8s_resource_type == FLB_TRUE) {
+            ctx->tag_prefix = flb_sds_create(ctx->resource);
+        }
     }
 
     return ctx;
@@ -286,6 +349,16 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 {
     if (!ctx) {
         return -1;
+    }
+
+    if (ctx->k8s_resource_type){
+        flb_sds_destroy(ctx->namespace_name);
+        flb_sds_destroy(ctx->pod_name);
+        flb_sds_destroy(ctx->container_name);
+        flb_sds_destroy(ctx->node_name);
+        flb_sds_destroy(ctx->cluster_name);
+        flb_sds_destroy(ctx->cluster_location);
+        flb_sds_destroy(ctx->local_resource_id);
     }
 
     flb_sds_destroy(ctx->credentials_file);
@@ -298,13 +371,27 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->auth_uri);
     flb_sds_destroy(ctx->token_uri);
     flb_sds_destroy(ctx->resource);
+    flb_sds_destroy(ctx->severity_key);
+    flb_sds_destroy(ctx->trace_key);
+    flb_sds_destroy(ctx->log_name_key);
+    flb_sds_destroy(ctx->labels_key);
+    flb_sds_destroy(ctx->tag_prefix);
+
+    if (ctx->metadata_server_auth) {
+        flb_sds_destroy(ctx->zone);
+        flb_sds_destroy(ctx->instance_id);
+    }
+
+    if (ctx->metadata_u) {
+        flb_upstream_destroy(ctx->metadata_u);
+    }
+
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
-    }
-    if (ctx->metadata_server_auth) {
-      flb_sds_destroy(ctx->zone);
-      flb_sds_destroy(ctx->instance_id);
     }
 
     flb_free(ctx);

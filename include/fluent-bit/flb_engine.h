@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_thread_storage.h>
 
 /* Types of events handled by the Server engine */
 #define FLB_ENGINE_EV_CORE          MK_EVENT_NOTIFICATION
@@ -33,20 +34,20 @@
 #define FLB_ENGINE_EV_THREAD        1024
 #define FLB_ENGINE_EV_SCHED         2048
 #define FLB_ENGINE_EV_SCHED_FRAME   (FLB_ENGINE_EV_SCHED + 4096)
+#define FLB_ENGINE_EV_OUTPUT        8192
+#define FLB_ENGINE_EV_THREAD_OUTPUT 16384
 
 /* Engine events: all engine events set the left 32 bits to '1' */
 #define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */
 #define FLB_ENGINE_EV_FAILED    FLB_BITS_U64_SET(1, 2) /* Engine started    */
 #define FLB_ENGINE_EV_STOP      FLB_BITS_U64_SET(1, 3) /* Requested to stop */
 #define FLB_ENGINE_EV_SHUTDOWN  FLB_BITS_U64_SET(1, 4) /* Engine shutdown   */
-#define FLB_ENGINE_EV_STATS     FLB_BITS_U64_SET(1, 5) /* Collect stats     */
 
 /* Similar to engine events, but used as return values */
 #define FLB_ENGINE_STARTED      FLB_BITS_U64_LOW(FLB_ENGINE_EV_STARTED)
 #define FLB_ENGINE_FAILED       FLB_BITS_U64_LOW(FLB_ENGINE_EV_FAILED)
 #define FLB_ENGINE_STOP         FLB_BITS_U64_LOW(FLB_ENGINE_EV_STOP)
 #define FLB_ENGINE_SHUTDOWN     FLB_BITS_U64_LOW(FLB_ENGINE_EV_SHUTDOWN)
-#define FLB_ENGINE_STATS        FLB_BITS_U64_LOW(FLB_ENGINE_EV_STATS)
 
 /* Engine signals: Task, it only refer to the type */
 #define FLB_ENGINE_TASK         2
@@ -57,7 +58,13 @@ int flb_engine_failed(struct flb_config *config);
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force);
 int flb_engine_exit(struct flb_config *config);
+int flb_engine_exit_status(struct flb_config *config, int status);
 int flb_engine_shutdown(struct flb_config *config);
 int flb_engine_destroy_tasks(struct mk_list *tasks);
+
+/* Engine event loop */
+void flb_engine_evl_init();
+struct mk_event_loop *flb_engine_evl_get();
+void flb_engine_evl_set(struct mk_event_loop *evl);
 
 #endif

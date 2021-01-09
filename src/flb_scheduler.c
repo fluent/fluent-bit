@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,16 +20,37 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_random.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
+FLB_TLS_DEFINE(struct flb_sched, flb_sched_ctx);
+
+void flb_sched_ctx_init()
+{
+    FLB_TLS_INIT(flb_sched_ctx);
+}
+
+struct flb_sched *flb_sched_ctx_get()
+{
+    struct flb_sched *sched;
+
+    sched = FLB_TLS_GET(flb_sched_ctx);
+    return sched;
+}
+
+void flb_sched_ctx_set(struct flb_sched *sched)
+{
+    FLB_TLS_SET(flb_sched_ctx, sched);
+}
 
 static inline double xmin(double a, double b)
 {
@@ -44,7 +65,11 @@ static inline int consume_byte(flb_pipefd_t fd)
 
     /* We need to consume the byte */
     ret = flb_pipe_r(fd, &val, sizeof(val));
+#if defined(__APPLE__) || __FreeBSD__ >= 12
+    if (ret < 0) {
+#else
     if (ret <= 0) {
+#endif
         flb_errno();
         return -1;
     }
@@ -61,27 +86,15 @@ static inline int consume_byte(flb_pipefd_t fd)
 static int random_uniform(int min, int max)
 {
     int val;
-    int fd;
     int range;
     int copies;
     int limit;
     int ra;
-    int ret;
 
-    fd = open("/dev/urandom", O_RDONLY);
-    if (fd == -1) {
-        srand(time(NULL));
+    if (flb_random_bytes((unsigned char *) &val, sizeof(int))) {
+        val = time(NULL);
     }
-    else {
-        ret = read(fd, &val, sizeof(val));
-        if (ret > 0) {
-            srand(val);
-        }
-        else {
-            srand(time(NULL));
-        }
-        close(fd);
-    }
+    srand(val);
 
     range  = max - min + 1;
     copies = (RAND_MAX / range);
@@ -94,6 +107,7 @@ static int random_uniform(int min, int max)
 
     return ra / copies + min;
 }
+
 
 /*
  * Schedule a request that will be processed within the next
@@ -150,36 +164,85 @@ static int schedule_request_wait(struct flb_sched_request *request,
  */
 static int schedule_request_promote(struct flb_sched *sched)
 {
-    int passed;
+    int ret;
     int next;
+    int passed;
     time_t now;
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list failed_requests;
     struct flb_sched_request *request;
 
     now = time(NULL);
+    mk_list_init(&failed_requests);
+
     mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
 
         /* First check how many seconds have passed since the request creation */
         passed = (now - request->created);
+        ret = 0;
 
         /* If we passed the original time, schedule now for the next second */
         if (passed > request->timeout) {
             mk_list_del(&request->_head);
-            schedule_request_now(1, request->timer, request, sched->config);
+            ret = schedule_request_now(1, request->timer, request, sched->config);
+            if (ret != 0) {
+                mk_list_add(&request->_head, &failed_requests);
+            }
+        }
+        else if (passed + FLB_SCHED_REQUEST_FRAME >= request->timeout) {
+            /* Check if we should schedule within this frame */
+            mk_list_del(&request->_head);
+            next = labs(passed - request->timeout);
+            ret = schedule_request_now(next, request->timer, request, sched->config);
+            if (ret != 0) {
+                mk_list_add(&request->_head, &failed_requests);
+            }
         }
         else {
-            /* Check if we should schedule within this frame */
-            if (passed + FLB_SCHED_REQUEST_FRAME >= request->timeout) {
-                next = labs(passed - request->timeout);
-                mk_list_del(&request->_head);
-                schedule_request_now(next, request->timer, request, sched->config);
-            }
+            continue;
+        }
+
+        /*
+         * If the 'request' could not be scheduled, this could only happen due to memory
+         * exhaustion or running out of file descriptors. There is no much we can do
+         * at this time.
+         */
+        if (ret == -1) {
+            flb_error("[sched] a 'retry request' could not be scheduled. the "
+                      "system might be running out of memory or file "
+                      "descriptors. The scheduler will do a retry later.");
         }
     }
 
+    /* For each failed request, re-add them to the wait list */
+    mk_list_foreach_safe(head, tmp, &failed_requests) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        mk_list_del(&request->_head);
+        mk_list_add(&request->_head, &sched->requests_wait);
+    }
+
     return 0;
+}
+
+static double ipow(double base, int exp)
+{
+    double result = 1;
+
+    for (;;) {
+        if (exp & 1) {
+            result *= base;
+        }
+
+        exp >>= 1;
+        if (!exp) {
+            break;
+        }
+        base *= base;
+    }
+
+    return result;
 }
 
 /*
@@ -191,10 +254,10 @@ static int schedule_request_promote(struct flb_sched *sched)
  */
 static int backoff_full_jitter(int base, int cap, int n)
 {
-    int exp;
+    int temp;
 
-    exp = xmin(cap, (1 << n /*pow(2, n)*/) * base);
-    return random_uniform(0, exp);
+    temp = xmin(cap, ipow(base * 2, n));
+    return random_uniform(base, temp);
 }
 
 /* Schedule the 'retry' for a thread buffer flush */
@@ -241,6 +304,10 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     else {
         ret = schedule_request_now(seconds, timer, request, config);
         if (ret == -1) {
+            flb_error("[sched]  'retry request' could not be created. the "
+                      "system might be running out of memory or file "
+                      "descriptors.");
+            flb_sched_timer_destroy(timer);
             flb_free(request);
             return -1;
         }
@@ -249,18 +316,17 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     return seconds;
 }
 
-int flb_sched_request_destroy(struct flb_config *config,
-                              struct flb_sched_request *req)
+int flb_sched_request_destroy(struct flb_sched_request *req)
 {
     struct flb_sched_timer *timer;
+
+    if (!req) {
+        return 0;
+    }
 
     mk_list_del(&req->_head);
 
     timer = req->timer;
-    if (config->evl && timer->event.mask != MK_EVENT_EMPTY) {
-        mk_event_del(config->evl, &timer->event);
-    }
-    flb_pipe_close(req->fd);
 
     /*
      * We invalidate the timer since in the same event loop round
@@ -269,6 +335,11 @@ int flb_sched_request_destroy(struct flb_config *config,
      * the event loop round finish.
      */
     flb_sched_timer_invalidate(timer);
+
+#ifndef FLB_SYSTEM_WINDOWS
+    /* Close pipe after invalidating timer */
+    flb_pipe_close(req->fd);
+#endif
 
     /* Remove request */
     flb_free(req);
@@ -287,7 +358,24 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data)
     mk_list_foreach_safe(head, tmp, &sched->requests) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
         if (request->data == data) {
-            flb_sched_request_destroy(config, request);
+            flb_sched_request_destroy(request);
+            return 0;
+        }
+    }
+
+    /*
+     *  Clean up retry tasks that are scheduled more than 60s.
+     *  Task might be destroyed when there are still retry
+     *  scheduled but no thread is running for the task.
+     *
+     *  We need to drop buffered chunks when the filesystem buffer
+     *  limit is reached. We need to make sure that all requests
+     *  should be destroyed to avoid invoke an invlidated request.
+     */
+    mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
+        request = mk_list_entry(head, struct flb_sched_request, _head);
+        if (request->data == data) {
+            flb_sched_request_destroy(request);
             return 0;
         }
     }
@@ -316,7 +404,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
         flb_engine_dispatch_retry(req->data, config);
 
         /* Destroy this scheduled request, it's not longer required */
-        flb_sched_request_destroy(config, req);
+        flb_sched_request_destroy(req);
     }
     else if (timer->type == FLB_SCHED_TIMER_FRAME) {
         sched = timer->data;
@@ -325,11 +413,15 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
 #endif
         schedule_request_promote(sched);
     }
-    else if (timer->type == FLB_SCHED_TIMER_CUSTOM) {
+    else if (timer->type == FLB_SCHED_TIMER_CB_ONESHOT) {
         consume_byte(timer->timer_fd);
         flb_sched_timer_cb_disable(timer);
         timer->cb(config, timer->data);
         flb_sched_timer_cb_destroy(timer);
+    }
+    else if (timer->type == FLB_SCHED_TIMER_CB_PERM) {
+        consume_byte(timer->timer_fd);
+        timer->cb(config, timer->data);
     }
 
     return 0;
@@ -342,7 +434,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
  *
  * use-case: invoke function A() after M milliseconds.
  */
-int flb_sched_timer_cb_create(struct flb_config *config, int ms,
+int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
                               void *data)
 {
@@ -352,12 +444,17 @@ int flb_sched_timer_cb_create(struct flb_config *config, int ms,
     struct mk_event *event;
     struct flb_sched_timer *timer;
 
-    timer = flb_sched_timer_create(config->sched);
+    if (type != FLB_SCHED_TIMER_CB_ONESHOT && type != FLB_SCHED_TIMER_CB_PERM) {
+        flb_error("[sched] invalid callback timer type %i", type);
+        return -1;
+    }
+
+    timer = flb_sched_timer_create(sched);
     if (!timer) {
         return -1;
     }
 
-    timer->type = FLB_SCHED_TIMER_CUSTOM;
+    timer->type = type;
     timer->data = data;
     timer->cb   = cb;
 
@@ -371,7 +468,7 @@ int flb_sched_timer_cb_create(struct flb_config *config, int ms,
     nsec = ((ms % 1000) * 1000000);
 
     /* Create the frame timer */
-    fd = mk_event_timeout_create(config->evl, sec, nsec, event);
+    fd = mk_event_timeout_create(sched->evl, sec, nsec, event);
     if (fd == -1) {
         flb_error("[sched] cannot do timeout_create()");
         flb_sched_timer_destroy(timer);
@@ -394,7 +491,7 @@ int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
     int ret;
 
-    ret = close(timer->timer_fd);
+    ret = mk_event_closesocket(timer->timer_fd);
     timer->timer_fd = -1;
     return ret;
 }
@@ -409,20 +506,22 @@ int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)
 }
 
 /* Initialize the Scheduler */
-int flb_sched_init(struct flb_config *config)
+struct flb_sched *flb_sched_create(struct flb_config *config,
+                                   struct mk_event_loop *evl)
 {
     flb_pipefd_t fd;
     struct mk_event *event;
-    struct flb_sched_timer *timer;
     struct flb_sched *sched;
+    struct flb_sched_timer *timer;
 
     sched = flb_malloc(sizeof(struct flb_sched));
     if (!sched) {
         flb_errno();
-        return -1;
+        return NULL;
     }
-    config->sched = sched;
+
     sched->config = config;
+    sched->evl = evl;
 
     /* Initialize lists */
     mk_list_init(&sched->requests);
@@ -434,7 +533,7 @@ int flb_sched_init(struct flb_config *config)
     timer = flb_sched_timer_create(sched);
     if (!timer) {
         flb_free(sched);
-        return -1;
+        return NULL;
     }
 
     timer->type = FLB_SCHED_TIMER_FRAME;
@@ -446,12 +545,12 @@ int flb_sched_init(struct flb_config *config)
     event->status = MK_EVENT_NONE;
 
     /* Create the frame timer */
-    fd = mk_event_timeout_create(config->evl, FLB_SCHED_REQUEST_FRAME, 0,
+    fd = mk_event_timeout_create(evl, FLB_SCHED_REQUEST_FRAME, 0,
                                  event);
     if (fd == -1) {
         flb_sched_timer_destroy(timer);
         flb_free(sched);
-        return -1;
+        return NULL;
     }
     sched->frame_fd = fd;
 
@@ -462,35 +561,32 @@ int flb_sched_init(struct flb_config *config)
      */
     event->type = FLB_ENGINE_EV_SCHED_FRAME;
 
-    return 0;
+    return sched;
 }
 
 /* Release all resources used by the Scheduler */
-int flb_sched_exit(struct flb_config *config)
+int flb_sched_destroy(struct flb_sched *sched)
 {
     int c = 0;
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_sched *sched;
     struct flb_sched_timer *timer;
     struct flb_sched_request *request;
 
-    /* Delete requests */
-    sched = config->sched;
     if (!sched) {
         return 0;
     }
 
     mk_list_foreach_safe(head, tmp, &sched->requests) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
-        flb_sched_request_destroy(config, request);
+        flb_sched_request_destroy(request);
         c++; /* evil counter */
     }
 
     /* Delete requests on wait list */
     mk_list_foreach_safe(head, tmp, &sched->requests_wait) {
         request = mk_list_entry(head, struct flb_sched_request, _head);
-        flb_sched_request_destroy(config, request);
+        flb_sched_request_destroy(request);
         c++; /* evil counter */
     }
 

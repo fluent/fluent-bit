@@ -1,0 +1,26 @@
+
+Native win32 build instructions using Microsoft Visual Studio 2015 (MSVC).
+
+Requirements:
+ * zlib is installed automatically from NuGet,
+   but probably requires the NuGet VS extension.
+ * OpenSSL-win32 must be installed in C:\OpenSSL-win32 and C:\OpenSSL-Win64
+   depending on your architecture.
+   Download and install the latest v1.0.2 non-light package from:
+   https://slproweb.com/products/Win32OpenSSL.html
+   (This would be using NuGet too but the current
+    OpenSSL packages are outdated and with broken
+    dependencies, so no luck)
+
+The Visual Studio solution file for librdkafka resides in win32/librdkafka.sln
+
+Artifacts:
+ - C library
+ - C++ library
+ - rdkafka_example, rdkafka_performance
+ - tests
+
+
+If you build librdkafka with an external tool (ie CMake) you can get rid of the 
+__declspec(dllexport) / __declspec(dllimport) decorations by adding a define
+-DLIBRDKAFKA_STATICLIB to your CFLAGS

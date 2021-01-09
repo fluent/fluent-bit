@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,40 +25,41 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_io.h>
 
 #ifdef FLB_HAVE_TLS
 #include <mbedtls/net.h>
 #endif
+
 /*
  * Upstream creation FLAGS set by Fluent Bit sub-components
  * ========================================================
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *
  * --- flb_io.h ---
- *   #define  FLB_IO_TCP    1
- *   #define  FLB_IO_TLS    2
- *   #define  FLB_IO_ASYNC  8
+ *   #define  FLB_IO_TCP      1
+ *   #define  FLB_IO_TLS      2
+ *   #define  FLB_IO_ASYNC    8
+ *   #define  FLB_IO_TCP_KA  16
  * ---
  */
 
 /* Upstream handler */
 struct flb_upstream {
-    struct mk_event_loop *evl;
-
     int flags;
     int tcp_port;
     char *tcp_host;
+    int proxied_port;
+    char *proxied_host;
+    char *proxy_username;
+    char *proxy_password;
 
     int n_connections;
 
-    /*
-     * An upstream handler may keep open up to 'max_connections' of
-     * TCP connections. A value minor or equal to zero means it will
-     * create a new connection on-demand if there is no one
-     * available in the 'av_queue'.
-     */
-    int max_connections;
+    /* Networking setup for timeouts and network interfaces */
+    struct flb_net_setup net;
 
     /*
      * If an upstream context has been created in HA mode, this flag is
@@ -67,6 +68,13 @@ struct flb_upstream {
      */
     int ha_mode;
     void *ha_ctx;
+
+    /*
+       If the connections will be in separate threads, this flag is
+     * enabled and all lists management are protected through mutexes.
+     */
+    int thread_safe;
+    pthread_mutex_t mutex_lists;
 
     /*
      * This field is a linked-list-head for upstream connections that
@@ -81,47 +89,29 @@ struct flb_upstream {
      */
     struct mk_list busy_queue;
 
+    struct mk_list destroy_queue;
+
 #ifdef FLB_HAVE_TLS
-    /* context with mbedTLS data to handle certificates and keys */
     struct flb_tls *tls;
 #endif
-};
 
-/* Upstream TCP connection */
-struct flb_upstream_conn {
-    struct mk_event event;
-    struct flb_thread *thread;
-
-    flb_sockfd_t fd;
-    int connect_count;
-
-    /* Upstream parent */
-    struct flb_upstream *u;
-
-    /*
-     * Link to list head on flb_upstream, if the connection is busy,
-     * it's linked to 'busy_queue', otherwise it resides in 'av_queue'
-     * so it can be used by a plugin.
-     */
     struct mk_list _head;
-
-#ifdef FLB_HAVE_TLS
-    /* Each TCP connections using TLS needs a session */
-    struct flb_tls_session *tls_session;
-    mbedtls_net_context tls_net_context;
-#endif
-
 };
 
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         char *host, int port, int flags,
-                                         void *tls);
+                                         const char *host, int port, int flags,
+                                         struct flb_tls *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
-                                             char *url, int flags, void *tls);
+                                             const char *url, int flags,
+                                             struct flb_tls *tls);
 
 int flb_upstream_destroy(struct flb_upstream *u);
 
-struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u);
-int flb_upstream_conn_release(struct flb_upstream_conn *u_conn);
+int flb_upstream_set_property(struct flb_config *config,
+                              struct flb_net_setup *net, char *k, char *v);
+int flb_upstream_is_async(struct flb_upstream *u);
+void flb_upstream_thread_safe(struct flb_upstream *u);
+struct mk_list *flb_upstream_get_config_map(struct flb_config *config);
+
 
 #endif

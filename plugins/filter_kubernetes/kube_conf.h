@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_regex.h>
 
 /*
@@ -40,7 +41,7 @@
 #define FLB_HASH_TABLE_SIZE 256
 
 /*
- * When merging nested JSON strings from Docker logs, we need a temporal
+ * When merging nested JSON strings from Docker logs, we need a temporary
  * buffer to perform the convertion. To optimize the process, we pre-allocate
  * a buffer for that purpose. The FLB_MERGE_BUF_SIZE defines the buffer size.
  *
@@ -50,9 +51,19 @@
 #define FLB_MERGE_BUF_SIZE  2048  /* 2KB */
 
 /* Kubernetes API server info */
-#define FLB_API_HOST  "kubernetes.default.svc.cluster.local"
+#define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
+
+/*
+ * Default expected Kubernetes tag prefix, this is used mostly when source
+ * data comes from in_tail with custom tags like: kube.service.*
+ */
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_KUBE_TAG_PREFIX "kube.c.var.log.containers."
+#else
+#define FLB_KUBE_TAG_PREFIX "kube.var.log.containers."
+#endif
 
 struct kube_meta;
 
@@ -68,7 +79,7 @@ struct flb_kube {
     int dummy_meta;
     int tls_debug;
     int tls_verify;
-    char *meta_preload_cache_dir;
+    flb_sds_t meta_preload_cache_dir;
 
     /* Configuration proposed through Annotations (boolean) */
     int k8s_logging_parser;   /* allow to process a suggested parser ? */
@@ -79,6 +90,8 @@ struct flb_kube {
 
     /* Merge Log feature */
     int merge_log;             /* old merge_json_log */
+
+    struct flb_parser *merge_parser;
 
     /* Temporal buffer to unescape strings */
     size_t unesc_buf_size;
@@ -92,11 +105,16 @@ struct flb_kube {
     int merge_log_trim;
 
     /* Log key, old merge_json_key (default 'log') */
-    int merge_log_key_len;
-    char *merge_log_key;
+    flb_sds_t merge_log_key;
+
+    /* Keep original log key after successful parsing */
+    int keep_log;
 
     /* API Server end point */
     char kube_url[1024];
+
+    /* Kubernetes tag prefix */
+    flb_sds_t kube_tag_prefix;
 
     /* Regex context to parse records */
     struct flb_regex *regex;
@@ -105,6 +123,9 @@ struct flb_kube {
     /* TLS CA certificate file */
     char *tls_ca_path;
     char *tls_ca_file;
+
+    /* TLS virtual host (optional), set by configmap */
+    flb_sds_t tls_vhost;
 
     /* Kubernetes Namespace */
     char *namespace;
@@ -123,10 +144,14 @@ struct flb_kube {
     char *auth;
     size_t auth_len;
 
-    struct flb_tls tls;
+    int dns_retries;
+    int dns_wait_time;
+
+    struct flb_tls *tls;
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;
+    struct flb_filter_instance *ins;
 };
 
 struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *i,

@@ -2,7 +2,7 @@
 
 /*  Chunk I/O
  *  =========
- *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
+ *  Copyright 2018-2019 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ struct cio_ctx *cio_create(const char *root_path,
     int ret;
     struct cio_ctx *ctx;
 
-    if (log_level < CIO_ERROR || log_level > CIO_DEBUG) {
+    if (log_level < CIO_LOG_ERROR || log_level > CIO_LOG_TRACE) {
         fprintf(stderr, "[cio] invalid log level, aborting");
         return NULL;
     }
@@ -70,19 +70,24 @@ struct cio_ctx *cio_create(const char *root_path,
     }
 #endif
 
-    cio_page_size = getpagesize();
-
     /* Create context */
     ctx = calloc(1, sizeof(struct cio_ctx));
     if (!ctx) {
         perror("calloc");
         return NULL;
     }
+    mk_list_init(&ctx->streams);
+    ctx->page_size = getpagesize();
+    ctx->max_chunks_up = CIO_MAX_CHUNKS_UP;
+    ctx->flags = flags;
+
+    /* Counters */
+    ctx->total_chunks = 0;
+    ctx->total_chunks_up = 0;
+
+    /* Logging */
     cio_set_log_callback(ctx, log_cb);
     cio_set_log_level(ctx, log_level);
-    mk_list_init(&ctx->streams);
-
-    ctx->flags = flags;
 
     /* Check or initialize file system root path */
     if (root_path) {
@@ -101,15 +106,87 @@ struct cio_ctx *cio_create(const char *root_path,
         ctx->root_path = NULL;
     }
 
+    return ctx;
+}
+
+int cio_load(struct cio_ctx *ctx, char *chunk_extension)
+{
+    int ret;
+
     if (ctx->root_path) {
-        cio_scan_streams(ctx);
+        ret = cio_scan_streams(ctx, chunk_extension);
+        return ret;
     }
 
-    return ctx;
+    return 0;
+}
+
+static int qsort_stream(struct cio_stream *stream,
+                        int (*compar)(const void *, const void *))
+{
+    int i = 0;
+    int items;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct cio_chunk **arr;
+    struct cio_chunk *chunk;
+
+    items = mk_list_size(&stream->chunks);
+    if (items == 0) {
+        return 0;
+    }
+
+    arr = malloc(sizeof(struct cio_chunk *) * items);
+    if (!arr) {
+        perror("malloc");
+        return -1;
+    }
+
+    /* map chunks to the array and and unlink them */
+    mk_list_foreach_safe(head, tmp, &stream->chunks) {
+        chunk = mk_list_entry(head, struct cio_chunk, _head);
+        arr[i++] = chunk;
+        mk_list_del(&chunk->_head);
+    }
+
+    /* sort the chunks, just trust in 'compar' external function  */
+    qsort(arr, items, sizeof(struct cio_chunk *), compar);
+
+    /* link the chunks in the proper order back to the list head */
+    for (i = 0; i < items; i++) {
+        chunk = arr[i];
+        mk_list_add(&chunk->_head, &stream->chunks);
+    }
+
+    free(arr);
+    return 0;
+}
+
+/*
+ * Sort chunks using the 'compar' callback function. This is pretty much a
+ * wrapper over qsort(3). The sort is done inside every stream content.
+ *
+ * Use this function after cio_load() only.
+ */
+int cio_qsort(struct cio_ctx *ctx, int (*compar)(const void *, const void *))
+{
+    struct mk_list *head;
+    struct cio_stream *stream;
+
+    mk_list_foreach(head, &ctx->streams) {
+        stream = mk_list_entry(head, struct cio_stream, _head);
+        qsort_stream(stream, compar);
+    }
+
+    return 0;
 }
 
 void cio_destroy(struct cio_ctx *ctx)
 {
+    if (!ctx) {
+        return;
+    }
+
     cio_stream_destroy_all(ctx);
     free(ctx->root_path);
     free(ctx);
@@ -122,10 +199,20 @@ void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb))
 
 int cio_set_log_level(struct cio_ctx *ctx, int level)
 {
-    if (level < CIO_ERROR || level > CIO_DEBUG) {
+    if (level < CIO_LOG_ERROR || level > CIO_LOG_TRACE) {
         return -1;
     }
 
     ctx->log_level = level;
+    return 0;
+}
+
+int cio_set_max_chunks_up(struct cio_ctx *ctx, int n)
+{
+    if (n < 1) {
+        return -1;
+    }
+
+    ctx->max_chunks_up = n;
     return 0;
 }

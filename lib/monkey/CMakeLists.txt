@@ -22,12 +22,14 @@ set(MK_VERSION_MINOR  7)
 set(MK_VERSION_PATCH  0)
 set(MK_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
 
+# Output paths
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
+
 # ============================================
 # ============= BUILD OPTIONS ================
 # ============================================
-
-# Project
-option(MK_LOCAL          "Build locally, no install"    No)
 
 # Monkey Core
 option(MK_DEBUG          "Build with debug symbols"     No)
@@ -40,7 +42,6 @@ option(MK_MUSL           "Enable Musl libc support"     No)
 option(MK_BACKTRACE      "Enable Backtrace feature"    Yes)
 option(MK_LINUX_TRACE    "Enable Lttng support"         No)
 option(MK_PTHREAD_TLS    "Use old Pthread TLS mode"     No)
-option(MK_SYSTEM_MALLOC  "Use system memory allocator"  No)
 option(MK_MBEDTLS_SHARED "Use mbedtls shared lib"       No)
 option(MK_VALGRIND       "Enable Valgrind support"      No)
 option(MK_FUZZ_MODE      "Enable HonggFuzz mode"        No)
@@ -48,13 +49,13 @@ option(MK_HTTP2          "Enable HTTP Support (dev)"    No)
 
 # Plugins: what should be build ?, these options
 # will be processed later on the plugins/CMakeLists.txt file
-option(MK_PLUGIN_AUTH          "Basic authentication"    Yes)
-option(MK_PLUGIN_CGI           "CGI support"             Yes)
-option(MK_PLUGIN_CHEETAH       "Cheetah Shell Interface" Yes)
+option(MK_PLUGIN_AUTH          "Basic authentication"     No)
+option(MK_PLUGIN_CGI           "CGI support"              No)
+option(MK_PLUGIN_CHEETAH       "Cheetah Shell Interface"  No)
 option(MK_PLUGIN_DIRLISTING    "Directory Listing"       Yes)
-option(MK_PLUGIN_FASTCGI       "FastCGI"                 Yes)
+option(MK_PLUGIN_FASTCGI       "FastCGI"                  No)
 option(MK_PLUGIN_LIANA         "Basic network layer"     Yes)
-option(MK_PLUGIN_LOGGER        "Log Writer"              Yes)
+option(MK_PLUGIN_LOGGER        "Log Writer"               No)
 option(MK_PLUGIN_MANDRIL       "Security"                Yes)
 option(MK_PLUGIN_TLS           "TLS/SSL support"          No)
 
@@ -135,7 +136,6 @@ endif()
 
 # Check Trace
 if(MK_TRACE)
-  MK_DEFINITION(MK_TRACE)
   MK_DEFINITION(MK_HAVE_TRACE)
 endif()
 
@@ -190,29 +190,6 @@ if(MK_VALGRIND OR MK_HAVE_VALGRIND)
   MK_DEFINITION(MK_HAVE_VALGRIND)
 endif()
 
-# Use system memory allocator instead of Jemalloc
-if(MK_SYSTEM_MALLOC)
-  MK_DEFINITION(MK_HAVE_MALLOC_LIBC)
-else()
-  # Prepare the Jemalloc build
-  MK_DEFINITION(MALLOC_JEMALLOC)
-  MK_DEFINITION(JEMALLOC_MANGLE)
-
-  # Link to Jemalloc as an external dependency
-  ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/jemalloc
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/deps/jemalloc/configure --with-jemalloc-prefix=je_ --enable-cc-silence --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND ${MAKE}
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install_lib_static install_include)
-
-  add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
-  add_dependencies(libjemalloc jemalloc)
-  include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
-endif()
-
 # ============================================
 # =========== CONFIGURATION FILES=============
 # ============================================
@@ -255,62 +232,6 @@ if(DEFAULT_USER)
   set(MK_CONF_USER ${DEFAULT_USER})
 endif()
 
-if(MK_LOCAL)
-  # This mode aims to be backward compatible with older versions of Monkey where
-  # a './configure && make' were enough to have the server running without installing
-  # any component.
-  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib/monkey")
-  set(MK_PATH_CONF     "${CMAKE_CURRENT_BINARY_DIR}/conf/")
-  set(MK_PATH_PIDPATH  "${CMAKE_CURRENT_BINARY_DIR}")
-  set(MK_PIDFILE       "${MK_CONF_PIDFILE}")
-  set(MK_PATH_WWW      "${CMAKE_CURRENT_SOURCE_DIR}/htdocs/")
-  set(MK_PATH_LOG      "${CMAKE_CURRENT_BINARY_DIR}/log/")
-  file(MAKE_DIRECTORY  ${MK_PATH_LOG})
-else()
-  # Custom SYSCONFDIR
-  if(NOT INSTALL_SYSCONFDIR)
-    set(MK_PATH_CONF ${CMAKE_INSTALL_FULL_SYSCONFDIR}/monkey/ CACHE STRING "Server configuration")
-  else()
-    set(MK_PATH_CONF ${INSTALL_SYSCONFDIR}/ CACHE STRING "Server configuration")
-  endif()
-
-  # Custom LOGDIR
-  if(NOT INSTALL_LOGDIR)
-    set(MK_PATH_LOG ${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/log/monkey CACHE STRING "Server logs")
-  else()
-    set(MK_PATH_LOG ${INSTALL_LOGDIR} CACHE STRING "Server logs")
-  endif()
-
-  # Custom PIDPATH
-  if(NOT PID_PATH)
-    set(MK_PATH_PIDPATH ${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/run/ CACHE STRING "Server PID path")
-  else()
-    set(MK_PATH_PIDPATH ${PID_PATH} CACHE STRING "Server PID path")
-  endif()
-
-  # Custom PIDFILE
-  if(NOT PID_FILE)
-    set(MK_PIDFILE ${MK_CONF_PIDFILE} CACHE STRING "Server pid file name")
-  else()
-    set(MK_PIDFILE ${PID_FILE} CACHE STRING "Server pid file name")
-endif()
-
-  # Custom WEBROOT
-  if(NOT INSTALL_WEBROOTDIR)
-    set(MK_PATH_WWW ${CMAKE_INSTALL_FULL_LOCALSTATEDIR}/www/monkey CACHE STRING "Server Web documents")
-  else()
-    set(MK_PATH_WWW ${INSTALL_WEBROOTDIR} CACHE STRING "Server Web documents")
-  endif()
-
-  # Headers
-  if(NOT INSTALL_INCLUDEDIR)
-    set(MK_PATH_HEADERS ${CMAKE_INSTALL_INCLUDEDIR}/monkey CACHE STRING "Server header files (development)")
-  else()
-    set(MK_PATH_HEADERS ${INSTALL_INCLUDEDIR} CACHE STRING "Server header files (development)")
-  endif()
-endif()
-
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/monkey/mk_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/monkey/mk_info.h"
@@ -328,7 +249,6 @@ include_directories(deps/rbtree)
 include_directories(deps/flb_libco)
 include_directories(include)
 include_directories(include/monkey/)
-
 
 # Instruct CMake to build the the code base
 # =========================================

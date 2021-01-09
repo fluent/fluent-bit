@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,15 +22,36 @@
 #define FLB_NETWORK_H
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_uri.h>
+#include <fluent-bit/flb_upstream_conn.h>
+
+/* Network connection setup */
+struct flb_net_setup {
+    /* enable/disable keepalive support */
+    int keepalive;
+
+    /* max time in seconds that a keepalive connection can be idle */
+    int keepalive_idle_timeout;
+
+    /* max time in seconds to wait for a established connection */
+    int connect_timeout;
+
+    /* network interface to bind and use to send data */
+    flb_sds_t source_address;
+
+    /* maximum of times a keepalive connection can be used */
+    int keepalive_max_recycle;
+};
 
 /* Defines a host service and it properties */
 struct flb_net_host {
     int  ipv6;             /* IPv6 required ?      */
-    char *address;         /* Original address     */
+    flb_sds_t address;     /* Original address     */
     int   port;            /* TCP port             */
-    char *name;            /* Hostname             */
-    char *listen;          /* Listen interface     */
+    flb_sds_t name;        /* Hostname             */
+    flb_sds_t listen;      /* Listen interface     */
     struct flb_uri *uri;   /* Extra URI parameters */
 };
 
@@ -39,22 +60,31 @@ struct flb_net_host {
 #endif
 
 /* Generic functions */
-int flb_net_host_set(char *plugin_name, struct flb_net_host *host, char *address);
+void flb_net_setup_init(struct flb_net_setup *net);
+int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* TCP options */
 int flb_net_socket_reset(flb_sockfd_t fd);
 int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
+int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
 flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock);
-flb_sockfd_t flb_net_tcp_connect(char *host, unsigned long port);
-flb_sockfd_t flb_net_udp_connect(char *host, unsigned long port);
-int flb_net_tcp_fd_connect(flb_sockfd_t fd, char *host, unsigned long port);
-flb_sockfd_t flb_net_server(char *port, char *listen_addr);
-flb_sockfd_t flb_net_server_udp(char *port, char *listen_addr);
+flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
+                                 char *source_addr, int connect_timeout,
+                                 int is_async,
+                                 void *async_ctx,
+                                 struct flb_upstream_conn *u_conn);
+
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
+                                 char *source_addr);
+
+int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
+flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
+flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);
 int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen, int backlog);
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,15 +36,10 @@
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
-/* thread initializator */
-static int pth_init;
-static pthread_cond_t  pth_cond;
-static pthread_mutex_t pth_mutex;
-
 /* Simple structure to dispatch messages to the log collector */
 struct log_message {
     size_t size;
-    char   msg[1024 - sizeof(size_t)];
+    char   msg[4096 - sizeof(size_t)];
 };
 
 static inline int consume_byte(flb_pipefd_t fd)
@@ -94,9 +89,14 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
      * under the PIPE_BUF limit (4KB on Linux) and our messages are always 1KB,
      * we can trust we will always get a full message on each read(2).
      */
-    bytes = flb_pipe_r(fd, &msg, sizeof(struct log_message));
+    bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
     if (bytes <= 0) {
-        perror("bytes");
+        flb_errno();
+        return -1;
+    }
+    if (msg.size > sizeof(msg.msg)) {
+        fprintf(stderr, "[log] message too long: %zi > %zi",
+                msg.size, sizeof(msg.msg));
         return -1;
     }
     log_push(&msg, log);
@@ -114,11 +114,13 @@ static void log_worker_collector(void *data)
     FLB_TLS_INIT(flb_log_ctx);
     FLB_TLS_SET(flb_log_ctx, log);
 
+    mk_utils_worker_rename("flb-logger");
+
     /* Signal the caller */
-    pthread_mutex_lock(&pth_mutex);
-    pth_init = FLB_TRUE;
-    pthread_cond_signal(&pth_cond);
-    pthread_mutex_unlock(&pth_mutex);
+    pthread_mutex_lock(&log->pth_mutex);
+    log->pth_init = FLB_TRUE;
+    pthread_cond_signal(&log->pth_cond);
+    pthread_mutex_unlock(&log->pth_mutex);
 
     while (run) {
         mk_event_wait(log->evl);
@@ -136,22 +138,20 @@ static void log_worker_collector(void *data)
     pthread_exit(NULL);
 }
 
-int flb_log_worker_init(void *data)
+int flb_log_worker_init(struct flb_worker *worker)
 {
     int ret;
-    struct flb_worker *worker = data;
     struct flb_config *config = worker->config;
     struct flb_log *log = config->log;
 
     /* Pipe to communicate Thread with worker log-collector */
     ret = flb_pipe_create(worker->log);
     if (ret == -1) {
-        perror("pipe");
+        flb_errno();
         return -1;
     }
 
     /* Register the read-end of the pipe (log[0]) into the event loop */
-    MK_EVENT_ZERO(&worker->event);
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
@@ -167,6 +167,30 @@ int flb_log_set_level(struct flb_config *config, int level)
 {
     config->log->level = level;
     return 0;
+}
+
+int flb_log_get_level_str(char *str)
+{
+    if (strcasecmp(str, "off") == 0) {
+        return FLB_LOG_OFF;
+    }
+    else if (strcasecmp(str, "error") == 0) {
+        return FLB_LOG_ERROR;
+    }
+    else if (strcasecmp(str, "warn") == 0 || strcasecmp(str, "warning") == 0) {
+        return FLB_LOG_WARN;
+    }
+    else if (strcasecmp(str, "info") == 0) {
+        return FLB_LOG_INFO;
+    }
+    else if (strcasecmp(str, "debug") == 0) {
+        return FLB_LOG_DEBUG;
+    }
+    else if (strcasecmp(str, "trace") == 0) {
+        return FLB_LOG_TRACE;
+    }
+
+    return -1;
 }
 
 int flb_log_set_file(struct flb_config *config, char *out)
@@ -185,23 +209,23 @@ int flb_log_set_file(struct flb_config *config, char *out)
     return 0;
 }
 
-struct flb_log *flb_log_init(struct flb_config *config, int type,
-                             int level, char *out)
+struct flb_log *flb_log_create(struct flb_config *config, int type,
+                               int level, char *out)
 {
     int ret;
     struct flb_log *log;
     struct flb_worker *worker;
     struct mk_event_loop *evl;
 
-    log = flb_malloc(sizeof(struct flb_log));
+    log = flb_calloc(1, sizeof(struct flb_log));
     if (!log) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     config->log = log;
 
     /* Create event loop to be used by the collector worker */
-    evl = mk_event_loop_create(16);
+    evl = mk_event_loop_create(32);
     if (!evl) {
         fprintf(stderr, "[log] could not create event loop\n");
         flb_free(log);
@@ -242,20 +266,16 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      * it will need a 'worker-like' context, here we create a fake worker
      * context just for messaging purposes.
      */
-    worker = flb_malloc(sizeof(struct flb_worker));
+    worker = flb_worker_context_create(NULL, NULL, config);
     if (!worker) {
         flb_errno();
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
-        return NULL;
     }
-    worker->func    = NULL;
-    worker->data    = NULL;
-    worker->log_ctx = log;
-    worker->config  = config;
 
     /* Set the worker context global */
+    FLB_TLS_INIT(flb_worker_ctx);
     FLB_TLS_SET(flb_worker_ctx, worker);
 
     ret = flb_log_worker_init(worker);
@@ -273,15 +293,15 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      * This lock is used for the 'pth_cond' conditional. Once the worker
      * thread is ready will signal the condition.
      */
-    pthread_mutex_init(&pth_mutex, NULL);
-    pthread_cond_init(&pth_cond, NULL);
-    pth_init = FLB_FALSE;
+    pthread_mutex_init(&log->pth_mutex, NULL);
+    pthread_cond_init(&log->pth_cond, NULL);
+    log->pth_init = FLB_FALSE;
 
-    pthread_mutex_lock(&pth_mutex);
+    pthread_mutex_lock(&log->pth_mutex);
 
     ret = flb_worker_create(log_worker_collector, log, &log->tid, config);
     if (ret == -1) {
-        pthread_mutex_unlock(&pth_mutex);
+        pthread_mutex_unlock(&log->pth_mutex);
         mk_event_loop_destroy(log->evl);
         flb_free(log->worker);
         flb_free(log);
@@ -290,10 +310,10 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
     }
 
     /* Block until the child thread is ready */
-    while (!pth_init) {
-        pthread_cond_wait(&pth_cond, &pth_mutex);
+    while (!log->pth_init) {
+        pthread_cond_wait(&log->pth_cond, &log->pth_mutex);
     }
-    pthread_mutex_unlock(&pth_mutex);
+    pthread_mutex_unlock(&log->pth_mutex);
 
     return log;
 }
@@ -315,6 +335,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     va_start(args, fmt);
 
     switch (type) {
+    case FLB_LOG_HELP:
+        header_title = "help";
+        header_color = ANSI_CYAN;
+        break;
     case FLB_LOG_INFO:
         header_title = "info";
         header_color = ANSI_GREEN;
@@ -331,6 +355,10 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         header_title = "debug";
         header_color = ANSI_YELLOW;
         break;
+    case FLB_LOG_IDEBUG:
+        header_title = "debug";
+        header_color = ANSI_CYAN;
+        break;
     case FLB_LOG_TRACE:
         header_title = "trace";
         header_color = ANSI_BLUE;
@@ -346,6 +374,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     now = time(NULL);
     current = localtime_r(&now, &result);
+
+    if (current == NULL) {
+        va_end(args);
+        return;
+    }
 
     len = snprintf(msg.msg, sizeof(msg.msg) - 1,
                    "%s[%s%i/%02i/%02i %02i:%02i:%02i%s]%s [%s%5s%s] ",
@@ -368,6 +401,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
                       (sizeof(msg.msg) - 2) - len,
                       fmt, args);
     if (total < 0) {
+        va_end(args);
         return;
     }
 
@@ -381,7 +415,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     w = flb_worker_get();
     if (w) {
-        int n = flb_pipe_w(w->log[1], &msg, sizeof(msg));
+        int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
             perror("write");
         }
@@ -400,7 +434,7 @@ int flb_errno_print(int errnum, const char *file, int line)
     return 0;
 }
 
-int flb_log_stop(struct flb_log *log, struct flb_config *config)
+int flb_log_destroy(struct flb_log *log, struct flb_config *config)
 {
     uint64_t val = FLB_TRUE;
 

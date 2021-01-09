@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,8 +27,7 @@
 #define FLB_SPLUNK_DEFAULT_TIME       "time"
 #define FLB_SPLUNK_DEFAULT_EVENT      "event"
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 
 struct flb_splunk {
@@ -44,6 +43,9 @@ struct flb_splunk {
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 #endif

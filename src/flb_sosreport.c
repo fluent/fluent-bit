@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_kv.h>
 
 #ifndef _MSC_VER
 #include <sys/utsname.h>
@@ -73,8 +74,8 @@ static void input_flags(int flags)
         printf("NET ");
     }
 
-    if (flags & FLB_INPUT_THREAD) {
-        printf("THREAD ");
+    if (flags & FLB_INPUT_CORO) {
+        printf("CORO ");
     }
 
     printf("\n");
@@ -99,11 +100,11 @@ static void print_host(struct flb_net_host *host)
 static void print_properties(struct mk_list *props)
 {
     struct mk_list *head;
-    struct flb_config_prop *p;
+    struct flb_kv *kv;
 
     mk_list_foreach(head, props) {
-        p = mk_list_entry(head, struct flb_config_prop, _head);
-        print_kv(p->key, p->val);
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        print_kv(kv->key, kv->val);
     }
 }
 
@@ -180,17 +181,10 @@ int flb_sosreport(struct flb_config *config)
     printf("Fluent Bit Enterprise - SOS Report\n");
     printf("==================================\n");
     printf("The following report aims to be used by Fluent Bit and Fluentd "
-           "Enterprise\nCustomers of Treasure Data. For more details visit:\n\n"
-           "    %shttps://fluentd.treasuredata.com%s\n\n", ANSI_BOLD, ANSI_RESET);
+           "community users.\n\n");
 
     /* Fluent Bit */
     printf("\n[Fluent Bit]\n");
-    printf("    Edition\t\t");
-#ifdef FLB_ENTERPRISE
-    printf("Enterprise\n");
-#else
-    printf("Community Edition\n");
-#endif
     printf("    Version\t\t%s\n", FLB_VERSION_STR);
     printf("    Built Flags\t\t%s\n", FLB_INFO_FLAGS);
     printf("\n");

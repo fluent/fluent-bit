@@ -15,6 +15,12 @@ flb-rt-out_forward
 flb-rt-in_disk
 flb-rt-in_proc"
 
+# On macOS, kubernetes log directory which points to /var/log does not exist.
+if [ "$(uname)" = "Darwin" ]
+then
+    SKIP_TESTS+="flb-rt-filter_kubernetes"
+fi
+
 for skip in $SKIP_TESTS
 do
     SKIP="$SKIP -DFLB_WITHOUT_${skip}=1"
@@ -31,16 +37,6 @@ fi
 
 # If no v6, disable that test
 [[ ! $(ip a) =~ ::1 ]] && SKIP="$SKIP -DFLB_WITHOUT_flb-it-network=1"
-
-if [ "$CC" = "gcc" ]
-then
-    if [[ "$FLB_OPT" =~ SANITIZE  ]]
-    then
-        # https://stackoverflow.com/questions/50024731/ld-unrecognized-option-push-state-no-as-needed
-        echo Set gold linker to workaround ubsan
-        LDFLAG=-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=gold
-    fi
-fi
 
 GLOBAL_OPTS="-DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On -DFLB_ALL=On -DFLB_EXAMPLES=Off"
 set -e
@@ -61,8 +57,8 @@ if [[ "$FLB_OPT" =~ COVERAGE  ]]
 then
     mkdir -p coverage
     find lib -name "*.gcda" -o -name "*.gcno" -print0 | xargs -0 -r rm
-    gcovr -p -r .. . | cut -c1-100
-    gcovr --html --html-details -p -r .. -o coverage/index.html .
+    gcovr -e "build/sql.l" -e "build/sql.y" -e "build/ra.l" -e "build/ra.y" -p -r .. . | cut -c1-100
+    gcovr -e "build/sql.l" -e "build/sql.y" -e "build/ra.l" -e "build/ra.y" --html --html-details -p -r .. -o coverage/index.html .
     echo
     echo "See coverage/index.html for code-coverage details"
 fi

@@ -1,0 +1,111 @@
+librdkafka (0.9.3-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Add Build-Depends to liblz4-dev to enable LZ4 compression.
+  * Add copyright for xxhash.[hc] and regexp.[hc].
+  * Update librdkafka1.symbols for 0.9.2 and 0.9.3.
+  * Use hardening build flags.
+  * Add myself to Uploaders.
+  * Switch to debhelper 10.
+  * Move packaging to alioth, under the pkg-kafka team.
+
+ -- Christos Trochalakis <ctrochalakis@debian.org>  Tue, 24 Jan 2017 17:33:40 +0200
+
+librdkafka (0.9.1-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #816047).
+    - Remove 0001-mklove-update-add-disable-silent-rules patch (not needed)
+    - Remove 0002_hexdump_use_size_t_instead_of_int patch (not needed)
+    - Fixes a GCC6-identified warning and possible FTBFS. (Closes: #811596)
+  * Add Build-Depends to libssl-dev/libsasl2-dev, to enable Kafka 0.9
+    encryption and authentication.
+  * Update the long description to mention 0.9 protocol support and also the
+    high-performance aspect, by copying upstream's description almost
+    verbatim.
+  * Bump Standards-Version to 3.9.8 (no changes needed).
+  * Switch Vcs-Git to GitHub's https (from git://)
+  * Migrate from our own -dbg package to the automatic -dbgsym package.
+  * Update librdkafka1.symbols with 0.9.0' and 0.9.1's new symbols.
+  * Ship the new C++ library, by shipping a new binary package, librdkafka++1.
+  * Ship pkg-config files in the -dev package for both the C and C++
+    libraries.
+  * Replace the perl build-dependency by python, as the build system (among
+    others) now requires it.
+
+ -- Faidon Liambotis <paravoid@debian.org>  Mon, 30 May 2016 16:07:33 +0300
+
+librdkafka (0.8.6-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Use size_t instead of int for hexdump to fix FTBFS (Closes: 799993):
+    assuming signed overflow does not occur when
+    assuming that (X + c) >= X is always true
+
+ -- YunQiang Su <syq@debian.org>  Mon, 21 Dec 2015 21:20:59 +0800
+
+librdkafka (0.8.6-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Backport upstream commit f6fd0da, adding --disable-silent-rules
+    compatibility support to mklove. (Closes: #788742)
+
+ -- Faidon Liambotis <paravoid@debian.org>  Sun, 19 Jul 2015 01:36:18 +0300
+
+librdkafka (0.8.5-2) unstable; urgency=medium
+
+  * Install rdkafka.pc in the right, multiarch location. (Closes: #766759)
+
+ -- Faidon Liambotis <paravoid@debian.org>  Sun, 26 Oct 2014 06:47:07 +0200
+
+librdkafka (0.8.5-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Fixes kFreeBSD FTBFS.
+  * Ship rdkafka.pc pkg-config in librdkafka-dev.
+
+ -- Faidon Liambotis <paravoid@debian.org>  Fri, 24 Oct 2014 18:03:22 +0300
+
+librdkafka (0.8.4-1) unstable; urgency=medium
+
+  * New upstream release, including a new build system.
+    - Add Build-Depends on perl, required by configure.
+    - Support multiarch library paths.
+    - Better detection of architecture atomic builtins, supporting more
+      architectures. (Closes: #739930)
+    - Various portability bugs fixed. (Closes: #730506)
+    - Update debian/librdkafka1.symbols.
+  * Convert to a multiarch package.
+  * Switch to Architecture: any, because of renewed upstream portability.
+  * Update debian/copyright to add src/ before Files: paths.
+  * Update Standards-Version to 3.9.6, no changes needed.
+  * Ship only the C library for now, not the new C++ library; the latter is
+    still in flux in some ways and will probably be shipped in a separate
+    package in a future release.
+
+ -- Faidon Liambotis <paravoid@debian.org>  Wed, 22 Oct 2014 23:57:24 +0300
+
+librdkafka (0.8.3-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Multiple internal symbols hidden; breaks ABI without a SONAME bump, but
+      these were internal and should not break any applications, packaged or
+      not.
+  * Update Standards-Version to 3.9.5, no changes needed.
+
+ -- Faidon Liambotis <paravoid@debian.org>  Tue, 18 Feb 2014 02:21:43 +0200
+
+librdkafka (0.8.1-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Multiple fixes to FTBFS on various architectures. (Closes: #730506)
+    - Remove dh_auto_clean override, fixed upstream.
+  * Limit the set of architectures: upstream currently relies on 64-bit atomic
+    operations that several Debian architectures do not support.
+
+ -- Faidon Liambotis <paravoid@debian.org>  Thu, 05 Dec 2013 16:53:28 +0200
+
+librdkafka (0.8.0-1) unstable; urgency=low
+
+  * Initial release. (Closes: #710271)
+
+ -- Faidon Liambotis <paravoid@debian.org>  Mon, 04 Nov 2013 16:50:07 +0200

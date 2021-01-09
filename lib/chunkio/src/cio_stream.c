@@ -27,8 +27,33 @@
 #include <chunkio/cio_log.h>
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_stream.h>
+#include <chunkio/cio_utils.h>
 
 #include <monkey/mk_core/mk_list.h>
+
+static char *get_stream_path(struct cio_ctx *ctx, struct cio_stream *st)
+{
+    int ret;
+    int len;
+    char *p;
+
+    /* Compose final path */
+    len = strlen(ctx->root_path) + strlen(st->name) + 2;
+    p = malloc(len + 1);
+    if (!p) {
+        cio_errno();
+        return NULL;
+    }
+
+    ret = snprintf(p, len, "%s/%s", ctx->root_path, st->name);
+    if (ret == -1) {
+        cio_errno();
+        free(p);
+        return NULL;
+    }
+
+    return p;
+}
 
 static int check_stream_path(struct cio_ctx *ctx, const char *path)
 {
@@ -121,7 +146,7 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
     }
 
     st->parent = ctx;
-    mk_list_init(&st->files);
+    mk_list_init(&st->chunks);
     mk_list_add(&st->_head, &ctx->streams);
 
     cio_log_debug(ctx, "[cio stream] new stream registered: %s", name);
@@ -130,6 +155,9 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
 
 void cio_stream_destroy(struct cio_stream *st)
 {
+    if (!st) {
+        return;
+    }
     /* close all files */
     cio_chunk_close_stream(st);
 
@@ -139,11 +167,62 @@ void cio_stream_destroy(struct cio_stream *st)
     free(st);
 }
 
+/* Deletes a complete stream, this include all chunks available */
+int cio_stream_delete(struct cio_stream *st)
+{
+    int ret;
+    char *path;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct cio_chunk *ch;
+    struct cio_ctx *ctx;
+
+    ctx = st->parent;
+
+    /* delete all chunks */
+    mk_list_foreach_safe(head, tmp, &st->chunks) {
+        ch = mk_list_entry(head, struct cio_chunk, _head);
+        cio_chunk_close(ch, CIO_TRUE);
+    }
+
+#ifdef CIO_HAVE_BACKEND_FILESYSTEM
+    /* If the stream is filesystem based, destroy the real directory */
+    if (st->type == CIO_STORE_FS) {
+        path = get_stream_path(ctx, st);
+        if (!path) {
+            cio_log_error(ctx,
+                          "content from stream '%s' has been deleted, but the "
+                          "directory might still exists.");
+            return -1;
+        }
+
+        cio_log_debug(ctx, "[cio stream] delete stream path: %s", path);
+
+        /* Recursive deletion */
+        ret = cio_utils_recursive_delete(path);
+        if (ret == -1) {
+            cio_log_error(ctx, "error in recursive deletion of path %s", path);
+            free(path);
+            return -1;
+        }
+        free(path);
+
+        return ret;
+    }
+#endif
+
+    return 0;
+}
+
 void cio_stream_destroy_all(struct cio_ctx *ctx)
 {
     struct mk_list *tmp;
     struct mk_list *head;
     struct cio_stream *st;
+
+    if (!ctx) {
+        return;
+    }
 
     mk_list_foreach_safe(head, tmp, &ctx->streams) {
         st = mk_list_entry(head, struct cio_stream, _head);

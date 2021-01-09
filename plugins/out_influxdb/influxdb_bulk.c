@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +34,9 @@ static int influxdb_escape(char *out, const char *str, int size, bool quote) {
     int i;
     for (i = 0; i < size; ++i) {
         char ch = str[i];
-        if (quote ? (ch == '"') : (isspace(ch) || ch == ',' || ch == '=')) {
+        if (quote ? (ch == '"' || ch == '\\') : (isspace(ch) || ch == ',' || ch == '=')) {
+            out[out_size++] = '\\';
+        } else if (ch == '\\') {
             out[out_size++] = '\\';
         }
         out[out_size++] = ch;
@@ -95,8 +97,8 @@ void influxdb_bulk_destroy(struct influxdb_bulk *bulk)
 }
 
 int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
-                                char *tag, int tag_len,
-                                uint64_t seq_n, char *seq, int seq_len)
+                                const char *tag, int tag_len,
+                                uint64_t seq_n, const char *seq, int seq_len)
 {
     int ret;
     int required;
@@ -135,8 +137,8 @@ int influxdb_bulk_append_header(struct influxdb_bulk *bulk,
 }
 
 int influxdb_bulk_append_kv(struct influxdb_bulk *bulk,
-                            char *key, int k_len,
-                            char *val, int v_len,
+                            const char *key, int k_len,
+                            const char *val, int v_len,
                             int quote)
 {
     int ret;

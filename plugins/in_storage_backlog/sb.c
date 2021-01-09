@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,15 +18,17 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_utils.h>
 #include <chunkio/chunkio.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
+#endif
 
 struct sb_chunk {
     struct cio_chunk *chunk;
@@ -37,7 +39,7 @@ struct sb_chunk {
 struct flb_sb {
     int coll_fd;                        /* collector id */
     size_t mem_limit;                   /* memory limit */
-    struct flb_input_instance *i_ins;   /* input instance */
+    struct flb_input_instance *ins;     /* input instance */
     struct cio_ctx *cio;                /* chunk i/o instance */
     struct mk_list backlog;             /* list of all pending chunks */
 };
@@ -46,28 +48,48 @@ struct flb_sb {
 static int cb_queue_chunks(struct flb_input_instance *in,
                            struct flb_config *config, void *data)
 {
+    int ret;
     ssize_t size;
     size_t total = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct sb_chunk *sbc;
-    struct flb_sb *sb;
+    struct flb_sb *ctx;
     struct flb_input_chunk *ic;
+    void *ch;
 
     /* Get context */
-    sb = (struct flb_sb *) data;
+    ctx = (struct flb_sb *) data;
 
     /* Get the total number of bytes already enqueued */
     total = flb_input_chunk_total_size(in);
 
     /* If we already hitted our limit, just wait and re-check later */
-    if (total >= sb->mem_limit) {
+    if (total >= ctx->mem_limit) {
         return 0;
     }
 
     /* Try to enqueue chunks under our limits */
-    mk_list_foreach_safe(head, tmp, &sb->backlog) {
+    mk_list_foreach_safe(head, tmp, &ctx->backlog) {
         sbc = mk_list_entry(head, struct sb_chunk, _head);
+
+        /*
+         * All chunks on this backlog are 'file' based, always try to set
+         * them up. We validate the status.
+         */
+        ret = cio_chunk_up(sbc->chunk);
+        if (ret == CIO_CORRUPTED) {
+            flb_plg_error(ctx->ins, "removing corrupted chunk from the "
+                          "queue %s:%s",
+                          sbc->stream->name, sbc->chunk->name);
+            cio_chunk_close(sbc->chunk, FLB_FALSE);
+            mk_list_del(&sbc->_head);
+            flb_free(sbc);
+            continue;
+        }
+        else if (ret == CIO_ERROR || ret == CIO_RETRY) {
+            continue;
+        }
 
         /* get the number of bytes being used by the chunk */
         size = cio_chunk_get_real_size(sbc->chunk);
@@ -75,14 +97,15 @@ static int cb_queue_chunks(struct flb_input_instance *in,
             continue;
         }
 
-        void *ch = sbc->chunk;
-        flb_info("[storage_backend] queueing %s:%s",
-                 sbc->stream->name, sbc->chunk->name);
+        ch = sbc->chunk;
+        flb_plg_info(ctx->ins, "queueing %s:%s",
+                     sbc->stream->name, sbc->chunk->name);
 
         /* Associate this backlog chunk to this instance into the engine */
         ic = flb_input_chunk_map(in, ch);
         if (!ic) {
-            flb_error("[storage_backlog] error registering chunk");
+            flb_plg_error(ctx->ins, "error registering chunk");
+            cio_chunk_down(sbc->chunk);
             continue;
         }
 
@@ -92,7 +115,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
 
         /* check our limits */
         total += size;
-        if (total >= sb->mem_limit) {
+        if (total >= ctx->mem_limit) {
             break;
         }
     }
@@ -102,7 +125,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
 
 /* Append a chunk candidate to the list */
 static int sb_append_chunk(struct cio_chunk *chunk, struct cio_stream *stream,
-                           struct flb_sb *sb)
+                           struct flb_sb *ctx)
 {
     struct sb_chunk *sbc;
 
@@ -114,16 +137,16 @@ static int sb_append_chunk(struct cio_chunk *chunk, struct cio_stream *stream,
 
     sbc->chunk = chunk;
     sbc->stream = stream;
-    mk_list_add(&sbc->_head, &sb->backlog);
+    mk_list_add(&sbc->_head, &ctx->backlog);
 
     /* lock the chunk */
     cio_chunk_lock(chunk);
-    flb_info("[storage_backlog] register %s/%s", stream->name, chunk->name);
+    flb_plg_info(ctx->ins, "register %s/%s", stream->name, chunk->name);
 
     return 0;
 }
 
-static int sb_prepare_environment(struct flb_sb *sb)
+static int sb_prepare_environment(struct flb_sb *ctx)
 {
     int ret;
     struct mk_list *head;
@@ -132,16 +155,20 @@ static int sb_prepare_environment(struct flb_sb *sb)
     struct cio_chunk *chunk;
     struct cio_ctx *cio;
 
-    cio = sb->cio;
+    cio = ctx->cio;
     mk_list_foreach(head, &cio->streams) {
         stream = mk_list_entry(head, struct cio_stream, _head);
-        mk_list_foreach(c_head, &stream->files) {
+        mk_list_foreach(c_head, &stream->chunks) {
             chunk = mk_list_entry(c_head, struct cio_chunk, _head);
-            ret = sb_append_chunk(chunk, stream, sb);
+            ret = sb_append_chunk(chunk, stream, ctx);
             if (ret == -1) {
                 flb_error("[storage_backlog] could not enqueue %s/%s",
                           stream->name, chunk->name);
                 continue;
+            }
+
+            if (cio_chunk_is_up(chunk) == CIO_TRUE) {
+                cio_chunk_down(chunk);
             }
         }
     }
@@ -155,68 +182,68 @@ static int cb_sb_init(struct flb_input_instance *in,
 {
     int ret;
     char mem[32];
-    struct flb_sb *sb;
+    struct flb_sb *ctx;
 
-    sb = flb_malloc(sizeof(struct flb_sb));
-    if (!sb) {
+    ctx = flb_malloc(sizeof(struct flb_sb));
+    if (!ctx) {
         flb_errno();
         return -1;
     }
 
-    sb->cio = data;
-    sb->i_ins = in;
-    sb->mem_limit = flb_utils_size_to_bytes(config->storage_bl_mem_limit);
-    mk_list_init(&sb->backlog);
+    ctx->cio = data;
+    ctx->ins = in;
+    ctx->mem_limit = flb_utils_size_to_bytes(config->storage_bl_mem_limit);
+    mk_list_init(&ctx->backlog);
 
-    flb_utils_bytes_to_human_readable_size(sb->mem_limit, mem, sizeof(mem) - 1);
-    flb_info("[storage backlog] queue memory limit: %s", mem);
+    flb_utils_bytes_to_human_readable_size(ctx->mem_limit, mem, sizeof(mem) - 1);
+    flb_plg_info(ctx->ins, "queue memory limit: %s", mem);
 
     /* export plugin context */
-    flb_input_set_context(in, sb);
+    flb_input_set_context(in, ctx);
 
     /* Set a collector to trigger the callback to queue data every second */
     ret = flb_input_set_collector_time(in, cb_queue_chunks, 1, 0, config);
     if (ret < 0) {
-        flb_error("[storage_backlog] could not create collector");
-        flb_free(sb);
+        flb_plg_error(ctx->ins, "could not create collector");
+        flb_free(ctx);
         return -1;
     }
-    sb->coll_fd = ret;
+    ctx->coll_fd = ret;
 
     /* Based on discovered chunks, create a local reference list */
-    sb_prepare_environment(sb);
+    sb_prepare_environment(ctx);
 
     return 0;
 }
 
 static void cb_sb_pause(void *data, struct flb_config *config)
 {
-    struct flb_sb *sb = data;
-    flb_input_collector_pause(sb->coll_fd, sb->i_ins);
+    struct flb_sb *ctx = data;
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 }
 
 static void cb_sb_resume(void *data, struct flb_config *config)
 {
-    struct flb_sb *sb = data;
-    flb_input_collector_resume(sb->coll_fd, sb->i_ins);
+    struct flb_sb *ctx = data;
+    flb_input_collector_resume(ctx->coll_fd, ctx->ins);
 }
 
 static int cb_sb_exit(void *data, struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
-    struct flb_sb *sb = data;
+    struct flb_sb *ctx = data;
     struct sb_chunk *sbc;
 
-    flb_input_collector_pause(sb->coll_fd, sb->i_ins);
+    flb_input_collector_pause(ctx->coll_fd, ctx->ins);
 
-    mk_list_foreach_safe(head, tmp, &sb->backlog) {
+    mk_list_foreach_safe(head, tmp, &ctx->backlog) {
         sbc = mk_list_entry(head, struct sb_chunk, _head);
         mk_list_del(&sbc->_head);
         flb_free(sbc);
     }
 
-    flb_free(sb);
+    flb_free(ctx);
     return 0;
 }
 
