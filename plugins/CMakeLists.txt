@@ -215,6 +215,7 @@ REGISTER_FILTER_PLUGIN("filter_tensorflow")
 
 if(FLB_REGEX)
   REGISTER_FILTER_PLUGIN("filter_kubernetes")
+  REGISTER_FILTER_PLUGIN("filter_go")
   REGISTER_FILTER_PLUGIN("filter_modify")
   REGISTER_FILTER_PLUGIN("filter_nest")
   REGISTER_FILTER_PLUGIN("filter_parser")
