@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_utils.h>
 
 #include <monkey/monkey.h>
+#include <monkey/mk_http.h>
 
 #define HTTP_BUFFER_MAX_SIZE    "4M"
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
