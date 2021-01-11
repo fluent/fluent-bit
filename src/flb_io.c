@@ -560,8 +560,7 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 
     if (u_conn->event.status & MK_EVENT_REGISTERED) {
         /* We got a notification, remove the event registered */
-        ret = mk_event_del(u->evl, &u_conn->event);
-        assert(ret == 0);
+        mk_event_del(u->evl, &u_conn->event);
     }
 
     *out_len = total;
