@@ -23,9 +23,19 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/opensslv.h>
+
+/*
+ * OPENSSL_VERSION_NUMBER has the following semantics
+ *
+ *     0x010100000L   M = major  F = fix    S = status
+ *       MMNNFFPPS    N = minor  P = patch
+ */
+#define OPENSSL_1_1_0 0x010100000L
 
 struct tls_session {
     SSL *ssl;
+    int fd;
 };
 
 /* OpenSSL library context */
@@ -33,6 +43,22 @@ struct tls_context {
     int debug_level;
     SSL_CTX *ctx;
 };
+
+static int tls_init(void)
+{
+/*
+ * Explicit initialization is needed for older versions of
+ * OpenSSL (before v1.1.0).
+ *
+ * https://wiki.openssl.org/index.php/Library_Initialization
+ */
+#if OPENSSL_VERSION_NUMBER < OPENSSL_1_1_0
+    OPENSSL_add_all_algorithms_noconf();
+    SSL_load_error_strings();
+    SSL_library_init();
+#endif
+    return 0;
+}
 
 static void tls_info_callback(const SSL *s, int where, int ret)
 {
@@ -127,7 +153,17 @@ static void *tls_context_create(int verify, int debug,
      */
 
     /* Create OpenSSL context */
+#if OPENSSL_VERSION_NUMBER < OPENSSL_1_1_0
+    /*
+     * SSLv23_method() is actually an equivalent of TLS_client_method()
+     * in OpenSSL v1.0.x.
+     *
+     * https://www.openssl.org/docs/man1.0.2/man3/SSLv23_method.html
+     */
+    ssl_ctx = SSL_CTX_new(SSLv23_client_method());
+#else
     ssl_ctx = SSL_CTX_new(TLS_client_method());
+#endif
     if (!ssl_ctx) {
         flb_error("[openssl] could not create context");
         return NULL;
@@ -145,10 +181,20 @@ static void *tls_context_create(int verify, int debug,
     if (verify == FLB_FALSE) {
         SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, NULL);
     }
+    else {
+        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    }
 
     /* ca_path | ca_file */
-    if (!ca_path) {
-        load_system_certificates(ctx);
+    if (ca_path) {
+        ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
+        if (ret != 1) {
+            flb_error("[tls] ca_path'%s' %lu: %s",
+                      ca_path,
+                      ERR_get_error(),
+                      ERR_error_string(ERR_get_error(), NULL));
+            goto error;
+        }
     }
     else if (ca_file) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, ca_file, NULL);
@@ -159,6 +205,9 @@ static void *tls_context_create(int verify, int debug,
                       ERR_error_string(ERR_get_error(), NULL));
             goto error;
         }
+    }
+    else {
+        load_system_certificates(ctx);
     }
 
     /* crt_file */
@@ -223,6 +272,7 @@ static void *tls_session_create(struct flb_tls *tls,
         return NULL;
     }
     session->ssl = ssl;
+    session->fd = u_conn->fd;
     SSL_set_fd(ssl, u_conn->fd);
 
     /*
@@ -249,7 +299,9 @@ static int tls_session_destroy(void *session)
         return 0;
     }
 
-    SSL_shutdown(ptr->ssl);
+    if (flb_socket_error(ptr->fd) == 0) {
+        SSL_shutdown(ptr->ssl);
+    }
     SSL_free(ptr->ssl);
     flb_free(ptr);
 

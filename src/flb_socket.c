@@ -32,7 +32,7 @@ int flb_socket_error(int fd)
 
     ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &slen);
     if (ret == -1) {
-        flb_error("[socket] could not validate socket status for #i", fd);
+        flb_error("[socket] could not validate socket status for #%i", fd);
         return -1;
     }
 

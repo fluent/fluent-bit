@@ -89,6 +89,10 @@ struct flb_tls *flb_tls_create(int verify,
     return tls;
 }
 
+int flb_tls_init(void)
+{
+    return tls_init();
+}
 
 int flb_tls_destroy(struct flb_tls *tls)
 {

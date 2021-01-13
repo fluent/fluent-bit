@@ -109,6 +109,10 @@ static int header_lookup(struct flb_http_client *c,
     char *crlf;
     char *end;
 
+    if (!c->resp.data) {
+        return FLB_HTTP_MORE;
+    }
+
     /* Lookup the beginning of the header */
     p = strcasestr(c->resp.data, header);
     end = strstr(c->resp.data, "\r\n\r\n");
@@ -742,6 +746,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
         flb_http_client_destroy(c);
         return NULL;
     }
+    c->resp.data[0] = '\0';
     c->resp.data_len  = 0;
     c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
     c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
@@ -1130,7 +1135,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                            c->header_buf, c->header_len,
                            &bytes_header);
     if (ret == -1) {
-        flb_errno();
+        /* errno might be changed from the original call */
+        if (errno != 0) {
+            flb_errno();
+        }
         return -1;
     }
 

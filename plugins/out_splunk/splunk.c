@@ -234,12 +234,45 @@ static int cb_splunk_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, http_user),
+     "Set HTTP auth user"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_splunk, http_passwd),
+     "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "splunk_token", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the Authentication Token for the HTTP Event Collector interface."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "splunk_send_raw", "off",
+     0, FLB_TRUE, offsetof(struct flb_splunk, splunk_send_raw),
+     "When enabled, the record keys and values are set in the top level of the "
+     "map instead of under the event key. Refer to the Sending Raw Events section "
+     "from the docs for more details to make this option work properly."
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_splunk_plugin = {
     .name         = "splunk",
     .description  = "Send events to Splunk HTTP Event Collector",
     .cb_init      = cb_splunk_init,
     .cb_flush     = cb_splunk_flush,
     .cb_exit      = cb_splunk_exit,
+    .config_map   = config_map,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,

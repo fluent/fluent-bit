@@ -59,7 +59,7 @@ static char init_bytes[] = {
     CIO_FILE_ID_00, CIO_FILE_ID_01,
 
     /* crc32 (4 bytes) in network byte order */
-    0xff, 0x12, 0xd9, 0x41,
+    0x41, 0xd9, 0x12, 0xff,
 
     /* padding bytes (we have 16 extra bytes */
     0x00, 0x00, 0x00, 0x00, 0x00,

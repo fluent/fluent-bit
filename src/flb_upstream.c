@@ -244,18 +244,9 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     if (u->flags & FLB_IO_ASYNC) {
         mk_event_del(u_conn->evl, &u_conn->event);
     }
-
-#ifdef FLB_HAVE_TLS
-    if (u_conn->tls_session) {
-        flb_tls_session_destroy(u_conn->tls, u_conn);
-    }
-#endif
-
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
     }
-
-    u->n_connections--;
 
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_lock(&u->mutex_lists);
@@ -266,6 +257,8 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
 
     /* Add node to destroy queue */
     mk_list_add(&u_conn->_head, &u->destroy_queue);
+
+    u->n_connections--;
 
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&u->mutex_lists);
@@ -334,12 +327,12 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     /* Link new connection to the busy queue */
     mk_list_add(&conn->_head, &u->busy_queue);
 
+    /* Increase counter */
+    u->n_connections++;
+
     if (u->thread_safe == FLB_TRUE) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
-
-    /* Increase counter */
-    u->n_connections++;
 
     /* Start connection */
     ret = flb_io_net_connect(conn, coro);
@@ -434,9 +427,17 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
     mk_list_foreach_safe(head, tmp, &u->av_queue) {
         conn = mk_list_entry(head, struct flb_upstream_conn, _head);
 
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_lock(&u->mutex_lists);
+        }
+
         /* This connection works, let's move it to the busy queue */
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &u->busy_queue);
+
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_unlock(&u->mutex_lists);
+        }
 
         /* Reset errno */
         conn->net_error = -1;
@@ -507,7 +508,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         }
 
         mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &conn->u->av_queue);
+        mk_list_add(&conn->_head, &u->av_queue);
 
         if (u->thread_safe == FLB_TRUE) {
             pthread_mutex_unlock(&u->mutex_lists);
@@ -631,6 +632,11 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
     mk_list_foreach_safe(head, tmp, &u->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
         mk_list_del(&u_conn->_head);
+#ifdef FLB_HAVE_TLS
+        if (u_conn->tls_session) {
+            flb_tls_session_destroy(u_conn->tls, u_conn);
+        }
+#endif
         flb_free(u_conn);
     }
 

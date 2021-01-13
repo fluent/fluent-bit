@@ -18,14 +18,17 @@ endif()
 # Update CFLAGS
 if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
 
   # Use custom CFLAGS for MSVC
   #
-  #   /W3 ...... Show up to 'production quality' msgs.
   #   /Zi ...... Generate pdb files.
   #   /MT ...... Static link C runtimes.
+  #   /wd4711 .. C4711 (function selected for inline expansion)
+  #   /wd4100 .. C4100 (unreferenced formal parameter)
+  #   /wd5045 .. C5045 (Spectre mitigation)
   #
-  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /W3 /O2 /Zi")
+  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
   set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
   set(CMAKE_BUILD_TYPE None)
 
@@ -60,7 +63,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
 option(FLB_ALL                 "Enable all features"           No)
-option(FLB_DEBUG               "Build with debug symbols"      No)
+option(FLB_DEBUG               "Build with debug symbols"     Yes)
+option(FLB_RELEASE             "Build with debug symbols"      No)
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
@@ -81,7 +85,7 @@ option(FLB_MTRACE              "Enable mtrace support"         No)
 option(FLB_POSIX_TLS           "Force POSIX thread storage"    No)
 option(FLB_INOTIFY             "Enable inotify support"       Yes)
 option(FLB_SQLDB               "Enable SQL embedded DB"       Yes)
-option(FLB_HTTP_SERVER         "Enable HTTP Server"            No)
+option(FLB_HTTP_SERVER         "Enable HTTP Server"           Yes)
 option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
@@ -100,20 +104,6 @@ option(FLB_METRICS            "Enable metrics support"       No)
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
-# Advanced options for Flushing methods
-# =====================================
-# Flush methods defines under what kind of context/environment the plugins
-# flush callback is invoked. Since this is done through co-routines
-# there are two options available:
-#
-# FLB_FLUSH_LIBCO: set by default, use lib/flb_libco implementation which
-# supports amd64, arm, x86 and ppc.
-#
-# FLB_FLUSH_UCONTEXT (DEPRECATED): It uses POSIX ucontext for co-routines
-# implementation.
-# Despites this is POSIX deprecated, it's supported on Linux and BSD
-# systems, but specific old-toolchains do not implement it.
-
 # Build-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
@@ -123,7 +113,7 @@ option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
 option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
 option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
-option(FLB_IN_HTTP            "Enable HTTP input plugin"             No)
+option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
 option(FLB_IN_MEM             "Enable Memory input plugin"          Yes)
 option(FLB_IN_KMSG            "Enable Kernel log input plugin"      Yes)
 option(FLB_IN_LIB             "Enable library mode input plugin"    Yes)
@@ -309,6 +299,8 @@ endif()
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
+elseif(FLB_RELEASE)
+  set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 endif()
 
 if(FLB_PARSER)
