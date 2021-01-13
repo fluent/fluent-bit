@@ -181,7 +181,7 @@ static struct flb_hash_entry *hash_get_entry(struct flb_hash *ht,
                                              const char *key, int key_len, int *out_id)
 {
     int id;
-    unsigned int hash;
+    uint64_t hash;
     struct mk_list *head;
     struct flb_hash_table *table;
     struct flb_hash_entry *entry;
@@ -430,7 +430,7 @@ int flb_hash_del(struct flb_hash *ht, const char *key)
 {
     int id;
     int len;
-    unsigned int hash;
+    uint64_t hash;
     struct mk_list *head;
     struct flb_hash_entry *entry = NULL;
     struct flb_hash_table *table;
