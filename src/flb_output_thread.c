@@ -101,6 +101,45 @@ static inline int handle_output_event(struct flb_config *config,
     return 0;
 }
 
+/*
+ * For every upstream registered, creates a local mapping for the thread. This is
+ * done to provide local queues of connections so we can use our event loop and I/O
+ * totally independently without the need of any syncrhonization across threads
+ */
+static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
+                                  struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_upstream *u;
+    struct flb_upstream *th_u;
+
+    mk_list_foreach(head, &ins->upstreams) {
+        u = mk_list_entry(head, struct flb_upstream, _head);
+
+        th_u = flb_calloc(1, sizeof(struct flb_upstream));
+        if (!th_u) {
+            flb_errno();
+            return -1;
+        }
+        th_u->parent_upstream = u;
+        flb_upstream_queue_init(&th_u->queue);
+        mk_list_add(&th_u->_head, &th_ins->upstreams);
+    }
+
+    return 0;
+}
+
+static void upstream_thread_destroy(struct flb_out_thread_instance *th_ins)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_upstream *th_u;
+
+    mk_list_foreach_safe(head, tmp, &th_ins->upstreams) {
+        th_u = mk_list_entry(head, struct flb_upstream, _head);
+        flb_upstream_destroy(th_u);
+    }
+}
 
 /*
  * This is the worker function that creates an event loop and synchronize
@@ -132,6 +171,18 @@ static void output_thread(void *data)
     ins = th_ins->ins;
     thread_id = th_ins->th->id;
 
+    /*
+     * Expose the event loop to the I/O interfaces: since we are in a separate
+     * thread, the upstream connection interfaces need access to the event
+     * loop for event notifications. Invoking the flb_engine_evl_set() function
+     * it sets the event loop reference in a TLS (thread local storage) variable
+     * of the scope of this thread.
+     */
+    flb_engine_evl_set(th_ins->evl);
+
+    /* Set the upstream queue */
+    flb_upstream_list_set(&th_ins->upstreams);
+
     /* Create a scheduler context */
     sched = flb_sched_create(ins->config, th_ins->evl);
     if (!sched) {
@@ -154,15 +205,6 @@ static void output_thread(void *data)
 
     snprintf(tmp, sizeof(tmp) - 1, "flb-out-%s-w%i", ins->name, thread_id);
     mk_utils_worker_rename(tmp);
-
-    /*
-     * Expose the event loop to the I/O interfaces: since we are in a separate
-     * thread, the upstream connection interfaces need access to the event
-     * loop for event notifications. Invoking the flb_engine_evl_set() function
-     * it sets the event loop reference in a TLS (thread local storage) variable
-     * of the scope of this thread.
-     */
-    flb_engine_evl_set(th_ins->evl);
 
     /* Channel used by flush callbacks to notify it return status */
     ret = mk_event_channel_create(th_ins->evl,
@@ -257,7 +299,6 @@ static void output_thread(void *data)
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
         }
-
         flb_upstream_conn_pending_destroy_list(&ins->upstreams);
     }
 
@@ -267,6 +308,8 @@ static void output_thread(void *data)
     if (params) {
         flb_free(params);
     }
+
+    /* destroy upstream mapping */
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
@@ -331,6 +374,11 @@ int flb_output_thread_pool_create(struct flb_config *config,
         }
         th_ins->config = config;
         th_ins->ins = ins;
+        th_ins->coro_id = 0;
+        mk_list_init(&th_ins->coros);
+        mk_list_init(&th_ins->coros_destroy);
+        mk_list_init(&th_ins->upstreams);
+        upstream_thread_create(th_ins, ins);
 
         /* Create the event loop for this thread */
         evl = mk_event_loop_create(64);
@@ -404,6 +452,7 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
             continue;
         }
         pthread_join(th->tid, NULL);
+        upstream_thread_destroy(th_ins);
         flb_free(th_ins);
     }
 
