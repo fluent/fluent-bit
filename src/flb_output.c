@@ -118,17 +118,17 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 void flb_output_coro_prepare_destroy(struct flb_output_coro *out_coro)
 {
     struct flb_output_instance *ins = out_coro->o_ins;
-
-    if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        pthread_mutex_lock(&ins->coro_mutex);
-    }
+    struct flb_out_thread_instance *th_ins;
 
     /* Move output coroutine context from active list to the destroy one */
     mk_list_del(&out_coro->_head);
-    mk_list_add(&out_coro->_head, &ins->coros_destroy);
 
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        pthread_mutex_unlock(&ins->coro_mutex);
+        th_ins = flb_output_thread_instance_get();
+        mk_list_add(&out_coro->_head, &th_ins->coros_destroy);
+    }
+    else {
+        mk_list_add(&out_coro->_head, &ins->coros_destroy);
     }
 }
 
@@ -136,22 +136,26 @@ int flb_output_coro_id_get(struct flb_output_instance *ins)
 {
     int id;
     int max = (2 << 13) - 1; /* max for 14 bits */
+    struct flb_out_thread_instance *th_ins;
 
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        pthread_mutex_lock(&ins->coro_mutex);
+        th_ins = flb_output_thread_instance_get();
+        id = th_ins->coro_id;
+        th_ins->coro_id++;
+
+        /* reset once it reach the maximum allowed */
+        if (th_ins->coro_id > max) {
+            th_ins->coro_id = 0;
+        }
     }
+    else {
+        id = ins->coro_id;
+        ins->coro_id++;
 
-    /* retrieve the next coro_id and increment the counter */
-    id = ins->coro_id;
-    ins->coro_id++;
-
-    /* reset once it reach the maximum allowed */
-    if (ins->coro_id > max) {
-        ins->coro_id = 0;
-    }
-
-    if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        pthread_mutex_unlock(&ins->coro_mutex);
+        /* reset once it reach the maximum allowed */
+        if (ins->coro_id > max) {
+            ins->coro_id = 0;
+        }
     }
 
     return id;
@@ -351,8 +355,10 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *list;
     struct flb_output_instance *ins;
     struct flb_output_coro *out_coro;
+    struct flb_out_thread_instance *th_ins;
 
     ins = flb_output_get_instance(config, out_id);
     if (!ins) {
@@ -360,17 +366,17 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
     }
 
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        pthread_mutex_lock(&ins->coro_mutex);
+        th_ins = flb_output_thread_instance_get();
+        list = &th_ins->coros_destroy;
+    }
+    else {
+        list = &ins->coros_destroy;
     }
 
     /* Look for output coroutines that needs to be destroyed */
-    mk_list_foreach_safe(head, tmp, &ins->coros_destroy) {
+    mk_list_foreach_safe(head, tmp, list) {
         out_coro = mk_list_entry(head, struct flb_output_coro, _head);
         flb_output_coro_destroy(out_coro);
-    }
-
-    if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        pthread_mutex_unlock(&ins->coro_mutex);
     }
 
     return 0;

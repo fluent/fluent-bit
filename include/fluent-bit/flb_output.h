@@ -336,7 +336,6 @@ struct flb_output_instance {
     int coro_id;
     struct mk_list coros;
     struct mk_list coros_destroy;
-    pthread_mutex_t coro_mutex;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -361,6 +360,7 @@ static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
 static FLB_INLINE void flb_output_coro_destroy(struct flb_output_coro *out_coro)
 {
     flb_debug("[out coro] cb_destroy coro_id=%i", out_coro->id);
+
     mk_list_del(&out_coro->_head);
     flb_coro_destroy(out_coro->coro);
     flb_free(out_coro);
@@ -472,8 +472,9 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
                                                const char *tag, int tag_len)
 {
     size_t stack_size;
-    struct flb_output_coro *out_coro;
     struct flb_coro *coro;
+    struct flb_output_coro *out_coro;
+    struct flb_out_thread_instance *th_ins;
 
     /* Custom output-thread info */
     out_coro = (struct flb_output_coro *) flb_malloc(sizeof(struct flb_output_coro));
@@ -510,13 +511,11 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
 #endif
 
     if (o_ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_lock(&o_ins->coro_mutex);
+        th_ins = flb_output_thread_instance_get();
+        mk_list_add(&out_coro->_head, &th_ins->coros);
     }
-
-    mk_list_add(&out_coro->_head, &o_ins->coros);
-
-    if (o_ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_unlock(&o_ins->coro_mutex);
+    else {
+        mk_list_add(&out_coro->_head, &o_ins->coros);
     }
 
     /* Workaround for makecontext() */
@@ -599,15 +598,14 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
 static inline int flb_output_coros_size(struct flb_output_instance *ins)
 {
     int size;
+    struct flb_out_thread_instance *th_ins;
 
-    if (ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_lock(&ins->coro_mutex);
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        size = mk_list_size(&th_ins->coros);
     }
-
-    size = mk_list_size(&ins->coros);
-
-    if (ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_unlock(&ins->coro_mutex);
+    else {
+        size = mk_list_size(&ins->coros);
     }
 
     return size;
