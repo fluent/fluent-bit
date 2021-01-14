@@ -106,7 +106,7 @@ static FLB_INLINE struct flb_coro *flb_coro_create(void *data)
     struct flb_coro *coro;
 
     /* Create a thread context and initialize */
-    coro = (struct flb_coro *) flb_malloc(sizeof(struct flb_coro));
+    coro = (struct flb_coro *) flb_calloc(1, sizeof(struct flb_coro));
     if (!coro) {
         flb_errno();
         return NULL;
