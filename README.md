@@ -61,6 +61,15 @@ make
 bin/fluent-bit -i cpu -o stdout -f 1
 ```
 
+To build on Windows
+
+```powershell
+cd build
+cmake -D FLB_HTTP_SERVER=No -D FLB_RELEASE=Yes -D FLB_DEBUG=No ..
+cmake --build . --config Release
+cmake --build . --config Release --target package
+```
+
 If you are interested into more details, please refer to the [Build & Install](https://docs.fluentbit.io/manual/installation/sources/build-and-install) section.
 
 #### Linux Packages
