@@ -22,6 +22,9 @@
 
 #include "stackdriver.h"
 
+/* Metadata server URL */
+#define FLB_STD_METADATA_SERVER "http://metadata.google.internal"
+
 /* Project ID metadata URI */
 #define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/project-id"
 

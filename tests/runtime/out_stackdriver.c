@@ -597,9 +597,9 @@ static void cb_check_trace_stackdriver_autoformat(void *ctx, int ffd,
 
     /* trace in the entries */
     ret = mp_kv_cmp(
-        res_data, 
-        res_size, 
-        "$entries[0]['trace']", 
+        res_data,
+        res_size,
+        "$entries[0]['trace']",
         "projects/fluent-bit-test/traces/test-trace-id-xyz");
     TEST_CHECK(ret == FLB_TRUE);
 
