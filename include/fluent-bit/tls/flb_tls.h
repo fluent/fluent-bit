@@ -85,6 +85,7 @@ struct flb_tls {
 };
 
 int flb_tls_init();
+
 struct flb_tls *flb_tls_create();
 int flb_tls_destroy(struct flb_tls *tls);
 
