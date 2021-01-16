@@ -129,6 +129,20 @@ static int upstream_thread_create(struct flb_out_thread_instance *th_ins,
     return 0;
 }
 
+int count_upstream_busy_connections(struct flb_out_thread_instance *th_ins)
+{
+    int c = 0;
+    struct mk_list *head;
+    struct flb_upstream *u;
+
+    mk_list_foreach(head, &th_ins->upstreams) {
+        u = mk_list_entry(head, struct flb_upstream, _head);
+        c += mk_list_size(&u->queue.busy_queue);
+    }
+
+    return c;
+}
+
 static void upstream_thread_destroy(struct flb_out_thread_instance *th_ins)
 {
     struct mk_list *tmp;
@@ -153,6 +167,7 @@ static void output_thread(void *data)
     int n;
     int ret;
     int running = FLB_TRUE;
+    int stopping = FLB_FALSE;
     int thread_id;
     char tmp[64];
     struct mk_event event_local;
@@ -254,7 +269,9 @@ static void output_thread(void *data)
                  * be terminated.
                  */
                 if ((uint64_t) task == 0xdeadbeef) {
-                    running = FLB_FALSE;
+                    stopping = FLB_TRUE;
+                    flb_plg_info(th_ins->ins, "thread worker #%i stopping...",
+                                 thread_id);
                     continue;
                 }
 
@@ -299,17 +316,42 @@ static void output_thread(void *data)
                 flb_plg_warn(ins, "unhandled event type => %i\n", event->type);
             }
         }
-        flb_upstream_conn_pending_destroy_list(&ins->upstreams);
+
+        /* Destroy upstream connections from the 'pending destroy list' */
+        flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+
+        /* Check if we should stop the event loop */
+        if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
+            /*
+             * If there are no busy network connections (and no coroutines) its
+             * safe to stop it.
+             */
+            if (count_upstream_busy_connections(th_ins) == 0) {
+                running = FLB_FALSE;
+            }
+        }
     }
 
-    flb_sched_destroy(sched);
+    /*
+     * Final cleanup, destroy all resources associated with:
+     *
+     * - local upstream maps
+     * - available connections, likely these are unused keepalive connections
+     * - any 'new' connection in the pending destroy list
+     * - event loop context
+     * - scheduler context
+     * - parameters helper for coroutines
+     */
+    upstream_thread_destroy(th_ins);
+    flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
+    flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+    mk_event_loop_destroy(th_ins->evl);
 
+    flb_sched_destroy(sched);
     params = FLB_TLS_GET(out_coro_params);
     if (params) {
         flb_free(params);
     }
-
-    /* destroy upstream mapping */
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
@@ -452,7 +494,6 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
             continue;
         }
         pthread_join(th->tid, NULL);
-        upstream_thread_destroy(th_ins);
         flb_free(th_ins);
     }
 
