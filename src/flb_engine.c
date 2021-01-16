@@ -177,6 +177,9 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
 
     task = config->tasks_map[task_id].task;
     ins  = flb_output_get_instance(config, out_id);
+    if (flb_output_is_threaded(ins) == FLB_FALSE) {
+        flb_output_flush_finished(config, out_id);
+    }
 
     /* A thread has finished, delete it */
     if (ret == FLB_OK) {
