@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <ctype.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
@@ -34,6 +35,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_meta.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_version.h>
@@ -47,6 +49,9 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_help.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -63,6 +68,9 @@ struct flb_config *config;
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
 #endif
+
+#define FLB_HELP_TEXT   0
+#define FLB_HELP_JSON   1
 
 #define PLUGIN_INPUT    0
 #define PLUGIN_OUTPUT   1
@@ -176,7 +184,7 @@ static void flb_help(int rc, struct flb_config *config)
  * If the description is larger than the allowed 80 chars including left
  * padding, split the content in multiple lines and align it properly.
  */
-static void help_plugin_description(int left_padding, char *str)
+static void help_plugin_description(int left_padding, flb_sds_t str)
 {
     int len;
     int max;
@@ -191,7 +199,7 @@ static void help_plugin_description(int left_padding, char *str)
         return;
     }
 
-    max = 80 - left_padding;
+    max = 90 - left_padding;
     len = strlen(str);
 
     if (len <= max) {
@@ -200,7 +208,7 @@ static void help_plugin_description(int left_padding, char *str)
     }
 
     p = str;
-    len = strlen(str);
+    len = flb_sds_len(str);
     end = str + len;
 
     while (p < end) {
@@ -233,131 +241,212 @@ static void help_plugin_description(int left_padding, char *str)
     }
 }
 
-static void flb_help_plugin(int rc, struct flb_config *config, int type,
+static msgpack_object *help_get_obj(msgpack_object map, char *key)
+{
+    flb_sds_t k;
+    msgpack_object *o;
+    struct flb_ra_value *rval = NULL;
+    struct flb_record_accessor *ra = NULL;
+
+    k = flb_sds_create(key);
+    ra = flb_ra_create(k, FLB_FALSE);
+    flb_sds_destroy(k);
+    if (!ra) {
+        return NULL;
+    }
+
+    rval = flb_ra_get_value_object(ra, map);
+    if (!rval) {
+        flb_ra_destroy(ra);
+        return NULL;
+    }
+
+    o = &rval->o;
+    flb_ra_key_value_destroy(rval);
+    flb_ra_destroy(ra);
+
+    return o;
+}
+
+static flb_sds_t help_get_value(msgpack_object map, char *key)
+{
+    flb_sds_t val;
+    msgpack_object *o;
+
+    o = help_get_obj(map, key);
+    val = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
+    return val;
+}
+
+static void help_print_property(int max, msgpack_object k, msgpack_object v)
+{
+    int i;
+    int len = 0;
+    char buf[32];
+    char fmt[32];
+    char fmt_prf[32];
+    char def[32];
+    msgpack_object map;
+    flb_sds_t tmp;
+    flb_sds_t name;
+    flb_sds_t type;
+    flb_sds_t desc;
+    flb_sds_t defv;
+
+    /* Convert property type to uppercase and print it */
+    for (i = 0; i < k.via.str.size; i++) {
+        buf[i] = toupper(k.via.str.ptr[i]);
+    }
+    buf[k.via.str.size] = '\0';
+    printf(ANSI_BOLD "\n%s\n" ANSI_RESET, buf);
+
+    snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
+    snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
+    snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
+
+    for (i = 0; i < v.via.array.size; i++) {
+        map = v.via.array.ptr[i];
+
+        name = help_get_value(map, "$name");
+        type = help_get_value(map, "$type");
+        desc = help_get_value(map, "$description");
+        defv = help_get_value(map, "$default");
+
+        if (strcmp(type, "prefix") == 0) {
+            len = flb_sds_len(name);
+            tmp = flb_sds_create_size(len + 2);
+            flb_sds_printf(&tmp, "%sN", name);
+            printf(fmt_prf, tmp);
+            flb_sds_destroy(tmp);
+        }
+        else {
+            printf(fmt, name);
+        }
+
+        help_plugin_description(max, desc);
+
+        if (defv) {
+            printf(def, max, " ", defv);
+        }
+        else {
+            printf("%*s> type: ", max, " ");
+        }
+        printf("%s", type);
+        printf("\n\n");
+    }
+}
+
+static void help_format_json(void *help_buf, size_t help_size)
+{
+    flb_sds_t json;
+
+    json = flb_msgpack_raw_to_json_sds(help_buf, help_size);
+    printf("%s\n", json);
+}
+
+static void help_format_text(void *help_buf, size_t help_size)
+{
+    int i;
+    int x;
+    int max = 0;
+    int len = 0;
+    int ret;
+    size_t off = 0;
+    flb_sds_t name;
+    flb_sds_t type;
+    flb_sds_t desc;
+    msgpack_unpacked result;
+    msgpack_object map;
+    msgpack_object p;
+    msgpack_object k;
+    msgpack_object v;
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, help_buf, help_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        return;
+    }
+    map = result.data;
+
+    type = help_get_value(map, "$type");
+    name = help_get_value(map, "$name");
+    desc = help_get_value(map, "$description");
+
+    printf("%sHELP%s\n%s %s plugin\n", ANSI_BOLD, ANSI_RESET,
+           name, type);
+    flb_sds_destroy(type);
+    flb_sds_destroy(name);
+
+    if (desc) {
+        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+        flb_sds_destroy(desc);
+    }
+
+    /* Properties */
+    p = map.via.map.ptr[3].val;
+
+    /* Calculate padding */
+    for (i = 0; i < p.via.map.size; i++) {
+        v = p.via.map.ptr[i].val;
+        for (x = 0; x < v.via.map.size; x++) {
+            msgpack_object ptr = v.via.array.ptr[x];
+            name = help_get_value(ptr, "$name");
+            len = flb_sds_len(name);
+            flb_sds_destroy(name);
+            if (len > max) {
+                max = len;
+            }
+        }
+    }
+    max += 2;
+
+    /* Iterate each section of properties */
+    for (i = 0; i < p.via.map.size; i++) {
+        k = p.via.map.ptr[i].key;
+        v = p.via.map.ptr[i].val;
+        help_print_property(max, k, v);
+    }
+}
+
+static void flb_help_plugin(int rc, int format,
+                            struct flb_config *config, int type,
                             struct flb_input_instance *in,
                             struct flb_filter_instance *filter,
                             struct flb_output_instance *out)
 
 
 {
-    int max = 0;
-    int len;
-    char fmt[32];
-    char fmt_prf[32];
-    char def[32];
-    char *desc = NULL;
-    flb_sds_t tmp;
-    struct flb_config_map *opt = NULL;
     struct flb_config_map *m = NULL;
+    struct flb_config_map *opt = NULL;
+    void *help_buf;
+    size_t help_size;
 
     flb_banner();
 
     if (type == PLUGIN_INPUT) {
-        printf("%sHELP%s\n%s input plugin\n", ANSI_BOLD, ANSI_RESET,
-               in->p->name);
-        desc = in->p->description;
-        opt = m = in->p->config_map;
+        opt = in->p->config_map;
+        flb_help_input(in, &help_buf, &help_size);
     }
     else if (type == PLUGIN_FILTER) {
-        printf("%sHELP%s\n%s filter plugin\n", ANSI_BOLD, ANSI_RESET,
-               filter->p->name);
-        desc = filter->p->description;
-        opt = m = filter->p->config_map;
+        opt = filter->p->config_map;
+        flb_help_filter(filter, &help_buf, &help_size);
     }
     else if (type == PLUGIN_OUTPUT) {
-        printf("%sHELP%s\n%s output plugin\n", ANSI_BOLD, ANSI_RESET,
-               out->p->name);
-        desc = out->p->description;
         opt = m = out->p->config_map;
-    }
-
-    if (desc) {
-        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+        flb_help_output(out, &help_buf, &help_size);
     }
 
     if (!opt) {
         exit(rc);
     }
 
-    printf(ANSI_BOLD "\nOPTIONS\n" ANSI_RESET);
-
-    /* Find the larger name, just for formatting purposes */
-    while (m && m->name) {
-        len = strlen(m->name);
-        if (len > max) {
-            max = len;
-        }
-        m++;
+    if (format == FLB_HELP_TEXT) {
+        help_format_text(help_buf, help_size);
     }
-    max += 2;
-
-    snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
-    snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
-    snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
-    m = opt;
-    while (m && m->name) {
-        if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
-            len = strlen(m->name);
-            tmp = flb_sds_create_size(len + 2);
-            flb_sds_printf(&tmp, "%sN", m->name);
-            printf(fmt_prf, tmp);
-            flb_sds_destroy(tmp);
-        }
-        else {
-            printf(fmt, m->name);
-        }
-
-        help_plugin_description(max, m->desc);
-        if (m->def_value) {
-            printf(def, max, " ", m->def_value);
-        }
-        else {
-            printf("%*s> type: ", max, " ");
-        }
-
-        if (m->type == FLB_CONFIG_MAP_STR) {
-            printf("string");
-        }
-        else if (m->type == FLB_CONFIG_MAP_INT) {
-            printf("integer");
-        }
-        else if (m->type == FLB_CONFIG_MAP_BOOL) {
-            printf("boolean");
-        }
-        else if(m->type == FLB_CONFIG_MAP_DOUBLE) {
-            printf("double");
-        }
-        else if (m->type == FLB_CONFIG_MAP_SIZE) {
-            printf("size");
-        }
-        else if (m->type == FLB_CONFIG_MAP_TIME) {
-            printf("time");
-        }
-        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_CLIST) {
-            len = flb_config_map_expected_values(m->type);
-            if (len == -1) {
-                printf("multiple comma delimited strings");
-            }
-            else {
-                printf("comma delimited strings (minimum %i)", len);
-            }
-        }
-        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_SLIST) {
-            len = flb_config_map_expected_values(m->type);
-            if (len == -1) {
-                printf("multiple space delimited strings");
-            }
-            else {
-                printf("space delimited strings (minimum %i)", len);
-            }
-        }
-        else if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
-            printf("prefixed string");
-        }
-
-        printf("\n\n");
-        m++;
+    else if (format == FLB_HELP_JSON) {
+        help_format_json(help_buf, help_size);
     }
+    flb_free(help_buf);
 
     exit(rc);
 }
@@ -796,7 +885,8 @@ int flb_main(int argc, char **argv)
         { "verbose",         no_argument      , NULL, 'v' },
         { "quiet",           no_argument      , NULL, 'q' },
         { "help",            no_argument      , NULL, 'h' },
-        { "coro_stack_size", required_argument, NULL, 's'},
+        { "help-json",       no_argument      , NULL, 'J' },
+        { "coro_stack_size", required_argument, NULL, 's' },
         { "sosreport",       no_argument      , NULL, 'S' },
 #ifdef FLB_HAVE_HTTP_SERVER
         { "http_server",     no_argument      , NULL, 'H' },
@@ -824,7 +914,7 @@ int flb_main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:i:m:o:R:F:p:e:"
-                              "t:T:l:vqVhL:HP:s:S",
+                              "t:T:l:vqVhJL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -920,7 +1010,17 @@ int flb_main(int argc, char **argv)
                 flb_help(EXIT_SUCCESS, config);
             }
             else {
-                flb_help_plugin(EXIT_SUCCESS, config,
+                flb_help_plugin(EXIT_SUCCESS, FLB_HELP_TEXT,
+                                config,
+                                last_plugin, in, filter, out);
+            }
+            break;
+        case 'J':
+            if (last_plugin == -1) {
+                flb_help(EXIT_SUCCESS, config);
+            }
+            else {
+                flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
                                 last_plugin, in, filter, out);
             }
             break;
