@@ -168,6 +168,7 @@ int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_s
             m = mk_list_entry(head, struct flb_config_map, _head);
             pack_config_map_entry(&mp_pck, m);
         }
+        flb_config_map_destroy(config_map);
     }
 
     flb_mp_map_header_end(&mh);
@@ -219,6 +220,7 @@ int flb_help_filter(struct flb_filter_instance *ins, void **out_buf, size_t *out
             m = mk_list_entry(head, struct flb_config_map, _head);
             pack_config_map_entry(&mp_pck, m);
         }
+        flb_config_map_destroy(config_map);
     }
 
     flb_mp_map_header_end(&mh);
@@ -270,6 +272,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
             m = mk_list_entry(head, struct flb_config_map, _head);
             pack_config_map_entry(&mp_pck, m);
         }
+        flb_config_map_destroy(config_map);
     }
 
     if (ins->p->flags & FLB_OUTPUT_NET) {
