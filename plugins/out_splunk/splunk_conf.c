@@ -77,6 +77,15 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     /* Set manual Index and Type */
     ctx->u = upstream;
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
     /* Splunk Auth Token */
     tmp = flb_output_get_property("splunk_token", ins);
     if (tmp) {

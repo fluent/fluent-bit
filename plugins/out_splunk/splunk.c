@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_gzip.h>
 #include <msgpack.h>
 
 #include "splunk.h"
@@ -40,6 +41,13 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     }
 
     flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
+
     return 0;
 }
 
@@ -162,13 +170,15 @@ static void cb_splunk_flush(const void *data, size_t bytes,
                             struct flb_config *config)
 {
     int ret;
+    int compressed = FLB_FALSE;
     size_t b_sent;
-    char *buf_data;
+    flb_sds_t buf_data;
     size_t buf_size;
     struct flb_splunk *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
-    flb_sds_t payload;
+    void *payload_buf;
+    size_t payload_size;
     (void) i_ins;
     (void) config;
 
@@ -184,16 +194,45 @@ static void cb_splunk_flush(const void *data, size_t bytes,
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
-    payload = (flb_sds_t) buf_data;
+
+    /* Map buffer */
+    payload_buf = buf_data;
+    payload_size = buf_size;
+
+    /* Should we compress the payload ? */
+    if (ctx->compress_gzip == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) buf_data, buf_size,
+                                &payload_buf, &payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
+        }
+        else {
+            compressed = FLB_TRUE;
+
+            /* JSON buffer is not longer needed */
+            flb_sds_destroy(buf_data);
+        }
+    }
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_SPLUNK_DEFAULT_URI,
-                        buf_data, buf_size, NULL, 0, NULL, 0);
+                        payload_buf, payload_size, NULL, 0, NULL, 0);
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     flb_http_add_header(c, "Authorization", 13,
                         ctx->auth_header, flb_sds_len(ctx->auth_header));
+
+    /* Content Encoding: gzip */
+    if (compressed == FLB_TRUE) {
+        flb_http_set_content_encoding_gzip(c);
+    }
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
+
+    /* Perform HTTP request */
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
@@ -208,9 +247,13 @@ static void cb_splunk_flush(const void *data, size_t bytes,
             else {
                 flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
             }
-            /* Requests that get 4xx responses from the Splunk HTTP Event
-               Collector will *always* fail, so there is no point in retrying
-               them: https://docs.splunk.com/Documentation/Splunk/8.0.5/Data/TroubleshootHTTPEventCollector#Possible_error_codes */
+            /*
+             * Requests that get 4xx responses from the Splunk HTTP Event
+             * Collector will 'always' fail, so there is no point in retrying
+             * them:
+             *
+             * https://docs.splunk.com/Documentation/Splunk/8.0.5/Data/TroubleshootHTTPEventCollector#Possible_error_codes
+             */
             ret = (c->resp.status < 400 || c->resp.status >= 500) ?
                 FLB_RETRY : FLB_ERROR;
         }
@@ -219,9 +262,19 @@ static void cb_splunk_flush(const void *data, size_t bytes,
         }
     }
 
+    /*
+     * If the payload buffer is different than incoming records in body, means
+     * we generated a different payload and must be freed.
+     */
+    if (compressed == FLB_TRUE) {
+        flb_free(payload_buf);
+    }
+    else {
+        flb_sds_destroy(buf_data);
+    }
+
     /* Cleanup */
     flb_http_client_destroy(c);
-    flb_sds_destroy(payload);
     flb_upstream_conn_release(u_conn);
     FLB_OUTPUT_RETURN(ret);
 }
@@ -236,6 +289,12 @@ static int cb_splunk_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Set payload compression mechanism. Option available is 'gzip'"
+    },
+
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_splunk, http_user),

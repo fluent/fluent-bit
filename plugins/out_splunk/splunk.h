@@ -31,6 +31,9 @@
 #include <fluent-bit/flb_sds.h>
 
 struct flb_splunk {
+    /* Payload compression */
+    int compress_gzip;
+
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
