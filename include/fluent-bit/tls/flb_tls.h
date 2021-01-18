@@ -102,6 +102,7 @@ int flb_tls_net_write(struct flb_upstream_conn *u_conn,
                       const void *data, size_t len, size_t *out_len);
 int flb_tls_net_write_async(struct flb_coro *th, struct flb_upstream_conn *u_conn,
                             const void *data, size_t len, size_t *out_len);
+struct mk_list *flb_tls_get_config_map(struct flb_config *config);
 
 #endif
 #endif

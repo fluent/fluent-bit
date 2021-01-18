@@ -27,6 +27,70 @@
 #include "mbedtls.c"
 #endif
 
+/* Config map for Upstream networking setup */
+struct flb_config_map tls_configmap[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "tls", "off",
+     0, FLB_FALSE, 0,
+     "Enable or disable TLS/SSL support",
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "on",
+     0, FLB_FALSE, 0,
+     "Force certificate validation",
+    },
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "1",
+     0, FLB_FALSE, 0,
+     "Set TLS debug verbosity level. It accept the following "
+     "values: 0 (No debug), 1 (Error), 2 (State change), 3 "
+     "(Informational) and 4 Verbose"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.ca_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to CA certificate file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.ca_path", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to scan for certificate files"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.crt_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to Certificate file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.key_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to private Key file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.key_passwd", NULL,
+     0, FLB_FALSE, 0,
+     "Optional password for tls.key_file file"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_FALSE, 0,
+     "Hostname to be used for TLS SNI extension"
+    },
+
+    /* EOF */
+    {0}
+};
+
+struct mk_list *flb_tls_get_config_map(struct flb_config *config)
+{
+    struct mk_list *config_map;
+
+    config_map = flb_config_map_create(config, tls_configmap);
+    return config_map;
+}
+
+
 static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
                                       int mask)
 {
