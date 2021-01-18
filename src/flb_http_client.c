@@ -42,7 +42,18 @@
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 
+
 #include <mbedtls/base64.h>
+
+void flb_http_client_debug(struct flb_http_client *c,
+                           struct flb_callback *cb_ctx)
+{
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    if (cb_ctx) {
+        flb_http_client_debug_enable(c, cb_ctx);
+    }
+#endif
+}
 
 /*
  * Removes the port from the host header

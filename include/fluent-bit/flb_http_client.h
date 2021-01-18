@@ -136,6 +136,9 @@ struct flb_http_client {
     void *cb_ctx;
 };
 
+void flb_http_client_debug(struct flb_http_client *c,
+                           struct flb_callback *cb_ctx);
+
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, const char *uri,
                                         const char *body, size_t body_len,
