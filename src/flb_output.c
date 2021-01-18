@@ -240,6 +240,10 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
             flb_tls_destroy(ins->tls);
         }
     }
+
+    if (ins->tls_config_map) {
+        flb_config_map_destroy(ins->tls_config_map);
+    }
 #endif
 
     /* Remove metrics */
