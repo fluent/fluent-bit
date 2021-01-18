@@ -37,11 +37,8 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     int ret;
     size_t buf_size;
     struct flb_task *task;
-    struct flb_output_coro *out_coro;
-    struct flb_input_instance *i_ins;
 
     task = retry->parent;
-    i_ins = task->i_ins;
 
     /* Set file up/down based on restrictions */
     ret = flb_input_chunk_set_up(task->ic);

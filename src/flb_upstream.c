@@ -27,6 +27,9 @@
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_thread_storage.h>
+
+FLB_TLS_DEFINE(struct mk_list, flb_upstream_list_key);
 
 /* Config map for Upstream networking setup */
 struct flb_config_map upstream_net[] = {
@@ -87,6 +90,67 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
 
     config_map = flb_config_map_create(config, upstream_net);
     return config_map;
+}
+
+void flb_upstream_queue_init(struct flb_upstream_queue *uq)
+{
+    mk_list_init(&uq->av_queue);
+    mk_list_init(&uq->busy_queue);
+    mk_list_init(&uq->destroy_queue);
+}
+
+struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u)
+{
+    struct mk_list *head;
+    struct mk_list *list;
+    struct flb_upstream *th_u;
+    struct flb_upstream_queue *uq;
+
+    /*
+     * Get the upstream queue, this might be different if the upstream is running
+     * in single-thread or multi-thread mode.
+     */
+    if (u->thread_safe == FLB_TRUE) {
+        list = flb_upstream_list_get();
+        if (!list) {
+            return NULL;
+        }
+
+        mk_list_foreach(head, list) {
+            th_u = mk_list_entry(head, struct flb_upstream, _head);
+            if (th_u->parent_upstream == u) {
+                break;
+            }
+            th_u = NULL;
+        }
+
+        if (!th_u) {
+            return NULL;
+        }
+        uq = &th_u->queue;
+    }
+    else {
+        uq = &u->queue;
+    }
+
+    return uq;
+}
+
+void flb_upstream_list_set(struct mk_list *list)
+{
+    FLB_TLS_SET(flb_upstream_list_key, list);
+}
+
+struct mk_list *flb_upstream_list_get()
+{
+    return FLB_TLS_GET(flb_upstream_list_key);
+}
+
+/* Initialize any upstream environment context */
+void flb_upstream_init()
+{
+    /* Initialize the upstream queue thread local storage */
+    FLB_TLS_INIT(flb_upstream_list_key);
 }
 
 /* Creates a new upstream context */
@@ -152,10 +216,9 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     u->flags         |= FLB_IO_ASYNC;
     u->thread_safe    = FLB_FALSE;
 
+
     /* Initialize queues */
-    mk_list_init(&u->av_queue);
-    mk_list_init(&u->busy_queue);
-    mk_list_init(&u->destroy_queue);
+    flb_upstream_queue_init(&u->queue);
 
 #ifdef FLB_HAVE_TLS
     u->tls = tls;
@@ -234,9 +297,12 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
     return u;
 }
 
-static int destroy_conn(struct flb_upstream_conn *u_conn)
+static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
 {
     struct flb_upstream *u = u_conn->u;
+    struct flb_upstream_queue *uq;
+
+    uq = flb_upstream_queue_get(u);
 
     flb_trace("[upstream] destroy connection #%i to %s:%i",
               u_conn->fd, u->tcp_host, u->tcp_port);
@@ -244,25 +310,18 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     if (u->flags & FLB_IO_ASYNC) {
         mk_event_del(u_conn->evl, &u_conn->event);
     }
+
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
-    }
-
-    if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
     }
 
     /* remove connection from the queue */
     mk_list_del(&u_conn->_head);
 
     /* Add node to destroy queue */
-    mk_list_add(&u_conn->_head, &u->destroy_queue);
+    mk_list_add(&u_conn->_head, &uq->destroy_queue);
 
     u->n_connections--;
-
-    if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_unlock(&u->mutex_lists);
-    }
 
     /*
      * note: the connection context is destroyed by the engine once all events
@@ -271,13 +330,29 @@ static int destroy_conn(struct flb_upstream_conn *u_conn)
     return 0;
 }
 
+static int destroy_conn(struct flb_upstream_conn *u_conn)
+{
+#ifdef FLB_HAVE_TLS
+    if (u_conn->tls_session) {
+        if (u_conn->tls_session) {
+            flb_tls_session_destroy(u_conn->tls, u_conn);
+        }
+    }
+#endif
+    mk_list_del(&u_conn->_head);
+    flb_free(u_conn);
+
+    return 0;
+}
+
 static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 {
     int ret;
     time_t now;
-    struct flb_upstream_conn *conn;
-    struct flb_coro *coro = flb_coro_get();
     struct mk_event_loop *evl;
+    struct flb_coro *coro = flb_coro_get();
+    struct flb_upstream_conn *conn;
+    struct flb_upstream_queue *uq;
 
     now = time(NULL);
 
@@ -325,7 +400,8 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     }
 
     /* Link new connection to the busy queue */
-    mk_list_add(&conn->_head, &u->busy_queue);
+    uq = flb_upstream_queue_get(u);
+    mk_list_add(&conn->_head, &uq->busy_queue);
 
     /* Increase counter */
     u->n_connections++;
@@ -339,7 +415,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     if (ret == -1) {
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
-        destroy_conn(conn);
+        prepare_destroy_conn(conn);
         return NULL;
     }
 
@@ -359,21 +435,26 @@ int flb_upstream_destroy(struct flb_upstream *u)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_upstream_conn *u_conn;
+    struct flb_upstream_queue *uq;
 
-    mk_list_foreach_safe(head, tmp, &u->av_queue) {
-        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-        destroy_conn(u_conn);
+    uq = flb_upstream_queue_get(u);
+    if (!uq) {
+        uq = &u->queue;
     }
 
-    mk_list_foreach_safe(head, tmp, &u->busy_queue) {
+    mk_list_foreach_safe(head, tmp, &uq->av_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-        destroy_conn(u_conn);
+        prepare_destroy_conn(u_conn);
     }
 
-    mk_list_foreach_safe(head, tmp, &u->destroy_queue) {
+    mk_list_foreach_safe(head, tmp, &uq->busy_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-        mk_list_del(&u_conn->_head);
-        flb_free(u_conn);
+        prepare_destroy_conn(u_conn);
+    }
+
+    mk_list_foreach_safe(head, tmp, &uq->destroy_queue) {
+        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+        destroy_conn(u_conn);
     }
 
     flb_free(u->tcp_host);
@@ -402,6 +483,9 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_upstream_conn *conn = NULL;
+    struct flb_upstream_queue *uq;
+
+    uq = flb_upstream_queue_get(u);
 
     flb_trace("[upstream] get new connection for %s:%i, net setup:\n"
               "net.connect_timeout        = %i seconds\n"
@@ -424,20 +508,12 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
      * take a little of time to do some cleanup and assign a connection. If no
      * entries exists, just create a new one.
      */
-    mk_list_foreach_safe(head, tmp, &u->av_queue) {
+    mk_list_foreach_safe(head, tmp, &uq->av_queue) {
         conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-
-        if (u->thread_safe == FLB_TRUE) {
-            pthread_mutex_lock(&u->mutex_lists);
-        }
 
         /* This connection works, let's move it to the busy queue */
         mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &u->busy_queue);
-
-        if (u->thread_safe == FLB_TRUE) {
-            pthread_mutex_unlock(&u->mutex_lists);
-        }
+        mk_list_add(&conn->_head, &uq->busy_queue);
 
         /* Reset errno */
         conn->net_error = -1;
@@ -447,7 +523,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
             flb_debug("[upstream] KA connection #%i is in a failed state "
                       "to: %s:%i, cleaning up",
                       conn->fd, u->tcp_host, u->tcp_port);
-            destroy_conn(conn);
+            prepare_destroy_conn(conn);
             conn = NULL;
             continue;
         }
@@ -489,13 +565,16 @@ static int cb_upstream_conn_ka_dropped(void *data)
     flb_debug("[upstream] KA connection #%i to %s:%i has been disconnected "
               "by the remote service",
               conn->fd, conn->u->tcp_host, conn->u->tcp_port);
-    return destroy_conn(conn);
+    return prepare_destroy_conn(conn);
 }
 
 int flb_upstream_conn_release(struct flb_upstream_conn *conn)
 {
     int ret;
     struct flb_upstream *u = conn->u;
+    struct flb_upstream_queue *uq;
+
+    uq = flb_upstream_queue_get(u);
 
     /* If this is a valid KA connection just recycle */
     if (conn->u->net.keepalive == FLB_TRUE && conn->recycle == FLB_TRUE && conn->fd > -1) {
@@ -503,16 +582,8 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
          */
-        if (u->thread_safe == FLB_TRUE) {
-            pthread_mutex_lock(&u->mutex_lists);
-        }
-
         mk_list_del(&conn->_head);
-        mk_list_add(&conn->_head, &u->av_queue);
-
-        if (u->thread_safe == FLB_TRUE) {
-            pthread_mutex_unlock(&u->mutex_lists);
-        }
+        mk_list_add(&conn->_head, &uq->av_queue);
 
         conn->ts_available = time(NULL);
 
@@ -531,7 +602,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
             flb_debug("[upstream] KA connection #%i to %s:%i could not be "
                       "registered, closing.",
                       conn->fd, conn->u->tcp_host, conn->u->tcp_port);
-            return destroy_conn(conn);
+            return prepare_destroy_conn(conn);
         }
 
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
@@ -541,14 +612,14 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         /* if we have exceeded our max number of uses of this connection, destroy it */
         if (conn->u->net.keepalive_max_recycle > 0 && conn->ka_count > conn->u->net.keepalive_max_recycle) {
             flb_debug("[upstream] KA count %i exceeded configured limit of %i: closing.", conn->ka_count, conn->u->net.keepalive_max_recycle);
-            return destroy_conn(conn);
+            return prepare_destroy_conn(conn);
         }
 
         return 0;
     }
 
     /* No keepalive connections must be destroyed */
-    return destroy_conn(conn);
+    return prepare_destroy_conn(conn);
 }
 
 int flb_upstream_conn_timeouts(struct mk_list *list)
@@ -559,19 +630,21 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     struct mk_list *u_head;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
+    struct flb_upstream_queue *uq;
 
     now = time(NULL);
 
     /* Iterate all upstream contexts */
     mk_list_foreach(head, list) {
         u = mk_list_entry(head, struct flb_upstream, _head);
+        uq = flb_upstream_queue_get(u);
 
         if (u->thread_safe == FLB_TRUE) {
             pthread_mutex_lock(&u->mutex_lists);
         }
 
         /* Iterate every busy connection */
-        mk_list_foreach(u_head, &u->busy_queue) {
+        mk_list_foreach(u_head, &uq->busy_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
 
             drop = FLB_FALSE;
@@ -600,7 +673,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         }
 
         /* Check every available Keepalive connection */
-        mk_list_foreach(u_head, &u->av_queue) {
+        mk_list_foreach(u_head, &uq->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
                 shutdown(u_conn->fd, SHUT_RDWR);
@@ -623,25 +696,46 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_upstream_conn *u_conn;
+    struct flb_upstream_queue *uq;
 
-    if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
-    }
+    uq = flb_upstream_queue_get(u);
 
     /* Real destroy of connections context */
-    mk_list_foreach_safe(head, tmp, &u->destroy_queue) {
+    mk_list_foreach_safe(head, tmp, &uq->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
-        mk_list_del(&u_conn->_head);
-#ifdef FLB_HAVE_TLS
-        if (u_conn->tls_session) {
-            flb_tls_session_destroy(u_conn->tls, u_conn);
-        }
-#endif
-        flb_free(u_conn);
+        destroy_conn(u_conn);
     }
 
-    if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_unlock(&u->mutex_lists);
+    return 0;
+}
+
+int flb_upstream_conn_active_destroy(struct flb_upstream *u)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_upstream_conn *u_conn;
+    struct flb_upstream_queue *uq;
+
+    uq = flb_upstream_queue_get(u);
+
+    /* Real destroy of connections context */
+    mk_list_foreach_safe(head, tmp, &uq->av_queue) {
+        u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
+        destroy_conn(u_conn);
+    }
+
+    return 0;
+}
+
+int flb_upstream_conn_active_destroy_list(struct mk_list *list)
+{
+    struct mk_list *head;
+    struct flb_upstream *u;
+
+    /* Iterate all upstream contexts */
+    mk_list_foreach(head, list) {
+        u = mk_list_entry(head, struct flb_upstream, _head);
+        flb_upstream_conn_active_destroy(u);
     }
 
     return 0;

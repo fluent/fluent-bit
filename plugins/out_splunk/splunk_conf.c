@@ -128,6 +128,9 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
         return -1;
     }
 
+    if (ctx->auth_header) {
+        flb_sds_destroy(ctx->auth_header);
+    }
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }

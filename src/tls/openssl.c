@@ -301,6 +301,7 @@ static int tls_session_destroy(void *session)
 
     if (flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
+        SSL_shutdown(ptr->ssl);
     }
     SSL_free(ptr->ssl);
     flb_free(ptr);

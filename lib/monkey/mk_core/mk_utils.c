@@ -262,13 +262,14 @@ int mk_utils_set_daemon()
 {
     pid_t pid;
 
-    if ((pid = fork()) < 0){
+    if ((pid = fork()) < 0) {
 		mk_err("Error: Failed creating to switch to daemon mode(fork failed)");
-        exit(EXIT_FAILURE);
+        return -1;
 	}
 
-    if (pid > 0) /* parent */
+    if (pid > 0) { /* parent */
         exit(EXIT_SUCCESS);
+    }
 
     /* set files mask */
     umask(0);
@@ -311,7 +312,7 @@ int mk_utils_register_pid(char *path)
     if ((fd = open(path,
                    O_WRONLY | O_CREAT | O_CLOEXEC, 0444)) < 0) {
         mk_err("I cannot create PID file '%s'", path);
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     /* create a write exclusive lock for the entire file */
@@ -323,7 +324,7 @@ int mk_utils_register_pid(char *path)
     if (fcntl(fd, F_SETLK, &lock) < 0) {
         close(fd);
         mk_err("I cannot set the lock for the PID file '%s'", path);
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     sprintf(pidstr, "%ld", (long) getpid());
@@ -331,7 +332,7 @@ int mk_utils_register_pid(char *path)
     if (write(fd, pidstr, write_len) != write_len) {
         close(fd);
         mk_err("I cannot write PID number at '%s' file", path);
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     close(fd);

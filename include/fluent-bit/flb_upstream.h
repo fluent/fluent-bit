@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_upstream_queue.h>
 
 #ifdef FLB_HAVE_TLS
 #include <mbedtls/net.h>
@@ -70,26 +71,14 @@ struct flb_upstream {
     void *ha_ctx;
 
     /*
-       If the connections will be in separate threads, this flag is
+     * If the connections will be in separate threads, this flag is
      * enabled and all lists management are protected through mutexes.
      */
     int thread_safe;
     pthread_mutex_t mutex_lists;
 
-    /*
-     * This field is a linked-list-head for upstream connections that
-     * are available for usage. When a connection is taken, it's moved to the
-     * 'busy_queue' list.
-     */
-    struct mk_list av_queue;
-
-    /*
-     * Linked list head for upstream connections that are in use by some
-     * plugin. When released, they are moved to the 'av_queue' list.
-     */
-    struct mk_list busy_queue;
-
-    struct mk_list destroy_queue;
+    void *parent_upstream;
+    struct flb_upstream_queue queue;
 
 #ifdef FLB_HAVE_TLS
     struct flb_tls *tls;
@@ -98,6 +87,12 @@ struct flb_upstream {
     struct mk_list _head;
 };
 
+void flb_upstream_queue_init(struct flb_upstream_queue *uq);
+struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u);
+void flb_upstream_list_set(struct mk_list *list);
+struct mk_list *flb_upstream_list_get();
+
+void flb_upstream_init();
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          const char *host, int port, int flags,
                                          struct flb_tls *tls);
