@@ -278,6 +278,8 @@ struct flb_output_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *tls_config_map;
+
     struct mk_list _head;                /* link to config->inputs       */
 
 #ifdef FLB_HAVE_METRICS
@@ -646,6 +648,8 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     }
     return ret;
 }
+
+int flb_output_help(struct flb_output_instance *ins, void **out_buf, size_t *out_size);
 
 struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
                                                     int out_id);

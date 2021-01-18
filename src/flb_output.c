@@ -37,6 +37,8 @@
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_pack.h>
 
 FLB_TLS_DEFINE(struct flb_out_coro_params, out_coro_params);
 
@@ -70,6 +72,7 @@ static int check_protocol(const char *prot, const char *output)
 
     return 0;
 }
+
 
 /* Invoke pre-run call for the output plugin */
 void flb_output_pre_run(struct flb_config *config)
@@ -910,6 +913,21 @@ int flb_output_init_all(struct flb_config *config)
             return -1;
         }
 
+#ifdef FLB_HAVE_TLS
+        struct flb_config_map *m;
+
+        /* TLS config map (just for 'help' formatting purposes) */
+        ins->tls_config_map = flb_tls_get_config_map(config);
+
+        /* Override first configmap value based on it plugin flag */
+        m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
+        if (p->flags & FLB_IO_TLS) {
+            m->value.val.boolean = FLB_TRUE;
+        }
+        else {
+            m->value.val.boolean = FLB_FALSE;
+        }
+#endif
         /*
          * Validate 'net.*' properties: if the plugin use the Upstream interface,
          * it might receive some networking settings.
