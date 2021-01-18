@@ -306,6 +306,7 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
         new->set_property = m->set_property;
         new->offset = m->offset;
         new->value.mult = NULL;
+        new->desc = m->desc;
         mk_list_add(&new->_head, list);
 
         if (new->set_property == FLB_FALSE) {
