@@ -36,6 +36,8 @@
 
 #else
 
+#include <pthread.h>
+
 /* Fallback mode using pthread_*() for Thread-Local-Storage usage */
 #define FLB_TLS_SET(key, val)      pthread_setspecific(key, (void *) val)
 #define FLB_TLS_GET(key)           pthread_getspecific(key)
