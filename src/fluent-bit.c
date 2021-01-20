@@ -134,6 +134,7 @@ static void flb_help(int rc, struct flb_config *config)
 #ifdef FLB_HAVE_TRACE
     printf("  -vv\t\t\ttrace mode (available)\n");
 #endif
+    printf("  -w, --workdir\t\tset the working directory\n");
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
@@ -884,6 +885,7 @@ int flb_main(int argc, char **argv)
 #endif
         { "version",         no_argument      , NULL, 'V' },
         { "verbose",         no_argument      , NULL, 'v' },
+        { "workdir",         required_argument, NULL, 'w' },
         { "quiet",           no_argument      , NULL, 'q' },
         { "help",            no_argument      , NULL, 'h' },
         { "help-json",       no_argument      , NULL, 'J' },
@@ -915,7 +917,7 @@ int flb_main(int argc, char **argv)
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
                               "b:c:dDf:i:m:o:R:F:p:e:"
-                              "t:T:l:vqVhJL:HP:s:S",
+                              "t:T:l:vw:qVhJL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -1048,6 +1050,9 @@ int flb_main(int argc, char **argv)
         case 'v':
             config->verbose++;
             break;
+        case 'w':
+            config->workdir =  flb_strdup(optarg);
+            break;
         case 'q':
             config->verbose = FLB_LOG_OFF;
             break;
@@ -1071,6 +1076,15 @@ int flb_main(int argc, char **argv)
 
     /* Program name */
     flb_config_set_program_name(config, argv[0]);
+
+    /* Set the current directory */
+    if (config->workdir) {
+        ret = chdir(config->workdir);
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+    }
 
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF

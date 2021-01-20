@@ -315,6 +315,11 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* Working directory */
+    if (config->workdir) {
+        flb_free(config->workdir);
+    }
+
     /* Destroy any DSO context */
     flb_plugin_destroy(config->dso_plugins);
 
