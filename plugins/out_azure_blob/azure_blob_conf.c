@@ -112,6 +112,23 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
     }
 
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
+    /* Compress Blob: only availabel for blockblob type */
+    if (ctx->compress_blob == FLB_TRUE && ctx->btype != AZURE_BLOB_BLOCKBLOB) {
+        flb_plg_error(ctx->ins,
+                      "the option 'compress_blob' is not compatible with 'appendblob' "
+                      "blob_type");
+        return NULL;
+    }
+
     /*
      * Setting up the real endpoint:
      *

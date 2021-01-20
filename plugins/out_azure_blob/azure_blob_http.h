@@ -26,8 +26,8 @@
 #include "azure_blob.h"
 
 int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
-                          ssize_t content_length, int content_type,
-                          int blob_type);
+                          ssize_t content_length, int blob_type,
+                          int content_type, int content_encoding);
 
 flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
                                      struct flb_http_client *c,
