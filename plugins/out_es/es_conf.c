@@ -24,9 +24,89 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <mbedtls/base64.h>
 
 #include "es.h"
 #include "es_conf.h"
+
+/*
+ * extract_cloud_host extracts the public hostname
+ * of a deployment from a Cloud ID string.
+ *
+ * The Cloud ID string has the format "<deployment_name>:<base64_info>".
+ * Once decoded, the "base64_info" string has the format "<deployment_region>$<elasticsearch_hostname>$<kibana_hostname>"
+ * and the function returns "<elasticsearch_hostname>.<deployment_region>" token.
+ */
+static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
+                                    const char *cloud_id)
+{
+
+    char *colon;
+    char *region;
+    char *host;
+    char buf[256] = {0};
+    char cloud_host_buf[256] = {0};
+    const char dollar[2] = "$";
+    size_t len;
+    int ret;
+
+    /* keep only part after first ":" */
+    colon = strchr(cloud_id, ':');
+    if (colon == NULL) {
+        return NULL;
+    }
+    colon++;
+
+    /* decode base64 */
+    ret = mbedtls_base64_decode((unsigned char *)buf, sizeof(buf), &len, (unsigned char *)colon, strlen(colon));
+    if (ret) {
+        flb_plg_error(ctx->ins, "cannot decode cloud_id");
+        return NULL;
+    }
+    region = strtok(buf, dollar);
+    if (region == NULL) {
+        return NULL;
+    }
+    host = strtok(NULL, dollar);
+    if (host == NULL) {
+        return NULL;
+    }
+    strcpy(cloud_host_buf, host);
+    strcat(cloud_host_buf, ".");
+    strcat(cloud_host_buf, region);
+    return flb_sds_create(cloud_host_buf);
+}
+
+/*
+ * set_cloud_credentials gets a cloud_auth
+ * and sets the context's cloud_user and cloud_passwd.
+ * Example:
+ *   cloud_auth = elastic:ZXVyb3BxxxxxxZTA1Ng
+ *   ---->
+ *   cloud_user = elastic
+ *   cloud_passwd = ZXVyb3BxxxxxxZTA1Ng
+ */
+static void set_cloud_credentials(struct flb_elasticsearch *ctx,
+                                  const char *cloud_auth)
+{
+    /* extract strings */
+    int items = 0;
+    struct mk_list *toks;
+    struct mk_list *head;
+    struct flb_split_entry *entry;
+    toks = flb_utils_split((const char *)cloud_auth, ':', -1);
+    mk_list_foreach(head, toks) {
+        items++;
+        entry = mk_list_entry(head, struct flb_split_entry, _head);
+        if (items == 1) {
+          ctx->cloud_user = flb_strdup(entry->value);
+        }
+        if (items == 2) {
+          ctx->cloud_passwd = flb_strdup(entry->value);
+        }
+    }
+    flb_utils_split_free(toks);
+}
 
 struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config)
@@ -41,6 +121,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     char *aws_external_id = NULL;
     char *aws_session_name = NULL;
 #endif
+    char *cloud_host = NULL;
     struct flb_uri *uri = ins->host.uri;
     struct flb_uri_field *f_index = NULL;
     struct flb_uri_field *f_type = NULL;
@@ -62,6 +143,19 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* handle cloud_id */
+    tmp = flb_output_get_property("cloud_id", ins);
+    if (tmp) {
+        cloud_host = extract_cloud_host(ctx, tmp);
+        if (cloud_host == NULL) {
+            flb_plg_error(ctx->ins, "cannot extract cloud_host");
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
+        ins->host.name = cloud_host;
+        ins->host.port = 443;
+    }
+
     /* Set default network configuration */
     flb_output_net_default("127.0.0.1", 9200, ins);
 
@@ -71,6 +165,12 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "configuration error");
         flb_es_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* handle cloud_auth */
+    tmp = flb_output_get_property("cloud_auth", ins);
+    if (tmp) {
+        set_cloud_credentials(ctx, tmp);
     }
 
     /* use TLS ? */
@@ -275,6 +375,8 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     }
 #endif
 
+    flb_free(ctx->cloud_passwd);
+    flb_free(ctx->cloud_user);
     flb_free(ctx);
 
     return 0;

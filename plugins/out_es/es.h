@@ -41,6 +41,10 @@ struct flb_elasticsearch {
     char *http_user;
     char *http_passwd;
 
+    /* Elastic Cloud Auth */
+    char *cloud_user;
+    char *cloud_passwd;
+
     /* AWS Auth */
 #ifdef FLB_HAVE_AWS
     int has_aws_auth;
