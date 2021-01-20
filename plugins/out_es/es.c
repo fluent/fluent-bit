@@ -675,6 +675,9 @@ static void cb_es_flush(const void *data, size_t bytes,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+    else if (ctx->cloud_user && ctx->cloud_passwd) {
+        flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
+    }
 
 #ifdef FLB_HAVE_AWS
     if (ctx->has_aws_auth == FLB_TRUE) {
@@ -786,6 +789,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
      NULL
+    },
+
+    /* Cloud Authentication */
+    {
+     FLB_CONFIG_MAP_STR, "cloud_id", NULL,
+     0, FLB_FALSE, 0,
+     "Elastic cloud ID of the cluster to connect to"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "cloud_auth", NULL,
+     0, FLB_FALSE, 0,
+     "Elastic cloud authentication credentials"
     },
 
     /* AWS Authentication */
