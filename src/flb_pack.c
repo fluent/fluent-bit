@@ -86,11 +86,15 @@ static inline int is_float(const char *buf, int len)
     const char *p = buf;
 
     while (p <= end) {
-        if (*p == '.') {
+        if (*p == 'e' && p < end && *(p + 1) == '-') {
+            return 1;
+        }
+        else if (*p == '.') {
             return 1;
         }
         p++;
     }
+
     return 0;
 }
 
