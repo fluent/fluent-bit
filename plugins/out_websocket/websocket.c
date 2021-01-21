@@ -100,8 +100,7 @@ static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
     unsigned long long payloadSize = bytes;
     
     flb_ws_mask((char *)data, payloadSize, masking_key);
-    if (payloadSize < 126)
-    {
+    if (payloadSize < 126) {
         data_frame_head = (char *)flb_malloc(6);
         if (!data_frame_head) {
             flb_errno();
@@ -115,8 +114,7 @@ static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
         data_frame_head[5] = masking_key[3];
         data_frame_head_len = 6;
     }
-    else if (payloadSize < 65536)
-    {
+    else if (payloadSize < 65536) {
         data_frame_head = (char *)flb_malloc(8);
         if (!data_frame_head) {
             flb_errno();
@@ -132,8 +130,7 @@ static int flb_ws_sendDataFrameHeader(struct flb_upstream_conn *u_conn,
         data_frame_head[7] = masking_key[3];
         data_frame_head_len = 8;
     }
-    else
-    {
+    else {
         data_frame_head = (char *)flb_malloc(14);
         if (!data_frame_head) {
             flb_errno();
@@ -219,7 +216,7 @@ static void cb_ws_flush(const void *data, size_t bytes,
 
     //TODO how to determine the interval? conn disconnet is about 30 sec, so we set 20 ssecnds here. 
     flb_debug("[out_ws] interval is  %ld and handshake is %d", now - ctx->last_input_timestamp, ctx->handshake);
-    if((now - ctx->last_input_timestamp > ctx->idle_interval) && (ctx->handshake == 0)) {
+    if ((now - ctx->last_input_timestamp > ctx->idle_interval) && (ctx->handshake == 0)) {
         ctx->handshake = 1;
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
