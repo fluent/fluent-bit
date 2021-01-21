@@ -434,10 +434,10 @@ int64_t flb_utils_size_to_bytes(const char *size)
     return val;
 }
 
-int flb_utils_hex2int(char *hex, int len)
+int64_t flb_utils_hex2int(char *hex, int len)
 {
     int i = 0;
-    int res = 0;
+    int64_t res = 0;
     char c;
 
     while ((c = *hex++) && i < len) {
