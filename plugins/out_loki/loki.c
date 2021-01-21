@@ -128,6 +128,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
         flb_plg_error(ctx->ins,
                       "key name for record accessor cannot start with a number: %s",
                       key);
+        flb_free(kv);
         return -1;
     }
 
