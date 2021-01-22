@@ -142,7 +142,10 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
     ctx->idle_interval  = idle_interval;
-  
+ 
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
+ 
     flb_info("[out_ws] we have following parameter %s, %s, %d, %d", ctx->uri, ctx->host, ctx->port, ctx->idle_interval);
     return ctx;
 }
