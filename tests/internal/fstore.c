@@ -57,6 +57,9 @@ void cb_all()
 
     fsf = flb_fstore_file_create(fs, st, "example.txt", 100);
     TEST_CHECK(fsf != NULL);
+    if (!fsf) {
+        return;
+    }
 
     ret = stat(FSF_STORE_PATH "/abc/example.txt", &st_data);
     TEST_CHECK(ret == 0);
