@@ -237,3 +237,25 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
     ret = flb_time_msgpack_to_time(time, &obj);
     return ret;
 }
+
+long flb_time_tz_offset_to_second()
+{
+    time_t t = time(NULL);
+    struct tm local = *localtime(&t);
+    struct tm utc = *gmtime(&t);
+
+    long diff = ((local.tm_hour - utc.tm_hour)          \
+                 * 60 + (local.tm_min - utc.tm_min))    \
+                 * 60L + (local.tm_sec - utc.tm_sec);
+
+    int delta_day = local.tm_mday - utc.tm_mday;
+
+    if ((delta_day == 1) || (delta_day < -1)) {
+        diff += 24L * 60 * 60;
+    }
+    else if ((delta_day == -1) || (delta_day > 1)) {
+        diff -= 24L * 60 * 60;
+    }
+
+    return diff;
+}

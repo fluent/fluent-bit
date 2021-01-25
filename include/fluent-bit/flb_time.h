@@ -83,5 +83,6 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
 int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
+long flb_time_tz_offset_to_second();
 
 #endif /* FLB_TIME_H */
