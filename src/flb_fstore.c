@@ -143,6 +143,8 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
         flb_errno();
         return NULL;
     }
+    fsf->stream = fs_stream->stream;
+
     fsf->name = flb_sds_create(name);
     if (!fsf->name) {
         flb_error("[fstore] could not create file: %s:%s",
@@ -162,7 +164,6 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     }
 
     fsf->chunk = chunk;
-    fsf->stream = fs_stream->stream;
     mk_list_add(&fsf->_head, &fs_stream->files);
 
     return fsf;
