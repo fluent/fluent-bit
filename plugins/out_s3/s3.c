@@ -1200,17 +1200,18 @@ static void cb_s3_flush(const void *data, size_t bytes,
                             void *out_context,
                             struct flb_config *config)
 {
-    struct flb_s3 *ctx = out_context;
-    flb_sds_t json = NULL;
-    struct s3_file *chunk = NULL;
-    struct multipart_upload *m_upload = NULL;
-    char *buffer = NULL;
-    size_t buffer_size;
-    int timeout_check = FLB_FALSE;
-    size_t chunk_size = 0;
-    size_t upload_size = 0;
     int ret;
     int len;
+    int timeout_check = FLB_FALSE;
+    char *buffer = NULL;
+    size_t buffer_size;
+    size_t chunk_size = 0;
+    size_t upload_size = 0;
+    flb_sds_t json = NULL;
+    struct s3_file *chunk = NULL;
+    struct flb_s3 *ctx = out_context;
+    struct multipart_upload *m_upload = NULL;
+    struct flb_sched *sched;
     (void) i_ins;
     (void) config;
 
@@ -1242,7 +1243,8 @@ static void cb_s3_flush(const void *data, size_t bytes,
                       "Creating upload timer with frequency %ds",
                       ctx->timer_ms / 1000);
 
-        ret = flb_sched_timer_cb_create(config, FLB_SCHED_TIMER_CB_PERM,
+        sched = flb_sched_ctx_get();
+        ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
                                         ctx->timer_ms,
                                         cb_s3_upload,
                                         ctx);
