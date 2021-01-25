@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -335,30 +336,21 @@ static int elasticsearch_format(struct flb_config *config,
 
         es_index_custom_len = 0;
         if (ctx->logstash_prefix_key) {
-            for (i = 0; i < map_size; i++) {
-                key = map.via.map.ptr[i].key;
-                if (key.type != MSGPACK_OBJECT_STR) {
-                    continue;
+            flb_sds_t v = flb_ra_translate(ctx->ra_prefix_key,
+                                           (char *) tag, tag_len,
+                                           map, NULL);
+            if (v) {
+                len = flb_sds_len(v);
+                if (len > 128) {
+                    len = 128;
+                    memcpy(logstash_index, v, 128);
                 }
-                if (key.via.str.size != flb_sds_len(ctx->logstash_prefix_key)) {
-                    continue;
+                else {
+                    memcpy(logstash_index, v, len);
                 }
-                if (strncmp(key.via.str.ptr, ctx->logstash_prefix_key,
-                            flb_sds_len(ctx->logstash_prefix_key)) != 0) {
-                    continue;
-                }
-                val = map.via.map.ptr[i].val;
-                if (val.type != MSGPACK_OBJECT_STR) {
-                    continue;
-                }
-                if (val.via.str.size >= 128) {
-                    continue;
-                }
-                es_index_custom = val.via.str.ptr;
-                es_index_custom_len = val.via.str.size;
-                memcpy(logstash_index, es_index_custom, es_index_custom_len);
-                logstash_index[es_index_custom_len] = '\0';
-                break;
+                es_index_custom = v;
+                es_index_custom_len = len;
+                flb_sds_destroy(v);
             }
         }
 
@@ -690,6 +682,9 @@ static void cb_es_flush(const void *data, size_t bytes,
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     }
 #endif
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {

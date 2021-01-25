@@ -106,6 +106,8 @@ struct flb_elasticsearch {
     /* Elasticsearch HTTP API */
     char uri[256];
 
+    struct flb_record_accessor *ra_prefix_key;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 

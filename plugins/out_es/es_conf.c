@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <mbedtls/base64.h>
@@ -111,9 +112,10 @@ static void set_cloud_credentials(struct flb_elasticsearch *ctx,
 struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                              struct flb_config *config)
 {
-
+    int len;
     int io_flags = 0;
     ssize_t ret;
+    char *buf;
     const char *tmp;
     const char *path;
 #ifdef FLB_HAVE_AWS
@@ -228,6 +230,34 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     }
     else {
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
+    }
+
+
+    if (ctx->logstash_prefix_key) {
+        if (ctx->logstash_prefix_key[0] != '$') {
+            len = flb_sds_len(ctx->logstash_prefix_key);
+            buf = flb_malloc(len + 2);
+            if (!buf) {
+                flb_errno();
+                flb_es_conf_destroy(ctx);
+                return NULL;
+            }
+            buf[0] = '$';
+            memcpy(buf + 1, ctx->logstash_prefix_key, len);
+            buf[len + 1] = '\0';
+
+            ctx->ra_prefix_key = flb_ra_create(buf, FLB_TRUE);
+            flb_free(buf);
+        }
+        else {
+            ctx->ra_prefix_key = flb_ra_create(ctx->logstash_prefix_key, FLB_TRUE);
+        }
+
+        if (!ctx->ra_prefix_key) {
+            flb_plg_error(ins, "invalid logstash_prefix_key pattern '%s'", tmp);
+            flb_es_conf_destroy(ctx);
+            return NULL;
+        }
     }
 
 #ifdef FLB_HAVE_AWS
@@ -374,6 +404,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
         flb_tls_destroy(ctx->aws_sts_tls);
     }
 #endif
+
+    if (ctx->ra_prefix_key) {
+        flb_ra_destroy(ctx->ra_prefix_key);
+    }
 
     flb_free(ctx->cloud_passwd);
     flb_free(ctx->cloud_user);
