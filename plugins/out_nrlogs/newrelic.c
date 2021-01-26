@@ -313,6 +313,7 @@ static struct flb_newrelic *newrelic_config_create(struct flb_output_instance *i
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     return ctx;
 }
