@@ -426,6 +426,7 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     }
     ctx->u   = upstream;
     ctx->seq = 0;
+    flb_output_upstream_set(ctx->u, ins);
 
     flb_time_zero(&ctx->ts_dupe);
     flb_time_zero(&ctx->ts_last);
