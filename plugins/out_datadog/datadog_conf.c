@@ -208,6 +208,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->upstream = upstream;
+    flb_output_upstream_set(ctx->upstream, ins);
 
     return ctx;
 }
