@@ -182,6 +182,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Compose uri */
     ctx->uri = flb_sds_create_size(1024);
