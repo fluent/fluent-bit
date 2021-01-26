@@ -25,6 +25,8 @@
 
 #ifdef FLB_SYSTEM_WINDOWS
 #include <monkey/mk_core/external/winpthreads.h>
+#else
+#include <pthread.h>
 #endif
 
 /* Ideal case when the compiler support direct storage through __thread */
@@ -35,8 +37,6 @@
 #define FLB_TLS_DEFINE(type, name) __thread type *name;
 
 #else
-
-#include <pthread.h>
 
 /* Fallback mode using pthread_*() for Thread-Local-Storage usage */
 #define FLB_TLS_SET(key, val)      pthread_setspecific(key, (void *) val)
