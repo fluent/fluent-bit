@@ -1037,6 +1037,20 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     return 0;
 }
 
+int flb_output_upstream_ha_set(struct flb_upstream_ha *ha,
+                               struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_upstream_node *node;
+
+    mk_list_foreach(head, &ha->nodes) {
+        node = mk_list_entry(head, struct flb_upstream_node, _head);
+        flb_output_upstream_set(node->u, ins);
+    }
+
+    return 0;
+}
+
 /*
  * Helper function to set HTTP callbacks using the output instance 'callback'
  * context.

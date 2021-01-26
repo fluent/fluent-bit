@@ -45,6 +45,8 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_upstream_ha.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -670,7 +672,11 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
+int flb_output_upstream_ha_set(struct flb_upstream_ha *ha,
+                               struct flb_output_instance *ins);
+
 void flb_output_prepare();
 int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 
