@@ -10,6 +10,7 @@ set(FLB_EXAMPLES              Yes)
 set(FLB_PARSER                Yes)
 set(FLB_TLS                   Yes)
 set(FLB_AWS                   Yes)
+set(FLB_HTTP_SERVER            No)
 
 # INPUT plugins
 # =============
