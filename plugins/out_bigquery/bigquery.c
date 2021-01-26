@@ -311,6 +311,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
     }
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Retrief oauth2 token */
     token = get_google_token(ctx);
