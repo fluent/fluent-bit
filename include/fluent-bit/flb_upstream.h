@@ -57,8 +57,6 @@ struct flb_upstream {
     char *proxy_username;
     char *proxy_password;
 
-    int n_connections;
-
     /* Networking setup for timeouts and network interfaces */
     struct flb_net_setup net;
 
