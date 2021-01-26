@@ -174,6 +174,7 @@ static int cb_td_init(struct flb_output_instance *ins, struct flb_config *config
         return -1;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     flb_output_set_context(ins, ctx);
     return 0;
