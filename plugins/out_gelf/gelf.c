@@ -446,6 +446,7 @@ static int cb_gelf_init(struct flb_output_instance *ins, struct flb_config *conf
             flb_free(ctx);
             return -1;
         }
+        flb_output_upstream_set(ctx->u, ins);
     }
 
     /* Set the plugin context */
