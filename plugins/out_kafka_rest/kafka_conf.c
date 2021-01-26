@@ -71,6 +71,7 @@ struct flb_kafka_rest *flb_kr_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     /* HTTP Auth */
     tmp = flb_output_get_property("http_user", ins);
