@@ -567,6 +567,7 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
     ctx->tcp_port = ins->host.port;
     ctx->tcp_host = ins->host.name;
 
