@@ -25,7 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
-#include <pthread.h>
+#include <fluent-bit/flb_pthread.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
