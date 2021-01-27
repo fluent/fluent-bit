@@ -33,6 +33,15 @@
  */
 #define OPENSSL_1_1_0 0x010100000L
 
+/*
+ * RHEL-family distrbutions do not provide system certificates in
+ * a format that OpenSSL's CAPath can read, but do provide a single
+ * packed cert in /etc/certs.
+ *
+ * Use the bundled cert as the default trusted CA.
+ */
+#define RHEL_DEFAULT_CA "/etc/ssl/certs/ca-bundle.crt"
+
 struct tls_session {
     SSL *ssl;
     int fd;
@@ -128,7 +137,13 @@ static int load_system_certificates(struct tls_context *ctx)
     //return windows_load_system_certificates(ctx);
 #endif
 
-    ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
+    if (access(RHEL_DEFAULT_CA, R_OK) == 0) {
+        ret = SSL_CTX_load_verify_locations(ctx->ctx, RHEL_DEFAULT_CA, ca_path);
+    }
+    else {
+        ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
+    }
+
     if (ret != 1) {
         ERR_print_errors_fp(stderr);
     }
