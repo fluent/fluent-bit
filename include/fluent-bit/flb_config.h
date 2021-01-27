@@ -121,6 +121,9 @@ struct flb_config {
     /* Environment */
     void *env;
 
+    /* Working Directory */
+    char *workdir;
+
     /* Exit status code */
     int exit_status_code;
 
