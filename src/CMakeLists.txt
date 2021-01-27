@@ -197,11 +197,12 @@ include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
 # Core dependencies
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+if(FLB_SYSTEM_WINDOWS)
   set(FLB_DEPS
     "ws2_32.lib"
     "crypt32.lib"
     "Bcrypt.lib"
+    "Shlwapi.lib"
     )
 else()
   set(FLB_DEPS
