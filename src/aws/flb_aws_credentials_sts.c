@@ -22,10 +22,10 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_jsmn.h>
 
 #include <mbedtls/ctr_drbg.h>
 #include "mbedtls/entropy.h"
-#include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>

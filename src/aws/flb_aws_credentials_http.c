@@ -23,7 +23,7 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
 
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <sys/types.h>

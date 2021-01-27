@@ -17,19 +17,18 @@
  *  limitations under the License.
  */
 
- #include <fluent-bit/flb_info.h>
- #include <fluent-bit/flb_sds.h>
- #include <fluent-bit/flb_http_client.h>
- #include <fluent-bit/flb_aws_credentials.h>
- #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_jsmn.h>
 
- #include <jsmn/jsmn.h>
- #include <stdlib.h>
- #include <time.h>
-
- #include <sys/types.h>
- #include <sys/stat.h>
- #include <ctype.h>
+#include <stdlib.h>
+#include <time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <ctype.h>
 
 #define ACCESS_KEY_PROPERTY_NAME            "aws_access_key_id"
 #define SECRET_KEY_PROPERTY_NAME            "aws_secret_access_key"

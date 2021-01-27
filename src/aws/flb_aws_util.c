@@ -24,8 +24,8 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_jsmn.h>
 
-#include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -301,10 +301,10 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     if (aws_client->extra_user_agent == NULL) {
         ret = flb_http_add_header(c, "User-Agent", 10,
                                   "aws-fluent-bit-plugin", 21);
-    } 
+    }
     else {
         user_agent_prefix = flb_sds_create_size(64);
-        tmp = flb_sds_printf(&user_agent_prefix, "aws-fluent-bit-plugin-%s", 
+        tmp = flb_sds_printf(&user_agent_prefix, "aws-fluent-bit-plugin-%s",
                              aws_client->extra_user_agent);
         if (!tmp) {
             flb_errno();
@@ -314,11 +314,11 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         user_agent_prefix = tmp;
 
-        ret = flb_http_add_header(c, "User-Agent", 10, user_agent_prefix, 
+        ret = flb_http_add_header(c, "User-Agent", 10, user_agent_prefix,
                                   flb_sds_len(user_agent_prefix));
         flb_sds_destroy(user_agent_prefix);
     }
-    
+
     if (ret < 0) {
         if (aws_client->debug_only == FLB_TRUE) {
             flb_debug("[aws_client] failed to add header to request");
