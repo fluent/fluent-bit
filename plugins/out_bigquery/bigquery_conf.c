@@ -20,8 +20,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_unescape.h>
-
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
