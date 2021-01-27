@@ -39,6 +39,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     int ret = -1;
+    uint64_t val;
     size_t str_len = 0;
     FILE *cmdp = NULL;
     msgpack_packer mp_pck;
@@ -50,6 +51,14 @@ static int in_exec_collect(struct flb_input_instance *ins,
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_time out_time;
+
+    if (ctx->oneshot == FLB_TRUE) {
+        ret = flb_pipe_r(ctx->ch_manager[0], &val, sizeof(val));
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+    }
 
     cmdp = popen(ctx->cmd, "r");
     if (cmdp == NULL) {
@@ -190,8 +199,18 @@ static int in_exec_config_read(struct flb_exec *ctx,
         *interval_nsec = DEFAULT_INTERVAL_NSEC;
     }
 
-    flb_debug("[in_exec] interval_sec=%d interval_nsec=%d",
-              *interval_sec, *interval_nsec);
+    pval = flb_input_get_property("oneshot", in);
+    if (pval != NULL && flb_utils_bool(pval) == FLB_TRUE) {
+        ctx->oneshot = FLB_TRUE;
+        *interval_sec = -1;
+        *interval_nsec = -1;
+    }
+    else {
+        ctx->oneshot = FLB_FALSE;
+    }
+
+    flb_debug("[in_exec] interval_sec=%d interval_nsec=%d oneshot=%i",
+              *interval_sec, *interval_nsec, ctx->oneshot);
 
     return 0;
 }
@@ -206,6 +225,15 @@ static void delete_exec_config(struct flb_exec *ctx)
     if (ctx->buf != NULL) {
         flb_free(ctx->buf);
     }
+
+    if (ctx->ch_manager[0] > -1) {
+        flb_pipe_close(ctx->ch_manager[0]);
+    }
+
+    if (ctx->ch_manager[1] > -1) {
+        flb_pipe_close(ctx->ch_manager[1]);
+    }
+
     flb_free(ctx);
 }
 
@@ -239,10 +267,25 @@ static int in_exec_init(struct flb_input_instance *in,
 
     flb_input_set_context(in, ctx);
 
-    ret = flb_input_set_collector_time(in,
-                                       in_exec_collect,
-                                       interval_sec,
-                                       interval_nsec, config);
+    ctx->ch_manager[0] = -1;
+    ctx->ch_manager[1] = -1;
+
+    if (ctx->oneshot == FLB_TRUE) {
+        if (flb_pipe_create(ctx->ch_manager)) {
+            flb_error("could not create pipe for oneshot command");
+            goto init_error;
+        }
+
+        ret = flb_input_set_collector_event(in,
+                                            in_exec_collect,
+                                            ctx->ch_manager[0], config);
+    }
+    else {
+        ret = flb_input_set_collector_time(in,
+                                           in_exec_collect,
+                                           interval_sec,
+                                           interval_nsec, config);
+    }
     if (ret < 0) {
         flb_error("could not set collector for exec input plugin");
         goto init_error;
@@ -254,6 +297,28 @@ static int in_exec_init(struct flb_input_instance *in,
     delete_exec_config(ctx);
 
     return -1;
+}
+
+static int in_exec_prerun(struct flb_input_instance *ins,
+                          struct flb_config *config, void *in_context)
+{
+    int ret;
+    uint64_t val = 0xc003;  /* dummy constant */
+    struct flb_exec *ctx = in_context;
+    (void) ins;
+    (void) config;
+
+    if (ctx->oneshot == FLB_FALSE) {
+        return 0;
+    }
+
+    /* Kick the oneshot execution */
+    ret = flb_pipe_w(ctx->ch_manager[1], &val, sizeof(val));
+    if (ret == -1) {
+        flb_errno();
+        return -1;
+    }
+    return 0;
 }
 
 static int in_exec_exit(void *data, struct flb_config *config)
@@ -270,7 +335,7 @@ struct flb_input_plugin in_exec_plugin = {
     .name         = "exec",
     .description  = "Exec Input",
     .cb_init      = in_exec_init,
-    .cb_pre_run   = NULL,
+    .cb_pre_run   = in_exec_prerun,
     .cb_collect   = in_exec_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_exec_exit

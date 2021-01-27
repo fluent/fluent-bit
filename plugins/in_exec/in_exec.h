@@ -39,6 +39,8 @@ struct flb_exec {
     char *buf;
     size_t buf_size;
     struct flb_input_instance *ins;
+    int oneshot;
+    flb_pipefd_t ch_manager[2];
 };
 
 #endif /* FLB_IN_EXEC_H */
