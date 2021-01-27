@@ -233,7 +233,6 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
     int ret;
     int err;
     int socket_errno;
-    fd_set wait_set;
     struct pollfd pfd_read;
 
     /* Set socket to non-blocking mode */
@@ -270,8 +269,6 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          * extra file descriptor, the poll(2) call is straightforward
          * for this use case.
          */
-        FD_ZERO(&wait_set);
-        FD_SET(fd, &wait_set);
 
         pfd_read.fd = fd + 1;
         pfd_read.events = POLLIN;
