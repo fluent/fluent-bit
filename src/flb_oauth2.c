@@ -240,6 +240,21 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     return NULL;
 }
 
+/* Clear the current payload and token */
+void flb_oauth2_payload_clear(struct flb_oauth2 *ctx)
+{
+    ctx->payload[0] = '\0';
+    ctx->expires_in = 0;
+    if (ctx->access_token){
+        flb_sds_destroy(ctx->access_token);
+        ctx->access_token = NULL;
+    }
+    if (ctx->token_type){
+        flb_sds_destroy(ctx->token_type);
+        ctx->token_type = NULL;
+    }
+}
+
 /* Append a key/value to the request body */
 int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
                               const char *key_str, int key_len,
