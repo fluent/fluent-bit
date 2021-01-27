@@ -24,7 +24,8 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
+
 #include <msgpack.h>
 
 /* JSON types */
