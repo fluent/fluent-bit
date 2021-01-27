@@ -270,7 +270,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          * for this use case.
          */
 
-        pfd_read.fd = fd + 1;
+        pfd_read.fd = fd;
         pfd_read.events = POLLIN;
         ret = poll(&pfd_read, 1, connect_timeout * 1000);
         if (ret == 0) {
