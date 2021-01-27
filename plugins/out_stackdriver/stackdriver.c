@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_pthread.h>
 
 #include <msgpack.h>
 
@@ -38,7 +39,6 @@
 #include "stackdriver_helper.h"
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
-#include <pthread.h>
 
 /*
  * Base64 Encoding in JWT must:
