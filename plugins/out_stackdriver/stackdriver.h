@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
+#include <pthread.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
@@ -117,6 +118,9 @@ struct flb_stackdriver {
 
     /* oauth2 context */
     struct flb_oauth2 *o;
+
+    /* mutex for acquiring oauth tokens */
+    pthread_mutex_t token_mutex;
 
     /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;
