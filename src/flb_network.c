@@ -26,7 +26,12 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <errno.h>
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define poll WSAPoll
+#else
 #include <sys/poll.h>
+#endif
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
@@ -260,9 +265,9 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
                   fd, host, port);
 
         /*
-         * Prepare a timeout using select(2): we could use our own
+         * Prepare a timeout using poll(2): we could use our own
          * event loop mechanism for this, but it will require an
-         * extra file descriptor, the select(2) call is straightforward
+         * extra file descriptor, the poll(2) call is straightforward
          * for this use case.
          */
         FD_ZERO(&wait_set);
@@ -270,7 +275,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
 
         pfd_read.fd = fd + 1;
         pfd_read.events = POLLIN;
-        ret = poll(&pfd_read, 1, connect_timeout) != 1;
+        ret = poll(&pfd_read, 1, connect_timeout * 1000);
         if (ret == 0) {
             /* Timeout */
             flb_error("[net] connection #%i timeout after %i seconds to: "
