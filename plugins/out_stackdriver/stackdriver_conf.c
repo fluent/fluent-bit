@@ -23,8 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
-
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
