@@ -61,6 +61,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
                                      const char *auth_url, int expire_sec);
 void flb_oauth2_destroy(struct flb_oauth2 *ctx);
 int flb_oauth2_token_len(struct flb_oauth2 *ctx);
+void flb_oauth2_payload_clear(struct flb_oauth2 *ctx);
 int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
                               const char *key_str, int key_len,
                               const char *val_str, int val_len);
