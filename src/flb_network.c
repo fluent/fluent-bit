@@ -27,6 +27,12 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define poll WSAPoll
+#else
+#include <sys/poll.h>
+#endif
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
@@ -227,8 +233,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
     int ret;
     int err;
     int socket_errno;
-    fd_set wait_set;
-    struct timeval timeout;
+    struct pollfd pfd_read;
 
     /* Set socket to non-blocking mode */
     flb_net_socket_nonblocking(fd);
@@ -259,18 +264,15 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
                   fd, host, port);
 
         /*
-         * Prepare a timeout using select(2): we could use our own
+         * Prepare a timeout using poll(2): we could use our own
          * event loop mechanism for this, but it will require an
-         * extra file descriptor, the select(2) call is straightforward
+         * extra file descriptor, the poll(2) call is straightforward
          * for this use case.
          */
-        FD_ZERO(&wait_set);
-        FD_SET(fd, &wait_set);
 
-        /* Wait 'connect_timeout' seconds for an event */
-        timeout.tv_sec = connect_timeout;
-        timeout.tv_usec = 0;
-        ret = select(fd + 1, NULL, &wait_set, NULL, &timeout);
+        pfd_read.fd = fd + 1;
+        pfd_read.events = POLLIN;
+        ret = poll(&pfd_read, 1, connect_timeout * 1000);
         if (ret == 0) {
             /* Timeout */
             flb_error("[net] connection #%i timeout after %i seconds to: "
