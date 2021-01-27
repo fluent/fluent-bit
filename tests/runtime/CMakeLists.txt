@@ -65,6 +65,7 @@ if(FLB_IN_LIB)
 
   FLB_RT_TEST(FLB_OUT_CLOUDWATCH_LOGS   "out_cloudwatch.c")
   FLB_RT_TEST(FLB_OUT_KINESIS_FIREHOSE  "out_firehose.c")
+  FLB_RT_TEST(FLB_OUT_KINESIS_STREAMS   "out_kinesis.c")
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
 endif()

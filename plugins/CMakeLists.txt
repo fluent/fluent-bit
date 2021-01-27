@@ -203,6 +203,7 @@ REGISTER_OUT_PLUGIN("out_gelf")
 REGISTER_OUT_PLUGIN("out_websocket")
 REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
 REGISTER_OUT_PLUGIN("out_kinesis_firehose")
+REGISTER_OUT_PLUGIN("out_kinesis_streams")
 REGISTER_OUT_PLUGIN("out_s3")
 
 # FILTERS
