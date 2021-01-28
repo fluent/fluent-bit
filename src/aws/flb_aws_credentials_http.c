@@ -223,7 +223,9 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
                                                   flb_sds_t path,
                                                   struct
                                                   flb_aws_client_generator
-                                                  *generator)
+                                                  *generator,
+                                                  struct flb_output_instance 
+                                                  *ins)
 {
     struct flb_aws_provider_http *implementation = NULL;
     struct flb_aws_provider *provider = NULL;
@@ -262,6 +264,8 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
         return NULL;
     }
 
+    flb_output_upstream_set(upstream, ins);
+
     upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
     implementation->client = generator->create();
@@ -293,7 +297,9 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
  struct flb_aws_provider *flb_ecs_provider_create(struct flb_config *config,
                                                   struct
                                                   flb_aws_client_generator
-                                                  *generator)
+                                                  *generator,
+                                                  struct flb_output_instance 
+                                                  *ins)
 {
     flb_sds_t host = NULL;
     flb_sds_t path = NULL;
@@ -314,7 +320,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
             return NULL;
         }
 
-        return flb_http_provider_create(config, host, path, generator);
+        return flb_http_provider_create(config, host, path, generator, ins);
     } else {
         flb_debug("[aws_credentials] Not initializing ECS Provider because"
                   " %s is not set", ECS_CREDENTIALS_PATH_ENV_VAR);
