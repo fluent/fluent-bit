@@ -92,6 +92,7 @@ struct flb_stackdriver {
     bool metadata_server_auth;
 
     /* metadata server (GCP specific, WIP) */
+    flb_sds_t metadata_server;
     flb_sds_t zone;
     flb_sds_t instance_id;
     flb_sds_t instance_name;

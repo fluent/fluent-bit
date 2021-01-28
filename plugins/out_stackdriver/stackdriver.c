@@ -866,7 +866,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
                                      io_flags, ins->tls);
-    ctx->metadata_u = flb_upstream_create_url(config, "http://metadata.google.internal",
+    ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
                                               FLB_IO_TCP, NULL);
 
     /* Create oauth2 context */

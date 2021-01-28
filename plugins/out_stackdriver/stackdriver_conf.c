@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "gce_metadata.h"
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 
@@ -181,6 +182,22 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     ctx->ins = ins;
     ctx->config = config;
+
+    /* Lookup metadata server URL */
+    tmp = flb_output_get_property("metadata_server", ctx->ins);
+    if(tmp) {
+        ctx->metadata_server = flb_sds_create(tmp);
+    }
+    else {
+        tmp = getenv("METADATA_SERVER_URL");
+        if(tmp) {
+            ctx->metadata_server = flb_sds_create(tmp);
+        }
+        else {
+            ctx->metadata_server = flb_sds_create(FLB_STD_METADATA_SERVER);
+        }
+    }
+    flb_plg_info(ctx->ins, "metadata_server set to %s", ctx->metadata_server);
 
     /* Lookup credentials file */
     tmp = flb_output_get_property("google_service_credentials", ins);
@@ -360,6 +377,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->local_resource_id);
     }
 
+    flb_sds_destroy(ctx->metadata_server);
     flb_sds_destroy(ctx->credentials_file);
     flb_sds_destroy(ctx->type);
     flb_sds_destroy(ctx->project_id);
