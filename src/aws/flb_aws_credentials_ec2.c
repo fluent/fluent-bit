@@ -198,9 +198,7 @@ static struct flb_aws_provider_vtable ec2_provider_vtable = {
 struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator,
-                                                 struct flb_output_instance 
-                                                 *ins)
+                                                 *generator)
 {
     struct flb_aws_provider_ec2 *implementation;
     struct flb_aws_provider *provider;
@@ -231,8 +229,6 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
         flb_debug("[aws_credentials] unable to connect to EC2 IMDS.");
         return NULL;
     }
-
-    flb_output_upstream_set(upstream, ins);
 
     upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 

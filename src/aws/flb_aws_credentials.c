@@ -47,9 +47,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       struct
                                                       flb_aws_client_generator
                                                       *generator,
-                                                      int eks_irsa,
-                                                      struct flb_output_instance 
-                                                      *ins);
+                                                      int eks_irsa);
 
 
 /*
@@ -256,9 +254,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
-                                                            *generator,
-                                                            struct flb_output_instance 
-                                                            *ins)
+                                                            *generator)
 {
     struct flb_aws_provider *provider;
     struct flb_aws_provider *tmp_provider;
@@ -274,7 +270,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
          */
         flb_debug("[aws_credentials] Using EKS_POD_EXECUTION_ROLE=%s", eks_pod_role);
         tmp_provider = standard_chain_create(config, tls, region, sts_endpoint,
-                                             proxy, generator, FLB_FALSE, ins);
+                                             proxy, generator, FLB_FALSE);
 
         if (!tmp_provider) {
             return NULL;
@@ -290,7 +286,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
         provider = flb_sts_provider_create(config, tls, tmp_provider, NULL,
                                            eks_pod_role, session_name,
                                            region, sts_endpoint,
-                                           NULL, generator, ins);
+                                           NULL, generator);
         if (!provider) {
             flb_error("Failed to create EKS Fargate Credential Provider");
             flb_aws_provider_destroy(tmp_provider);
@@ -305,7 +301,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
 
     /* standard case- not in EKS Fargate */
     provider = standard_chain_create(config, tls, region, sts_endpoint,
-                                     proxy, generator, FLB_TRUE, ins);
+                                     proxy, generator, FLB_TRUE);
     return provider;
 }
 
@@ -318,9 +314,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       struct
                                                       flb_aws_client_generator
                                                       *generator,
-                                                      int eks_irsa,
-                                                      struct flb_output_instance 
-                                                      *ins)
+                                                      int eks_irsa)
 {
     struct flb_aws_provider *sub_provider;
     struct flb_aws_provider *provider;
@@ -366,7 +360,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     }
 
     if (eks_irsa == FLB_TRUE) {
-        sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator, ins);
+        sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
         if (sub_provider) {
             /* EKS provider can fail if we are not running in k8s */;
             mk_list_add(&sub_provider->_head, &implementation->sub_providers);
@@ -374,14 +368,14 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
         }
     }
 
-    sub_provider = flb_ecs_provider_create(config, generator, ins);
+    sub_provider = flb_ecs_provider_create(config, generator);
     if (sub_provider) {
         /* ECS Provider will fail creation if we are not running in ECS */
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);
         flb_debug("[aws_credentials] Initialized ECS Provider in standard chain");
     }
 
-    sub_provider = flb_ec2_provider_create(config, generator, ins);
+    sub_provider = flb_ec2_provider_create(config, generator);
     if (!sub_provider) {
         /* EC2 provider will only fail creation if a memory alloc failed */
         flb_aws_provider_destroy(provider);

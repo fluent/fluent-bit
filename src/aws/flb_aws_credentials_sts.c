@@ -269,9 +269,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator,
-                                                 struct flb_output_instance 
-                                                 *ins)
+                                                 *generator)
 {
     struct flb_aws_provider_sts *implementation = NULL;
     struct flb_aws_provider *provider = NULL;
@@ -330,8 +328,6 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
         flb_error("[aws_credentials] Connection initialization error");
         goto error;
     }
-
-    flb_output_upstream_set(upstream, ins);
 
     upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
@@ -534,9 +530,7 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator,
-                                                 struct flb_output_instance 
-                                                *ins)
+                                                 *generator)
 {
     struct flb_aws_provider_eks *implementation = NULL;
     struct flb_aws_provider *provider = NULL;
@@ -620,8 +614,6 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
     if (!upstream) {
         goto error;
     }
-
-    flb_output_upstream_set(upstream, ins);
 
     upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
 
