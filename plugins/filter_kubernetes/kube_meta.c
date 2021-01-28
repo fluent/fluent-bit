@@ -842,6 +842,9 @@ static inline int extract_meta(struct flb_kube *ctx,
         if (meta->container_name) {
             n += meta->container_name_len + 1;
         }
+        if (meta->docker_id) {
+            n += meta->docker_id_len + 1;
+        }
         meta->cache_key = flb_malloc(n);
         if (!meta->cache_key) {
             flb_errno();
@@ -864,6 +867,14 @@ static inline int extract_meta(struct flb_kube *ctx,
             meta->cache_key[off++] = ':';
             memcpy(meta->cache_key + off, meta->container_name, meta->container_name_len);
             off += meta->container_name_len;
+        }
+
+        /* Copy docker_id if docker_id is not NULL*/
+        if (meta->docker_id) {
+            /* Separator */
+            meta->cache_key[off++] = ':';
+            memcpy(meta->cache_key + off, meta->docker_id, meta->docker_id_len);
+            off += meta->docker_id_len;
         }
 
         meta->cache_key[off] = '\0';
