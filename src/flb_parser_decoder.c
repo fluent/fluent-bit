@@ -38,6 +38,7 @@ static int decode_json(struct flb_parser_dec *dec,
 {
     int ret;
     int root_type;
+    int records;
     char *buf;
     const char *p;
     size_t size;
@@ -53,8 +54,14 @@ static int decode_json(struct flb_parser_dec *dec,
         return -1;
     }
 
-    ret = flb_pack_json(p, len, &buf, &size, &root_type);
+    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records);
     if (ret != 0) {
+        return -1;
+    }
+
+    /* We expect to decode only one JSON element */
+    if (records != 1) {
+        flb_free(buf);
         return -1;
     }
 
