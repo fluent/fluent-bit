@@ -302,7 +302,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                                    ctx->aws_region,
                                                                    ctx->aws_sts_endpoint,
                                                                    NULL,
-                                                                   flb_aws_client_generator());
+                                                                   flb_aws_client_generator(),
+                                                                   ctx->ins);
             if (!ctx->aws_provider) {
                 flb_error("[out_es] Failed to create AWS Credential Provider");
                 flb_es_conf_destroy(ctx);
@@ -353,7 +354,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                                                             ctx->aws_region,
                                                             ctx->aws_sts_endpoint,
                                                             NULL,
-                                                            flb_aws_client_generator());
+                                                            flb_aws_client_generator(),
+                                                            ctx->ins);
                 /* Session name can be freed once provider is created */
                 flb_free(aws_session_name);
                 if (!ctx->aws_provider) {
