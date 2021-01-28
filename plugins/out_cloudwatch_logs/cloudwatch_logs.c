@@ -223,7 +223,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                            (char *) ctx->region,
                                                            (char *) ctx->sts_endpoint,
                                                            NULL,
-                                                           flb_aws_client_generator());
+                                                           flb_aws_client_generator(),
+                                                           ctx->ins);
     if (!ctx->aws_provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
         goto error;
@@ -263,7 +264,8 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
                                                     (char *) ctx->region,
                                                     (char *) ctx->sts_endpoint,
                                                     NULL,
-                                                    flb_aws_client_generator());
+                                                    flb_aws_client_generator(),
+                                                    ctx->ins);
         if (!ctx->aws_provider) {
             flb_plg_error(ctx->ins,
                           "Failed to create AWS STS Credential Provider");
