@@ -181,34 +181,49 @@ int is_same_metric(char *s1, char *s2) {
 flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
 {
     if (strstr(metric_name, "input_bytes")) {
-        return flb_sds_cat(*metric_helptxt, " Number of input bytes.\n", 24);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of input bytes by Fluent Bit input plugin.\n");
     }
     else if (strstr(metric_name, "input_records")) {
-        return flb_sds_cat(*metric_helptxt, " Number of input records.\n", 26);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of input records by Fluent Bit input plugin.\n");
+    }
+    else if (strstr(metric_name, "input_files_opened")) {
+        return flb_sds_cat_auto(*metric_helptxt, "Number of files opened by Fluent Bit input plugin.\n");
+    }
+    else if (strstr(metric_name, "input_files_closed")) {
+        return flb_sds_cat_auto(*metric_helptxt, "Number of files closed by Fluent Bit input plugin.\n");
+    }
+    else if (strstr(metric_name, "input_files_rotated")) {
+        return flb_sds_cat_auto(*metric_helptxt, "Number of files rotated by Fluent Bit input plugin.\n");
     }
     else if (strstr(metric_name, "output_bytes")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output bytes.\n", 25);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of output bytes by Fluent Bit output plugin.\n");
     }
     else if (strstr(metric_name, "output_records")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output records.\n", 27);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of output records by Fluent Bit output plugin.\n");
     }
     else if (strstr(metric_name, "output_errors")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output errors.\n", 26);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of output errors by Fluent Bit output plugin.\n");
     }
     else if (strstr(metric_name, "output_retries_failed")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output retries failed.\n", 34);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of output retries failed by Fluent Bit output plugin.\n");
     }
     else if (strstr(metric_name, "output_retries")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output retries.\n", 27);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of output retries by Fluent Bit output plugin.\n");
     }
     else if (strstr(metric_name, "output_proc_records")) {
-        return flb_sds_cat(*metric_helptxt, " Number of processed output records.\n", 37);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of processed output records by Fluent Bit output plugin.\n");
     }
     else if (strstr(metric_name, "output_proc_bytes")) {
-        return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
+        return flb_sds_cat_auto(*metric_helptxt, " Number of processed output bytes by Fluent Bit output plugin.\n");
+    }
+    else if (strstr(metric_name, "filter_add_records")) {
+        return flb_sds_cat_auto(*metric_helptxt, " Number of records added by Fluent Bit filter plugin.\n");
+    }
+    else if (strstr(metric_name, "filter_drop_records")) {
+        return flb_sds_cat_auto(*metric_helptxt, " Number of records dropped by Fluent Bit filter plugin.\n");
     }
     else {
-        return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
+        return (flb_sds_cat_auto(*metric_helptxt, " Fluentbit metrics.\n"));
     }
 }
 
