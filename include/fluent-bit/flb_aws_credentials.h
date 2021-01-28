@@ -146,7 +146,9 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             char *proxy,
                                                             struct
                                                             flb_aws_client_generator
-                                                            *generator);
+                                                            *generator,
+                                                            struct flb_output_instance 
+                                                            *ins);
 
 /*
  * A provider that uses OIDC tokens provided by kubernetes to obtain
@@ -164,7 +166,9 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator);
+                                                 *generator, 
+                                                 struct flb_output_instance 
+                                                 *ins);
 
 
 /*
@@ -182,7 +186,9 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
                                                  char *proxy,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator);
+                                                 *generator,
+                                                 struct flb_output_instance 
+                                                 *ins);
 
 /*
  * Standard environment variables
@@ -202,7 +208,9 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
                                                   flb_sds_t path,
                                                   struct
                                                   flb_aws_client_generator
-                                                  *generator);
+                                                  *generator,
+                                                  struct flb_output_instance 
+                                                  *ins);
 
 /*
  * ECS Provider
@@ -212,7 +220,9 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
 struct flb_aws_provider *flb_ecs_provider_create(struct flb_config *config,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator);
+                                                 *generator,
+                                                 struct flb_output_instance 
+                                                 *ins);
 
 /*
  * EC2 IMDS Provider
@@ -220,7 +230,9 @@ struct flb_aws_provider *flb_ecs_provider_create(struct flb_config *config,
 struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
                                                  struct
                                                  flb_aws_client_generator
-                                                 *generator);
+                                                 *generator,
+                                                 struct flb_output_instance 
+                                                 *ins);
 
 /*
  * New AWS Profile provider, reads from the shared credentials file
