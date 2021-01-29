@@ -440,7 +440,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     if (ctx->generic_resource_type){
         flb_sds_destroy(ctx->location);
         flb_sds_destroy(ctx->namespace_id);
-        if(flb_sds_cmp(ctx->resource, "generic_node", flb_sds_len(ctx->resource)) ){
+        if(ctx->node_id){
             flb_sds_destroy(ctx->node_id);
         }
         else {
