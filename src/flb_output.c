@@ -1037,13 +1037,13 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     return 0;
 }
 
-int flb_output_upstream_ha_set(struct flb_upstream_ha *ha,
-                               struct flb_output_instance *ins)
+int flb_output_upstream_ha_set(void *ha, struct flb_output_instance *ins)
 {
     struct mk_list *head;
     struct flb_upstream_node *node;
+    struct flb_upstream_ha *upstream_ha = ha;
 
-    mk_list_foreach(head, &ha->nodes) {
+    mk_list_foreach(head, &upstream_ha->nodes) {
         node = mk_list_entry(head, struct flb_upstream_node, _head);
         flb_output_upstream_set(node->u, ins);
     }

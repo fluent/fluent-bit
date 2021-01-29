@@ -674,8 +674,7 @@ int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
-int flb_output_upstream_ha_set(struct flb_upstream_ha *ha,
-                               struct flb_output_instance *ins);
+int flb_output_upstream_ha_set(void *ha, struct flb_output_instance *ins);
 
 void flb_output_prepare();
 int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
