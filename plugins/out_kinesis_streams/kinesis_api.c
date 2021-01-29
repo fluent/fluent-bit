@@ -41,8 +41,11 @@
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
+#include <unistd.h>
+#endif
 
 #include "kinesis_api.h"
 
