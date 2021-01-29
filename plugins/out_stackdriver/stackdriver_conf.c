@@ -32,6 +32,7 @@
 #include "stackdriver.h"
 #include "stackdriver_conf.h"
 
+
 static inline int key_cmp(const char *str, int len, const char *cmp) {
 
     if (strlen(cmp) != len) {
@@ -189,7 +190,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server = flb_sds_create(tmp);
     }
     else {
-        tmp = getenv("METADATA_SERVER_URL");
+        tmp = getenv("METADATA_SERVER");
         if(tmp) {
             ctx->metadata_server = flb_sds_create(tmp);
         }
@@ -340,6 +341,65 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
     }
 
+    if(flb_sds_cmp(ctx->resource, "generic_node",
+                    flb_sds_len(ctx->resource)) == 0 ||
+        flb_sds_cmp(ctx->resource, "generic_task",
+                    flb_sds_len(ctx->resource)) == 0) {
+
+        ctx->generic_resource_type = FLB_TRUE;
+
+        tmp = flb_output_get_property("location", ins);
+        if(tmp) {
+            ctx->location = flb_sds_create(tmp);
+        } else {
+            flb_plg_error(ctx->ins, "missing generic resource's location");
+        }
+
+        tmp = flb_output_get_property("namespace", ins);
+        if(tmp) {
+            ctx->namespace_id = flb_sds_create(tmp);
+        } else {
+            flb_plg_error(ctx->ins, "missing generic resource's namespace");
+        }
+
+        if (flb_sds_cmp(ctx->resource, "generic_node",
+                    flb_sds_len(ctx->resource)) == 0) {
+            tmp = flb_output_get_property("node_id", ins);
+            if(tmp) {
+                ctx->node_id = flb_sds_create(tmp);
+            } else {
+                flb_plg_error(ctx->ins, "missing generic_node's node_id");
+                flb_stackdriver_conf_destroy(ctx);
+                return NULL;
+            }
+        }
+        else {
+            tmp = flb_output_get_property("job", ins);
+            if(tmp) {
+                ctx->job = flb_sds_create(tmp);
+            } else {
+                flb_plg_error(ctx->ins, "missing generic_task's job");
+            }
+
+            tmp = flb_output_get_property("task_id", ins);
+            if(tmp) {
+                ctx->task_id = flb_sds_create(tmp);
+            } else {
+                flb_plg_error(ctx->ins, "missing generic_task's task_id");
+            }
+
+            if (!ctx->job || !ctx->task_id) {
+                flb_stackdriver_conf_destroy(ctx);
+                return NULL;
+            }
+        }
+
+        if (!ctx->location || !ctx->namespace_id) {
+            flb_stackdriver_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
     tmp = flb_output_get_property("labels_key", ins);
     if (tmp) {
         ctx->labels_key = flb_sds_create(tmp);
@@ -375,6 +435,18 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->cluster_name);
         flb_sds_destroy(ctx->cluster_location);
         flb_sds_destroy(ctx->local_resource_id);
+    }
+
+    if (ctx->generic_resource_type){
+        flb_sds_destroy(ctx->location);
+        flb_sds_destroy(ctx->namespace_id);
+        if(flb_sds_cmp(ctx->resource, "generic_node", flb_sds_len(ctx->resource)) ){
+            flb_sds_destroy(ctx->node_id);
+        }
+        else {
+            flb_sds_destroy(ctx->job);
+            flb_sds_destroy(ctx->task_id);
+        }
     }
 
     flb_sds_destroy(ctx->metadata_server);

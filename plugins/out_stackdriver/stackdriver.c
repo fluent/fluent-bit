@@ -899,20 +899,22 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         }
     }
 
-    if (ctx->metadata_server_auth) {
+    if (ctx->metadata_server_auth ) {
         ret = gce_metadata_read_project_id(ctx);
         if (ret == -1) {
             return -1;
         }
 
-        ret = gce_metadata_read_zone(ctx);
-        if (ret == -1) {
-            return -1;
-        }
+        if (!ctx->generic_resource_type) {
+            ret = gce_metadata_read_zone(ctx);
+            if (ret == -1) {
+                return -1;
+            }
 
-        ret = gce_metadata_read_instance_id(ctx);
-        if (ret == -1) {
-            return -1;
+            ret = gce_metadata_read_instance_id(ctx);
+            if (ret == -1) {
+                return -1;
+            }
         }
     }
 
@@ -1430,6 +1432,52 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
             msgpack_pack_str_body(&mp_pck,
                                   ctx->project_id, flb_sds_len(ctx->project_id));
+        }
+        else if (ctx->generic_resource_type) {
+            if (strcmp(ctx->resource, "generic_node") == 0) {
+                /* generic_node has fields project_id, location, namespace, node_id */
+                msgpack_pack_map(&mp_pck, 4);
+
+                msgpack_pack_str(&mp_pck, 7);
+                msgpack_pack_str_body(&mp_pck, "node_id", 7);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->node_id, flb_sds_len(ctx->node_id));
+            }
+            else {
+                 /* generic_task has fields project_id, location, namespace, job, task_id */
+                msgpack_pack_map(&mp_pck, 5);
+
+                msgpack_pack_str(&mp_pck, 3);
+                msgpack_pack_str_body(&mp_pck, "job", 3);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->job));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->job, flb_sds_len(ctx->job));
+
+                msgpack_pack_str(&mp_pck, 7);
+                msgpack_pack_str_body(&mp_pck, "task_id", 7);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->task_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->task_id, flb_sds_len(ctx->task_id));
+            }
+
+            msgpack_pack_str(&mp_pck, 10);
+            msgpack_pack_str_body(&mp_pck, "project_id", 10);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->project_id, flb_sds_len(ctx->project_id));
+
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "location", 8);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->location));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->location, flb_sds_len(ctx->location));
+
+            msgpack_pack_str(&mp_pck, 9);
+            msgpack_pack_str_body(&mp_pck, "namespace", 9);
+            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_id));
+            msgpack_pack_str_body(&mp_pck,
+                                  ctx->namespace_id, flb_sds_len(ctx->namespace_id));
         }
         else if (strcmp(ctx->resource, "gce_instance") == 0) {
             /* gce_instance resource has fields project_id, zone, instance_id */

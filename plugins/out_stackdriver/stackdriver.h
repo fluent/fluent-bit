@@ -110,6 +110,19 @@ struct flb_stackdriver {
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
 
+    /* generic resources */
+    flb_sds_t location;
+    flb_sds_t namespace_id;
+    bool generic_resource_type;
+
+    /* generic_node specific */
+    flb_sds_t node_id;
+
+    /* generic_task specific */
+    flb_sds_t job;
+    flb_sds_t task_id;
+
+
     /* other */
     flb_sds_t resource;
     flb_sds_t severity_key;
