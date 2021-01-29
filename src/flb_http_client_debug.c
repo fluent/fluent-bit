@@ -42,7 +42,7 @@ static void debug_cb_request_payload(char *name, void *p1, void *p2)
     struct flb_http_client *c = p1;
 
     if (c->body_len > 3) {
-        ptr = c->body_buf;
+        ptr = (unsigned char *) c->body_buf;
         if (ptr[0] == 0x1F && ptr[1] == 0x8B && ptr[2] == 0x08) {
             flb_idebug("[http] request payload (%lu bytes)\n[GZIP binary content...]",
                        c->body_len);
