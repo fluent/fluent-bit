@@ -235,11 +235,7 @@ static int elasticsearch_format(struct flb_config *config,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     uint16_t hash[8];
-    const char *es_index_custom;
     int es_index_custom_len;
-    int i;
-    msgpack_object key;
-    msgpack_object val;
     struct flb_elasticsearch *ctx = plugin_context;
 
     /* Iterate the original buffer and perform adjustments */
@@ -348,7 +344,6 @@ static int elasticsearch_format(struct flb_config *config,
                 else {
                     memcpy(logstash_index, v, len);
                 }
-                es_index_custom = v;
                 es_index_custom_len = len;
                 flb_sds_destroy(v);
             }
