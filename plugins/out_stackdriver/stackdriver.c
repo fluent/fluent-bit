@@ -905,7 +905,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
             return -1;
         }
 
-        if (!ctx->generic_resource_type) {
+        if (!ctx->is_generic_resource_type) {
             ret = gce_metadata_read_zone(ctx);
             if (ret == -1) {
                 return -1;
@@ -1413,7 +1413,7 @@ static int stackdriver_format(struct flb_config *config,
     msgpack_pack_str(&mp_pck, 6);
     msgpack_pack_str_body(&mp_pck, "labels", 6);
 
-    if (ctx->k8s_resource_type) {
+    if (ctx->is_k8s_resource_type) {
         ret = extract_local_resource_id(data, bytes, ctx, tag);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "fail to construct local_resource_id");
@@ -1433,7 +1433,7 @@ static int stackdriver_format(struct flb_config *config,
             msgpack_pack_str_body(&mp_pck,
                                   ctx->project_id, flb_sds_len(ctx->project_id));
         }
-        else if (ctx->generic_resource_type) {
+        else if (ctx->is_generic_resource_type) {
             if (strcmp(ctx->resource, "generic_node") == 0) {
                 /* generic_node has fields project_id, location, namespace, node_id */
                 msgpack_pack_map(&mp_pck, 4);
@@ -1852,7 +1852,7 @@ static int stackdriver_format(struct flb_config *config,
 
         /* avoid modifying the original tag */
         newtag = tag;
-        if (ctx->k8s_resource_type) {
+        if (ctx->is_k8s_resource_type) {
             stream = get_stream(result.data.via.array.ptr[1].via.map);
             if (stream == STREAM_STDOUT) {
                 newtag = "stdout";

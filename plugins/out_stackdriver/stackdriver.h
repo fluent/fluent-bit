@@ -104,7 +104,7 @@ struct flb_stackdriver {
     flb_sds_t pod_name;
     flb_sds_t container_name;
     flb_sds_t node_name;
-    bool k8s_resource_type;
+    bool is_k8s_resource_type;
 
     flb_sds_t labels_key;
     flb_sds_t local_resource_id;
@@ -113,7 +113,7 @@ struct flb_stackdriver {
     /* generic resources */
     flb_sds_t location;
     flb_sds_t namespace_id;
-    bool generic_resource_type;
+    bool is_generic_resource_type;
 
     /* generic_node specific */
     flb_sds_t node_id;
