@@ -137,7 +137,7 @@ static flb_sds_t random_partition_key(const char *tag)
  * Writes a log event to the output buffer
  */
 static int write_event(struct flb_kinesis *ctx, struct flush *buf,
-                       struct event *event, int *offset)
+                       struct kinesis_event *event, int *offset)
 {
     flb_sds_t tag_timestamp = NULL;
 
@@ -216,7 +216,7 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
     int ret;
     size_t size;
     size_t b64_len;
-    struct event *event;
+    struct kinesis_event *event;
     char *tmp_buf_ptr;
     char *time_key_ptr;
     struct tm time_stamp;
@@ -379,7 +379,7 @@ static int send_log_events(struct flb_kinesis *ctx, struct flush *buf) {
     int ret;
     int offset;
     int i;
-    struct event *event;
+    struct kinesis_event *event;
 
     if (buf->event_index <= 0) {
         /*
@@ -453,7 +453,7 @@ static int add_event(struct flb_kinesis *ctx, struct flush *buf,
                      const msgpack_object *obj, struct flb_time *tms)
 {
     int ret;
-    struct event *event;
+    struct kinesis_event *event;
     int retry_add = FLB_FALSE;
     size_t event_bytes = 0;
 
