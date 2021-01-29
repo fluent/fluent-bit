@@ -363,7 +363,7 @@ static void cb_results(const char *name, const char *value,
         return;
     }
 
-    flb_hash_add(ht, name, strlen(name), value, vlen);
+    flb_hash_add(ht, name, strlen(name), (void *) value, vlen);
 }
 #endif
 
@@ -417,7 +417,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                     end--;
 
                     len = end - beg + 1;
-                    ret = flb_hash_get(ht, beg, len, &tmp, &tmp_s);
+                    ret = flb_hash_get(ht, beg, len, (void *) &tmp, &tmp_s);
                     if (ret != -1) {
                         memcpy(out_buf + buf_s, tmp, tmp_s);
                         buf_s += tmp_s;
