@@ -40,6 +40,10 @@ EXTRA_OECMAKE += "-DFLB_LUAJIT=Off -DFLB_FILTER_LUA=Off "
 # Disable Library and examples
 EXTRA_OECMAKE += "-DFLB_SHARED_LIB=Off -DFLB_EXAMPLES=Off "
 
+# Systemd support (optional)
+DEPENDS += "systemd"
+EXTRA_OECMAKE += "-DFLB_IN_SYSTEMD=On "
+
 # Kafka Output plugin (disabled by default): note that when
 # enabling Kafka output plugin, the backend library librdkafka
 # requires 'openssl' as a dependency.
