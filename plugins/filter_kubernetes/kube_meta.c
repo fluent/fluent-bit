@@ -1079,7 +1079,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     /* Check if we have some data associated to the cache key */
     ret = flb_hash_get(ctx->hash_table,
                        meta->cache_key, meta->cache_key_len,
-                       &hash_meta_buf, &hash_meta_size);
+                       (void *) &hash_meta_buf, &hash_meta_size);
     if (ret == -1) {
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_meta(ctx, meta,
