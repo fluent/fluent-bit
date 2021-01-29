@@ -166,7 +166,8 @@ static struct flb_hash *prepare_lookup_keys(msgpack_object *map,
         mk_list_foreach_safe(head, tmp, &ctx->lookup_keys) {
             lookup_key = mk_list_entry(head, struct geoip2_lookup_key, _head);
             if (strncasecmp(key->via.str.ptr, lookup_key->key, lookup_key->key_len) == 0) {
-                flb_hash_add(ht, lookup_key->key, lookup_key->key_len, val->via.str.ptr, val->via.str.size);
+                flb_hash_add(ht, lookup_key->key, lookup_key->key_len,
+                             (void *) val->via.str.ptr, val->via.str.size);
             }
         }
     }
@@ -221,7 +222,8 @@ static void add_geoip_fields(msgpack_object *map,
         msgpack_pack_str(packer, record->key_len);
         msgpack_pack_str_body(packer, record->key, record->key_len);
 
-        flb_hash_get(lookup_keys, record->lookup_key, record->lookup_key_len, &ip, &ip_size);
+        flb_hash_get(lookup_keys, record->lookup_key, record->lookup_key_len,
+                     (void *) &ip, &ip_size);
         result = mmdb_lookup(ctx, ip);
         if (!result.found_entry) {
             msgpack_pack_nil(packer);
