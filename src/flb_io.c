@@ -63,7 +63,7 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
 
-FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
+int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                                   struct flb_coro *coro)
 {
     int ret;
