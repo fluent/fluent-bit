@@ -300,7 +300,7 @@ static struct flush *new_flush_buffer(const char *tag, int tag_len)
     }
     buf->tmp_buf_size = PUT_RECORDS_PAYLOAD_SIZE;
 
-    buf->events = flb_malloc(sizeof(struct event) * MAX_EVENTS_PER_PUT);
+    buf->events = flb_malloc(sizeof(struct kinesis_event) * MAX_EVENTS_PER_PUT);
     if (!buf->events) {
         flb_errno();
         kinesis_flush_destroy(buf);
