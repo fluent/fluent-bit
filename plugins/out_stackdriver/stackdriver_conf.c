@@ -340,7 +340,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
     }
 
-    if(flb_sds_cmp(ctx->resource, "generic_node",
+    if (flb_sds_cmp(ctx->resource, "generic_node",
                     flb_sds_len(ctx->resource)) == 0 ||
         flb_sds_cmp(ctx->resource, "generic_task",
                     flb_sds_len(ctx->resource)) == 0) {
@@ -348,14 +348,14 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->is_generic_resource_type = FLB_TRUE;
 
         tmp = flb_output_get_property("location", ins);
-        if(tmp) {
+        if (tmp) {
             ctx->location = flb_sds_create(tmp);
         } else {
             flb_plg_error(ctx->ins, "missing generic resource's location");
         }
 
         tmp = flb_output_get_property("namespace", ins);
-        if(tmp) {
+        if (tmp) {
             ctx->namespace_id = flb_sds_create(tmp);
         } else {
             flb_plg_error(ctx->ins, "missing generic resource's namespace");
@@ -364,7 +364,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         if (flb_sds_cmp(ctx->resource, "generic_node",
                     flb_sds_len(ctx->resource)) == 0) {
             tmp = flb_output_get_property("node_id", ins);
-            if(tmp) {
+            if (tmp) {
                 ctx->node_id = flb_sds_create(tmp);
             } else {
                 flb_plg_error(ctx->ins, "missing generic_node's node_id");
@@ -374,14 +374,14 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
         else {
             tmp = flb_output_get_property("job", ins);
-            if(tmp) {
+            if (tmp) {
                 ctx->job = flb_sds_create(tmp);
             } else {
                 flb_plg_error(ctx->ins, "missing generic_task's job");
             }
 
             tmp = flb_output_get_property("task_id", ins);
-            if(tmp) {
+            if (tmp) {
                 ctx->task_id = flb_sds_create(tmp);
             } else {
                 flb_plg_error(ctx->ins, "missing generic_task's task_id");

@@ -899,7 +899,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         }
     }
 
-    if (ctx->metadata_server_auth ) {
+    if (ctx->metadata_server_auth) {
         ret = gce_metadata_read_project_id(ctx);
         if (ret == -1) {
             return -1;
