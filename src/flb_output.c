@@ -398,7 +398,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data)
 {
     int ret = -1;
-    int mask_id;
+    uint64_t mask_id;
     int flags = 0;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
