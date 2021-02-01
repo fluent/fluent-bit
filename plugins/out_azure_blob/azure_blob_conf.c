@@ -144,7 +144,7 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
 
         ctx->u = flb_upstream_create_url(config, ctx->endpoint,
-                                         io_flags, ins->tls);
+                                         io_flags);
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "invalid endpoint '%s'", ctx->endpoint);
             return NULL;
@@ -171,8 +171,8 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
             io_flags = FLB_IO_TCP;
         }
 
-        ctx->u = flb_upstream_create(config, ctx->real_endpoint, port, io_flags,
-                                     ins->tls);
+        ctx->u = flb_upstream_create(config, ctx->real_endpoint, port, io_flags
+                                     );
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "cannot create upstream for endpoint '%s'",
                           ctx->real_endpoint);

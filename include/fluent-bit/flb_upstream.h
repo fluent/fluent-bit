@@ -92,11 +92,11 @@ struct mk_list *flb_upstream_list_get();
 
 void flb_upstream_init();
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         const char *host, int port, int flags,
-                                         struct flb_tls *tls);
+                                         const char *host, int port, int flags);
+                                         // struct flb_tls *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
-                                             const char *url, int flags,
-                                             struct flb_tls *tls);
+                                             const char *url, int flags);
+                                         //    struct flb_tls *tls);
 
 int flb_upstream_destroy(struct flb_upstream *u);
 

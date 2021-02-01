@@ -140,7 +140,7 @@ void flb_aws_provider_destroy(struct flb_aws_provider *provider);
  */
 struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             *config,
-                                                            struct flb_tls *tls,
+                                                            // struct flb_tls *tls,
                                                             char *region,
                                                             char *sts_endpoint,
                                                             char *proxy,
@@ -158,7 +158,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
  * location of the OIDC token from an environment variable.
  */
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
-                                                 struct flb_tls *tls,
+                                                 // struct flb_tls *tls,
                                                  char *region, 
                                                  char *sts_endpoint,
                                                  char *proxy,
@@ -171,7 +171,7 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
  * STS Assume Role Provider.
  */
 struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
-                                                 struct flb_tls *tls,
+                                                 // struct flb_tls *tls,
                                                  struct flb_aws_provider
                                                  *base_provider,
                                                  char *external_id,

@@ -253,7 +253,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
     implementation->host = host;
     implementation->path = path;
 
-    upstream = flb_upstream_create(config, host, 80, FLB_IO_TCP, NULL);
+    upstream = flb_upstream_create(config, host, 80, FLB_IO_TCP);
 
     if (!upstream) {
         flb_aws_provider_destroy(provider);

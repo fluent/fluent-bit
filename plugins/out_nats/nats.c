@@ -54,8 +54,8 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags,
-                                   NULL);
+                                   io_flags
+                                   );
     if (!upstream) {
         flb_free(ctx);
         return -1;

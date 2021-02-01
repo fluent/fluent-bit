@@ -292,7 +292,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         flb_mp_map_header_append(&mh);
         pack_str(&mp_pck, "network_tls");
 
-        config_map = flb_tls_get_config_map(ins->config);
+        // config_map = flb_tls_get_config_map(ins->config);
         msgpack_pack_array(&mp_pck, mk_list_size(config_map));
 
         /* Adjust 'tls' default value based on plugin type" */

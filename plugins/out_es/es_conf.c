@@ -191,8 +191,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags,
-                                   ins->tls);
+                                   io_flags
+                                   );
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_es_conf_destroy(ctx);
@@ -268,8 +268,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         if (strncasecmp(tmp, "On", 2) == 0) {
             ctx->has_aws_auth = FLB_TRUE;
             flb_debug("[out_es] Enabled AWS Auth");
-
-            /* AWS provider needs a separate TLS instance */
+/*
             ctx->aws_tls = flb_tls_create(FLB_TRUE,
                                           ins->tls_debug,
                                           ins->tls_vhost,
@@ -283,7 +282,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }
-
+*/
             tmp = flb_output_get_property("aws_region", ins);
             if (!tmp) {
                 flb_error("[out_es] aws_auth enabled but aws_region not set");
@@ -298,7 +297,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             }
 
             ctx->aws_provider = flb_standard_chain_provider_create(config,
-                                                                   ctx->aws_tls,
+                                                                   // ctx->aws_tls,
                                                                    ctx->aws_region,
                                                                    ctx->aws_sts_endpoint,
                                                                    NULL,
@@ -328,8 +327,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                     return NULL;
                 }
 
-                /* STS provider needs yet another separate TLS instance */
-                ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
+                /*
+		 * ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
                                                   ins->tls_debug,
                                                   ins->tls_vhost,
                                                   ins->tls_ca_path,
@@ -342,9 +341,9 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                     flb_es_conf_destroy(ctx);
                     return NULL;
                 }
-
+*/
                 ctx->aws_provider = flb_sts_provider_create(config,
-                                                            ctx->aws_sts_tls,
+                                //                            ctx->aws_sts_tls,
                                                             ctx->
                                                             base_aws_provider,
                                                             aws_external_id,
@@ -395,7 +394,7 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     if (ctx->aws_provider) {
         flb_aws_provider_destroy(ctx->aws_provider);
     }
-
+/*
     if (ctx->aws_tls) {
         flb_tls_destroy(ctx->aws_tls);
     }
@@ -403,6 +402,7 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
     if (ctx->aws_sts_tls) {
         flb_tls_destroy(ctx->aws_sts_tls);
     }
+*/
 #endif
 
     if (ctx->ra_prefix_key) {

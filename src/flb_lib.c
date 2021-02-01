@@ -107,7 +107,7 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
-    flb_tls_init();
+    // flb_tls_init();
     flb_coro_init();
     flb_upstream_init();
     flb_output_prepare();

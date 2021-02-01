@@ -258,7 +258,7 @@ static struct flb_aws_provider_vtable sts_provider_vtable = {
 };
 
 struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
-                                                 struct flb_tls *tls,
+                                                 // struct flb_tls *tls,
                                                  struct flb_aws_provider
                                                  *base_provider,
                                                  char *external_id,
@@ -323,7 +323,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
     implementation->sts_client->proxy = proxy;
 
     upstream = flb_upstream_create(config, implementation->endpoint, 443,
-                                   FLB_IO_TLS, tls);
+                                   FLB_IO_TLS);
     if (!upstream) {
         flb_error("[aws_credentials] Connection initialization error");
         goto error;
@@ -524,7 +524,7 @@ static struct flb_aws_provider_vtable eks_provider_vtable = {
 };
 
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
-                                                 struct flb_tls *tls,
+                                                 // struct flb_tls *tls,
                                                  char *region,
                                                  char *sts_endpoint,
                                                  char *proxy,
@@ -609,7 +609,7 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
     implementation->sts_client->proxy = proxy;
 
     upstream = flb_upstream_create(config, implementation->endpoint, 443,
-                                   FLB_IO_TLS, tls);
+                                   FLB_IO_TLS);
 
     if (!upstream) {
         goto error;

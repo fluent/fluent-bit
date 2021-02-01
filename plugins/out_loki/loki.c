@@ -562,8 +562,8 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags,
-                                   ins->tls);
+                                   io_flags
+                                   );
     if (!upstream) {
         return NULL;
     }

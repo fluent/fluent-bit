@@ -161,7 +161,7 @@ static int in_health_init(struct flb_input_instance *in,
     ctx->ins      = in;
 
     ctx->u = flb_upstream_create(config, in->host.name, in->host.port,
-                                 FLB_IO_TCP, NULL);
+                                 FLB_IO_TCP);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "could not initialize upstream");
         flb_free(ctx);

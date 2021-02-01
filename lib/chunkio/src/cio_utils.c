@@ -25,14 +25,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-#ifndef _MSC_VER
-#include <fts.h>
-#endif
+// #ifndef _MSC_VER
+// #include <fts.h>
+// #endif
 
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/cio_log.h>
 
-#ifndef _MSC_VER
+#ifdef _MSC_VERX
 /*
  * Taken from StackOverflow:
  *

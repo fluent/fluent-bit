@@ -174,8 +174,8 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     upstream = flb_upstream_create(config,
                                    ctx->host,
                                    ctx->port,
-                                   FLB_IO_TLS,
-                                   ins->tls);
+                                   FLB_IO_TLS
+                                   );
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_azure_conf_destroy(ctx);

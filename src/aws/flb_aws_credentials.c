@@ -40,7 +40,7 @@
 /* declarations */
 static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       *config,
-                                                      struct flb_tls *tls,
+                                                      //struct flb_tls *tls,
                                                       char *region,
                                                       char *sts_endpoint,
                                                       char *proxy,
@@ -248,7 +248,7 @@ static struct flb_aws_provider_vtable standard_chain_provider_vtable = {
 
 struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             *config,
-                                                            struct flb_tls *tls,
+//                                                            struct flb_tls *tls,
                                                             char *region,
                                                             char *sts_endpoint,
                                                             char *proxy,
@@ -269,7 +269,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
          * assume the EKS_POD_EXECUTION_ROLE
          */
         flb_debug("[aws_credentials] Using EKS_POD_EXECUTION_ROLE=%s", eks_pod_role);
-        tmp_provider = standard_chain_create(config, tls, region, sts_endpoint,
+        tmp_provider = standard_chain_create(config, region, sts_endpoint,
                                              proxy, generator, FLB_FALSE);
 
         if (!tmp_provider) {
@@ -283,7 +283,7 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
             return NULL;
         }
 
-        provider = flb_sts_provider_create(config, tls, tmp_provider, NULL,
+        provider = flb_sts_provider_create(config, tmp_provider, NULL,
                                            eks_pod_role, session_name,
                                            region, sts_endpoint,
                                            NULL, generator);
@@ -300,14 +300,14 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
     }
 
     /* standard case- not in EKS Fargate */
-    provider = standard_chain_create(config, tls, region, sts_endpoint,
+    provider = standard_chain_create(config, region, sts_endpoint,
                                      proxy, generator, FLB_TRUE);
     return provider;
 }
 
 static struct flb_aws_provider *standard_chain_create(struct flb_config
                                                       *config,
-                                                      struct flb_tls *tls,
+                                                      //struct flb_tls *tls,
                                                       char *region,
                                                       char *sts_endpoint,
                                                       char *proxy,
@@ -360,7 +360,7 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     }
 
     if (eks_irsa == FLB_TRUE) {
-        sub_provider = flb_eks_provider_create(config, tls, region, sts_endpoint, proxy, generator);
+        sub_provider = flb_eks_provider_create(config, region, sts_endpoint, proxy, generator);
         if (sub_provider) {
             /* EKS provider can fail if we are not running in k8s */;
             mk_list_add(&sub_provider->_head, &implementation->sub_providers);

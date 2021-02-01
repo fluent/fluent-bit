@@ -95,8 +95,8 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     ctx->ec2_upstream = flb_upstream_create(config,
                                             FLB_FILTER_AWS_IMDS_HOST,
                                             80,
-                                            FLB_IO_TCP,
-                                            NULL);
+                                            FLB_IO_TCP
+                                            );
     if (!ctx->ec2_upstream) {
         flb_plg_error(ctx->ins, "connection initialization error");
         flb_free(ctx);

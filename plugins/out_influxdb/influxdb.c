@@ -418,8 +418,8 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags,
-                                   ins->tls);
+                                   io_flags);
+                                   
     if (!upstream) {
         flb_free(ctx);
         return -1;

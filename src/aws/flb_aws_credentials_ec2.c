@@ -223,7 +223,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     provider->implementation = implementation;
 
     upstream = flb_upstream_create(config, AWS_IMDS_HOST, 80,
-                                   FLB_IO_TCP, NULL);
+                                   FLB_IO_TCP);
     if (!upstream) {
         flb_aws_provider_destroy(provider);
         flb_debug("[aws_credentials] unable to connect to EC2 IMDS.");
