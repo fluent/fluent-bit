@@ -831,7 +831,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          msgpack_pack_str_body(&mp_pck, "stream", 6);
 
          /* Pack stream labels */
-         pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, obj);
+         pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, NULL);
 
         /* streams['values'] */
          msgpack_pack_str(&mp_pck, 6);
