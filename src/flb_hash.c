@@ -426,6 +426,21 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id,
     return 0;
 }
 
+void *flb_hash_get_ptr(struct flb_hash *ht,
+                 const char *key, int key_len)
+{
+    int id;
+    struct flb_hash_entry *entry;
+
+    entry = hash_get_entry(ht, key, key_len, &id);
+    if (!entry) {
+        return NULL;
+    }
+
+    entry->hits++;
+    return entry->val;
+}
+
 int flb_hash_del(struct flb_hash *ht, const char *key)
 {
     int id;
