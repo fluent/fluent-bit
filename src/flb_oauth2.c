@@ -220,7 +220,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
 
     /* Create Upstream context */
     ctx->u = flb_upstream_create_url(config, auth_url,
-                                     FLB_IO_TLS, ctx->tls);
+                                     FLB_IO_TLS);
     if (!ctx->u) {
         flb_error("[oauth2] error creating upstream context");
         goto error;

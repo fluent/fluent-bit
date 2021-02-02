@@ -348,14 +348,14 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
 
     flb_trace("[io coro=%p] [net_write] trying %zd bytes", coro, len);
 
-    /*if (!u_conn->tls_session) {
+    if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_write_async(coro, u_conn, data, len, out_len);
         }
         else {
             ret = net_io_write(u_conn, data, len, out_len);
         }
-    }*/
+    }
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
@@ -386,14 +386,14 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 
     flb_trace("[io coro=%p] [net_read] try up to %zd bytes", coro, len);
 
-    /*if (!u_conn->tls_session) {
+    if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
             ret = net_io_read_async(coro, u_conn, buf, len);
         }
         else {
             ret = net_io_read(u_conn, buf, len);
         }
-    }*/
+    }
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {

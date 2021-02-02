@@ -220,7 +220,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     flb_upstream_queue_init(&u->queue);
 
 #ifdef FLB_HAVE_TLS
-    u->tls = tls;
+  //  u->tls = tls;
 #endif
 
     mk_list_add(&u->_head, &config->upstreams);
