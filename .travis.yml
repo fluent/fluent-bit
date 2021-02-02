@@ -38,6 +38,7 @@ before_script:
 matrix:
   include:
     - os: osx
+      osx_image: xcode12.2
       env: FLB_OPT="-DFLB_JEMALLOC=Off"
       script: |
         brew update
