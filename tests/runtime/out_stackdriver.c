@@ -400,6 +400,148 @@ static void cb_check_global_resource(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_generic_node_creds(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+   /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "generic_node");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "fluent");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace']", "test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* node_id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['node_id']", "333222111");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_generic_node_metadata(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+   /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "generic_node");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit-test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "fluent");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace']", "test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* node_id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['node_id']", "333222111");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_generic_task_creds(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+   /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "generic_task");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "fluent");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace']", "test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+     /* job */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['job']", "test-job");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* task_id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['task_id']", "333222111");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_generic_task_metadata(void *ctx, int ffd,
+                                     int res_ret, void *res_data, size_t res_size,
+                                     void *data)
+{
+    int ret;
+
+   /* resource type */
+    ret = mp_kv_cmp(res_data, res_size, "$resource['type']", "generic_task");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* project id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['project_id']", "fluent-bit-test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* location */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['location']", "fluent");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* namespace */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['namespace']", "test");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* job */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['job']", "test-job");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* task_id */
+    ret = mp_kv_cmp(res_data, res_size,
+                    "$resource['labels']['task_id']", "333222111");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_gce_instance(void *ctx, int ffd,
                                   int res_ret, void *res_data, size_t res_size,
                                   void *data)
@@ -2128,6 +2270,182 @@ void flb_test_resource_global_custom_prefix()
     /* Enable test mode */
     ret = flb_output_set_test(ctx, out_ffd, "formatter",
                               cb_check_global_resource,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_generic_node_creds()
+{
+    int ret;
+    int size = sizeof(JSON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "generic_node",
+                   "location", "fluent",
+                   "namespace", "test",
+                   "node_id", "333222111",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_generic_node_creds,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_generic_node_metadata()
+{
+    int ret;
+    int size = sizeof(JSON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "generic_node",
+                   "location", "fluent",
+                   "namespace", "test",
+                   "node_id", "333222111",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_generic_node_metadata,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_generic_task_creds()
+{
+    int ret;
+    int size = sizeof(JSON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "resource", "generic_task",
+                   "location", "fluent",
+                   "namespace", "test",
+                   "job", "test-job",
+                   "task_id", "333222111",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_generic_task_creds,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_resource_generic_task_metadata()
+{
+    int ret;
+    int size = sizeof(JSON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "generic_task",
+                   "location", "fluent",
+                   "namespace", "test",
+                   "job", "test-job",
+                   "task_id", "333222111",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_generic_task_metadata,
                               NULL, NULL);
 
     /* Start */
@@ -4169,6 +4487,12 @@ TEST_LIST = {
     {"resource_global", flb_test_resource_global },
     {"resource_global_custom_prefix", flb_test_resource_global_custom_prefix },
     {"resource_gce_instance", flb_test_resource_gce_instance },
+
+    /* generic resources */
+    {"resource_generic_node_creds", flb_test_resource_generic_node_creds},
+    {"resource_generic_node_metadata", flb_test_resource_generic_node_metadata},
+    {"resource_generic_task_creds", flb_test_resource_generic_task_creds},
+    {"resource_generic_task_metadata", flb_test_resource_generic_task_metadata},
 
     /* test trace */
     {"trace_no_autoformat", flb_test_trace_no_autoformat},
