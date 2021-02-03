@@ -74,6 +74,7 @@ struct flb_kube {
     int api_port;
     int api_https;
     int use_journal;
+    int cache_use_docker_id;
     int labels;
     int annotations;
     int dummy_meta;
