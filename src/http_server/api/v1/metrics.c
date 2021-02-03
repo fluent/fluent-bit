@@ -196,7 +196,7 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
         return flb_sds_cat(*metric_helptxt, " Number of output errors.\n", 26);
     }
     else if (strstr(metric_name, "output_retries_failed")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output retries failed.\n", 34);
+        return flb_sds_cat(*metric_helptxt, " Number of abandoned batches because the maximum number of re-tries was reached.\n", 81);
     }
     else if (strstr(metric_name, "output_retries")) {
         return flb_sds_cat(*metric_helptxt, " Number of output retries.\n", 27);
