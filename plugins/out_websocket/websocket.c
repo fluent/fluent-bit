@@ -257,6 +257,7 @@ static void cb_ws_flush(const void *data, size_t bytes,
     }
     if (ret == -1) {
         flb_error("[out_ws] dataFrameHeader sent failed");
+        ctx->handshake = 1;
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -272,6 +273,7 @@ static void cb_ws_flush(const void *data, size_t bytes,
 
     //flb_info("[out_ws] sendDataFrame number of bytes sent = %i", ret);
     if (ret == -1) {
+        ctx->handshake = 1;
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
