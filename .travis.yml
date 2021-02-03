@@ -35,7 +35,11 @@ env:
 
 before_script:
 
-matrix:
+jobs:
+  exclude:
+    - arch: arm64
+      compiler: clang
+      env: FLB_OPT="-DSANITIZE_UNDEFINED=On"
   include:
     - os: osx
       osx_image: xcode12.2
