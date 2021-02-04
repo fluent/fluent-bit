@@ -182,6 +182,15 @@ void async_fn_http(struct flb_aws_provider *provider) {
     implementation->client->upstream->flags |= FLB_IO_ASYNC;
 }
 
+void upstream_set_fn_http(struct flb_aws_provider *provider,
+                          struct flb_output_instance *ins) {
+    struct flb_aws_provider_http *implementation = provider->implementation;
+
+    flb_debug("[aws_credentials] upstream_set called on the http provider");
+    /* set upstream on output */
+    flb_output_upstream_set(implementation->client->upstream, ins);
+}
+
 void destroy_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
 
@@ -216,6 +225,7 @@ static struct flb_aws_provider_vtable http_provider_vtable = {
     .destroy = destroy_fn_http,
     .sync = sync_fn_http,
     .async = async_fn_http,
+    .upstream_set = upstream_set_fn_http,
 };
 
 struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,

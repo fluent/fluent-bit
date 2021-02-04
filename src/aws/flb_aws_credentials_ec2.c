@@ -167,6 +167,15 @@ void async_fn_ec2(struct flb_aws_provider *provider) {
     implementation->client->upstream->flags |= FLB_IO_ASYNC;
 }
 
+void upstream_set_fn_ec2(struct flb_aws_provider *provider,
+                         struct flb_output_instance *ins) {
+    struct flb_aws_provider_ec2 *implementation = provider->implementation;
+
+    flb_debug("[aws_credentials] upstream_set called on the EC2 provider");
+    /* upstream_set */
+    flb_output_upstream_set(implementation->client->upstream, ins);
+}
+
 void destroy_fn_ec2(struct flb_aws_provider *provider) {
     struct flb_aws_provider_ec2 *implementation = provider->implementation;
 
@@ -193,6 +202,7 @@ static struct flb_aws_provider_vtable ec2_provider_vtable = {
     .destroy = destroy_fn_ec2,
     .sync = sync_fn_ec2,
     .async = async_fn_ec2,
+    .upstream_set = upstream_set_fn_ec2,
 };
 
 struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,

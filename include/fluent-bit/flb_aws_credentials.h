@@ -93,6 +93,13 @@ typedef void(flb_aws_provider_sync_fn)(struct flb_aws_provider *provider);
 typedef void(flb_aws_provider_async_fn)(struct flb_aws_provider *provider);
 
 /*
+ * Call flb_output_upstream_set() on all upstreams created 
+ * by this provider and all sub-providers. 
+ */
+typedef void(flb_aws_provider_upstream_set_fn)(struct flb_aws_provider *provider, 
+                                               struct flb_output_instance *ins);
+
+/*
  * This structure is a virtual table for the functions implemented by each
  * provider
  */
@@ -103,6 +110,7 @@ struct flb_aws_provider_vtable {
     flb_aws_provider_destroy_fn *destroy;
     flb_aws_provider_sync_fn *sync;
     flb_aws_provider_async_fn *async;
+    flb_aws_provider_upstream_set_fn *upstream_set;
 };
 
 /*

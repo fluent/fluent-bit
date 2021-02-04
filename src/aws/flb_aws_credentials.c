@@ -217,6 +217,23 @@ void async_fn_standard_chain(struct flb_aws_provider *provider)
     }
 }
 
+void upstream_set_fn_standard_chain(struct flb_aws_provider *provider,
+                                    struct flb_output_instance *ins)
+{
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    /* set all providers to async mode */
+    mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+        sub_provider = mk_list_entry(head,
+                                     struct flb_aws_provider,
+                                     _head);
+        sub_provider->provider_vtable->upstream_set(sub_provider, ins);
+    }
+}
+
 void destroy_fn_standard_chain(struct flb_aws_provider *provider) {
     struct flb_aws_provider *sub_provider;
     struct flb_aws_provider_chain *implementation;
@@ -244,6 +261,7 @@ static struct flb_aws_provider_vtable standard_chain_provider_vtable = {
     .destroy = destroy_fn_standard_chain,
     .sync = sync_fn_standard_chain,
     .async = async_fn_standard_chain,
+    .upstream_set = upstream_set_fn_standard_chain,
 };
 
 struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
@@ -482,7 +500,6 @@ int init_fn_environment(struct flb_aws_provider *provider)
     return refresh_env(provider);
 }
 
-
 /*
  * sync and async are no-ops for the env provider because it does not make
  * network IO calls
@@ -493,6 +510,12 @@ void sync_fn_environment(struct flb_aws_provider *provider)
 }
 
 void async_fn_environment(struct flb_aws_provider *provider)
+{
+    return;
+}
+
+void upstream_set_fn_environment(struct flb_aws_provider *provider,
+                                 struct flb_output_instance *ins)
 {
     return;
 }
@@ -509,6 +532,7 @@ static struct flb_aws_provider_vtable environment_provider_vtable = {
     .destroy = destroy_fn_environment,
     .sync = sync_fn_environment,
     .async = async_fn_environment,
+    .upstream_set = upstream_set_fn_environment,
 };
 
 struct flb_aws_provider *flb_aws_env_provider_create() {

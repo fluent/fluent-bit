@@ -145,6 +145,12 @@ void async_fn_profile(struct flb_aws_provider *provider)
     return;
 }
 
+void upstream_set_fn_profile(struct flb_aws_provider *provider,
+                             struct flb_output_instance *ins)
+{
+    return;
+}
+
 void destroy_fn_profile(struct flb_aws_provider *provider)
 {
     struct flb_aws_provider_profile *implementation = provider->implementation;
@@ -176,6 +182,7 @@ static struct flb_aws_provider_vtable profile_provider_vtable = {
     .destroy = destroy_fn_profile,
     .sync = sync_fn_profile,
     .async = async_fn_profile,
+    .upstream_set = upstream_set_fn_profile,
 };
 
 struct flb_aws_provider *flb_profile_provider_create()
