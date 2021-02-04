@@ -699,6 +699,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->s3_client->upstream->flags = async_flags;
     }
 
+    /* this is done last since in the previous block we make calls to AWS */
+    ctx->provider->provider_vtable->upstream_set(ctx->provider, ctx->ins);
+
     return 0;
 }
 
