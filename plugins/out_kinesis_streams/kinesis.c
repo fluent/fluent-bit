@@ -232,6 +232,7 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     /* initialize credentials and set to sync mode */
     ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
     ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+    ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
     if (ctx->endpoint == NULL) {
         ctx->endpoint = flb_aws_endpoint("kinesis", (char *) ctx->region);
