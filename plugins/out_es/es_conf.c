@@ -370,6 +370,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
             /* set back to async */
             ctx->aws_provider->provider_vtable->async(ctx->aws_provider);
+            ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
         }
     }
 #endif
