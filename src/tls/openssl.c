@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <openssl/ssl.h>
@@ -42,16 +43,19 @@
  */
 #define RHEL_DEFAULT_CA "/etc/ssl/certs/ca-bundle.crt"
 
-struct tls_session {
-    SSL *ssl;
-    int fd;
-};
-
 /* OpenSSL library context */
 struct tls_context {
     int debug_level;
     SSL_CTX *ctx;
+    pthread_mutex_t mutex;
 };
+
+struct tls_session {
+    SSL *ssl;
+    int fd;
+    struct tls_context *parent;    /* parent struct tls_context ref */
+};
+
 
 static int tls_init(void)
 {
@@ -123,7 +127,10 @@ static void tls_context_destroy(void *ctx_backend)
 {
     struct tls_context *ctx = ctx_backend;
 
+    pthread_mutex_lock(&ctx->mutex);
     SSL_CTX_free(ctx->ctx);
+    pthread_mutex_unlock(&ctx->mutex);
+
     flb_free(ctx);
 }
 
@@ -191,6 +198,7 @@ static void *tls_context_create(int verify, int debug,
     }
     ctx->ctx = ssl_ctx;
     ctx->debug_level = debug;
+    pthread_mutex_init(&ctx->mutex, NULL);
 
     /* Verify peer: by default OpenSSL always verify peer */
     if (verify == FLB_FALSE) {
@@ -279,11 +287,15 @@ static void *tls_session_create(struct flb_tls *tls,
         flb_errno();
         return NULL;
     }
+    session->parent = ctx;
 
+    pthread_mutex_lock(&ctx->mutex);
     ssl = SSL_new(ctx->ctx);
+
     if (!ssl) {
         flb_error("[openssl] could create new SSL context");
         flb_free(session);
+        pthread_mutex_unlock(&ctx->mutex);
         return NULL;
     }
     session->ssl = ssl;
@@ -303,16 +315,21 @@ static void *tls_session_create(struct flb_tls *tls,
         SSL_set_info_callback(session->ssl, tls_info_callback);
     }
     SSL_set_connect_state(ssl);
+    pthread_mutex_unlock(&ctx->mutex);
     return session;
 }
 
 static int tls_session_destroy(void *session)
 {
     struct tls_session *ptr = session;
+    struct tls_context *ctx;
 
     if (!ptr) {
         return 0;
     }
+    ctx = ptr->parent;
+
+    pthread_mutex_lock(&ctx->mutex);
 
     if (flb_socket_error(ptr->fd) == 0) {
         SSL_shutdown(ptr->ssl);
@@ -320,6 +337,8 @@ static int tls_session_destroy(void *session)
     }
     SSL_free(ptr->ssl);
     flb_free(ptr);
+
+    pthread_mutex_unlock(&ctx->mutex);
 
     return 0;
 }
@@ -329,18 +348,23 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
 {
     int ret;
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
+    struct tls_context *ctx;
+
+    ctx = session->parent;
+    pthread_mutex_lock(&ctx->mutex);
 
     ret = SSL_read(session->ssl, buf, len);
     if (ret <= 0) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret == SSL_ERROR_WANT_READ) {
-            return FLB_TLS_WANT_READ;
+            ret = FLB_TLS_WANT_READ;
         }
         else if (ret < 0) {
-            return -1;
+            ret = -1;
         }
     }
 
+    pthread_mutex_unlock(&ctx->mutex);
     return ret;
 }
 
@@ -350,6 +374,10 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     int ret;
     size_t total = 0;
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
+    struct tls_context *ctx;
+
+    ctx = session->parent;
+    pthread_mutex_lock(&ctx->mutex);
 
     ret = SSL_write(session->ssl,
                     (unsigned char *) data + total,
@@ -357,15 +385,17 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     if (ret <= 0) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret == SSL_ERROR_WANT_WRITE) {
-            return FLB_TLS_WANT_WRITE;
+            ret = FLB_TLS_WANT_WRITE;
         }
         else if (ret == SSL_ERROR_WANT_READ) {
-            return FLB_TLS_WANT_READ;
+            ret = FLB_TLS_WANT_READ;
         }
         else {
-            return -1;
+            ret = -1;
         }
     }
+
+    pthread_mutex_unlock(&ctx->mutex);
 
     /* Update counter and check if we need to continue writing */
     return ret;
@@ -373,8 +403,12 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
 
 static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
 {
-    int ret;
+    int ret = 0;
     struct tls_session *session = ptr_session;
+    struct tls_context *ctx;
+
+    ctx = session->parent;
+    pthread_mutex_lock(&ctx->mutex);
 
     if (tls->vhost) {
         SSL_set_tlsext_host_name(session->ssl, tls->vhost);
@@ -386,17 +420,21 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
             ret = SSL_get_error(session->ssl, ret);
+            pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }
 
         if (ret == SSL_ERROR_WANT_WRITE) {
+            pthread_mutex_unlock(&ctx->mutex);
             return FLB_TLS_WANT_WRITE;
         }
         else if (ret == SSL_ERROR_WANT_READ) {
+            pthread_mutex_unlock(&ctx->mutex);
             return FLB_TLS_WANT_READ;
         }
     }
 
+    pthread_mutex_unlock(&ctx->mutex);
     flb_trace("[tls] connection and handshake OK");
     return 0;
 }
