@@ -57,7 +57,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                     flb_input_collector_resume(random_i2, entry);
                     flb_input_net_default_listener(nm4, random_i1, entry);
                     flb_input_collector_start(random_i2, entry);
-                    flb_router_get_routes_mask_by_tag(nm4, 10, entry);
                 }
             }
             break;

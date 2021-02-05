@@ -544,7 +544,7 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key)
     if (ret == JSMN_ERROR_INVAL || ret == JSMN_ERROR_PART) {
         flb_free(tokens);
         flb_debug("[aws_client] Unable to parse API response- response is not"
-                  "not valid JSON.");
+                  " valid JSON.");
         return NULL;
     }
 
