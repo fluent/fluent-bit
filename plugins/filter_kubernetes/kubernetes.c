@@ -170,7 +170,6 @@ static int merge_log_handler(msgpack_object o,
     }
 
     if (ret == -1) {
-        flb_plg_debug(ctx->ins, "could not merge JSON log as requested");
         return MERGE_NONE;
     }
 
@@ -811,14 +810,29 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, dns_wait_time),
      "dns interval between network status checks"
     },
-
     /* Fetch K8s meta when docker_id has changed */
     {
      FLB_CONFIG_MAP_BOOL, "cache_use_docker_id", "false",
      0, FLB_TRUE, offsetof(struct flb_kube, cache_use_docker_id),
      "fetch K8s meta when docker_id is changed"
     },
-
+    /*
+     * Enable the feature for using kubelet to get pods information
+     */
+    {
+     FLB_CONFIG_MAP_BOOL, "use_kubelet", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_kubelet),
+     "use kubelet to get metadata instead of kube-server"
+    },
+    /*
+     * The kubelet port for /pods endpoint, default is 10250
+     * Will only check when "use_kubelet" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_INT, "kubelet_port", "10250",
+     0, FLB_TRUE, offsetof(struct flb_kube, kubelet_port),
+     "kubelet port to connect with when using kubelet"
+    },
     /* EOF */
     {0}
 };
