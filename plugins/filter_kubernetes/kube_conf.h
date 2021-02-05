@@ -55,6 +55,9 @@
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
 
+/* Kubelet info */
+#define FLB_KUBELET_HOST  "127.0.0.1"
+
 /*
  * Default expected Kubernetes tag prefix, this is used mostly when source
  * data comes from in_tail with custom tags like: kube.service.*
@@ -148,7 +151,11 @@ struct flb_kube {
     int dns_retries;
     int dns_wait_time;
 
+    int use_kubelet;
+    int kubelet_port;
+
     struct flb_tls *tls;
+
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;
