@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 
-#define WEBSOCKET_INPUT_IDLE_INTERVAL 20
 /*
  * Configuration: we put this separate from the main
  * context so every Upstream Node can have it own configuration
@@ -48,6 +47,9 @@ struct flb_out_ws {
     int handshake;
     time_t last_input_timestamp;
     int idle_interval;
+
+    /* Plugin instance */
+    struct flb_output_instance *ins;
 };
 
 #endif

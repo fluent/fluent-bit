@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include "websocket.h"
@@ -283,6 +284,22 @@ static void cb_ws_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "uri", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_ws, uri),
+     "Specify an optional URI for the target web socket server, e.g: /something"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_websocket_plugin = {
     .name         = "websocket",
@@ -290,5 +307,6 @@ struct flb_output_plugin out_websocket_plugin = {
     .cb_init      = cb_ws_init,
     .cb_flush     = cb_ws_flush,
     .cb_exit      = cb_ws_exit,
+    .config_map   = config_map,
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
