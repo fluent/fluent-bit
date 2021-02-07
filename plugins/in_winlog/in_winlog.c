@@ -28,7 +28,7 @@
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
-#define DEFAULT_BUFFER_SIZE 0x7fff /* Max size allowed by Win32 (32kb) */
+#define DEFAULT_BUFFER_SIZE 0x7ffff /* Max size allowed by Win32 (512kb) */
 
 static int in_winlog_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context);
