@@ -271,7 +271,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
          * The following links are a good reference:
          *
          * - http://stackoverflow.com/questions/7114690/how-to-parse-syslog-timestamp
-         * - http://code.activestate.com/lists/python-list/521885/
+         * - http://code.activestate.com/lists/python-list/521885
          */
         if (is_epoch == FLB_TRUE || p->time_with_year == FLB_TRUE) {
             timeptr = p->time_fmt;
