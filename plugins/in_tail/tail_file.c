@@ -52,7 +52,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            const char *key, size_t key_len,
-                           const char *val, size_t val_len)
+                           const char *val, size_t val_len, size_t val_uint64)
 {
     int i;
     int size = root->via.map.size;
@@ -62,8 +62,12 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
     /* Append new k/v */
     msgpack_pack_str(pck, key_len);
     msgpack_pack_str_body(pck, key, key_len);
-    msgpack_pack_str(pck, val_len);
-    msgpack_pack_str_body(pck, val, val_len);
+    if (val != NULL) {
+        msgpack_pack_str(pck, val_len);
+        msgpack_pack_str_body(pck, val, val_len);
+    } else {
+        msgpack_pack_uint64(pck, val_uint64);
+    }
 
     for (i = 0; i < size; i++) {
         msgpack_object k = root->via.map.ptr[i].key;
@@ -78,7 +82,8 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
 
 static int append_record_to_map(char **data, size_t *data_size,
                                 const char *key, size_t key_len,
-                                const char *val, size_t val_len)
+                                const char *val, size_t val_len,
+                                size_t val_uint64)
 {
     int ret;
     msgpack_unpacked result;
@@ -100,7 +105,7 @@ static int append_record_to_map(char **data, size_t *data_size,
 
     root = result.data;
     ret = unpack_and_pack(&pck, &root,
-                          key, key_len, val, val_len);
+                          key, key_len, val, val_len, val_uint64);
     if (ret < 0) {
         /* fail! */
         msgpack_unpacked_destroy(&result);
@@ -120,19 +125,29 @@ static int append_record_to_map(char **data, size_t *data_size,
 
 int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            struct flb_time *time, char **data,
-                           size_t *data_size, struct flb_tail_file *file)
+                           size_t *data_size, struct flb_tail_file *file,
+                           size_t processed_bytes)
 {
     int map_num = 1;
 
     if (file->config->path_key != NULL) {
         map_num++; /* to append path_key */
     }
+    if (file->config->offset_key != NULL) {
+        map_num++; /* to append offset_key */
+    }
 
     if (file->config->path_key != NULL) {
         append_record_to_map(data, data_size,
                              file->config->path_key,
                              flb_sds_len(file->config->path_key),
-                             file->name, file->name_len);
+                             file->name, file->name_len, 0);
+    }
+    if (file->config->offset_key != NULL) {
+        append_record_to_map(data, data_size,
+                             file->config->path_key,
+                             flb_sds_len(file->config->offset_key),
+                             NULL, 0, file->offset + processed_bytes);
     }
 
     msgpack_pack_array(mp_pck, 2);
@@ -290,7 +305,8 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                 }
 
                 flb_tail_pack_line_map(out_sbuf, out_pck, &out_time,
-                                       (char**) &out_buf, &out_size, file);
+                                       (char**) &out_buf, &out_size, file,
+                                       processed_bytes);
                 flb_free(out_buf);
             }
             else {

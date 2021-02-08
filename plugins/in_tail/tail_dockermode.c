@@ -375,7 +375,7 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                 goto dmode_flush_end;
             }
             flb_tail_pack_line_map(mp_sbuf, mp_pck, &out_time,
-                                   (char**) &out_buf, &out_size, file);
+                                   (char**) &out_buf, &out_size, file, 0);
             goto dmode_flush_end;        }
     }
 #endif
