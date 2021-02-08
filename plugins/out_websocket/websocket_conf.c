@@ -46,6 +46,15 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+    //flb_output_net_default("127.0.0.1", 8080, ins);
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -58,10 +67,6 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
 #else
     io_flags = FLB_IO_TCP;
 #endif
-
-    if (ins->flags & FLB_IO_TCP_KA) {
-        io_flags |= FLB_IO_TCP_KA;
-    }
 
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port, io_flags, (void *)&ins->tls);
     if (!upstream) {
@@ -127,23 +132,21 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         uri = tmp_uri;
     }
 
-    /* Idle Interval */
-    tmp = flb_output_get_property("idle_interval", ins);
-    if (!tmp) {
-        idle_interval = WEBSOCKET_INPUT_IDLE_INTERVAL; /* 20 seconds */
-    }
-    else {
-        /* Convert to integer */
-        idle_interval  = atoi(tmp);
+    idle_interval = ins->net_setup.keepalive_idle_timeout;
+    if (idle_interval > 5) {
+        ctx->idle_interval = idle_interval - 5;
+    } else if (idle_interval <= 2) {
+        flb_error("[out_ws] the keepalive timeout value is smaller than 2, which is meaningless! Please set it higher than 10 seconds. Current value will bring disorder for websocket plugin.");
+        ctx->idle_interval = idle_interval;
+    } else {
+        ctx->idle_interval = idle_interval - 2;
     }
 
     ctx->u = upstream;
     ctx->uri = uri;
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
-    ctx->idle_interval  = idle_interval;
- 
-    /* Set instance flags into upstream */
+
     flb_output_upstream_set(ctx->u, ins);
  
     flb_info("[out_ws] we have following parameter %s, %s, %d, %d", ctx->uri, ctx->host, ctx->port, ctx->idle_interval);
@@ -166,5 +169,4 @@ void flb_ws_conf_destroy(struct flb_out_ws *ctx)
     }
     flb_free(ctx->uri);
     flb_free(ctx);
-    ctx = NULL;
 }
