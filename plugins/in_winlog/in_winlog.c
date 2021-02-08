@@ -142,7 +142,6 @@ static int in_winlog_read_channel(struct flb_input_instance *ins,
         return -1;
     }
     if (read == 0) {
-        flb_plg_trace(ctx->ins, "EOF reached on '%s'", ch->name);
         return 0;
     }
     flb_plg_debug(ctx->ins, "read %u bytes from '%s'", read, ch->name);
