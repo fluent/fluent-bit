@@ -51,6 +51,7 @@ struct flb_kafka_rest {
 
     /* HTTP URI */
     char uri[256];
+    char *url_path;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
