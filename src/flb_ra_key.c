@@ -253,11 +253,11 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
 
 int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
                          struct mk_list *subkeys,
+                         msgpack_object **start_key,
                          msgpack_object **out_key, msgpack_object **out_val)
 {
     int i;
     int ret;
-    msgpack_object key;
     msgpack_object val;
     msgpack_object *o_key;
     msgpack_object *o_val;
@@ -269,7 +269,7 @@ int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
     }
 
     /* Reference entries */
-    key = map.via.map.ptr[i].key;
+    *start_key = &map.via.map.ptr[i].key;
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
@@ -282,8 +282,8 @@ int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
         }
     }
     else {
-        *out_key = &key;
-        *out_val = &val;
+        *out_key = &map.via.map.ptr[i].key;
+        *out_val = &map.via.map.ptr[i].val;
         return 0;
     }
 
