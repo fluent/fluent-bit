@@ -47,6 +47,7 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
                        struct flb_regex_search *result);
 
 int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                       msgpack_object **start_key,
                        msgpack_object **out_key, msgpack_object **out_val);
 
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
