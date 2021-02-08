@@ -23,6 +23,9 @@
 
 #include <msgpack.h>
 
+#define FLB_MP_MAP        MSGPACK_OBJECT_MAP
+#define FLB_MP_ARRAY      MSGPACK_OBJECT_ARRAY
+
 int flb_mp_count(const void *data, size_t bytes);
 void flb_mp_set_map_header_size(char *buf, int arr_size);
 
@@ -36,8 +39,35 @@ struct flb_mp_map_header {
     void *data;
 };
 
+
+/* */
+struct flb_mp_accessor_match {
+    int matched;
+    msgpack_object *start_key;
+    msgpack_object *key;
+    msgpack_object *val;
+    struct flb_record_accessor *ra;
+};
+
+/* A context to abstract usage of record accessor when multiple patterns exists */
+struct flb_mp_accessor {
+    struct flb_mp_accessor_match *matches;
+    struct mk_list ra_list;
+};
+
 int flb_mp_map_header_init(struct flb_mp_map_header *mh, msgpack_packer *mp_pck);
 int flb_mp_map_header_append(struct flb_mp_map_header *mh);
 void flb_mp_map_header_end(struct flb_mp_map_header *mh);
+
+int flb_mp_array_header_init(struct flb_mp_map_header *mh, msgpack_packer *mp_pck);
+int flb_mp_array_header_append(struct flb_mp_map_header *mh);
+void flb_mp_array_header_end(struct flb_mp_map_header *mh);
+
+/* mp accessor api */
+struct flb_mp_accessor *flb_mp_accessor_create(struct mk_list *slist_patterns);
+void flb_mp_accessor_destroy(struct flb_mp_accessor *mpa);
+int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
+                                msgpack_object *map,
+                                void **out_buf, size_t *out_size);
 
 #endif
