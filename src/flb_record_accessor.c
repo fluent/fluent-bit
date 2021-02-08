@@ -600,6 +600,7 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
  * FLB_FALSE.
  */
 int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                       msgpack_object **start_key,
                        msgpack_object **out_key, msgpack_object **out_val)
 {
     struct flb_ra_parser *rp;
@@ -610,7 +611,7 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
     return flb_ra_key_value_get(rp->key->name, map, rp->key->subkeys,
-                                out_key, out_val);
+                                start_key, out_key, out_val);
 }
 
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
