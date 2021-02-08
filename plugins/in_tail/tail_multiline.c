@@ -120,7 +120,7 @@ int flb_tail_mult_destroy(struct flb_tail_config *ctx)
  * message.
  */
 static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
-                     struct flb_tail_config *ctx)
+                     struct flb_tail_config *ctx, size_t processed_bytes)
 {
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -130,7 +130,8 @@ static int pack_line(char *data, size_t data_size, struct flb_tail_file *file,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
     flb_time_get(&out_time);
 
-    flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time, data, data_size, file);
+    flb_tail_file_pack_line(&mp_sbuf, &mp_pck, &out_time,
+                            data, data_size, file, processed_bytes);
     flb_input_chunk_append_raw(ctx->ins,
                                file->tag_buf,
                                file->tag_len,
@@ -275,7 +276,8 @@ static inline int is_last_key_val_string(char *buf, size_t size)
 int flb_tail_mult_process_content(time_t now,
                                   char *buf, size_t len,
                                   struct flb_tail_file *file,
-                                  struct flb_tail_config *ctx)
+                                  struct flb_tail_config *ctx,
+                                  size_t processed_bytes)
 {
     int ret;
     size_t off;
@@ -345,7 +347,7 @@ int flb_tail_mult_process_content(time_t now,
             flb_tail_mult_append_raw(buf, len, file, ctx);
         }
         else {
-            pack_line(buf, len, file, ctx);
+            pack_line(buf, len, file, ctx, processed_bytes);
         }
         return FLB_TAIL_MULT_MORE;
     }

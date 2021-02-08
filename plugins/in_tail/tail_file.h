@@ -112,6 +112,6 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            size_t *data_size, struct flb_tail_file *file);
 int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
-                            struct flb_tail_file *file);
+                            struct flb_tail_file *file, size_t processed_bytes);
 
 #endif

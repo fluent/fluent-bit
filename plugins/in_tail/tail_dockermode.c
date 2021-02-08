@@ -381,7 +381,7 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 #endif
     flb_time_get(&out_time);
     flb_tail_file_pack_line(mp_sbuf, mp_pck, &out_time,
-                            repl_line, repl_line_len, file);
+                            repl_line, repl_line_len, file, 0);
 
  dmode_flush_end:
     flb_free(repl_line);

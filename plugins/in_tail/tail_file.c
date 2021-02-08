@@ -144,13 +144,16 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
 int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
-                            struct flb_tail_file *file)
+                            struct flb_tail_file *file, size_t processed_bytes)
 {
     int map_num = 1;
     struct flb_tail_config *ctx = file->config;
 
     if (file->config->path_key != NULL) {
         map_num++; /* to append path_key */
+    }
+    if (file->config->offset_key != NULL) {
+        map_num++; /* to append offset_key */
     }
     msgpack_pack_array(mp_pck, 2);
     flb_time_append_to_msgpack(time, mp_pck, 0);
@@ -163,6 +166,13 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                               flb_sds_len(file->config->path_key));
         msgpack_pack_str(mp_pck, file->name_len);
         msgpack_pack_str_body(mp_pck, file->name, file->name_len);
+    }
+    if (file->config->offset_key != NULL) {
+        /* append offset_key */
+        msgpack_pack_str(mp_pck, flb_sds_len(file->config->offset_key));
+        msgpack_pack_str_body(mp_pck, file->config->offset_key,
+                              flb_sds_len(file->config->offset_key));
+        msgpack_pack_uint64(mp_pck, file->offset + processed_bytes);
     }
 
     msgpack_pack_str(mp_pck, flb_sds_len(ctx->key));
@@ -237,7 +247,6 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
-
         if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
@@ -288,12 +297,13 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                 /* Parser failed, pack raw text */
                 flb_time_get(&out_time);
                 flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                        data, len, file);
+                                        data, len, file, processed_bytes);
             }
         }
         else if (ctx->multiline == FLB_TRUE) {
             ret = flb_tail_mult_process_content(now,
-                                                line, line_len, file, ctx);
+                                                line, line_len,
+                                                file, ctx, processed_bytes);
 
             /* No multiline */
             if (ret == FLB_TAIL_MULT_NA) {
@@ -302,7 +312,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
                 flb_time_get(&out_time);
                 flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                        line, line_len, file);
+                                        line, line_len, file, processed_bytes);
             }
             else if (ret == FLB_TAIL_MULT_MORE) {
                 /* we need more data, do nothing */
@@ -315,7 +325,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         else {
             flb_time_get(&out_time);
             flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                    line, line_len, file);
+                                    line, line_len, file, processed_bytes);
         }
 #else
         flb_time_get(&out_time);
