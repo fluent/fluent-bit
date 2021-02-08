@@ -296,6 +296,7 @@ void cb_get_kv_pair()
     char *json;
     char *fmt;
     char *fmt_out;
+    msgpack_object *start_key;
     msgpack_object *out_key;
     msgpack_object *out_val;
     msgpack_unpacked result;
@@ -337,7 +338,7 @@ void cb_get_kv_pair()
     map = result.data;
 
     /* Do translation */
-    ret = flb_ra_get_kv_pair(ra, map, &out_key, &out_val);
+    ret = flb_ra_get_kv_pair(ra, map, &start_key, &out_key, &out_val);
     TEST_CHECK(ret == 0);
     if (ret != 0) {
         exit(EXIT_FAILURE);
