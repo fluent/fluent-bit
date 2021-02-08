@@ -57,6 +57,7 @@ void flb_ra_key_value_destroy(struct flb_ra_value *v);
 
 int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
                          struct mk_list *subkeys,
+                         msgpack_object **start_key,
                          msgpack_object **out_key, msgpack_object **out_val);
 
 int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
