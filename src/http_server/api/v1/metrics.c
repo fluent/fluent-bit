@@ -263,6 +263,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     /* length of HELP text */
     metric_helptxt = flb_sds_create_size(128);
     if (!metric_helptxt) {
+        flb_sds_destroy(sds);
         mk_http_status(request, 500);
         mk_http_done(request);
         buf->users--;
