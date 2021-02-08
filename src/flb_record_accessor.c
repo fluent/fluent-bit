@@ -592,6 +592,27 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
                                   regex, result);
 }
 
+/*
+ * If 'record accessor' pattern matches an entry in the 'map', set the
+ * reference in 'out_key' and 'out_val' for the entries in question.
+ *
+ * Returns FLB_TRUE if the pattern matched a kv pair, otherwise it returns
+ * FLB_FALSE.
+ */
+int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                       msgpack_object **out_key, msgpack_object **out_val)
+{
+    struct flb_ra_parser *rp;
+
+    if (mk_list_size(&ra->list) == 0) {
+        return -1;
+    }
+
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    return flb_ra_key_value_get(rp->key->name, map, rp->key->subkeys,
+                                out_key, out_val);
+}
+
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
                                              msgpack_object map)
 {
