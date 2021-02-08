@@ -534,6 +534,11 @@ static struct flb_config_map config_map[] = {
      "set the 'key' name where the name of monitored file will be appended."
     },
     {
+     FLB_CONFIG_MAP_STR, "offset_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, offset_key),
+     "set the 'key' name where the offset of monitored file will be appended."
+    },
+    {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
      "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
