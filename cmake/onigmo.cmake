@@ -25,7 +25,7 @@ ExternalProject_Add(onigmo
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${ONIGMO_SRC}
   INSTALL_DIR ${ONIGMO_DEST}
-  CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST} CC=emcc
+  CONFIGURE_COMMAND emconfigure ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST} CC=emcc
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -Os\ -g0\ -s\ -fno-stack-protector\ -fomit-frame-pointer\ -DNDEBUG\ -U_FORTIFY_SOURCE
   BUILD_COMMAND $(MAKE)
   INSTALL_COMMAND $(MAKE) DESTDIR= install)
@@ -35,7 +35,7 @@ ExternalProject_Add(onigmo
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${ONIGMO_SRC}
   INSTALL_DIR ${ONIGMO_DEST}
-  CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST} CC=emcc
+  CONFIGURE_COMMAND emconfigure ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST} CC=emcc
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
   BUILD_COMMAND $(MAKE)
   INSTALL_COMMAND $(MAKE) DESTDIR= install)
@@ -64,6 +64,7 @@ if(MSVC)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DONIG_EXTERN=extern")
 else()
   add_dependencies(libonigmo onigmo)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DONIG_EXTERN=extern")
   set(ONIGMO_STATIC_LIB "${ONIGMO_DEST}/lib/libonigmo.a")
 endif()
 
