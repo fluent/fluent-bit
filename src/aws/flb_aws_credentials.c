@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define TEN_MINUTES    600
+#define FIVE_MINUTES   600
 #define TWELVE_HOURS   43200
 
 /* Credentials Environment Variables */
@@ -612,22 +612,17 @@ time_t flb_aws_cred_expiration(const char *timestamp)
     }
     /*
      * Sanity check - expiration should be ~10 minutes to 12 hours in the future
-     * < 10 minutes is problematic because the provider auto-refreshes if creds
-     * expire in 5 minutes. Disabling auto-refresh reduces requests for creds.
-     * (The flb_aws_client will still force a refresh of creds and then retry
-     * if it receives an auth error).
      * (> 12 hours is impossible with the current APIs and would likely indicate
      *  a bug in how this code processes timestamps.)
      */
      now = time(NULL);
-     if (expiration < (now + TEN_MINUTES)) {
-         flb_warn("[aws_credentials] Credential expiration '%s' is less than"
-                  "10 minutes in the future. Disabling auto-refresh.",
+     if (expiration < (now + FIVE_MINUTES)) {
+         flb_warn("[aws_credentials] Credential expiration '%s' is less than "
+                  "5 minutes in the future.",
                   timestamp);
-         return -1;
      }
      if (expiration > (now + TWELVE_HOURS)) {
-         flb_warn("[aws_credentials] Credential expiration '%s' is greater than"
+         flb_warn("[aws_credentials] Credential expiration '%s' is greater than "
                   "12 hours in the future. This should not be possible.",
                   timestamp);
      }
