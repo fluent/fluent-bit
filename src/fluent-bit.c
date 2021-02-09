@@ -557,7 +557,7 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
                 in->p->name, key);
     }
 
-    flb_free(key);
+    mk_mem_free(key);
     return ret;
 }
 
@@ -582,7 +582,7 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     }
 
     ret = flb_output_set_property(out, key, value);
-    flb_free(key);
+    mk_mem_free(key);
     return ret;
 }
 
@@ -608,7 +608,7 @@ static int filter_set_property(struct flb_filter_instance *filter, char *kv)
     }
 
     ret = flb_filter_set_property(filter, key, value);
-    flb_free(key);
+    mk_mem_free(key);
     return ret;
 }
 
