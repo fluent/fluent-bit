@@ -744,6 +744,10 @@ add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
 
+if(NOT FLB_SHARED_LIB)
+  set(FLB_EXAMPLES OFF)
+endif()
+
 if(FLB_EXAMPLES)
   add_subdirectory(examples)
 endif()
