@@ -269,6 +269,10 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
 
     size_t avro_buffer_size = in_size * 3;
     char *out_buff = flb_malloc(avro_buffer_size);
+    if (!out_buff) {
+        flb_errno();
+        return NULL;
+    }
 
     avro_writer_t awriter;
     flb_debug("in flb_msgpack_raw_to_avro_sds\n");
