@@ -28,8 +28,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 
-/* Refresh creds if they will expire in 5 min or less */
-#define FLB_AWS_REFRESH_WINDOW         300
+/* Refresh creds if they will expire in 1 min or less */
+#define FLB_AWS_REFRESH_WINDOW         60
 
 /* 5 second timeout for credential related http requests */
 #define FLB_AWS_CREDENTIAL_NET_TIMEOUT 5
