@@ -292,13 +292,6 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                     flb_time_get(&out_time);
                 }
 
-                if (ctx->ignore_older > 0) {
-                    if ((now - ctx->ignore_older) > out_time.tm.tv_sec) {
-                        flb_free(out_buf);
-                        goto go_next;
-                    }
-                }
-
                 /* If multiline is enabled, flush any buffered data */
                 if (ctx->multiline == FLB_TRUE) {
                     flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
@@ -1319,9 +1312,10 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 }
 
 static int check_purge_deleted_file(struct flb_tail_config *ctx,
-                                    struct flb_tail_file *file)
+                                    struct flb_tail_file *file, time_t ts)
 {
     int ret;
+    int64_t mtime;
     struct stat st;
 
     ret = fstat(file->fd, &st);
@@ -1343,6 +1337,18 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         /* Remove file from the monitored list */
         flb_tail_file_remove(file);
         return FLB_TRUE;
+    }
+
+    if (ctx->ignore_older > 0) {
+        mtime = flb_tail_stat_mtime(&st);
+        if (mtime > 0) {
+            if ((ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
+                              file->name);
+                flb_tail_file_remove(file);
+                return FLB_TRUE;
+            }
+        }
     }
 
     return FLB_FALSE;
@@ -1397,11 +1403,11 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
      */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        check_purge_deleted_file(ctx, file);
+        check_purge_deleted_file(ctx, file, now);
     }
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        check_purge_deleted_file(ctx, file);
+        check_purge_deleted_file(ctx, file, now);
     }
 
     return count;

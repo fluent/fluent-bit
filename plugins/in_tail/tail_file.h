@@ -40,6 +40,19 @@
 #define FLB_HASH_TABLE_SIZE 50
 #endif
 
+/* return the file modification time in seconds since epoch */
+static inline int64_t flb_tail_stat_mtime(struct stat *st)
+{
+#ifdef __linux__
+    return (int64_t) st->st_mtim.tv_sec;
+#elif __APPLE__ || defined(__unix__)
+    return (int64_t) st->st_mtimespec.tv_sec;
+#endif
+
+    /* backend unsupported: submit a PR :) */
+    return -1;
+}
+
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {

@@ -54,6 +54,7 @@ struct flb_tail_config {
     int coll_fd_watcher;
     int coll_fd_rotated;
     int coll_fd_pending;
+    int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
 
