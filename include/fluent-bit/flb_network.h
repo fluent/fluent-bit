@@ -30,7 +30,7 @@
 /* Network connection setup */
 struct flb_net_setup {
     /* enable/disable keepalive support */
-    int keepalive;
+    char keepalive;
 
     /* max time in seconds that a keepalive connection can be idle */
     int keepalive_idle_timeout;
