@@ -1739,6 +1739,10 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
             aggr_node->nums_size = map_entries;
             aggr_node->records = 1;
             aggr_node->ts = (struct timeseries **) flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+            if (!aggr_node->ts) {
+                flb_sp_aggr_node_destroy(cmd, aggr_node);
+                return NULL;
+            }
             mk_list_add(&aggr_node->_head, &task->window.aggr_list);
         }
         else {
