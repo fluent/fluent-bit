@@ -46,6 +46,17 @@ ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
     return cio_chunk_get_content_size(ic->chunk);
 }
 
+/*
+ * When chunk is set to DOWN from memory, data_size is set to 0 and 
+ * cio_chunk_get_content_size(1) returns the data_size. fs_chunks_size
+ * is used to track the size of chunks in filesystem so we need to call
+ * cio_chunk_get_real_size to return the original size in the file system
+ */
+ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
+{
+    return cio_chunk_get_real_size(ic->chunk);
+}
+
 int flb_input_chunk_write(void *data, const char *buf, size_t len)
 {
     int ret;
@@ -137,7 +148,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
             continue;
         }
 
-        bytes_remained += flb_input_chunk_get_size(old_ic);
+        bytes_remained += flb_input_chunk_get_real_size(old_ic);
         count++;
         if (bytes_remained >= chunk_size) {
             enough_space = FLB_TRUE;
@@ -217,7 +228,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                 continue;
             }
 
-            old_ic_bytes = flb_input_chunk_get_size(old_ic);
+            old_ic_bytes = flb_input_chunk_get_real_size(old_ic);
+
             /* drop chunk by adjusting the routes_mask */
             flb_routes_mask_clear_bit(old_ic->routes_mask, o_ins->id);
             o_ins->fs_chunks_size -= old_ic_bytes;
@@ -279,7 +291,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
                   flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size - o_ins->fs_chunks_size,
                   o_ins->name);
-
+                  
         if (o_ins->fs_chunks_size + chunk_size > o_ins->total_limit_size) {
             overlimit = 1;
         }
@@ -360,7 +372,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                  flb_input_chunk_get_name(ic));
     }
 
-    bytes = flb_input_chunk_get_size(ic);
+    bytes = flb_input_chunk_get_real_size(ic);
     flb_input_chunk_update_output_instances(ic, bytes);
 
     return ic;
@@ -474,7 +486,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
             continue;
         }
 
-        bytes = flb_input_chunk_get_size(ic);
+        bytes = flb_input_chunk_get_real_size(ic);
         if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
             o_ins->fs_chunks_size -= bytes;
         }
@@ -607,7 +619,6 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 
     /* Gather total number of enqueued bytes */
     total = flb_input_chunk_total_size(in);
-
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
