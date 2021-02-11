@@ -63,6 +63,7 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 static int tail_register_file(const char *target, struct flb_tail_config *ctx,
                               time_t ts)
 {
+    int64_t mtime;
     struct stat st;
     char path[MAX_PATH];
 
