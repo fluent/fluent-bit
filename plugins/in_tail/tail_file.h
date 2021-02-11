@@ -47,8 +47,9 @@ static inline int64_t flb_tail_stat_mtime(struct stat *st)
     return (int64_t) st->st_mtim.tv_sec;
 #elif __APPLE__ || defined(__unix__)
     return (int64_t) st->st_mtimespec.tv_sec;
+#elif FLB_HAVE_WINDOWS
+    return (int64_t) st->st_mtime;
 #endif
-
     /* backend unsupported: submit a PR :) */
     return -1;
 }
