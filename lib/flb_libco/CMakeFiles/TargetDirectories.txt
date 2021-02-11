@@ -1,0 +1,3 @@
+/home/anugup/new-fluent-bit/fluent-bit/lib/flb_libco/CMakeFiles/rebuild_cache.dir
+/home/anugup/new-fluent-bit/fluent-bit/lib/flb_libco/CMakeFiles/co.dir
+/home/anugup/new-fluent-bit/fluent-bit/lib/flb_libco/CMakeFiles/edit_cache.dir

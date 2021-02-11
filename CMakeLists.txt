@@ -380,7 +380,7 @@ if(FLB_UTF8_ENCODER)
 endif()
 
 # xxHash
-FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
+FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" ON)
 set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
 set(XXHASH_BUILD_XXHSUM OFF)
 add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
@@ -610,7 +610,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND emconfigure ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
     BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
@@ -629,7 +629,7 @@ if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    CONFIGURE_COMMAND emconfigure ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
     BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
