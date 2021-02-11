@@ -622,6 +622,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     int drop;
     struct mk_list *head;
     struct mk_list *u_head;
+    struct mk_list *tmp;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_upstream_queue *uq;
@@ -667,10 +668,11 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         }
 
         /* Check every available Keepalive connection */
-        mk_list_foreach(u_head, &uq->av_queue) {
+        mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
                 shutdown(u_conn->fd, SHUT_RDWR);
+                prepare_destroy_conn(u_conn);
                 flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
                           "(keepalive idle timeout)",
                           u_conn->fd, u->tcp_host, u->tcp_port);
