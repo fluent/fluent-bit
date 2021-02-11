@@ -1707,6 +1707,7 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
         else {
             aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
             if (!aggr_node->nums) {
+                flb_errno();
                 flb_sp_aggr_node_destroy(cmd, aggr_node);
                 return NULL;
             }
@@ -1728,10 +1729,12 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
         if (!mk_list_size(&task->window.aggr_list)) {
             aggr_node = flb_calloc(1, sizeof(struct aggr_node));
             if (!aggr_node) {
+                flb_errno();
                 return NULL;
             }
             aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
             if (!aggr_node->nums) {
+                flb_errno();
                 flb_sp_aggr_node_destroy(cmd, aggr_node);
                 return NULL;
             }
@@ -1739,6 +1742,11 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
             aggr_node->nums_size = map_entries;
             aggr_node->records = 1;
             aggr_node->ts = (struct timeseries **) flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+            if (!aggr_node->ts) {
+                flb_errno();
+                flb_sp_aggr_node_destroy(cmd, aggr_node);
+                return NULL;
+            }
             mk_list_add(&aggr_node->_head, &task->window.aggr_list);
         }
         else {
