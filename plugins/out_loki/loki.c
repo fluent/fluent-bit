@@ -690,6 +690,7 @@ static int pack_record(struct flb_loki *ctx,
                        msgpack_packer *mp_pck, msgpack_object *rec)
 {
     int i;
+    int skip = 0;
     int len;
     int size_hint = 1024;
     char *line;
@@ -722,10 +723,11 @@ static int pack_record(struct flb_loki *ctx,
             val = rec->via.map.ptr[i].val;
 
             if (key.type != MSGPACK_OBJECT_STR) {
+                skip++;
                 continue;
             }
 
-            if (i > 0) {
+            if (i > skip) {
                 safe_sds_cat(&buf, " ", 1);
             }
 
