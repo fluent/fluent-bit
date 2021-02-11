@@ -37,6 +37,16 @@ static void flb_loki_kv_init(struct mk_list *list)
     mk_list_init(list);
 }
 
+static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
+{
+    flb_sds_t tmp;
+
+    tmp = flb_sds_cat(*buf, str, len);
+    if (tmp) {
+        *buf = tmp;
+    }
+}
+
 static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
 {
     int sub;
@@ -49,13 +59,12 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
     /* Iterate record accessor keys */
     key = rp->key;
     if (rp->type == FLB_RA_PARSER_STRING) {
-        flb_sds_cat(name, key->name, flb_sds_len(key->name));
+        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
     }
     else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-        flb_sds_cat(name, key->name, flb_sds_len(key->name));
-
+        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
         if (mk_list_size(key->subkeys) > 0) {
-            flb_sds_cat(name, "_", 1);
+            safe_sds_cat(&name, "_", 1);
         }
 
         sub = 0;
@@ -63,15 +72,15 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
             entry = mk_list_entry(s_head, struct flb_ra_subentry, _head);
 
             if (sub > 0) {
-                flb_sds_cat(name, "_", 1);
+                safe_sds_cat(&name, "_", 1);
             }
             if (entry->type == FLB_RA_PARSER_STRING) {
-                flb_sds_cat(name, entry->str, flb_sds_len(entry->str));
+                safe_sds_cat(&name, entry->str, flb_sds_len(entry->str));
             }
             else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
                 len = snprintf(tmp, sizeof(tmp) -1, "%d",
                                entry->array_id);
-                flb_sds_cat(name, tmp, len);
+                safe_sds_cat(&name, tmp, len);
             }
             sub++;
         }
@@ -494,9 +503,28 @@ static int parse_labels(struct flb_loki *ctx)
     return 0;
 }
 
-static int prepare_remove_keys(struct flb_loki *ctx) {
+static int key_is_duplicated(struct mk_list *list, char *str, int len)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    mk_list_foreach(head, list) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (flb_sds_len(entry->str) == len &&
+            strncmp(entry->str, str, len) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int prepare_remove_keys(struct flb_loki *ctx)
+{
     int ret;
+    int len;
     int size;
+    char *tmp;
     struct mk_list *head;
     struct flb_slist_entry *entry;
     struct mk_list *patterns;
@@ -507,7 +535,38 @@ static int prepare_remove_keys(struct flb_loki *ctx) {
     if (ctx->remove_keys) {
         mk_list_foreach(head, ctx->remove_keys) {
             entry = mk_list_entry(head, struct flb_slist_entry, _head);
-            ret = flb_slist_add_n(patterns, entry->str, flb_sds_len(entry->str));
+
+            if (entry->str[0] != '$') {
+                tmp = flb_malloc(flb_sds_len(entry->str) + 2);
+                if (!tmp) {
+                    flb_errno();
+                    continue;
+                }
+                else {
+                    tmp[0] = '$';
+                    len = flb_sds_len(entry->str);
+                    memcpy(tmp + 1, entry->str, len);
+                    tmp[len + 1] = '\0';
+                    len++;
+                }
+            }
+            else {
+                tmp = entry->str;
+                len = flb_sds_len(entry->str);
+            }
+
+            ret = key_is_duplicated(patterns, tmp, len);
+            if (ret == FLB_TRUE) {
+                if (entry->str != tmp) {
+                    flb_free(tmp);
+                }
+                continue;
+            }
+
+            ret = flb_slist_add_n(patterns, tmp, len);
+            if (entry->str != tmp) {
+                flb_free(tmp);
+            }
             if (ret < 0) {
                 return -1;
             }
@@ -515,7 +574,7 @@ static int prepare_remove_keys(struct flb_loki *ctx) {
     }
 
     size = mk_list_size(patterns);
-    flb_debug("remove_mpa size: %d", size);
+    flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
     if (size > 0) {
         ctx->remove_mpa = flb_mp_accessor_create(patterns);
         if (ctx->remove_mpa == NULL) {
@@ -652,15 +711,6 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
     msgpack_pack_str_body(mp_pck, buf, len);
 }
 
-static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
-{
-    flb_sds_t tmp;
-
-    tmp = flb_sds_cat(*buf, str, len);
-    if (tmp) {
-        *buf = tmp;
-    }
-}
 
 static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
 {
@@ -753,7 +803,7 @@ static int pack_record(struct flb_loki *ctx,
     flb_sds_t buf;
     msgpack_object key;
     msgpack_object val;
-    char *tmp_sbuf_data;
+    char *tmp_sbuf_data = NULL;
     size_t tmp_sbuf_size;
     msgpack_unpacked mp_buffer;
     size_t off = 0;
@@ -761,22 +811,25 @@ static int pack_record(struct flb_loki *ctx,
     /* Remove keys in remove_keys */
     msgpack_unpacked_init(&mp_buffer);
     if (ctx->remove_mpa) {
-        ret = flb_mp_accessor_keys_remove(ctx->remove_mpa, rec, (void *) &tmp_sbuf_data, &tmp_sbuf_size);
+        ret = flb_mp_accessor_keys_remove(ctx->remove_mpa, rec,
+                                          (void *) &tmp_sbuf_data, &tmp_sbuf_size);
         if (ret == FLB_TRUE) {
             ret = msgpack_unpack_next(&mp_buffer, tmp_sbuf_data, tmp_sbuf_size, &off);
             if (ret != MSGPACK_UNPACK_SUCCESS) {
-                free(tmp_sbuf_data);
+                flb_free(tmp_sbuf_data);
                 msgpack_unpacked_destroy(&mp_buffer);
                 return -1;
             }
             rec = &mp_buffer.data;
-            free(tmp_sbuf_data);
         }
     }
 
     if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
         line = flb_msgpack_to_json_str(size_hint, rec);
         if (!line) {
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
             msgpack_unpacked_destroy(&mp_buffer);
             return -1;
         }
@@ -788,12 +841,18 @@ static int pack_record(struct flb_loki *ctx,
     else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
         if (rec->type != MSGPACK_OBJECT_MAP) {
             msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
             return -1;
         }
 
         buf = flb_sds_create_size(size_hint);
         if (!buf) {
             msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
             return -1;
         }
 
@@ -810,8 +869,8 @@ static int pack_record(struct flb_loki *ctx,
                 safe_sds_cat(&buf, " ", 1);
             }
 
-            flb_sds_cat(buf, key.via.str.ptr, key.via.str.size);
-            flb_sds_cat(buf, "=", 1);
+            safe_sds_cat(&buf, key.via.str.ptr, key.via.str.size);
+            safe_sds_cat(&buf, "=", 1);
             pack_format_line_value(buf, &val);
         }
 
@@ -821,6 +880,10 @@ static int pack_record(struct flb_loki *ctx,
     }
 
     msgpack_unpacked_destroy(&mp_buffer);
+    if (tmp_sbuf_data) {
+        flb_free(tmp_sbuf_data);
+    }
+
     return 0;
 }
 
