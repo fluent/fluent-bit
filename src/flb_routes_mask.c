@@ -29,10 +29,7 @@
  * Set the routes_mask for input chunk with a router_match on tag, return a
  * non-zero value if any routes matched
  */
-int flb_routes_mask_set_by_tag(uint64_t *routes_mask,
-                               const char *tag,
-                               int tag_len,
-                               struct flb_input_instance *in)
+int flb_routes_mask_set_by_tag(uint64_t *routes_mask, const char *tag, int tag_len, struct flb_input_instance *in)
 {
     int has_routes = 0;
     struct mk_list *o_head;
@@ -77,8 +74,7 @@ void flb_routes_mask_set_bit(uint64_t *routes_mask, int value)
     uint64_t bit;
 
     if (value < 0 || value > FLB_ROUTES_MASK_MAX_VALUE) {
-        flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
-                 value);
+        flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield", value);
         return;
     }
 
@@ -100,8 +96,7 @@ void flb_routes_mask_clear_bit(uint64_t *routes_mask, int value)
     uint64_t bit;
 
     if (value < 0 || value > FLB_ROUTES_MASK_MAX_VALUE) {
-        flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield",
-                 value);
+        flb_warn("[routes_mask] Can't set bit (%d) past limits of bitfield", value);
         return;
     }
 
@@ -124,8 +119,7 @@ int flb_routes_mask_get_bit(uint64_t *routes_mask, int value)
     uint64_t bit;
 
     if (value < 0 || value > FLB_ROUTES_MASK_MAX_VALUE) {
-        flb_warn("[routes_mask] Can't get bit (%d) past limits of bitfield",
-                 value);
+        flb_warn("[routes_mask] Can't get bit (%d) past limits of bitfield", value);
         return 0;
     }
 
