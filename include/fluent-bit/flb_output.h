@@ -193,6 +193,7 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     struct mk_event event;               /* events handler               */
+    uint64_t mask_id;                    /* internal bitmask for routing */
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
