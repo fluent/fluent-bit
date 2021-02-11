@@ -25,7 +25,6 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
-#include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 
 static void generate_chunk_name(struct flb_input_instance *in,
@@ -106,7 +105,7 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
 
 int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
                                 struct flb_input_chunk *old_ic,
-                                uint64_t o_id)
+                                uint64_t o_mask_id)
 {
     /* The chunk we want to drop should not be the incoming chunk */
     if (ic == old_ic) {
@@ -116,9 +115,9 @@ int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
     /*
      * Even if chunks from same input plugin have same routes_mask when created,
      * the routes_mask could be modified when new chunks is ingested. Therefore,
-     * we still need to do the validation on the routes_mask with o_id.
+     * we still need to do the validation on the routes_mask with mask_id.
      */
-    if (flb_routes_mask_get_bit(old_ic->routes_mask, o_id) == 0) {
+    if ((old_ic->routes_mask & o_mask_id) == 0) {
         return FLB_FALSE;
     }
 
@@ -143,7 +142,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
     mk_list_foreach(head, &ic->in->chunks) {
         old_ic = mk_list_entry(head, struct flb_input_chunk, _head);
 
-        if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
+        if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->mask_id) == FLB_FALSE ||
             flb_input_chunk_is_task_safe_delete(old_ic->task) == FLB_FALSE) {
             continue;
         }
@@ -174,8 +173,12 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 /*
  * Find a slot in the output instance to append the new data with size chunk_size, it
  * will drop the the oldest chunks when the limitation on local disk is reached.
+ *
+ * overlimit_routes_mask: A bit mask used to check whether the output instance will
+ * reach the limit when buffering the new data
  */
 int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
+                                        uint64_t overlimit_routes_mask,
                                         size_t chunk_size)
 {
     int count;
@@ -196,7 +199,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
         if ((o_ins->total_limit_size == -1) ||
-            (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
+            (ic->routes_mask & o_ins->mask_id) == 0) {
             continue;
         }
 
@@ -210,7 +213,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
              */
             flb_error("[input chunk] no enough space in filesystem to buffer "
                       "chunk %s in plugin %s", flb_input_chunk_get_name(ic), o_ins->name);
-            flb_routes_mask_clear_bit(ic->routes_mask, o_ins->id);
+            ic->routes_mask ^= o_ins->mask_id;
             continue;
         }
 
@@ -223,7 +226,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
         mk_list_foreach_safe(head_chunk, tmp, &ic->in->chunks) {
             old_ic = mk_list_entry(head_chunk, struct flb_input_chunk, _head);
 
-            if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->id) == FLB_FALSE ||
+            if (flb_input_chunk_safe_delete(ic, old_ic, o_ins->mask_id) == FLB_FALSE ||
                 flb_input_chunk_is_task_safe_delete(old_ic->task) == FLB_FALSE) {
                 continue;
             }
@@ -231,14 +234,14 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             old_ic_bytes = flb_input_chunk_get_real_size(old_ic);
 
             /* drop chunk by adjusting the routes_mask */
-            flb_routes_mask_clear_bit(old_ic->routes_mask, o_ins->id);
+            old_ic->routes_mask ^= o_ins->mask_id;
             o_ins->fs_chunks_size -= old_ic_bytes;
 
             flb_debug("[input chunk] remove route of chunk %s with size %ld bytes to output plugin %s "
                       "to place the incoming data with size %ld bytes", flb_input_chunk_get_name(old_ic),
                       old_ic_bytes, o_ins->name, chunk_size);
 
-            if (flb_routes_mask_is_empty(old_ic->routes_mask)) {
+            if (old_ic->routes_mask == 0) {
                 if (old_ic->task != NULL) {
                     /*
                      * If the chunk is referenced by a task and task has no active route,
@@ -269,13 +272,13 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
 }
 
 /*
- * Returns a non-zero result if any output instances will reach the limit
+ * Returns routes_mask of output instances that will reach the limit
  * after buffering the new data
  */
-int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
+uint64_t flb_input_chunk_get_overlimit_routes_mask(struct flb_input_chunk *ic,
                                                    size_t chunk_size)
 {
-    int overlimit = 0;
+    uint64_t routes_mask = 0;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
 
@@ -283,7 +286,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
         if ((o_ins->total_limit_size == -1) ||
-            (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
+            (ic->routes_mask & o_ins->mask_id) == 0) {
             continue;
         }
 
@@ -293,35 +296,33 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
                   o_ins->name);
                   
         if (o_ins->fs_chunks_size + chunk_size > o_ins->total_limit_size) {
-            overlimit = 1;
+            routes_mask |= o_ins->mask_id;
         }
     }
 
-    return overlimit;
+    return routes_mask;
 }
 
-/* Find a slot for the incoming data to buffer it in local file system
- * returns 0 if none of the routes can be written to
- */
-int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
+/* Find a slot for the incoming data to buffer it in local file system */
+uint64_t flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_size)
 {
-	int overlimit;
-    overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
-    if (overlimit != 0) {
-        flb_input_chunk_find_space_new_data(ic, chunk_size);
+    uint64_t overlimit_routes_mask;
+    overlimit_routes_mask = flb_input_chunk_get_overlimit_routes_mask(ic, chunk_size);
+    if (overlimit_routes_mask != 0) {
+        flb_input_chunk_find_space_new_data(ic, overlimit_routes_mask, chunk_size);
     }
 
-    return !flb_routes_mask_is_empty(ic->routes_mask);
+    return ic->routes_mask;
 }
 
 /* Create an input chunk using a Chunk I/O */
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             void *chunk)
 {
+    uint64_t chunk_routes_mask;
     ssize_t bytes;
     const char *tag_buf;
     int tag_len;
-    int has_routes;
     int ret;
 
 #ifdef FLB_HAVE_METRICS
@@ -365,12 +366,12 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         return ic;
     }
 
-
-    has_routes = flb_routes_mask_set_by_tag(ic->routes_mask, tag_buf, tag_len, in);
-    if (has_routes == 0) {
+    chunk_routes_mask = flb_router_get_routes_mask_by_tag(tag_buf, tag_len, in);
+    if (chunk_routes_mask == 0) {
         flb_warn("[input chunk] no matching route for backoff log chunk %s",
                  flb_input_chunk_get_name(ic));
     }
+    ic->routes_mask = chunk_routes_mask;
 
     bytes = flb_input_chunk_get_real_size(ic);
     flb_input_chunk_update_output_instances(ic, bytes);
@@ -384,7 +385,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     int ret;
     int err;
     int set_down = FLB_FALSE;
-    int has_routes;
+    uint64_t chunk_routes_mask;
     char name[64];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
@@ -450,11 +451,12 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 #endif
 
     /* Calculate the routes_mask for the input chunk */
-    has_routes = flb_routes_mask_set_by_tag(ic->routes_mask, tag, tag_len, in);
-    if (has_routes == 0) {
+    chunk_routes_mask = flb_router_get_routes_mask_by_tag(tag, tag_len, in);
+    if (chunk_routes_mask == 0) {
         flb_trace("[input chunk] no matching route for input chunk '%s' with tag '%s'",
                   flb_input_chunk_get_name(ic), tag);
     }
+    ic->routes_mask = chunk_routes_mask;
 
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
     mk_list_add(&ic->_head, &in->chunks);
@@ -486,8 +488,8 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
             continue;
         }
 
-        bytes = flb_input_chunk_get_real_size(ic);
-        if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+        bytes = flb_input_chunk_get_size(ic);
+        if ((ic->routes_mask & o_ins->mask_id) > 0) {
             o_ins->fs_chunks_size -= bytes;
         }
     }
@@ -550,7 +552,8 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
      * that the chunk will flush to, we need to modify the routes_mask of the oldest chunks
      * (based in creation time) to get enough space for the incoming chunk.
      */
-    if (flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
+    if (ic->routes_mask != 0 &&
+        flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
         /*
          * If the chunk is not newly created, the chunk might already have logs inside.
          * We cannot delete (reused) chunks here.
@@ -986,7 +989,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
             continue;
         }
 
-        if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+        if ((ic->routes_mask & o_ins->mask_id) > 0) {
             /*
              * if there is match on any index of 1's in the binary, it indicates
              * that the input chunk will flush to this output instance
