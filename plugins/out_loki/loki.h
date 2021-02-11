@@ -63,6 +63,7 @@ struct flb_loki {
     /* Labels */
     struct mk_list *labels;
     struct mk_list *label_keys;
+    struct mk_list *remove_keys;
 
     /* Private */
     int tcp_port;
@@ -71,6 +72,8 @@ struct flb_loki {
     int ra_used;                        /* number of record accessor label keys */
     struct flb_record_accessor *ra_k8s; /* kubernetes record accessor */
     struct mk_list labels_list;         /* list of flb_loki_kv nodes */
+    struct mk_list remove_keys_derived; /* remove_keys with label RAs */
+    struct flb_mp_accessor *remove_mpa; /* remove_keys multi-pattern accessor */
 
     /* Upstream Context */
     struct flb_upstream *u;
