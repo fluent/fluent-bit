@@ -43,13 +43,21 @@
 /* return the file modification time in seconds since epoch */
 static inline int64_t flb_tail_stat_mtime(struct stat *st)
 {
-#ifdef __linux__
-    return (int64_t) st->st_mtim.tv_sec;
-#elif __APPLE__ || defined(__unix__)
+#if defined(FLB_HAVE_WINDOWS)
+    return (int64_t) st->st_mtime;
+#elif defined(__APPLE__) && !defined(_POSIX_C_SOURCE)
     return (int64_t) st->st_mtimespec.tv_sec;
-#elif FLB_HAVE_WINDOWS
+#elif (_POSIX_C_SOURCE >= 200809L ||                                \
+    defined(_BSD_SOURCE) || defined(_SVID_SOURCE) ||                \
+    defined(__BIONIC__) || (defined (__SVR4) && defined (__sun)) || \
+    defined(__FreeBSD__) || defined (__linux__))
+    return (int64_t) st->st_mtim.tv_sec;
+#elif defined(_AIX)
+    return (int64_t) st->st_mtime;
+#else
     return (int64_t) st->st_mtime;
 #endif
+
     /* backend unsupported: submit a PR :) */
     return -1;
 }
