@@ -902,6 +902,40 @@ static int pack_record(struct flb_loki *ctx,
         get_tenant_id_from_record(ctx, rec);
     }
 
+    /* Drop single key */
+    if (ctx->drop_single_key == FLB_TRUE && rec->type == MSGPACK_OBJECT_MAP && rec->via.map.size == 1) {
+        if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
+            rec = &rec->via.map.ptr[0].val;
+        } else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
+            val = rec->via.map.ptr[0].val;
+
+            if (val.type == MSGPACK_OBJECT_STR) {
+                msgpack_pack_str(mp_pck, val.via.str.size);
+                msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
+            } else {
+                buf = flb_sds_create_size(size_hint);
+                if (!buf) {
+                    msgpack_unpacked_destroy(&mp_buffer);
+                    if (tmp_sbuf_data) {
+                        flb_free(tmp_sbuf_data);
+                    }
+                    return -1;
+                }
+                pack_format_line_value(buf, &val);
+                msgpack_pack_str(mp_pck, flb_sds_len(buf));
+                msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
+                flb_sds_destroy(buf);
+            }
+
+            msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
+
+            return 0;
+        }
+    }
+
     if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
         line = flb_msgpack_to_json_str(size_hint, rec);
         if (!line) {
@@ -1281,6 +1315,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "auto_kubernetes_labels", "false",
      0, FLB_TRUE, offsetof(struct flb_loki, auto_kubernetes_labels),
      "If set to true, it will add all Kubernetes labels to Loki labels.",
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "drop_single_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_loki, drop_single_key),
+     "If set to true and only a single key remains, the log line sent to Loki "
+     "will be the value of that key.",
     },
 
     {
