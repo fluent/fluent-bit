@@ -107,7 +107,9 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
+#ifdef FLB_HAVE_TLS
     flb_tls_init();
+#endif
     flb_coro_init();
     flb_upstream_init();
     flb_output_prepare();
