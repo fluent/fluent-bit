@@ -550,7 +550,8 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
      * that the chunk will flush to, we need to modify the routes_mask of the oldest chunks
      * (based in creation time) to get enough space for the incoming chunk.
      */
-    if (flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
+    if (!flb_routes_mask_is_empty(ic->routes_mask)
+        && flb_input_chunk_place_new_chunk(ic, chunk_size) == 0) {
         /*
          * If the chunk is not newly created, the chunk might already have logs inside.
          * We cannot delete (reused) chunks here.
