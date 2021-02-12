@@ -48,7 +48,6 @@ set(src
   flb_random.c
   flb_plugin.c
   flb_gzip.c
-  flb_http_client.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
@@ -90,6 +89,7 @@ if(FLB_TLS)
     ${src}
     "tls/flb_tls.c"
     "flb_oauth2.c"
+    "flb_http_client.c"
     )
 
   # Make sure our output targets links to the TLS library
@@ -288,8 +288,14 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
   )
+
+if(FLB_TLS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    mbedtls
+    )
+endif()
 
 if(OPENSSL_FOUND)
   set(FLB_DEPS
