@@ -129,10 +129,12 @@ static void cb_mq_storage_metrics(mk_mq_t *queue, void *data, size_t size)
     cleanup_metrics();
 }
 
+/* FIXME: pending implementation of metrics exit interface
 static void cb_mq_storage_metrics_exit(mk_mq_t *queue, void *data)
 {
 
 }
+*/
 
 /* API: expose built-in storage metrics /api/v1/storage */
 static void cb_storage(mk_request_t *request, void *data)
