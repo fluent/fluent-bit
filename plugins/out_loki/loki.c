@@ -112,6 +112,28 @@ static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
     return name;
 }
 
+void flb_loki_kv_destroy(struct flb_loki_kv *kv)
+{
+    /* destroy key and value */
+    flb_sds_destroy(kv->key);
+    if (kv->val_type == FLB_LOKI_KV_STR) {
+        flb_sds_destroy(kv->str_val);
+    }
+    else if (kv->val_type == FLB_LOKI_KV_RA) {
+        flb_ra_destroy(kv->ra_val);
+    }
+
+    if (kv->ra_key) {
+        flb_ra_destroy(kv->ra_key);
+    }
+
+    if (kv->key_normalized) {
+        flb_sds_destroy(kv->key_normalized);
+    }
+
+    flb_free(kv);
+}
+
 int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
 {
     int ra_count = 0;
@@ -158,8 +180,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "invalid key record accessor pattern for key '%s'",
                           key);
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
             return -1;
         }
 
@@ -169,12 +190,12 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "could not normalize key pattern name '%s'\n",
                           kv->ra_key->pattern);
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
             return -1;
         }
         ret = flb_slist_add(&ctx->remove_keys_derived, key);
         if (ret < 0) {
+            flb_loki_kv_destroy(kv);
             return -1;
         }
         ra_count++;
@@ -187,12 +208,12 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "invalid record accessor pattern for key '%s': %s",
                           key, val);
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
             return -1;
         }
         ret = flb_slist_add(&ctx->remove_keys_derived, val);
         if (ret < 0) {
+            flb_loki_kv_destroy(kv);
             return -1;
         }
         ra_count++;
@@ -201,8 +222,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
         kv->val_type = FLB_LOKI_KV_STR;
         kv->str_val = flb_sds_create(val);
         if (!kv->str_val) {
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
             return -1;
         }
     }
@@ -221,27 +241,9 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
     mk_list_foreach_safe(head, tmp, &ctx->labels_list) {
         kv = mk_list_entry(head, struct flb_loki_kv, _head);
 
-        /* unlink */
+        /* unlink and destroy */
         mk_list_del(&kv->_head);
-
-        /* destroy key and value */
-        flb_sds_destroy(kv->key);
-        if (kv->val_type == FLB_LOKI_KV_STR) {
-            flb_sds_destroy(kv->str_val);
-        }
-        else if (kv->val_type == FLB_LOKI_KV_RA) {
-            flb_ra_destroy(kv->ra_val);
-        }
-
-        if (kv->ra_key) {
-            flb_ra_destroy(kv->ra_key);
-        }
-
-        if (kv->key_normalized) {
-            flb_sds_destroy(kv->key_normalized);
-        }
-
-        flb_free(kv);
+        flb_loki_kv_destroy(kv);
     }
 }
 
@@ -384,6 +386,9 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
                 msgpack_pack_str(mp_pck, v.via.str.size);
                 msgpack_pack_str_body(mp_pck, v.via.str.ptr,  v.via.str.size);
             }
+        }
+
+        if (rval) {
             flb_ra_key_value_destroy(rval);
         }
     }
