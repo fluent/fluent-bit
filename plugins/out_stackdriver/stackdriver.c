@@ -1327,7 +1327,7 @@ static int stackdriver_format(struct flb_config *config,
 
     /* Parameters for log name */
     int log_name_extracted = FLB_FALSE;
-    flb_sds_t log_name;
+    flb_sds_t log_name = NULL;
 
     /* Parameters for insertId */
     msgpack_object insert_id_obj;
@@ -1719,6 +1719,9 @@ static int stackdriver_format(struct flb_config *config,
             insert_id_extracted = FLB_FALSE;
         }
         else {
+            if (log_name_extracted == FLB_TRUE) {
+                flb_sds_destroy(log_name);
+            }
             continue;
         }
 
