@@ -171,7 +171,7 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     flb_sds_t tmp = NULL;
     char *b64 = NULL;
     char *encoding;
-    char *ctype;
+    char *ctype = "";
     unsigned char signature[32];
 
     size = strlen(c->uri) + (mk_list_size(&c->headers) * 64) + 256;
