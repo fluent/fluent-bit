@@ -197,6 +197,7 @@ static void add_geoip_fields(msgpack_object *map,
                              struct geoip2_ctx *ctx,
                              msgpack_packer *packer)
 {
+    int ret;
     struct mk_list *head;
     struct mk_list *tmp;
     struct geoip2_record *record;
@@ -222,8 +223,13 @@ static void add_geoip_fields(msgpack_object *map,
         msgpack_pack_str(packer, record->key_len);
         msgpack_pack_str_body(packer, record->key, record->key_len);
 
-        flb_hash_get(lookup_keys, record->lookup_key, record->lookup_key_len,
-                     (void *) &ip, &ip_size);
+        ret = flb_hash_get(lookup_keys, record->lookup_key, record->lookup_key_len,
+                           (void *) &ip, &ip_size);
+        if (ret == -1) {
+            msgpack_pack_nil(packer);
+            continue;
+        }
+
         result = mmdb_lookup(ctx, ip);
         if (!result.found_entry) {
             msgpack_pack_nil(packer);
