@@ -125,7 +125,7 @@ struct flb_tls *flb_tls_create(int verify,
     backend = tls_context_create(verify, debug, vhost, ca_path, ca_file,
                                  crt_file, key_file, key_passwd);
     if (!backend) {
-        flb_error("[tls] could not create mbedtls TLS backend");
+        flb_error("[tls] could not create TLS backend");
         return NULL;
     }
 
