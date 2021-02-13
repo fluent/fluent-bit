@@ -931,6 +931,7 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
         /* Parse username:passwrod part. */
         tmp = strchr(proto_sep, ':');
         if (!tmp) {
+            flb_free(protocol);
             return -1;
         }
         username = mk_string_copy_substr(proto_sep, 0, tmp - proto_sep);
