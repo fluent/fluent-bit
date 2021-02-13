@@ -1,0 +1,140 @@
+language: c
+dist: trusty
+sudo: false
+cache: ccache
+
+addons:
+  apt:
+    packages:
+    - python3
+    - python3-pip
+    - python3-setuptools
+    # required by openssl installer
+    - perl
+
+
+matrix:
+ include:
+ - name: "Linux GCC: +Debian packages +BuiltinRegex +Strict"
+   os: linux
+   compiler: gcc
+   env: ADDITIONAL_BUILDS="debian" LINKAGE=std
+   before_script:
+    - ./configure --CFLAGS="-std=c99" --CXXFLAGS="-std=c++98" --install-deps --disable-lz4-ext --disable-regex-ext --prefix="$PWD/dest" --enable-strip
+ - name: "RPM packages"
+   os: linux
+   compiler: gcc
+   env: ADDITIONAL_BUILDS="centos" SKIP_MAKE=y
+ - name: "Linux clang: +alpine +manylinux"
+   os: linux
+   compiler: clang
+   env: ADDITIONAL_BUILDS="alpine manylinux2010_x86_64" LINKAGE=std
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest" --enable-werror --enable-strip
+ - name: "Linux clang: +static +alpine-static -gssapi"
+   os: linux
+   compiler: clang
+   env: ADDITIONAL_BUILDS="alpine-static" LINKAGE=static
+   before_script:
+    - ./configure --enable-static --install-deps --source-deps-only --disable-gssapi --disable-lz4-ext --prefix="$PWD/dest" --enable-strip
+ - name: "OSX GCC"
+   os: osx
+   compiler: gcc
+   env: LINKAGE=std
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest" --enable-werror --enable-strip
+ - name: "OSX clang: +static"
+   os: osx
+   # Use an older image to disable syslog and for broader compatibility
+   # with old and new osx versions.
+   osx_image: xcode9.2
+   compiler: clang
+   env: LINKAGE=static HOMEBREW_NO_AUTO_UPDATE=1
+   before_script:
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest" --enable-static --disable-syslog --enable-strip
+ - name: "Windows MinGW-w64"
+   os: windows
+   env:
+    - SKIP_MAKE=y
+   before_install:
+    - source ./packaging/mingw-w64/travis-before-install.sh
+   before_script:
+    - ./packaging/mingw-w64/configure-build-msys2-mingw.sh
+ - name: "Linux GCC: +integration-tests +copyright-check +doc-check"
+   os: linux
+   dist: xenial
+   compiler: gcc
+   env: NO_ARTIFACTS=y RUN_INTEGRATION_TESTS=y COPYRIGHT_CHECK=y DOC_CHECK=y
+   before_script:
+    - wget -O rapidjson-dev.deb https://launchpad.net/ubuntu/+archive/primary/+files/rapidjson-dev_1.1.0+dfsg2-3_all.deb
+    - sudo dpkg -i rapidjson-dev.deb
+    - sudo pip3 install -r tests/requirements.txt
+    - sudo apt update
+    - sudo apt install -y doxygen graphviz gdb
+    - ./configure --install-deps --disable-lz4-ext --prefix="$PWD/dest"
+ - name: "Linux GCC: +devel +code-cov"
+   os: linux
+   dist: bionic
+   compiler: gcc
+   env: NO_ARTIFACTS=y
+   before_script:
+    - sudo apt update
+    - sudo apt install -y gdb
+    - ./configure --enable-devel --disable-lz4-ext --prefix="$PWD/dest"
+    - ./packaging/tools/rdutcoverage.sh
+ - name: "Linux GCC arm64: +static -gssapi"
+   os: linux
+   arch: arm64
+   dist: bionic
+   compiler: gcc
+   env: LINKAGE=std
+   before_script:
+    - ./configure --CFLAGS="-std=c99" --CXXFLAGS="-std=c++98" --disable-gssapi --install-deps --enable-static --disable-lz4-ext --prefix="$PWD/dest" --enable-strip
+ - name: "Linux GCC s390x: +devel"
+   os: linux
+   arch: s390x
+   dist: bionic
+   compiler: gcc
+   env: NO_ARTIFACTS=y
+   before_script:
+    - sudo apt install -y gdb
+    - ./configure --enable-devel --disable-lz4-ext --prefix="$PWD/dest"
+
+install:
+ - ccache -s || echo "CCache is not available."
+ - rm -rf artifacts dest
+ - mkdir dest artifacts
+ - if [[ $TRAVIS_OS_NAME == "linux" ]]; then sudo apt update || true; fi
+ - if [[ $TRAVIS_DIST == "trusty" || $TRAVIS_DIST == "xenial" ]]; then sudo apt-get install -y libssl1.0.0 libssl-dev ; fi
+ - if [[ $TRAVIS_DIST == "bionic" || $TRAVIS_DIST == "focal" ]]; then sudo apt-get install -y libssl1.1 libssl-dev ; fi
+
+before_cache:
+ - if [[ $TRAVIS_OS_NAME == windows ]]; then $msys2 pacman --sync --clean --noconfirm ; fi
+
+script:
+- if [[ $SKIP_MAKE != y ]]; then (make -j2 all examples check && make -j2 -C tests build) || travis_terminate 1 ; fi
+- if [[ $SKIP_MAKE != y && $RUN_INTEGRATION_TESTS != y ]]; then make -C tests run_local_quick ; fi
+- if [[ $SKIP_MAKE != y ]]; then make install || travis_terminate 1 ; fi
+- if [[ -z $NO_ARTIFACTS ]]; then (cd dest && tar cvzf ../artifacts/librdkafka-${CC}.tar.gz .) ; fi
+- for distro in $ADDITIONAL_BUILDS ; do packaging/tools/distro-build.sh $distro --enable-strip || travis_terminate 1 ; done
+- if [[ $COPYRIGHT_CHECK == y ]]; then make copyright-check || travis_terminate 1; fi
+- if [[ $DOC_CHECK == y ]]; then make docs || travis_terminate 1 ; fi
+- if [[ $RUN_INTEGRATION_TESTS == y ]]; then (cd tests && travis_retry ./interactive_broker_version.py -c "make quick" 2.6.0) || travis_terminate 1 ; fi
+- if [[ -f tests/core ]] && (which gdb >/dev/null); then (cd tests && LD_LIBRARY_PATH=../src:../src-cpp gdb ./test-runner core < backtrace.gdb) ; fi
+
+deploy:
+  provider: s3
+  access_key_id:
+    secure: "m8FQrFesK0xSS1wHo2S7cuWkpO7VB91dBmj1XIYLRXZSkbMpKBJATcFcHNbrAp3slEp7wLAnT7CHrQ4ccQi4H68Z7mjEwdq4VKRE+7zqJ/feK8MOFNeSHWLQzgwLUYlRlc9+tzLNwxMuL2ilWgdjKOArsUVHo9LEKNfQ3T6zCJU="
+  secret_access_key:
+    secure: "GE6O0gk5VRervntCKAmczfBdSOvbr9bouJ15H2rpcOgHi8KTDEjI/NS69eLiRRSHBCARtcRqN4wfgy+/dn7D1VklY8a1rAKu02wGjw+fq7k7GVSSmynR/aF619R4SIABsaAhNCwswXnLHuLlq8HFk5ulG3z8DUvYBczB45bWZfQ="
+  bucket: librdkafka-ci-packages
+  region: us-west-1
+  skip_cleanup: true
+  local-dir: artifacts
+  upload-dir: librdkafka/p-librdkafka__bld-travis__plat-${TRAVIS_OS_NAME}__arch-${TRAVIS_CPU_ARCH}__tag-${TRAVIS_TAG}__sha-${TRAVIS_COMMIT}__bid-${TRAVIS_JOB_NUMBER}__lnk-${LINKAGE}
+  on:
+    repo: edenhill/librdkafka
+    all_branches: true
+    tags: true
+    on: $NO_ARTIFACTS != y
