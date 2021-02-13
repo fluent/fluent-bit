@@ -294,7 +294,7 @@ int flb_sosreport(struct flb_config *config)
         ins_out = mk_list_entry(head, struct flb_output_instance, _head);
         printf("[OUTPUT] Instance\n");
         printf("    Name\t\t%s (%s, id=%" PRIu64 ")\n", ins_out->name, ins_out->p->name,
-               ins_out->id);
+               (uint64_t) ins_out->id);
         printf("    Match\t\t%s\n", ins_out->match);
 
 #ifdef FLB_HAVE_TLS
