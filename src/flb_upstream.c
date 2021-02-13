@@ -192,6 +192,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                         &proxy_host, &proxy_port);
         if (ret == -1) {
             flb_errno();
+            flb_free(u);
             return NULL;
         }
 
