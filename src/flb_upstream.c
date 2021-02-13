@@ -113,7 +113,16 @@ struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u)
     if (u->thread_safe == FLB_TRUE) {
         list = flb_upstream_list_get();
         if (!list) {
-            return NULL;
+            /*
+             * Here is the issue: a plugin enabled in multiworker mode in the
+             * initialization callback might wanted to use an upstream
+             * connection, but the init callback does not run in threaded mode
+             * so we hit this problem.
+             *
+             * As a fallback mechanism: just cross our fingers and return the
+             * principal upstream queue.
+             */
+            return (struct flb_upstream_queue *) &u->queue;
         }
 
         mk_list_foreach(head, list) {
