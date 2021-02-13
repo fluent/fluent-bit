@@ -47,7 +47,7 @@ ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
 }
 
 /*
- * When chunk is set to DOWN from memory, data_size is set to 0 and 
+ * When chunk is set to DOWN from memory, data_size is set to 0 and
  * cio_chunk_get_content_size(1) returns the data_size. fs_chunks_size
  * is used to track the size of chunks in filesystem so we need to call
  * cio_chunk_get_real_size to return the original size in the file system
@@ -291,7 +291,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
                   flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size - o_ins->fs_chunks_size,
                   o_ins->name);
-                  
+
         if (o_ins->fs_chunks_size + chunk_size > o_ins->total_limit_size) {
             overlimit = 1;
         }
@@ -331,7 +331,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     struct flb_input_chunk *ic;
 
     /* Create context for the input instance */
-    ic = flb_malloc(sizeof(struct flb_input_chunk));
+    ic = flb_calloc(1, sizeof(struct flb_input_chunk));
     if (!ic) {
         flb_errno();
         return NULL;
@@ -342,13 +342,13 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     ic->chunk = chunk;
     ic->in = in;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
-    mk_list_add(&ic->_head, &in->chunks);
 
 #ifdef FLB_HAVE_METRICS
     ret = cio_chunk_get_content(ic->chunk, &buf_data, &buf_size);
     if (ret != CIO_OK) {
         flb_error("[input chunk] error retrieving content for metrics");
-        return ic;
+        flb_free(ic);
+        return NULL;
     }
 
     ic->total_records = flb_mp_count(buf_data, buf_size);
@@ -362,9 +362,16 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     ret = flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
     if (ret == -1) {
         flb_error("[input chunk] error retrieving tag of input chunk");
-        return ic;
+        flb_free(ic);
+        return NULL;
     }
 
+    bytes = flb_input_chunk_get_real_size(ic);
+    if (bytes < 0) {
+        flb_warn("[input chunk] could not retrieve chunk real size");
+        flb_free(ic);
+        return NULL;
+    }
 
     has_routes = flb_routes_mask_set_by_tag(ic->routes_mask, tag_buf, tag_len, in);
     if (has_routes == 0) {
@@ -372,7 +379,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                  flb_input_chunk_get_name(ic));
     }
 
-    bytes = flb_input_chunk_get_real_size(ic);
+    mk_list_add(&ic->_head, &in->chunks);
     flb_input_chunk_update_output_instances(ic, bytes);
 
     return ic;
