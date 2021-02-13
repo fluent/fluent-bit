@@ -280,6 +280,9 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
 
     if (pthread_mutex_unlock(&ctx->token_mutex)){
         flb_plg_error(ctx->ins, "error unlocking mutex");
+        if (output) {
+            flb_sds_destroy(output);
+        }
         return NULL;
     }
 
