@@ -270,6 +270,8 @@ static void test_fs_up_down()
     char *f_hash;
     size_t in_size;
     uint32_t val;
+    char path[1024];
+    struct stat st;
     struct cio_ctx *ctx;
     struct cio_stream *stream;
     struct cio_chunk *chunk;
@@ -329,6 +331,7 @@ static void test_fs_up_down()
     /* file down/up */
     TEST_CHECK(cio_chunk_is_up(chunk) == CIO_TRUE);
     ret = cio_chunk_down(chunk);
+
     TEST_CHECK(ret == 0);
     TEST_CHECK(cio_chunk_is_up(chunk) == CIO_FALSE);
     ret = cio_chunk_up(chunk);
@@ -357,7 +360,18 @@ static void test_fs_up_down()
      * sha1 context so it skip old data to perform the verification.
      */
     cio_chunk_write(chunk, in_data, in_size);
+
     cio_chunk_sync(chunk);
+
+    /*
+     * Bug https://github.com/fluent/fluent-bit/pull/3054#issuecomment-778831815
+     *
+     * the fs_size cache value is not being updated after a sync, let's validate.
+     */
+    snprintf(path, sizeof(path) - 1, "%s%s", CIO_ENV, "test-crc32/test1.out");
+    ret = stat(path, &st);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(st.st_size == cio_chunk_get_real_size(chunk));
 
     /* file down/up */
     TEST_CHECK(cio_chunk_is_up(chunk) == CIO_TRUE);

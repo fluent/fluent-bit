@@ -1013,6 +1013,14 @@ int cio_file_sync(struct cio_chunk *ch)
     }
 
     cf->synced = CIO_TRUE;
+
+    ret = fstat(cf->fd, &fst);
+    if (ret == -1) {
+        cio_errno();
+        return -1;
+    }
+    cf->fs_size = fst.st_size;
+
     cio_log_debug(ch->ctx, "[cio file] synced at: %s/%s",
                   ch->st->name, ch->name);
     return 0;
