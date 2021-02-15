@@ -28,8 +28,8 @@ static Fiber main_fiber;
 static Fiber* running_fiber = 0;
 
 void init_main_fiber() {
-  main_fiber.asyncify_stack = (char*)malloc(16385 * sizeof(char));
-  emscripten_fiber_init_from_current_context(&main_fiber.context, main_fiber.asyncify_stack, 16385);
+  main_fiber.asyncify_stack = (char*)malloc(4096 * sizeof(char));
+  emscripten_fiber_init_from_current_context(&main_fiber.context, main_fiber.asyncify_stack, 4096);
   running_fiber = &main_fiber;
 }
 
