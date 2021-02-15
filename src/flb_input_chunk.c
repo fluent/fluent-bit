@@ -287,7 +287,8 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
             continue;
         }
 
-        flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left in plugin %s",
+        flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left "
+                  "in plugin %s",
                   flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size - o_ins->fs_chunks_size,
                   o_ins->name);
@@ -477,8 +478,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 {
     int tag_len;
+    int ret;
     ssize_t bytes;
-    const char *tag_buf;
+    const char *tag_buf = NULL;
     struct mk_list *head;
     struct flb_output_instance *o_ins;
 
@@ -499,10 +501,28 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
     }
 
-    /* Retrieve Tag */
-    flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
+    /*
+     * When a chunk is going to be destroyed, this can be in a down state,
+     * since the next step is to retrieve the Tag we need to have the
+     * content up.
+     */
+    ret = flb_input_chunk_is_up(ic);
+    if (ret == FLB_FALSE) {
+        ret = cio_chunk_up_force(ic->chunk);
+        if (ret == -1) {
+            flb_error("[input chunk] cannot load chunk: %s",
+                      flb_input_chunk_get_name(ic));
+        }
+    }
 
-    if (del == CIO_TRUE) {
+    /* Retrieve Tag */
+    ret = flb_input_chunk_get_tag(ic, &tag_buf, &tag_len);
+    if (ret == -1) {
+        flb_trace("[input chunk] could not retrieve chunk tag: %s",
+                  flb_input_chunk_get_name(ic));
+    }
+
+    if (del == CIO_TRUE && tag_buf) {
         /*
          * "TRY" to delete any reference to this chunk ('ic') from the hash
          * table. Note that maybe the value is not longer available in the
