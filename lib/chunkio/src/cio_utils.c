@@ -26,7 +26,7 @@
 #include <fcntl.h>
 #include <errno.h>
 // #ifndef _MSC_VER
-// #include <fts.h>
+#include <chunkio/fts.h>
 // #endif
 
 #include <chunkio/chunkio_compat.h>

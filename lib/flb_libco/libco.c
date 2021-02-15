@@ -7,7 +7,9 @@
   #pragma clang diagnostic ignored "-Wparentheses"
 #endif
 
-#if defined(__clang__) || defined(__GNUC__)
+#if defined(EMSCRIPTEN)
+  #include "emscripten_fiber.c"
+#elif defined(__clang__) || defined(__GNUC__)
   #if defined(__i386__)
     #include "x86.c"
   #elif defined(__amd64__)
