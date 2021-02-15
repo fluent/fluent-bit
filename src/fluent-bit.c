@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -90,7 +90,7 @@ static void flb_banner()
 {
     fprintf(stderr, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
             ANSI_RESET);
-    fprintf(stderr, "* %sCopyright (C) 2019-2020 The Fluent Bit Authors%s\n",
+    fprintf(stderr, "* %sCopyright (C) 2019-2021 The Fluent Bit Authors%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
     fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
