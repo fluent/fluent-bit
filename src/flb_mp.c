@@ -246,6 +246,7 @@ struct flb_mp_accessor *flb_mp_accessor_create(struct mk_list *slist_patterns)
     }
 
     size = sizeof(struct flb_mp_accessor_match) * mk_list_size(&mpa->ra_list);
+    mpa->matches_size = size;
     mpa->matches = flb_calloc(1, size);
     if (!mpa->matches) {
         flb_errno();
@@ -356,6 +357,9 @@ int flb_mp_accessor_keys_remove(struct flb_mp_accessor *mpa,
     if (map->via.map.size == 0) {
         return FLB_FALSE;
     }
+
+    /* Reset matches cache */
+    memset(mpa->matches, '\0', mpa->matches_size);
 
     mk_list_foreach(head, &mpa->ra_list) {
         ra = mk_list_entry(head, struct flb_record_accessor, _head);

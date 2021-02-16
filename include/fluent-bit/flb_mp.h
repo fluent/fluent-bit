@@ -51,6 +51,7 @@ struct flb_mp_accessor_match {
 
 /* A context to abstract usage of record accessor when multiple patterns exists */
 struct flb_mp_accessor {
+    int matches_size;
     struct flb_mp_accessor_match *matches;
     struct mk_list ra_list;
 };
