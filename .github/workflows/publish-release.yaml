@@ -1,0 +1,287 @@
+name: Publish release
+on:
+  workflow_run:
+    workflows: [ 'Build release' ]
+    types:
+      - completed
+jobs:
+  publish-docker-images:
+    name: publish docker images
+    strategy:
+      max-parallel: 48
+      fail-fast: true
+      matrix:
+        arch: [ x86_64, arm64v8, arm32v7, x86_64-debug ]
+    runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
+    steps:
+      - if: github.event.workflow_run.conclusion != 'success'
+        name: Abort if build failed
+        run: |
+          echo "build failed"
+          exit 1
+
+      - uses: actions/checkout@v2
+
+      - name: Setup environment
+        run: |
+          sudo apt-get install --yes docker.io containerd runc
+          sudo systemctl unmask docker && sudo systemctl start docker
+
+      - uses: actions-ecosystem/action-get-latest-tag@v1
+        id: get_version
+        with:
+          semver_only: true
+
+      - uses: frabert/replace-string-action@master
+        id: formatted_version
+        with:
+          pattern: '[v]*(.*)$'
+          string: "${{ steps.get_version.outputs.tag }}"
+          replace-with: '$1'
+          flags: 'g'
+
+      - name: Download docker image from build artifacts
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: "${{ secrets.GITHUB_TOKEN }}"
+          workflow: build-release.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-${{ env.release }}
+          path: images
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          arch: ${{ matrix.arch }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+
+      - name: Import docker image
+        run: |
+          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-${{ env.release }}
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          arch: ${{ matrix.arch }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image to Docker Hub
+        run: |
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ env.release }}
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          arch: ${{ matrix.arch }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+
+  publish-docker-manifest:
+
+    name: publish docker manifest
+    needs: publish-docker-images
+    runs-on: [ ubuntu-latest ]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup environment
+        run: |
+          sudo apt-get install --yes docker.io containerd runc
+          sudo rm -rf /etc/docker/daemon.json
+          sudo systemctl unmask docker && sudo systemctl start docker
+
+      - uses: actions-ecosystem/action-get-latest-tag@v1
+        id: get_version
+        with:
+          semver_only: true
+
+      - uses: frabert/replace-string-action@master
+        id: formatted_version
+        with:
+          pattern: '[v]*(.*)$'
+          string: "${{ steps.get_version.outputs.tag }}"
+          replace-with: '$1'
+          flags: 'g'
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull docker images
+        run: |
+          docker pull ${{ env.dockerhub_organization }}/fluent-bit:x86_64-${{ env.release }} && docker pull ${{ env.dockerhub_organization }}/fluent-bit:arm64v8-${{ env.release }} && docker pull ${{ env.dockerhub_organization }}/fluent-bit:arm32v7-${{ env.release }} && docker pull ${{ env.dockerhub_organization }}/fluent-bit:x86_64-debug-${{ env.release }}
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          DOCKER_CLI_EXPERIMENTAL: enabled
+
+      - name: Create manifests for docker release images
+        run: |
+          docker manifest create ${{ env.dockerhub_organization }}/fluent-bit:${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:x86_64-${{ env.release }} --amend ${{ env.dockerhub_organization}}/fluent-bit:arm64v8-${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:arm32v7-${{ env.release }}
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          DOCKER_CLI_EXPERIMENTAL: enabled
+
+      - name: Create manifests for docker latest images
+        run: |
+          docker manifest create ${{ env.dockerhub_organization }}/fluent-bit:latest --amend ${{ env.dockerhub_organization }}/fluent-bit:x86_64-${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:arm64v8-${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:arm32v7-${{ env.release }}
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          DOCKER_CLI_EXPERIMENTAL: enabled
+
+      - name: Create manifests for docker debug images
+        run: |
+          docker manifest create ${{ env.dockerhub_organization }}/fluent-bit:${{ env.release }}-debug --amend ${{ env.dockerhub_organization }}/fluent-bit:x86_64-debug-${{ env.release }}
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          DOCKER_CLI_EXPERIMENTAL: enabled
+
+      - name: Push docker manifests
+        run: |
+          docker manifest push --purge ${{ env.dockerhub_organization }}/fluent-bit:${{ env.release }} && docker manifest push --purge ${{ env.dockerhub_organization }}/fluent-bit:latest && docker manifest push --purge ${{ env.dockerhub_organization}}/fluent-bit:${{ env.release }}-debug
+        env:
+           release: ${{ steps.formatted_version.outputs.replaced }}
+           dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+           DOCKER_CLI_EXPERIMENTAL: enabled
+
+  publish-distro-artifacts:
+    name: publis distro artifacts
+    strategy:
+      max-parallel: 48
+      fail-fast: true
+      matrix:
+        distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
+                  debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
+                  debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
+                  ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
+        include:
+          - distro: amazonlinux/2
+            target: amazonlinux/2/
+            format: rpm
+
+          - distro: amazonlinux/2.arm64v8
+            target: amazonlinux/2/
+            format: rpm
+
+          - distro: centos/7
+            target: centos/7/
+            format: rpm
+
+          - distro: centos/7.arm64v8
+            target: centos/7/
+            format: rpm
+
+          - distro: debian/jessie
+            target: debian/jessie/
+            format: deb
+
+          - distro: debian/jessie.arm64v8
+            target: debian/jessie/
+            format: deb
+
+          - distro: debian/stretch
+            target: debian/stretch/
+            format: deb
+
+          - distro: debian/stretch.arm64v8
+            target: debian/stretch/
+            format: deb
+
+          - distro: debian/buster
+            target: debian/buster/
+            format: deb
+
+          - distro: debian/buster.arm64v8
+            target: debian/buster/
+            format: deb
+
+          - distro: ubuntu/16.04
+            target: ubuntu/xenial/
+            format: deb
+
+          - distro: ubuntu/18.04
+            target: ubuntu/bionic/
+            format: deb
+
+          - distro: ubuntu/18.04.arm64v8
+            target: ubuntu/bionic/
+            format: deb
+
+          - distro: ubuntu/20.04
+            target: ubuntu/focal/
+            format: deb
+
+          - distro: ubuntu/20.04.arm64v8
+            target: ubuntu/focal/
+            format: deb
+
+          - distro: raspbian/jessie
+            target: raspbian/jessie/
+            format: deb
+
+          - distro: raspbian/stretch
+            target: raspbian/stretch/
+            format: deb
+
+          - distro: raspbian/buster
+            target: raspbian/buster/
+            format: deb
+
+    runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-ecosystem/action-get-latest-tag@v1
+        id: get_version
+        with:
+          semver_only: true
+
+      - uses: frabert/replace-string-action@master
+        id: formatted_distro
+        with:
+          pattern: '(.*)\/(.*)$'
+          string: "${{ matrix.distro }}"
+          replace-with: '$1-$2'
+          flags: 'g'
+
+      - uses: frabert/replace-string-action@master
+        id: formatted_version
+        with:
+          pattern: '[v]*(.*)$'
+          string: "${{ steps.get_version.outputs.tag }}"
+          replace-with: '$1'
+          flags: 'g'
+
+      - name: Download distro package from build artifacts
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: "${{ secrets.GITHUB_TOKEN }}"
+          workflow: build-release.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: release-${{ env.release }}-${{ env.distro}}-pkgs
+          path: packages
+        env:
+          release: ${{ steps.formatted_version.outputs.replaced }}
+          distro: ${{ steps.formatted_distro.outputs.replaced }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+
+      - name: Move artifacts to main packages folder
+        run: |
+          mv packages/**/*.${{ env.format }} .
+        env:
+          format: ${{ matrix.format }}
+
+      - name: Copy distro package to webserver
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.FLUENTBITIO_HOST }}
+          username: ${{ secrets.FLUENTBITIO_USERNAME }}
+          key: ${{ secrets.FLUENTBITIO_SSHKEY }}
+          source: ${{ env.source_files }}
+          target: apt/${{ env.target }}
+        env:
+          source_files: "./*.${{ matrix.format }}"
+          target: ${{ matrix.target }}
