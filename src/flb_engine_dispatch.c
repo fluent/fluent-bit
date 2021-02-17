@@ -73,6 +73,7 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 
     ret = flb_output_task_flush(task, retry->o_ins, config);
     if (ret == -1) {
+        flb_task_retry_destroy(retry);
         return -1;
     }
     return 0;
