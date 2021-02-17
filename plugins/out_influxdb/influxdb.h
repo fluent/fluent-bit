@@ -32,6 +32,7 @@ struct flb_influxdb {
 
     char uri[256];
 
+    // v1
     /* database */
     char *db_name;
     int  db_len;
@@ -39,6 +40,18 @@ struct flb_influxdb {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    // v2
+    /* bucket */
+    char *bucket_name;
+    int  bucket_len;
+
+    /* organization */
+    char *org_name;
+    int  org_len;
+
+    /* HTTP Token */
+    char *http_token;
 
     /* sequence tag */
     char *seq_name;
