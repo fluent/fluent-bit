@@ -104,8 +104,12 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         /* Associate this backlog chunk to this instance into the engine */
         ic = flb_input_chunk_map(in, ch);
         if (!ic) {
-            flb_plg_error(ctx->ins, "error registering chunk");
+            flb_plg_error(ctx->ins, "removing chunk %s:%s from the queue",
+                          sbc->stream->name, sbc->chunk->name);
             cio_chunk_down(sbc->chunk);
+            cio_chunk_close(sbc->chunk, FLB_FALSE);
+            mk_list_del(&sbc->_head);
+            flb_free(sbc);
             continue;
         }
 
