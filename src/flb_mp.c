@@ -48,6 +48,87 @@ int flb_mp_count(const void *data, size_t bytes)
     return count;
 }
 
+int flb_mp_validate_chunk(const void *data, size_t bytes,
+                          int *out_records, size_t *processed_bytes)
+{
+    int ret;
+    int count = 0;
+    size_t off = 0;
+    size_t pre_off = 0;
+    size_t ptr_size;
+    unsigned char *ptr;
+    msgpack_object array;
+    msgpack_object ts;
+    msgpack_object record;
+    msgpack_unpacked result;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        array = result.data;
+
+        if (array.type != MSGPACK_OBJECT_ARRAY) {
+            /*
+             * Sometimes there is a special case: Chunks might have extra zero
+             * bytes at the end of a record, meaning: no more records. This is not
+             * an error and actually it happens if a previous run of Fluent Bit
+             * was stopped/killed before to adjust the file size.
+             *
+             * Just validate if all bytes are zero, if so, adjust counters
+             * and return zero.
+             */
+            ptr = (unsigned char *) (data + pre_off);
+            if (ptr[0] != 0) {
+                goto error;
+            }
+
+            ptr_size = bytes - pre_off;
+            ret = memcmp(ptr, ptr + 1, ptr_size - 1);
+            if (ret == 0) {
+                /*
+                 * The chunk is valid, just let the caller know the last processed
+                 * valid byte.
+                 */
+                msgpack_unpacked_destroy(&result);
+                *out_records = count;
+                *processed_bytes = pre_off;
+                return 0;
+            }
+            goto error;
+        }
+
+        if (array.via.array.size != 2) {
+            goto error;
+        }
+
+        ts = array.via.array.ptr[0];
+        record = array.via.array.ptr[1];
+
+        if (ts.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
+            ts.type != MSGPACK_OBJECT_FLOAT &&
+            ts.type != MSGPACK_OBJECT_EXT) {
+            goto error;
+        }
+
+        if (record.type != MSGPACK_OBJECT_MAP) {
+            goto error;
+        }
+
+        count++;
+        pre_off = off;
+    }
+
+    msgpack_unpacked_destroy(&result);
+    *out_records = count;
+    *processed_bytes = pre_off;
+    return 0;
+
+ error:
+    msgpack_unpacked_destroy(&result);
+    *out_records = count;
+    *processed_bytes = pre_off;
+    return -1;
+}
+
 /* Adjust a mspack header buffer size */
 void flb_mp_set_map_header_size(char *buf, int size)
 {
