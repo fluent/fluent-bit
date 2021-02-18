@@ -51,9 +51,7 @@ struct flb_kube_meta {
 #define FLB_KUBE_NAMESPACE "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 #define FLB_KUBE_TOKEN "/var/run/secrets/kubernetes.io/serviceaccount/token"
 #define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-#define FLB_KUBE_API_HOST "kubernetes.default.svc"
-#define FLB_KUBE_API_PORT 443
-#define FLB_KUBE_API_FMT "/api/v1/namespaces/%s/pods/%s"
+#define FLB_KUBE_API_FMT "%s/namespaces/%s/pods/%s"
 
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);

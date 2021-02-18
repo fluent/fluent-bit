@@ -1,8 +1,10 @@
 # Filter Kubernetes Tests
 
-The tests implemented on [filter_kubernets.c]() file aims to take different Kubernetes Pod log files (formats) and play with different setups. These files resides in the [data/kubernetes]() directory and each .log file have it corresponding .meta  which contains the metadata associated with the Pod.
+The tests implemented in [filter_kubernetes.c]() aim to take different Kubernetes Pod log files (formats) and play with different setups. These files reside in the [data/kubernetes]() directory and each .log file has a corresponding .meta file which contains the metadata associated with the Pod.
 
-The unit test implements a fake Kubernetes API server to expose .meta files when the filter query for such data. This make things easier to test without to spawn a real cluster.
+The unit test implements a fake Kubernetes API server to expose .meta files when the filter queries for such data. This makes things easier to test without spawning a real cluster.
+
+It also means the tests do not cover code used when connecting to a real cluster but they verify related config is processed without error and additional details can be verified manually by changing the LOG_LEVEL preprocessor constant temporarily.
 
 If you find that a specific test is missing, don't hesitate to open an issue on our Github repository.
 
