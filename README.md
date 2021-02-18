@@ -3,11 +3,11 @@
 Travis CI:
 [![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
 
-[Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Embedded Linux, MacOS and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
+[Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Windows, Embedded Linux, MacOS and BSD family operating systems. It's part of the Graduated [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
 
-Fluent Bit allows to collect log events or metrics from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, NATS, InfluxDB or any custom HTTP end-point within others.
+Fluent Bit allows to collect log events or metrics from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, Splunk, DataDog, Kafka, New Relic, Azure services, AWS services, Google services, NATS, InfluxDB or any custom HTTP end-point.
 
-In addition, Fluent Bit comes with full [Stream Processing](https://docs.fluentbit.io/stream-processing/) capabilities: data manipulation and analytics using SQL queries.
+Fluent Bit comes with full SQL [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction) capabilities: data manipulation and analytics using SQL queries.
 
 Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
 
@@ -23,12 +23,12 @@ Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
   - Security: built-in TLS/SSL support
   - Asynchronous I/O
 - Pluggable Architecture and [Extensibility](https://docs.fluentbit.io/manual/development): Inputs, Filters and Outputs
-  - More than 50 built-in plugins available
+  - More than 70 built-in plugins available
   - Extensibility
     - Write any input, filter or output plugin in C language
-    - Bonus: write [Filters in Lua](https://docs.fluentbit.io/manual/filter/lua) or [Output plugins in Golang](https://docs.fluentbit.io/manual/development/golang-output-plugins)
+    - Write [Filters in Lua](https://docs.fluentbit.io/manual/filter/lua) or [Output plugins in Golang](https://docs.fluentbit.io/manual/development/golang-output-plugins)
 - [Monitoring](https://docs.fluentbit.io/manual/administration/monitoring): expose internal metrics over HTTP in JSON and [Prometheus](https://prometheus.io/) format
-- [Stream Processing](https://docs.fluentbit.io/stream-processing/): Perform data selection and transformation using simple SQL queries
+- [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction): Perform data selection and transformation using simple SQL queries
   - Create new streams of data using query results
   - Aggregation Windows
   - Data analysis and prediction: Timeseries forecasting
@@ -36,7 +36,7 @@ Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
 
 ## Fluent Bit in Production
 
-[Fluent Bit](https://fluentbit.io) is used widely, just on 2019 it was deployed more than **62 Million** times. The following is a preview of who uses Fluent Bit heavily in production:
+[Fluent Bit](https://fluentbit.io) is used widely in production environments. In 2020 Fluent Bit was deployed more than **220 Million** times, and continues to be deploy over **1 million times a day**. The following is a preview of who uses Fluent Bit heavily in production:
 
 > If your company uses Fluent Bit and is not listed, feel free to open a Github issue and we will add the logo.
 
@@ -167,6 +167,7 @@ Feel free to join us on our Slack channel, Mailing List or IRC:
 
 - [Slack](http://slack.fluentd.org) (#fluent-bit channel)
 - [Mailing List](https://groups.google.com/forum/#!forum/fluent-bit)
+- [Discourse Forum](https://discuss.fluentd.org)
 - [Twitter](http://twitter.com/fluentbit)
 - [IRC](irc.freenode.net) #fluent-bit
 
