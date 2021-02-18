@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_router.h>
@@ -319,16 +320,15 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             void *chunk)
 {
-    ssize_t bytes;
-    const char *tag_buf;
+    int records;
     int tag_len;
     int has_routes;
     int ret;
-
-#ifdef FLB_HAVE_METRICS
     char *buf_data;
     size_t buf_size;
-#endif
+    size_t offset;
+    ssize_t bytes;
+    const char *tag_buf;
     struct flb_input_chunk *ic;
 
     /* Create context for the input instance */
@@ -344,7 +344,6 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     ic->in = in;
     msgpack_packer_init(&ic->mp_pck, ic, flb_input_chunk_write);
 
-#ifdef FLB_HAVE_METRICS
     ret = cio_chunk_get_content(ic->chunk, &buf_data, &buf_size);
     if (ret != CIO_OK) {
         flb_error("[input chunk] error retrieving content for metrics");
@@ -352,7 +351,33 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         return NULL;
     }
 
-    ic->total_records = flb_mp_count(buf_data, buf_size);
+    /* Validate records in the chunk */
+    ret = flb_mp_validate_chunk(buf_data, buf_size, &records, &offset);
+    if (ret == -1) {
+        flb_plg_error(in,
+                      "chunk validation failed, data might be corrupted. "
+                      "Found %d valid records, failed content starts "
+                      "right after byte %lu.", records, offset);
+        flb_free(ic);
+        return NULL;
+    }
+
+    /*
+     * If the content is valid and the chunk has extra padding zeros, just
+     * perform an adjustment.
+     */
+    bytes = cio_chunk_get_content_size(chunk);
+    if (bytes == -1) {
+        flb_free(ic);
+        return NULL;
+    }
+    if (offset < bytes) {
+        cio_chunk_write_at(chunk, offset, NULL, 0);
+    }
+
+    /* Updat metrics */
+#ifdef FLB_HAVE_METRICS
+    ic->total_records = records;
     if (ic->total_records > 0) {
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->total_records, in->metrics);
         flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
