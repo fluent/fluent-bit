@@ -76,7 +76,8 @@ int flb_mp_validate_chunk(const void *data, size_t bytes,
              * Just validate if all bytes are zero, if so, adjust counters
              * and return zero.
              */
-            ptr = (unsigned char *) (data + pre_off);
+            ptr = (unsigned char *) (data);
+            ptr += pre_off;
             if (ptr[0] != 0) {
                 goto error;
             }
