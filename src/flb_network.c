@@ -58,6 +58,10 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->keepalive_max_recycle = 0;
     net->connect_timeout = 10;
     net->source_address = NULL;
+    net->tcp_keepalive = FLB_FALSE;
+    net->tcp_keepalive_time = -1;
+    net->tcp_keepalive_interval = -1;
+    net->tcp_keepalive_probes = -1;
 }
 
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address)
@@ -184,6 +188,42 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t fd)
 {
     int qlen = 5;
     return setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
+}
+
+
+/*
+ * Enable TCP keepalive
+ */
+int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net)
+{
+    int ret = 0;
+    int enabled = 1;
+    int time = net->tcp_keepalive_time;
+    int intvl = net->tcp_keepalive_interval;
+    int probes = net->tcp_keepalive_probes;
+
+    printf("keepalive = %d, %d %d\n", time, intvl, probes);
+
+    ret |= setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&enabled, sizeof(enabled));
+
+    if (time >= 0) {
+        ret |= setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, (const void*)&time, sizeof(time));
+    }
+
+    if (intvl >= 0) {
+        ret |= setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, (const void*)&intvl, sizeof(intvl));
+    }
+
+    if (probes >= 0) {
+        ret |= setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, (const void*)&probes, sizeof(probes));
+    }
+
+    if (ret) {
+        flb_error("[net] failed to configure TCP keepalive for connection #%i", fd);
+        return -1;
+    }
+
+    return 0;
 }
 
 flb_sockfd_t flb_net_socket_create(int family, int nonblock)

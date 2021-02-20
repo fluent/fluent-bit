@@ -102,6 +102,15 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
                   u_conn->fd, u->tcp_host, u->tcp_port);
     }
 
+    /* set TCP keepalive and it's options */
+    if (u->net.tcp_keepalive != FLB_FALSE) {
+        ret = flb_net_socket_tcp_keepalive(fd, &u->net);
+        if (ret == -1) {
+            flb_socket_close(fd);
+            return -1;
+        }
+    }
+
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
     if (u->flags & FLB_IO_TLS) {

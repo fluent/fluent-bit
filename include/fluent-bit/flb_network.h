@@ -43,6 +43,18 @@ struct flb_net_setup {
 
     /* maximum of times a keepalive connection can be used */
     int keepalive_max_recycle;
+
+    /* enable/disable tcp keepalive */
+    char tcp_keepalive;
+
+    /* interval between the last data packet sent and the first TCP keepalive probe */
+    int tcp_keepalive_time;
+
+    /* the interval between TCP keepalive probes */
+    int tcp_keepalive_interval;
+
+    /* number of unacknowledged probes to consider a connection dead */
+    int tcp_keepalive_probes;
 };
 
 /* Defines a host service and it properties */
@@ -69,6 +81,7 @@ int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
 int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
+int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net);
 
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
