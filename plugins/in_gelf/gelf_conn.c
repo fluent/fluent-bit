@@ -160,7 +160,7 @@ int gelf_conn_event(void *data)
         if (available < 1) {
             if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
                 flb_plg_trace(ctx->ins,
-                              "fd=%i incoming data exceed limit (%i KB)",
+                              "fd=%i incoming data exceed limit (%zu KB)",
                               event->fd, (ctx->buffer_size / 1024));
                 gelf_conn_del(conn);
                 return -1;
