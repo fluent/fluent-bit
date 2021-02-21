@@ -244,7 +244,7 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
         key->timeseries_func = timeseries_func;
     }
 
-    /* Lookup for any subkeys in the temporal list */
+    /* Lookup for any subkeys in the temporary list */
     if (mk_list_size(cmd->tmp_subkeys) > 0) {
         ret = swap_tmp_subkeys(&key->subkeys, cmd);
         if (ret == -1) {
@@ -379,7 +379,7 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
     mk_list_init(&cmd->cond_list);
     mk_list_init(&cmd->gb_keys);
 
-    /* Allocate temporal list and initialize */
+    /* Allocate temporary list and initialize */
     cmd->tmp_subkeys = flb_malloc(sizeof(struct mk_list));
     if (!cmd->tmp_subkeys) {
         flb_errno();
@@ -783,7 +783,7 @@ int flb_sp_cmd_gb_key_add(struct flb_sp_cmd *cmd, const char *key)
     gb_key->id = mk_list_size(&cmd->gb_keys);
     mk_list_add(&gb_key->_head, &cmd->gb_keys);
 
-    /* Lookup for any subkeys in the temporal list */
+    /* Lookup for any subkeys in the temporary list */
     if (mk_list_size(cmd->tmp_subkeys) > 0) {
         ret = swap_tmp_subkeys(&gb_key->subkeys, cmd);
         if (ret == -1) {

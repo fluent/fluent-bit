@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,12 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_callback.h>
+
+static inline void flb_http_client_debug_enable(struct flb_http_client *c,
+                                                struct flb_callback *cb_ctx)
+{
+    c->cb_ctx = cb_ctx;
+}
 
 int flb_http_client_debug_setup(struct flb_callback *cb_ctx,
                                 struct mk_list *props);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,9 +27,10 @@
 struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
                                           struct flb_config *config)
 {
+    int ret;
     int io_flags = 0;
-    const char *tmp;
     flb_sds_t t;
+    const char *tmp;
     struct flb_upstream *upstream;
     struct flb_splunk *ctx;
 
@@ -39,6 +40,12 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Set default network configuration */
     flb_output_net_default(FLB_SPLUNK_DEFAULT_HOST, FLB_SPLUNK_DEFAULT_PORT, ins);
@@ -60,7 +67,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
                                    ins->host.name,
                                    ins->host.port,
                                    io_flags,
-                                   &ins->tls);
+                                   ins->tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_splunk_conf_destroy(ctx);
@@ -69,6 +76,15 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
 
     /* Set manual Index and Type */
     ctx->u = upstream;
+
+    /* Compress (gzip) */
+    tmp = flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
 
     /* Splunk Auth Token */
     tmp = flb_output_get_property("splunk_token", ins);
@@ -109,18 +125,11 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Event format, send all fields or pack into event map */
-    tmp = flb_output_get_property("splunk_send_raw", ins);
-    if (tmp) {
-        ctx->splunk_send_raw = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->splunk_send_raw = FLB_FALSE;
-    }
+    /* Set instance flags into upstream */
+    flb_output_upstream_set(ctx->u, ins);
 
     return ctx;
 }
-
 
 int flb_splunk_conf_destroy(struct flb_splunk *ctx)
 {
@@ -131,13 +140,9 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
     if (ctx->auth_header) {
         flb_sds_destroy(ctx->auth_header);
     }
-    if (ctx->http_user) {
-        flb_free(ctx->http_user);
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
     }
-    if (ctx->http_passwd) {
-        flb_free(ctx->http_passwd);
-    }
-    flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
     return 0;

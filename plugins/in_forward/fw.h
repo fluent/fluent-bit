@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,7 @@ struct flb_in_fw_config {
     /* Unix Socket (TCP only) */
     char *unix_path;                /* Unix path for socket        */
 
+    int coll_fd;
     struct mk_list connections;     /* List of active connections */
     struct mk_event_loop *evl;      /* Event loop file descriptor */
     struct flb_input_instance *ins; /* Input plugin instace       */

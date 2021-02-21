@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -163,7 +163,7 @@ static int process_config(struct flb_rewrite_tag *ctx)
         rule->ra_tag = flb_ra_create(entry->str, FLB_FALSE);
 
         if (!rule->ra_tag) {
-            flb_plg_error(ctx->ins, "could not compose tag", entry->str);
+            flb_plg_error(ctx->ins, "could not compose tag: %s", entry->str);
             flb_ra_destroy(rule->ra_key);
             flb_regex_destroy(rule->regex);
             flb_free(rule);
@@ -321,6 +321,11 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
 
     /* Release any capture info from 'results' */
     flb_regex_results_release(&result);
+
+    /* Validate new outgoing tag */
+    if (!out_tag) {
+        return FLB_FALSE;
+    }
 
     /* Emit record with new tag */
     ret = in_emitter_add_record(out_tag, flb_sds_len(out_tag), buf, buf_size,

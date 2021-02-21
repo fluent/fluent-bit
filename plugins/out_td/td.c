@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -168,12 +168,13 @@ static int cb_td_init(struct flb_output_instance *ins, struct flb_config *config
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   FLB_IO_TLS, (void *) &ins->tls);
+                                   FLB_IO_TLS, ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return -1;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     flb_output_set_context(ins, ctx);
     return 0;

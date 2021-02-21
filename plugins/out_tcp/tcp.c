@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,7 +82,7 @@ static void cb_tcp_flush(const void *data, size_t bytes,
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->date_key);
         if (!json) {
             flb_plg_error(ctx->ins, "error formatting JSON payload");
             flb_upstream_conn_release(u_conn);

@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_OUT_SYSLOG_H
-#define FLB_OUT_SYSLOG_H
+#ifndef FLB_OUT_SYSLOG_CONF_H
+#define FLB_OUT_SYSLOG_CONF_H
 
 #define FLB_SYSLOG_UDP 0
 #define FLB_SYSLOG_TCP 1
@@ -30,9 +30,9 @@
 struct flb_syslog {
     flb_sockfd_t fd;
     struct flb_upstream *u;
-    int mode;
+    flb_sds_t mode;
     int format;
-    int maxsize;
+    size_t maxsize;
     flb_sds_t severity_key;
     flb_sds_t facility_key;
     flb_sds_t timestamp_key;
@@ -40,9 +40,12 @@ struct flb_syslog {
     flb_sds_t appname_key;
     flb_sds_t procid_key;
     flb_sds_t msgid_key;
-    int nsd;
-    flb_sds_t *sd_key;
+    struct mk_list *sd_keys;
     flb_sds_t message_key;
+
+    /* Internal */
+    int parsed_mode;
+    int parsed_format;
     struct flb_output_instance *ins;
 };
 

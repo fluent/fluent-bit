@@ -28,6 +28,8 @@
 #include <monkey/mk_clock.h>
 #include <monkey/mk_utils.h>
 
+pthread_t mk_clock_tid;
+
 time_t log_current_utime;
 time_t monkey_init_time;
 

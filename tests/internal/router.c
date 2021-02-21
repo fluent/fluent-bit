@@ -39,7 +39,14 @@ void test_router_wildcard()
         len = strlen(c->tag);
         ret = flb_router_match(c->tag, len, c->match, NULL);
         TEST_CHECK(ret == c->matched);
+        if (ret != c->matched) {
+            fprintf(stderr, "test %i failed: tag=%s match=%s expected_to_match=%s\n",
+                    i, c->tag, c->match, c->matched ? "YES": "NO");
+        }
     }
+
+    ret = flb_router_match("aaaX", 3, "aaa", NULL);
+    TEST_CHECK(ret == FLB_TRUE);
 }
 
 TEST_LIST = {

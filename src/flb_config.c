@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +35,6 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_slist.h>
-#include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -96,6 +95,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_SYNC,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, storage_sync)},
+    {FLB_CONF_STORAGE_METRICS,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, storage_metrics)},
     {FLB_CONF_STORAGE_CHECKSUM,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, storage_checksum)},
@@ -136,6 +138,10 @@ struct flb_config *flb_config_init()
     MK_EVENT_ZERO(&config->event_flush);
     MK_EVENT_ZERO(&config->event_shutdown);
 
+    /* is data ingestion active ? */
+    config->is_ingestion_active = FLB_TRUE;
+
+    /* Is the engine (event loop) actively running ? */
     config->is_running = FLB_TRUE;
 
     /* Flush */
@@ -154,6 +160,12 @@ struct flb_config *flb_config_init()
     config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
 #endif
 
+    config->http_proxy = getenv("HTTP_PROXY");
+    if (config->http_proxy != NULL && strcmp(config->http_proxy, "") == 0) {
+        /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
+        config->http_proxy = NULL;
+    }
+
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
@@ -171,7 +183,7 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_THREAD_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE;
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
@@ -231,7 +243,7 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->log) {
-        flb_log_stop(config->log, config);
+        flb_log_destroy(config->log, config);
     }
 
     if (config->parsers_file) {
@@ -303,6 +315,11 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* Working directory */
+    if (config->workdir) {
+        flb_free(config->workdir);
+    }
+
     /* Destroy any DSO context */
     flb_plugin_destroy(config->dso_plugins);
 
@@ -316,7 +333,7 @@ void flb_config_exit(struct flb_config *config)
     mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
-    flb_sched_exit(config);
+    flb_sched_destroy(config->sched);
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_listen) {
@@ -350,7 +367,6 @@ void flb_config_exit(struct flb_config *config)
         mk_event_loop_destroy(config->evl);
     }
 
-
     flb_plugins_unregister(config);
     flb_free(config);
 }
@@ -377,7 +393,8 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         if (strcasecmp(v_str, "error") == 0) {
             config->verbose = 1;
         }
-        else if (strcasecmp(v_str, "warning") == 0) {
+        else if (strcasecmp(v_str, "warn") == 0 ||
+                 strcasecmp(v_str, "warning") == 0) {
             config->verbose = 2;
         }
         else if (strcasecmp(v_str, "info") == 0) {

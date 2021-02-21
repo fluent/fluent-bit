@@ -89,7 +89,6 @@ struct cio_ctx *cio_create(const char *root_path,
     cio_set_log_callback(ctx, log_cb);
     cio_set_log_level(ctx, log_level);
 
-
     /* Check or initialize file system root path */
     if (root_path) {
         ret = check_root_path(ctx, root_path);
@@ -110,12 +109,12 @@ struct cio_ctx *cio_create(const char *root_path,
     return ctx;
 }
 
-int cio_load(struct cio_ctx *ctx)
+int cio_load(struct cio_ctx *ctx, char *chunk_extension)
 {
     int ret;
 
     if (ctx->root_path) {
-        ret = cio_scan_streams(ctx);
+        ret = cio_scan_streams(ctx, chunk_extension);
         return ret;
     }
 

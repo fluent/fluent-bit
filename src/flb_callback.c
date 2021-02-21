@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,7 +82,7 @@ int flb_callback_exists(struct flb_callback *ctx, char *name)
     int ret;
     int len;
     size_t out_size;
-    const char *cb_addr;
+    void *cb_addr;
 
     len = strlen(name);
     ret = flb_hash_get(ctx->ht, name, len, &cb_addr, &out_size);
@@ -98,7 +98,7 @@ int flb_callback_do(struct flb_callback *ctx, char *name, void *p1, void *p2)
     int ret;
     int len;
     size_t out_size;
-    const char *cb_addr;
+    void *cb_addr;
     struct flb_callback_entry *entry;
 
     if (!ctx) {

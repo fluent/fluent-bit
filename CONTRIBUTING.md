@@ -23,6 +23,10 @@ You have to pay attention to the code indentation, tabs are 4 spaces, spaces on 
 
 ### General requirements
 
+#### Line Length
+
+Fluent Bit source code lines length should not exceed 90 characters.
+
 #### Braces usage on conditionals, loops and functions:
 
 Always append braces to a conditional or loop expression, e.g:

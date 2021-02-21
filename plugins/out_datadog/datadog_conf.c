@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -152,7 +152,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         ctx->host = flb_sds_create(FLB_DATADOG_DEFAULT_HOST);
     }
     else {
-        ctx->host = flb_strdup(ins->host.name);
+        ctx->host = flb_sds_create(ins->host.name);
     }
     flb_plg_debug(ctx->ins, "host: %s", ctx->host);
 
@@ -196,10 +196,10 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
                                        io_flags,
-                                       &ins->tls);
+                                       ins->tls);
     }
     else {
-        upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, &ins->tls);
+        upstream = flb_upstream_create(config, ctx->host, ctx->port, io_flags, ins->tls);
     }
 
     if (!upstream) {
@@ -208,6 +208,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->upstream = upstream;
+    flb_output_upstream_set(ctx->upstream, ins);
 
     return ctx;
 }
@@ -225,7 +226,7 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
         flb_sds_destroy(ctx->scheme);
     }
     if (ctx->host) {
-        flb_free(ctx->host);
+        flb_sds_destroy(ctx->host);
     }
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);

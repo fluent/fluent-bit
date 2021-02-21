@@ -48,5 +48,7 @@ void cio_memfs_close(struct cio_chunk *ch);
 int cio_memfs_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_memfs_close_stream(struct cio_stream *st);
 void cio_memfs_scan_dump(struct cio_ctx *ctx, struct cio_stream *st);
+int cio_memfs_content_copy(struct cio_chunk *ch,
+                           void **out_buf, size_t *out_size);
 
 #endif

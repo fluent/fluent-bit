@@ -19,6 +19,9 @@
 #define JSON_FMT_01  "{\"key001\": 12345, \"key002\": 0.99, \"time\": \"%s\"}"
 #define REGEX_FMT_01 "12345 0.99 %s"
 
+#define isleap(y) ((y) % 4 == 0 && ((y) % 400 == 0 || (y) % 100 != 0))
+#define year2sec(y) (isleap(y) ? 31622400 : 31536000)
+
 /* Timezone */
 struct tz_check {
     char *val;
@@ -91,6 +94,7 @@ struct time_check time_entries[] = {
     {"generic_TZ"   , "07/18/2017 01:47:03 +05:30"  , 1500322623, 0,   0},
     {"generic_N_TZ" , "07/17/2017 22:17:03.1 +02:00", 1500322623, 0.1, 0},
     {"generic_NC_TZ", "07/17/2017 22:17:03,1 +02:00", 1500322623, 0.1, 0},
+    {"generic_NL_TZ", "07/17/2017 22:17:03:1 +02:00", 1500322623, 0.1, 0},
 #endif
     /* Same date for different timezones, same timestamp w/ fixed UTC offset */
     {"generic"   , "07/18/2017 01:47:03"   , 1500322623, 0,   19800},
@@ -166,6 +170,7 @@ static void load_regex_parsers(struct flb_config *config)
 void test_parser_time_lookup()
 {
     int i;
+    int j;
     int len;
     int ret;
     int toff;
@@ -209,8 +214,9 @@ void test_parser_time_lookup()
             gmtime_r(&now, &tm_now);
             gmtime_r(&time_test, &tm_test);
 
-            if (tm_now.tm_year != tm_test.tm_year) {
-                year_diff = ((tm_now.tm_year - tm_test.tm_year) * 31536000);
+            year_diff = 0;
+            for (j = tm_test.tm_year; j < tm_now.tm_year; j++) {
+                year_diff += year2sec(tm_test.tm_mon < 2 ? j : j + 1);
             }
         }
         else {
@@ -243,6 +249,7 @@ void test_parser_time_lookup()
 void test_json_parser_time_lookup()
 {
     int i;
+    int j;
     int ret;
     int len;
     int toff;
@@ -288,8 +295,9 @@ void test_json_parser_time_lookup()
             gmtime_r(&time_now, &tm_now);
             gmtime_r(&time_test, &tm_test);
 
-            if (tm_now.tm_year != tm_test.tm_year) {
-                year_diff = ((tm_now.tm_year - tm_test.tm_year) * 31536000);
+            year_diff = 0;
+            for (j = tm_test.tm_year; j < tm_now.tm_year; j++) {
+                year_diff += year2sec(tm_test.tm_mon < 2 ? j : j + 1);
             }
         }
         else {
@@ -326,6 +334,7 @@ void test_json_parser_time_lookup()
 void test_regex_parser_time_lookup()
 {
     int i;
+    int j;
     int ret;
     int len;
     int toff;
@@ -371,8 +380,9 @@ void test_regex_parser_time_lookup()
             gmtime_r(&time_now, &tm_now);
             gmtime_r(&time_test, &tm_test);
 
-            if (tm_now.tm_year != tm_test.tm_year) {
-                year_diff = ((tm_now.tm_year - tm_test.tm_year) * 31536000);
+            year_diff = 0;
+            for (j = tm_test.tm_year; j < tm_now.tm_year; j++) {
+                year_diff += year2sec(tm_test.tm_mon < 2 ? j : j + 1);
             }
         }
         else {

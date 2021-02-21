@@ -384,7 +384,7 @@ static int object_to_number(msgpack_object obj, int64_t *i, double *d)
     return -1;
 }
 
-/* Summarize a value into the temporal array considering data type */
+/* Summarize a value into the temporary array considering data type */
 static void aggr_sum(struct aggr_num *nums, int key_id, int64_t i, double d)
 {
     if (nums[key_id].type == FLB_SP_NUM_I64) {
@@ -668,6 +668,19 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
     return task;
 }
 
+void groupby_nums_destroy(struct aggr_num *groupby_nums, int size)
+{
+    int i;
+
+    for (i = 0; i < size; i++) {
+        if (groupby_nums[i].type == FLB_SP_STRING) {
+            flb_sds_destroy(groupby_nums[i].string);
+          }
+    }
+
+    flb_free(groupby_nums);
+}
+
 /*
  * Destroy aggregation node context: before to use this function make sure
  * to unlink from the linked list.
@@ -690,12 +703,7 @@ void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
         }
     }
 
-    for (i = 0; i < aggr_node->groupby_keys; i++) {
-        num = &aggr_node->groupby_nums[i];
-        if (num->type == FLB_SP_STRING) {
-            flb_sds_destroy(num->string);
-        }
-    }
+    groupby_nums_destroy(aggr_node->groupby_nums, aggr_node->groupby_keys);
 
     key_id = 0;
     mk_list_foreach(head, &cmd->keys) {
@@ -723,7 +731,6 @@ void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
     }
 
     flb_free(aggr_node->nums);
-    flb_free(aggr_node->groupby_nums);
     flb_free(aggr_node->ts);
     flb_free(aggr_node);
 }
@@ -849,7 +856,7 @@ static void itof_convert(struct flb_exp_val *val)
     }
 
     val->type = FLB_EXP_FLOAT;
-    val->val.f64 = val->val.i64;
+    val->val.f64 = (double) val->val.i64;
 }
 
 /* Convert (string) expression to number */
@@ -1666,14 +1673,14 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
 
         /* if some GROUP BY keys are not found in the record */
         if (values_found < gb_entries) {
-            flb_free(gb_nums);
+            groupby_nums_destroy(gb_nums, gb_entries);
             return NULL;
         }
 
         aggr_node = (struct aggr_node *) flb_calloc(1, sizeof(struct aggr_node));
         if (!aggr_node) {
             flb_errno();
-            flb_free(gb_nums);
+            groupby_nums_destroy(gb_nums, gb_entries);
             return NULL;
         }
 
@@ -1700,6 +1707,7 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
         else {
             aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
             if (!aggr_node->nums) {
+                flb_errno();
                 flb_sp_aggr_node_destroy(cmd, aggr_node);
                 return NULL;
             }
@@ -1721,17 +1729,27 @@ static struct aggr_node * sp_process_aggregation_data(struct flb_sp_task *task,
         if (!mk_list_size(&task->window.aggr_list)) {
             aggr_node = flb_calloc(1, sizeof(struct aggr_node));
             if (!aggr_node) {
+                flb_errno();
                 return NULL;
             }
             aggr_node->nums = flb_calloc(1, sizeof(struct aggr_num) * map_entries);
             if (!aggr_node->nums) {
+                flb_errno();
                 flb_sp_aggr_node_destroy(cmd, aggr_node);
                 return NULL;
             }
 
             aggr_node->nums_size = map_entries;
             aggr_node->records = 1;
-            aggr_node->ts = (struct timeseries **) flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+            if (cmd->timeseries_num > 0) {
+                aggr_node->ts = (struct timeseries **)
+                                flb_calloc(1, sizeof(struct timeseries *) * cmd->timeseries_num);
+                if (!aggr_node->ts) {
+                    flb_errno();
+                    flb_sp_aggr_node_destroy(cmd, aggr_node);
+                    return NULL;
+                }
+            }
             mk_list_add(&aggr_node->_head, &task->window.aggr_list);
         }
         else {
@@ -2350,7 +2368,6 @@ static int sp_process_hopping_slot(const char *tag, int tag_len,
         }
         else {
             flb_free(nums);
-            flb_free(aggr_node_hs->groupby_nums);
             flb_free(aggr_node_hs);
         }
     }
@@ -2657,7 +2674,7 @@ int flb_sp_test_fd_event(int fd, struct flb_sp_task *task, char **out_data,
         else if (fd == task->window.fd_hop) {
             sp_process_hopping_slot(tag, tag_len, task);
         }
-
     }
+
     return 0;
 }

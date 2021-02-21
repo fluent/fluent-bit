@@ -20,11 +20,16 @@ void cb_worker(void *data)
 
 void cb_main(mk_request_t *request, void *data)
 {
+    int i;
     (void) data;
 
     mk_http_status(request, 200);
-    mk_http_header(request, "X-Monkey", 8, "OK", 2);
-    mk_http_send(request, ":)\n", 3, NULL);
+
+    for (i = 0; i < 20; i++) {
+        mk_http_send(request, "first", 5, NULL);
+        mk_http_send(request, "second", 6, NULL);
+        mk_http_send(request, "third", 5, NULL);
+    }
     mk_http_done(request);
 }
 
@@ -38,7 +43,7 @@ void cb_test_chunks(mk_request_t *request, void *data)
     mk_http_status(request, 200);
     mk_http_header(request, "X-Monkey", 8, "OK", 2);
 
-    for (i = 0; i < 1000; i++) {
+    for (i = 0; i < 4; i++) {
         len = snprintf(tmp, sizeof(tmp) -1, "test-chunk %6i\n ", i);
         mk_http_send(request, tmp, len, NULL);
     }

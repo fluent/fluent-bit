@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -210,12 +210,12 @@ static int cb_parser_filter(const void *data, size_t bytes,
     msgpack_packer tmp_pck;
 
     msgpack_object_kv **append_arr = NULL;
-    size_t            append_arr_len;
+    size_t            append_arr_len = 0;
     int                append_arr_i;
     struct mk_list *head;
     struct filter_parser *fp;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
@@ -271,8 +271,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                         flb_time_zero(&parsed_time);
 
                         parse_ret = flb_parser_do(fp->parser, val_str, val_len,
-                                            (void **) &out_buf, &out_size,
-                                            &parsed_time);
+                                                  (void **) &out_buf, &out_size,
+                                                  &parsed_time);
                         if (parse_ret >= 0) {
                             /*
                              * If the parser succeeded we need to check the
@@ -295,8 +295,8 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             }
                             else {
                                 continue_parsing = FLB_FALSE;
-                                break;
                             }
+                            break;
                         }
                     }
                 }

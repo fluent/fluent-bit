@@ -821,12 +821,12 @@ static void cb_select_max_sub_keys(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
-static void cb_select_max_sub_keys_group_by(int id, struct task_check *check,
+static void cb_select_sum_sub_keys_group_by(int id, struct task_check *check,
                                             char *buf, size_t size)
 {
     int ret;
 
-    /* Expect 1 row */
+    /* Expect 3 rows */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 3);
 
@@ -837,12 +837,12 @@ static void cb_select_max_sub_keys_group_by(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
-static void cb_select_max_sub_keys_group_by_2(int id, struct task_check *check,
+static void cb_select_sum_sub_keys_group_by_2(int id, struct task_check *check,
                                               char *buf, size_t size)
 {
     int ret;
 
-    /* Expect 1 row */
+    /* Expect 3 rows */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 3);
 
@@ -850,6 +850,34 @@ static void cb_select_max_sub_keys_group_by_2(int id, struct task_check *check,
                             0, "SUM(map['sub1']['sub3'])",
                             MSGPACK_OBJECT_FLOAT,
                             NULL, 0, 105.5);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_sum_sub_keys_group_by_3(int id, struct task_check *check,
+                                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 3 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 100, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_record_key_cmp(buf, size,
+                            1, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 11);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_record_key_cmp(buf, size,
+                            2, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 5.5);
     TEST_CHECK(ret == FLB_TRUE);
 }
 
@@ -925,15 +953,20 @@ struct task_check select_subkeys_checks[] = {
         "map['sub1']['sub3'] > 0;",
         cb_select_max_sub_keys},
     {   10, 0, 0, 0,
-        "cb_select_max_sub_keys_group_by",
+        "cb_select_sum_sub_keys_group_by",
         "SELECT SUM(map['sub1']['sub3']) FROM STREAM:FLB "  \
         "GROUP BY map['mtype'];",
-        cb_select_max_sub_keys_group_by},
+        cb_select_sum_sub_keys_group_by},
     {   11, 0, 0, 0,
-        "cb_select_max_sub_keys_group_by",
+        "cb_select_sum_sub_keys_group_by_2",
         "SELECT map['sub1']['stype'], map['mtype'], SUM(map['sub1']['sub3']) " \
         "FROM STREAM:FLB GROUP BY map['mtype'], map['sub1']['stype'];",
-        cb_select_max_sub_keys_group_by_2}
+        cb_select_sum_sub_keys_group_by_2},
+    {   12, 0, 0, 0,
+        "cb_select_sum_sub_keys_group_by_3",
+        "SELECT map['sub1']['stype'], map['sub1']['sub4'], SUM(map['sub1']['sub3']) " \
+        "FROM STREAM:FLB GROUP BY map['sub1']['stype'], map['sub1']['sub4'];",
+        cb_select_sum_sub_keys_group_by_3}
 };
 
 /* Tests to check syntactically valid/semantically invalid queries */
@@ -1536,7 +1569,7 @@ static void cb_snapshot_purge_time(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect 5 rows, as set in snapshot query */
+    /* Expect 11 rows, as set in snapshot query */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 11);
 };
@@ -1674,6 +1707,7 @@ static void test_snapshot()
                                  "samples", 7,
                                  data_buf, data_size,
                                  &out_buf, &out_size);
+
             if (ret == -1) {
                 flb_error("[sp test] error processing check '%s'", check->name);
                 flb_sp_task_destroy(task);

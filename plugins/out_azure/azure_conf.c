@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -175,13 +175,14 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
                                    ctx->host,
                                    ctx->port,
                                    FLB_IO_TLS,
-                                   &ins->tls);
+                                   ins->tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "cannot create Upstream context");
         flb_azure_conf_destroy(ctx);
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Compose uri */
     ctx->uri = flb_sds_create_size(1024);

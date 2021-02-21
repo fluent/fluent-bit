@@ -84,7 +84,7 @@ struct cio_ctx {
 struct cio_ctx *cio_create(const char *root_path,
                            void (*log_cb), int log_level, int flags);
 void cio_destroy(struct cio_ctx *ctx);
-int cio_load(struct cio_ctx *ctx);
+int cio_load(struct cio_ctx *ctx, char *chunk_extension);
 int cio_qsort(struct cio_ctx *ctx, int (*compar)(const void *, const void *));
 
 void cio_set_log_callback(struct cio_ctx *ctx, void (*log_cb));
@@ -95,7 +95,5 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
 int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
 int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
 int cio_meta_size(struct cio_chunk *ch);
-
-ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 
 #endif

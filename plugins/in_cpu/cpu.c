@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -197,7 +197,7 @@ static inline double proc_cpu_pid_load(struct flb_cpu *ctx,
     }
 
     if (fgets(line, sizeof(line) - 1, f) == NULL) {
-        flb_plg_error(ctx->ins, "cannot read process %lu stats", pid);
+        flb_plg_error(ctx->ins, "cannot read process %ld stats", (long) pid);
         fclose(f);
         return -1;
     }
@@ -333,16 +333,17 @@ struct cpu_snapshot *snapshot_pid_percent(struct cpu_stats *cstats,
     sum_pre = (snap_pre->v_user + snap_pre->v_system);
     sum_now = (snap_now->v_user + snap_now->v_system);
 
-    snap_now->p_cpu = CPU_METRIC_USAGE(sum_pre, sum_now, ctx);
+    snap_now->p_cpu = CPU_METRIC_SYS_AVERAGE(sum_pre, sum_now, ctx);
 
     /* User space CPU% */
-    snap_now->p_user = CPU_METRIC_USAGE(snap_pre->v_user, snap_now->v_user,
-                                        ctx);
+    snap_now->p_user = CPU_METRIC_SYS_AVERAGE(snap_pre->v_user,
+                                              snap_now->v_user,
+                                              ctx);
 
     /* Kernel space CPU% */
-    snap_now->p_system = CPU_METRIC_USAGE(snap_pre->v_system,
-                                          snap_now->v_system,
-                                          ctx);
+    snap_now->p_system = CPU_METRIC_SYS_AVERAGE(snap_pre->v_system,
+                                                snap_now->v_system,
+                                                ctx);
 
 #ifdef FLB_TRACE
     flb_trace("cpu[pid=%i] all=%s%f%s user=%s%f%s system=%s%f%s",
@@ -549,12 +550,18 @@ static int cb_cpu_init(struct flb_input_instance *in,
     }
 
     /* Get CPU load, ready to be updated once fired the calc callback */
-    ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
+    if (ctx->pid > 0) {
+        ret = proc_cpu_pid_load(ctx, ctx->pid, &ctx->cstats);
+    }
+    else {
+        ret = proc_cpu_load(ctx->n_processors, &ctx->cstats);
+    }
     if (ret != 0) {
         flb_error("[cpu] Could not obtain CPU data");
         flb_free(ctx);
         return -1;
     }
+
     ctx->cstats.snap_active = CPU_SNAP_ACTIVE_B;
 
     /* Set the context */

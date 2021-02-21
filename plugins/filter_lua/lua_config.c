@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -144,6 +144,12 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     tmp = flb_filter_get_property("protected_mode", ins);
     if (tmp) {
         lf->protected_mode = flb_utils_bool(tmp);
+    }
+
+    lf->time_as_table = FLB_FALSE;
+    tmp = flb_filter_get_property("time_as_table", ins);
+    if (tmp) {
+        lf->time_as_table = flb_utils_bool(tmp);
     }
 
     return lf;

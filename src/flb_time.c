@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -190,13 +190,40 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
     return ret;
 }
 
+int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
+{
+    uint32_t tmp;
+
+    switch(obj->type) {
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        time->tm.tv_sec  = obj->via.u64;
+        time->tm.tv_nsec = 0;
+        break;
+    case MSGPACK_OBJECT_FLOAT:
+        time->tm.tv_sec  = obj->via.f64;
+        time->tm.tv_nsec = ((obj->via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        memcpy(&tmp, &obj->via.ext.ptr[0], 4);
+        time->tm.tv_sec = (uint32_t) ntohl(tmp);
+        memcpy(&tmp, &obj->via.ext.ptr[4], 4);
+        time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+        break;
+    default:
+        flb_warn("unknown time format %x", obj->type);
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map)
 {
+    int ret;
     msgpack_object obj;
-    uint32_t tmp;
 
-    if(time == NULL || upk == NULL) {
+    if (time == NULL || upk == NULL) {
         return -1;
     }
 
@@ -207,25 +234,28 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
     obj = upk->data.via.array.ptr[0];
     *map = &upk->data.via.array.ptr[1];
 
-    switch(obj.type){
-    case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        time->tm.tv_sec  = obj.via.u64;
-        time->tm.tv_nsec = 0;
-        break;
-    case MSGPACK_OBJECT_FLOAT:
-        time->tm.tv_sec  = obj.via.f64;
-        time->tm.tv_nsec = ((obj.via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
-        break;
-    case MSGPACK_OBJECT_EXT:
-        memcpy(&tmp, &obj.via.ext.ptr[0], 4);
-        time->tm.tv_sec = (uint32_t)ntohl(tmp);
-        memcpy(&tmp, &obj.via.ext.ptr[4], 4);
-        time->tm.tv_nsec = (uint32_t)ntohl(tmp);
-        break;
-    default:
-        flb_warn("unknown time format %x", obj.type);
-        return -1;
+    ret = flb_time_msgpack_to_time(time, &obj);
+    return ret;
+}
+
+long flb_time_tz_offset_to_second()
+{
+    time_t t = time(NULL);
+    struct tm local = *localtime(&t);
+    struct tm utc = *gmtime(&t);
+
+    long diff = ((local.tm_hour - utc.tm_hour)          \
+                 * 60 + (local.tm_min - utc.tm_min))    \
+                 * 60L + (local.tm_sec - utc.tm_sec);
+
+    int delta_day = local.tm_mday - utc.tm_mday;
+
+    if ((delta_day == 1) || (delta_day < -1)) {
+        diff += 24L * 60 * 60;
+    }
+    else if ((delta_day == -1) || (delta_day > 1)) {
+        diff -= 24L * 60 * 60;
     }
 
-    return 0;
+    return diff;
 }

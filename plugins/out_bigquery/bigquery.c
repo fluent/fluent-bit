@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -306,11 +306,12 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
      * (no oauth2 service)
      */
     ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE,
-                                     io_flags, &ins->tls);
+                                     io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
     }
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Retrief oauth2 token */
     token = get_google_token(ctx);
@@ -343,7 +344,7 @@ static int bigquery_format(const void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -434,7 +435,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
 
-    flb_plg_trace(ctx->ins, "flushing bytes %d", bytes);
+    flb_plg_trace(ctx->ins, "flushing bytes %zu", bytes);
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);

@@ -77,7 +77,7 @@ int main(int argc, char **argv)
     fclose(fp);
 
     /* Invoke the fuzzer entry-point function */
-    for (i = 0; i < 1; i++) {
+    for (i = 0; i < 100; i++) {
         ret = LLVMFuzzerTestOneInput((unsigned char *) buffer, st.st_size);
     }
     flb_free(buffer);

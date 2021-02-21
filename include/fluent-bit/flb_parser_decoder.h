@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,7 +53,7 @@ struct flb_parser_dec_rule {
 
 struct flb_parser_dec {
     flb_sds_t key;
-    flb_sds_t buffer;        /* temporal buffer for decoding work */
+    flb_sds_t buffer;        /* temporary buffer for decoding work */
     int add_extra_keys;      /* if type == FLB_PARSER_DEC_DEFAULT, flag is True */
     struct mk_list rules;    /* list head for decoder key rules */
     struct mk_list _head;    /* link to parser->decoders */

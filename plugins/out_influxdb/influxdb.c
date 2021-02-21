@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -284,7 +284,7 @@ static char *influxdb_format(const char *tag, int tag_len,
                 influxdb_bulk_append_bulk(bulk, bulk_body, ' ') != 0) {
                 goto error;
             }
-        } 
+        }
         else {
             flb_plg_warn(ctx->ins, "skip send record, "
                          "since no record available "
@@ -363,6 +363,23 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     }
     ctx->db_len = strlen(ctx->db_name);
 
+    /* bucket */
+    tmp = flb_output_get_property("bucket", ins);
+    if (tmp) {
+        ctx->bucket_name = flb_strdup(tmp);
+        ctx->bucket_len = strlen(ctx->bucket_name);
+    }
+
+    /* organization */
+    tmp = flb_output_get_property("org", ins);
+    if (!tmp) {
+        ctx->org_name = flb_strdup("fluent");
+    }
+    else {
+        ctx->org_name = flb_strdup(tmp);
+    }
+    ctx->org_len = strlen(ctx->org_name);
+
     /* sequence tag */
     tmp = flb_output_get_property("sequence_tag", ins);
     if (!tmp) {
@@ -376,7 +393,13 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     }
     ctx->seq_len = strlen(ctx->seq_name);
 
-    snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s&precision=n", ctx->db_name);
+    if (ctx->bucket_name) {
+        // bucket specified, use v2
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/api/v2/write?org=%s&bucket=%s&precision=ns", ctx->org_name, ctx->bucket_name);
+    }
+    else {
+        snprintf(ctx->uri, sizeof(ctx->uri) - 1, "/write?db=%s&precision=n", ctx->db_name);
+    }
 
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
@@ -394,6 +417,12 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
         else {
             ctx->http_passwd = flb_strdup("");
         }
+    }
+
+    /* HTTP Token */
+    tmp = flb_output_get_property("http_token", ins);
+    if (tmp) {
+        ctx->http_token = flb_strdup(tmp);
     }
 
     /* Auto_Tags */
@@ -419,13 +448,14 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
                                    ins->host.name,
                                    ins->host.port,
                                    io_flags,
-                                   &ins->tls);
+                                   ins->tls);
     if (!upstream) {
         flb_free(ctx);
         return -1;
     }
     ctx->u   = upstream;
     ctx->seq = 0;
+    flb_output_upstream_set(ctx->u, ins);
 
     flb_time_zero(&ctx->ts_dupe);
     flb_time_zero(&ctx->ts_last);
@@ -446,6 +476,7 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
     int bytes_out;
     size_t b_sent;
     char *pack;
+    char tmp[128];
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     struct flb_influxdb *ctx = out_context;
@@ -468,7 +499,11 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
                         pack, bytes_out, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
-    if (ctx->http_user && ctx->http_passwd) {
+    if (ctx->http_token) {
+        ret = snprintf(tmp, sizeof(tmp) - 1, "Token %s", ctx->http_token);
+        flb_http_add_header(c, FLB_HTTP_HEADER_AUTH, sizeof FLB_HTTP_HEADER_AUTH - 1, tmp, ret);
+    }
+    else if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
@@ -504,11 +539,17 @@ static int cb_influxdb_exit(void *data, struct flb_config *config)
 {
     struct flb_influxdb *ctx = data;
 
+    if (ctx->bucket_name) {
+        flb_free(ctx->bucket_name);
+    }
     if (ctx->http_user) {
         flb_free(ctx->http_user);
     }
     if (ctx->http_passwd) {
         flb_free(ctx->http_passwd);
+    }
+    if (ctx->http_token) {
+        flb_free(ctx->http_token);
     }
     if (ctx->tag_keys) {
         flb_utils_split_free(ctx->tag_keys);
@@ -517,6 +558,7 @@ static int cb_influxdb_exit(void *data, struct flb_config *config)
     flb_upstream_destroy(ctx->u);
     flb_free(ctx->db_name);
     flb_free(ctx->seq_name);
+    flb_free(ctx->org_name);
     flb_free(ctx);
 
     return 0;

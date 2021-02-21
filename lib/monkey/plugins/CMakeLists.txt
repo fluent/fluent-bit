@@ -57,7 +57,7 @@ macro(MK_BUILD_PLUGIN name)
       # struct reference on mk_static_plugins.h
       set(static_plugins "${static_plugins}monkey-${name}-static;")
       set(STATIC_PLUGINS_INIT "${STATIC_PLUGINS_INIT}\n    p = &mk_plugin_${name};\n    mk_list_add(&p->_head, plugins);\n")
-      set(STATIC_PLUGINS_DECL "${STATIC_PLUGINS_DECL}struct mk_plugin mk_plugin_${name};\n")
+      set(STATIC_PLUGINS_DECL "${STATIC_PLUGINS_DECL}extern struct mk_plugin mk_plugin_${name};\n")
 
       # append message to stdout
       set(mode "[== static ==]")

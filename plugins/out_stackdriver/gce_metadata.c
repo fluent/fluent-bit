@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -40,6 +40,23 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     size_t b_sent;
     struct flb_upstream_conn *metadata_conn;
     struct flb_http_client *c;
+
+    /* If runtime test mode is enabled, add test data */
+    if (ctx->ins->test_mode == FLB_TRUE) {
+        if (strcmp(uri, FLB_STD_METADATA_PROJECT_ID_URI) == 0) {
+            flb_sds_cat(payload, "fluent-bit-test", 15);
+            return 0;
+        }
+        else if (strcmp(uri, FLB_STD_METADATA_ZONE_URI) == 0) {
+            flb_sds_cat(payload, "projects/0123456789/zones/fluent", 32);
+            return 0;
+        }
+        else if (strcmp(uri, FLB_STD_METADATA_INSTANCE_ID_URI) == 0) {
+            flb_sds_cat(payload, "333222111", 9);
+            return 0;
+        }
+        return -1;
+    }
 
     /* Get metadata connection */
     metadata_conn = flb_upstream_conn_get(upstream);
@@ -127,7 +144,7 @@ int gce_metadata_read_zone(struct flb_stackdriver *ctx)
     int j;
     int part = 0;
     flb_sds_t payload = flb_sds_create_size(4096);
-    flb_sds_t zone;
+    flb_sds_t zone = NULL;
 
     ret = fetch_metadata(ctx, ctx->metadata_u, FLB_STD_METADATA_ZONE_URI,
                          payload);
@@ -155,12 +172,14 @@ int gce_metadata_read_zone(struct flb_stackdriver *ctx)
     }
 
     zone = flb_sds_create_size(flb_sds_len(payload) - i);
+
     j = 0;
     while (i != flb_sds_len(payload)) {
         zone[j] = payload[i];
         i++;
         j++;
     }
+    zone[j] = '\0';
     ctx->zone = flb_sds_create(zone);
     flb_sds_destroy(zone);
     flb_sds_destroy(payload);

@@ -22,7 +22,7 @@
 
 #include <chunkio/chunkio.h>
 
-int cio_scan_streams(struct cio_ctx *ctx);
+int cio_scan_streams(struct cio_ctx *ctx, char *chunk_extension);
 void cio_scan_dump(struct cio_ctx *ctx);
 
 #endif

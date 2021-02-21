@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <ctype.h>
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_compat.h>
@@ -34,6 +35,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_meta.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_version.h>
@@ -46,14 +48,29 @@
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_parser.h>
-
-
+#include <fluent-bit/flb_lib.h>
+#include <fluent-bit/flb_help.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+extern int win32_main(int, char**);
+extern void win32_started(void);
+#endif
+
+flb_ctx_t *ctx;
 struct flb_config *config;
+
+#ifdef FLB_HAVE_LIBBACKTRACE
+struct flb_stacktrace flb_st;
+#endif
+
+#define FLB_HELP_TEXT   0
+#define FLB_HELP_JSON   1
 
 #define PLUGIN_INPUT    0
 #define PLUGIN_OUTPUT   1
@@ -73,7 +90,7 @@ static void flb_banner()
 {
     fprintf(stderr, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
             ANSI_RESET);
-    fprintf(stderr, "* %sCopyright (C) 2019-2020 The Fluent Bit Authors%s\n",
+    fprintf(stderr, "* %sCopyright (C) 2019-2021 The Fluent Bit Authors%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
     fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
@@ -93,6 +110,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     printf("  -b  --storage_path=PATH\tspecify a storage buffering path\n");
     printf("  -c  --config=FILE\tspecify an optional configuration file\n");
+    printf("  -D, --dry-run\tdry run\n");
 #ifdef FLB_HAVE_FORK
     printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
 #endif
@@ -116,6 +134,7 @@ static void flb_help(int rc, struct flb_config *config)
 #ifdef FLB_HAVE_TRACE
     printf("  -vv\t\t\ttrace mode (available)\n");
 #endif
+    printf("  -w, --workdir\t\tset the working directory\n");
 #ifdef FLB_HAVE_HTTP_SERVER
     printf("  -H, --http\t\tenable monitoring HTTP server\n");
     printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
@@ -139,6 +158,13 @@ static void flb_help(int rc, struct flb_config *config)
         }
         printf("  %-22s%s\n", in->name, in->description);
     }
+
+    printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
+    mk_list_foreach(head, &config->filter_plugins) {
+        filter = mk_list_entry(head, struct flb_filter_plugin, _head);
+        printf("  %-22s%s\n", filter->name, filter->description);
+    }
+
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
     mk_list_foreach(head, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
@@ -147,12 +173,6 @@ static void flb_help(int rc, struct flb_config *config)
             continue;
         }
         printf("  %-22s%s\n", out->name, out->description);
-    }
-
-    printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
-    mk_list_foreach(head, &config->filter_plugins) {
-        filter = mk_list_entry(head, struct flb_filter_plugin, _head);
-        printf("  %-22s%s\n", filter->name, filter->description);
     }
 
     printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);
@@ -165,7 +185,7 @@ static void flb_help(int rc, struct flb_config *config)
  * If the description is larger than the allowed 80 chars including left
  * padding, split the content in multiple lines and align it properly.
  */
-static void help_plugin_description(int left_padding, char *str)
+static void help_plugin_description(int left_padding, flb_sds_t str)
 {
     int len;
     int max;
@@ -180,7 +200,7 @@ static void help_plugin_description(int left_padding, char *str)
         return;
     }
 
-    max = 80 - left_padding;
+    max = 90 - left_padding;
     len = strlen(str);
 
     if (len <= max) {
@@ -189,7 +209,7 @@ static void help_plugin_description(int left_padding, char *str)
     }
 
     p = str;
-    len = strlen(str);
+    len = flb_sds_len(str);
     end = str + len;
 
     while (p < end) {
@@ -222,131 +242,213 @@ static void help_plugin_description(int left_padding, char *str)
     }
 }
 
-static void flb_help_plugin(int rc, struct flb_config *config, int type,
+static msgpack_object *help_get_obj(msgpack_object map, char *key)
+{
+    flb_sds_t k;
+    msgpack_object *o;
+    struct flb_ra_value *rval = NULL;
+    struct flb_record_accessor *ra = NULL;
+
+    k = flb_sds_create(key);
+    ra = flb_ra_create(k, FLB_FALSE);
+    flb_sds_destroy(k);
+    if (!ra) {
+        return NULL;
+    }
+
+    rval = flb_ra_get_value_object(ra, map);
+    if (!rval) {
+        flb_ra_destroy(ra);
+        return NULL;
+    }
+
+    o = &rval->o;
+    flb_ra_key_value_destroy(rval);
+    flb_ra_destroy(ra);
+
+    return o;
+}
+
+static flb_sds_t help_get_value(msgpack_object map, char *key)
+{
+    flb_sds_t val;
+    msgpack_object *o;
+
+    o = help_get_obj(map, key);
+    val = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
+    return val;
+}
+
+static void help_print_property(int max, msgpack_object k, msgpack_object v)
+{
+    int i;
+    int len = 0;
+    char buf[32];
+    char fmt[32];
+    char fmt_prf[32];
+    char def[32];
+    msgpack_object map;
+    flb_sds_t tmp;
+    flb_sds_t name;
+    flb_sds_t type;
+    flb_sds_t desc;
+    flb_sds_t defv;
+
+    /* Convert property type to uppercase and print it */
+    for (i = 0; i < k.via.str.size; i++) {
+        buf[i] = toupper(k.via.str.ptr[i]);
+    }
+    buf[k.via.str.size] = '\0';
+    printf(ANSI_BOLD "\n%s\n" ANSI_RESET, buf);
+
+    snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
+    snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
+    snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
+
+    for (i = 0; i < v.via.array.size; i++) {
+        map = v.via.array.ptr[i];
+
+        name = help_get_value(map, "$name");
+        type = help_get_value(map, "$type");
+        desc = help_get_value(map, "$description");
+        defv = help_get_value(map, "$default");
+
+        if (strcmp(type, "prefix") == 0) {
+            len = flb_sds_len(name);
+            tmp = flb_sds_create_size(len + 2);
+            flb_sds_printf(&tmp, "%sN", name);
+            printf(fmt_prf, tmp);
+            flb_sds_destroy(tmp);
+        }
+        else {
+            printf(fmt, name);
+        }
+
+        help_plugin_description(max, desc);
+
+        if (defv) {
+            printf(def, max, " ", defv);
+        }
+        else {
+            printf("%*s> type: ", max, " ");
+        }
+        printf("%s", type);
+        printf("\n\n");
+    }
+}
+
+static void help_format_json(void *help_buf, size_t help_size)
+{
+    flb_sds_t json;
+
+    json = flb_msgpack_raw_to_json_sds(help_buf, help_size);
+    printf("%s\n", json);
+    flb_sds_destroy(json);
+}
+
+static void help_format_text(void *help_buf, size_t help_size)
+{
+    int i;
+    int x;
+    int max = 0;
+    int len = 0;
+    int ret;
+    size_t off = 0;
+    flb_sds_t name;
+    flb_sds_t type;
+    flb_sds_t desc;
+    msgpack_unpacked result;
+    msgpack_object map;
+    msgpack_object p;
+    msgpack_object k;
+    msgpack_object v;
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, help_buf, help_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        return;
+    }
+    map = result.data;
+
+    type = help_get_value(map, "$type");
+    name = help_get_value(map, "$name");
+    desc = help_get_value(map, "$description");
+
+    printf("%sHELP%s\n%s %s plugin\n", ANSI_BOLD, ANSI_RESET,
+           name, type);
+    flb_sds_destroy(type);
+    flb_sds_destroy(name);
+
+    if (desc) {
+        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+        flb_sds_destroy(desc);
+    }
+
+    /* Properties */
+    p = map.via.map.ptr[3].val;
+
+    /* Calculate padding */
+    for (i = 0; i < p.via.map.size; i++) {
+        v = p.via.map.ptr[i].val;
+        for (x = 0; x < v.via.map.size; x++) {
+            msgpack_object ptr = v.via.array.ptr[x];
+            name = help_get_value(ptr, "$name");
+            len = flb_sds_len(name);
+            flb_sds_destroy(name);
+            if (len > max) {
+                max = len;
+            }
+        }
+    }
+    max += 2;
+
+    /* Iterate each section of properties */
+    for (i = 0; i < p.via.map.size; i++) {
+        k = p.via.map.ptr[i].key;
+        v = p.via.map.ptr[i].val;
+        help_print_property(max, k, v);
+    }
+}
+
+static void flb_help_plugin(int rc, int format,
+                            struct flb_config *config, int type,
                             struct flb_input_instance *in,
                             struct flb_filter_instance *filter,
                             struct flb_output_instance *out)
 
 
 {
-    int max = 0;
-    int len;
-    char fmt[32];
-    char fmt_prf[32];
-    char def[32];
-    char *desc = NULL;
-    flb_sds_t tmp;
-    struct flb_config_map *opt = NULL;
     struct flb_config_map *m = NULL;
+    struct flb_config_map *opt = NULL;
+    void *help_buf;
+    size_t help_size;
 
     flb_banner();
 
     if (type == PLUGIN_INPUT) {
-        printf("%sHELP%s\n%s input plugin\n", ANSI_BOLD, ANSI_RESET,
-               in->p->name);
-        desc = in->p->description;
-        opt = m = in->p->config_map;
+        opt = in->p->config_map;
+        flb_help_input(in, &help_buf, &help_size);
     }
     else if (type == PLUGIN_FILTER) {
-        printf("%sHELP%s\n%s filter plugin\n", ANSI_BOLD, ANSI_RESET,
-               filter->p->name);
-        desc = filter->p->description;
-        opt = m = filter->p->config_map;
+        opt = filter->p->config_map;
+        flb_help_filter(filter, &help_buf, &help_size);
     }
     else if (type == PLUGIN_OUTPUT) {
-        printf("%sHELP%s\n%s output plugin\n", ANSI_BOLD, ANSI_RESET,
-               out->p->name);
-        desc = out->p->description;
         opt = m = out->p->config_map;
-    }
-
-    if (desc) {
-        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+        flb_help_output(out, &help_buf, &help_size);
     }
 
     if (!opt) {
         exit(rc);
     }
 
-    printf(ANSI_BOLD "\nOPTIONS\n" ANSI_RESET);
-
-    /* Find the larger name, just for formatting purposes */
-    while (m && m->name) {
-        len = strlen(m->name);
-        if (len > max) {
-            max = len;
-        }
-        m++;
+    if (format == FLB_HELP_TEXT) {
+        help_format_text(help_buf, help_size);
     }
-    max += 2;
-
-    snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
-    snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
-    snprintf(def, sizeof(def) - 1, "%%*s> default: %%s, type: ");
-    m = opt;
-    while (m && m->name) {
-        if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
-            len = strlen(m->name);
-            tmp = flb_sds_create_size(len + 2);
-            flb_sds_printf(&tmp, "%sN", m->name);
-            printf(fmt_prf, tmp);
-            flb_sds_destroy(tmp);
-        }
-        else {
-            printf(fmt, m->name);
-        }
-
-        help_plugin_description(max, m->desc);
-        if (m->def_value) {
-            printf(def, max, " ", m->def_value);
-        }
-        else {
-            printf("%*s> type: ", max, " ");
-        }
-
-        if (m->type == FLB_CONFIG_MAP_STR) {
-            printf("string");
-        }
-        else if (m->type == FLB_CONFIG_MAP_INT) {
-            printf("integer");
-        }
-        else if (m->type == FLB_CONFIG_MAP_BOOL) {
-            printf("boolean");
-        }
-        else if(m->type == FLB_CONFIG_MAP_DOUBLE) {
-            printf("double");
-        }
-        else if (m->type == FLB_CONFIG_MAP_SIZE) {
-            printf("size");
-        }
-        else if (m->type == FLB_CONFIG_MAP_TIME) {
-            printf("time");
-        }
-        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_CLIST) {
-            len = flb_config_map_expected_values(m->type);
-            if (len == -1) {
-                printf("multiple comma delimited strings");
-            }
-            else {
-                printf("comma delimited strings (minimum %i)", len);
-            }
-        }
-        else if (flb_config_map_mult_type(m->type) == FLB_CONFIG_MAP_SLIST) {
-            len = flb_config_map_expected_values(m->type);
-            if (len == -1) {
-                printf("multiple space delimited strings");
-            }
-            else {
-                printf("space delimited strings (minimum %i)", len);
-            }
-        }
-        else if (m->type == FLB_CONFIG_MAP_STR_PREFIX) {
-            printf("prefixed string");
-        }
-
-        printf("\n\n");
-        m++;
+    else if (format == FLB_HELP_JSON) {
+        help_format_json(help_buf, help_size);
     }
+    flb_free(help_buf);
 
     exit(rc);
 }
@@ -357,9 +459,24 @@ static void flb_help_plugin(int rc, struct flb_config *config, int type,
 
 static void flb_signal_handler(int signal)
 {
+    int len;
+    char ts[32];
     char s[] = "[engine] caught signal (";
+    time_t now;
+    struct tm *cur;
+
+    now = time(NULL);
+    cur = localtime(&now);
+    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+                   cur->tm_year + 1900,
+                   cur->tm_mon + 1,
+                   cur->tm_mday,
+                   cur->tm_hour,
+                   cur->tm_min,
+                   cur->tm_sec);
 
     /* write signal number */
+    write(STDERR_FILENO, ts, len);
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         flb_print_signal(SIGINT);
@@ -379,23 +496,21 @@ static void flb_signal_handler(int signal)
     case SIGQUIT:
     case SIGHUP:
 #endif
-        flb_engine_shutdown(config);
-#ifdef FLB_HAVE_MTRACE
-        /* Stop tracing malloc and free */
-        muntrace();
-#endif
+        flb_stop(ctx);
+        flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
     case SIGTERM:
-        flb_engine_exit(config);
-        break;
-    case SIGSEGV:
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        _exit(EXIT_SUCCESS);
+     case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
-        flb_stacktrace_print();
+        flb_stacktrace_print(&flb_st);
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
-        flb_dump(config);
+        flb_dump(ctx->config);
         break;
 #endif
     default:
@@ -442,7 +557,7 @@ static int input_set_property(struct flb_input_instance *in, char *kv)
                 in->p->name, key);
     }
 
-    flb_free(key);
+    mk_mem_free(key);
     return ret;
 }
 
@@ -467,7 +582,7 @@ static int output_set_property(struct flb_output_instance *out, char *kv)
     }
 
     ret = flb_output_set_property(out, key, value);
-    flb_free(key);
+    mk_mem_free(key);
     return ret;
 }
 
@@ -493,7 +608,7 @@ static int filter_set_property(struct flb_filter_instance *filter, char *kv)
     }
 
     ret = flb_filter_set_property(filter, key, value);
-    flb_free(key);
+    mk_mem_free(key);
     return ret;
 }
 
@@ -725,7 +840,7 @@ flb_service_conf_end:
     return ret;
 }
 
-int main(int argc, char **argv)
+int flb_main(int argc, char **argv)
 {
     int opt;
     int ret;
@@ -740,7 +855,7 @@ int main(int argc, char **argv)
     struct flb_filter_instance *filter = NULL;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
-    flb_stacktrace_init(argv[0]);
+    flb_stacktrace_init(argv[0], &flb_st);
 #endif
 
     /* Setup long-options */
@@ -750,6 +865,7 @@ int main(int argc, char **argv)
 #ifdef FLB_HAVE_FORK
         { "daemon",          no_argument      , NULL, 'd' },
 #endif
+        { "dry-run",         no_argument      , NULL, 'D' },
         { "flush",           required_argument, NULL, 'f' },
         { "http",            no_argument      , NULL, 'H' },
         { "log_file",        required_argument, NULL, 'l' },
@@ -769,9 +885,11 @@ int main(int argc, char **argv)
 #endif
         { "version",         no_argument      , NULL, 'V' },
         { "verbose",         no_argument      , NULL, 'v' },
+        { "workdir",         required_argument, NULL, 'w' },
         { "quiet",           no_argument      , NULL, 'q' },
         { "help",            no_argument      , NULL, 'h' },
-        { "coro_stack_size", required_argument, NULL, 's'},
+        { "help-json",       no_argument      , NULL, 'J' },
+        { "coro_stack_size", required_argument, NULL, 's' },
         { "sosreport",       no_argument      , NULL, 'S' },
 #ifdef FLB_HAVE_HTTP_SERVER
         { "http_server",     no_argument      , NULL, 'H' },
@@ -781,42 +899,25 @@ int main(int argc, char **argv)
         { NULL, 0, NULL, 0 }
     };
 
-#ifdef FLB_HAVE_MTRACE
-    /* Start tracing malloc and free */
-    mtrace();
-#endif
-
-
-#ifdef _WIN32
-    /* Initialize sockets */
-    WSADATA wsaData;
-    int err;
-
-    err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (err != 0) {
-        fprintf(stderr, "WSAStartup failed with error: %d\n", err);
-        exit(EXIT_FAILURE);
-    }
-#endif
-
     /* Signal handler */
     flb_signal_init();
 
     /* Initialize Monkey Core library */
     mk_core_init();
 
-    /* Create configuration context */
-    config = flb_config_init();
-    if (!config) {
+    /* Create Fluent Bit context */
+    ctx = flb_create();
+    if (!ctx) {
         exit(EXIT_FAILURE);
     }
+    config = ctx->config;
 
 #ifndef FLB_HAVE_STATIC_CONF
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:c:df:i:m:o:R:F:p:e:"
-                              "t:T:l:vqVhL:HP:s:S",
+                              "b:c:dDf:i:m:o:R:F:p:e:"
+                              "t:T:l:vw:qVhJL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
         switch (opt) {
@@ -831,6 +932,9 @@ int main(int argc, char **argv)
             config->daemon = FLB_TRUE;
             break;
 #endif
+        case 'D':
+            config->dry_run = FLB_TRUE;
+            break;
         case 'e':
             ret = flb_plugin_load_router(optarg, config);
             if (ret == -1) {
@@ -909,7 +1013,17 @@ int main(int argc, char **argv)
                 flb_help(EXIT_SUCCESS, config);
             }
             else {
-                flb_help_plugin(EXIT_SUCCESS, config,
+                flb_help_plugin(EXIT_SUCCESS, FLB_HELP_TEXT,
+                                config,
+                                last_plugin, in, filter, out);
+            }
+            break;
+        case 'J':
+            if (last_plugin == -1) {
+                flb_help(EXIT_SUCCESS, config);
+            }
+            else {
+                flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
                                 last_plugin, in, filter, out);
             }
             break;
@@ -936,6 +1050,9 @@ int main(int argc, char **argv)
         case 'v':
             config->verbose++;
             break;
+        case 'w':
+            config->workdir =  flb_strdup(optarg);
+            break;
         case 'q':
             config->verbose = FLB_LOG_OFF;
             break;
@@ -959,6 +1076,15 @@ int main(int argc, char **argv)
 
     /* Program name */
     flb_config_set_program_name(config, argv[0]);
+
+    /* Set the current directory */
+    if (config->workdir) {
+        ret = chdir(config->workdir);
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
+    }
 
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF
@@ -1015,14 +1141,32 @@ int main(int argc, char **argv)
     }
 #endif
 
-    /* Prepare pthread keys */
-    flb_thread_prepare();
-    flb_output_prepare();
+#ifdef FLB_SYSTEM_WINDOWS
+    win32_started();
+#endif
 
-    ret = flb_engine_start(config);
-    if (ret == -1 && config) {
-        flb_engine_shutdown(config);
+    if (config->dry_run == FLB_TRUE) {
+        fprintf(stderr, "configuration test is successful\n");
+        exit(EXIT_SUCCESS);
     }
 
+    ret = flb_start(ctx);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return ret;
+    }
+
+    flb_loop(ctx);
+    flb_destroy(ctx);
+
     return ret;
+}
+
+int main(int argc, char **argv)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return win32_main(argc, argv);
+#else
+    return flb_main(argc, argv);
+#endif
 }

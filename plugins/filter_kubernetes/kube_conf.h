@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +41,7 @@
 #define FLB_HASH_TABLE_SIZE 256
 
 /*
- * When merging nested JSON strings from Docker logs, we need a temporal
+ * When merging nested JSON strings from Docker logs, we need a temporary
  * buffer to perform the convertion. To optimize the process, we pre-allocate
  * a buffer for that purpose. The FLB_MERGE_BUF_SIZE defines the buffer size.
  *
@@ -54,6 +54,9 @@
 #define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
+
+/* Kubelet info */
+#define FLB_KUBELET_HOST  "127.0.0.1"
 
 /*
  * Default expected Kubernetes tag prefix, this is used mostly when source
@@ -74,6 +77,7 @@ struct flb_kube {
     int api_port;
     int api_https;
     int use_journal;
+    int cache_use_docker_id;
     int labels;
     int annotations;
     int dummy_meta;
@@ -147,7 +151,11 @@ struct flb_kube {
     int dns_retries;
     int dns_wait_time;
 
-    struct flb_tls tls;
+    int use_kubelet;
+    int kubelet_port;
+
+    struct flb_tls *tls;
+
     struct flb_config *config;
     struct flb_hash *hash_table;
     struct flb_upstream *upstream;

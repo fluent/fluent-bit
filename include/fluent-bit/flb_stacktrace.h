@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_info.h>
 
 /* Libbacktrace support */
-#if defined(FLB_HAVE_LIBBACKTRACE) && defined(FLB_DUMP_STACKTRACE)
+#if defined(FLB_HAVE_LIBBACKTRACE)
 #include <backtrace.h>
 #include <backtrace-supported.h>
 
@@ -33,8 +33,6 @@ struct flb_stacktrace {
     int error;
     int line;
 };
-
-struct flb_stacktrace flb_st;
 
 static void flb_stacktrace_error_callback(void *data,
                                           const char *msg, int errnum)
@@ -50,7 +48,7 @@ static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
 {
     struct flb_stacktrace *p = data;
 
-    fprintf(stdout, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
+    fprintf(stderr, "#%-2i 0x%-17lx in  %s() at %s:%d\n",
             p->line,
             (unsigned long) pc,
             function == NULL ? "???" : function,
@@ -60,21 +58,18 @@ static int flb_stacktrace_print_callback(void *data, uintptr_t pc,
     return 0;
 }
 
-static inline void flb_stacktrace_init(char *prog)
+static inline void flb_stacktrace_init(char *prog, struct flb_stacktrace *st)
 {
-    memset(&flb_st, '\0', sizeof(struct flb_stacktrace));
-    flb_st.state = backtrace_create_state(prog,
-                                          BACKTRACE_SUPPORTS_THREADS,
-                                          flb_stacktrace_error_callback, NULL);
+    memset(st, '\0', sizeof(struct flb_stacktrace));
+    st->state = backtrace_create_state(prog,
+                                       BACKTRACE_SUPPORTS_THREADS,
+                                       flb_stacktrace_error_callback, NULL);
 }
 
-static inline void flb_stacktrace_print()
+static inline void flb_stacktrace_print(struct flb_stacktrace *st)
 {
-    struct flb_stacktrace *ctx;
-
-    ctx = &flb_st;
-    backtrace_full(ctx->state, 3, flb_stacktrace_print_callback,
-                   flb_stacktrace_error_callback, ctx);
+    backtrace_full(st->state, 3, flb_stacktrace_print_callback,
+                   flb_stacktrace_error_callback, st);
 }
 
 #endif

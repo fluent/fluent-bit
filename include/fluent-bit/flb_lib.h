@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +54,11 @@ FLB_EXPORT int flb_output(flb_ctx_t *ctx, const char *output, void *data);
 FLB_EXPORT int flb_filter(flb_ctx_t *ctx, const char *filter, void *data);
 FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
+FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                                   void (*out_callback) (void *, int, int,
+                                                         void *, size_t, void *),
+                                   void *out_callback_data,
+                                   void *test_ctx);
 FLB_EXPORT int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
                                        void (*cb)(char *, void *, void *));
 
@@ -65,6 +70,7 @@ FLB_EXPORT double flb_time_now();
 /* start stop the engine */
 FLB_EXPORT int flb_start(flb_ctx_t *ctx);
 FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
+FLB_EXPORT int flb_loop(flb_ctx_t *ctx);
 
 /* data ingestion for "lib" input instance */
 FLB_EXPORT int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len);

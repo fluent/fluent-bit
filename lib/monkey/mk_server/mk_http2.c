@@ -120,7 +120,7 @@ static inline void mk_http2_frame_decode_header(uint8_t *buf,
     frame->stream_id = mk_http2_bitdec_stream_id(buf + 5);
     frame->payload   = buf + 9;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
     MK_TRACE("Frame Header");
     printf(" length=%i, type=%i, stream_id=%i\n",
            mk_http2_frame_len(frame),

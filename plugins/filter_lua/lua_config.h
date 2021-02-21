@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,6 +40,7 @@ struct lua_filter {
     flb_sds_t buffer;                 /* json dec buffer */
     int    l2c_types_num;             /* number of l2c_types */
     int    protected_mode;            /* exec lua function in protected mode */
+    int    time_as_table;             /* timestamp as a Lua table */
     struct mk_list l2c_types;         /* data types (lua -> C) */
     struct flb_luajit *lua;           /* state context   */
     struct flb_filter_instance *ins;  /* filter instance */

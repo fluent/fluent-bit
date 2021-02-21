@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,6 +76,15 @@ static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
         return NULL;
     }
     return result;
+}
+
+static inline char *ctime_r(const time_t *timep, char *result)
+{
+    char *tmp = ctime(timep);
+    if (tmp == NULL) {
+        return NULL;
+    }
+    return strcpy(result, tmp);
 }
 
 /*

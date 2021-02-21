@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -126,7 +126,7 @@ int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
     char *buf;
     struct flbgo_output_plugin *plugin = ctx->proxy->data;
 
-    /* temporal buffer for the tag */
+    /* temporary buffer for the tag */
     buf = flb_malloc(tag_len + 1);
     if (!buf) {
         flb_errno();

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,8 +20,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_unescape.h>
-
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -306,7 +305,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
 
     /* Create the target URI */
-    ctx->uri = flb_sds_create_size(sizeof(FLB_BIGQUERY_RESOURCE_TEMPLATE)-7 +
+    ctx->uri = flb_sds_create_size(sizeof(FLB_BIGQUERY_RESOURCE_TEMPLATE)-6 +
                                    flb_sds_len(ctx->project_id) +
                                    flb_sds_len(ctx->dataset_id) +
                                    flb_sds_len(ctx->table_id));

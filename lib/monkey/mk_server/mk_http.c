@@ -287,7 +287,7 @@ int mk_http_handler_read(struct mk_sched_conn *conn, struct mk_http_session *cs,
     int total_bytes = 0;
     char *tmp = 0;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
     int socket = conn->event.fd;
 #endif
 
@@ -1527,7 +1527,7 @@ int mk_http_sched_read(struct mk_sched_conn *conn,
     struct mk_http_session *cs;
     struct mk_http_request *sr;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
     int socket = conn->event.fd;
 #endif
 
@@ -1589,7 +1589,7 @@ int mk_http_sched_close(struct mk_sched_conn *conn,
     struct mk_http_session *session;
     (void) sched;
 
-#ifdef TRACE
+#ifdef MK_HAVE_TRACE
     MK_TRACE("[FD %i] HTTP sched close (type=%i)", conn->event.fd, type);
 #else
     (void) type;

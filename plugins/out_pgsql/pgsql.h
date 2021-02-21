@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_output_plugin.h>
 
 #include <libpq-fe.h>
 
@@ -30,6 +31,23 @@
 #define FLB_PGSQL_DBNAME "fluentbit"
 #define FLB_PGSQL_TABLE "fluentbit"
 #define FLB_PGSQL_TIMESTAMP_KEY "date"
+#define FLB_PGSQL_POOL_SIZE 4
+#define FLB_PGSQL_MIN_POOL_SIZE 1
+#define FLB_PGSQL_SYNC FLB_FALSE
+#define FLB_PGSQL_COCKROACH FLB_FALSE
+
+#define FLB_PGSQL_INSERT "INSERT INTO %s SELECT %s, "   \
+    "to_timestamp(CAST(value->>'%s' as FLOAT)),"        \
+    " * FROM json_array_elements(%s);"
+#define FLB_PGSQL_INSERT_COCKROACH "INSERT INTO %s SELECT %s,"  \
+    "CAST(value->>'%s' AS INTERVAL) + DATE'1970-01-01',"        \
+    " * FROM json_array_elements(%s);"
+
+struct flb_pgsql_conn {
+    struct mk_list _head;
+    PGconn *conn;
+    int number;
+};
 
 struct flb_pgsql_config {
 
@@ -43,11 +61,28 @@ struct flb_pgsql_config {
     const char *db_user;
     const char *db_passwd;
 
-    /* pgconn, params, etc */
-    PGconn *conn;
-
     /* time key */
     flb_sds_t timestamp_key;
+
+    /* instance reference */
+    struct flb_output_instance *ins;
+
+    /* connections pool */
+    struct mk_list conn_queue;
+    struct mk_list _head;
+
+    struct flb_pgsql_conn *conn_current;
+    int max_pool_size;
+    int min_pool_size;
+    int active_conn;
+
+    /* async mode or sync mode */
+    int async;
+
+    /* cockroachdb */
+    int cockroachdb;
 };
+
+void pgsql_conf_destroy(struct flb_pgsql_config *ctx);
 
 #endif

@@ -2,9 +2,9 @@ FROM debian:buster as builder
 
 # Fluent Bit version
 ENV FLB_MAJOR 1
-ENV FLB_MINOR 5
+ENV FLB_MINOR 8
 ENV FLB_PATCH 0
-ENV FLB_VERSION 1.5.0
+ENV FLB_VERSION 1.8.0
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -20,6 +20,7 @@ RUN apt-get update && \
     libsasl2-dev \
     pkg-config \
     libsystemd-dev \
+    libzstd-dev \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -31,7 +32,7 @@ COPY . /tmp/src/
 RUN rm -rf /tmp/src/build/*
 
 WORKDIR /tmp/src/build/
-RUN cmake -DFLB_DEBUG=Off \
+RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
           -DFLB_TLS=On \

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
+#endif
 
 struct sb_chunk {
     struct cio_chunk *chunk;
@@ -101,8 +104,12 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         /* Associate this backlog chunk to this instance into the engine */
         ic = flb_input_chunk_map(in, ch);
         if (!ic) {
-            flb_plg_error(ctx->ins, "error registering chunk");
+            flb_plg_error(ctx->ins, "removing chunk %s:%s from the queue",
+                          sbc->stream->name, sbc->chunk->name);
             cio_chunk_down(sbc->chunk);
+            cio_chunk_close(sbc->chunk, FLB_FALSE);
+            mk_list_del(&sbc->_head);
+            flb_free(sbc);
             continue;
         }
 

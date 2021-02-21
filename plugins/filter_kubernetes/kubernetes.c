@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,7 +35,7 @@
 #include <msgpack.h>
 
 /* Merge status used by merge_log_handler() */
-#define MERGE_NONE        0 /* merge unescaped string in temporal buffer */
+#define MERGE_NONE        0 /* merge unescaped string in temporary buffer */
 #define MERGE_PARSED      1 /* merge parsed string (log_buf)             */
 #define MERGE_MAP         2 /* merge direct binary object (v)            */
 
@@ -99,6 +99,7 @@ static int merge_log_handler(msgpack_object o,
     int ret;
     int new_size;
     int root_type;
+    int records = 0;
     char *tmp;
 
     /* Reset vars */
@@ -131,7 +132,7 @@ static int merge_log_handler(msgpack_object o,
         ret = flb_parser_do(parser, ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0) {
+            if (flb_time_to_double(log_time) == 0.0) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -142,25 +143,33 @@ static int merge_log_handler(msgpack_object o,
                             ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0) {
+            if (flb_time_to_double(log_time) == 0.0) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
         }
     }
     else { /* Default JSON parser */
-        ret = flb_pack_json(ctx->unesc_buf, ctx->unesc_buf_len,
-                            (char **) out_buf, out_size, &root_type);
+        ret = flb_pack_json_recs(ctx->unesc_buf, ctx->unesc_buf_len,
+                                 (char **) out_buf, out_size, &root_type,
+                                 &records);
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
             flb_plg_debug(ctx->ins, "could not merge JSON, root_type=%i",
                       root_type);
             flb_free(*out_buf);
             return MERGE_NONE;
         }
+
+        if (ret == 0 && records != 1) {
+            flb_plg_debug(ctx->ins,
+                          "could not merge JSON, invalid number of records: %i",
+                          records);
+            flb_free(*out_buf);
+            return MERGE_NONE;
+        }
     }
 
     if (ret == -1) {
-        flb_plg_debug(ctx->ins, "could not merge JSON log as requested");
         return MERGE_NONE;
     }
 
@@ -246,7 +255,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /*
      * If a log_index exists, the application log content inside the
-     * Docker JSON map is a escaped string. Proceed to reserve a temporal
+     * Docker JSON map is a escaped string. Proceed to reserve a temporary
      * buffer and create an unescaped version.
      */
     if (log_index != -1) {
@@ -468,7 +477,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
         }
     }
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
@@ -801,7 +810,29 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, dns_wait_time),
      "dns interval between network status checks"
     },
-
+    /* Fetch K8s meta when docker_id has changed */
+    {
+     FLB_CONFIG_MAP_BOOL, "cache_use_docker_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, cache_use_docker_id),
+     "fetch K8s meta when docker_id is changed"
+    },
+    /*
+     * Enable the feature for using kubelet to get pods information
+     */
+    {
+     FLB_CONFIG_MAP_BOOL, "use_kubelet", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_kubelet),
+     "use kubelet to get metadata instead of kube-server"
+    },
+    /*
+     * The kubelet port for /pods endpoint, default is 10250
+     * Will only check when "use_kubelet" config is set to true
+     */
+    {
+     FLB_CONFIG_MAP_INT, "kubelet_port", "10250",
+     0, FLB_TRUE, offsetof(struct flb_kube, kubelet_port),
+     "kubelet port to connect with when using kubelet"
+    },
     /* EOF */
     {0}
 };

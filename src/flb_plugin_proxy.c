@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -142,7 +142,7 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
 
     /*
-     * Create a temporal definition used for registration. This definition
+     * Create a temporary definition used for registration. This definition
      * aims to be be populated by plugin in the registration phase with:
      *
      * - plugin type (or proxy type, e.g: Golang)

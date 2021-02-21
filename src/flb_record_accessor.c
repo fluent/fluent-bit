@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
@@ -77,10 +76,10 @@ static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
 /*
  * Supported data
  *
- * ${X}                         => environment variable
- * $key, $key[x], $key[x][y][z] => record key value
- * $0, $1,..$9                  => regex id
- * $X()                         => built-in function
+ * ${X}                               => environment variable
+ * $key, $key['x'], $key['x'][N]['z'] => record key value or array index
+ * $0, $1,..$9                        => regex id
+ * $X()                               => built-in function
  */
 static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
 {
@@ -250,6 +249,10 @@ void flb_ra_destroy(struct flb_record_accessor *ra)
         mk_list_del(&rp->_head);
         flb_ra_parser_destroy(rp);
     }
+
+    if (ra->pattern) {
+        flb_sds_destroy(ra->pattern);
+    }
     flb_free(ra);
 }
 
@@ -289,7 +292,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     }
 
     /* Allocate context */
-    ra = flb_malloc(sizeof(struct flb_record_accessor));
+    ra = flb_calloc(1, sizeof(struct flb_record_accessor));
     if (!ra) {
         flb_errno();
         flb_error("[record accessor] cannot create context");
@@ -298,8 +301,17 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         }
         return NULL;
     }
+    ra->pattern = flb_sds_create(str);
+    if (!ra->pattern) {
+        flb_error("[record accessor] could not allocate pattern");
+        flb_free(ra);
+        if (buf) {
+            flb_sds_destroy(buf);
+        }
+        return NULL;
+    }
+
     mk_list_init(&ra->list);
-    flb_slist_create(&ra->list);
 
     /*
      * The buffer needs to processed where we create a list of parts, basically
@@ -491,10 +503,10 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
             tmp = ra_translate_regex_id(rp, result, buf);
         }
-        else if (rp->type == FLB_RA_PARSER_TAG) {
+        else if (rp->type == FLB_RA_PARSER_TAG && tag) {
             tmp = ra_translate_tag(rp, buf, tag, tag_len);
         }
-        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+        else if (rp->type == FLB_RA_PARSER_TAG_PART && tag) {
             tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
         }
         else {
@@ -516,6 +528,40 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
     }
 
     return buf;
+}
+
+/*
+ * If the record accessor rules do not generate content based on a keymap or
+ * regex, it's considered to be 'static', so the value returned will always be
+ * the same.
+ *
+ * If the 'ra' is static, return FLB_TRUE, otherwise FLB_FALSE.
+ */
+int flb_ra_is_static(struct flb_record_accessor *ra)
+{
+    struct mk_list *head;
+    struct flb_ra_parser *rp;
+
+    mk_list_foreach(head, &ra->list) {
+        rp = mk_list_entry(head, struct flb_ra_parser, _head);
+        if (rp->type == FLB_RA_PARSER_STRING) {
+            continue;
+        }
+        else if (rp->type == FLB_RA_PARSER_KEYMAP) {
+            return FLB_FALSE;
+        }
+        else if (rp->type == FLB_RA_PARSER_REGEX_ID) {
+            return FLB_FALSE;
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG) {
+            continue;
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+            continue;
+        }
+    }
+
+    return FLB_TRUE;
 }
 
 /*
@@ -544,6 +590,28 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
     return flb_ra_key_regex_match(rp->key->name, map, rp->key->subkeys,
                                   regex, result);
+}
+
+/*
+ * If 'record accessor' pattern matches an entry in the 'map', set the
+ * reference in 'out_key' and 'out_val' for the entries in question.
+ *
+ * Returns FLB_TRUE if the pattern matched a kv pair, otherwise it returns
+ * FLB_FALSE.
+ */
+int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                       msgpack_object **start_key,
+                       msgpack_object **out_key, msgpack_object **out_val)
+{
+    struct flb_ra_parser *rp;
+
+    if (mk_list_size(&ra->list) == 0) {
+        return -1;
+    }
+
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    return flb_ra_key_value_get(rp->key->name, map, rp->key->subkeys,
+                                start_key, out_key, out_val);
 }
 
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,

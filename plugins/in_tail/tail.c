@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,13 +43,13 @@
 #include "tail_dockermode.h"
 #include "tail_multiline.h"
 
-static inline int consume_byte(int fd)
+static inline int consume_byte(flb_pipefd_t fd)
 {
     int ret;
     uint64_t val;
 
     /* We need to consume the byte */
-    ret = flb_pipe_r(fd, &val, sizeof(val));
+    ret = flb_pipe_r(fd, (char *) &val, sizeof(val));
     if (ret <= 0) {
         flb_errno();
         return -1;
@@ -141,7 +141,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
         switch (ret) {
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
-            flb_plg_debug(ctx->ins, "inode=%lu collect static ERROR",
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" collect static ERROR",
                           file->inode);
             flb_tail_file_remove(file);
             break;
@@ -151,12 +151,14 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             break;
         case FLB_TAIL_WAIT:
             if (file->config->exit_on_eof) {
-                flb_plg_info(ctx->ins, "inode=%lu file=%s ended, stop",
+                flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
-                flb_engine_exit(config);
+                if (mk_list_size(&ctx->files_static) == 1) {
+                    flb_engine_exit(config);
+                }
             }
             /* Promote file to 'events' type handler */
-            flb_plg_debug(ctx->ins, "inode=%lu file=%s promote to TAIL_EVENT",
+            flb_plg_debug(ctx->ins, "inode=%"PRIu64" file=%s promote to TAIL_EVENT",
                           file->inode, file->name);
 
             /*
@@ -229,7 +231,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
     struct flb_tail_file *file;
     (void) config;
 
-#ifndef _MSC_VER
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         if (file->is_link == FLB_TRUE) {
@@ -242,8 +243,6 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
     }
-
-#endif
     return ret;
 }
 
@@ -252,7 +251,6 @@ int in_tail_collect_event(void *file, struct flb_config *config)
     int ret;
     struct stat st;
     struct flb_tail_file *f = file;
-    struct flb_tail_config *ctx = f->config;
 
     ret = fstat(f->fd, &st);
     if (ret == -1) {
@@ -296,8 +294,15 @@ static int in_tail_init(struct flb_input_instance *in,
     }
 
     /* Scan path */
-    flb_tail_scan(ctx->path, ctx);
-    flb_plg_trace(in, "scan path: %s", ctx->path);
+    flb_tail_scan(ctx->path_list, ctx);
+
+    /*
+     * After the first scan (on start time), all new files discovered needs to be
+     * read from head, so we switch the 'read_from_head' flag to true so any
+     * other file discovered after a scan or a rotation are read from the
+     * beginning.
+     */
+    ctx->read_from_head = FLB_TRUE;
 
     /* Set plugin context */
     flb_input_set_context(in, ctx);
@@ -424,10 +429,18 @@ static void in_tail_pause(void *data, struct flb_config *config)
 
     if (ctx->docker_mode == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->ins);
+        if (config->is_ingestion_active == FLB_FALSE) {
+            flb_plg_info(ctx->ins, "flushing pending docker mode data...");
+            flb_tail_dmode_pending_flush_all(ctx);
+        }
     }
 
     if (ctx->multiline == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->ins);
+        if (config->is_ingestion_active == FLB_FALSE) {
+            flb_plg_info(ctx->ins, "flushing pending multiline data...");
+            flb_tail_mult_pending_flush_all(ctx);
+        }
     }
 
     /* Pause file system backend handlers */
@@ -456,8 +469,8 @@ static void in_tail_resume(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "path", NULL,
-     0, FLB_TRUE, offsetof(struct flb_tail_config, path),
+     FLB_CONFIG_MAP_CLIST, "path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, path_list),
      "pattern specifying log files or multiple ones through "
      "the use of common wildcards."
     },
@@ -475,6 +488,12 @@ static struct flb_config_map config_map[] = {
      "alternative name for that key."
     },
     {
+     FLB_CONFIG_MAP_BOOL, "read_from_head", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, read_from_head),
+     "For new discovered files on start (without a database offset/position), read the "
+     "content from the head of the file, not tail."
+    },
+    {
      FLB_CONFIG_MAP_STR, "refresh_interval", "60",
      0, FLB_FALSE, 0,
      "interval to refresh the list of watched files expressed in seconds."
@@ -484,7 +503,7 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
     },
     {
-     FLB_CONFIG_MAP_INT, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
+     FLB_CONFIG_MAP_TIME, "rotate_wait", FLB_TAIL_ROTATE_WAIT,
      0, FLB_TRUE, offsetof(struct flb_tail_config, rotate_wait),
      "specify the number of extra time in seconds to monitor a file once is "
      "rotated in case some pending data is flushed."
@@ -502,10 +521,22 @@ static struct flb_config_map config_map[] = {
      "wait period time in seconds to flush queued unfinished split lines."
 
     },
+#ifdef FLB_HAVE_REGEX
+    {
+     FLB_CONFIG_MAP_STR, "docker_mode_parser", NULL,
+     0, FLB_FALSE, 0,
+     "specify the parser name to fetch log first line for muliline log"
+    },
+#endif
     {
      FLB_CONFIG_MAP_STR, "path_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_tail_config, path_key),
      "set the 'key' name where the name of monitored file will be appended."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "offset_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, offset_key),
+     "set the 'key' name where the offset of monitored file will be appended."
     },
     {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
@@ -563,9 +594,15 @@ static struct flb_config_map config_map[] = {
      "set a database file to keep track of monitored files and it offsets."
     },
     {
-     FLB_CONFIG_MAP_STR, "db.sync", "full",
+     FLB_CONFIG_MAP_STR, "db.sync", "normal",
      0, FLB_FALSE, 0,
      "set a database sync method. values: extra, full, normal and off."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.locking", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, db_locking),
+     "set exclusive locking mode, increase performance but don't allow "
+     "external connections to the database file."
     },
 #endif
 
