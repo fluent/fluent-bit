@@ -719,8 +719,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 }
                 else if (v->type == MSGPACK_OBJECT_EXT) {
                     quote   = FLB_TRUE;
-                    val     = o->via.ext.ptr;
-                    val_len = o->via.ext.size;
+                    val     = v->via.ext.ptr;
+                    val_len = v->via.ext.size;
                 }
 
                 if (!val || !key) {
