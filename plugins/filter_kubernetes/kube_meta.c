@@ -802,7 +802,6 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 msgpack_unpacked_init(&meta_result);
                 for (i = 0; i < meta_val.via.map.size; i++) {
                     k = meta_val.via.map.ptr[i].key;
-                    v = meta_val.via.map.ptr[i].val;
 
                     char *ptr = (char *) k.via.str.ptr;
                     size_t size = k.via.str.size;
