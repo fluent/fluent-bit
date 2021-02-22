@@ -61,8 +61,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
 option(FLB_ALL                 "Enable all features"           No)
-option(FLB_DEBUG               "Build with debug symbols"     Yes)
-option(FLB_RELEASE             "Build with debug symbols"      No)
+option(FLB_DEBUG               "Build with debug mode (-g)"    Yes)
+option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
