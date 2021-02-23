@@ -284,6 +284,9 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
         }
         else if (c >= 0x80) {
             hex_bytes = flb_utf8_len(str + i);
+            if (hex_bytes + i >= str_len) {
+                return NULL;
+            }
             state = FLB_UTF8_ACCEPT;
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
