@@ -337,7 +337,7 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     wchar_t *source_name = SRCNAME(evt);
     wchar_t *computer_name = source_name + wcslen(source_name) + 1;
     size_t len;
-    int count = 12;
+    int count = 13;
 
     if (ctx->string_inserts) {
         count++;
@@ -372,7 +372,12 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     /* EventId */
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "EventID", 7);
-    msgpack_pack_uint32(mp_pck, evt->EventID);
+    msgpack_pack_uint16(mp_pck, evt->EventID & 0xffff);
+
+    /* Qualifiers */
+    msgpack_pack_str(mp_pck, 10);
+    msgpack_pack_str_body(mp_pck, "Qualifiers", 10);
+    msgpack_pack_uint16(mp_pck, evt->EventID >> 16);
 
     /* EventType */
     msgpack_pack_str(mp_pck, 9);
