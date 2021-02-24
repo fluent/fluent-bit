@@ -1122,8 +1122,8 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         if (!tmp) {
             return -1;
         }
-        c->header_buf = tmp;
-        c->header_len = new_size;
+        c->header_buf  = tmp;
+        c->header_size = new_size;
     }
 
     /* Append the ending header CRLF */
