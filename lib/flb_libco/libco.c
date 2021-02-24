@@ -27,8 +27,8 @@
 #elif defined(_MSC_VER)
   #if defined(_M_IX86)
     #include "x86.c"
-  #elif defined(_M_AMD64)
-    #include "amd64.c"
+  //#elif defined(_M_AMD64)
+  //  #include "amd64.c"
   #else
     #include "fiber.c"
   #endif
