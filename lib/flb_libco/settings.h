@@ -5,6 +5,10 @@
    if not supported, uncomment the below line to use mprotect instead */
 /* #define LIBCO_MPROTECT */
 
+#ifdef _WIN32
+#define LIBCO_MPROTECT
+#endif
+
 /*[amd64]:
    Win64 only: provides a substantial speed-up, but will thrash XMM regs
    do not use this unless you are certain your application won't use SSE */
