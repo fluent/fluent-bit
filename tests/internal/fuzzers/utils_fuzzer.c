@@ -54,7 +54,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     char *split_host;
     char *split_port;
     if (flb_utils_proxy_url_split(null_terminated, &split_protocol,
-            split_username, split_password, split_host, split_port) == 0) {
+            &split_username, &split_password, &split_host, &split_port) == 0) {
         flb_free(split_protocol);
         flb_free(split_username);
         flb_free(split_password);
