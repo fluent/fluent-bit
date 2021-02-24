@@ -14,6 +14,8 @@
    do not use this unless you are certain your application won't use SSE */
 /* #define LIBCO_NO_SSE */
 
+#undef thread_local
+
 #if !defined(thread_local) /* User can override thread_local for obscure compilers */
   #if !defined(LIBCO_MP) /* Running in single-threaded environment */
     #define thread_local
@@ -58,7 +60,7 @@
    - alignas can be used multiple times; the strictest one wins.
    - alignas (TYPE) is equivalent to alignas (alignof (TYPE)).
 */
-#if !defined(alignas) 
+#if !defined(alignas)
   #if defined(__STDC__) /* C Language */
     #if defined(_MSC_VER) /* Don't rely on MSVC's C11 support */
       #define alignas(bytes) __declspec(align(bytes))
