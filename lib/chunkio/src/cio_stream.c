@@ -95,6 +95,21 @@ static int check_stream_path(struct cio_ctx *ctx, const char *path)
     return ret;
 }
 
+struct cio_stream *cio_stream_get(struct cio_ctx *ctx, const char *name)
+{
+    struct mk_list *head;
+    struct cio_stream *st;
+
+    mk_list_foreach(head, &ctx->streams) {
+        st = mk_list_entry(head, struct cio_stream, _head);
+        if (strcmp(st->name, name) == 0) {
+            return st;
+        }
+    }
+
+    return NULL;
+}
+
 struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
                                      int type)
 {
@@ -124,6 +139,13 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
     }
 #endif
 
+    /* Find duplicated */
+    st = cio_stream_get(ctx, name);
+    if (st) {
+        cio_log_error(ctx, "[cio stream] stream already registered: %s", name);
+        return NULL;
+    }
+
     /* If backend is the file system, validate the stream path */
     if (type == CIO_STORE_FS) {
         ret = check_stream_path(ctx, name);
@@ -131,6 +153,7 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
             return NULL;
         }
     }
+
 
     st = malloc(sizeof(struct cio_stream));
     if (!st) {
