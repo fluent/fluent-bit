@@ -567,7 +567,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 /* Return or create an available chunk to write data */
 static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
                                                struct flb_input_instance *in,
-                                               size_t chunk_size)
+                                               size_t chunk_size, int *set_down)
 {
     int id;
     int ret;
@@ -585,6 +585,7 @@ static struct flb_input_chunk *input_chunk_get(const char *tag, int tag_len,
             if (ret == -1) {
                 ic = NULL;
             }
+            *set_down = FLB_TRUE;
         }
     }
 
@@ -815,7 +816,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * Get a target input chunk, can be one with remaining space available
      * or a new one.
      */
-    ic = input_chunk_get(tag, tag_len, in, buf_size);
+    ic = input_chunk_get(tag, tag_len, in, buf_size, &set_down);
     if (!ic) {
         flb_error("[input chunk] no available chunk");
         return -1;
