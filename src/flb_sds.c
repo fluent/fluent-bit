@@ -288,6 +288,9 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
                 p = (const unsigned char *) str + i + b;
+                if (p > (str + str_len)) {
+                    break;
+                }
                 ret = flb_utf8_decode(&state, &cp, *p);
                 if (ret == 0) {
                     break;
