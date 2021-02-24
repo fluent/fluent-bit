@@ -400,22 +400,25 @@ int flb_storage_input_create(struct cio_ctx *cio,
         return -1;
     }
 
+    /* get stream name */
+    name = flb_input_name(in);
+
+    /* Check for duplicates */
+    stream = cio_stream_get(cio, name);
+    if (!stream) {
+        /* create stream for input instance */
+        stream = cio_stream_create(cio, name, in->storage_type);
+        if (!stream) {
+            flb_error("[storage] cannot create stream for instance %s",
+                      name);
+            return -1;
+        }
+    }
+
     /* allocate storage context for the input instance */
     si = flb_malloc(sizeof(struct flb_storage_input));
     if (!si) {
         flb_errno();
-        return -1;
-    }
-
-    /* get stream name */
-    name = flb_input_name(in);
-
-    /* create stream for input instance */
-    stream = cio_stream_create(cio, name, in->storage_type);
-    if (!stream) {
-        flb_error("[storage] cannot create stream for instance %s",
-                  name);
-        flb_free(si);
         return -1;
     }
 
