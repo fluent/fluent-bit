@@ -890,8 +890,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * There is a case that rewrite_tag will modify the tag and keep rule is set
      * to drop the original record. The original record will still go through the
      * flb_input_chunk_update_output_instances(2) to update the fs_chunk_size by
-     * 35 bytes (consisted by metadata bytes of the file chunk). This condition
-     * set the diff to 0 in order to not update the fs_chunk_size. 
+     * metadata bytes (consisted by metadata bytes of the file chunk). This condition
+     * sets the diff to 0 in order to not update the fs_chunk_size. 
      */
     if (flb_input_chunk_get_size(ic) == 0) {
         diff = 0;
