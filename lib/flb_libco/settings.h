@@ -14,7 +14,7 @@
    do not use this unless you are certain your application won't use SSE */
 /* #define LIBCO_NO_SSE */
 
-#undef thread_local
+#define thread_local __declspec(thread)
 
 #if !defined(thread_local) /* User can override thread_local for obscure compilers */
   #if !defined(LIBCO_MP) /* Running in single-threaded environment */
