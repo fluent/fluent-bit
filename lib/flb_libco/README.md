@@ -1,14 +1,29 @@
-# Fork of libco for Fluent Bit
+# libco
 
-This repository is a fork of the original library [libco](https://byuu.org/library/libco/) v18 created by Byuu. Compared to the original version it have the following changes:
+libco is a cooperative multithreading library written in C89.
 
-- Core
-  - ARMv8: workaround for [GCC bug](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90907).
-  - Added [aarch64.c](aarch64.c) backend file created by [webgeek1234](https://github.com/webgeek1234).
-  - Fixes on settings.h to get MacOS support.
-- API
-  - co_create() have a third argument to retrieve the real size of the stack created.
+Although cooperative multithreading is limited to a single CPU core, it scales substantially better than preemptive multithreading.
 
-This library is used inside [Fluent Bit](http://github.com/fluent/fluent-bit) project, so this repo aims to keep aligned with latest releases but including our required patches.
+For applications that need 100,000 or more context switches per second, the kernel overhead involved in preemptive multithreading can end up becoming the bottleneck in the application. libco can easily scale to 10,000,000 or more context switches per second.
 
-Eduardo Silva <eduardo@monkey.io>
+Ideal use cases include servers (HTTP, RDBMS) and emulators (CPU cores, etc.)
+
+It currently includes backends for:
+
+* x86 CPUs
+* amd64 CPUs
+* PowerPC CPUs
+* PowerPC64 ELFv1 CPUs
+* PowerPC64 ELFv2 CPUs
+* ARM 32-bit CPUs
+* ARM 64-bit (AArch64) CPUs
+* POSIX platforms (setjmp)
+* Windows platforms (fibers)
+
+See [doc/targets.md] for details.
+
+See [doc/usage.md] for documentation.
+
+## License
+
+libco is released under the ISC license.

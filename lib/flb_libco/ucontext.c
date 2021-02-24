@@ -1,10 +1,4 @@
 /*
-  libco.ucontext (2008-01-28)
-  author: Nach
-  license: public domain
-*/
-
-/*
   WARNING: the overhead of POSIX ucontext is very high,
   assembly versions of libco or libco_sjlj should be much faster
 
@@ -21,6 +15,7 @@
 #include "settings.h"
 
 #define _BSD_SOURCE
+#define _XOPEN_SOURCE 500
 #include <stdlib.h>
 #include <ucontext.h>
 
@@ -36,15 +31,30 @@ cothread_t co_active() {
   return (cothread_t)co_running;
 }
 
-cothread_t co_create(unsigned int heapsize, void (*coentry)(void),
-                     size_t *out_size) {
+cothread_t co_derive(void* memory, unsigned int heapsize, void (*coentry)(void)) {
+  if(!co_running) co_running = &co_primary;
+  ucontext_t* thread = (ucontext_t*)memory;
+  memory = (unsigned char*)memory + sizeof(ucontext_t);
+  heapsize -= sizeof(ucontext_t);
+  if(thread) {
+    if((!getcontext(thread) && !(thread->uc_stack.ss_sp = 0)) && (thread->uc_stack.ss_sp = memory)) {
+      thread->uc_link = co_running;
+      thread->uc_stack.ss_size = heapsize;
+      makecontext(thread, coentry, 0);
+    } else {
+      thread = 0;
+    }
+  }
+  return (cothread_t)thread;
+}
+
+cothread_t co_create(unsigned int heapsize, void (*coentry)(void)) {
   if(!co_running) co_running = &co_primary;
   ucontext_t* thread = (ucontext_t*)malloc(sizeof(ucontext_t));
   if(thread) {
     if((!getcontext(thread) && !(thread->uc_stack.ss_sp = 0)) && (thread->uc_stack.ss_sp = malloc(heapsize))) {
       thread->uc_link = co_running;
       thread->uc_stack.ss_size = heapsize;
-      *out_size = heapsize;
       makecontext(thread, coentry, 0);
     } else {
       co_delete((cothread_t)thread);
@@ -65,6 +75,10 @@ void co_switch(cothread_t cothread) {
   ucontext_t* old_thread = co_running;
   co_running = (ucontext_t*)cothread;
   swapcontext(old_thread, co_running);
+}
+
+int co_serializable() {
+  return 0;
 }
 
 #ifdef __cplusplus

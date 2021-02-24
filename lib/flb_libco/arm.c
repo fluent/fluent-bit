@@ -1,17 +1,11 @@
-/*
-  libco.arm (2016-09-14)
-  author: byuu
-  license: public domain
-*/
-
 #define LIBCO_C
 #include "libco.h"
 #include "settings.h"
 
-#include <assert.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/mman.h>
+#ifdef LIBCO_MPROTECT
+  #include <unistd.h>
+  #include <sys/mman.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,7 +18,7 @@ static void (*co_swap)(cothread_t, cothread_t) = 0;
 #ifdef LIBCO_MPROTECT
   alignas(4096)
 #else
-  text_section
+  section(text)
 #endif
 static const unsigned long co_swap_function[1024] = {
   0xe8a16ff0,  /* stmia r1!, {r4-r11,sp,lr} */
@@ -46,20 +40,17 @@ cothread_t co_active() {
   return co_active_handle;
 }
 
-cothread_t co_create(unsigned int size, void (*entrypoint)(void),
-                     size_t *out_size) {
-  unsigned long* handle = 0;
+cothread_t co_derive(void* memory, unsigned int size, void (*entrypoint)(void)) {
+  unsigned long* handle;
   if(!co_swap) {
     co_init();
     co_swap = (void (*)(cothread_t, cothread_t))co_swap_function;
   }
   if(!co_active_handle) co_active_handle = &co_active_buffer;
-  size += 256;
-  size &= ~15;
-  *out_size = size;
 
-  if(handle = (unsigned long*)malloc(size)) {
-    unsigned long* p = (unsigned long*)((unsigned char*)handle + size);
+  if(handle = (unsigned long*)memory) {
+    unsigned int offset = (size & ~15);
+    unsigned long* p = (unsigned long*)((unsigned char*)handle + offset);
     handle[8] = (unsigned long)p;
     handle[9] = (unsigned long)entrypoint;
   }
@@ -67,13 +58,23 @@ cothread_t co_create(unsigned int size, void (*entrypoint)(void),
   return handle;
 }
 
+cothread_t co_create(unsigned int size, void (*entrypoint)(void)) {
+  void* memory = LIBCO_MALLOC(size);
+  if(!memory) return (cothread_t)0;
+  return co_derive(memory, size, entrypoint);
+}
+
 void co_delete(cothread_t handle) {
-  free(handle);
+  LIBCO_FREE(handle);
 }
 
 void co_switch(cothread_t handle) {
   cothread_t co_previous_handle = co_active_handle;
   co_swap(co_active_handle = handle, co_previous_handle);
+}
+
+int co_serializable() {
+  return 1;
 }
 
 #ifdef __cplusplus

@@ -1,18 +1,13 @@
-/*
-  libco.ppc (2016-09-14)
-  author: blargg
-  license: public domain
-*/
+/* ppc64le (ELFv2) is not currently supported */
 
 #define LIBCO_C
 #include "libco.h"
 #include "settings.h"
 
-#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
-#if LIBCO_MPROTECT
+#ifdef LIBCO_MPROTECT
   #include <unistd.h>
   #include <sys/mman.h>
 #endif
@@ -42,7 +37,7 @@ static thread_local cothread_t co_active_handle = 0;
 
 /* whether function calls are indirect through a descriptor, or are directly to function */
 #ifndef LIBCO_PPCDESC
-  #if !_CALL_SYSV && (_CALL_AIX || _CALL_AIXDESC || LIBCO_PPC64)
+  #if !_CALL_SYSV && (_CALL_AIX || _CALL_AIXDESC || (LIBCO_PPC64 && (!defined(_CALL_ELF) || _CALL_ELF == 1)))
     #define LIBCO_PPCDESC 1
   #endif
 #endif
@@ -50,7 +45,7 @@ static thread_local cothread_t co_active_handle = 0;
 #ifdef LIBCO_MPROTECT
   alignas(4096)
 #else
-  text_section
+  section(text)
 #endif
 static const uint32_t libco_ppc_code[1024] = {
   #if LIBCO_PPC64
@@ -264,10 +259,10 @@ static const uint32_t libco_ppc_code[1024] = {
   #define CO_SWAP_ASM(x, y) ((void (*)(cothread_t, cothread_t))(uintptr_t)libco_ppc_code)(x, y)
 #endif
 
-static uint32_t* co_create_(unsigned size, uintptr_t entry) {
+static uint32_t* co_derive_(void* memory, unsigned size, uintptr_t entry) {
   (void)entry;
 
-  uint32_t* t = (uint32_t*)malloc(size);
+  uint32_t* t = (uint32_t*)memory;
 
   #if LIBCO_PPCDESC
   if(t) {
@@ -279,9 +274,71 @@ static uint32_t* co_create_(unsigned size, uintptr_t entry) {
   return t;
 }
 
-cothread_t co_create(unsigned int size, void (*entry_)(void),
-                     size_t *out_size) {
+cothread_t co_derive(void* memory, unsigned int size, void (*entry_)(void)) {
+  uintptr_t entry = (uintptr_t)entry_;
+  uint32_t* t = 0;
 
+  /* be sure main thread was successfully allocated */
+  if(co_active()) {
+    t = co_derive_(memory, size, entry);
+  }
+
+  if(t) {
+    uintptr_t sp;
+    int shift;
+
+    /* save current registers into new thread, so that any special ones will have proper values when thread is begun */
+    CO_SWAP_ASM(t, t);
+
+    #if LIBCO_PPCDESC
+    entry = (uintptr_t)*(void**)entry;  /* get real address */
+    #endif
+
+    /* put stack near end of block, and align */
+    sp = (uintptr_t)t + size - above_stack;
+    sp -= sp % stack_align;
+
+    /* on PPC32, we save and restore GPRs as 32 bits. for PPC64, we
+       save and restore them as 64 bits, regardless of the size the ABI
+       uses. so, we manually write pointers at the proper size. we always
+       save and restore at the same address, and since PPC is big-endian,
+       we must put the low byte first on PPC32. */
+
+    /* if uintptr_t is 32 bits, >>32 is undefined behavior,
+       so we do two shifts and don't have to care how many bits uintptr_t is. */
+    #if LIBCO_PPC64
+    shift = 16;
+    #else
+    shift = 0;
+    #endif
+
+    /* set up so entry will be called on next swap */
+    t[ 8] = (uint32_t)(entry >> shift >> shift);
+    t[ 9] = (uint32_t)entry;
+
+    t[10] = (uint32_t)(sp >> shift >> shift); 
+    t[11] = (uint32_t)sp;
+  }
+
+  return t;
+}
+
+static uint32_t* co_create_(unsigned size, uintptr_t entry) {
+  (void)entry;
+
+  uint32_t* t = (uint32_t*)LIBCO_MALLOC(size);
+
+  #if LIBCO_PPCDESC
+  if(t) {
+    memcpy(t, (void*)entry, sizeof(void*) * 3);  /* copy entry's descriptor */
+    *(const void**)t = libco_ppc_code;  /* set function pointer to swap routine */
+  }
+  #endif
+
+  return t;
+}
+
+cothread_t co_create(unsigned int size, void (*entry_)(void)) {
   uintptr_t entry = (uintptr_t)entry_;
   uint32_t* t = 0;
 
@@ -324,15 +381,15 @@ cothread_t co_create(unsigned int size, void (*entry_)(void),
     t[ 8] = (uint32_t)(entry >> shift >> shift);
     t[ 9] = (uint32_t)entry;
 
-    t[10] = (uint32_t)(sp >> shift >> shift);
+    t[10] = (uint32_t)(sp >> shift >> shift); 
     t[11] = (uint32_t)sp;
   }
-  *out_size = size;
+
   return t;
 }
 
 void co_delete(cothread_t t) {
-  free(t);
+  LIBCO_FREE(t);
 }
 
 static void co_init_(void) {
@@ -366,4 +423,8 @@ void co_switch(cothread_t t) {
   co_active_handle = t;
 
   CO_SWAP_ASM(t, old);
+}
+
+int co_serializable() {
+  return 0;
 }

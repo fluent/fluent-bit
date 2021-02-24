@@ -413,7 +413,9 @@ struct flb_coro *flb_input_coro_collect(struct flb_input_collector *coll,
 
     coro->caller = co_active();
     coro->callee = co_create(config->coro_stack_size,
-                             input_pre_cb_collect, &stack_size);
+                             input_pre_cb_collect);
+
+    stack_size = config->coro_stack_size;
 
 #ifdef FLB_HAVE_VALGRIND
     coro->valgrind_stack_id = VALGRIND_STACK_REGISTER(coro->callee,

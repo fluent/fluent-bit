@@ -506,7 +506,8 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
 
     coro->caller = co_active();
     coro->callee = co_create(config->coro_stack_size,
-                             output_pre_cb_flush, &stack_size);
+                             output_pre_cb_flush);
+    stack_size = config->coro_stack_size;
 
 #ifdef FLB_HAVE_VALGRIND
     coro->valgrind_stack_id = \
