@@ -159,6 +159,9 @@ static int sb_prepare_environment(struct flb_sb *ctx)
     struct cio_chunk *chunk;
     struct cio_ctx *cio;
 
+    time_t t1 = time(NULL);
+    time_t t2;
+
     cio = ctx->cio;
     mk_list_foreach(head, &cio->streams) {
         stream = mk_list_entry(head, struct cio_stream, _head);
@@ -176,7 +179,9 @@ static int sb_prepare_environment(struct flb_sb *ctx)
             }
         }
     }
+    t2 = time(NULL);
 
+    printf("sb prepare environment: %i seconds\n", t2 - t1);
     return 0;
 }
 
