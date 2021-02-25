@@ -332,9 +332,12 @@ struct flb_output_instance {
      * list and placed into 'coros_destroy', a cleanup function will
      * run later to cleanup the coroutine context.
      *
-     * If this plugin instance runs in multi-thread mode, we use the
-     * 'coro_mutex' to do a safe access to the 'coros' list and coro_id
-     * fields.
+     * note on multi-threading mode
+     * ----------------------------
+     * Every output instance in threaded mode has it own context which
+     * has similar fields like 'coro_id', 'coros', 'coros_destroy'.
+     *
+     * On that mode, field fields are not used.
      */
     int coro_id;
     struct mk_list coros;
@@ -515,7 +518,10 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
 
     if (o_ins->is_threaded == FLB_TRUE) {
         th_ins = flb_output_thread_instance_get();
+
+        pthread_mutex_lock(&th_ins->coro_mutex);
         mk_list_add(&out_coro->_head, &th_ins->coros);
+        pthread_mutex_unlock(&th_ins->coro_mutex);
     }
     else {
         mk_list_add(&out_coro->_head, &o_ins->coros);
@@ -550,7 +556,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     struct flb_task *task;
     struct flb_output_coro *out_coro;
     struct flb_output_instance *o_ins;
-    struct flb_out_thread_instance *th_ins;
+    struct flb_out_thread_instance *th_ins = NULL;
 
     out_coro = (struct flb_output_coro *) co->data;
     o_ins = out_coro->o_ins;
@@ -576,7 +582,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
      * event loop.
      */
     if (flb_output_is_threaded(o_ins) == FLB_TRUE) {
-        /* Retrieve the thread instance */
+        /* Retrieve the thread instance and prepare pipe channel */
         th_ins = flb_output_thread_instance_get();
         pipe_fd = th_ins->ch_thread_events[1];
     }
@@ -600,12 +606,14 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
 /* return the number of co-routines running in the instance */
 static inline int flb_output_coros_size(struct flb_output_instance *ins)
 {
-    int size;
-    struct flb_out_thread_instance *th_ins;
+    int size = 0;
 
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
-        th_ins = flb_output_thread_instance_get();
-        size = mk_list_size(&th_ins->coros);
+        /*
+         * On threaded mode, we need to count the active co-routines of
+         * every running thread of the thread pool.
+         */
+        size = flb_output_thread_pool_coros_size(ins);
     }
     else {
         size = mk_list_size(&ins->coros);

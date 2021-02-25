@@ -124,13 +124,15 @@ void flb_output_coro_prepare_destroy(struct flb_output_coro *out_coro)
     struct flb_out_thread_instance *th_ins;
 
     /* Move output coroutine context from active list to the destroy one */
-    mk_list_del(&out_coro->_head);
-
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
         th_ins = flb_output_thread_instance_get();
+        pthread_mutex_lock(&th_ins->coro_mutex);
+        mk_list_del(&out_coro->_head);
         mk_list_add(&out_coro->_head, &th_ins->coros_destroy);
+        pthread_mutex_unlock(&th_ins->coro_mutex);
     }
     else {
+        mk_list_del(&out_coro->_head);
         mk_list_add(&out_coro->_head, &ins->coros_destroy);
     }
 }
