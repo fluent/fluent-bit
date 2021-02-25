@@ -25,7 +25,7 @@
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_stats.h>
 
-#define FLB_STORAGE_BL_MEM_LIMIT   "5M"
+#define FLB_STORAGE_BL_MEM_LIMIT   "100M"
 #define FLB_STORAGE_MAX_CHUNKS_UP  128
 
 struct flb_storage_metrics {
