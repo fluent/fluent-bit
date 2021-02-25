@@ -186,6 +186,8 @@ static void output_thread(void *data)
     ins = th_ins->ins;
     thread_id = th_ins->th->id;
 
+    flb_coro_thread_init();
+
     /*
      * Expose the event loop to the I/O interfaces: since we are in a separate
      * thread, the upstream connection interfaces need access to the event
