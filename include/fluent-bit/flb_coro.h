@@ -91,6 +91,8 @@ static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
 #define flb_coro_return(th) co_switch(th->caller)
 
 void flb_coro_init();
+void flb_coro_thread_init();
+
 struct flb_coro *flb_coro_get();
 void flb_coro_set(struct flb_coro *coro);
 
