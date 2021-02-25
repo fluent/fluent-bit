@@ -69,6 +69,8 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         return 0;
     }
 
+    int opened = 0;
+
     /* Try to enqueue chunks under our limits */
     mk_list_foreach_safe(head, tmp, &ctx->backlog) {
         sbc = mk_list_entry(head, struct sb_chunk, _head);
@@ -117,6 +119,8 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         mk_list_del(&sbc->_head);
         flb_free(sbc);
 
+        opened++;
+
         /* check our limits */
         total += size;
         if (total >= ctx->mem_limit) {
@@ -124,6 +128,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
         }
     }
 
+    printf("OPENED CHUNKS: %i\n", opened);
     return 0;
 }
 
