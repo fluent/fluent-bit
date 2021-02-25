@@ -421,7 +421,9 @@ int flb_output_thread_pool_create(struct flb_config *config,
         th_ins->coro_id = 0;
         mk_list_init(&th_ins->coros);
         mk_list_init(&th_ins->coros_destroy);
+        pthread_mutex_init(&th_ins->coro_mutex, NULL);
         mk_list_init(&th_ins->upstreams);
+
         upstream_thread_create(th_ins, ins);
 
         /* Create the event loop for this thread */
@@ -465,6 +467,34 @@ int flb_output_thread_pool_create(struct flb_config *config,
     }
 
     return 0;
+}
+
+int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
+{
+    int n;
+    int size = 0;
+    struct mk_list *head;
+    struct flb_tp *tp = ins->tp;
+    struct flb_tp_thread *th;
+    struct flb_out_thread_instance *th_ins;
+
+    /* Signal each worker thread that needs to stop doing work */
+    mk_list_foreach(head, &tp->list_threads) {
+        th = mk_list_entry(head, struct flb_tp_thread, _head);
+        if (th->status != FLB_THREAD_POOL_RUNNING) {
+            continue;
+        }
+
+        th_ins = th->params.data;
+
+        pthread_mutex_lock(&th_ins->coro_mutex);
+        n = mk_list_size(&th_ins->coros);
+        pthread_mutex_unlock(&th_ins->coro_mutex);
+
+        size += n;
+    }
+
+    return size;
 }
 
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins)

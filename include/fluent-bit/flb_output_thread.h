@@ -81,12 +81,20 @@ struct flb_out_thread_instance {
     struct mk_list coros;                /* list of co-routines */
     struct mk_list coros_destroy;        /* list of co-routines */
 
+    /*
+     * If the main engine (parent thread) needs to query the number of active
+     * coroutines being used by a threaded instance, the access to the 'coros'
+     * list must be protected: we use 'coro_mutex for that purpose.
+     */
+     pthread_mutex_t coro_mutex;         /* mutex for 'coros' list */
+
     /* List of mapped 'upstream' contexts */
     struct mk_list upstreams;
 };
 
 int flb_output_thread_pool_create(struct flb_config *config,
                                   struct flb_output_instance *ins);
+int flb_output_thread_pool_coros_size(struct flb_output_instance *ins);
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins);
 int flb_output_thread_pool_start(struct flb_output_instance *ins);
 int flb_output_thread_pool_flush(struct flb_task *task,
