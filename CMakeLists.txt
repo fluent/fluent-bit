@@ -647,8 +647,13 @@ endif()
 
 # Onigmo (Regex Engine)
 # =====================
+FLB_OPTION_SYSTEM_LIB(onigmo)
 if(FLB_REGEX)
-  include(cmake/onigmo.cmake)
+  if(NOT FLB_USE_SYSTEM_onigmo)
+    include(cmake/onigmo.cmake)
+  else()
+    FLB_FORCE_PKG_CONFIG_LIB(onigmo)
+  endif()
   FLB_DEFINITION(FLB_HAVE_REGEX)
 endif()
 
