@@ -414,14 +414,31 @@ else()
   add_subdirectory(${FLB_PATH_LIB_MONKEY}/mk_core EXCLUDE_FROM_ALL)
 endif()
 
+FLB_OPTION_SYSTEM_LIB(mbedtls)
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
 
-  # Build mbedtls: yes, in this transition period we always enable it
-  option(ENABLE_TESTING  OFF)
-  option(ENABLE_PROGRAMS OFF)
-  option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+  if(FLB_USE_SYSTEM_mbedtls)
+    check_c_source_compiles("
+      #include <mbedtls/ssl.h>
+      #include <mbedtls/x509.h>
+      int main() {
+         return 0;
+      }" FLB_HAVE_MBEDTLS)
+    find_library(FLB_MBEDTLS mbedtls)
+    find_library(FLB_MBEDCRYPTO mbedcrypto)
+    find_library(FLB_MBEDX509 mbedx509)
+    if(NOT FLB_HAVE_MBEDTLS OR NOT FLB_MBEDTLS OR NOT FLB_MBEDCRYPTO OR NOT FLB_MBEDX509)
+      message(FATAL_ERROR "mbedtls: not found")
+    endif()
+    link_libraries(${FLB_MBEDTLS} ${FLB_MBEDCRYPTO} ${FLB_MBEDX509})
+  else()
+    # Build mbedtls: yes, in this transition period we always enable it
+    option(ENABLE_TESTING  OFF)
+    option(ENABLE_PROGRAMS OFF)
+    option(INSTALL_MBEDTLS_HEADERS OFF)
+    add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+  endif()
 
   # find OpenSSL (our preferred choice now)
   find_package(OpenSSL)

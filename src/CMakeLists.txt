@@ -288,8 +288,11 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
   )
+
+if(NOT FLB_USE_SYSTEM_mbedtls)
+  set(FLB_DEPS ${FLB_DEPS} mbedtls)
+endif()
 
 if(OPENSSL_FOUND)
   set(FLB_DEPS
