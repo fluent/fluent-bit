@@ -693,8 +693,13 @@ endif()
 
 # LuaJIT (Scripting Support)
 # ==========================
+FLB_OPTION_SYSTEM_LIB(LuaJIT)
 if(FLB_LUAJIT)
-  include(cmake/luajit.cmake)
+  if(FLB_USE_SYSTEM_LuaJIT)
+    FLB_FORCE_PKG_CONFIG_LIB(luajit)
+  else()
+    include(cmake/luajit.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 
