@@ -268,11 +268,10 @@ endif()
 
 # AVRO Encoding
 if(FLB_AVRO_ENCODER)
-set(FLB_DEPS
-  ${FLB_DEPS}
-  avro-static
-  jansson
-  )
+  set(FLB_DEPS ${FLB_DEPS} avro-static)
+  if(NOT FLB_USE_SYSTEM_jansson)
+    set(FLB_DEPS ${FLB_DEPS} jansson)
+  endif()
 endif()
 
 # Set static dependencies
