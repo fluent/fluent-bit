@@ -36,6 +36,7 @@ struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
     char *index;
     char *type;
+    char suppress_type_name;
 
     /* HTTP Auth */
     char *http_user;
