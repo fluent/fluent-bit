@@ -281,7 +281,14 @@ set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
   jsmn
-  msgpack-c-static
+  )
+
+if(NOT FLB_USE_SYSTEM_msgpack)
+  set(FLB_DEPS ${FLB_DEPS} msgpack-c-static)
+endif()
+
+set(FLB_DEPS
+  ${FLB_DEPS}
   mpack-static
   chunkio-static
   miniz

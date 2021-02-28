@@ -350,11 +350,16 @@ endif()
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
 # MsgPack options
-option(MSGPACK_ENABLE_CXX             OFF)
-option(MSGPACK_ENABLE_SHARED          OFF)
-option(MSGPACK_BUILD_TESTS            OFF)
-option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+FLB_OPTION_SYSTEM_LIB(msgpack)
+if(FLB_USE_SYSTEM_msgpack)
+  FLB_FORCE_PKG_CONFIG_LIB(msgpack)
+else()
+  option(MSGPACK_ENABLE_CXX             OFF)
+  option(MSGPACK_ENABLE_SHARED          OFF)
+  option(MSGPACK_BUILD_TESTS            OFF)
+  option(MSGPACK_BUILD_EXAMPLES         OFF)
+  add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+endif()
 
 # MPack
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
