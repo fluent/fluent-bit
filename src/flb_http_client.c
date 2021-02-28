@@ -289,7 +289,9 @@ static int process_chunked_data(struct flb_http_client *c)
         flb_errno();
         return FLB_HTTP_ERROR;
     }
-
+    if (val < 0) {
+        return FLB_HTTP_ERROR;
+    }
     /*
      * 'val' contains the expected number of bytes, check current lengths
      * and do buffer adjustments.
