@@ -364,20 +364,25 @@ add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Avro
 FLB_OPTION_SYSTEM_LIB(jansson)
+FLB_OPTION_SYSTEM_LIB(avro)
 if(FLB_AVRO_ENCODER)
-  # jansson
-  if(FLB_USE_SYSTEM_jansson)
-    FLB_FORCE_PKG_CONFIG_LIB(jansson)
+  if(FLB_USE_SYSTEM_avro)
+    FLB_FORCE_PKG_CONFIG_LIB(avro-c)
   else()
-    option(JANSSON_BUILD_DOCS         OFF)
-    option(JANSSON_EXAMPLES           OFF)
-    option(JANSSON_WITHOUT_TESTS       ON)
-    option(JANSSON_BUILD_SHARED_LIBS  OFF)
-    add_subdirectory(${FLB_PATH_LIB_JANSSON})
-  endif()
+    # jansson
+    if(FLB_USE_SYSTEM_jansson)
+      FLB_FORCE_PKG_CONFIG_LIB(jansson)
+    else()
+      option(JANSSON_BUILD_DOCS         OFF)
+      option(JANSSON_EXAMPLES           OFF)
+      option(JANSSON_WITHOUT_TESTS       ON)
+      option(JANSSON_BUILD_SHARED_LIBS  OFF)
+      add_subdirectory(${FLB_PATH_LIB_JANSSON})
+    endif()
 
-  #avro
-  add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+    #avro
+    add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+  endif()
 endif()
 
 # tutf8e
