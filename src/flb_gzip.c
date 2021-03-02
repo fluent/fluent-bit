@@ -275,6 +275,11 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     }
     out_size = dlen;
 
+    /* Ensure size is above 0 */
+    if (((p + in_len) - start - 8) <= 0) {
+        return -1;
+    }
+
     /* Map zip content */
     zip_data = (uint8_t *) start;
     zip_len = (p + in_len) - start - 8;
