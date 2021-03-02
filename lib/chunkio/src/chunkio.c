@@ -37,6 +37,16 @@
 static int check_root_path(struct cio_ctx *ctx, const char *root_path)
 {
     int ret;
+    int len;
+
+    if (!root_path) {
+        return -1;
+    }
+
+    len = strlen(root_path);
+    if (len <= 0) {
+        return -1;
+    }
 
     ret = cio_os_isdir(root_path);
     if (ret == -1) {
