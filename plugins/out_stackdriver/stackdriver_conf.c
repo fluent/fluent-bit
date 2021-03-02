@@ -273,6 +273,12 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
+    tmp = flb_output_get_property("export_to_project_id", ins);
+    if (tmp) {
+        ctx->export_to_project_id = flb_sds_create(tmp);
+        flb_plg_info(ctx->ins, "export_to_project_id set to %s", ctx->export_to_project_id);
+    }
+
     tmp = flb_output_get_property("resource", ins);
     if (tmp) {
         ctx->resource = flb_sds_create(tmp);
@@ -452,6 +458,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->credentials_file);
     flb_sds_destroy(ctx->type);
     flb_sds_destroy(ctx->project_id);
+    flb_sds_destroy(ctx->export_to_project_id);
     flb_sds_destroy(ctx->private_key_id);
     flb_sds_destroy(ctx->private_key);
     flb_sds_destroy(ctx->client_email);

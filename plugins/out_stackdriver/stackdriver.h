@@ -124,6 +124,7 @@ struct flb_stackdriver {
 
 
     /* other */
+    flb_sds_t export_to_project_id;
     flb_sds_t resource;
     flb_sds_t severity_key;
     flb_sds_t trace_key;
