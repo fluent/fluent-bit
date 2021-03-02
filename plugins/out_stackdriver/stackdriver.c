@@ -927,6 +927,10 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (!ctx->export_to_project_id) {
+        ctx->export_to_project_id = flb_sds_create(ctx->project_id);
+    }
+
     return 0;
 }
 
@@ -1877,7 +1881,7 @@ static int stackdriver_format(struct flb_config *config,
 
         /* logName */
         len = snprintf(path, sizeof(path) - 1,
-                       "projects/%s/logs/%s", ctx->project_id, new_log_name);
+                       "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
 
         if (log_name_extracted == FLB_TRUE) {
             flb_sds_destroy(log_name);
