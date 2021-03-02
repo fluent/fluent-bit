@@ -641,22 +641,10 @@ size_t flb_input_chunk_total_size(struct flb_input_instance *in)
     size_t total = 0;
     struct mk_list *head;
     struct flb_input_chunk *ic;
+    struct flb_storage_input *storage;
 
-    mk_list_foreach(head, &in->chunks) {
-        ic = mk_list_entry(head, struct flb_input_chunk, _head);
-
-        /* Skip files who are 'down' */
-        if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
-            continue;
-        }
-
-        bytes = flb_input_chunk_get_size(ic);
-        if (bytes <= 0) {
-            continue;
-        }
-        total += bytes;
-    }
-
+    storage = (struct flb_storage_input *) in->storage;
+    total = cio_stream_size_chunks_up(storage->stream);
     return total;
 }
 
@@ -887,12 +875,12 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
             + 2;   /* METADATA LENGTH BYTES */
     }
 
-    /* 
+    /*
      * There is a case that rewrite_tag will modify the tag and keep rule is set
      * to drop the original record. The original record will still go through the
      * flb_input_chunk_update_output_instances(2) to update the fs_chunk_size by
      * metadata bytes (consisted by metadata bytes of the file chunk). This condition
-     * sets the diff to 0 in order to not update the fs_chunk_size. 
+     * sets the diff to 0 in order to not update the fs_chunk_size.
      */
     if (flb_input_chunk_get_size(ic) == 0) {
         diff = 0;

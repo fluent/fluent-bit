@@ -213,9 +213,18 @@ struct flb_input_instance {
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
-    struct mk_list chunks;               /* storage chunks             */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
+
+    /* Storage Chunks */
+    struct mk_list chunks;               /* linked list of all chunks  */
+
+    /*
+     * The following list helps to separate the chunks per it
+     * status, it can be 'up' or 'down'.
+     */
+    struct mk_list chunks_up;            /* linked list of all chunks up */
+    struct mk_list chunks_down;          /* linked list of all chunks down */
 
     /*
      * Every co-routine created by the engine when flushing data, it's
