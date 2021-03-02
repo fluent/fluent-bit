@@ -27,6 +27,8 @@
 #define ES_BULK_HEADER      165  /* ES Bulk API prefix line  */
 #define ES_BULK_INDEX_FMT    "{\"index\":{\"_index\":\"%s\",\"_type\":\"%s\"}}\n"
 #define ES_BULK_INDEX_FMT_ID "{\"index\":{\"_index\":\"%s\",\"_type\":\"%s\",\"_id\":\"%s\"}}\n"
+#define ES_BULK_INDEX_FMT_WITHOUT_TYPE  "{\"index\":{\"_index\":\"%s\"}}\n"
+#define ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE "{\"index\":{\"_index\":\"%s\",\"_id\":\"%s\"}}\n"
 
 struct es_bulk {
     char *ptr;

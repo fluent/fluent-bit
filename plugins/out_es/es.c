@@ -293,11 +293,18 @@ static int elasticsearch_format(struct flb_config *config,
         strftime(index_formatted, sizeof(index_formatted) - 1,
                  ctx->index, &tm);
         es_index = index_formatted;
-
-        index_len = snprintf(j_index,
-                             ES_BULK_HEADER,
-                             ES_BULK_INDEX_FMT,
-                             es_index, ctx->type);
+        if (ctx->suppress_type_name) {
+            index_len = snprintf(j_index,
+                                 ES_BULK_HEADER,
+                                 ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                 es_index);
+        }
+        else {
+            index_len = snprintf(j_index,
+                                 ES_BULK_HEADER,
+                                 ES_BULK_INDEX_FMT,
+                                 es_index, ctx->type);
+        }
     }
 
     /*
@@ -398,10 +405,18 @@ static int elasticsearch_format(struct flb_config *config,
             *p++ = '\0';
             es_index = logstash_index;
             if (ctx->generate_id == FLB_FALSE) {
-                index_len = snprintf(j_index,
-                                     ES_BULK_HEADER,
-                                     ES_BULK_INDEX_FMT,
-                                     es_index, ctx->type);
+                if (ctx->suppress_type_name) {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                         es_index);
+                }
+                else {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT,
+                                         es_index, ctx->type);
+                }
             }
         }
         else if (ctx->current_time_index == FLB_TRUE) {
@@ -440,10 +455,18 @@ static int elasticsearch_format(struct flb_config *config,
                      "%04x%04x-%04x-%04x-%04x-%04x%04x%04x",
                      hash[0], hash[1], hash[2], hash[3],
                      hash[4], hash[5], hash[6], hash[7]);
-            index_len = snprintf(j_index,
-                                 ES_BULK_HEADER,
-                                 ES_BULK_INDEX_FMT_ID,
-                                 es_index, ctx->type, es_uuid);
+            if (ctx->suppress_type_name) {
+                index_len = snprintf(j_index,
+                                     ES_BULK_HEADER,
+                                     ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                     es_index,  es_uuid);
+            }
+            else {
+                index_len = snprintf(j_index,
+                                     ES_BULK_HEADER,
+                                     ES_BULK_INDEX_FMT_ID,
+                                     es_index, ctx->type, es_uuid);
+            }
         }
 
         /* Convert msgpack to JSON */
@@ -767,6 +790,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "type", FLB_ES_DEFAULT_TYPE,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, type),
      "Set the document type property"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "suppress_type_name", "false",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, suppress_type_name),
+     "If true, mapping types is removed. (for v7.0.0 or later)"
     },
 
     /* HTTP Authentication */
