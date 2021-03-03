@@ -38,11 +38,7 @@
 #define TAG_DESCRIPTOR "$TAG"
 #define MAX_TAG_PARTS 10
 #define S3_KEY_SIZE 1024
-
-#define TAG_PART_DESCRIPTOR "$TAG[%d]"
-#define TAG_DESCRIPTOR "$TAG"
-#define MAX_TAG_PARTS 10
-#define S3_KEY_SIZE 1024
+#define RANDOM_STRING "$UUID"
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -693,6 +689,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     int ret = 0;
     char *tag_token = NULL;
     char *key;
+    char *random_alphanumeric;
     int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
@@ -798,6 +795,28 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
     tmp_key = NULL;
+
+    /* Find all occurences of $UUID and replace with a random string. */
+    random_alphanumeric = flb_sts_session_name();
+    if (!random_alphanumeric) {
+        goto error;
+    }
+    /* only use 8 chars of the random string */
+    random_alphanumeric[8] = '\0';
+    tmp_key = replace_uri_tokens(s3_key, RANDOM_STRING, random_alphanumeric);
+    if (!tmp_key) {
+        flb_free(random_alphanumeric);
+        goto error;
+    }
+    
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+    
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+    flb_free(random_alphanumeric);
 
     gmt = gmtime(&time);
 

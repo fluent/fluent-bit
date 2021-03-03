@@ -136,6 +136,7 @@ struct flb_s3 {
 
     int timer_created;
     int timer_ms;
+    int key_fmt_has_uuid;
 
     struct flb_output_instance *ins;
 };
