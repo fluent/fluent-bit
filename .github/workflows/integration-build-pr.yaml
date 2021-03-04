@@ -1,0 +1,37 @@
+name: Build PR docker images for integration tests
+on:
+  pull_request:
+    branches:
+      - master
+    types: [ labeled ]
+jobs:
+  docker_build:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
+    steps:
+      - name: Setup environment
+        run: |
+          sudo apt-get --yes update
+          sudo apt-get install --yes docker.io containerd runc
+          sudo systemctl unmask docker && sudo systemctl start docker
+
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build the docker images for PR ${{ github.event.number }}
+        run: |
+          docker build --no-cache -f ./dockerfiles/Dockerfile.${{ env.arch }}-master -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }} .
+        env:
+          pr: ${{ github.event.number }}
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+      - name: Archive the docker images
+        uses: ishworkh/docker-image-artifact-upload@v1
+        with:
+          image: ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }}
+        env:
+          pr: ${{ github.event.number }}
+          arch: x86_64
+          dockerhub_organization: fluentbitdev

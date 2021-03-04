@@ -1,0 +1,119 @@
+name: Run integration tests for master
+on:
+  workflow_run:
+    workflows: [ 'Build master docker images for integration tests' ]
+    types:
+      - completed
+jobs:
+  publish-docker-images:
+    name: publish the docker images for master
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download docker image from build artifacts
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: integration-build-docker-master.yaml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master
+          path: images
+        env:
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+      - name: Import docker image
+        run: |
+          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master
+        env:
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image to Docker Hub
+        run: |
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master
+        env:
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+  run-integration-microk8s:
+    name: run integration tests on ${{ matrix.k8s-release }} microk8s
+    needs: publish-docker-images
+    strategy:
+      max-parallel: 48
+      fail-fast: true
+      matrix:
+        k8s-release: [ 1.20/stable ] #, 1.19/stable, 1.18/stable ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure LXD
+        run: |
+          sudo snap install lxd
+          sudo lxd.migrate -yes || true
+          sudo lxd waitready
+          sudo lxd init --auto
+          sudo usermod -a -G lxd ${USER}
+          sudo groupadd --force --system lxd
+          sudo usermod --append --groups lxd ${USER}
+          newgrp lxd
+          sudo newgrp lxd
+          sudo systemctl start snap.lxd.daemon.service
+          sudo systemctl status snap.lxd.daemon.service
+          sudo systemctl start snap.lxd.daemon.unix.socket
+          sudo systemctl status snap.lxd.daemon.unix.socket
+          sudo chmod 0777 /var/snap/lxd/common/lxd/unix.socket
+
+      - uses: actions/checkout@v2
+        with:
+          repository: calyptia/fluent-bit-ci
+          path: ci
+
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+        working-directory: ci/terraform/microk8s/
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ci/terraform/microk8s/
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+        working-directory: ci/terraform/microk8s/
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          newgrp lxd
+          terraform apply -input=false -auto-approve -var k8s-version=${{ env.k8s_release }}
+        working-directory: ci/terraform/microk8s/
+        env:
+          k8s_release: ${{ matrix.k8s-release }}
+
+      - run: lxc exec mk8s-node-integration-0 -- microk8s enable dns
+      - run: lxc exec mk8s-node-integration-0 -- microk8s enable storage
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.15' # The Go version to download (if necessary) and use.
+
+      - uses: azure/setup-helm@v1
+        id: install
+
+      - run: go mod download
+        working-directory: ci/integration/
+
+      - run: make integration
+        env:
+          IMAGE_REPOSITORY: fluentbitdev/fluent-bit
+          IMAGE_TAG: x86_64-master
+        working-directory: ci/
