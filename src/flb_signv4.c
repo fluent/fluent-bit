@@ -351,6 +351,20 @@ static flb_sds_t url_params_format(char *params)
             return NULL;
         }
 
+        /*
+         * If key length is 0 then a problem occurs because val
+         * will not be set flb_kv_item_create_len, which eventually
+         * results in issues since kv->val will be equal to NULL.
+         * Thus, check here whether key length is satisfied
+         */
+        if (flb_sds_len(key) == 0) {
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
+            flb_slist_destroy(&split);
+            flb_kv_release(&list);
+            return NULL;
+        }
+
         kv = flb_kv_item_create_len(&list,
                                     key, flb_sds_len(key),
                                     val, flb_sds_len(val));
