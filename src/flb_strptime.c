@@ -709,6 +709,12 @@ _conv_num64(const unsigned char **buf, int64_t *dest, int64_t llim, int64_t ulim
 		result *= 10;
 		result += *(*buf)++ - '0';
 		rulim /= 10;
+        /* watch out for overflows. If value gets above
+         * ((2**64)/2.0)/10.0 then we will overflow. So instead
+         * we return 0 */
+        if (result >= 922337203685477632) {
+            return (0);
+        }
 	} while ((result * 10 <= ulim) && rulim && **buf >= '0' && **buf <= '9');
 
 	if (result < llim || result > ulim)
