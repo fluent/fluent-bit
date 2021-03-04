@@ -64,6 +64,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 struct mk_list *head;
                 struct flb_input_instance *entry;
                 mk_list_foreach(head, &ctx->config->inputs) {
+                    entry = mk_list_entry(head, struct flb_input_instance, _head);
                     if (entry->storage != NULL) {
                         char bufbuf[100];
                         flb_input_chunk_append_raw(entry, "A", 1, "\0", 0);
