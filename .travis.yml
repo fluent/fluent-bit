@@ -67,7 +67,7 @@ jobs:
       env: DOCKER_BUILD=1
       script: |
         echo "===== BUILD DOCKER IMAGE ======="
-        docker build -t test-image -f Dockerfile .
+        docker build -t test-image -f ./dockerfiles/Dockerfile.x86_64-master .
       addons:
         apt:
           sources: {}

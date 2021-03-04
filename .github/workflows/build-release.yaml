@@ -97,19 +97,12 @@ jobs:
           replace-with: '$1'
           flags: 'g'
 
-      - uses: actions/checkout@v2
-        with:
-          repository: ${{ github.actor }}/fluent-bit-docker-image
-          ref: ${{ steps.formatted_version.outputs.replaced }}
-          path: docker-build
-
       - name: Build the docker images
-        run: docker build --no-cache -f Dockerfile.${{ env.arch }} -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ env.release }} .
+        run: docker build --no-cache -f ./dockerfiles/Dockerfile.${{ env.arch }} -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ env.release }} .
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           arch: ${{ matrix.arch }}
           dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
-        working-directory: docker-build
 
       - name: Archive the docker images
         uses: ishworkh/docker-image-artifact-upload@v1
