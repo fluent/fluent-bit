@@ -187,8 +187,10 @@ void upstream_set_fn_http(struct flb_aws_provider *provider,
     struct flb_aws_provider_http *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] upstream_set called on the http provider");
-    /* set upstream on output */
+    /* Make sure TLS is set to false before setting upstream, then reset it */
+    ins->use_tls = FLB_FALSE;
     flb_output_upstream_set(implementation->client->upstream, ins);
+    ins->use_tls = FLB_TRUE;
 }
 
 void destroy_fn_http(struct flb_aws_provider *provider) {
