@@ -48,18 +48,28 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_free(uri);
     }
 
-    char *split_protocol;
-    char *split_username;
-    char *split_password;
-    char *split_host;
-    char *split_port;
+    char *split_protocol = NULL;
+    char *split_username = NULL;
+    char *split_password = NULL;
+    char *split_host     = NULL;
+    char *split_port     = NULL;
     if (flb_utils_proxy_url_split(null_terminated, &split_protocol,
             &split_username, &split_password, &split_host, &split_port) == 0) {
-        flb_free(split_protocol);
-        flb_free(split_username);
-        flb_free(split_password);
-        flb_free(split_host);
-        flb_free(split_port);
+        if (split_protocol) {
+            flb_free(split_protocol);
+        }
+        if (split_username) {
+            flb_free(split_username);
+        }
+        if (split_password) {
+            flb_free(split_password);
+        }
+        if (split_host) {
+            flb_free(split_host);
+        }
+        if (split_port) {
+            flb_free(split_port);
+        }
     }
 
 
