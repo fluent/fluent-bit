@@ -1,38 +1,43 @@
 name: Run integration tests for PR
 on:
-  workflow_run:
-    workflows: [ 'Build PR docker images for integration tests' ]
-    types:
-      - completed
+  pull_request:
+    branches:
+      - master
+    types: [ labeled ]
 jobs:
   publish-docker-images:
     name: publish the docker images for PR
-    if: github.event.workflow_run.conclusion == 'success'
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
     runs-on: ubuntu-latest
     steps:
-      - name: Find PR
-        if: ${{ github.event.workflow_run.event == 'pull_request' }}
-        run: |
-          PR=$(curl https://api.github.com/search/issues?q=${{ github.event.workflow_run.head_sha }} |
-          grep -Po "(?<=${{ github.event.workflow_run.repository.full_name }}\/pulls\/)\d*" | head -1)
-          echo "PR=$PR" >> $GITHUB_ENV
+      - name: Wait for docker build to succeed
+        uses: fountainhead/action-wait-for-check@v1.0.0
+        id: wait-for-build
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: docker_build
+          timeoutSeconds: 3600
+          intervalSeconds: 10
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Download docker image from build artifacts
         uses: dawidd6/action-download-artifact@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: integration-build-docker-pr.yaml
-          run_id: ${{ github.event.workflow_run.id }}
-          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.PR }}
+          workflow: integration-build-pr.yaml
+          pr: ${{github.event.pull_request.number}}
+          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.pr }}
           path: images
         env:
+          pr: ${{github.event.pull_request.number}}
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
       - name: Import docker image
         run: |
-          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.PR }}
+          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.pr }}
         env:
+          pr: ${{github.event.pull_request.number}}
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
@@ -44,8 +49,9 @@ jobs:
 
       - name: Push image to Docker Hub
         run: |
-          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.PR }}
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }}
         env:
+          pr: ${{ github.event.number }}
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
@@ -59,13 +65,6 @@ jobs:
         k8s-release: [ 1.20/stable ] #, 1.19/stable, 1.18/stable ]
     runs-on: ubuntu-latest
     steps:
-      - name: Find PR
-        if: ${{ github.event.workflow_run.event == 'pull_request' }}
-        run: |
-          PR=$(curl https://api.github.com/search/issues?q=${{ github.event.workflow_run.head_sha }} |
-          grep -Po "(?<=${{ github.event.workflow_run.repository.full_name }}\/pulls\/)\d*" | head -1)
-          echo "PR=$PR" >> $GITHUB_ENV
-
       - name: Configure LXD
         run: |
           sudo snap install lxd
@@ -129,12 +128,12 @@ jobs:
       - run: make integration
         env:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
-          IMAGE_TAG: x86_64-master-pr-${{ env.PR }}
+          IMAGE_TAG: x86_64-master-pr-${{ github.event.number }}
         working-directory: ci/
 
       - uses: actions-ecosystem/action-add-labels@v1
         with:
           labels: test-integration-ok
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          number: ${{ env.PR }}
+          number: ${{ github.event.number }}
           repo: ${{ github.actor }}/fluent-bit
