@@ -42,10 +42,10 @@ struct modifier_key {
 struct record_modifier_ctx {
     int records_num;
     int remove_keys_num;
-    int whitelist_keys_num;
+    int allowlist_keys_num;
     struct mk_list records;
     struct mk_list remove_keys;
-    struct mk_list whitelist_keys;
+    struct mk_list allowlist_keys;
     struct flb_filter_instance *ins;
 };
 
