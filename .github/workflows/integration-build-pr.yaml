@@ -35,3 +35,11 @@ jobs:
           pr: ${{ github.event.number }}
           arch: x86_64
           dockerhub_organization: fluentbitdev
+
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-docker-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: ${{ github.actor }}/fluent-bit
