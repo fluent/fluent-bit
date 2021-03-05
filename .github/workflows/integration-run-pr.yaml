@@ -143,4 +143,4 @@ jobs:
           labels: ci/integration-test-ok
           github_token: ${{ secrets.GITHUB_TOKEN }}
           number: ${{ github.event.pull_request.number }}
-          repo: ${{ github.actor }}/fluent-bit
+          repo: fluent/fluent-bit
