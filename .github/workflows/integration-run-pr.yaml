@@ -20,12 +20,18 @@ jobs:
           intervalSeconds: 10
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Wait until artifacts are propagated
+        uses: jakejarvis/wait-action@master
+        with:
+          time: '15s'
+
       - name: Download docker image from build artifacts
         uses: dawidd6/action-download-artifact@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: integration-build-pr.yaml
-          pr: ${{github.event.pull_request.number}}
+          pr: ${{ github.event.pull_request.number }}
+          repo: ${{ github.repository }}
           name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.pr }}
           path: images
         env:
@@ -128,12 +134,13 @@ jobs:
       - run: make integration
         env:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
-          IMAGE_TAG: x86_64-master-pr-${{ github.event.number }}
+          IMAGE_TAG: x86_64-master-pr-${{ github.event.pull_request.number }}
         working-directory: ci/
 
       - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
         with:
-          labels: test-integration-ok
+          labels: ci/integration-test-ok
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          number: ${{ github.event.number }}
-          repo: ${{ github.actor }}/fluent-bit
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit
