@@ -128,12 +128,13 @@ jobs:
       - run: make integration
         env:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
-          IMAGE_TAG: x86_64-master-pr-${{ github.event.number }}
+          IMAGE_TAG: x86_64-master-pr-${{ github.event.pull_request.number }}
         working-directory: ci/
 
       - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
         with:
-          labels: test-integration-ok
+          labels: ci/integration-test-ok
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          number: ${{ github.event.number }}
+          number: ${{ github.event.pull_request.number }}
           repo: ${{ github.actor }}/fluent-bit
