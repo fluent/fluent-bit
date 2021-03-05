@@ -61,6 +61,14 @@ jobs:
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-docker-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit
+
   run-integration-microk8s:
     name: run integration tests on ${{ matrix.k8s-release }} microk8s
     needs: publish-docker-images
