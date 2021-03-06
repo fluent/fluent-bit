@@ -11,6 +11,12 @@ icon: ./fluent-bit.svg
 confinement: 'strict'
 grade: 'stable'
 
+plugs:
+    read-config:
+        interface: system-files
+        read:
+        - $SNAP/etc/fluent-bit
+
 apps:
   service:
     command: fluent-bit -c $SNAP/etc/fluent-bit/fluent-bit.conf
@@ -18,6 +24,7 @@ apps:
     plugs:
       - network
       - network-bind
+      - read-config
   fluent-bit:
     command: fluent-bit
     plugs:
