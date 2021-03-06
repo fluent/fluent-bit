@@ -110,7 +110,11 @@ endmacro()
 macro(FLB_PLUGIN name src deps)
   add_library(flb-plugin-${name} STATIC ${src})
   add_sanitizers(flb-plugin-${name})
-  target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
+  target_link_libraries(flb-plugin-${name} fluent-bit-static)
+  if (NOT FLB_USE_SYSTEM_msgpack)
+    target_link_libraries(flb-plugin-${name} msgpack-c-static)
+  endif()
+  target_link_libraries(flb-plugin-${name} ${deps})
 endmacro()
 
 

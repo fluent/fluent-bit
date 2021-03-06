@@ -47,6 +47,7 @@ endif()
 
 include(GNUInstallDirs)
 include(ExternalProject)
+include(CheckIncludeFile)
 include(cmake/FindJournald.cmake)
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
@@ -65,6 +66,7 @@ option(FLB_DEBUG               "Build with debug mode (-g)"    Yes)
 option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
+option(FLB_USE_SYSTEM_LIBRARIES "Build with system libraries"  No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
 option(FLB_REGEX               "Build with Regex support"     Yes)
 option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
@@ -349,11 +351,16 @@ endif()
 set(WITH_SYSTEM_MALLOC  1 CACHE BOOL "Use system memory allocator")
 
 # MsgPack options
-option(MSGPACK_ENABLE_CXX             OFF)
-option(MSGPACK_ENABLE_SHARED          OFF)
-option(MSGPACK_BUILD_TESTS            OFF)
-option(MSGPACK_BUILD_EXAMPLES         OFF)
-add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+FLB_OPTION_SYSTEM_LIB(msgpack)
+if(FLB_USE_SYSTEM_msgpack)
+  FLB_FORCE_PKG_CONFIG_LIB(msgpack)
+else()
+  option(MSGPACK_ENABLE_CXX             OFF)
+  option(MSGPACK_ENABLE_SHARED          OFF)
+  option(MSGPACK_BUILD_TESTS            OFF)
+  option(MSGPACK_BUILD_EXAMPLES         OFF)
+  add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
+endif()
 
 # MPack
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
@@ -362,16 +369,26 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
 # Avro
+FLB_OPTION_SYSTEM_LIB(jansson)
+FLB_OPTION_SYSTEM_LIB(avro)
 if(FLB_AVRO_ENCODER)
-  # jansson
-  option(JANSSON_BUILD_DOCS         OFF)
-  option(JANSSON_EXAMPLES           OFF)
-  option(JANSSON_WITHOUT_TESTS       ON)
-  option(JANSSON_BUILD_SHARED_LIBS  OFF)
-  add_subdirectory(${FLB_PATH_LIB_JANSSON})
+  if(FLB_USE_SYSTEM_avro)
+    FLB_FORCE_PKG_CONFIG_LIB(avro-c)
+  else()
+    # jansson
+    if(FLB_USE_SYSTEM_jansson)
+      FLB_FORCE_PKG_CONFIG_LIB(jansson)
+    else()
+      option(JANSSON_BUILD_DOCS         OFF)
+      option(JANSSON_EXAMPLES           OFF)
+      option(JANSSON_WITHOUT_TESTS       ON)
+      option(JANSSON_BUILD_SHARED_LIBS  OFF)
+      add_subdirectory(${FLB_PATH_LIB_JANSSON})
+    endif()
 
-  #avro
-  add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+    #avro
+    add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+  endif()
 endif()
 
 # tutf8e
@@ -380,10 +397,20 @@ if(FLB_UTF8_ENCODER)
 endif()
 
 # xxHash
-FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
-set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
-set(XXHASH_BUILD_XXHSUM OFF)
-add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
+FLB_OPTION_SYSTEM_LIB(xxHash)
+if(FLB_USE_SYSTEM_xxHash)
+  check_include_file("xxhash.h" FLB_HAVE_XXHASH_H)
+  find_library(FLB_XXHASH_LIB xxhash)
+  if(NOT FLB_HAVE_XXHASH_H OR NOT FLB_XXHASH_LIB)
+    message(FATAL_ERROR "xxHash: development files not found")
+  endif()
+  link_libraries(${FLB_XXHASH_LIB})
+else()
+  FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
+  set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
+  set(XXHASH_BUILD_XXHSUM OFF)
+  add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
+endif()
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
@@ -413,14 +440,31 @@ else()
   add_subdirectory(${FLB_PATH_LIB_MONKEY}/mk_core EXCLUDE_FROM_ALL)
 endif()
 
+FLB_OPTION_SYSTEM_LIB(mbedtls)
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
 
-  # Build mbedtls: yes, in this transition period we always enable it
-  option(ENABLE_TESTING  OFF)
-  option(ENABLE_PROGRAMS OFF)
-  option(INSTALL_MBEDTLS_HEADERS OFF)
-  add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+  if(FLB_USE_SYSTEM_mbedtls)
+    check_c_source_compiles("
+      #include <mbedtls/ssl.h>
+      #include <mbedtls/x509.h>
+      int main() {
+         return 0;
+      }" FLB_HAVE_MBEDTLS)
+    find_library(FLB_MBEDTLS mbedtls)
+    find_library(FLB_MBEDCRYPTO mbedcrypto)
+    find_library(FLB_MBEDX509 mbedx509)
+    if(NOT FLB_HAVE_MBEDTLS OR NOT FLB_MBEDTLS OR NOT FLB_MBEDCRYPTO OR NOT FLB_MBEDX509)
+      message(FATAL_ERROR "mbedtls: not found")
+    endif()
+    link_libraries(${FLB_MBEDTLS} ${FLB_MBEDCRYPTO} ${FLB_MBEDX509})
+  else()
+    # Build mbedtls: yes, in this transition period we always enable it
+    option(ENABLE_TESTING  OFF)
+    option(ENABLE_PROGRAMS OFF)
+    option(INSTALL_MBEDTLS_HEADERS OFF)
+    add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+  endif()
 
   # find OpenSSL (our preferred choice now)
   find_package(OpenSSL)
@@ -444,9 +488,14 @@ if (FLB_SIGNV4)
   FLB_DEFINITION(FLB_HAVE_SIGNV4)
 endif()
 
+FLB_OPTION_SYSTEM_LIB(sqlite3)
 if(FLB_SQLDB)
   FLB_DEFINITION(FLB_HAVE_SQLDB)
-  add_subdirectory(${FLB_PATH_LIB_SQLITE})
+  if(FLB_USE_SYSTEM_sqlite3)
+    FLB_FORCE_PKG_CONFIG_LIB(sqlite3)
+  else()
+    add_subdirectory(${FLB_PATH_LIB_SQLITE})
+  endif()
 endif()
 
 if(FLB_TRACE)
@@ -603,22 +652,27 @@ endif()
 
 # Memory Allocator
 # ================
+FLB_OPTION_SYSTEM_LIB(jemalloc)
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
-  # Link to Jemalloc as an external dependency
-  ExternalProject_Add(jemalloc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
-    CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
-    INSTALL_COMMAND $(MAKE) install_lib_static install_include)
-  add_library(libjemalloc STATIC IMPORTED GLOBAL)
-  set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
-  add_dependencies(libjemalloc jemalloc)
-  include_directories("${CMAKE_BINARY_DIR}/include/")
+  if(FLB_USE_SYSTEM_jemalloc)
+    FLB_FORCE_PKG_CONFIG_LIB(jemalloc)
+  else()
+    # Link to Jemalloc as an external dependency
+    ExternalProject_Add(jemalloc
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
+      CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
+      CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
+      BUILD_COMMAND $(MAKE)
+      INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
+      INSTALL_COMMAND $(MAKE) install_lib_static install_include)
+    add_library(libjemalloc STATIC IMPORTED GLOBAL)
+    set_target_properties(libjemalloc PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/lib/libjemalloc_pic.a")
+    add_dependencies(libjemalloc jemalloc)
+    include_directories("${CMAKE_BINARY_DIR}/include/")
+  endif()
 else()
   FLB_OPTION(FLB_JEMALLOC OFF)
 endif()
@@ -641,8 +695,13 @@ endif()
 
 # Onigmo (Regex Engine)
 # =====================
+FLB_OPTION_SYSTEM_LIB(onigmo)
 if(FLB_REGEX)
-  include(cmake/onigmo.cmake)
+  if(NOT FLB_USE_SYSTEM_onigmo)
+    include(cmake/onigmo.cmake)
+  else()
+    FLB_FORCE_PKG_CONFIG_LIB(onigmo)
+  endif()
   FLB_DEFINITION(FLB_HAVE_REGEX)
 endif()
 
@@ -660,8 +719,13 @@ endif()
 
 # LuaJIT (Scripting Support)
 # ==========================
+FLB_OPTION_SYSTEM_LIB(LuaJIT)
 if(FLB_LUAJIT)
-  include(cmake/luajit.cmake)
+  if(FLB_USE_SYSTEM_LuaJIT)
+    FLB_FORCE_PKG_CONFIG_LIB(luajit)
+  else()
+    include(cmake/luajit.cmake)
+  endif()
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
 endif()
 

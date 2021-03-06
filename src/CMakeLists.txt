@@ -268,11 +268,12 @@ endif()
 
 # AVRO Encoding
 if(FLB_AVRO_ENCODER)
-set(FLB_DEPS
-  ${FLB_DEPS}
-  avro-static
-  jansson
-  )
+  if(NOT FLB_USE_SYSTEM_avro)
+    set(FLB_DEPS ${FLB_DEPS} avro-static)
+    if(NOT FLB_USE_SYSTEM_jansson)
+      set(FLB_DEPS ${FLB_DEPS} jansson)
+    endif()
+  endif()
 endif()
 
 # Set static dependencies
@@ -280,7 +281,14 @@ set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
   jsmn
-  msgpack-c-static
+  )
+
+if(NOT FLB_USE_SYSTEM_msgpack)
+  set(FLB_DEPS ${FLB_DEPS} msgpack-c-static)
+endif()
+
+set(FLB_DEPS
+  ${FLB_DEPS}
   mpack-static
   chunkio-static
   miniz
@@ -288,8 +296,11 @@ set(FLB_DEPS
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
-  mbedtls
   )
+
+if(NOT FLB_USE_SYSTEM_mbedtls)
+  set(FLB_DEPS ${FLB_DEPS} mbedtls)
+endif()
 
 if(OPENSSL_FOUND)
   set(FLB_DEPS
