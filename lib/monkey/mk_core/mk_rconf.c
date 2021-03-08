@@ -340,6 +340,9 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         if (strncmp(buf, indent, indent_len) != 0 ||
             isblank(buf[indent_len]) != 0) {
             mk_config_error(path, line, "Invalid indentation level");
+            mk_mem_free(key);
+            mk_mem_free(val);
+            return -1;
         }
 
         if (buf[indent_len] == '#' || indent_len == len) {
