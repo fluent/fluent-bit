@@ -1,0 +1,72 @@
+name: Run unit tests on PR(s)
+on:
+  pull_request:
+    branches:
+      - master
+jobs:
+  run-unit-tests-amd64:
+    runs-on: [ubuntu-latest, macos-latest]
+    strategy:
+      max-parallel: 48
+      fail-fast: true
+      matrix:
+        flb_option: [ "-DFLB_JEMALLOC=On", "-DFLB_JEMALLOC=Off", "-DFLB_SMALL=On", "-DSANITIZE_ADDRESS=On", "-DSANITIZE_UNDEFINED=On", "-DFLB_COVERAGE=On"]
+        compiler: [ gcc, clang ]
+        exclude:
+          - os: macos-latest
+            flb_option: "-DFLB_JEMALLOC=On"
+          - os: macos-latest
+            flb_option: "-DFLB_SMALL=On"
+          - os: macos-latest
+            flb_option: "-DSANITIZE_ADDRESS=On"
+          - os: macos-latest
+            flb_option: "-DSANITIZE_UNDEFINED=On"
+          - os: macos-latest
+            flb_option: "-DFLB_COVERAGE=On"
+    steps:
+      - name: Setup environment ubuntu-latest
+        if: ${{ matrix.os }} == "ubuntu-latest"
+        run: |
+          sudo apt install -yyq gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr
+
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Run ci/do-ut on ${{ matrix.os }} with gcc
+        if: ${{ matrix.os }} == "ubuntu-latest" && ${{ matrix.compiler }} == "gcc"
+        run: |
+          echo "CC = $CC, CXX = $CXX"
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          sudo usermod -a -G systemd-journal $(id -un)
+          sudo -E "PATH=$PATH ci/do-ut"
+        env:
+          CC: gcc-7
+          CXX: g++-7
+
+      - name: Run ci/do-ut on ${{ matrix.os }} with clang
+        if: ${{ matrix.os }} == "ubuntu-latest" && ${{ matrix.compiler }} == "clang"
+        run: |
+          echo "CC = $CC, CXX = $CXX"
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          sudo usermod -a -G systemd-journal $(id -un)
+          sudo -E "PATH=$PATH ci/do-ut"
+        env:
+          CC: clang
+          CXX: clang++
+
+
+      - name: Run ci/do-ut on ${{ matrix.os }}
+        if: ${{ matrix.os }} == "macos-latest" && ${{ matrix.compiler }} == "gcc"
+        run: |
+          echo "CC = $CC, CXX = $CXX"
+          brew update
+          brew install bison flex || true
+          ci/do-ut || true
+        env:
+          CC: gcc
+          CXX: g++
