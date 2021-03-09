@@ -3,9 +3,13 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
+    types: [opened, edited, synchronize]
 jobs:
   run-unit-tests-amd64:
-    name: Run unit tests on amd64 for ${{ matrix.os }} - master
+    name: Run unit tests on amd64 for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 48
@@ -25,6 +29,9 @@ jobs:
             flb_option: "-DSANITIZE_UNDEFINED=On"
           - os: macos-latest
             flb_option: "-DFLB_COVERAGE=On"
+          - os: macos-latest
+            flb_option: "-DFLB_JEMALLOC=Off"
+            compiler: clang
     steps:
       - name: Setup environment ubuntu-latest
         if: matrix.os == 'ubuntu-latest'
@@ -51,7 +58,7 @@ jobs:
           CXX: ${{ matrix.compiler }}
 
       - name: Run ci/do-ut on ${{ matrix.os }}
-        if: ${{ matrix.os == 'macos-latest' && matrix.compiler == 'gcc' }}
+        if: matrix.os == 'macos-latest'
         run: |
           echo "CC = $CC, CXX = $CXX"
           brew update
