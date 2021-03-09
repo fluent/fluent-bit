@@ -3,6 +3,7 @@ on:
   pull_request:
     branches:
       - master
+    types: [opened, edited, synchronize, review_requested]
 jobs:
   run-unit-tests-amd64:
     runs-on: ${{ matrix.os }}
