@@ -496,6 +496,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
     flb_plg_info(ctx->ins, "S3 endpoint: %s", ctx->endpoint);
     flb_plg_info(ctx->ins, "S3 port: %d", ctx->port);
+    flb_plg_info(ctx->ins, "S3 veirfy TLS: %d", ctx->tls_verify);
 
     tmp = flb_output_get_property("sts_endpoint", ins);
     if (tmp) {
@@ -527,7 +528,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->content_type = (char *) tmp;
     }
     
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
+    ctx->client_tls = flb_tls_create(ctx->tls_verify,
                                      ins->tls_debug,
                                      ins->tls_vhost,
                                      ins->tls_ca_path,
@@ -1542,6 +1543,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "role_arn", NULL,
      0, FLB_FALSE, 0,
      "ARN of an IAM role to assume (ex. for cross account access)."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tls_verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_s3, tls_verify),
+     "Verify TLS of the S3 API."
     },
     {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,

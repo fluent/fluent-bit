@@ -100,6 +100,7 @@ struct flb_s3 {
     int free_endpoint;
     int use_put_object;
     int port;
+    int tls_verify;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
