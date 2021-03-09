@@ -90,6 +90,18 @@ struct flb_config_map upstream_net[] = {
      "before it is retired."
     },
 
+    {
+     FLB_CONFIG_MAP_TIME, "net.backoff_init", "0s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, backoff_init),
+     "Set backoff time in seconds after the first connection failure."
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "net.backoff_max", "0s",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, backoff_max),
+     "Set maximal connection backoff time in seconds."
+    },
+
     /* EOF */
     {0}
 };
@@ -504,6 +516,12 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     now = time(NULL);
 
+    if (u->backoff_next_attempt_time > now) {
+        flb_debug("[upstream] skipping connection to %s:%i because of connection backoff for another %i seconds",
+                  u->tcp_host, u->tcp_port, u->backoff_next_attempt_time - now);
+        return NULL;
+    }
+
     conn = flb_calloc(1, sizeof(struct flb_upstream_conn));
     if (!conn) {
         flb_errno();
@@ -639,12 +657,16 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
               "net.connect_timeout        = %i seconds\n"
               "net.source_address         = %s\n"
               "net.keepalive              = %s\n"
-              "net.keepalive_idle_timeout = %i seconds",
+              "net.keepalive_idle_timeout = %i seconds\n"
+              "net.backoff_init           = %i seconds\n"
+              "net.backoff_max            = %i seconds",
               u->tcp_host, u->tcp_port,
               u->net.connect_timeout,
               u->net.source_address ? u->net.source_address: "any",
               u->net.keepalive ? "enabled": "disabled",
-              u->net.keepalive_idle_timeout);
+              u->net.keepalive_idle_timeout,
+              u->net.backoff_init,
+              u->net.backoff_max);
 
     /* On non Keepalive mode, always create a new TCP connection */
     if (u->net.keepalive == FLB_FALSE) {

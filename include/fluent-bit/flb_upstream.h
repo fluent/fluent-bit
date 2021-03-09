@@ -83,6 +83,10 @@ struct flb_upstream {
 
     struct flb_config *config;
     struct mk_list _head;
+
+    /* Backoff state. */
+    time_t backoff_next_attempt_time;
+    int backoff_last_duration;
 };
 
 
