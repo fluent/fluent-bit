@@ -99,6 +99,7 @@ struct flb_s3 {
     char *content_type;
     int free_endpoint;
     int use_put_object;
+    int port;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
