@@ -41,6 +41,9 @@
 #include "arrow/compress.h"
 #endif
 
+#define DEFAULT_S3_PORT 443
+#define DEFAULT_S3_INSECURE_PORT 80
+
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
@@ -497,6 +500,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct flb_aws_client_generator *generator;
     (void) config;
     (void) data;
+    char *ep;
+    struct flb_split_entry *tok;
+    struct mk_list *split;
+    int list_size;
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
@@ -657,12 +664,48 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
-        ctx->endpoint = removeProtocol((char *) tmp, "https://");
-        ctx->free_endpoint = FLB_FALSE;
+        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
+        if (ctx->insecure == FLB_TRUE) {
+          ep = removeProtocol((char *) tmp, "http://");
+        }
+        else {
+          ep = removeProtocol((char *) tmp, "https://");
+        }
+
+        split = flb_utils_split((const char *)ep, ':', 1);
+        if (!split) {
+          flb_errno();
+          return -1;
+        }
+        list_size = mk_list_size(split);
+        if (list_size > 2) {
+          flb_plg_error(ctx->ins, "Failed to split endpoint");
+          flb_utils_split_free(split);
+          return -1;
+        }
+
+        tok = mk_list_entry_first(split, struct flb_split_entry, _head);
+        ctx->endpoint = flb_strndup(tok->value, tok->len);
+        if (!ctx->endpoint) {
+            flb_errno();
+            flb_utils_split_free(split);
+            return -1;
+        }
+        ctx->free_endpoint = FLB_TRUE;
+        if (list_size == 2) {
+          tok = mk_list_entry_next(&tok->_head, struct flb_split_entry, _head, split);
+          ctx->port = atoi(tok->value);
+        }
+        else {
+          ctx->port = ctx->insecure == FLB_TRUE ? DEFAULT_S3_INSECURE_PORT : DEFAULT_S3_PORT;
+        }
+        flb_utils_split_free(split);
     }
     else {
         /* default endpoint for the given region */
         ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
+        ctx->insecure = FLB_FALSE;
+        ctx->port = DEFAULT_S3_PORT;
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
@@ -705,18 +748,20 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (tmp) {
         ctx->content_type = (char *) tmp;
     }
-    
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
-                                     ins->tls_debug,
-                                     ins->tls_vhost,
-                                     ins->tls_ca_path,
-                                     ins->tls_ca_file,
-                                     ins->tls_crt_file,
-                                     ins->tls_key_file,
-                                     ins->tls_key_passwd);
-    if (!ctx->client_tls) {
-        flb_plg_error(ctx->ins, "Failed to create tls context");
-        return -1;
+
+    if (ctx->insecure == FLB_FALSE) {
+        ctx->client_tls = flb_tls_create(ins->tls_verify,
+                                         ins->tls_debug,
+                                         ins->tls_vhost,
+                                         ins->tls_ca_path,
+                                         ins->tls_ca_file,
+                                         ins->tls_crt_file,
+                                         ins->tls_key_file,
+                                         ins->tls_key_passwd);
+        if (!ctx->client_tls) {
+            flb_plg_error(ctx->ins, "Failed to create tls context");
+            return -1;
+        }
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -819,18 +864,24 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->provider = ctx->provider;
     ctx->s3_client->region = ctx->region;
     ctx->s3_client->service = "s3";
-    ctx->s3_client->port = 443;
+    ctx->s3_client->port = ctx->port;
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
     ctx->s3_client->retry_requests = ctx->retry_requests;
 
-    ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
-                                                   FLB_IO_TLS, ctx->client_tls);
+    if (ctx->insecure == FLB_TRUE) {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TCP, NULL);
+    } else {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TLS, ctx->client_tls);
+    }
     if (!ctx->s3_client->upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
     }
+
     flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
 
     ctx->s3_client->host = ctx->endpoint;
