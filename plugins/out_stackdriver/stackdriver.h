@@ -34,12 +34,11 @@
 #define FLB_STD_SCOPE     "https://www.googleapis.com/auth/logging.write"
 
 /* Stackdriver authorization URL */
-#define FLB_STD_AUTH_URL  "https://www.googleapis.com/oauth2/v4/token"
+#define FLB_STD_AUTH_URL  "https://oauth2.googleapis.com/token"
 
 /* Stackdriver Logging 'write' end-point */
 #define FLB_STD_WRITE_URI "/v2/entries:write"
-#define FLB_STD_WRITE_URL \
-    "https://logging.googleapis.com" FLB_STD_WRITE_URI
+#define FLB_STD_WRITE_URL "https://logging.googleapis.com" FLB_STD_WRITE_URI
 
 /* Timestamp format */
 #define FLB_STD_TIME_FMT  "%Y-%m-%dT%H:%M:%S"
