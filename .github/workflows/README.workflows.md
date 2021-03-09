@@ -11,4 +11,5 @@
 | [integration-build-pr](./integration-build-pr.yaml)     | Builds a docker image to be used in integration testing (pr branch) | on new commit/push on PR(s) |
 | [integration-run-master](./integration-run-master.yaml)     | Runs the integration testing suite on master | on new image built|
 | [integration-run-pr](./integration-run-pr.yaml)     | Runs the integration testing suite on a PR branch | pr opened / label created 'ok-to-test' |
+| [unit-tests](./unit-tests.yaml)     | Runs the unit tests suite on master push or new PR | PR opened, merge in master branch |
 
