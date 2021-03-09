@@ -422,6 +422,12 @@ if(FLB_TLS)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
 
+  # Link OpenSSL statically on Windows.
+  if (FLB_SYSTEM_WINDOWS)
+    set(OPENSSL_USE_STATIC_LIBS ON)
+    set(OPENSSL_MSVC_STATIC_RT  ON)
+  endif()
+
   # find OpenSSL (our preferred choice now)
   find_package(OpenSSL)
   if(OPENSSL_FOUND)
