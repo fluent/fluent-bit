@@ -32,7 +32,7 @@
 #define FLB_BIGQUERY_SCOPE     "https://www.googleapis.com/auth/bigquery.insertdata"
 
 /* BigQuery authorization URL */
-#define FLB_BIGQUERY_AUTH_URL  "https://www.googleapis.com/oauth2/v4/token"
+#define FLB_BIGQUERY_AUTH_URL  "https://oauth2.googleapis.com/token"
 
 #define FLB_BIGQUERY_RESOURCE_TEMPLATE  "/bigquery/v2/projects/%s/datasets/%s/tables/%s/insertAll"
 #define FLB_BIGQUERY_URL_BASE           "https://www.googleapis.com"
