@@ -43,7 +43,7 @@ jobs:
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
           sudo usermod -a -G systemd-journal $(id -un)
-          #sudo -E "PATH=$PATH ci/do-ut"
+          sudo -E su -p $(id -un) -c "PATH=$PATH ci/do-ut"
         env:
           CC: ${{ matrix.compiler }}
           CXX: ${{ matrix.compiler }}
