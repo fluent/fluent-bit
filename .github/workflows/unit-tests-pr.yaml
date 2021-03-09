@@ -63,7 +63,7 @@ jobs:
 
 
       - name: Run ci/do-ut on ${{ matrix.os }}
-        if: ${{ matrix.os == "macos-latest" && matrix.compiler == "gcc" }}
+        if: ${{ matrix.os == 'macos-latest' && matrix.compiler == 'gcc' }}
         run: |
           echo "CC = $CC, CXX = $CXX"
           brew update
