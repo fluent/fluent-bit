@@ -35,32 +35,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Run ci/do-ut on ${{ matrix.os }} with gcc
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.compiler == 'gcc' }}
+      - name: Run ci/do-ut on ${{ matrix.os }} with ${{ matrix.compiler }}
+        if: matrix.os == 'ubuntu-latest'
         run: |
           echo "CC = $CC, CXX = $CXX"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
-          sudo usermod -a -G systemd-journal $(id -un)
-          sudo -E "PATH=$PATH ci/do-ut"
         env:
-          CC: gcc-7
-          CXX: g++-7
-
-      - name: Run ci/do-ut on ${{ matrix.os }} with clang
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.compiler == 'clang' }}
-        run: |
-          echo "CC = $CC, CXX = $CXX"
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
-          sudo usermod -a -G systemd-journal $(id -un)
-          sudo -E "PATH=$PATH ci/do-ut"
-        env:
-          CC: clang
-          CXX: clang++
-
+          CC: ${{ matrix.compiler }}
+          CXX: ${{ matrix.compiler }}
 
       - name: Run ci/do-ut on ${{ matrix.os }}
         if: ${{ matrix.os == 'macos-latest' && matrix.compiler == 'gcc' }}
