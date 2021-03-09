@@ -5,12 +5,13 @@ on:
       - master
 jobs:
   run-unit-tests-amd64:
-    runs-on: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 48
       fail-fast: true
       matrix:
         flb_option: [ "-DFLB_JEMALLOC=On", "-DFLB_JEMALLOC=Off", "-DFLB_SMALL=On", "-DSANITIZE_ADDRESS=On", "-DSANITIZE_UNDEFINED=On", "-DFLB_COVERAGE=On"]
+        os: [ubuntu-latest, macos-latest]
         compiler: [ gcc, clang ]
         exclude:
           - os: macos-latest
