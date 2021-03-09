@@ -27,7 +27,7 @@ jobs:
             flb_option: "-DFLB_COVERAGE=On"
     steps:
       - name: Setup environment ubuntu-latest
-        if: ${{ matrix.os }} == "ubuntu-latest"
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt install -yyq gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr
 
@@ -36,7 +36,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Run ci/do-ut on ${{ matrix.os }} with gcc
-        if: ${{ matrix.os }} == "ubuntu-latest" && ${{ matrix.compiler }} == "gcc"
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.compiler == 'gcc' }}
         run: |
           echo "CC = $CC, CXX = $CXX"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
@@ -49,7 +49,7 @@ jobs:
           CXX: g++-7
 
       - name: Run ci/do-ut on ${{ matrix.os }} with clang
-        if: ${{ matrix.os }} == "ubuntu-latest" && ${{ matrix.compiler }} == "clang"
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.compiler == 'clang' }}
         run: |
           echo "CC = $CC, CXX = $CXX"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
@@ -63,7 +63,7 @@ jobs:
 
 
       - name: Run ci/do-ut on ${{ matrix.os }}
-        if: ${{ matrix.os }} == "macos-latest" && ${{ matrix.compiler }} == "gcc"
+        if: ${{ matrix.os == "macos-latest" && matrix.compiler == "gcc" }}
         run: |
           echo "CC = $CC, CXX = $CXX"
           brew update
