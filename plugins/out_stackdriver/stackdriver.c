@@ -291,8 +291,8 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
-                                    "urn:ietf:params:oauth:"
-                                    "grant-type:jwt-bearer", -1);
+                                    "urn%3Aietf%3Aparams%3Aoauth%3A"
+                                    "grant-type%3Ajwt-bearer", -1);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         flb_sds_destroy(sig_data);
