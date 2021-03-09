@@ -1,4 +1,4 @@
-name: Run unit tests on PR(s)
+name: Run unit tests
 on:
   push:
     branches:
