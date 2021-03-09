@@ -9,7 +9,7 @@ on:
     types: [opened, edited, synchronize]
 jobs:
   run-unit-tests-amd64:
-    name: Run unit tests on amd64 for ${{ matrix.os }}
+    name: Run unit tests on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 48
