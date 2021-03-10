@@ -229,6 +229,9 @@ static int check_connection(struct flb_http_client *c)
     if (ret == FLB_HTTP_NOT_FOUND) {
         return FLB_HTTP_NOT_FOUND;
     }
+    else if (ret == FLB_HTTP_MORE) {
+        return FLB_HTTP_MORE;
+    }
 
     buf = flb_malloc(len + 1);
     if (!buf) {
