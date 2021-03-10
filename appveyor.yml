@@ -21,6 +21,8 @@ install:
   - ps: Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
 
 before_build:
+  - git clone --depth=1 https://github.com/calyptia/fluent-bit-ci.git ci
+  - ps: Copy-Item -Path .\ci\scripts\run-unit-tests.ps1 .\ci\do-ut.ps1
   - if %PLATFORM%==Win32 call "%vspath%\VC\Auxiliary\Build\vcvars32.bat"
   - if %PLATFORM%==x64   call "%vspatH%\VC\Auxiliary\Build\vcvars64.bat"
 
