@@ -62,6 +62,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     flb_ra_dump(ra);
 
+    if (outbuf != NULL) {
+        flb_free(outbuf);
+    }
+
     flb_sds_destroy(str);
     flb_ra_destroy(ra);
     flb_sds_destroy(ra_str);
