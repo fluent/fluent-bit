@@ -101,6 +101,7 @@ struct flb_s3 {
     int use_put_object;
     int port;
     int tls_verify;
+    int insecure;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
