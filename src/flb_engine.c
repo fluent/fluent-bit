@@ -215,6 +215,17 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         flb_task_users_dec(task, FLB_TRUE);
     }
     else if (ret == FLB_RETRY) {
+        if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+            flb_info("[engine] chunk '%s' is not retried (no retry config): "
+                     "task_id=%i, input=%s > output=%s (out_id=%i)",
+                     flb_input_chunk_get_name(task->ic),
+                     task_id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins), out_id);
+            flb_task_users_dec(task, FLB_TRUE);
+            return 0;
+        }
+
         /* Create a Task-Retry */
         retry = flb_task_retry_create(task, ins);
         if (!retry) {
