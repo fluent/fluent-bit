@@ -405,6 +405,9 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "'s3_key_format' must start with a '/'");
             return -1;
         }
+        if (strstr((char *) tmp, "$UUID")) {
+            ctx->key_fmt_has_uuid = FLB_TRUE;
+        }
     }
 
     /* validate 'total_file_size' */
@@ -1033,7 +1036,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     }
 
     len = strlen(s3_key);
-    if ((len + 16) <= 1024) {
+    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid) {
         append_random = FLB_TRUE;
         len += 16;
     }
