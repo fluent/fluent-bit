@@ -24,6 +24,11 @@
 #include "azure.h"
 #include "azure_conf.h"
 
+/*
+ * Returns FLB_TRUE if the specified value is true, otherwise FLB_FALSE
+ */
+static int bool_value(const char *v);
+
 struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config)
 {
@@ -108,6 +113,15 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     if (!ctx->time_key) {
         flb_azure_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* config: 'time_generated' */
+    tmp = flb_output_get_property("time_generated", ins);
+    if (tmp) {
+        ctx->time_generated = bool_value(tmp);
+    }
+    else {
+        ctx->time_generated = FLB_FALSE;
     }
 
     /* Validate hostname given by command line or 'Host' property */
@@ -234,4 +248,19 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
     flb_free(ctx);
 
     return 0;
+}
+
+int bool_value(const char *v)
+{
+    if (strcasecmp(v, "true") == 0) {
+        return FLB_TRUE;
+    }
+    else if (strcasecmp(v, "on") == 0) {
+        return FLB_TRUE;
+    }
+    else if (strcasecmp(v, "yes") == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }

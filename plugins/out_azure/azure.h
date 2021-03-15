@@ -47,6 +47,9 @@ struct flb_azure {
     /* records */
     flb_sds_t time_key;
 
+    /* time_generated: on/off */
+    int time_generated;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
