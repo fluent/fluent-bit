@@ -604,6 +604,13 @@ static struct flb_config_map config_map[] = {
      "set exclusive locking mode, increase performance but don't allow "
      "external connections to the database file."
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "db.wal", "on",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, db_wal),
+     "enable or disable Work Ahead Logging mechanism (WAL). Enabling WAL "
+     "provides higher performance. Note that WAL is not compatible with "
+     "shared network file systems."
+    },
 #endif
 
     /* Multiline Options */
