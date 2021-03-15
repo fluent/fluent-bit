@@ -119,6 +119,15 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* config: 'time_generated' */
+    tmp = flb_output_get_property("time_generated", ins);
+    if (tmp) {
+        ctx->time_generated = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->time_generated = FLB_FALSE;
+    }
+
     /* Validate hostname given by command line or 'Host' property */
     if (!ins->host.name && !cid) {
         flb_plg_error(ctx->ins, "property 'customer_id' is not defined");
