@@ -366,8 +366,7 @@ int flb_filter_init_all(struct flb_config *config)
             ) {
             flb_warn("[filter] NO match rule for %s filter instance, unloading.",
                      ins->name);
-            mk_list_del(&ins->_head);
-            flb_free(ins);
+            flb_filter_instance_destroy(ins);
             continue;
         }
         if (ins->log_level == -1) {
