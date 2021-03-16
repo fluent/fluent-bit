@@ -221,8 +221,14 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
-    flb_http_add_header(c, "Authorization", 13,
-                        ctx->auth_header, flb_sds_len(ctx->auth_header));
+    /* Try to use http_user and http_passwd if not, fallback to auth_header */
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+    else if (ctx->auth_header) {
+        flb_http_add_header(c, "Authorization", 13,
+                            ctx->auth_header, flb_sds_len(ctx->auth_header));
+    }
 
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
