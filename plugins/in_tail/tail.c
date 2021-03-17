@@ -607,7 +607,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "db.journal_mode", "WAL",
      0, FLB_TRUE, offsetof(struct flb_tail_config, db_journal_mode),
-     "enable or disable Work Ahead Logging mechanism (WAL). Enabling WAL "
+     "Option to Provide WAL configuration for Work Ahead Logging mechanism (WAL). Enabling WAL "
      "provides higher performance. Note that WAL is not compatible with "
      "shared network file systems."
     },
