@@ -14,7 +14,8 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-mas
 
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -25,7 +26,7 @@ RUN apt-get update && \
     libssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev \
+    libsystemd-dev/buster-backports \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
@@ -70,13 +71,14 @@ FROM arm32v7/debian:buster-slim
 
 COPY --from=builder /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
 
-RUN apt-get update && \
+RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
       libssl1.1 \
       libsasl2-2 \
       pkg-config \
       libpq5 \
-      libsystemd0 \
+      libsystemd0/buster-backports \
       zlib1g \
       ca-certificates
 
