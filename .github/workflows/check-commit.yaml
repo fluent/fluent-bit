@@ -16,6 +16,6 @@ jobs:
         with:
           pattern: '^[a-z\-]+\:[ ]{0,1}[a-z]+[a-zA-Z0-9 \-\.\:]+$'
           error: 'Invalid commit subject. Please refer to: https://github.com/fluent/fluent-bit/blob/master/CONTRIBUTING.md#commit-changes'
-          checkAllCommitMessages: 'true'
+          checkAllCommitMessages: 'false'
           excludeDescription: 'true'
           accessToken: ${{ secrets.GITHUB_TOKEN }}
