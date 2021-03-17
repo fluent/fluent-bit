@@ -648,6 +648,7 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+
 struct flb_input_plugin in_tail_plugin = {
     .name         = "tail",
     .description  = "Tail files",
