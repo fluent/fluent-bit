@@ -609,7 +609,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
             flb_sds_destroy(tmp);
         }
         else {
-            ins->retry_limit = FLB_OUT_RETRY_NONE;
+            ins->retry_limit = 1;
         }
     }
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {
