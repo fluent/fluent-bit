@@ -1,7 +1,16 @@
 # ![logo](fluentbit_logo.png)
 
-Travis CI:
-[![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
+### CI Status
+
+| CI Workflow       | Status             |
+|-------------------|--------------------|
+| Unit Tests (master) | ![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=master) |
+| Integration Tests (master) | ![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml/badge.svg)|
+| Latest release build |  ![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml/badge.svg)|
+| Docker images (master) | ![CI/Docker Images](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml/badge.svg)|
+
+
+## Project Description
 
 [Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Windows, Embedded Linux, MacOS and BSD family operating systems. It's part of the Graduated [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
 
