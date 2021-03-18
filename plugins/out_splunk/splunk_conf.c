@@ -86,9 +86,28 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Splunk Auth Token */
-    tmp = flb_output_get_property("splunk_token", ins);
+    /* HTTP Auth */
+    tmp = flb_output_get_property("http_user", ins);
     if (tmp) {
+        ctx->http_user = flb_strdup(tmp);
+        tmp = flb_output_get_property("http_passwd", ins);
+        if (tmp) {
+            ctx->http_passwd = flb_strdup(tmp);
+        }
+        else {
+            ctx->http_passwd = flb_strdup("");
+        }
+    }
+
+    /* No http_user is set, fallback to splunk_token, if splunk_token is unset, fail. */
+    if(!ctx->http_user) {
+        /* Splunk Auth Token */
+        tmp = flb_output_get_property("splunk_token", ins);
+        if(!tmp) {
+            flb_plg_error(ctx->ins, "either splunk_token or http_user should be set");
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
         ctx->auth_header = flb_sds_create("Splunk ");
         t = flb_sds_cat(ctx->auth_header, tmp, strlen(tmp));
         if (t) {
@@ -98,30 +117,6 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "error on token generation");
             flb_splunk_conf_destroy(ctx);
             return NULL;
-        }
-    }
-    else {
-        flb_plg_error(ctx->ins, "no splunk_token configuration key defined");
-        flb_splunk_conf_destroy(ctx);
-        return NULL;
-    }
-
-    /* HTTP Auth */
-    tmp = flb_output_get_property("http_user", ins);
-    if (tmp && ctx->auth_header) {
-        flb_plg_error(ctx->ins, "splunk_token and http_user cannot be used at"
-                      " the same time");
-        flb_splunk_conf_destroy(ctx);
-        return NULL;
-    }
-    if (tmp) {
-        ctx->http_user = flb_strdup(tmp);
-        tmp = flb_output_get_property("http_passwd", ins);
-        if (tmp) {
-            ctx->http_passwd = flb_strdup(tmp);
-        }
-        else {
-            ctx->http_passwd = flb_strdup("");
         }
     }
 
