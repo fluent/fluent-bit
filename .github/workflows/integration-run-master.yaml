@@ -151,3 +151,11 @@ jobs:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
           IMAGE_TAG: x86_64-master
         working-directory: ci/
+
+      - run: |
+          ./scripts/grafana-add-tag.sh
+        env:
+          GRAFANA_CLOUD_TOKEN: ${{ secrets.GRAFANA_CLOUD_TOKEN }}
+          COMMIT_ID: ${{ github.event.workflow_run.head_sha }}
+        working-directory: ci/
+
