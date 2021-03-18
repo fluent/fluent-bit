@@ -586,85 +586,78 @@ static int msgpack_to_syslog(struct flb_syslog *ctx, msgpack_object *o,
               continue;
             }
 
-            if ((ctx->severity_key != NULL) &&
-                flb_sds_cmp(ctx->severity_key, key, key_len) == 0) {
+            if ((ctx->severity_key != NULL)) {
                 if (msg->severity == -1) {
-                    if ((val_len == 1) && (val[0] >= '0' && val[0] <= '7')) {
-                        msg->severity = val[0]-'0';
+                    if ((strlen(ctx->severity_key) == 1) && (ctx->severity_key[0] >= '0' && ctx->severity_key[0] <= '7')) {
+                        msg->severity = ctx->severity_key[0]-'0';
                     }
                     else {
                         int i;
                         for (i=0; syslog_severity[i].name != NULL; i++) {
-                            if ((syslog_severity[i].len == val_len) &&
-                                (!strncasecmp(syslog_severity[i].name, val, val_len))) {
+                            if ((syslog_severity[i].len == strlen(ctx->severity_key)) &&
+                                (!strncasecmp(syslog_severity[i].name, ctx->severity_key, strlen(ctx->severity_key)))) {
                                 msg->severity = syslog_severity[i].value;
                             }
                         }
                         if (!syslog_severity[i].name) {
                             flb_plg_warn(ctx->ins, "invalid severity: '%.*s'",
-                                         val_len, val);
+                                         strlen(ctx->severity_key), ctx->severity_key);
                         }
                     }
                 }
             }
-            else if ((ctx->facility_key != NULL) &&
-                     flb_sds_cmp(ctx->facility_key, key, key_len) == 0) {
+            if ((ctx->facility_key != NULL)) {
                 if (msg->facility == -1) {
-                    if ((val_len == 1) && (val[0] >= '0' && val[0] <= '9')) {
-                        msg->facility = val[0]-'0';
+                    if ((strlen(ctx->facility_key) == 1) && (ctx->facility_key[0] >= '0' && ctx->facility_key[0] <= '9')) {
+                        msg->facility = ctx->facility_key[0]-'0';
                     }
-                    else if ((val_len == 2) &&
-                             (val[0] >= '0' && val[0] <= '2') &&
-                             (val[1] >= '0' && val[1] <= '9')) {
-                        msg->facility = (val[0]-'0')*10;
-                        msg->facility += (val[1]-'0');
+                    else if ((strlen(ctx->facility_key) == 2) &&
+                             (ctx->facility_key[0] >= '0' && ctx->facility_key[0] <= '2') &&
+                             (ctx->facility_key[1] >= '0' && ctx->facility_key[1] <= '9')) {
+                        msg->facility = (ctx->facility_key[0]-'0')*10;
+                        msg->facility += (ctx->facility_key[1]-'0');
                         if (!((msg->facility >= 0) && (msg->facility <=23))) {
                             flb_plg_warn(ctx->ins, "invalid facility: '%.*s'",
-                                         val_len, val);
+                                         strlen(ctx->facility_key), ctx->facility_key);
                             msg->facility= -1;
                         }
                     }
                     else {
                         int i;
                         for (i=0; syslog_facility[i].name != NULL; i++) {
-                            if ((syslog_facility[i].len == val_len) &&
-                                (!strncasecmp(syslog_facility[i].name, val, val_len))) {
+                            if ((syslog_facility[i].len == strlen(ctx->facility_key)) &&
+                                (!strncasecmp(syslog_facility[i].name, ctx->facility_key, strlen(ctx->facility_key)))) {
                                 msg->facility = syslog_facility[i].value;
                             }
                         }
                         if (!syslog_facility[i].name) {
                             flb_plg_warn(ctx->ins, "invalid facility: '%.*s'",
-                                         val_len, val);
+                                         strlen(ctx->facility_key), ctx->facility_key);
                         }
                     }
                 }
             }
-            else if ((ctx->hostname_key != NULL) &&
-                     flb_sds_cmp(ctx->hostname_key, key, key_len) == 0) {
+            if ((ctx->hostname_key != NULL)) {
                 if (!msg->hostname) {
-                    msg->hostname = flb_sds_create_len(val, val_len);
+                    msg->hostname = flb_sds_create_len(ctx->hostname_key, strlen(ctx->hostname_key));
                 }
             }
-            else if ((ctx->appname_key != NULL) &&
-                     flb_sds_cmp(ctx->appname_key, key, key_len) == 0) {
+            if ((ctx->appname_key != NULL)) {
                 if (!msg->appname) {
-                    msg->appname = flb_sds_create_len(val, val_len);
+                    msg->appname = flb_sds_create_len(ctx->appname_key, strlen(ctx->appname_key));
                 }
             }
-            else if ((ctx->procid_key != NULL) &&
-                     flb_sds_cmp(ctx->procid_key, key, key_len) == 0) {
+            if ((ctx->procid_key != NULL)) {
                 if (!msg->procid) {
-                    msg->procid = flb_sds_create_len(val, val_len);
+                    msg->procid = flb_sds_create_len(ctx->procid_key, strlen(ctx->procid_key));
                 }
             }
-            else if ((ctx->msgid_key != NULL) &&
-                     flb_sds_cmp(ctx->msgid_key, key, key_len) == 0) {
+            if ((ctx->msgid_key != NULL)) {
                 if (!msg->msgid) {
-                    msg->msgid = flb_sds_create_len(val, val_len);
+                    msg->msgid = flb_sds_create_len(ctx->msgid_key, strlen(ctx->msgid_key));
                 }
             }
-            else if ((ctx->message_key != NULL) &&
-                     flb_sds_cmp(ctx->message_key, key, key_len) == 0) {
+            if ((ctx->message_key != NULL)) {
                 if (!msg->message) {
                     msg->message = flb_sds_create_len(val, val_len);
                 }
