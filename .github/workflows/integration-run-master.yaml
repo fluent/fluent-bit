@@ -149,5 +149,5 @@ jobs:
       - run: make integration
         env:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
-          IMAGE_TAG: x86_64-master-pr-${{ github.event.pull_request.number }}
+          IMAGE_TAG: x86_64-master
         working-directory: ci/
