@@ -162,4 +162,6 @@ jobs:
         env:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
           IMAGE_TAG: x86_64-master
+          GRAFANA_USERNAME: ${{ secrets.GRAFANA_USERNAME }}
+          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
         working-directory: ci/
