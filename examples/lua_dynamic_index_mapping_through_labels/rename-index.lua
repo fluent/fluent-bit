@@ -17,12 +17,14 @@ function indexcb_replace(tag, timestamp, record)
           updated_log = log
           updated_log["index"] = new_index
         else
+          #default index
           extracted_value = k8s_metadata["namespace_name"]
           extracted_value = "default_" .. extracted_value
           updated_log = log
           updated_log["index"] = extracted_value
         end
       else
+        #default index
         extracted_value = k8s_metadata["namespace_name"]
         extracted_value = "default_" .. extracted_value
         updated_log = log
