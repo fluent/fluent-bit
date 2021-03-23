@@ -649,7 +649,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         }
 
         /* Iterate every busy connection */
-        mk_list_foreach(u_head, &uq->busy_queue) {
+        mk_list_foreach_safe(u_head, tmp, &uq->busy_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
 
             drop = FLB_FALSE;
@@ -674,6 +674,7 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                  */
                 shutdown(u_conn->fd, SHUT_RDWR);
                 u_conn->net_error = ETIMEDOUT;
+                prepare_destroy_conn(u_conn);
             }
         }
 
