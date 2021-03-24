@@ -116,6 +116,19 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void in_mqtt_pause(void *data, struct flb_config *config)
+{
+    struct flb_in_mqtt_config *ctx = data;
+    flb_input_collector_pause(ctx->server_fd, ctx->ins);
+}
+
+
+static void in_mqtt_resume(void *data, struct flb_config *config)
+{
+    struct flb_in_mqtt_config *ctx = data;
+    flb_input_collector_resume(ctx->server_fd, ctx->ins);
+}
+
 /* Configuration properties map */	
 static struct flb_config_map config_map[] = {	
         	
@@ -131,6 +144,8 @@ struct flb_input_plugin in_mqtt_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_mqtt_collect,
     .cb_flush_buf = NULL,
+    .cb_pause     = in_mqtt_pause,
+    .cb_resume    = in_mqtt_resume,
     .cb_exit      = in_mqtt_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET,
