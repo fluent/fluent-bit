@@ -115,7 +115,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
             flb_plg_error(ctx->ins, "removing chunk %s:%s from the queue",
                           sbc->stream->name, sbc->chunk->name);
             cio_chunk_down(sbc->chunk);
-            cio_chunk_close(sbc->chunk, FLB_FALSE);
+            cio_chunk_close(sbc->chunk, FLB_TRUE);
             mk_list_del(&sbc->_head);
             flb_free(sbc);
             continue;
