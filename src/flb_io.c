@@ -73,6 +73,8 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
+        u_conn->fd = -1;
+        u_conn->event.fd = -1;
     }
 
     /* Check which connection mode must be done */
@@ -107,7 +109,6 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     if (u->flags & FLB_IO_TLS) {
         ret = flb_tls_session_create(u->tls, u_conn, coro);
         if (ret != 0) {
-            flb_socket_close(fd);
             return -1;
         }
     }
@@ -323,7 +324,6 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
-                flb_socket_close(u_conn->fd);
                 return -1;
             }
             flb_coro_yield(co, MK_FALSE);
