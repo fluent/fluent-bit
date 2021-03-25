@@ -3,8 +3,14 @@ set(src
   tail_dockermode.c
   tail_scan.c
   tail_config.c
-  tail_fs.c
+  tail_fs_stat.c
   tail.c)
+
+if(FLB_HAVE_INOTIFY)
+set(src
+    ${src}
+    tail_fs_inotify.c)
+endif()
 
 if(FLB_SQLDB)
 set(src
