@@ -547,9 +547,16 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         if (ret == -1) {
-            flb_error("[net] cannot connect to %s:%s", host, _port);
+            /* If the connection failed, just abort and report the problem */
+            flb_error("[net] socket #%i could not connect to %s:%s",
+                      fd, host, _port);
+            if (u_conn) {
+                u_conn->fd = -1;
+                u_conn->event.fd = -1;
+            }
             flb_socket_close(fd);
-            continue;
+            fd = -1;
+            break;
         }
         break;
     }
@@ -619,9 +626,11 @@ flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
          * the same Fluent Bit I/O API to deliver a message.
          */
         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
-            flb_error("Cannot connect to %s port %s", host, _port);
+            flb_error("[net] UDP socket %i could connect to %s:%s",
+                      fd, host, _port);
             flb_socket_close(fd);
-            continue;
+            fd = -1;
+            break;
         }
         break;
     }
