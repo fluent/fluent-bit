@@ -322,6 +322,8 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
 
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
+        u_conn->fd = -1;
+        u_conn->event.fd = -1;
     }
 
     /* remove connection from the queue */
