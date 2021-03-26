@@ -190,8 +190,8 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
               ++quote_cnt;
             }
             else if (buf[end] == '.' && (quote_cnt & 0x01)) {
-              // ignore '.' if it is inside a string/subkey
-              continue;
+                /* ignore '.' if it is inside a string/subkey */
+                continue;
             }
             else if (buf[end] == '.' || buf[end] == ' ' || buf[end] == ',' || buf[end] == '"') {
                 break;
@@ -229,7 +229,8 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
 
     /* Append remaining string */
     if (i - 1 > end && pre < i) {
-        rp_str = ra_parse_string(ra, buf, pre, i);
+        end = flb_sds_len(buf);
+        rp_str = ra_parse_string(ra, buf, pre, end);
         if (rp_str) {
             mk_list_add(&rp_str->_head, &ra->list);
         }
@@ -610,6 +611,10 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
     }
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (!rp->key) {
+        return FLB_FALSE;
+    }
+
     return flb_ra_key_value_get(rp->key->name, map, rp->key->subkeys,
                                 start_key, out_key, out_val);
 }
@@ -624,5 +629,9 @@ struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
     }
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (!rp->key) {
+        return NULL;
+    }
+
     return flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
 }
