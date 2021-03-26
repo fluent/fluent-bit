@@ -155,6 +155,61 @@ void cb_translate()
     msgpack_unpacked_destroy(&result);
 }
 
+void cb_translate_tag()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON message */
+    json =
+        "{\"k1\": \"string\", \"k2\": true, \"k3\": false," \
+        " \"k4\": 0.123456789, \"k5\": 123456789,"          \
+        " \"k6\": {\"s1\": {\"s2\": \"nested\"}}}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    fmt = "$TAG";
+    ra = flb_ra_create(fmt, FLB_TRUE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, "testapp", 7, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(flb_sds_len(str) == 7);
+
+    flb_sds_destroy(str);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
 void cb_dots_subkeys()
 {
     int len;
@@ -357,6 +412,7 @@ void cb_get_kv_pair()
 TEST_LIST = {
     { "keys"         , cb_keys},
     { "translate"    , cb_translate},
+    { "translate_tag", cb_translate_tag},
     { "dots_subkeys" , cb_dots_subkeys},
     { "array_id"     , cb_array_id},
     { "get_kv_pair"  , cb_get_kv_pair},
