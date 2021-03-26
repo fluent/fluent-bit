@@ -29,13 +29,13 @@
 #include <monkey/mk_core.h>
 #include <rbtree.h>
 
-/* Aggr num type */
+/* Aggregate num type */
 #define FLB_SP_NUM_I64       0
 #define FLB_SP_NUM_F64       1
 #define FLB_SP_BOOLEAN       2
 #define FLB_SP_STRING        3
 
-struct aggr_num {
+struct aggregate_num {
     int type;
     int ops;
     int64_t i64;
@@ -44,17 +44,21 @@ struct aggr_num {
     flb_sds_t string;
 };
 
-struct timeseries {
-    struct aggr_num *nums;
+struct aggregate_data {
+    struct aggregate_num *nums;
     struct mk_list _head;
 };
 
 struct timeseries_forecast {
-    struct aggr_num *nums;
+    struct aggregate_num *nums;
     struct mk_list _head;
 
-    double *offset;
-    double *latest_x;
+    // future time to forecast
+    double future_time;
+
+    // time offset (the first time value captured)
+    double offset;
+    double latest_x;
 
     double sigma_x;
     double sigma_y;
@@ -63,15 +67,15 @@ struct timeseries_forecast {
     double sigma_x2;
 };
 
-struct aggr_node {
+struct aggregate_node {
     int groupby_keys;
     int records;
     int nums_size;
-    struct aggr_num *nums;
-    struct aggr_num *groupby_nums;
+    struct aggregate_num *nums;
+    struct aggregate_num *groupby_nums;
 
-    /* Timeseries data */
-    struct timeseries **ts;
+    /* Aggregate data */
+    struct aggregate_data **aggregate_data;
 
     /* To keep track of the aggregation nodes */
     struct rb_tree_node _rb_head;
@@ -85,8 +89,8 @@ struct flb_sp_window_data {
 };
 
 struct flb_sp_hopping_slot {
-    struct rb_tree aggr_tree;
-    struct mk_list aggr_list;
+    struct rb_tree aggregate_tree;
+    struct mk_list aggregate_list;
     int records;
     struct mk_list _head;
 };
@@ -98,8 +102,8 @@ struct flb_sp_task_window {
     struct mk_event event;
     struct mk_event event_hop;
 
-    struct rb_tree aggr_tree;
-    struct mk_list aggr_list;
+    struct rb_tree aggregate_tree;
+    struct mk_list aggregate_list;
 
     /* Hopping window parameters */
     /*
@@ -133,7 +137,7 @@ struct flb_sp_task {
      */
     void *stream;
 
-    int aggr_keys;           /* do commands contains aggregated keys ? */
+    int aggregate_keys;      /* do commands contains aggregate keys? */
     struct flb_sp *sp;       /* parent context */
     struct flb_sp_cmd *cmd;  /* (SQL) commands */
 
@@ -167,8 +171,8 @@ struct flb_sp_task *flb_sp_task_create(struct flb_sp *sp, const char *name,
                                        const char *query);
 int flb_sp_fd_event(int fd, struct flb_sp *sp);
 void flb_sp_task_destroy(struct flb_sp_task *task);
-void groupby_nums_destroy(struct aggr_num *groupby_nums, int size);
-void flb_sp_aggr_node_destroy(struct flb_sp_cmd *cmd,
-                              struct aggr_node *aggr_node);
+void groupby_nums_destroy(struct aggregate_num *groupby_nums, int size);
+void flb_sp_aggregate_node_destroy(struct flb_sp_cmd *cmd,
+                                   struct aggregate_node *aggregate_node);
 
 #endif
