@@ -242,6 +242,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
 /* Clear the current payload and token */
 void flb_oauth2_payload_clear(struct flb_oauth2 *ctx)
 {
+    flb_sds_len_set(ctx->payload, 0);
     ctx->payload[0] = '\0';
     ctx->expires_in = 0;
     if (ctx->access_token){
