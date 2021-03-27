@@ -306,6 +306,11 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
     return u;
 }
 
+/*
+ * This function moves the 'upstream connection' into the queue to be
+ * destroyed. Note that the caller is responsible to validate and check
+ * required mutex if this is being used in multi-worker mode.
+ */
 static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
 {
     struct flb_upstream *u = u_conn->u;
@@ -337,6 +342,25 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
      * have been processed.
      */
     return 0;
+}
+
+/* 'safe' version of prepare_destroy_conn. It set locks if necessary */
+static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
+{
+    int ret;
+    struct flb_upstream *u = u_conn->u;
+
+    if (u->thread_safe == FLB_TRUE) {
+        pthread_mutex_lock(&u->mutex_lists);
+    }
+
+    ret = prepare_destroy_conn(u_conn);
+
+    if (u->thread_safe == FLB_TRUE) {
+        pthread_mutex_unlock(&u->mutex_lists);
+    }
+
+    return ret;
 }
 
 static int destroy_conn(struct flb_upstream_conn *u_conn)
@@ -419,7 +443,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     if (ret == -1) {
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
-        prepare_destroy_conn(conn);
+        prepare_destroy_conn_safe(conn);
         return NULL;
     }
 
@@ -515,9 +539,17 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
     mk_list_foreach_safe(head, tmp, &uq->av_queue) {
         conn = mk_list_entry(head, struct flb_upstream_conn, _head);
 
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_lock(&u->mutex_lists);
+        }
+
         /* This connection works, let's move it to the busy queue */
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &uq->busy_queue);
+
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_unlock(&u->mutex_lists);
+        }
 
         /* Reset errno */
         conn->net_error = -1;
@@ -527,7 +559,7 @@ struct flb_upstream_conn *flb_upstream_conn_get(struct flb_upstream *u)
             flb_debug("[upstream] KA connection #%i is in a failed state "
                       "to: %s:%i, cleaning up",
                       conn->fd, u->tcp_host, u->tcp_port);
-            prepare_destroy_conn(conn);
+            prepare_destroy_conn_safe(conn);
             conn = NULL;
             continue;
         }
@@ -569,7 +601,7 @@ static int cb_upstream_conn_ka_dropped(void *data)
     flb_debug("[upstream] KA connection #%i to %s:%i has been disconnected "
               "by the remote service",
               conn->fd, conn->u->tcp_host, conn->u->tcp_port);
-    return prepare_destroy_conn(conn);
+    return prepare_destroy_conn_safe(conn);
 }
 
 int flb_upstream_conn_release(struct flb_upstream_conn *conn)
@@ -586,8 +618,16 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
          * This connection is still useful, move it to the 'available' queue and
          * initialize variables.
          */
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_lock(&u->mutex_lists);
+        }
+
         mk_list_del(&conn->_head);
         mk_list_add(&conn->_head, &uq->av_queue);
+
+        if (u->thread_safe == FLB_TRUE) {
+            pthread_mutex_unlock(&u->mutex_lists);
+        }
 
         conn->ts_available = time(NULL);
 
@@ -606,7 +646,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
             flb_debug("[upstream] KA connection #%i to %s:%i could not be "
                       "registered, closing.",
                       conn->fd, conn->u->tcp_host, conn->u->tcp_port);
-            return prepare_destroy_conn(conn);
+            return prepare_destroy_conn_safe(conn);
         }
 
         flb_debug("[upstream] KA connection #%i to %s:%i is now available",
@@ -614,8 +654,11 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         conn->ka_count++;
 
         /* if we have exceeded our max number of uses of this connection, destroy it */
-        if (conn->u->net.keepalive_max_recycle > 0 && conn->ka_count > conn->u->net.keepalive_max_recycle) {
-            flb_debug("[upstream] KA count %i exceeded configured limit of %i: closing.", conn->ka_count, conn->u->net.keepalive_max_recycle);
+        if (conn->u->net.keepalive_max_recycle > 0 &&
+            conn->ka_count > conn->u->net.keepalive_max_recycle) {
+            flb_debug("[upstream] KA count %i exceeded configured limit "
+                      "of %i: closing.",
+                      conn->ka_count, conn->u->net.keepalive_max_recycle);
             return prepare_destroy_conn(conn);
         }
 
@@ -623,7 +666,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
     }
 
     /* No keepalive connections must be destroyed */
-    return prepare_destroy_conn(conn);
+    return prepare_destroy_conn_safe(conn);
 }
 
 int flb_upstream_conn_timeouts(struct mk_list *list)
@@ -707,10 +750,18 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
 
     uq = flb_upstream_queue_get(u);
 
+    if (u->thread_safe == FLB_TRUE) {
+        pthread_mutex_lock(&u->mutex_lists);
+    }
+
     /* Real destroy of connections context */
     mk_list_foreach_safe(head, tmp, &uq->destroy_queue) {
         u_conn = mk_list_entry(head, struct flb_upstream_conn, _head);
         destroy_conn(u_conn);
+    }
+
+    if (u->thread_safe == FLB_TRUE) {
+        pthread_mutex_lock(&u->mutex_lists);
     }
 
     return 0;
