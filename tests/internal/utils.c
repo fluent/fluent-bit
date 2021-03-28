@@ -115,6 +115,7 @@ void test_url_split()
 void test_write_str()
 {
     char buf[10];
+    char japanese_a[4] = {0xe3, 0x81, 0x82};
     int size = sizeof(buf);
     int off;
     int ret;
@@ -132,13 +133,13 @@ void test_write_str()
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(memcmp(buf, "\\u3042", off) == 0);
+    TEST_CHECK(memcmp(buf, japanese_a, off) == 0);
 
     // Truncated bytes
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(memcmp(buf, "\\u3042", off) == 0);
+    TEST_CHECK(memcmp(buf, japanese_a, off) == 0);
 
     // Error: buffer too small
     off = 0;
