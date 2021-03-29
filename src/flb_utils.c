@@ -700,29 +700,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             if (i + hex_bytes > str_len) {
                 break; /* skip truncated UTF-8 */
             }
-
-            state = FLB_UTF8_ACCEPT;
-            codepoint = 0;
             for (b = 0; b < hex_bytes; b++) {
-                s = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &codepoint, *s);
-                if (ret == 0) {
-                    break;
-                }
+                tmp[b] = str[i+b];
             }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
-            }
-            else {
-                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
-                if ((available - written) < len) {
-                    return FLB_FALSE;
-                }
-                encoded_to_buf(p, tmp, len);
-                p += len;
-            }
+            encoded_to_buf(p, tmp, hex_bytes);
+            p += hex_bytes;
             i += (hex_bytes - 1);
         }
         else {
