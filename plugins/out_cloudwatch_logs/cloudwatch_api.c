@@ -903,13 +903,22 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 metric->timestamp = tms;
 
                 mk_list_add(&metric->_head, &flb_intermediate_metrics);
-                flb_free(metric);
+                
             }  
 
             struct msgpack_object emf_payload = pack_emf_payload(ctx, 
                                                                 &flb_intermediate_metrics, 
                                                                 input_plugin, 
                                                                 tms);
+            struct mk_list *tmp;
+            struct mk_list *head;
+            mk_list_foreach_safe(head, tmp, &flb_intermediate_metrics) {
+                a_metric = mk_list_entry(head, struct flb_intermediate_metric, _head)
+                mk_list_del(&a_metric->_head);
+                flb_free(a_metric);
+            }
+
+
             ret = add_event(ctx, buf, stream, &emf_payload, &tms);
         } else {
             ret = add_event(ctx, buf, stream, &map, &tms);
