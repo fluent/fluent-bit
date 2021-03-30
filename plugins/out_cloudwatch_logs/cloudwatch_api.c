@@ -770,6 +770,10 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
     msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, 
                    &deserialized_emf_object);
 
+    /* free allocated memory */
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
     return deserialized_emf_object;
 }
 
@@ -801,6 +805,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
     /* Added for EMF support */
     struct flb_intermediate_metric *metric;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_intermediate_metric *an_item;
 
     int intermediate_metric_type;
     char *intermediate_metric_unit;
@@ -900,13 +907,22 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 metric->timestamp = tms;
 
                 mk_list_add(&metric->_head, &flb_intermediate_metrics);
+                
             }  
 
             struct msgpack_object emf_payload = pack_emf_payload(ctx, 
                                                                 &flb_intermediate_metrics, 
                                                                 input_plugin, 
                                                                 tms);
-            flb_free(metric);
+            
+            /* free the intermediate metric list */
+            
+            mk_list_foreach_safe(head, tmp, &flb_intermediate_metrics) {
+                an_item = mk_list_entry(head, struct flb_intermediate_metric, _head);
+                mk_list_del(&an_item->_head);
+                flb_free(an_item);
+            }
+
             ret = add_event(ctx, buf, stream, &emf_payload, &tms);
         } else {
             ret = add_event(ctx, buf, stream, &map, &tms);
