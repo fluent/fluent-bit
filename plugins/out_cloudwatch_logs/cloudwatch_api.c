@@ -770,6 +770,9 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
     msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, 
                    &deserialized_emf_object);
 
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
     return deserialized_emf_object;
 }
 
@@ -900,13 +903,13 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 metric->timestamp = tms;
 
                 mk_list_add(&metric->_head, &flb_intermediate_metrics);
+                flb_free(metric);
             }  
 
             struct msgpack_object emf_payload = pack_emf_payload(ctx, 
                                                                 &flb_intermediate_metrics, 
                                                                 input_plugin, 
                                                                 tms);
-            flb_free(metric);
             ret = add_event(ctx, buf, stream, &emf_payload, &tms);
         } else {
             ret = add_event(ctx, buf, stream, &map, &tms);
