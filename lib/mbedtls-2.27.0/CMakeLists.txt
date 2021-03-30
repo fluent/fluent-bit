@@ -173,7 +173,9 @@ string(REGEX MATCH "Clang" CMAKE_COMPILER_IS_CLANG "${CMAKE_C_COMPILER_ID}")
 
 include(CheckCCompilerFlag)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+if(NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+endif()
 
 if(CMAKE_COMPILER_IS_GNU)
     # some warnings we want are not available with old GCC versions
