@@ -915,7 +915,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             struct mk_list *head;
             struct flb_intermediate_metric *a_metric;
             mk_list_foreach_safe(head, tmp, &flb_intermediate_metrics) {
-                a_metric = mk_list_entry(head, struct flb_intermediate_metric, _head)
+                a_metric = mk_list_entry(head, struct flb_intermediate_metric, _head);
                 mk_list_del(&a_metric->_head);
                 flb_free(a_metric);
             }
