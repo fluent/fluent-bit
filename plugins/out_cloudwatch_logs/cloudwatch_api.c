@@ -770,6 +770,7 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
     msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, 
                    &deserialized_emf_object);
 
+    /* free allocated memory */
     msgpack_zone_destroy(&mempool);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
@@ -911,6 +912,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                                                                 input_plugin, 
                                                                 tms);
             
+            /* free the intermediate metric list */
             struct mk_list *tmp;
             struct mk_list *head;
             struct flb_intermediate_metric *a_metric;
