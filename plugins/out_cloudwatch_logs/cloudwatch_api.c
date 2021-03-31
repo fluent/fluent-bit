@@ -802,6 +802,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     int check = FLB_FALSE;
     int found = FLB_FALSE;
     struct flb_time tms;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_intermediate_metric *an_item;
 
     /* Added for EMF support */
     struct flb_intermediate_metric *metric;
@@ -913,13 +916,11 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                                                                 tms);
             
             /* free the intermediate metric list */
-            struct mk_list *tmp;
-            struct mk_list *head;
-            struct flb_intermediate_metric *a_metric;
+            
             mk_list_foreach_safe(head, tmp, &flb_intermediate_metrics) {
-                a_metric = mk_list_entry(head, struct flb_intermediate_metric, _head);
-                mk_list_del(&a_metric->_head);
-                flb_free(a_metric);
+                an_item = mk_list_entry(head, struct flb_intermediate_metric, _head);
+                mk_list_del(&an_item->_head);
+                flb_free(an_item);
             }
 
             ret = add_event(ctx, buf, stream, &emf_payload, &tms);
