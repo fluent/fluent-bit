@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
@@ -185,7 +186,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     flb_net_setup_init(&u->net);
 
     /* Set upstream to the http_proxy if it is specified. */
-    if (flb_should_proxy_for_host(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
+    if (flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
         ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
                                         &proxy_username, &proxy_password,
@@ -240,8 +241,13 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 /*
  * Checks whehter a destinate URL should be proxied.
  */
-int flb_should_proxy_for_host(const char *host, const char *proxy, const char *no_proxy)
+int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no_proxy)
 {
+    int ret;
+    struct mk_list no_proxy_list;
+    struct mk_list *head;
+    struct flb_slist_entry *e = NULL;
+
     /* No HTTP_PROXY, should not set up proxy for the upstream `host`. */
     if (proxy == NULL) {
         return FLB_FALSE;
@@ -258,15 +264,27 @@ int flb_should_proxy_for_host(const char *host, const char *proxy, const char *n
     }
 
     /* check the URL list in the NO_PROXY  */
-    char *no_proxy_url = strtok(no_proxy, ",");
-    while (no_proxy_url != NULL) {
-        if (strcmp(host, no_proxy_url) == 0) {
-            return FLB_FALSE;
+    ret = flb_slist_create(&no_proxy_list);
+    if (ret != 0) {
+        return FLB_TRUE;
+    }
+    ret = flb_slist_split_string(&no_proxy_list, no_proxy, ',', -1);
+    if (ret <= 0) {
+        return FLB_TRUE;
+    }
+    ret = FLB_TRUE;
+    mk_list_foreach(head, &no_proxy_list) {
+        e = mk_list_entry(head, struct flb_slist_entry, _head);
+         if (strcmp(host, e->str)) {
+            ret = FLB_FALSE;
+            break;
         }
-        no_proxy_url = strtok(NULL, ",");
     }
 
-    return FLB_TRUE;
+    /* clean up the resources. */
+    flb_slist_destroy(&no_proxy_list);
+
+    return ret;
 }
 
 
