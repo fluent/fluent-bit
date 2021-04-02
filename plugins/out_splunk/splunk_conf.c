@@ -98,6 +98,9 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             ctx->http_passwd = flb_strdup("");
         }
     }
+    if (ctx->channel) {
+        ctx->channel_len = flb_sds_len(ctx->channel);
+    }
 
     /* No http_user is set, fallback to splunk_token, if splunk_token is unset, fail. */
     if(!ctx->http_user) {
