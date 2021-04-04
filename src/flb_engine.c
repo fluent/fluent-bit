@@ -735,8 +735,6 @@ int flb_engine_shutdown(struct flb_config *config)
     }
 #endif
 
-    flb_config_exit(config);
-
     return 0;
 }
 

@@ -421,7 +421,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
-    if (ins->log_level == -1) {
+    if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
     }
 
