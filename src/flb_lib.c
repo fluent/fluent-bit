@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
@@ -205,6 +206,13 @@ void flb_destroy(flb_ctx_t *ctx)
 
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
+
+    /* cfg->is_running is set to false when flb_engine_shutdown has been invoked (event loop) */
+    if(ctx->config && ctx->config->is_running == FLB_TRUE) {
+        flb_engine_shutdown(ctx->config);
+        flb_config_exit(ctx->config);
+    }
+
     flb_free(ctx);
     ctx = NULL;
 
@@ -228,11 +236,11 @@ int flb_input(flb_ctx_t *ctx, const char *input, void *data)
 }
 
 /* Defines a new output instance */
-int flb_output(flb_ctx_t *ctx, const char *output, void *data)
+int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, data);
+    o_ins = flb_output_new(ctx->config, output, cb);
     if (!o_ins) {
         return -1;
     }
@@ -284,6 +292,108 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
 
     va_end(va);
     return 0;
+}
+
+static inline int flb_config_map_property_check(char *plugin_name, struct mk_list *config_map, char *key, char *val)
+{
+    struct flb_kv *kv;
+    struct mk_list properties;
+    int r;
+
+    mk_list_init(&properties);
+
+    kv = flb_kv_item_create(&properties, (char *) key, (char *) val);
+    if (!kv) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_properties_check(plugin_name, &properties, config_map);
+    flb_kv_item_destroy(kv);
+    return r;
+}
+
+/* Check if a given k, v is a valid config directive for the given output plugin */
+int flb_output_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
+{
+    struct flb_output_instance *o_ins;
+    struct mk_list *config_map;
+    struct flb_output_plugin *p;
+    int r;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+      return FLB_LIB_ERROR;
+    }
+
+    p = o_ins->p;
+    if (!p->config_map) {
+        return FLB_LIB_NO_CONFIG_MAP;
+    }
+
+    config_map = flb_config_map_create(ctx->config, p->config_map);
+    if (!config_map) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_property_check(p->name, config_map, key, val);
+    flb_config_map_destroy(config_map);
+    return r;
+}
+
+/* Check if a given k, v is a valid config directive for the given input plugin */
+int flb_input_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
+{
+    struct flb_input_instance *i_ins;
+    struct flb_input_plugin *p;
+    struct mk_list *config_map;
+    int r;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+      return FLB_LIB_ERROR;
+    }
+
+    p = i_ins->p;
+    if (!p->config_map) {
+        return FLB_LIB_NO_CONFIG_MAP;
+    }
+
+    config_map = flb_config_map_create(ctx->config, p->config_map);
+    if (!config_map) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_property_check(p->name, config_map, key, val);
+    flb_config_map_destroy(config_map);
+    return r;
+}
+
+/* Check if a given k, v is a valid config directive for the given filter plugin */
+int flb_filter_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
+{
+    struct flb_filter_instance *f_ins;
+    struct flb_filter_plugin *p;
+    struct mk_list *config_map;
+    int r;
+
+    f_ins = filter_instance_get(ctx, ffd);
+    if (!f_ins) {
+      return FLB_LIB_ERROR;
+    }
+
+    p = f_ins->p;
+    if (!p->config_map) {
+        return FLB_LIB_NO_CONFIG_MAP;
+    }
+
+    config_map = flb_config_map_create(ctx->config, p->config_map);
+    if (!config_map) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_property_check(p->name, config_map, key, val);
+    flb_config_map_destroy(config_map);
+    return r;
 }
 
 /* Set an output interface property */
@@ -584,6 +694,6 @@ int flb_stop(flb_ctx_t *ctx)
     flb_engine_exit(ctx->config);
     ret = pthread_join(tid, NULL);
     flb_debug("[lib] Fluent Bit engine stopped");
-
+    ctx->config = NULL;
     return ret;
 }

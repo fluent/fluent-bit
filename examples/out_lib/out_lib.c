@@ -20,13 +20,13 @@
 #include <fluent-bit.h>
 #include <msgpack.h>
 
-int my_stdout_json(void* data, size_t size)
+int my_stdout_json(void *record, size_t size, void *data)
 {
     printf("[%s]",__FUNCTION__);
-    printf("%s",(char*)data);
+    printf("%s",(char*)record);
     printf("\n");
 
-    flb_lib_free(data);
+    flb_lib_free(record);
     return 0;
 }
 
@@ -46,6 +46,7 @@ int main()
     int n;
     char tmp[256];
     flb_ctx_t *ctx;
+    struct flb_lib_out_cb callback;
     int in_ffd;
     int out_ffd;
 
@@ -61,7 +62,10 @@ int main()
     /* Register my callback function */
 
     /* JSON format */
-    out_ffd = flb_output(ctx, "lib", my_stdout_json);
+    callback.cb = my_stdout_json;
+    callback.data = NULL;
+
+    out_ffd = flb_output(ctx, "lib", &callback);
     flb_output_set(ctx, out_ffd, "match", "test", "format", "json", NULL);
 
     /* Msgpack format */

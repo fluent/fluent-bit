@@ -1,4 +1,4 @@
-flex_target(lexer   sql.l "${CMAKE_CURRENT_BINARY_DIR}/sql_lex.c"
+flex_target(lexer sql.l "${CMAKE_CURRENT_BINARY_DIR}/sql_lex.c"
             DEFINES_FILE "${CMAKE_CURRENT_BINARY_DIR}/sql_lex.h"
             )
 bison_target(parser sql.y "${CMAKE_CURRENT_BINARY_DIR}/sql_parser.c")
