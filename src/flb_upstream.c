@@ -385,6 +385,9 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     struct flb_upstream_conn *conn;
     struct flb_upstream_queue *uq;
 
+    /* FIXME: TROUBLESHOOTING FOR issue-3058 */
+    return NULL;
+
     now = time(NULL);
 
     conn = flb_calloc(1, sizeof(struct flb_upstream_conn));
