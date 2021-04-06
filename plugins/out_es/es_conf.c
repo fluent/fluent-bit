@@ -233,6 +233,17 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
     }
 
 
+    if (ctx->id_key) {
+        ctx->ra_id_key = flb_ra_create(ctx->id_key, FLB_FALSE);
+        if (ctx->ra_id_key == NULL) {
+            flb_plg_error(ins, "could not create record accessor for Id Key");
+        }
+        if (ctx->generate_id == FLB_TRUE) {
+            flb_plg_warn(ins, "Generate_ID is ignored when ID_key is set");
+            ctx->generate_id = FLB_FALSE;
+        }
+    }
+
     if (ctx->logstash_prefix_key) {
         if (ctx->logstash_prefix_key[0] != '$') {
             len = flb_sds_len(ctx->logstash_prefix_key);
@@ -386,6 +397,10 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+    if (ctx->ra_id_key) {
+        flb_ra_destroy(ctx->ra_id_key);
+        ctx->ra_id_key = NULL;
     }
 
 #ifdef FLB_HAVE_AWS

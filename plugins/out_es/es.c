@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -198,6 +199,40 @@ static int es_pack_array_content(msgpack_packer *tmp_pck,
 }
 
 /*
+ * Get _id value from incoming record.
+ * If it successed, return the value as flb_sds_t.
+ * If it failed, return NULL.
+*/
+static flb_sds_t es_get_id_value(struct flb_elasticsearch *ctx,
+                                msgpack_object *map)
+{
+    struct flb_ra_value *rval = NULL;
+    flb_sds_t tmp_str;
+    rval = flb_ra_get_value_object(ctx->ra_id_key, *map);
+    if (rval == NULL) {
+        flb_plg_warn(ctx->ins, "the value of %s is missing",
+                     ctx->id_key);
+        return NULL;
+    }
+    else if(rval->o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_warn(ctx->ins, "the value of %s is not string",
+                     ctx->id_key);
+        flb_ra_key_value_destroy(rval);
+        return NULL;
+    }
+
+    tmp_str = flb_sds_create_len(rval->o.via.str.ptr,
+                                 rval->o.via.str.size);
+    if (tmp_str == NULL) {
+        flb_plg_warn(ctx->ins, "cannot create ID string from record");
+        flb_ra_key_value_destroy(rval);
+        return NULL;
+    }
+    flb_ra_key_value_destroy(rval);
+    return tmp_str;
+}
+
+/*
  * Convert the internal Fluent Bit data representation to the required
  * one by Elasticsearch.
  *
@@ -224,6 +259,7 @@ static int elasticsearch_format(struct flb_config *config,
     char index_formatted[256];
     char es_uuid[37];
     flb_sds_t out_buf;
+    flb_sds_t id_key_str = NULL;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
@@ -466,6 +502,25 @@ static int elasticsearch_format(struct flb_config *config,
                                      ES_BULK_HEADER,
                                      ES_BULK_INDEX_FMT_ID,
                                      es_index, ctx->type, es_uuid);
+            }
+        }
+        if (ctx->ra_id_key) {
+            id_key_str = es_get_id_value(ctx ,&map);
+            if (id_key_str) {
+                if (ctx->suppress_type_name) {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                         es_index,  id_key_str);
+                }
+                else {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT_ID,
+                                         es_index, ctx->type, id_key_str);
+                }
+                flb_sds_destroy(id_key_str);
+                id_key_str = NULL;
             }
         }
 
@@ -939,6 +994,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, generate_id),
      "When enabled, generate _id for outgoing records. This prevents duplicate "
      "records when retrying ES"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "id_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, id_key),
+     "If set, _id will be the value of the key from incoming record."
     },
     {
      FLB_CONFIG_MAP_BOOL, "replace_dots", "false",

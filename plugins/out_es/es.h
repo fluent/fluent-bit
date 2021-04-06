@@ -100,6 +100,11 @@ struct flb_elasticsearch {
     /* time key nanoseconds */
     int time_key_nanos;
 
+
+    /* id_key */
+    flb_sds_t id_key;
+    struct flb_record_accessor *ra_id_key;
+    
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;
