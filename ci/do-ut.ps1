@@ -1,10 +1,10 @@
 cd build
 
 if ( "x64" -eq $env:PLATFORM ) {
-    $OPENSSL_DIR = "C:\OpenSSL-v11-Win64"
+    $OPENSSL_DIR = "C:\OpenSSL-v111-Win64"
 }
 else {
-    $OPENSSL_DIR = "C:\OpenSSL-v11-Win32"
+    $OPENSSL_DIR = "C:\OpenSSL-v111-Win32"
 }
 
 
