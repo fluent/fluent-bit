@@ -73,6 +73,18 @@ static void cb_check_replace_dots(void *ctx, int ffd,
     flb_free(res_data);
 }
 
+static void cb_check_id_key(void *ctx, int ffd,
+                            int res_ret, void *res_data, size_t res_size,
+                            void *data)
+{
+    char *p;
+    char *out_js = res_data;
+    char *record = "\"_id\":\"some string\""; // see data/es/json_es.h
+
+    p = strstr(out_js, record);
+    TEST_CHECK(p != NULL);
+    flb_free(res_data);
+}
 
 void flb_test_index_type()
 {
@@ -301,6 +313,50 @@ void flb_test_replace_dots()
     flb_destroy(ctx);
 }
 
+void flb_test_id_key()
+{
+    int ret;
+    int size = sizeof(JSON_DOTS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "id_key", "key_2",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_id_key,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"index_type"           , flb_test_index_type },
@@ -308,5 +364,6 @@ TEST_LIST = {
     {"logstash_format_nanos", flb_test_logstash_format_nanos },
     {"tag_key"              , flb_test_tag_key },
     {"replace_dots"         , flb_test_replace_dots },
+    {"id_key"               , flb_test_id_key },
     {NULL, NULL}
 };
