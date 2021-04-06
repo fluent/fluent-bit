@@ -37,6 +37,9 @@
 /* Service account metadata URI */
 #define FLB_STD_METADATA_SERVICE_ACCOUNT_URI "/computeMetadata/v1/instance/service-accounts/"
 
+/* Max size of token response from metadata server */
+#define FLB_STD_METADATA_TOKEN_SIZE_MAX 14336
+
 int gce_metadata_read_token(struct flb_stackdriver *ctx);
 int gce_metadata_read_zone(struct flb_stackdriver *ctx);
 int gce_metadata_read_project_id(struct flb_stackdriver *ctx);

@@ -275,7 +275,8 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
 
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
-        output = flb_sds_create(ctx->o->access_token);
+        output = flb_sds_create(ctx->o->token_type);
+        flb_sds_printf(&output, " %s", ctx->o->access_token);
     }
 
     if (pthread_mutex_unlock(&ctx->token_mutex)){
@@ -1933,17 +1934,6 @@ static int stackdriver_format(struct flb_config *config,
     return 0;
 }
 
-static void set_authorization_header(struct flb_http_client *c,
-                                     char *token)
-{
-    int len;
-    char header[512];
-
-    len = snprintf(header, sizeof(header) - 1,
-                   "Bearer %s", token);
-    flb_http_add_header(c, "Authorization", 13, header, len);
-}
-
 static void cb_stackdriver_flush(const void *data, size_t bytes,
                                  const char *tag, int tag_len,
                                  struct flb_input_instance *i_ins,
@@ -2001,9 +1991,7 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
-
-    /* Compose and append Authorization header */
-    set_authorization_header(c, token);
+    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
