@@ -331,6 +331,19 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+
+static int cb_splunk_format_test(struct flb_config *config,
+                                 struct flb_input_instance *ins,
+                                 void *plugin_context,
+                                 void *flush_ctx,
+                                 const char *tag, int tag_len,
+                                 const void *data, size_t bytes,
+                                 void **out_data, size_t *out_size)
+{
+    struct flb_splunk *ctx = plugin_context;
+    return splunk_format(data, bytes, (char**)out_data, out_size,ctx);
+}
+
 struct flb_output_plugin out_splunk_plugin = {
     .name         = "splunk",
     .description  = "Send events to Splunk HTTP Event Collector",
@@ -339,6 +352,8 @@ struct flb_output_plugin out_splunk_plugin = {
     .cb_exit      = cb_splunk_exit,
     .config_map   = config_map,
 
+    /* for testing */
+    .test_formatter.callback = cb_splunk_format_test,
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
