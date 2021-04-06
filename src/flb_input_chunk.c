@@ -64,7 +64,7 @@ ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
     // Real size is not synced to chunk yet
     size = flb_input_chunk_get_size(ic);
     if (size == 0) {
-        flb_error("[input chunk] failed to load the size of chunk %s",
+        flb_debug("[input chunk] no data in the chunk %s",
                   flb_input_chunk_get_name(ic));
         return -1;
     }
@@ -564,6 +564,11 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
 
         bytes = flb_input_chunk_get_real_size(ic);
+        if (bytes == -1) {
+            // no data in the chunk
+            continue;
+        }
+
         if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
             o_ins->fs_chunks_size -= bytes;
         }
