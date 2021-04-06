@@ -36,7 +36,7 @@ jobs:
           path: packaging
 
       - name: Build the distro artifacts
-        run: ./build.sh -v master -d ${{ env.distro }}
+        run: ./build.sh -v master -d ${{ env.distro }} -b master
         env:
           distro: ${{ matrix.distro }}
         working-directory: packaging
