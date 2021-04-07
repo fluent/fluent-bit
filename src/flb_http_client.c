@@ -1187,6 +1187,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                  * We could not allocate more space, let the caller handle
                  * this.
                  */
+                flb_warn("[http_client] cannot increase buffer: current=%zu "
+                         "requested=%zu max=%zu", c->resp.data_size,
+                         c->resp.data_size + FLB_HTTP_DATA_CHUNK,
+                         c->resp.data_size_max);
                 flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
                 return 0;
             }
