@@ -38,6 +38,12 @@ struct flb_net_setup {
     /* max time in seconds to wait for a established connection */
     int connect_timeout;
 
+    /* backoff time in seconds after the first connection failure */
+    int backoff_init;
+
+    /* maximum connection backoff time in seconds */
+    int backoff_max;
+
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
 
