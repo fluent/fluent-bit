@@ -11,7 +11,7 @@ jobs:
       max-parallel: 48
       fail-fast: true
       matrix:
-        distro: [ ubuntu/16.04, ubuntu/18.04, ubuntu/20.04 ]
+        distro: [ ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, debian/buster ]
 
     runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
     steps:
@@ -31,12 +31,12 @@ jobs:
 
       - uses: actions/checkout@v2
         with:
-          repository: ${{ github.actor }}/fluent-bit-packaging
+          repository: fluent/fluent-bit-packaging
           fetch-depth: 1
           path: packaging
 
       - name: Build the distro artifacts
-        run: ./build.sh -v master -d ${{ env.distro }}
+        run: ./build.sh -v master -d ${{ env.distro }} -b master
         env:
           distro: ${{ matrix.distro }}
         working-directory: packaging
