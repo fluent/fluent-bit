@@ -76,37 +76,74 @@ int process_pack(struct flb_http *ctx, flb_sds_t tag, char *buf, size_t size)
     msgpack_packer mp_pck;
     msgpack_unpacked result;
     struct flb_time tm;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    int i = 0;
+    msgpack_object *obj;
+    msgpack_object record;
 
     flb_time_get(&tm);
 
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type != MSGPACK_OBJECT_MAP) {
-            flb_plg_warn(ctx->ins, "skip record from invalid type: %i",
+        if (result.data.type == MSGPACK_OBJECT_MAP) {
+            msgpack_sbuffer_init(&mp_sbuf);
+            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+            /* Pack record with timestamp */
+            msgpack_pack_array(&mp_pck, 2);
+            flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+            msgpack_pack_object(&mp_pck, result.data);
+
+            /* Ingest record into the engine */
+            if (tag) {
+                flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
+                                        mp_sbuf.data, mp_sbuf.size);
+            }
+            else {
+                /* use default plugin Tag (it internal name, e.g: http.0 */
+                flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+            }
+            msgpack_sbuffer_destroy(&mp_sbuf);
+
+            break;
+    
+        } 
+        else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+            obj = &result.data;
+            for (i = 0; i < obj->via.array.size; i++)
+            {
+                record = obj->via.array.ptr[i];
+                msgpack_sbuffer_init(&mp_sbuf);
+                msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+                /* Pack record with timestamp */
+                msgpack_pack_array(&mp_pck, 2);
+                flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+                msgpack_pack_object(&mp_pck, record); 
+
+                /* Ingest record into the engine */
+                if (tag) {
+                    flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
+                                               mp_sbuf.data, mp_sbuf.size);
+                }
+                else {
+                    /* use default plugin Tag (it internal name, e.g: http.0 */
+                    flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+                }
+
+                msgpack_sbuffer_destroy(&mp_sbuf);
+            }
+
+            break;
+        } 
+        else {
+            flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
-            continue;
+            msgpack_unpacked_destroy(&result);
+            return -1;
         }
-
-        /* Pack record with timestamp */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&tm, &mp_pck, 0);
-        msgpack_pack_object(&mp_pck, result.data);
     }
 
-    /* Ingest real record into the engine */
-    if (tag) {
-        flb_input_chunk_append_raw(ctx->ins, tag, flb_sds_len(tag),
-                                   mp_sbuf.data, mp_sbuf.size);
-    }
-    else {
-        /* use default plugin Tag (it internal name, e.g: http.0 */
-        flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    }
     msgpack_unpacked_destroy(&result);
-    msgpack_sbuffer_destroy(&mp_sbuf);
 
     return 0;
 }
