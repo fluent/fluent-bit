@@ -189,7 +189,8 @@ static int http_post(struct flb_out_http *ctx,
          *
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            if (c->resp.payload && c->resp.payload_size > 0) {
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                               ctx->host, ctx->port,
                               c->resp.status, c->resp.payload);
@@ -201,7 +202,8 @@ static int http_post(struct flb_out_http *ctx,
             out_ret = FLB_RETRY;
         }
         else {
-            if (c->resp.payload && c->resp.payload_size > 0) {
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                              ctx->host, ctx->port,
                              c->resp.status, c->resp.payload);
@@ -354,6 +356,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "allow_duplicated_headers", "true",
      0, FLB_TRUE, offsetof(struct flb_out_http, allow_dup_headers),
      "Specify if duplicated headers are allowed or not"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_http, log_response_payload),
+     "Specify if the response paylod should be logged or not"
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
