@@ -89,6 +89,11 @@ double flb_time_to_double(struct flb_time *tm)
     return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
 }
 
+uint64_t flb_time_to_nanosec(struct flb_time *tm)
+{
+    return (((uint64_t)tm->tm.tv_sec * 1000000000L) + tm->tm.tv_nsec);
+}
+
 int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
 {
     if (base == NULL || duration == NULL|| result == NULL) {

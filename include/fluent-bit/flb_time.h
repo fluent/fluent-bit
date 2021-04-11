@@ -75,6 +75,7 @@ static inline int flb_time_equal(struct flb_time *t0, struct flb_time *t1) {
 int flb_time_get(struct flb_time *tm);
 int flb_time_msleep(uint32_t ms);
 double flb_time_to_double(struct flb_time *tm);
+uint64_t flb_time_to_nanosec(struct flb_time *tm);
 int flb_time_add(struct flb_time *base, struct flb_time *duration,
                  struct flb_time *result);
 int flb_time_diff(struct flb_time *time1,
