@@ -706,7 +706,7 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
     uint64_t nanosecs;
 
     /* convert to nanoseconds */
-    nanosecs = ((tms->tm.tv_sec * 1000000000L) + tms->tm.tv_nsec);
+    nanosecs = flb_time_to_nanosec(tms);
 
     /* format as a string */
     len = snprintf(buf, sizeof(buf) - 1, "%" PRIu64, nanosecs);
