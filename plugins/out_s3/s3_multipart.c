@@ -619,6 +619,9 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     int ret;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    struct flb_aws_header *headers = NULL;
+    int num_headers = 0;
+    char body_md5[25];
 
     uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
     if (!uri) {
@@ -636,6 +639,29 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     }
     uri = tmp;
 
+    memset(body_md5, 0, sizeof(body_md5));
+    if (ctx->send_content_md5 == FLB_TRUE) {
+        ret = get_md5_base64(body, body_size, body_md5, sizeof(body_md5));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
+            flb_sds_destroy(uri);
+            return -1;
+        }
+
+        num_headers = 1;
+        headers = flb_malloc(sizeof(struct flb_aws_header) * num_headers);
+        if (headers == NULL) {
+            flb_errno();
+            flb_sds_destroy(uri);
+            return -1;
+        }
+
+        headers[0].key = "Content-MD5";
+        headers[0].key_len = 11;
+        headers[0].val = body_md5;
+        headers[0].val_len = strlen(body_md5);
+    }
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_UPLOAD_PART_ERROR", "UploadPart");
@@ -643,8 +669,9 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     else {
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, body, body_size,
-                                              NULL, 0);
+                                              headers, num_headers);
     }
+    flb_free(headers);
     flb_sds_destroy(uri);
     if (c) {
         flb_plg_info(ctx->ins, "UploadPart http status=%d",
