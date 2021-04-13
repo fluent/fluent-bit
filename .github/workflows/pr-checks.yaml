@@ -1,4 +1,4 @@
-name: 'Commit Message Check'
+name: 'Pull requests checks'
 on:
   pull_request:
     types:
@@ -7,6 +7,19 @@ on:
       - reopened
       - synchronize
 jobs:
+  apply-default-labels:
+    name: apply default labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR with 'docs-required' by default.
+        continue-on-error: true
+        with:
+          labels: docs-required
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit
+
   check-commit-message:
     name: Check Commit Message
     runs-on: ubuntu-latest

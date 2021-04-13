@@ -13,3 +13,12 @@
 | [integration-run-pr](./integration-run-pr.yaml)     | Runs the integration testing suite on a PR branch | pr opened / label created 'ok-to-test' |
 | [unit-tests](./unit-tests.yaml)     | Runs the unit tests suite on master push or new PR | PR opened, merge in master branch |
 
+### Available labels
+
+| Label name | Description | 
+| :----------|-------------|
+| docs-required| default tag used to request documentation, has to be removed before merge |
+| ok-to-test | run all integration tests |
+| ok-to-merge | run mergebot and merge (rebase) current PR |
+| ci/integration-docker-ok | integration test is able to build docker image |
+| ci/integration-gcp-ok | integration test is able to run on GCP |
