@@ -13,12 +13,19 @@
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos
-/cmake/                  @fujimotos
+/CMakeLists.txt          @fujimotos @niedbalski
+/cmake/                  @fujimotos @niedbalski
+
+# CI 
+# -------------------------
+/.github/                @niedbalski
+/appveyor.yml            @niedbalski
+/dockerfiles/            @niedbalski
 
 # Core: Signv4
 # ------------
 /src/flb_signv4.c        @pettitwesley
+/src/flb_lib.c           @edsiper @niedbalski
 
 # Core: Stream Processor
 # ----------------
