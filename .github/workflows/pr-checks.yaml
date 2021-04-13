@@ -13,7 +13,6 @@ jobs:
     steps:
       - uses: actions-ecosystem/action-add-labels@v1
         name: Label the PR with 'docs-required' by default.
-        continue-on-error: true
         with:
           labels: docs-required
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -20,12 +20,13 @@ jobs:
     name: Merge pull request
     steps:
       - name: Checks for merging
-        uses: squalrus/merge-bot@v0.4.4
+        uses: squalrus/merge-bot@v0.1.0
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          reviewers: false
+          test: true
+          reviewers: true
           labels: ok-to-merge
           blocking_labels: docs-required, dont-merge
-          checks_enabled: false
+          checks_enabled: true
           method: rebase
           delete_source_branch: true
