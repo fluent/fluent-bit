@@ -18,3 +18,4 @@ jobs:
           days-before-pr-close: -1
           exempt-all-pr-assignees: true
           exempt-all-pr-milestones: true
+          exempt-issue-labels: 'long-term'
