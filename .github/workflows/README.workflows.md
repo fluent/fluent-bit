@@ -22,3 +22,4 @@
 | ok-to-merge | run mergebot and merge (rebase) current PR |
 | ci/integration-docker-ok | integration test is able to build docker image |
 | ci/integration-gcp-ok | integration test is able to run on GCP |
+| long-term | long running pull request, don't close |
