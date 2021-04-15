@@ -457,7 +457,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_sched *sched;
 
     /* HTTP Server */
-#ifdef FLB_HAVE_HTTP
+#ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_server == FLB_TRUE) {
         flb_http_server_start(config);
     }
