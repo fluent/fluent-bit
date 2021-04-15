@@ -34,6 +34,8 @@
 #include "s3.h"
 #include "s3_store.h"
 
+#define DEFAULT_S3_PORT 443
+
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
@@ -472,18 +474,32 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
-        ctx->endpoint = removeProtocol((char *) tmp, "https://");
+        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
+        char *ep = removeProtocol((char *) tmp, ctx->insecure == FLB_TRUE ? "http://" : "https://");
+        char *port_str;
+        ctx->endpoint = strtok_r(ep, ":", &port_str);
+        if(port_str != NULL) {
+          ctx->port = atoi(port_str);
+        } else {
+          ctx->port = DEFAULT_S3_PORT;
+        }
         ctx->free_endpoint = FLB_FALSE;
     }
     else {
         /* default endpoint for the given region */
         ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
+        ctx->insecure = FLB_FALSE;
+        ctx->port = DEFAULT_S3_PORT;
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
             return -1;
         }
     }
+    flb_plg_info(ctx->ins, "S3 endpoint: %s", ctx->endpoint);
+    flb_plg_info(ctx->ins, "S3 port: %d", ctx->port);
+    flb_plg_info(ctx->ins, "S3 insecure: %d", ctx->insecure);
+    flb_plg_info(ctx->ins, "S3 veirfy TLS: %d", ctx->tls_verify);
 
     tmp = flb_output_get_property("sts_endpoint", ins);
     if (tmp) {
@@ -515,17 +531,19 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->content_type = (char *) tmp;
     }
     
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
-                                     ins->tls_debug,
-                                     ins->tls_vhost,
-                                     ins->tls_ca_path,
-                                     ins->tls_ca_file,
-                                     ins->tls_crt_file,
-                                     ins->tls_key_file,
-                                     ins->tls_key_passwd);
-    if (!ctx->client_tls) {
-        flb_plg_error(ctx->ins, "Failed to create tls context");
-        return -1;
+    if (ctx->insecure == FLB_FALSE) {
+        ctx->client_tls = flb_tls_create(ctx->tls_verify,
+                                         ins->tls_debug,
+                                         ins->tls_vhost,
+                                         ins->tls_ca_path,
+                                         ins->tls_ca_file,
+                                         ins->tls_crt_file,
+                                         ins->tls_key_file,
+                                         ins->tls_key_passwd);
+        if (!ctx->client_tls) {
+            flb_plg_error(ctx->ins, "Failed to create tls context");
+            return -1;
+        }
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -637,18 +655,29 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->provider = ctx->provider;
     ctx->s3_client->region = ctx->region;
     ctx->s3_client->service = "s3";
-    ctx->s3_client->port = 443;
+    ctx->s3_client->port = ctx->port;
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
 
-    ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
-                                                   FLB_IO_TLS, ctx->client_tls);
+    int org_use_tls = ctx->ins->use_tls;
+
+    if (ctx->insecure == FLB_TRUE) {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TCP, NULL);
+        ctx->ins->use_tls = FLB_FALSE;
+    } else {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TLS, ctx->client_tls);
+    }
     if (!ctx->s3_client->upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
     }
+
     flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
+    /* Set back use_tls after setting upstream */
+    ctx->ins->use_tls = org_use_tls;
 
     ctx->s3_client->host = ctx->endpoint;
 
@@ -1530,6 +1559,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "role_arn", NULL,
      0, FLB_FALSE, 0,
      "ARN of an IAM role to assume (ex. for cross account access)."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tls_verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_s3, tls_verify),
+     "Verify TLS of the S3 API."
     },
     {
      FLB_CONFIG_MAP_STR, "endpoint", NULL,
