@@ -208,8 +208,10 @@ void flb_destroy(flb_ctx_t *ctx)
     mk_event_loop_destroy(ctx->event_loop);
 
     /* cfg->is_running is set to false when flb_engine_shutdown has been invoked (event loop) */
-    if(ctx->config && ctx->config->is_running == FLB_TRUE) {
-        flb_engine_shutdown(ctx->config);
+    if(ctx->config) {
+        if (ctx->config->is_running == FLB_TRUE) {
+            flb_engine_shutdown(ctx->config);
+        }
         flb_config_exit(ctx->config);
     }
 
@@ -694,6 +696,6 @@ int flb_stop(flb_ctx_t *ctx)
     flb_engine_exit(ctx->config);
     ret = pthread_join(tid, NULL);
     flb_debug("[lib] Fluent Bit engine stopped");
-    ctx->config = NULL;
+
     return ret;
 }
