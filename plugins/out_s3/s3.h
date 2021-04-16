@@ -99,6 +99,7 @@ struct flb_s3 {
     char *content_type;
     int free_endpoint;
     int use_put_object;
+    int send_content_md5;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
@@ -156,5 +157,7 @@ void multipart_upload_destroy(struct multipart_upload *m_upload);
 
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api);
 int s3_plugin_under_test();
+
+int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size);
 
 #endif

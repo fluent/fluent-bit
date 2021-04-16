@@ -29,6 +29,8 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
 #include <stdlib.h>
+#include <mbedtls/base64.h>
+#include <mbedtls/md5.h>
 #include <msgpack.h>
 
 #include "s3.h"
@@ -72,6 +74,13 @@ static struct flb_aws_header canned_acl_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header content_md5_header = {
+    .key = "Content-MD5",
+    .key_len = 11,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -104,7 +113,7 @@ int s3_plugin_under_test()
     return FLB_FALSE;
 }
 
-static int create_headers(struct flb_s3 *ctx, struct flb_aws_header **headers, int *num_headers)
+static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_header **headers, int *num_headers)
 {
     int n = 0;
     int headers_len = 0;
@@ -117,6 +126,9 @@ static int create_headers(struct flb_s3 *ctx, struct flb_aws_header **headers, i
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
+        headers_len++;
+    }
+    if (body_md5 != NULL && strlen(body_md5)) {
         headers_len++;
     }
     if (headers_len == 0) {
@@ -145,6 +157,12 @@ static int create_headers(struct flb_s3 *ctx, struct flb_aws_header **headers, i
         s3_headers[n] = canned_acl_header;
         s3_headers[n].val = ctx->canned_acl;
         s3_headers[n].val_len = strlen(ctx->canned_acl);
+        n++;
+    }
+    if (body_md5 != NULL && strlen(body_md5)) {
+        s3_headers[n] = content_md5_header;
+        s3_headers[n].val = body_md5;
+        s3_headers[n].val_len = strlen(body_md5);
     }
     
     *num_headers = headers_len;
@@ -1028,6 +1046,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     void *compressed_body;
     char *final_body;
     size_t final_body_size;
+    char final_body_md5[25];
 
     s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters);
     if (!s3_key) {
@@ -1083,13 +1102,24 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         final_body = body;
         final_body_size = body_size;
     }
+
+    memset(final_body_md5, 0, sizeof(final_body_md5));
+    if (ctx->send_content_md5 == FLB_TRUE) {
+        ret = get_md5_base64(final_body, final_body_size,
+                             final_body_md5, sizeof(final_body_md5));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
+            flb_sds_destroy(uri);
+            return -1;
+        }
+    }
     
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
     }
     else {
-        ret = create_headers(ctx, &headers, &num_headers);
+        ret = create_headers(ctx, final_body_md5, &headers, &num_headers);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create headers");
             flb_sds_destroy(uri);
@@ -1124,6 +1154,25 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_plg_error(ctx->ins, "PutObject request failed");
     flb_sds_destroy(uri);
     return -1;
+}
+
+int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size)
+{
+    unsigned char md5_bin[16];
+    size_t olen;
+    int ret;
+
+    ret = mbedtls_md5_ret(buf, buf_size, md5_bin);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = mbedtls_base64_encode(md5_str, md5_str_size, &olen, md5_bin, sizeof(md5_bin));
+    if (ret != 0) {
+        return ret;
+    }
+
+    return 0;
 }
 
 static struct multipart_upload *get_upload(struct flb_s3 *ctx,
@@ -1591,6 +1640,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "use_put_object", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, use_put_object),
      "Use the S3 PutObject API, instead of the multipart upload API"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "send_content_md5", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, send_content_md5),
+     "Send the Content-MD5 header with object uploads, as is required when Object Lock is enabled"
     },
 
     /* EOF */
