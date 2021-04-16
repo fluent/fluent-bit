@@ -35,6 +35,18 @@ RUN apt-get update && \
     && cd fluent-bit/build/ \
     && rm -rf /tmp/fluent-bit/build/*
 
+RUN echo "deb http://deb.debian.org/debian testing main" >> /etc/apt/sources.list
+
+RUN /bin/bash -c "echo $'\n\
+Package: * \n\
+Pin: release a=testing \n\
+Pin-Priority: 450' >> /etc/apt/preferences"
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends -t testing \
+    libidn2-0 \
+    libtasn1-bin
+
 WORKDIR /tmp/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
