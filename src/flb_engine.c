@@ -456,13 +456,6 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event_loop *evl;
     struct flb_sched *sched;
 
-    /* HTTP Server */
-#ifdef FLB_HAVE_HTTP_SERVER
-    if (config->http_server == FLB_TRUE) {
-        flb_http_server_start(config);
-    }
-#endif
-
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
