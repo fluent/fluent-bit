@@ -1128,6 +1128,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, final_body, final_body_size,
                                               headers, num_headers);
+        if (ctx->compression != NULL) {
+             flb_free(compressed_body);
+        }
         flb_free(headers);
     }
     if (c) {
