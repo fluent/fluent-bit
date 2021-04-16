@@ -30,10 +30,6 @@
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
 
-#define _BSD_SOURCE
-
-#include <sys/time.h>
-
 #define PROMETHEUS_HEADER "text/plain; version=0.0.4"
 
 #define null_check(x) do { if (!x) { goto error; } else {sds = x;} } while (0)
