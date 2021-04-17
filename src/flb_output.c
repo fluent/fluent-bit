@@ -598,18 +598,27 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
-            if (strcasecmp(tmp, "false") == 0 ||
+            if (strcasecmp(tmp, "no_limits") == 0 ||
+                strcasecmp(tmp, "false") == 0 ||
                 strcasecmp(tmp, "off") == 0) {
                 /* No limits for retries */
-                ins->retry_limit = -1;
+                ins->retry_limit = FLB_OUT_RETRY_UNLIMITED;
+            }
+            else if (strcasecmp(tmp, "no_retries") == 0) {
+                ins->retry_limit = FLB_OUT_RETRY_NONE;
             }
             else {
                 ins->retry_limit = atoi(tmp);
+                if (ins->retry_limit <= 0) {
+                    flb_warn("[config] invalid retry_limit. set default.");
+                    /* set default when input is invalid number */
+                    ins->retry_limit = 1;
+                }
             }
             flb_sds_destroy(tmp);
         }
         else {
-            ins->retry_limit = 0;
+            ins->retry_limit = 1;
         }
     }
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {

@@ -184,6 +184,10 @@ struct flb_output_plugin {
     struct mk_list _head;
 };
 
+// constants for retry_limit
+#define FLB_OUT_RETRY_UNLIMITED -1
+#define FLB_OUT_RETRY_NONE       0
+
 /*
  * Each initialized plugin must have an instance, same plugin may be
  * loaded more than one time.
