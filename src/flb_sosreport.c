@@ -308,7 +308,7 @@ int flb_sosreport(struct flb_config *config)
                    ins_out->tls_key_passwd ? "*****" : "(not set)");
         }
 #endif
-        if (ins_out->retry_limit == -1) {
+        if (ins_out->retry_limit == FLB_OUT_RETRY_UNLIMITED) {
             printf("    Retry Limit\t\tno limit\n");
         }
         else {
