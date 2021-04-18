@@ -13,6 +13,11 @@ environment:
 
 configuration:
   - Release
+  
+skip_commits:
+  message: /workflows/
+  files:
+    - '.github/**'
 
 install:
   - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
