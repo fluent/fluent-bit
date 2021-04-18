@@ -1,6 +1,6 @@
 name: 'Pull requests labels'
 on:
-  pull_request:
+  pull_request_target:
     types:
       - opened
       - edited
@@ -15,6 +15,6 @@ jobs:
         name: Label the PR with 'docs-required' by default.
         with:
           labels: docs-required
-          github_token: ${{ secrets.GH_PA_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           number: ${{ github.event.pull_request.number }}
           repo: fluent/fluent-bit
