@@ -1989,7 +1989,15 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 
     flb_http_buffer_size(c, 4192);
 
-    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    if (ctx->stackdriver_agent) {
+        flb_http_add_header(c, "User-Agent", 10,
+                            ctx->stackdriver_agent,
+                            flb_sds_len(ctx->stackdriver_agent));
+    }
+    else {
+        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    }
+
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
 

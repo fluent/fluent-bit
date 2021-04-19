@@ -131,6 +131,8 @@ struct flb_stackdriver {
     flb_sds_t log_name_key;
     bool autoformat_stackdriver_trace;
 
+    flb_sds_t stackdriver_agent;
+
     /* oauth2 context */
     struct flb_oauth2 *o;
 
