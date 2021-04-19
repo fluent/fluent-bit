@@ -1,7 +1,13 @@
 # ![logo](fluentbit_logo.png)
 
-Travis CI:
-[![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
+### CI Status
+
+| CI Workflow       | Status             |
+|-------------------|--------------------|
+| Unit Tests (master) | ![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=1.7) |
+
+
+## Fluent Bit
 
 [Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Embedded Linux, MacOS and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
 
