@@ -29,7 +29,7 @@
 /* Sched contstants */
 #define FLB_SCHED_CAP            2000
 #define FLB_SCHED_BASE           5
-#define FLB_SCHED_REQUEST_FRAME  10
+#define FLB_SCHED_REQUEST_FRAME  5
 
 /* Timer types */
 #define FLB_SCHED_TIMER_REQUEST     1  /* timerfd             */
