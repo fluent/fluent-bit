@@ -62,6 +62,9 @@ struct flb_out_http {
     /* Allow duplicated headers */
     int allow_dup_headers;
 
+    /* Log the response paylod */
+    int log_response_payload;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
