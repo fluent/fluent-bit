@@ -4,7 +4,7 @@
 
 | CI Workflow       | Status             |
 |-------------------|--------------------|
-| Unit Tests (master) | ![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=1.7) |
+| Unit Tests (1.7)  | ![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=1.7) |
 
 
 ## Fluent Bit
