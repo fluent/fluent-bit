@@ -311,6 +311,10 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
             flb_free(request);
             return -1;
         }
+        else {
+            fprintf(stderr, "timerfd request now: fd=%i seconds=%i\n",
+                    request->fd, seconds);
+        }
     }
 
     return seconds;
