@@ -162,6 +162,7 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
      * restrictions and if the Storage type is 'filesystem' we need to put
      * the file content down.
      */
+    flb_input_chunk_set_up_down(task->ic);
     if (mk_list_size(&task->routes) == 1) {
         flb_input_chunk_down(task->ic);
     }
