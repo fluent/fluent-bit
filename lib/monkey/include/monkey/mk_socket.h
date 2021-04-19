@@ -20,12 +20,20 @@
 #ifndef MK_SOCKET_H
 #define MK_SOCKET_H
 
+#include <fcntl.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <afunix.h>
+#else
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <fcntl.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/un.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <monkey/mk_config.h>

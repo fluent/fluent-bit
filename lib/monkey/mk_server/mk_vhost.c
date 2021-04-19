@@ -26,9 +26,11 @@
 #include <monkey/mk_http_status.h>
 #include <monkey/mk_info.h>
 
-#include <regex.h>
+#include <mk_core/mk_dirent.h>
+
+//#include <regex.h>
+#include <re.h>
 #include <sys/stat.h>
-#include <dirent.h>
 #include <fcntl.h>
 
 /* Initialize Virtual Host FDT mutex */
@@ -36,21 +38,17 @@ pthread_mutex_t mk_vhost_fdt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int str_to_regex(char *str, regex_t *reg)
 {
-    int ret;
-    char tmp[80];
     char *p = str;
+    regex_t *result;
 
     while (*p) {
         if (*p == ' ') *p = '|';
         p++;
     }
 
-    ret = regcomp(reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
-    if (ret) {
-        regerror(ret, reg, tmp, sizeof(tmp));
-        mk_err("Handler config: Failed to compile regex: %s", tmp);
-        return -1;
-    }
+    result = re_compile(str);
+
+    memcpy(reg, result, REGEXP_SIZE);
 
     return 0;
 }
@@ -326,7 +324,7 @@ struct mk_vhost_handler *mk_vhost_handler_match(char *match,
     h->name  = NULL;
     h->cb    = cb;
     h->data  = data;
-    h->match = mk_mem_alloc(sizeof(regex_t));
+    h->match = mk_mem_alloc(REGEXP_SIZE);
     if (!h->match) {
         mk_mem_free(h);
         return NULL;
@@ -516,6 +514,11 @@ struct mk_vhost *mk_vhost_read(char *path)
             }
             h_handler = mk_mem_alloc(sizeof(struct mk_vhost_handler));
             if (!h_handler) {
+                exit(EXIT_FAILURE);
+            }
+            h_handler->match = mk_mem_alloc(REGEXP_SIZE);
+            if (!h_handler->match) {
+                mk_mem_free(h_handler);
                 exit(EXIT_FAILURE);
             }
             h_handler->cb = NULL;
@@ -745,7 +748,6 @@ static void mk_vhost_handler_free(struct mk_vhost_handler *h)
         mk_mem_free(param);
     }
 
-    regfree(h->match);
     mk_mem_free(h->match);
     mk_mem_free(h->name);
     mk_mem_free(h);

@@ -2,7 +2,7 @@
 
 /*  Monkey HTTP Server
  *  ==================
- *  Copyright 2001-2016 Monkey Software LLC <eduardo@monkey.io>
+ *  Copyright 2001-2017 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,24 +17,15 @@
  *  limitations under the License.
  */
 
-#ifndef MK_NET_H
-#define MK_NET_H
+#ifndef MK_DIRENT_H
+#define MK_DIRENT_H
 
-#include <monkey/mk_core.h>
-#include <monkey/mk_stream.h>
+#include "mk_core_info.h"
 
-struct mk_net_connection {
-    struct mk_event event;
-    int fd;
-    char *host;
-    int port;
-    void *thread;
-};
-
-int mk_net_init();
-
-struct mk_net_connection *mk_net_conn_create(char *addr, int port);
-int mk_net_conn_write(struct mk_channel *channel,
-                      void *data, size_t len);
+#ifdef _WIN32
+#include "external/dirent.h"
+#else
+#include <dirent.h>
+#endif
 
 #endif

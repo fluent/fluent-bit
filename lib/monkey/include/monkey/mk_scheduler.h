@@ -33,8 +33,16 @@
 #define MK_SCHED_CONN_TIMEOUT    -1
 #define MK_SCHED_CONN_CLOSED     -2
 
-#define MK_SCHED_SIGNAL_DEADBEEF  0xDEADBEEF
-#define MK_SCHED_SIGNAL_FREE_ALL  0xFFEE0000
+#define MK_SCHED_SIGNAL_DEADBEEF         0xDEADBEEF
+#define MK_SCHED_SIGNAL_FREE_ALL         0xFFEE0000
+#define MK_SCHED_SIGNAL_EVENT_LOOP_BREAK 0xEEFFAACC
+
+#ifdef _WIN32
+    /* The pid field in the mk_sched_worker structure is ignored in platforms other than
+     * linux and mac os so it can be safely plugged in this meaningless way
+     */
+    typedef uint64_t pid_t;
+#endif
 
 /*
  * Scheduler balancing mode:
@@ -75,6 +83,7 @@ struct mk_sched_worker
     unsigned char initialized;
 
     pthread_t tid;
+
     pid_t pid;
 
     /* store the memory page size (_SC_PAGESIZE) */
@@ -333,7 +342,8 @@ int mk_sched_worker_cb_add(struct mk_server *server,
                            void *data);
 
 void mk_sched_worker_cb_free(struct mk_server *server);
-int mk_sched_send_signal(struct mk_server *server, uint64_t val);
+int mk_sched_send_signal(struct mk_sched_worker *worker, uint64_t val);
+int mk_sched_broadcast_signal(struct mk_server *server, uint64_t val);
 int mk_sched_workers_join(struct mk_server *server);
 int mk_sched_threads_purge(struct mk_sched_worker *sched);
 int mk_sched_threads_destroy_all(struct mk_sched_worker *sched);

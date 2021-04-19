@@ -74,7 +74,7 @@ struct response_headers
 
     /* IOV dirty hack */
     struct mk_iov headers_iov;
-    struct iovec __iov_io[MK_HEADER_IOV];
+    struct mk_iovec __iov_io[MK_HEADER_IOV];
     void *__iov_buf[MK_HEADER_IOV];
 };
 

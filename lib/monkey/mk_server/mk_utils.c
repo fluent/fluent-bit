@@ -34,16 +34,111 @@
 #include <stdarg.h>
 #include <time.h>
 #include <inttypes.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 
 /* stacktrace */
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 
 #ifdef MK_HAVE_BACKTRACE
 #include <execinfo.h>
 #endif
 
 #define MK_UTILS_GMT_DATEFORMAT "%a, %d %b %Y %H:%M:%S GMT"
+
+#ifdef _WIN32
+static struct tm* localtime_r(const time_t* timep, struct tm* result)
+{
+    localtime_s(result, timep);
+
+    return result;
+}
+
+static struct tm* gmtime_r(const time_t* timep, struct tm* result)
+{
+    gmtime_s(result, timep);
+
+    return result;
+}
+
+static time_t timegm(struct tm* timeptr)
+{
+    return _mkgmtime(timeptr);
+}
+#endif
+
+#ifdef _WIN32
+int mk_utils_get_system_core_count()
+{
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION *proc_info_buffer;
+    unsigned int result_entry_count;
+    unsigned int entry_index;
+    DWORD result_length;
+    int result_code;
+    int core_count;
+
+    core_count = 1;
+    result_length = 0;
+    proc_info_buffer = NULL;
+
+    result_code = GetLogicalProcessorInformation(proc_info_buffer, &result_length);
+    /* We're passing a null buffer, result_code has to be false */
+
+    if (ERROR_INSUFFICIENT_BUFFER == GetLastError()) {
+        result_entry_count = result_length / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+        proc_info_buffer = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION *) _alloca(result_length);
+
+        if(NULL != proc_info_buffer) {
+            result_code = GetLogicalProcessorInformation(proc_info_buffer, &result_length);
+
+            if (0 != result_code) {
+                core_count = 0;
+
+                for(entry_index = 0 ; entry_index < result_entry_count ; entry_index++) {
+                    if(RelationProcessorCore == proc_info_buffer[entry_index].Relationship) {
+                        core_count++;
+                    }
+                }
+            }
+        }
+
+        /* Athread stack allocation error is a pretty serious 
+         * error so in that case we let someone else handle it by returning a 
+         * sane default (1 core)
+         */
+    }
+
+    return core_count;
+}
+
+int mk_utils_get_system_page_size()
+{
+    SYSTEM_INFO si;
+
+    GetSystemInfo(&si);
+
+    return si.dwPageSize;
+}
+
+#else
+int mk_utils_get_system_core_count()
+{
+    return sysconf(_SC_NPROCESSORS_ONLN);
+}
+
+int mk_utils_get_system_page_size()
+{
+    return sysconf(_SC_PAGESIZE);
+}
+
+#endif
+
 
 /* Date helpers */
 static const char mk_date_wd[][6]  = {"Sun, ", "Mon, ", "Tue, ", "Wed, ", "Thu, ", "Fri, ", "Sat, "};
@@ -184,9 +279,115 @@ time_t mk_utils_gmt2utime(char *date)
     struct tm t_data;
     memset(&t_data, 0, sizeof(struct tm));
 
-    if (!strptime(date, MK_UTILS_GMT_DATEFORMAT, (struct tm *) &t_data)) {
+
+#ifdef _WIN32
+#pragma message("Since there is no strptime in windows we'll parse the date in a really crude way just to get it out of the way")
+
+    if (0 != strcmp(MK_UTILS_GMT_DATEFORMAT, "%a, %d %b %Y %H:%M:%S GMT")) {
         return -1;
     }
+    
+    {
+        char *token;
+
+        token = strtok(date, " "); /* "%a, " */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        token = strtok(NULL, " "); /* "%d " */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        t_data.tm_mday = strtol(token, NULL, 10);
+
+        token = strtok(NULL, " "); /* "%b " */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        if(0 == _strnicmp(token, "jan", 3)){
+            t_data.tm_mon = 0;
+        }
+        else if(0 == _strnicmp(token, "feb", 3)){
+            t_data.tm_mon = 1;
+        }
+        else if(0 == _strnicmp(token, "mar", 3)){
+            t_data.tm_mon = 2;
+        }
+        else if(0 == _strnicmp(token, "apr", 3)){
+            t_data.tm_mon = 3;
+        }
+        else if(0 == _strnicmp(token, "may", 3)){
+            t_data.tm_mon = 4;
+        }
+        else if(0 == _strnicmp(token, "jun", 3)){
+            t_data.tm_mon = 5;
+        }
+        else if(0 == _strnicmp(token, "jul", 3)){
+            t_data.tm_mon = 6;
+        }
+        else if(0 == _strnicmp(token, "aug", 3)){
+            t_data.tm_mon = 7;
+        }
+        else if(0 == _strnicmp(token, "sep", 3)){
+            t_data.tm_mon = 8;
+        }
+        else if(0 == _strnicmp(token, "oct", 3)){
+            t_data.tm_mon = 9;
+        }
+        else if(0 == _strnicmp(token, "nov", 3)){
+            t_data.tm_mon = 10;
+        }
+        else if(0 == _strnicmp(token, "dec", 3)){
+            t_data.tm_mon = 11;
+        }
+        else {
+            return -1;
+        }
+
+        token = strtok(NULL, " "); /* "%Y " */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        t_data.tm_year = strtol(token, NULL, 10);
+
+        token = strtok(NULL, ":"); /* "%H:" */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        t_data.tm_hour = strtol(token, NULL, 10);
+
+        token = strtok(NULL, ":"); /* "%M:" */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        t_data.tm_min = strtol(token, NULL, 10);
+
+        token = strtok(NULL, " "); /* "%S " */
+
+        if (NULL == token) {
+            return -1;
+        }
+
+        t_data.tm_sec = strtol(token, NULL, 10);
+    }
+
+#else
+    if (!strptime(date, MK_UTILS_GMT_DATEFORMAT, (struct tm*)&t_data)) {
+        return -1;
+    }
+#endif
 
     new_unix_time = timegm((struct tm *) &t_data);
 

@@ -25,6 +25,8 @@
 #include <monkey/mk_scheduler.h>
 
 #include <ctype.h>
+
+#ifndef _WIN32
 #include <sys/utsname.h>
 
 int mk_kernel_version()
@@ -142,3 +144,22 @@ int mk_kernel_features_print(char *buffer, size_t size,
 
     return features;
 }
+#else
+/* We still need to determine if this can be safely ignored or what do we need to do here */
+
+int mk_kernel_version()
+{
+    return 1;
+}
+
+int mk_kernel_features(int version)
+{
+    return 0;
+}
+
+int mk_kernel_features_print(char* buffer, size_t size,
+    struct mk_server* server)
+{
+    return 0;
+}
+#endif

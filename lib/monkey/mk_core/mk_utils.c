@@ -28,13 +28,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <mk_core/mk_utils.h>
 
 #include <mk_core/mk_unistd.h>
 
 #if defined (__linux__)
 #include <sys/prctl.h>
 #elif defined (_WIN32)
-  #ifndef localtime_r
+#include <winsock2.h>
+
+#ifndef localtime_r
     struct tm *localtime_r(time_t *_clock, struct tm *_result)
     {
         struct tm *p = localtime(_clock);
@@ -43,6 +46,31 @@
         return p;
     }
   #endif
+    struct timezone {
+        int tz_minuteswest;     /* minutes west of Greenwich */
+        int tz_dsttime;         /* type of DST correction */
+    };
+
+    int gettimeofday(struct timeval *tv, struct timezone *tz)
+    {
+        FILETIME result;
+        ULARGE_INTEGER temp;
+
+        memset(&result, 0, sizeof(FILETIME));
+
+        GetSystemTimeAsFileTime(&result);
+
+        if (NULL != tv) {
+            temp.LowPart = result.dwLowDateTime;
+            temp.HighPart = result.dwHighDateTime;
+            
+            tv->tv_usec = ((temp.QuadPart / 10LL) % 1000000LL);
+            tv->tv_sec = ((temp.QuadPart - (116444736000000000LL)) / 10000000LL);
+        }
+
+        return 0;
+    }
+
 #endif
 
 /* core init time variable */
@@ -59,7 +87,12 @@ pthread_mutex_t mutex_trace;
 pthread_key_t mk_utils_error_key;
 
 #ifdef MK_HAVE_TRACE
+#ifdef _WIN32
+/* struct timeval is defined in winsock.h according to msdn */
+#include <winsock2.h>
+#else
 #include <sys/time.h>
+#endif
 
 static time_t mk_core_init_time;
 static char *env_trace_filter;
@@ -87,7 +120,7 @@ void mk_utils_trace(const char *component, int color, const char *function,
     }
 
     /* Mutex lock */
-    pthread_mutex_lock(&mutex_trace);
+    //pthread_mutex_lock(&mutex_trace);
 
     gettimeofday(&tv, &tz);
 
@@ -128,7 +161,7 @@ void mk_utils_trace(const char *component, int color, const char *function,
     fflush(stdout);
 
     /* Mutex unlock */
-    pthread_mutex_unlock(&mutex_trace);
+    //pthread_mutex_unlock(&mutex_trace);
 }
 
 int mk_utils_print_errno(int n)
