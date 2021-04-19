@@ -298,7 +298,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     request->timer   = timer;
 
     /* Request to be placed into the sched_requests_wait list */
-    if (seconds > FLB_SCHED_REQUEST_FRAME) {
+    if (seconds >= FLB_SCHED_REQUEST_FRAME) {
         schedule_request_wait(request, config);
     }
     else {
