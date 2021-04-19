@@ -164,6 +164,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
      */
     flb_input_chunk_set_up_down(task->ic);
 
+    /*
+     * Besides limits adjusted above, a retry that's going to only one place
+     * must be down.
+     */
+    if (mk_list_size(&task->routes) == 1) {
+        flb_input_chunk_down(task->ic);
+    }
+
     return retry;
 }
 
@@ -382,7 +390,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
-        
+
         if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
