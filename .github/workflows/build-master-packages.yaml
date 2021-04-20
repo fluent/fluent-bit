@@ -17,6 +17,7 @@ jobs:
     steps:
       - name: Setup environment
         run: |
+          sudo apt-get update
           sudo apt-get install --yes qemu binfmt-support qemu-user-static qemu-utils qemu-efi-aarch64 qemu-system-arm docker.io containerd runc
           sudo systemctl unmask docker && sudo systemctl start docker
           docker run --rm --privileged --name qemu multiarch/qemu-user-static:register --reset
