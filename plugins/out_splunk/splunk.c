@@ -230,6 +230,13 @@ static void cb_splunk_flush(const void *data, size_t bytes,
                             ctx->auth_header, flb_sds_len(ctx->auth_header));
     }
 
+    /* Append Channel identifier header */
+    if (ctx->channel) {
+        flb_http_add_header(c, FLB_SPLUNK_CHANNEL_IDENTIFIER_HEADER,
+                            strlen(FLB_SPLUNK_CHANNEL_IDENTIFIER_HEADER),
+                            ctx->channel, ctx->channel_len);
+    }
+
     /* Content Encoding: gzip */
     if (compressed == FLB_TRUE) {
         flb_http_set_content_encoding_gzip(c);
@@ -325,6 +332,12 @@ static struct flb_config_map config_map[] = {
      "When enabled, the record keys and values are set in the top level of the "
      "map instead of under the event key. Refer to the Sending Raw Events section "
      "from the docs for more details to make this option work properly."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "channel", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, channel),
+     "Specify X-Splunk-Request-Channel Header for the HTTP Event Collector interface."
     },
 
     /* EOF */
