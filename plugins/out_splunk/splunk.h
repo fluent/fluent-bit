@@ -28,6 +28,8 @@
 #define FLB_SPLUNK_DEFAULT_TIME       "time"
 #define FLB_SPLUNK_DEFAULT_EVENT      "event"
 
+#define FLB_SPLUNK_CHANNEL_IDENTIFIER_HEADER "X-Splunk-Request-Channel"
+
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
@@ -46,6 +48,10 @@ struct flb_splunk {
 
     /* Token Auth */
     flb_sds_t auth_header;
+
+    /* Channel identifier */
+    flb_sds_t channel;
+    size_t channel_len;
 
     /* Send fields directly or pack data into "event" object */
     int splunk_send_raw;
