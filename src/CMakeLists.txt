@@ -417,7 +417,7 @@ if(FLB_BINARY)
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION /lib/systemd/system)
+    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${FLB_INSTALL_SYSTEMDUNITDIR})
     install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
@@ -425,7 +425,7 @@ if(FLB_BINARY)
       "${PROJECT_SOURCE_DIR}/init/upstart.in"
       ${FLB_UPSTART_SCRIPT}
       )
-    install(FILES ${FLB_UPSTART_SCRIPT} COMPONENT binary DESTINATION /etc/init)
+    install(FILES ${FLB_UPSTART_SCRIPT} COMPONENT binary DESTINATION ${FLB_INSTALL_UPSTARTUNITDIR})
     install(DIRECTORY DESTINATION COMPONENT binary ${FLB_INSTALL_CONFDIR})
   else()
     # FIXME: should we support Sysv init script ?
