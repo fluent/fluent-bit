@@ -57,6 +57,8 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
         ctx->multiline_flush = 1;
     }
 
+    mk_list_init(&ctx->mult_parsers);
+
     /* Get firstline parser */
     tmp = flb_input_get_property("parser_firstline", ins);
     if (!tmp) {
@@ -70,7 +72,6 @@ int flb_tail_mult_create(struct flb_tail_config *ctx,
     }
 
     ctx->mult_parser_firstline = parser;
-    mk_list_init(&ctx->mult_parsers);
 
     /* Read all multiline rules */
     mk_list_foreach(head, &ins->properties) {
