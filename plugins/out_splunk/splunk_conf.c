@@ -30,6 +30,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     int ret;
     int io_flags = 0;
     flb_sds_t t;
+    char buf[256];
     const char *tmp;
     struct flb_upstream *upstream;
     struct flb_splunk *ctx;
@@ -86,6 +87,24 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Event key */
+    if (ctx->event_key) {
+        if (ctx->event_key[0] != '$') {
+            flb_plg_error(ctx->ins,
+                          "invalid single_value_key pattern, it must start with '$'");
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->ra_event_key = flb_ra_create(ctx->event_key, FLB_TRUE);
+        if (!ctx->ra_event_key) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for event_key pattern: '%s'",
+                          ctx->event_key);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
     /* No http_user is set, fallback to splunk_token, if splunk_token is unset, fail. */
     if(!ctx->http_user) {
         /* Splunk Auth Token */
@@ -125,6 +144,11 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
+
+    if (ctx->ra_event_key) {
+        flb_ra_destroy(ctx->ra_event_key);
+    }
+
     flb_free(ctx);
 
     return 0;
