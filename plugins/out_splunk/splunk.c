@@ -24,8 +24,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
-#include <msgpack.h>
+#include <fluent-bit/flb_ra_key.h>
 
+#include <msgpack.h>
 #include "splunk.h"
 #include "splunk_conf.h"
 
@@ -51,23 +52,101 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static int splunk_format(const void *in_buf, size_t in_bytes,
-                         char **out_buf, size_t *out_size,
-                         struct flb_splunk *ctx)
+static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
+                    struct flb_time *tm, msgpack_object map)
 {
     int i;
-    int map_size;
-    size_t off = 0;
     double t;
+    int map_size;
+    msgpack_object k;
+    msgpack_object v;
+
+    t = flb_time_to_double(tm);
+    map_size = map.via.map.size;
+
+    if (ctx->splunk_send_raw == FLB_TRUE) {
+        msgpack_pack_map(mp_pck, map_size /* all k/v */);
+    }
+    else {
+        msgpack_pack_map(mp_pck, 2 /* time + event */);
+
+        /* Append the time key */
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_TIME,
+                              sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
+        msgpack_pack_double(mp_pck, t);
+
+        /* Add k/v pairs under the key 'event' instead of to the top level object */
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_EVENT,
+                              sizeof(FLB_SPLUNK_DEFAULT_EVENT) - 1);
+        msgpack_pack_map(mp_pck, map_size);
+    }
+
+    /* Append k/v */
+    for (i = 0; i < map_size; i++) {
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+
+        msgpack_pack_object(mp_pck, k);
+        msgpack_pack_object(mp_pck, v);
+    }
+
+    return 0;
+}
+
+
+static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
+                                 struct flb_time *tm, msgpack_object map)
+{
+    double t;
+    struct flb_ra_value *rval;
+
+    t = flb_time_to_double(tm);
+    rval = flb_ra_get_value_object(ctx->ra_event_key, map);
+    if (!rval) {
+        return -1;
+    }
+
+    if (ctx->splunk_send_raw == FLB_FALSE) {
+        msgpack_pack_map(mp_pck, 2 /* time + raw event key value */);
+
+        /* Append the time key */
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_TIME,
+                              sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
+        msgpack_pack_double(mp_pck, t);
+
+        /* Add k/v pairs under the key 'event' instead of to the top level object */
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_EVENT,
+                              sizeof(FLB_SPLUNK_DEFAULT_EVENT) - 1);
+    }
+
+    msgpack_pack_object(mp_pck, rval->o);
+
+    flb_ra_key_value_destroy(rval);
+    return 0;
+}
+
+static inline int splunk_format(const void *in_buf, size_t in_bytes,
+                                char **out_buf, size_t *out_size,
+                                struct flb_splunk *ctx)
+{
+    int ret;
+    size_t off = 0;
     struct flb_time tm;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object *obj;
     msgpack_object map;
-    msgpack_object k;
-    msgpack_object v;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    char *err;
     flb_sds_t tmp;
     flb_sds_t record;
     flb_sds_t json_out;
@@ -93,46 +172,36 @@ static int splunk_format(const void *in_buf, size_t in_bytes,
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-        t = flb_time_to_double(&tm);
 
         /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&mp_sbuf);
         msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
         map = root.via.array.ptr[1];
-        map_size = map.via.map.size;
 
-        if (ctx->splunk_send_raw == FLB_TRUE) {
-            msgpack_pack_map(&mp_pck, 1 + map_size /* time + all k/v */);
-        } else {
-            msgpack_pack_map(&mp_pck, 2 /* time + event */);
+        if (ctx->event_key) {
+            /* Pack the value of a event key */
+            ret = pack_event_key(ctx, &mp_pck, &tm, map);
+        }
+        else {
+            /* Pack as a map */
+            ret = pack_map(ctx, &mp_pck, &tm, map);
         }
 
-        /* Append the time key */
-        msgpack_pack_str(&mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
-        msgpack_pack_str_body(&mp_pck,
-                              FLB_SPLUNK_DEFAULT_TIME,
-                              sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
-        msgpack_pack_double(&mp_pck, t);
-
-        if (ctx->splunk_send_raw == FLB_FALSE) {
-            /* Add k/v pairs under the key 'event' instead of to the top level object */
-            msgpack_pack_str(&mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT) -1);
-            msgpack_pack_str_body(&mp_pck,
-                                  FLB_SPLUNK_DEFAULT_EVENT,
-                                  sizeof(FLB_SPLUNK_DEFAULT_EVENT) - 1);
-            msgpack_pack_map(&mp_pck, map_size);
+        /* Validate packaging */
+        if (ret != 0) {
+            /* Format invalid record */
+            err = flb_msgpack_to_json_str(1048, &map);
+            if (err) {
+                /* Print error and continue processing other records */
+                flb_plg_warn(ctx->ins, "could not process record: %s", err);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                flb_free(err);
+            }
+            continue;
         }
 
-        /* Append k/v */
-        for (i = 0; i < map_size; i++) {
-            k = map.via.map.ptr[i].key;
-            v = map.via.map.ptr[i].val;
-
-            msgpack_pack_object(&mp_pck, k);
-            msgpack_pack_object(&mp_pck, v);
-        }
-
+        /* Format as JSON */
         record = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
         if (!record) {
             flb_errno();
@@ -140,6 +209,14 @@ static int splunk_format(const void *in_buf, size_t in_bytes,
             msgpack_unpacked_destroy(&result);
             flb_sds_destroy(json_out);
             return -1;
+        }
+
+        /* On raw mode, append a breakline to every record */
+        if (ctx->splunk_send_raw) {
+            tmp = flb_sds_cat(record, "\n", 1);
+            if (tmp) {
+                record = tmp;
+            }
         }
 
         tmp = flb_sds_cat(json_out, record, flb_sds_len(record));
@@ -174,6 +251,7 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     size_t b_sent;
     flb_sds_t buf_data;
     size_t buf_size;
+    char *endpoint;
     struct flb_splunk *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
@@ -215,8 +293,16 @@ static void cb_splunk_flush(const void *data, size_t bytes,
         }
     }
 
+    /* Splunk URI endpoint */
+    if (ctx->splunk_send_raw) {
+        endpoint = FLB_SPLUNK_DEFAULT_URI_RAW;
+    }
+    else {
+        endpoint = FLB_SPLUNK_DEFAULT_URI_EVENT;
+    }
+
     /* Compose HTTP Client request */
-    c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_SPLUNK_DEFAULT_URI,
+    c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
     flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
@@ -311,6 +397,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_splunk, http_passwd),
      "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_key),
+     "Specify the key name that will be used to send a single value as part of the record."
     },
 
     {
