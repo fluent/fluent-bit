@@ -630,7 +630,7 @@ void test_json_pack_bug1278()
 void test_json_pack_nan()
 {
     int ret;
-    char json_str[128];
+    char json_str[128] = {0};
     char *p = NULL;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -654,6 +654,20 @@ void test_json_pack_nan()
     if (!TEST_CHECK(p != NULL)) {
         TEST_MSG("json should be nan. json_str=%s", json_str);
     }
+
+    // convert. nan -> null
+    memset(&json_str[0], 0, sizeof(json_str));
+    flb_pack_set_null_as_nan(FLB_TRUE);
+    ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
+    TEST_CHECK(ret >= 0);
+
+    p = strstr(&json_str[0], "null");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("json should be null. json_str=%s", json_str);
+    }
+
+    // clear setting
+    flb_pack_set_null_as_nan(FLB_FALSE);
 }
 
 
