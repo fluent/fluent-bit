@@ -43,6 +43,7 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_pack.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -455,6 +456,8 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_sched *sched;
+
+    flb_pack_set_null_as_nan(config->convert_nan_to_null);
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
