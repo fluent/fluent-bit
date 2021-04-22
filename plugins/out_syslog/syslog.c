@@ -849,7 +849,6 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
         flb_plg_error(ins, "error configuring plugin");
         return -1;
     }
-    ctx->ins = ins;
 
     if (ctx->maxsize < 0) {
         if (ctx->parsed_format == FLB_SYSLOG_RFC3164) {
@@ -894,7 +893,6 @@ static int cb_syslog_init(struct flb_output_instance *ins, struct flb_config *co
 
     flb_plg_info(ctx->ins, "setup done for %s:%i",
                  ins->host.name, ins->host.port);
-
     return 0;
 }
 
@@ -929,7 +927,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_STR, "syslog_format", "rfc5424",
-     0, FLB_TRUE, offsetof(struct flb_syslog, parsed_format),
+     0, FLB_TRUE, offsetof(struct flb_syslog, format),
      "Specify the Syslog protocol format to use, the available options are rfc3164 "
      "and rfc5424."
     },
