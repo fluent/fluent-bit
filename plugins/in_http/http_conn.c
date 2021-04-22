@@ -185,6 +185,7 @@ int http_conn_del(struct http_conn *conn)
 
     mk_event_del(ctx->evl, &conn->event);
     mk_list_del(&conn->_head);
+    flb_socket_close(conn->fd);
     flb_free(conn->buf_data);
     flb_free(conn);
 
