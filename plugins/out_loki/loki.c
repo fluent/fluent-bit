@@ -1140,14 +1140,14 @@ static void cb_loki_flush(const void *data, size_t bytes,
         }
         else {
             if (c->resp.payload) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             ctx->tcp_host, ctx->tcp_port,
-                             c->resp.status, c->resp.payload);
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->tcp_host, ctx->tcp_port,
+                              c->resp.status, c->resp.payload);
             }
             else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
-                             ctx->tcp_host, ctx->tcp_port,
-                             c->resp.status);
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->tcp_host, ctx->tcp_port,
+                              c->resp.status);
             }
         }
     }
