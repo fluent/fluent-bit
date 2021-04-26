@@ -392,6 +392,10 @@ int flb_parser_decoder_do(struct mk_list *decoders,
          * The content of this buffer is just a serialized number of maps.
          */
         if (dec->add_extra_keys == FLB_TRUE) {
+            /* We need to clean up already allocated extra buffers */
+            if (extra_keys == FLB_TRUE) {
+                msgpack_sbuffer_destroy(&extra_mp_sbuf);
+            }
             extra_keys = FLB_TRUE;
             msgpack_sbuffer_init(&extra_mp_sbuf);
             msgpack_packer_init(&extra_mp_pck, &extra_mp_sbuf,
