@@ -145,7 +145,8 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
             }
 
             /* Index limit */
-            if (cur.via.array.size < entry->array_id + 1) {
+            if (entry->array_id == 2147483647 ||
+                cur.via.array.size < entry->array_id + 1) {
                 return -1;
             }
 
