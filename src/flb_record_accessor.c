@@ -455,10 +455,20 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     }
     else if (v->type == FLB_RA_INT) {
         len = snprintf(str, sizeof(str) - 1, "%" PRId64, v->val.i64);
+        /* We need to check size is not above str length */
+        if (len >= 32) {
+            *found = FLB_FALSE;
+            return buf;
+        }
         tmp = flb_sds_cat(buf, str, len);
     }
     else if (v->type == FLB_RA_FLOAT) {
         len = snprintf(str, sizeof(str) - 1, "%f", v->val.f64);
+        /* We need to check size is not above str length */
+        if (len >= 32) {
+            *found = FLB_FALSE;
+            return buf;
+        }
         tmp = flb_sds_cat(buf, str, len);
     }
     else if (v->type == FLB_RA_STRING) {
