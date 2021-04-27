@@ -99,7 +99,7 @@ option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support" No)
-
+option(FLB_ARROW               "Build with Apache Arrow support"  No)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS            "Enable metrics support"       Yes)
@@ -733,6 +733,16 @@ endif()
 find_package(PostgreSQL)
 if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
    FLB_OPTION(FLB_OUT_PGSQL OFF)
+endif()
+
+# Arrow GLib
+# ==========
+find_package(PkgConfig)
+pkg_check_modules(ARROW_GLIB QUIET arrow-glib)
+if(FLB_ARROW AND ARROW_GLIB_FOUND)
+  FLB_DEFINITION(FLB_HAVE_ARROW)
+else()
+  set(FLB_ARROW OFF)
 endif()
 
 # Pthread Local Storage
