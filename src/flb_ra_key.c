@@ -145,7 +145,9 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
             }
 
             /* Index limit */
-            if (entry->array_id == 2147483647 ||
+            /* Ensure we do not oveflow signed numbers (holding 2**31-1) */
+            static int overflow_limit = 2147483647;
+            if (entry->array_id == overflow_limit ||
                 cur.via.array.size < entry->array_id + 1) {
                 return -1;
             }
