@@ -36,6 +36,10 @@
 #include "s3.h"
 #include "s3_store.h"
 
+#ifdef FLB_HAVE_ARROW
+#include "arrow/compress.h"
+#endif
+
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
@@ -122,7 +126,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression != NULL) {
+    if (ctx->compression == COMPRESS_GZIP) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -149,7 +153,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression != NULL) {
+    if (ctx->compression == COMPRESS_GZIP) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -515,17 +519,23 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
-        if (strcmp((char *) tmp, "gzip") != 0) {
-            flb_plg_error(ctx->ins, 
-                          "'gzip' is currently the only supported value for 'compression'");
-            return -1;
-        } else if (ctx->use_put_object == FLB_FALSE) {
+        if (ctx->use_put_object == FLB_FALSE) {
             flb_plg_error(ctx->ins, 
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
-        
-        ctx->compression = (char *) tmp;
+        if (strcmp(tmp, "gzip") == 0) {
+            ctx->compression = COMPRESS_GZIP;
+        }
+#ifdef FLB_HAVE_ARROW
+        else if (strcmp(tmp, "arrow") == 0) {
+            ctx->compression = COMPRESS_ARROW;
+        }
+#endif
+        else {
+            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+            return -1;
+        }
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -1090,7 +1100,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_destroy(s3_key);
     uri = tmp;
 
-    if (ctx->compression != NULL) {
+    if (ctx->compression == COMPRESS_GZIP) {
         ret = flb_gzip_compress(body, body_size, &compressed_body, &final_body_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
@@ -1098,7 +1108,19 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
         final_body = (char *) compressed_body;
-    } else {
+    }
+#ifdef FLB_HAVE_ARROW
+    else if (ctx->compression == COMPRESS_ARROW) {
+        ret = out_s3_compress_arrow(body, body_size, &compressed_body, &final_body_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to compress data");
+            flb_sds_destroy(uri);
+            return -1;
+        }
+        final_body = compressed_body;
+    }
+#endif
+    else {
         final_body = body;
         final_body_size = body_size;
     }
@@ -1128,7 +1150,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, final_body, final_body_size,
                                               headers, num_headers);
-        if (ctx->compression != NULL) {
+        if (ctx->compression != COMPRESS_NONE) {
              flb_free(compressed_body);
         }
         flb_free(headers);
@@ -1602,7 +1624,8 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
     "Compression type for S3 objects. 'gzip' is currently the only supported value. "
-    "The Content-Encoding HTTP Header will be set to 'gzip'."
+    "The Content-Encoding HTTP Header will be set to 'gzip'. "
+    "If Apache Arrow was enabled at compile time, you can set 'arrow' to this option."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
