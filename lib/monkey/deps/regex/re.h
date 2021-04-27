@@ -43,8 +43,12 @@ extern "C"{
 
 /* Definitions: */
 
-#define MAX_REGEXP_OBJECTS      30    /* Max number of regex symbols in expression. */
-#define MAX_CHAR_CLASS_LEN      40    /* Max length of character-class buffer in.   */
+/* This was incremented because everything counts as a symbol, even literals and because
+ * of that the longer regular expressions matched wrong input text because they were only
+ * partially compiled
+ */
+#define MAX_REGEXP_OBJECTS      512    /* Max number of regex symbols in expression. */
+#define MAX_CHAR_CLASS_LEN      40     /* Max length of character-class buffer in.   */
 
 
 enum { UNUSED, DOT, BEGIN, END, QUESTIONMARK, STAR, PLUS, RE_CHAR, CHAR_CLASS, INV_CHAR_CLASS, DIGIT, NOT_DIGIT, ALPHA, NOT_ALPHA, WHITESPACE, NOT_WHITESPACE, /* BRANCH */ };
