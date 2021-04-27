@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
@@ -427,8 +428,9 @@ static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
 static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
                                      msgpack_object map, int *found)
 {
-    char str[32];
     int len;
+    char *js;
+    char str[32];
     flb_sds_t tmp = NULL;
     struct flb_ra_value *v;
 
@@ -444,11 +446,23 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
 
     /* Based on data type, convert to it string representation */
     if (v->type == FLB_RA_BOOL) {
-        if (v->val.boolean) {
-            tmp = flb_sds_cat(buf, "true", 4);
+        /* Check if is a map or a real bool */
+        if (v->o.type == MSGPACK_OBJECT_MAP) {
+            /* Convert msgpack map to JSON string */
+            js = flb_msgpack_to_json_str(1024, &v->o);
+            if (js) {
+                len = strlen(js);
+                tmp = flb_sds_cat(buf, js, len);
+                flb_free(js);
+            }
         }
-        else {
-            tmp = flb_sds_cat(buf, "false", 5);
+        else if (v->o.type == MSGPACK_OBJECT_BOOLEAN) {
+            if (v->val.boolean) {
+                tmp = flb_sds_cat(buf, "true", 4);
+            }
+            else {
+                tmp = flb_sds_cat(buf, "false", 5);
+            }
         }
     }
     else if (v->type == FLB_RA_INT) {
