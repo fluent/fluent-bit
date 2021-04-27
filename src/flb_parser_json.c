@@ -168,6 +168,12 @@ int flb_parser_json_do(struct flb_parser *parser,
         return *out_size;
     }
 
+    /* Ensure we have an accurate type */
+    if (v->type != MSGPACK_OBJECT_STR) {
+        msgpack_unpacked_destroy(&result);
+        return *out_size;
+    }
+
     /* Lookup time */
     ret = flb_parser_time_lookup(v->via.str.ptr, v->via.str.size,
                                  0, parser, &tm, &tmfrac);
