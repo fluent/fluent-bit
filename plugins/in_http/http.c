@@ -66,6 +66,14 @@ static int in_http_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    /* Populate context with config map defaults and incoming properties */
+    ret = flb_input_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "configuration error");
+        http_config_destroy(ctx);
+        return -1;
+    }
+
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
@@ -124,6 +132,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", HTTP_BUFFER_CHUNK_SIZE,
      0, FLB_TRUE, offsetof(struct flb_http, buffer_chunk_size),
+     ""
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tag_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_http, tag_key),
      ""
     },
 
