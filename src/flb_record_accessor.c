@@ -46,18 +46,6 @@ static struct flb_ra_parser *ra_parse_string(struct flb_record_accessor *ra,
     return rp;
 }
 
-static struct flb_ra_parser *ra_parse_regex_id(struct flb_record_accessor *ra,
-                                               int c)
-{
-    struct flb_ra_parser *rp;
-
-    rp = flb_ra_parser_regex_id_create(c);
-    if (!rp) {
-        return NULL;
-    }
-    return rp;
-}
-
 /* Create a parser context for a key map or function definition */
 static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
                                            flb_sds_t buf, int start, int end)
@@ -131,7 +119,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
         if (isdigit(buf[n])) {
             /* Add REGEX_ID entry */
             c = atoi(buf + n);
-            rp = ra_parse_regex_id(ra, c);
+            rp = flb_ra_parser_regex_id_create(c);
             if (!rp) {
                 return -1;
             }
