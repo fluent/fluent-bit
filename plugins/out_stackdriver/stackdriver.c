@@ -856,6 +856,12 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    /* Load config map */
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Set context */
     flb_output_set_context(ins, ctx);
 
