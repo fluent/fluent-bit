@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,6 +43,12 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
 
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
+
     /* Set default network configuration if not set */
     flb_output_net_default("127.0.0.1", 5170, ins);
 
@@ -66,7 +72,7 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
     upstream = flb_upstream_create(config,
                                    ins->host.name,
                                    ins->host.port,
-                                   io_flags, (void *) &ins->tls);
+                                   io_flags, ins->tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "could not create upstream context");
         flb_free(ctx);
@@ -87,6 +93,16 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Date key */
+    ctx->date_key = ctx->json_date_key;
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->date_key = NULL;
+        }
+    }
+
     /* Date format for JSON output */
     ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
     tmp = flb_output_get_property("json_date_format", ins);
@@ -101,15 +117,9 @@ struct flb_out_tcp *flb_tcp_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create("date");
-    }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
+
     ctx->host = ins->host.name;
     ctx->port = ins->host.port;
 
@@ -126,9 +136,6 @@ void flb_tcp_conf_destroy(struct flb_out_tcp *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
     flb_free(ctx);
     ctx = NULL;
 }

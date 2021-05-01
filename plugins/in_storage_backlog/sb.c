@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
+#endif
 
 struct sb_chunk {
     struct cio_chunk *chunk;
@@ -74,37 +77,52 @@ static int cb_queue_chunks(struct flb_input_instance *in,
          * All chunks on this backlog are 'file' based, always try to set
          * them up. We validate the status.
          */
-        ret = cio_chunk_up(sbc->chunk);
-        if (ret == CIO_CORRUPTED) {
-            flb_plg_error(ctx->ins, "removing corrupted chunk from the "
+        ret = cio_chunk_is_up(sbc->chunk);
+        if (ret == CIO_FALSE) {
+            ret = cio_chunk_up(sbc->chunk);
+            if (ret == CIO_CORRUPTED) {
+                flb_plg_error(ctx->ins, "removing corrupted chunk from the "
+                              "queue %s:%s",
+                              sbc->stream->name, sbc->chunk->name);
+                cio_chunk_close(sbc->chunk, FLB_FALSE);
+                mk_list_del(&sbc->_head);
+                flb_free(sbc);
+                continue;
+            }
+            else if (ret == CIO_ERROR || ret == CIO_RETRY) {
+                continue;
+            }
+
+        }
+
+        /* get the number of bytes being used by the chunk */
+        size = cio_chunk_get_content_size(sbc->chunk);
+        if (size <= 0) {
+            flb_plg_error(ctx->ins, "removing empty chunk from the "
                           "queue %s:%s",
                           sbc->stream->name, sbc->chunk->name);
+            cio_chunk_close(sbc->chunk, FLB_TRUE);
+            mk_list_del(&sbc->_head);
+            flb_free(sbc);
+            continue;
+        }
+
+        ch = sbc->chunk;
+
+        /* Associate this backlog chunk to this instance into the engine */
+        ic = flb_input_chunk_map(in, ch);
+        if (!ic) {
+            flb_plg_error(ctx->ins, "removing chunk %s:%s from the queue",
+                          sbc->stream->name, sbc->chunk->name);
+            cio_chunk_down(sbc->chunk);
             cio_chunk_close(sbc->chunk, FLB_FALSE);
             mk_list_del(&sbc->_head);
             flb_free(sbc);
             continue;
         }
-        else if (ret == CIO_ERROR || ret == CIO_RETRY) {
-            continue;
-        }
 
-        /* get the number of bytes being used by the chunk */
-        size = cio_chunk_get_real_size(sbc->chunk);
-        if (size <= 0) {
-            continue;
-        }
-
-        ch = sbc->chunk;
         flb_plg_info(ctx->ins, "queueing %s:%s",
                      sbc->stream->name, sbc->chunk->name);
-
-        /* Associate this backlog chunk to this instance into the engine */
-        ic = flb_input_chunk_map(in, ch);
-        if (!ic) {
-            flb_plg_error(ctx->ins, "error registering chunk");
-            cio_chunk_down(sbc->chunk);
-            continue;
-        }
 
         /* remove the reference, it's on the engine hands now */
         mk_list_del(&sbc->_head);

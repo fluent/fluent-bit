@@ -29,9 +29,10 @@
 #include "mk_core.h"
 
 #ifdef _WIN32
-#include <mk_core/mk_dep_unistd.h>
-#else
-#include <unistd.h>
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+#define S_ISLNK(m) (0)
+#define O_NONBLOCK (0)
+#define lstat stat
 #endif
 
 int mk_file_get_info(const char *path, struct file_info *f_info, int mode)
@@ -128,7 +129,7 @@ char *mk_file_to_buffer(const char *path)
         return NULL;
     }
 
-    if (!(fp = fopen(path, "r"))) {
+    if (!(fp = fopen(path, "rb"))) {
         return NULL;
     }
 

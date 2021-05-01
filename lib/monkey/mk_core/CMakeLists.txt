@@ -24,8 +24,6 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     ${src}
     "external/winpthreads.c"
     )
-  include_directories(deps/libevent/include)
-  include_directories("${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include/")
   add_subdirectory(deps/)
 else()
   MK_DEFINITION(MK_THREADS_POSIX)
@@ -35,10 +33,8 @@ endif()
 check_c_source_compiles("
   #include <sys/types.h>
   #include <sys/stat.h>
-  #include <unistd.h>
   int main() {
-    int x = S_IXUSR;
-    S_ISLNK(0);
+    struct stat st;
     return 0;
   }" HAVE_STAT_H)
 if (HAVE_STAT_H)
@@ -56,10 +52,28 @@ check_c_source_compiles("
   }" HAVE_SYS_UIO_H)
 
 if (HAVE_SYS_UIO_H)
-  set(src "${src}"
-    mk_iov.c
-    )
   MK_DEFINITION(MK_HAVE_SYS_UIO_H)
+endif()
+
+# We need to compile mk_iov regardless of system UIO support
+set(src "${src}"
+  mk_iov.c
+  )
+
+check_c_source_compiles("
+  #include <string.h>
+  int main() {
+     char  haystack[] = \"1234\";
+     char  needle[] = \"23\";
+     void *result;
+
+     result = memmem(haystack, sizeof(haystack) - 1, needle, sizeof(needle) - 1);
+
+     return (NULL != result);
+  }" HAVE_MEMMEM)
+
+if (HAVE_MEMMEM)
+  MK_DEFINITION(MK_HAVE_MEMMEM)
 endif()
 
 # Check for unistd.h
@@ -139,8 +153,4 @@ target_link_libraries(mk_core ${CMAKE_THREAD_LIBS_INIT})
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   target_link_libraries(mk_core event)
-endif()
-
-if(NOT MK_SYSTEM_MALLOC)
-  target_link_libraries(mk_core libjemalloc)
 endif()

@@ -690,7 +690,7 @@ struct task_check select_keys_checks[] = {
         "@recond.contains",
         "SELECT id FROM TAG:'samples' WHERE @record.contains(x);",
         cb_record_not_contains,
-    }
+    },
 };
 
 
@@ -821,12 +821,12 @@ static void cb_select_max_sub_keys(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
-static void cb_select_max_sub_keys_group_by(int id, struct task_check *check,
+static void cb_select_sum_sub_keys_group_by(int id, struct task_check *check,
                                             char *buf, size_t size)
 {
     int ret;
 
-    /* Expect 1 row */
+    /* Expect 3 rows */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 3);
 
@@ -837,12 +837,12 @@ static void cb_select_max_sub_keys_group_by(int id, struct task_check *check,
     TEST_CHECK(ret == FLB_TRUE);
 }
 
-static void cb_select_max_sub_keys_group_by_2(int id, struct task_check *check,
+static void cb_select_sum_sub_keys_group_by_2(int id, struct task_check *check,
                                               char *buf, size_t size)
 {
     int ret;
 
-    /* Expect 1 row */
+    /* Expect 3 rows */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 3);
 
@@ -850,6 +850,34 @@ static void cb_select_max_sub_keys_group_by_2(int id, struct task_check *check,
                             0, "SUM(map['sub1']['sub3'])",
                             MSGPACK_OBJECT_FLOAT,
                             NULL, 0, 105.5);
+    TEST_CHECK(ret == FLB_TRUE);
+}
+
+static void cb_select_sum_sub_keys_group_by_3(int id, struct task_check *check,
+                                              char *buf, size_t size)
+{
+    int ret;
+
+    /* Expect 3 rows */
+    ret = mp_count_rows(buf, size);
+    TEST_CHECK(ret == 3);
+
+    ret = mp_record_key_cmp(buf, size,
+                            0, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_POSITIVE_INTEGER,
+                            NULL, 100, 0);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_record_key_cmp(buf, size,
+                            1, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 11);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_record_key_cmp(buf, size,
+                            2, "SUM(map['sub1']['sub3'])",
+                            MSGPACK_OBJECT_FLOAT,
+                            NULL, 0, 5.5);
     TEST_CHECK(ret == FLB_TRUE);
 }
 
@@ -925,15 +953,20 @@ struct task_check select_subkeys_checks[] = {
         "map['sub1']['sub3'] > 0;",
         cb_select_max_sub_keys},
     {   10, 0, 0, 0,
-        "cb_select_max_sub_keys_group_by",
+        "cb_select_sum_sub_keys_group_by",
         "SELECT SUM(map['sub1']['sub3']) FROM STREAM:FLB "  \
         "GROUP BY map['mtype'];",
-        cb_select_max_sub_keys_group_by},
+        cb_select_sum_sub_keys_group_by},
     {   11, 0, 0, 0,
-        "cb_select_max_sub_keys_group_by",
+        "cb_select_sum_sub_keys_group_by_2",
         "SELECT map['sub1']['stype'], map['mtype'], SUM(map['sub1']['sub3']) " \
         "FROM STREAM:FLB GROUP BY map['mtype'], map['sub1']['stype'];",
-        cb_select_max_sub_keys_group_by_2}
+        cb_select_sum_sub_keys_group_by_2},
+    {   12, 0, 0, 0,
+        "cb_select_sum_sub_keys_group_by_3",
+        "SELECT map['sub1']['stype'], map['sub1']['sub4'], SUM(map['sub1']['sub3']) " \
+        "FROM STREAM:FLB GROUP BY map['sub1']['stype'], map['sub1']['sub4'];",
+        cb_select_sum_sub_keys_group_by_3}
 };
 
 /* Tests to check syntactically valid/semantically invalid queries */
@@ -1219,7 +1252,7 @@ static void cb_forecast_tumbling_window(int id, struct task_check *check,
     TEST_CHECK(ret == 1);
 
     /* Check SUM value result */
-    ret = mp_record_key_cmp(buf, size, 0, "FORECAST",
+    ret = mp_record_key_cmp(buf, size, 0, "TIMESERIES_FORECAST(usage)",
                             MSGPACK_OBJECT_FLOAT,
                             NULL, 0, 310.0);
     TEST_CHECK(ret == FLB_TRUE);
@@ -1242,55 +1275,9 @@ static void cb_forecast_hopping_window(int id, struct task_check *check,
     TEST_CHECK(ret == 1);
 
     /* Check SUM value result */
-    ret = mp_record_key_cmp(buf, size, 0, "FORECAST",
+    ret = mp_record_key_cmp(buf, size, 0, "TIMESERIES_FORECAST(usage)",
                             MSGPACK_OBJECT_FLOAT,
                             NULL, 0, 460.0);
-    TEST_CHECK(ret == FLB_TRUE);
-
-    /* Check AVG value result */
-    ret = mp_record_key_cmp(buf, size, 0, "AVG(usage)",
-                            MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 175.0);
-
-    TEST_CHECK(ret == FLB_TRUE);
-}
-
-static void cb_forecast_r_tumbling_window(int id, struct task_check *check,
-                                          char *buf, size_t size)
-{
-    int ret;
-
-    /* Expect one record only */
-    ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 1);
-
-    /* Check SUM value result */
-    ret = mp_record_key_cmp(buf, size, 0, "FORECAST_R",
-                            MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 39.0);
-    TEST_CHECK(ret == FLB_TRUE);
-
-    /* Check AVG value result */
-    ret = mp_record_key_cmp(buf, size, 0, "AVG(usage)",
-                            MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 60.0);
-
-    TEST_CHECK(ret == FLB_TRUE);
-}
-
-static void cb_forecast_r_hopping_window(int id, struct task_check *check,
-                                         char *buf, size_t size)
-{
-    int ret;
-
-    /* Expect one record only */
-    ret = mp_count_rows(buf, size);
-    TEST_CHECK(ret == 1);
-
-    /* Check SUM value result */
-    ret = mp_record_key_cmp(buf, size, 0, "FORECAST_R",
-                            MSGPACK_OBJECT_FLOAT,
-                            NULL, 0, 24.0);
     TEST_CHECK(ret == FLB_TRUE);
 
     /* Check AVG value result */
@@ -1335,32 +1322,59 @@ struct task_check window_checks[] = {
     {    /* FORECAST */
         4, FLB_SP_WINDOW_TUMBLING, 1, 0,
         "timeseries_forecast_window_tumbling",
-        "SELECT AVG(usage), TIMESERIES_FORECAST(id, usage, 20) FROM " \
+        "SELECT AVG(usage), TIMESERIES_FORECAST(usage, 20) FROM " \
         "STREAM:FLB WINDOW TUMBLING (5 SECOND);",
         cb_forecast_tumbling_window
     },
     {
         5, FLB_SP_WINDOW_HOPPING, 5, 2,
         "timeseries_forecast_window_hopping",
-        "SELECT AVG(usage), TIMESERIES_FORECAST(id, usage, 20) FROM " \
+        "SELECT AVG(usage), TIMESERIES_FORECAST(usage, 20) FROM " \
         "STREAM:FLB WINDOW HOPPING (5 SECOND, ADVANCE BY 2 SECOND);",
         cb_forecast_hopping_window
     },
-    { /* FORECAST_R */
-        6, FLB_SP_WINDOW_TUMBLING, 1, 0,
-        "timeseries_forecast_r_window_tumbling",
-        "SELECT AVG(usage), TIMESERIES_FORECAST_R(id, usage, 500, 10000) FROM " \
-        "STREAM:FLB WINDOW TUMBLING (5 SECOND);",
-        cb_forecast_r_tumbling_window
-    },
-    {
-        7, FLB_SP_WINDOW_HOPPING, 5, 2,
-        "timeseries_forecast_r_window_hopping",
-        "SELECT AVG(usage), TIMESERIES_FORECAST_R(id, usage, 500, 10000) FROM " \
-        "STREAM:FLB WINDOW HOPPING (5 SECOND, ADVANCE BY 2 SECOND);",
-        cb_forecast_r_hopping_window
-    },
 };
+
+void set_record_timestamps(char **data_buf, size_t *data_size, double *record_timestamp)
+{
+    /* unpacker variables */
+    int ok;
+    size_t off = 0;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_unpacked result;
+    struct flb_time tm;
+
+    /* packer variables */
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    ok = MSGPACK_UNPACK_SUCCESS;
+    msgpack_unpacked_init(&result);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Iterate incoming records */
+    while (msgpack_unpack_next(&result, *data_buf, *data_size, &off) == ok) {
+        root = result.data;
+
+        map = root.via.array.ptr[1];
+
+        msgpack_pack_array(&mp_pck, 2);
+        flb_time_set(&tm, *record_timestamp, 0);
+        flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+        msgpack_pack_object(&mp_pck, map);
+
+        *record_timestamp = *record_timestamp + 1;
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_free(*data_buf);
+
+    *data_buf = mp_sbuf.data;
+    *data_size = mp_sbuf.size;
+}
 
 static void test_window()
 {
@@ -1408,14 +1422,12 @@ static void test_window()
         check = (struct task_check *) &window_checks[i];
 
         task = flb_sp_task_create(sp, check->name, check->exec);
-        if (!task) {
-            flb_error("[sp test] wrong check '%s', fix it!", check->name);
-            continue;
-        }
+        TEST_CHECK(task != NULL);
 
         out_buf = NULL;
         out_size = 0;
 
+        double record_timestamp = 1.0;
         if (check->window_type == FLB_SP_WINDOW_TUMBLING) {
             ret = file_to_buf(DATA_SAMPLES, &data_buf, &data_size);
             if (ret == -1) {
@@ -1423,6 +1435,8 @@ static void test_window()
                 flb_free(config);
                 return;
             }
+
+            set_record_timestamps(&data_buf, &data_size, &record_timestamp);
 
             /* We ingest the buffer every second */
             for (t = 0; t < check->window_val; t++) {
@@ -1452,6 +1466,7 @@ static void test_window()
             /* We ingest the buffer every second */
             task->window.fd = 0;
             task->window.fd_hop = 1;
+            double record_timestamp = 1.0;
             for (t = 0; t < check->window_val + check->window_hop_val; t++) {
                 sprintf(datafile, "%s%d.mp",
                         DATA_SAMPLES_HOPPING_WINDOW_PATH, t + 1);
@@ -1461,6 +1476,9 @@ static void test_window()
                     flb_free(config);
                     return;
                 }
+
+                /* Replace record timestamps with test timestamps */
+                set_record_timestamps(&data_buf, &data_size, &record_timestamp);
 
                 ret = flb_sp_test_do(sp, task,
                                      "samples", 7,
@@ -1536,7 +1554,7 @@ static void cb_snapshot_purge_time(int id, struct task_check *check,
 {
     int ret;
 
-    /* Expect 5 rows, as set in snapshot query */
+    /* Expect 11 rows, as set in snapshot query */
     ret = mp_count_rows(buf, size);
     TEST_CHECK(ret == 11);
 };
@@ -1572,6 +1590,7 @@ struct task_check snapshot_checks[][2] = {
         },
     },
 };
+
 
 static void test_snapshot()
 {
@@ -1674,6 +1693,7 @@ static void test_snapshot()
                                  "samples", 7,
                                  data_buf, data_size,
                                  &out_buf, &out_size);
+
             if (ret == -1) {
                 flb_error("[sp test] error processing check '%s'", check->name);
                 flb_sp_task_destroy(task);

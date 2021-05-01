@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,6 +34,7 @@
 #define FLB_HTTP_POST        1
 #define FLB_HTTP_PUT         2
 #define FLB_HTTP_HEAD        3
+#define FLB_HTTP_CONNECT     4
 
 /* HTTP Flags */
 #define FLB_HTTP_10          1
@@ -53,6 +54,7 @@
 
 /* Useful headers */
 #define FLB_HTTP_HEADER_AUTH             "Authorization"
+#define FLB_HTTP_HEADER_PROXY_AUTH       "Proxy-Authorization"
 #define FLB_HTTP_HEADER_CONTENT_TYPE     "Content-Type"
 #define FLB_HTTP_HEADER_CONTENT_ENCODING "Content-Encoding"
 #define FLB_HTTP_HEADER_CONNECTION       "Connection"
@@ -62,6 +64,7 @@ struct flb_http_response {
     int status;                /* HTTP response status          */
     int content_length;        /* Content length set by headers */
     int chunked_encoding;      /* Chunked transfer encoding ?   */
+    int connection_close;      /* connection: close ?           */
     long chunked_cur_size;
     long chunked_exp_size;     /* expected chunked size         */
     char *chunk_processed_end; /* Position to mark last chunk   */
@@ -85,6 +88,17 @@ struct flb_http_proxy {
     const char *host;       /* Proxy Host */
 };
 
+/* HTTP Debug context */
+struct flb_http_debug {
+    /* HTTP request headers */
+    int debug_request_headers;          /* debug HTTP request headers   */
+    void (*cb_debug_request_headers);   /* callback to pass raw headers */
+
+    /* HTTP request payload */
+    int debug_request_payload;          /* debug HTTP request payload   */
+    int (*cb_debug_request_payload);
+};
+
 /* Set a request type */
 struct flb_http_client {
     /* Upstream connection */
@@ -96,6 +110,9 @@ struct flb_http_client {
     int header_len;
     int header_size;
     char *header_buf;
+
+    /* Config */
+    int allow_dup_headers;          /* allow duplicated headers      */
 
     /* incoming parameters */
     const char *uri;
@@ -114,7 +131,13 @@ struct flb_http_client {
 
     /* Response */
     struct flb_http_response resp;
+
+    /* Reference to Callback context */
+    void *cb_ctx;
 };
+
+void flb_http_client_debug(struct flb_http_client *c,
+                           struct flb_callback *cb_ctx);
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, const char *uri,
@@ -127,13 +150,22 @@ int flb_http_add_header(struct flb_http_client *c,
                         const char *val, size_t val_len);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
+int flb_http_proxy_auth(struct flb_http_client *c,
+                        const char *user, const char *passwd);
+int flb_http_set_keepalive(struct flb_http_client *c);
 int flb_http_set_content_encoding_gzip(struct flb_http_client *c);
+int flb_http_set_callback_context(struct flb_http_client *c,
+                                  struct flb_callback *cb_ctx);
+
 int flb_http_do(struct flb_http_client *c, size_t *bytes);
+int flb_http_client_proxy_connect(struct flb_upstream_conn *u_conn);
 void flb_http_client_destroy(struct flb_http_client *c);
 int flb_http_buffer_size(struct flb_http_client *c, size_t size);
 size_t flb_http_buffer_available(struct flb_http_client *c);
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size);
 int flb_http_strip_port_from_host(struct flb_http_client *c);
+int flb_http_allow_duplicated_headers(struct flb_http_client *c, int allow);
+int flb_http_client_debug_property_is_valid(char *key, char *val);
 
 #endif

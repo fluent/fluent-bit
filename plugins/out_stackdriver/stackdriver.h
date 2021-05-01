@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_pthread.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
@@ -46,6 +47,35 @@
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
 
+#define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
+#define MONITORED_RESOURCE_KEY "logging.googleapis.com/monitored_resource"
+#define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
+#define DEFAULT_LABELS_KEY "logging.googleapis.com/labels"
+#define DEFAULT_SEVERITY_KEY "logging.googleapis.com/severity"
+#define DEFAULT_TRACE_KEY "logging.googleapis.com/trace"
+#define DEFAULT_LOG_NAME_KEY "logging.googleapis.com/logName"
+#define DEFAULT_INSERT_ID_KEY "logging.googleapis.com/insertId"
+#define SOURCELOCATION_FIELD_IN_JSON "logging.googleapis.com/sourceLocation"
+#define HTTPREQUEST_FIELD_IN_JSON "logging.googleapis.com/http_request"
+#define INSERT_ID_SIZE 31
+#define LEN_LOCAL_RESOURCE_ID_KEY 40
+#define OPERATION_KEY_SIZE 32
+#define SOURCE_LOCATION_SIZE 37
+#define HTTP_REQUEST_KEY_SIZE 35
+
+#define K8S_CONTAINER "k8s_container"
+#define K8S_NODE      "k8s_node"
+#define K8S_POD       "k8s_pod"
+
+#define STREAM_STDOUT 1
+#define STREAM_STDERR 2
+#define STREAM_UNKNOWN 3
+
+#define STDOUT "stdout"
+#define STDERR "stderr"
+
+#define DEFAULT_TAG_REGEX "(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -62,16 +92,52 @@ struct flb_stackdriver {
     bool metadata_server_auth;
 
     /* metadata server (GCP specific, WIP) */
+    flb_sds_t metadata_server;
     flb_sds_t zone;
     flb_sds_t instance_id;
     flb_sds_t instance_name;
 
+    /* kubernetes specific */
+    flb_sds_t cluster_name;
+    flb_sds_t cluster_location;
+    flb_sds_t namespace_name;
+    flb_sds_t pod_name;
+    flb_sds_t container_name;
+    flb_sds_t node_name;
+    bool is_k8s_resource_type;
+
+    flb_sds_t labels_key;
+    flb_sds_t local_resource_id;
+    flb_sds_t tag_prefix;
+
+    /* generic resources */
+    flb_sds_t location;
+    flb_sds_t namespace_id;
+    bool is_generic_resource_type;
+
+    /* generic_node specific */
+    flb_sds_t node_id;
+
+    /* generic_task specific */
+    flb_sds_t job;
+    flb_sds_t task_id;
+
+
     /* other */
+    flb_sds_t export_to_project_id;
     flb_sds_t resource;
     flb_sds_t severity_key;
+    flb_sds_t trace_key;
+    flb_sds_t log_name_key;
+    bool autoformat_stackdriver_trace;
+
+    flb_sds_t stackdriver_agent;
 
     /* oauth2 context */
     struct flb_oauth2 *o;
+
+    /* mutex for acquiring oauth tokens */
+    pthread_mutex_t token_mutex;
 
     /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;
@@ -87,15 +153,26 @@ struct flb_stackdriver {
 };
 
 typedef enum {
-    EMERGENCY = 800,
-    ALERT     = 700,
-    CRITICAL  = 600,
-    ERROR     = 500,
-    WARNING   = 400,
-    NOTICE    = 300,
-    INFO      = 200,
-    DEBUG     = 100,
-    DEFAULT   = 0
+    FLB_STD_EMERGENCY = 800,
+    FLB_STD_ALERT     = 700,
+    FLB_STD_CRITICAL  = 600,
+    FLB_STD_ERROR     = 500,
+    FLB_STD_WARNING   = 400,
+    FLB_STD_NOTICE    = 300,
+    FLB_STD_INFO      = 200,
+    FLB_STD_DEBUG     = 100,
+    FLB_STD_DEFAULT   = 0
 } severity_t;
+
+struct local_resource_id_list {
+    flb_sds_t val;
+    struct mk_list _head;
+};
+
+typedef enum {
+    INSERTID_VALID = 0,
+    INSERTID_INVALID = 1,
+    INSERTID_NOT_PRESENT = 2
+} insert_id_status;
 
 #endif

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,10 +25,9 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_jsmn.h>
 
-#include <jsmn/jsmn.h>
-
-#define free_temporal_buffers()                 \
+#define free_temporary_buffers()                 \
     if (prot) {                                 \
         flb_free(prot);                         \
     }                                           \
@@ -206,22 +205,22 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     }
 
     /* Create TLS context */
-    ctx->tls.context = flb_tls_context_new(FLB_TRUE,  /* verify */
-                                           -1,        /* debug */
-                                           NULL,      /* vhost */
-                                           NULL,      /* ca_path */
-                                           NULL,      /* ca_file */
-                                           NULL,      /* crt_file */
-                                           NULL,      /* key_file */
-                                           NULL);     /* key_passwd */
-    if (!ctx->tls.context) {
+    ctx->tls = flb_tls_create(FLB_TRUE,  /* verify */
+                              -1,        /* debug */
+                              NULL,      /* vhost */
+                              NULL,      /* ca_path */
+                              NULL,      /* ca_file */
+                              NULL,      /* crt_file */
+                              NULL,      /* key_file */
+                              NULL);     /* key_passwd */
+    if (!ctx->tls) {
         flb_error("[oauth2] error initializing TLS context");
         goto error;
     }
 
     /* Create Upstream context */
     ctx->u = flb_upstream_create_url(config, auth_url,
-                                     FLB_IO_TLS, &ctx->tls);
+                                     FLB_IO_TLS, ctx->tls);
     if (!ctx->u) {
         flb_error("[oauth2] error creating upstream context");
         goto error;
@@ -230,14 +229,30 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     /* Remove Upstream Async flag */
     ctx->u->flags &= ~(FLB_IO_ASYNC);
 
-    free_temporal_buffers();
+    free_temporary_buffers();
     return ctx;
 
  error:
-    free_temporal_buffers();
+    free_temporary_buffers();
     flb_oauth2_destroy(ctx);
 
     return NULL;
+}
+
+/* Clear the current payload and token */
+void flb_oauth2_payload_clear(struct flb_oauth2 *ctx)
+{
+    flb_sds_len_set(ctx->payload, 0);
+    ctx->payload[0] = '\0';
+    ctx->expires_in = 0;
+    if (ctx->access_token){
+        flb_sds_destroy(ctx->access_token);
+        ctx->access_token = NULL;
+    }
+    if (ctx->token_type){
+        flb_sds_destroy(ctx->token_type);
+        ctx->token_type = NULL;
+    }
 }
 
 /* Append a key/value to the request body */
@@ -287,8 +302,6 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 
 void flb_oauth2_destroy(struct flb_oauth2 *ctx)
 {
-    flb_tls_context_destroy(ctx->tls.context);
-
     flb_sds_destroy(ctx->auth_url);
     flb_sds_destroy(ctx->payload);
 
@@ -300,6 +313,8 @@ void flb_oauth2_destroy(struct flb_oauth2 *ctx)
     flb_sds_destroy(ctx->token_type);
 
     flb_upstream_destroy(ctx->u);
+    flb_tls_destroy(ctx->tls);
+
     flb_free(ctx);
 }
 
@@ -325,7 +340,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
         ctx->u->flags |= FLB_IO_IPV6;
         u_conn = flb_upstream_conn_get(ctx->u);
         if (!u_conn) {
-            flb_error("[oauth2] could not get an upstream connection");
+            flb_error("[oauth2] could not get an upstream connection to %s:%i",
+                      ctx->u->tcp_host, ctx->u->tcp_port);
             ctx->u->flags &= ~FLB_IO_IPV6;
             return NULL;
         }
@@ -352,7 +368,7 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     /* Issue request */
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_warn("[oauth2] cannot issue request, http_do=%i, ret");
+        flb_warn("[oauth2] cannot issue request, http_do=%i", ret);
     }
     else {
         flb_info("[oauth2] HTTP Status=%i", c->resp.status);

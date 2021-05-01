@@ -32,13 +32,10 @@
 
 #include <ctype.h>
 #include <limits.h>
-#include <dirent.h>
-#include <netinet/in.h>
+#include <mk_core/mk_dirent.h>
 #include <sys/stat.h>
 
 struct mk_server_config *mk_config;
-gid_t EGID;
-gid_t EUID;
 
 static int mk_config_key_have(struct mk_list *list, const char *value)
 {
@@ -339,7 +336,8 @@ static int mk_config_read_files(char *path_conf, char *file_conf,
     }
 
     if (server->workers < 1) {
-        server->workers = sysconf(_SC_NPROCESSORS_ONLN);
+        server->workers = mk_utils_get_system_core_count();
+
         if (server->workers < 1) {
             mk_config_print_error_msg("Workers", tmp);
         }
@@ -584,7 +582,8 @@ void mk_config_set_init_values(struct mk_server *server)
     server->nhosts = 0;
     mk_list_init(&server->hosts);
     server->user = NULL;
-    server->open_flags = O_RDONLY | O_NONBLOCK;
+    server->open_flags = O_RDONLY; /* The only place this is effectively used (other than the sanity check) 
+                                    * is mk_http.c where it's used to test for file existence and the fd is apparently leaked */
     server->index_files = NULL;
     server->conf_user_pub = NULL;
     server->workers = 1;

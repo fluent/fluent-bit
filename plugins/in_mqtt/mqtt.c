@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include "mqtt.h"
 #include "mqtt_conn.h"
@@ -115,6 +116,13 @@ static int in_mqtt_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */	
+static struct flb_config_map config_map[] = {	
+        	
+    /* EOF */	
+    {0}	
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_mqtt_plugin = {
     .name         = "mqtt",
@@ -124,5 +132,6 @@ struct flb_input_plugin in_mqtt_plugin = {
     .cb_collect   = in_mqtt_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_mqtt_exit,
+    .config_map   = config_map,
     .flags        = FLB_INPUT_NET,
 };

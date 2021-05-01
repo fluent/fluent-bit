@@ -1,7 +1,7 @@
 #! /bin/sh
 # vim:et:ft=sh:sts=2:sw=2
 #
-# Copyright 2008-2019 Kate Ward. All Rights Reserved.
+# Copyright 2008-2020 Kate Ward. All Rights Reserved.
 # Released under the Apache 2.0 license.
 # http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -20,7 +20,7 @@
 
 # Return if shunit2 already loaded.
 command [ -n "${SHUNIT_VERSION:-}" ] && exit 0
-SHUNIT_VERSION='2.1.8pre'
+SHUNIT_VERSION='2.1.8'
 
 # Return values that scripts can use.
 SHUNIT_TRUE=0

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,11 +24,11 @@
 #include <monkey/mk_core.h>
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_upstream.h>
 
-/* Coroutine status 'flb_thread.status' */
+/* Coroutine status 'flb_coro.status' */
 #define FLB_IO_CONNECT     0  /* thread issue a connection request */
 #define FLB_IO_WRITE       1  /* thread wants to write() data      */
 
@@ -43,7 +43,7 @@
 #define FLB_IO_IPV6       32  /* network I/O uses IPv6                  */
 
 int flb_io_net_connect(struct flb_upstream_conn *u_conn,
-                       struct flb_thread *th);
+                       struct flb_coro *th);
 
 int flb_io_net_write(struct flb_upstream_conn *u, const void *data,
                      size_t len, size_t *out_len);

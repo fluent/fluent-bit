@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_router.h>
@@ -64,7 +65,7 @@ static inline int router_match(const char *tag, int tag_len,
             while (*++match == '*'){
                 /* skip successive '*' */
             }
-            if(*match == '\0'){
+            if (*match == '\0') {
                 /*  '*' is last of string */
                 ret = 1;
                 break;
@@ -86,11 +87,11 @@ static inline int router_match(const char *tag, int tag_len,
             }
             break;
         }
-        else if (*tag != *match ) {
+        else if (*tag != *match) {
             /* mismatch! */
             break;
         }
-        else if (*tag == '\0'){
+        else if (*tag == '\0') {
             /* end of tag. so matched! */
             ret = 1;
             break;
@@ -105,7 +106,23 @@ static inline int router_match(const char *tag, int tag_len,
 int flb_router_match(const char *tag, int tag_len, const char *match,
                      void *match_regex)
 {
-    return router_match(tag, tag_len, match, match_regex);
+    int ret;
+    flb_sds_t t;
+
+    if (tag[tag_len] != '\0') {
+        t = flb_sds_create_len(tag, tag_len);
+        if (!t) {
+            return FLB_FALSE;
+        }
+
+        ret = router_match(t, tag_len, match, match_regex);
+        flb_sds_destroy(t);
+    }
+    else {
+        ret = router_match(tag, tag_len, match, match_regex);
+    }
+
+    return ret;
 }
 
 /* Associate and input and output instances due to a previous match */
@@ -116,7 +133,7 @@ static int flb_router_connect(struct flb_input_instance *in,
 
     p = flb_malloc(sizeof(struct flb_router_path));
     if (!p) {
-        perror("malloc");
+        flb_errno();
         return -1;
     }
 
@@ -233,3 +250,6 @@ void flb_router_exit(struct flb_config *config)
         }
     }
 }
+
+
+

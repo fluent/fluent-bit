@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,28 @@
 #define FLB_NETWORK_H
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_uri.h>
+#include <fluent-bit/flb_upstream_conn.h>
+
+/* Network connection setup */
+struct flb_net_setup {
+    /* enable/disable keepalive support */
+    char keepalive;
+
+    /* max time in seconds that a keepalive connection can be idle */
+    int keepalive_idle_timeout;
+
+    /* max time in seconds to wait for a established connection */
+    int connect_timeout;
+
+    /* network interface to bind and use to send data */
+    flb_sds_t source_address;
+
+    /* maximum of times a keepalive connection can be used */
+    int keepalive_max_recycle;
+};
 
 /* Defines a host service and it properties */
 struct flb_net_host {
@@ -39,19 +60,28 @@ struct flb_net_host {
 #endif
 
 /* Generic functions */
+void flb_net_setup_init(struct flb_net_setup *net);
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* TCP options */
 int flb_net_socket_reset(flb_sockfd_t fd);
 int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
+int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 
 /* Socket handling */
 flb_sockfd_t flb_net_socket_create(int family, int nonblock);
 flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock);
-flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port);
-flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port);
+flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
+                                 char *source_addr, int connect_timeout,
+                                 int is_async,
+                                 void *async_ctx,
+                                 struct flb_upstream_conn *u_conn);
+
+flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
+                                 char *source_addr);
+
 int flb_net_tcp_fd_connect(flb_sockfd_t fd, const char *host, unsigned long port);
 flb_sockfd_t flb_net_server(const char *port, const char *listen_addr);
 flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr);

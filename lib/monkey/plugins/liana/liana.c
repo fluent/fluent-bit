@@ -22,11 +22,16 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <arpa/inet.h>
 #include <sys/types.h>
+#include <fcntl.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include <fcntl.h>
+#endif
 
 #if defined (__linux__)
 #include <sys/sendfile.h>
@@ -48,14 +53,15 @@ int mk_liana_plugin_exit()
 
 int mk_liana_read(int socket_fd, void *buf, int count)
 {
-    return read(socket_fd, (void *) buf, count);
+    return recv(socket_fd, (void*)buf, count, 0);
 }
 
 int mk_liana_write(int socket_fd, const void *buf, size_t count )
 {
     ssize_t bytes_sent = -1;
 
-    bytes_sent = write(socket_fd, buf, count);
+    bytes_sent = send(socket_fd, buf, count, 0);
+
     return bytes_sent;
 }
 
@@ -70,12 +76,19 @@ int mk_liana_writev(int socket_fd, struct mk_iov *mk_io)
 
 int mk_liana_close(int socket_fd)
 {
+#ifdef _WIN32
+    return closesocket(socket_fd);
+#else
     return close(socket_fd);
+#endif
 }
 
 int mk_liana_send_file(int socket_fd, int file_fd, off_t *file_offset,
                        size_t file_count)
 {
+    ssize_t bytes_written = 0;
+    ssize_t to_be_sent = -1;
+    ssize_t send_ret = -1;
     ssize_t ret = -1;
 
 #if defined (__linux__)
@@ -114,7 +127,51 @@ int mk_liana_send_file(int socket_fd, int file_fd, off_t *file_offset,
     }
     return ret;
 #else
-#error Sendfile not supported on platform
+    #pragma message ("This is a terrible sendfile \"implementation\" and just a crutch")
+
+    uint8_t temporary_buffer[1024];
+
+    if (NULL != file_offset) {
+        lseek(file_fd, *file_offset, SEEK_SET);
+    }
+
+    while (1) {
+        memset(temporary_buffer, 0, sizeof(temporary_buffer));
+
+        ret = read(file_fd, temporary_buffer, sizeof(temporary_buffer));
+
+        if (0 == ret)
+        {
+            return bytes_written;
+        }
+        else if (0 > ret)
+        {
+            return -1;
+        }
+        else if (0 < ret)
+        {
+            to_be_sent = ret;
+
+            while (to_be_sent > 0)
+            {
+                send_ret = send(file_fd, &temporary_buffer[ret - to_be_sent], to_be_sent, 0);
+
+                if (-1 == send_ret)
+                {
+                    if (EAGAIN != errno &&
+                        EWOULDBLOCK != errno)
+                    {
+                        return -1;
+                    }
+                }
+                else
+                {
+                    bytes_written += send_ret;
+                    to_be_sent -= send_ret;
+                }
+            }
+        }
+    }
 #endif
 }
 

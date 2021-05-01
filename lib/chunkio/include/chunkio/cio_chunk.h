@@ -35,6 +35,13 @@ struct cio_chunk {
 
     struct cio_ctx *ctx;      /* library context      */
     struct cio_stream *st;    /* stream context       */
+
+    /*
+     * The state head links to the stream->chunks_up or stream->chunks_down
+     * linked list.
+     */
+    struct mk_list _state_head;
+
     struct mk_list _head;     /* head link to stream->files */
 };
 
@@ -47,6 +54,9 @@ int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
                        const void *buf, size_t count);
 int cio_chunk_sync(struct cio_chunk *ch);
 int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size);
+int cio_chunk_get_content_copy(struct cio_chunk *ch,
+                               void **out_buf, size_t *out_size);
+
 ssize_t cio_chunk_get_content_size(struct cio_chunk *ch);
 ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch);

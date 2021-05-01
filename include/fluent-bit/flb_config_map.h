@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -100,7 +100,8 @@ static inline int flb_config_map_mult_type(int type)
 int flb_config_map_properties_check(char *context_name,
                                     struct mk_list *in_properties,
                                     struct mk_list *map);
-struct mk_list *flb_config_map_create(struct flb_config_map *map);
+struct mk_list *flb_config_map_create(struct flb_config *config,
+                                      struct flb_config_map *map);
 void flb_config_map_destroy(struct mk_list *list);
 int flb_config_map_expected_values(int type);
 int flb_config_map_set(struct mk_list *properties, struct mk_list *map, void *context);

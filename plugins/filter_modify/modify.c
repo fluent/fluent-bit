@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -1222,9 +1222,7 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
                       "%d elements", records_in, map.via.map.size);
 
         // * * Record array item 2/2
-        msgpack_pack_map(packer, map.via.map.size);
-        map_pack_each(packer, &map);
-
+        msgpack_pack_object(packer, map);
     }
 
     msgpack_unpacked_destroy(&unpacked);

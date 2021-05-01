@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,8 +28,6 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <shlwapi.h>
 
 #include "tail.h"
@@ -37,18 +35,20 @@
 #include "tail_signal.h"
 #include "tail_config.h"
 
+#include "win32.h"
+
 static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 {
     struct mk_list *head;
-    struct flb_split_entry *pattern;
+    struct flb_slist_entry *pattern;
 
     if (!ctx->exclude_list) {
         return FLB_FALSE;
     }
 
     mk_list_foreach(head, ctx->exclude_list) {
-        pattern = mk_list_entry(head, struct flb_split_entry, _head);
-        if (PathMatchSpecA(path, pattern->value)) {
+        pattern = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (PathMatchSpecA(path, pattern->str)) {
             return FLB_TRUE;
         }
     }
@@ -60,8 +60,10 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
  * This function is a thin wrapper over flb_tail_file_append(),
  * adding normalization and sanity checks on top of it.
  */
-static int tail_register_file(const char *target, struct flb_tail_config *ctx)
+static int tail_register_file(const char *target, struct flb_tail_config *ctx,
+                              time_t ts)
 {
+    int64_t mtime;
     struct stat st;
     char path[MAX_PATH];
 
@@ -74,12 +76,19 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
         return -1;
     }
 
-    if (tail_is_excluded(path, ctx) == FLB_TRUE) {
-        flb_plg_trace(ctx->ins, "skip '%s' (excluded)", path);
-        return -1;
+    if (ctx->ignore_older > 0) {
+        mtime = flb_tail_stat_mtime(&st);
+        if (mtime > 0) {
+            if ((ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
+                              target);
+                return -1;
+            }
+        }
     }
 
-    if (flb_tail_file_exists(path, ctx) == FLB_TRUE) {
+    if (tail_is_excluded(path, ctx) == FLB_TRUE) {
+        flb_plg_trace(ctx->ins, "skip '%s' (excluded)", path);
         return -1;
     }
 
@@ -91,6 +100,9 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
  * supports patterns with "nested" wildcards like below.
  *
  *     tail_scan_pattern("C:\fluent-bit\*\*.txt", ctx);
+ *
+ * On success, the number of files found is returned (zero indicates
+ * "no file found"). On error, -1 is returned.
  */
 static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 {
@@ -99,6 +111,8 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
     char buf[MAX_PATH];
     int ret;
     int n_added = 0;
+    time_t now;
+    int64_t mtime;
     HANDLE h;
     WIN32_FIND_DATA data;
 
@@ -135,9 +149,10 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
 
     h = FindFirstFileA(pattern, &data);
     if (h == INVALID_HANDLE_VALUE) {
-        return -1;
+        return 0;  /* none matched */
     }
 
+    now = time(NULL);
     do {
         /* Ignore the current and parent dirs */
         if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
@@ -169,31 +184,13 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         }
 
         /* Try to register the target file */
-        ret = tail_register_file(buf, ctx);
+        ret = tail_register_file(buf, ctx, now);
         if (ret == 0) {
             n_added++;
         }
     } while (FindNextFileA(h, &data) != 0);
 
     FindClose(h);
-    return n_added;
-}
-
-static int tail_do_scan(const char *path, struct flb_tail_config *ctx)
-{
-    int ret;
-    int n_added = 0;
-
-    if (strchr(path, '*')) {
-        return tail_scan_pattern(path, ctx);
-    }
-
-    /* No wildcard involved. Let's just handle the file... */
-    ret = tail_register_file(path, ctx);
-    if (ret == 0) {
-        n_added++;
-    }
-
     return n_added;
 }
 
@@ -228,32 +225,22 @@ static int tail_filepath(char *buf, int len, const char *basedir, const char *fi
     return 0;
 }
 
-int flb_tail_scan(const char *pattern, struct flb_tail_config *ctx)
+static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
-    int n_added;
+    int ret;
+    int n_added = 0;
+    time_t now;
 
-    flb_plg_debug(ctx->ins, "scanning path %s", pattern);
-
-    n_added = tail_do_scan(pattern, ctx);
-    if (n_added >= 0) {
-        flb_plg_debug(ctx->ins, "%i files found for '%s'", n_added, pattern);
+    if (strchr(path, '*')) {
+        return tail_scan_pattern(path, ctx);
     }
 
-    return 0;
-}
-
-int flb_tail_scan_callback(struct flb_input_instance *ins,
-                           struct flb_config *config, void *context)
-{
-    struct flb_tail_config *ctx = (struct flb_tail_config *) context;
-    int n_added;
-
-    n_added = tail_do_scan(ctx->path, ctx);
-    if (n_added > 0) {
-        flb_plg_debug(ctx->ins, "%i new files found for '%s'",
-                      n_added, ctx->path);
-        tail_signal_manager(ctx);
+    /* No wildcard involved. Let's just handle the file... */
+    now = time(NULL);
+    ret = tail_register_file(path, ctx, now);
+    if (ret == 0) {
+        n_added++;
     }
 
-    return 0;
+    return n_added;
 }

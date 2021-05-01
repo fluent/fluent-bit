@@ -23,16 +23,21 @@
 #include <monkey/mk_core/mk_list.h>
 
 struct cio_stream {
-    int type;                 /* type: CIO_STORE_FS or CIO_STORE_MEM */
-    char *name;               /* stream name */
-    struct mk_list _head;     /* head link to ctx->streams list */
-    struct mk_list chunks;
-    void *parent;             /* ref to parent ctx */
+    int type;                   /* type: CIO_STORE_FS or CIO_STORE_MEM */
+    char *name;                 /* stream name */
+    struct mk_list _head;       /* head link to ctx->streams list */
+    struct mk_list chunks;      /* list of all chunks in the stream */
+    struct mk_list chunks_up;   /* list of chunks who are 'up'   */
+    struct mk_list chunks_down; /* list of chunks who are 'down' */
+    void *parent;               /* ref to parent ctx */
 };
 
 struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
                                      int type);
+struct cio_stream *cio_stream_get(struct cio_ctx *ctx, const char *name);
+int cio_stream_delete(struct cio_stream *st);
 void cio_stream_destroy(struct cio_stream *st);
 void cio_stream_destroy_all(struct cio_ctx *ctx);
+size_t cio_stream_size_chunks_up(struct cio_stream *st);
 
 #endif

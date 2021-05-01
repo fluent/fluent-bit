@@ -94,6 +94,14 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
     /* Adjust counter */
     cio_chunk_counter_total_add(ctx);
 
+    /* Link the chunk state to the proper stream list */
+    if (cio_chunk_is_up(ch) == CIO_TRUE) {
+        mk_list_add(&ch->_state_head, &st->chunks_up);
+    }
+    else {
+        mk_list_add(&ch->_state_head, &st->chunks_down);
+    }
+
     return ch;
 }
 
@@ -116,6 +124,7 @@ void cio_chunk_close(struct cio_chunk *ch, int delete)
     }
 
     mk_list_del(&ch->_head);
+    mk_list_del(&ch->_state_head);
     free(ch->name);
     free(ch);
 
@@ -208,6 +217,23 @@ int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
     return CIO_ERROR;
 }
 
+/* Using the content of the chunk, generate a copy using the heap */
+int cio_chunk_get_content_copy(struct cio_chunk *ch,
+                               void **out_buf, size_t *out_size)
+{
+    int type;
+
+    type = ch->st->type;
+    if (type == CIO_STORE_MEM) {
+        return cio_memfs_content_copy(ch, out_buf, out_size);
+    }
+    else if (type == CIO_STORE_FS) {
+        return cio_file_content_copy(ch, out_buf, out_size);
+    }
+
+    return CIO_ERROR;
+}
+
 size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch)
 {
     int type;
@@ -294,6 +320,11 @@ int cio_chunk_lock(struct cio_chunk *ch)
     }
 
     ch->lock = CIO_TRUE;
+
+    if (cio_chunk_is_up(ch) == CIO_TRUE) {
+        return cio_chunk_sync(ch);
+    }
+
     return CIO_OK;
 }
 
@@ -426,13 +457,34 @@ int cio_chunk_is_file(struct cio_chunk *ch)
     return CIO_FALSE;
 }
 
+static inline void chunk_state_sync(struct cio_chunk *ch)
+{
+    struct cio_stream *st;
+
+    if (!ch) {
+        return;
+    }
+
+    mk_list_del(&ch->_state_head);
+    st = ch->st;
+    if (cio_chunk_is_up(ch) == CIO_TRUE) {
+        mk_list_add(&ch->_state_head, &st->chunks_up);
+    }
+    else {
+        mk_list_add(&ch->_state_head, &st->chunks_down);
+    }
+}
+
 int cio_chunk_down(struct cio_chunk *ch)
 {
+    int ret;
     int type;
 
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
-        return cio_file_down(ch);
+        ret = cio_file_down(ch);
+        chunk_state_sync(ch);
+        return ret;
     }
 
     return CIO_OK;
@@ -440,11 +492,14 @@ int cio_chunk_down(struct cio_chunk *ch)
 
 int cio_chunk_up(struct cio_chunk *ch)
 {
+    int ret;
     int type;
 
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
-        return cio_file_up(ch);
+        ret = cio_file_up(ch);
+        chunk_state_sync(ch);
+        return ret;
     }
 
     return CIO_OK;
@@ -452,11 +507,14 @@ int cio_chunk_up(struct cio_chunk *ch)
 
 int cio_chunk_up_force(struct cio_chunk *ch)
 {
+    int ret;
     int type;
 
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
-        return cio_file_up_force(ch);
+        ret = cio_file_up_force(ch);
+        chunk_state_sync(ch);
+        return ret;
     }
 
     return CIO_OK;

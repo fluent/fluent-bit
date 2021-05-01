@@ -4,6 +4,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_config_map.h>
 
 #include "flb_tests_internal.h"
@@ -157,6 +158,12 @@ void test_helper()
     struct context ctx;
     struct mk_list *map;
     struct mk_list prop;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
 
@@ -164,7 +171,7 @@ void test_helper()
     flb_kv_init(&prop);
     flb_kv_item_create(&prop, "bad", "property");
 
-    map = flb_config_map_create(config_map);
+    map = flb_config_map_create(config, config_map);
     TEST_CHECK(map != NULL);
 
     ret = flb_config_map_properties_check("test", &prop, map);
@@ -172,6 +179,8 @@ void test_helper()
 
     flb_config_map_destroy(map);
     flb_kv_release(&prop);
+
+    flb_config_exit(config);
 }
 
 void test_create()
@@ -181,11 +190,17 @@ void test_create()
     struct mk_list *map;
     struct mk_list properties;
     struct flb_slist_entry *e;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
     mk_list_init(&properties);
 
-    map = flb_config_map_create(config_map);
+    map = flb_config_map_create(config, config_map);
     TEST_CHECK(map != NULL);
 
     /* Populate default values only */
@@ -205,6 +220,8 @@ void test_create()
     e = mk_list_entry_last(ctx.list2, struct flb_slist_entry, _head);
     TEST_CHECK(strcmp(e->str, "f   ghi jk l m n  o pqr   stuv xyz") == 0);
     flb_config_map_destroy(map);
+
+    flb_config_exit(config);
 }
 
 void test_override_defaults()
@@ -214,11 +231,17 @@ void test_override_defaults()
     struct mk_list *map;
     struct mk_list properties;
     struct flb_slist_entry *e;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
     mk_list_init(&properties);
 
-    map = flb_config_map_create(config_map);
+    map = flb_config_map_create(config, config_map);
     TEST_CHECK(map != NULL);
 
     /* Create a properties list that will override default values */
@@ -250,6 +273,8 @@ void test_override_defaults()
 
     flb_kv_release(&properties);
     flb_config_map_destroy(map);
+
+    flb_config_exit(config);
 }
 
 /* Check that single property raise an error if are set multiple times (dups) */
@@ -259,6 +284,12 @@ void test_no_multiple()
     struct context ctx;
     struct mk_list *map;
     struct mk_list prop;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
 
@@ -267,7 +298,7 @@ void test_no_multiple()
     flb_kv_item_create(&prop, "no_mult", "true");
     flb_kv_item_create(&prop, "no_mult", "false");
 
-    map = flb_config_map_create(config_map_mult);
+    map = flb_config_map_create(config, config_map_mult);
     TEST_CHECK(map != NULL);
 
     ret = flb_config_map_properties_check("test", &prop, map);
@@ -275,6 +306,8 @@ void test_no_multiple()
 
     flb_config_map_destroy(map);
     flb_kv_release(&prop);
+
+    flb_config_exit(config);
 }
 
 void test_multiple()
@@ -287,6 +320,12 @@ void test_multiple()
     struct mk_list prop;
     struct mk_list *head;
     struct flb_config_map_val *mv;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    if (!config) {
+        exit(1);
+    }
 
     memset(&ctx, '\0', sizeof(struct context));
 
@@ -301,7 +340,7 @@ void test_multiple()
 
     flb_kv_item_create(&prop, "mult_slist", "d e f g");
 
-    map = flb_config_map_create(config_map_mult);
+    map = flb_config_map_create(config, config_map_mult);
     TEST_CHECK(map != NULL);
 
     ret = flb_config_map_properties_check("test", &prop, map);
@@ -334,6 +373,7 @@ void test_multiple()
 
     flb_config_map_destroy(map);
     flb_kv_release(&prop);
+    flb_config_exit(config);
 }
 
 TEST_LIST = {

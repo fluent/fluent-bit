@@ -1,0 +1,54 @@
+on:
+  push:
+    branches:
+      - master
+
+name: Build packages for master
+jobs:
+  build-distro-packages:
+    name: build packages
+    strategy:
+      max-parallel: 48
+      fail-fast: true
+      matrix:
+        distro: [ ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, debian/buster ]
+
+    runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
+    steps:
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes qemu binfmt-support qemu-user-static qemu-utils qemu-efi-aarch64 qemu-system-arm docker.io containerd runc
+          sudo systemctl unmask docker && sudo systemctl start docker
+          docker run --rm --privileged --name qemu multiarch/qemu-user-static:register --reset
+
+      - uses: frabert/replace-string-action@master
+        id: formatted_distro
+        with:
+          pattern: '(.*)\/(.*)$'
+          string: "${{ matrix.distro }}"
+          replace-with: '$1-$2'
+          flags: 'g'
+
+      - uses: actions/checkout@v2
+        with:
+          repository: fluent/fluent-bit-packaging
+          fetch-depth: 1
+          path: packaging
+
+      - name: Build the distro artifacts
+        run: ./build.sh -v master -d ${{ env.distro }} -b master
+        env:
+          distro: ${{ matrix.distro }}
+        working-directory: packaging
+
+      - name: Store the master package artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: packages-${{env.release}}-${{env.bucket-name}}
+          path: |
+            packaging/packages/${{env.distro}}/${{env.release}}/**/*
+        env:
+          bucket-name: ${{ steps.formatted_distro.outputs.replaced }}
+          release: master
+          distro: ${{ matrix.distro }}

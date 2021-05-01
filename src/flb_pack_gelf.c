@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -321,6 +321,10 @@ static flb_sds_t flb_msgpack_gelf_flatten(flb_sds_t *s, msgpack_object *o,
                 msgpack_object *k = &((p+i)->key);
                 msgpack_object *v = &((p+i)->val);
 
+                if (k->type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+
                 const char *key = k->via.str.ptr;
                 int key_len = k->via.str.size;
 
@@ -431,6 +435,11 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         return NULL;
     }
 
+    /* Make sure the incoming object is a map */
+    if (o->type != MSGPACK_OBJECT_MAP) {
+        return NULL;
+    }
+
     if (fields != NULL && fields->host_key != NULL) {
         host_key = fields->host_key;
         host_key_len = flb_sds_len(fields->host_key);
@@ -490,12 +499,13 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
             const char *key = NULL;
             int key_len;
             const char *val = NULL;
-            int val_len;
+            int val_len = 0;
             int quote = FLB_FALSE;
             int custom_key = FLB_FALSE;
 
             msgpack_object *k = &p[i].key;
             msgpack_object *v = &p[i].val;
+            msgpack_object vtmp; // used when converting level value from string to int
 
             if (k->type != MSGPACK_OBJECT_BIN && k->type != MSGPACK_OBJECT_STR) {
                 continue;
@@ -547,19 +557,43 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 key_len = 5;
                 if (v->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     if ( v->via.u64 > 7 ) {
-                        flb_error("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
-                                  "but should be in 0..7", v->via.u64);
-                        return NULL;
+                        flb_warn("[flb_msgpack_to_gelf] level is %" PRIu64 ", "
+                                  "but should be in 0..7 or a syslog keyword", v->via.u64);
                     }
                 }
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     val     = v->via.str.ptr;
                     val_len = v->via.str.size;
-                    if (val_len != 1 || val[0] < '0' || val[0] > '7') {
-                        flb_error("[flb_msgpack_to_gelf] level is '%.*s', "
-                                  "but should be in 0..7", val_len, val);
-                        return NULL;
+                    if (val_len == 1 && val[0] >= '0' && val[0] <= '7') {
+                        v = &vtmp;
+                        v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                        v->via.u64 = (uint64_t)(val[0] - '0');
                     }
+                    else {
+                        int n;
+                        char* allowed_levels[] = {
+                            "emerg", "alert", "crit", "err",
+                            "warning", "notice", "info", "debug",
+                            NULL
+                        };
+                        for (n = 0; allowed_levels[n] != NULL; ++n) {
+                            if (val_len == strlen(allowed_levels[n]) &&
+                                !strncasecmp(val, allowed_levels[n], val_len)) {
+                                v = &vtmp;
+                                v->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+                                v->via.u64 = (uint64_t)n;
+                                break;
+                            }
+                        }
+                        if (allowed_levels[n] == NULL) {
+                            flb_warn("[flb_msgpack_to_gelf] level is '%.*s', "
+                                      "but should be in 0..7 or a syslog keyword", val_len, val);
+                        }
+                    }
+                }
+                else {
+                    flb_error("[flb_msgpack_to_gelf] level must be a non-negative integer or a string");
+                    return NULL;
                 }
             }
             else if ((key_len == full_message_key_len) &&
@@ -584,7 +618,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 int prefix_len = 0;
 
                 prefix_len = key_len + 1;
-                prefix = flb_malloc(prefix_len + 1);
+                prefix = flb_calloc(1, prefix_len + 1);
                 if (prefix == NULL) {
                     return NULL;
                 }
@@ -639,16 +673,37 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                     val = temp;
                     val_len = snprintf(temp, sizeof(temp) - 1,
                                        "%" PRIu64, v->via.u64);
+                    /*
+                     * Check if the value length is larger than our string.
+                     * this is needed to avoid stack-based overflows.
+                     */
+                    if (val_len > sizeof(temp)) {
+                        return NULL;
+                    }
                 }
                 else if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                     val = temp;
                     val_len = snprintf(temp, sizeof(temp) - 1,
                                        "%" PRId64, v->via.i64);
+                    /*
+                     * Check if the value length is larger than our string.
+                     * this is needed to avoid stack-based overflows.
+                     */
+                    if (val_len > sizeof(temp)) {
+                        return NULL;
+                    }
                 }
                 else if (v->type == MSGPACK_OBJECT_FLOAT) {
                     val = temp;
                     val_len = snprintf(temp, sizeof(temp) - 1,
                                        "%f", v->via.f64);
+                    /*
+                     * Check if the value length is larger than our string.
+                     * this is needed to avoid stack-based overflows.
+                     */
+                    if (val_len > sizeof(temp)) {
+                        return NULL;
+                    }
                 }
                 else if (v->type == MSGPACK_OBJECT_STR) {
                     /* String value */
@@ -664,8 +719,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 }
                 else if (v->type == MSGPACK_OBJECT_EXT) {
                     quote   = FLB_TRUE;
-                    val     = o->via.ext.ptr;
-                    val_len = o->via.ext.size;
+                    val     = v->via.ext.ptr;
+                    val_len = v->via.ext.size;
                 }
 
                 if (!val || !key) {
@@ -707,7 +762,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         }
         *s = tmp;
 
-        tmp = flb_sds_printf(s, "%f", flb_time_to_double(tm));
+        tmp = flb_sds_printf(s, "%" PRIu32".%lu",
+                             tm->tm.tv_sec, tm->tm.tv_nsec / 1000000);
         if (tmp == NULL) {
             return NULL;
         }
@@ -729,7 +785,7 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
 }
 
 flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
-   struct flb_time *tm, struct flb_gelf_fields *fields)
+                                  struct flb_time *tm, struct flb_gelf_fields *fields)
 {
     int ret;
     size_t off = 0;

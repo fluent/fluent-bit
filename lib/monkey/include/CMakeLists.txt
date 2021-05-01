@@ -1,10 +1,3 @@
-if(NOT MK_LOCAL)
-  install(DIRECTORY
-      ${CMAKE_CURRENT_SOURCE_DIR}/monkey/
-    DESTINATION
-      ${MK_PATH_HEADERS})
-endif()
-
 # MK_CORE
 if(NOT WITHOUT_HEADERS)
   install(FILES "mk_core.h"

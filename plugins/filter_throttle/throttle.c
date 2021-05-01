@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,7 +82,7 @@ void *time_ticker(void *args)
 
         if (t->ctx->print_status) {
             flb_plg_info(ctx->ins,
-                         "%i: limit is %0.2f per %s with window size of %i, "
+                         "%ld: limit is %0.2f per %s with window size of %i, "
                          "current rate is: %i per interval",
                          timestamp, t->ctx->max_rate, t->ctx->slide_interval,
                          t->ctx->window_size,
@@ -195,12 +195,18 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ctx->hash = window_create(ctx->window_size);
+    ticker_ctx = flb_malloc(sizeof(struct ticker));
+    if (!ticker_ctx) {
+        flb_errno();
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Set our context */
     flb_filter_set_context(f_ins, ctx);
 
-    ticker_ctx = flb_malloc(sizeof(struct ticker));
+    ctx->hash = window_create(ctx->window_size);
+
     ticker_ctx->ctx = ctx;
     ticker_ctx->done = false;
     ticker_ctx->seconds = parse_duration(ctx, ctx->slide_interval);
@@ -226,7 +232,7 @@ static int cb_throttle_filter(const void *data, size_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 

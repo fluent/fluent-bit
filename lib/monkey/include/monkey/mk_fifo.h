@@ -23,14 +23,23 @@
 #include <monkey/mk_info.h>
 #include <monkey/mk_config.h>
 #include <monkey/mk_core.h>
-#include <pthread.h>
 
 #define MK_FIFO_BUF_SIZE   32768
+
+#ifdef _WIN32
+#ifdef _WIN64
+typedef long long mk_fifo_channel_fd;
+#else
+typedef long long mk_fifo_channel_fd;
+#endif
+#else
+typedef int mk_fifo_channel_fd;
+#endif
 
 struct mk_fifo_worker {
     struct mk_event event; /* event loop 'event' */
     int worker_id;         /* worker ID */
-    int channel[2];        /* pipe(2) communication channel */
+    mk_fifo_channel_fd channel[2];        /* pipe(2) communication channel */
     void *data;            /* opaque data for thread */
 
     /* Read buffer */

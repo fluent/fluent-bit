@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -154,7 +154,7 @@ int flb_utils_set_daemon(struct flb_config *config)
 	}
 
     /* Our last STDOUT messages */
-    flb_info("switching to background mode (PID=%lu)", getpid());
+    flb_info("switching to background mode (PID=%ld)", (long) getpid());
 
     fclose(stderr);
     fclose(stdout);
@@ -419,12 +419,24 @@ int64_t flb_utils_size_to_bytes(const char *size)
     }
 
     if (tmp[0] == 'K') {
+        /* set upper bound (2**64/KB)/2 to avoid overflows */
+        if (val >= 0x20c49ba5e353f8) {
+            return -1;
+        }
         return (val * KB);
     }
     else if (tmp[0] == 'M') {
+        /* set upper bound (2**64/MB)/2 to avoid overflows */
+        if (val >= 0x8637bd05af6) {
+            return -1;
+        }
         return (val * MB);
     }
     else if (tmp[0] == 'G') {
+        /* set upper bound (2**64/GB)/2 to avoid overflows */
+        if (val >= 0x225c17d04) {
+            return -1;
+        }
         return (val * GB);
     }
     else {
@@ -434,12 +446,50 @@ int64_t flb_utils_size_to_bytes(const char *size)
     return val;
 }
 
+int64_t flb_utils_hex2int(char *hex, int len)
+{
+    int i = 0;
+    int64_t res = 0;
+    char c;
+
+    while ((c = *hex++) && i < len) {
+        /* Ensure no overflow */
+        if (res >= 0xccccccccccccd00) {
+            return -1;
+        }
+        res *= 0x10;
+
+        if (c >= 'a' && c <= 'f') {
+            res += (c - 0x57);
+        }
+        else if (c >= 'A' && c <= 'F') {
+            res += (c - 0x37);
+        }
+        else if (c >= '0' && c <= '9') {
+            res += (c - 0x30);
+        }
+        else {
+            return -1;
+        }
+        i++;
+    }
+
+    if (res < 0) {
+        return -1;
+    }
+
+    return res;
+}
+
 int flb_utils_time_to_seconds(const char *time)
 {
     int len;
     size_t val;
 
     len = strlen(time);
+    if (len == 0) {
+        return 0;
+    }
     val = atoi(time);
 
     /* String time to seconds */
@@ -616,6 +666,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
                 return FLB_FALSE;
             }
             len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4hhx", (unsigned char) c);
+            if ((available - written) < len) {
+                return FLB_FALSE;
+            }
             encoded_to_buf(p, tmp, len);
             p += len;
         }
@@ -624,12 +677,14 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             if (available - written < 6) {
                 return FLB_FALSE;
             }
+
             if (i + hex_bytes > str_len) {
                 break; /* skip truncated UTF-8 */
             }
 
             state = FLB_UTF8_ACCEPT;
             codepoint = 0;
+
             for (b = 0; b < hex_bytes; b++) {
                 s = (unsigned char *) str + i + b;
                 ret = flb_utf8_decode(&state, &codepoint, *s);
@@ -640,10 +695,13 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
 
             if (state != FLB_UTF8_ACCEPT) {
                 /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                break;
+                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
             }
             else {
                 len = snprintf(tmp, sizeof(tmp) - 1, "\\u%.4x", codepoint);
+                if ((available - written) < len) {
+                    return FLB_FALSE;
+                }
                 encoded_to_buf(p, tmp, len);
                 p += len;
             }
@@ -654,30 +712,15 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             if (available - written < 6) {
                 return FLB_FALSE;
             }
+
             if (i + hex_bytes > str_len) {
                 break; /* skip truncated UTF-8 */
             }
-
-            state = FLB_UTF8_ACCEPT;
-            codepoint = 0;
             for (b = 0; b < hex_bytes; b++) {
-                s = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &codepoint, *s);
-                if (ret == 0) {
-                    break;
-                }
+                tmp[b] = str[i+b];
             }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes, skipping");
-                break;
-            }
-            else {
-                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
-                encoded_to_buf(p, tmp, len);
-                p += len;
-            }
+            encoded_to_buf(p, tmp, hex_bytes);
+            p += hex_bytes;
             i += (hex_bytes - 1);
         }
         else {
@@ -687,6 +730,7 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     }
 
     *off += written;
+
     return FLB_TRUE;
 }
 
@@ -730,6 +774,18 @@ int flb_utils_write_str_buf(const char *str, size_t str_len, char **out, size_t 
     return 0;
 }
 
+static char *flb_copy_host(const char *string, int pos_init, int pos_end)
+{
+    if (string[pos_init] == '[') {            /* IPv6 */
+        if (string[pos_end-1] != ']')
+            return NULL;
+
+        return mk_string_copy_substr(string, pos_init + 1, pos_end - 1);
+    }
+    else
+        return mk_string_copy_substr(string, pos_init, pos_end);
+}
+
 int flb_utils_url_split(const char *in_url, char **out_protocol,
                         char **out_host, char **out_port, char **out_uri)
 {
@@ -771,7 +827,7 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     }
 
     if (tmp) {
-        host = mk_string_copy_substr(p, 0, tmp - p);
+        host = flb_copy_host(p, 0, tmp - p);
         if (!host) {
             flb_errno();
             goto error;
@@ -792,12 +848,21 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     else {
         tmp = strchr(p, '/');
         if (tmp) {
-            host = mk_string_copy_substr(p, 0, tmp - p);
+            host = flb_copy_host(p, 0, tmp - p);
             uri = flb_strdup(tmp);
         }
         else {
-            host = flb_strdup(p);
+            host = flb_copy_host(p, 0, strlen(p));
             uri = flb_strdup("/");
+        }
+    }
+
+    if (!port) {
+        if (strcmp(protocol, "http") == 0) {
+            port = flb_strdup("80");
+        }
+        else if (strcmp(protocol, "https") == 0) {
+            port = flb_strdup("443");
         }
     }
 
@@ -814,4 +879,99 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
     }
 
     return -1;
+}
+
+
+/*
+ * flb_utils_proxy_url_split parses a proxy's information from a http_proxy URL.
+ * The URL is in the form like `http://username:password@myproxy.com:8080`.
+ * Note: currently only HTTP is supported.
+ */
+int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
+                              char **out_username, char **out_password,
+                              char **out_host, char **out_port)
+{
+    char *protocol = NULL;
+    char *username = NULL;
+    char *password = NULL;
+    char *host = NULL;
+    char *port = NULL;
+    char *proto_sep;
+    char *at_sep;
+    char *tmp;
+
+    /*  Parse protocol */
+    proto_sep = strstr(in_url, "://");
+    if (!proto_sep) {
+        return -1;
+    }
+    if (proto_sep == in_url) {
+        return -1;
+    }
+
+    protocol = mk_string_copy_substr(in_url, 0, proto_sep - in_url);
+    if (!protocol) {
+        flb_errno();
+        return -1;
+    }
+    /* Only HTTP proxy is supported for now. */
+    if (strcmp(protocol, "http") != 0) {
+        flb_free(protocol);
+        return -1;
+    }
+
+    /* Advance position after protocol */
+    proto_sep += 3;
+
+    /* Seperate `username:password` and `host:port` */
+    at_sep = strchr(proto_sep, '@');
+    if (at_sep) {
+        /* Parse username:passwrod part. */
+        tmp = strchr(proto_sep, ':');
+        if (!tmp) {
+            flb_free(protocol);
+            return -1;
+        }
+        username = mk_string_copy_substr(proto_sep, 0, tmp - proto_sep);
+        tmp += 1;
+        password = mk_string_copy_substr(tmp, 0, at_sep - tmp);
+
+        /* Parse host:port part. */
+        at_sep += 1;
+        tmp = strchr(at_sep, ':');
+        if (tmp) {
+            host = flb_copy_host(at_sep, 0, tmp - at_sep);
+            tmp += 1;
+            port = strdup(tmp);
+        }
+        else {
+            host = flb_copy_host(at_sep, 0, strlen(at_sep));
+            port = flb_strdup("80");
+        }
+    }
+    else {
+        /* Parse host:port part. */
+        tmp = strchr(proto_sep, ':');
+        if (tmp) {
+            host = flb_copy_host(proto_sep, 0, tmp - proto_sep);
+            tmp += 1;
+            port = strdup(tmp);
+        }
+        else {
+            host = flb_copy_host(proto_sep, 0, strlen(proto_sep));
+            port = flb_strdup("80");
+        }
+    }
+
+    *out_protocol = protocol;
+    *out_host = host;
+    *out_port = port;
+    if (username) {
+        *out_username = username;
+    }
+    if (password) {
+        *out_password = password;
+    }
+
+    return 0;
 }

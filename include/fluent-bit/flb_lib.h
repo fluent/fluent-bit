@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,7 @@
 #define FLB_LIB_ERROR     -1
 #define FLB_LIB_NONE       0
 #define FLB_LIB_OK         1
+#define FLB_LIB_NO_CONFIG_MAP 2
 
 /* Library mode context data */
 struct flb_lib_ctx {
@@ -50,10 +51,21 @@ FLB_EXPORT void flb_init_env();
 FLB_EXPORT flb_ctx_t *flb_create();
 FLB_EXPORT void flb_destroy(flb_ctx_t *ctx);
 FLB_EXPORT int flb_input(flb_ctx_t *ctx, const char *input, void *data);
-FLB_EXPORT int flb_output(flb_ctx_t *ctx, const char *output, void *data);
+FLB_EXPORT int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb);
 FLB_EXPORT int flb_filter(flb_ctx_t *ctx, const char *filter, void *data);
 FLB_EXPORT int flb_input_set(flb_ctx_t *ctx, int ffd, ...);
+FLB_EXPORT int flb_input_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
+FLB_EXPORT int flb_output_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
+FLB_EXPORT int flb_filter_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val);
 FLB_EXPORT int flb_output_set(flb_ctx_t *ctx, int ffd, ...);
+FLB_EXPORT int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                                   void (*out_callback) (void *, int, int,
+                                                         void *, size_t, void *),
+                                   void *out_callback_data,
+                                   void *test_ctx);
+FLB_EXPORT int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
+                                       void (*cb)(char *, void *, void *));
+
 FLB_EXPORT int flb_filter_set(flb_ctx_t *ctx, int ffd, ...);
 FLB_EXPORT int flb_service_set(flb_ctx_t *ctx, ...);
 FLB_EXPORT int  flb_lib_free(void *data);
@@ -62,6 +74,7 @@ FLB_EXPORT double flb_time_now();
 /* start stop the engine */
 FLB_EXPORT int flb_start(flb_ctx_t *ctx);
 FLB_EXPORT int flb_stop(flb_ctx_t *ctx);
+FLB_EXPORT int flb_loop(flb_ctx_t *ctx);
 
 /* data ingestion for "lib" input instance */
 FLB_EXPORT int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len);

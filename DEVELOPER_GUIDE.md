@@ -15,6 +15,7 @@ changes to Fluent Bit.
     - [Input](#input)
     - [Filter](#filter)
     - [Output](#output)
+    - [Config Maps](#config-maps)
 - [Testing](#testing)
     - [Valgrind](#valgrind)
 - [Need more help?](#need-more-help)
@@ -283,7 +284,7 @@ Please also check out the message pack examples on the [msgpack-c GitHub repo](h
 
 Fluent Bit uses ["coroutines"](https://en.wikipedia.org/wiki/Coroutine); a concurrent programming model in which subroutines can be paused and resumed. Co-routines are cooperative routines- instead of blocking, they cooperatively pass execution between each other. Coroutines are implemented as part of Fluent Bit's core network IO libraries. When a blocking network IO operation is made (for example, waiting for a response on a socket), a routine will cooperatively yield (pause itself) and pass execution to Fluent Bit engine, which will schedule (activate) other routines. Once the blocking IO operation is complete, the sleeping coroutine will be scheduled again (resumed). This model allows Fluent Bit to achieve performance benefits without the headaches that often come from having multiple active threads.
 
-This Fluent Bit engine consists of an event loop that is built upon [github.com/monkey/monkey](github.com/monkey/monkey). The monkey project is a server and library designed for low resource usage. It was primarily implemented by Eduardo Silva, who also created Fluent Bit.
+This Fluent Bit engine consists of an event loop that is built upon [github.com/monkey/monkey](https://github.com/monkey/monkey). The monkey project is a server and library designed for low resource usage. It was primarily implemented by Eduardo Silva, who also created Fluent Bit.
 
 #### Coroutine Code: How does it work?
 
@@ -421,6 +422,88 @@ upstream->flags &= ~(FLB_IO_ASYNC);
 Output plugins are defined in [flb_output.h](https://github.com/fluent/fluent-bit/blob/master/include/fluent-bit/flb_output.h#L57). Each plugin must implement `cb_init`, `cb_flush`, and `cb_exit`.
 
 The [stdout plugin](plugins/out_stdout) is very simple; review its code to understand how output plugins work.
+
+#### Config Maps
+
+Config maps are an improvement to the previous Fluent Bit API that was used by plugins to read configuration values. The new config maps feature warns the user if there is an unknown configuration key and reduces risk of bad configuration due to typos or deprecated property names. They will also allow dynamic configuration reloading to be implemented in the future.
+
+There are various types of supported configuration types. Full list available [here](https://github.com/fluent/fluent-bit/blob/v1.4.2/include/fluent-bit/flb_config_map.h#L29). The most used ones are:
+
+| Type                   | Description           | 
+| -----------------------|:---------------------:| 
+| FLB_CONFIG_MAP_INT     | Represents integer data type | 
+| FLB_CONFIG_MAP_BOOL    | Represents boolean data type | 
+| FLB_CONFIG_MAP_DOUBLE  | Represents a double |
+| FLB_CONFIG_MAP_SIZE    | Provides size_type as an integer datatype large enough to represent any possible string size. |
+| FLB_CONFIG_MAP_STR     | Represents string data type |
+| FLB_CONFIG_MAP_CLIST   | Comma separated list of strings |
+| FLB_CONFIG_MAP_SLIST   | Empty space separated list of strings |
+
+A config map expects certain public fields at registration.
+
+| Public Fields | Description           | 
+| --------------|:---------------------| 
+| Type          | This field is the data type of the property that we are writing to the config map. If the property is of type `int` we use `FLB_CONFIG_MAP_INT`, if `string` `FLB_CONFIG_MAP_STR` etc. |
+| Name          | This field is the name of the configuration property. For example for the property flush count we use `flush_count`|
+| Default Value | This field allows the user to set the default value of the property. For example, for a property of type `FLB_CONFIG_MAP_BOOL` (boolean), the default value may be false. Then we have to give `false` as default value. If there is no default value, `NULL` is given.|
+| Flags         | This field allows the user to set option flags. For example, it specifies in certain cases if multiple entries are allowed. |
+| Set Property  | This field decides if the property needs to be written to plugin context or just validated. If the property needs to be written to the plugin context, the value of this field needs to `FLB_TRUE` or else the value will be `FLB_FALSE`.|
+| Offset        | This field represents the member offset. It is 0 if the property is not written to the plugin context and if the property is being written to the plugin context it is ```offsetof(struct name_of_plugin_structure, name_of_property)```. The macro offsetof() returns the offset of the field *member* from the start of the structure type.|
+| Description   | This field is so that the user can give a short description of the property. It is `NULL` if no description is needed or given. |
+
+For example for [stdout](https://github.com/fluent/fluent-bit/blob/v1.4.2/plugins/out_stdout/stdout.c#L158) plugin the config map is something like:
+
+```c
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", NULL,
+     0, FLB_FALSE, 0,
+     "Specifies the data format to be printed. Supported formats are msgpack json, json_lines and json_stream."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", NULL,
+     0, FLB_FALSE, 0,
+     "Specifies the name of the date field in output."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
+     "Specifies the format of the date. Supported formats are double,  iso8601 and epoch."
+    },
+
+    /* EOF */
+    {0}
+};
+
+/* Plugin registration */
+struct flb_output_plugin out_stdout_plugin = {
+    .name         = "stdout",
+    .description  = "Prints events to STDOUT",
+    .cb_init      = cb_stdout_init,
+    .cb_flush     = cb_stdout_flush,
+    .cb_exit      = cb_stdout_exit,
+    .flags        = 0,
+    .config_map   = config_map
+};
+
+```
+In the above code snippet, the property *format* is of type string which supports formats like json, msgpack etc. It has default value NULL(in which case it uses msgpack), no flags, and it is being only validated by the config map and hence set_property field is `FLB_FALSE` with member offset 0. No description is written for *format* property at present.
+Similarly, for the property *json_date_key*, type is string, default value is date, and it is being written to context so the set_property field is `FLB_TRUE` with a member offset. Again, no description is written for it.
+
+
+Upon initilization the engine loads the config map like [this](https://github.com/fluent/fluent-bit/blob/v1.4.2/plugins/out_stdout/stdout.c#L48):
+
+```c
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+```
+
+[flb_output_config_map_set](https://github.com/fluent/fluent-bit/blob/v1.4.2/include/fluent-bit/flb_output.h#L510) returns [flb_config_map_set](https://github.com/fluent/fluent-bit/blob/v1.4.2/src/flb_config_map.c#L513) which is a function used by plugins that needs to populate their context structure with the configuration properties already mapped.
+
+Some points to keep in mind while migrating an existing plugin to a config map interface:
+- All memory allocations and releases of properties on exit are handled by the config map interface.
+- The config map does not parse host and port properties since these properties are handled automatically for plugins that perform network operations.
+- Some plugins might also have an empty config_map. This is so that it would show an error when someone tried to use a non-existent parameter.
 
 ### Testing
 

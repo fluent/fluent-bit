@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,6 +34,9 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_hash.h>
+
+struct flb_libco_in_params libco_in_param;
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -42,7 +45,7 @@ static int check_protocol(const char *prot, const char *output)
     int len;
 
     len = strlen(prot);
-    if (len > strlen(output)) {
+    if (len != strlen(output)) {
         return 0;
     }
 
@@ -139,6 +142,13 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Get an ID */
         id =  instance_id(plugin, config);
 
+        /* Index for Chunks (hash table) */
+        instance->ht_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        if (!instance->ht_chunks) {
+            flb_free(instance);
+            return NULL;
+        }
+
         /* format name (with instance id) */
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
@@ -169,7 +179,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
         mk_list_init(&instance->collectors);
-        mk_list_init(&instance->threads);
+        mk_list_init(&instance->coros);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
@@ -184,7 +194,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* Plugin requires a Thread context */
-        if (plugin->flags & FLB_INPUT_THREAD) {
+        if (plugin->flags & FLB_INPUT_CORO) {
             instance->threaded = FLB_TRUE;
         }
 
@@ -390,8 +400,14 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_config_map_destroy(ins->config_map);
     }
 
+    /* hash table for chunks */
+    if (ins->ht_chunks) {
+        flb_hash_destroy(ins->ht_chunks);
+    }
+
     /* Unlink and release */
     mk_list_del(&ins->_head);
+
     flb_free(ins);
 }
 
@@ -405,7 +421,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
-    if (ins->log_level == -1) {
+    if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
     }
 
@@ -436,7 +452,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
          * Create a dynamic version of the configmap that will be used by the specific
          * instance in question.
          */
-        config_map = flb_config_map_create(p->config_map);
+        config_map = flb_config_map_create(config, p->config_map);
         if (!config_map) {
             flb_error("[filter] error loading config map for '%s' plugin",
                       p->name);
@@ -575,7 +591,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *
@@ -742,7 +758,7 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
             ret = collector_start(coll, in->config);
             if (ret == -1) {
                 flb_error("[input] error starting collector #%i: %s",
-                          in->name);
+                          coll_id, in->name);
             }
             return ret;
         }
@@ -794,6 +810,7 @@ int flb_input_collector_running(int coll_id, struct flb_input_instance *in)
     return coll->running;
 }
 
+
 int flb_input_pause_all(struct flb_config *config)
 {
     int paused = 0;
@@ -818,6 +835,7 @@ int flb_input_pause_all(struct flb_config *config)
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 {
     int ret;
+    flb_pipefd_t fd;
     struct flb_config *config;
     struct flb_input_collector *coll;
 
@@ -836,10 +854,14 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          * For a collector time, it's better to just remove the file
          * descriptor associated to the time out, when resumed a new
          * one can be created.
+         *
+         * Note: Invalidate fd_timer first in case closing a socket
+         * invokes another event.
          */
-        mk_event_timeout_destroy(config->evl, &coll->event);
-        mk_event_closesocket(coll->fd_timer);
+        fd = coll->fd_timer;
         coll->fd_timer = -1;
+        mk_event_timeout_destroy(config->evl, &coll->event);
+        mk_event_closesocket(fd);
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {
         ret = mk_event_del(config->evl, &coll->event);
@@ -875,6 +897,11 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
 
     config = in->config;
     event = &coll->event;
+
+    /* If data ingestion has been paused, the collector cannot resume */
+    if (config->is_ingestion_active == FLB_FALSE) {
+        return 0;
+    }
 
     if (coll->type == FLB_COLLECT_TIME) {
         event->mask = MK_EVENT_EMPTY;
@@ -935,14 +962,14 @@ int flb_input_set_collector_socket(struct flb_input_instance *in,
     mk_list_add(&collector->_head, &config->collectors);
     mk_list_add(&collector->_head_ins, &in->collectors);
 
-    return 0;
+    return collector->id;
 }
 
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector = NULL;
-    struct flb_thread *th;
+    struct flb_coro *co;
 
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
@@ -967,11 +994,11 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 
     /* Trigger the collector callback */
     if (collector->instance->threaded == FLB_TRUE) {
-        th = flb_input_thread_collect(collector, config);
-        if (!th) {
+        co = flb_input_coro_collect(collector, config);
+        if (!co) {
             return -1;
         }
-        flb_thread_resume(th);
+        flb_coro_resume(co);
     }
     else {
         collector->cb_collect(collector->instance, config,

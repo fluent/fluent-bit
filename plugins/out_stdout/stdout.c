@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -64,6 +64,16 @@ static int cb_stdout_init(struct flb_output_instance *ins,
         }
     }
 
+    /* Date key */
+    ctx->date_key = ctx->json_date_key;
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->date_key = NULL;
+        }
+    }
+
     /* Date format for JSON output */
     ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
     tmp = flb_output_get_property("json_date_format", ins);
@@ -104,7 +114,7 @@ static void cb_stdout_flush(const void *data, size_t bytes,
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->date_key);
         write(STDOUT_FILENO, json, flb_sds_len(json));
         flb_sds_destroy(json);
 
@@ -159,17 +169,17 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specifies the data format to be printed. Supported formats are msgpack json, json_lines and json_stream."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+    "Specifies the name of the date field in output."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
-     NULL
+    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
     },
 
     /* EOF */

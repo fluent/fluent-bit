@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,7 @@
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_scan.h"
+#include "tail_sql.h"
 #include "tail_dockermode.h"
 
 #ifdef FLB_HAVE_PARSER
@@ -53,7 +54,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
 #ifdef FLB_HAVE_SQLDB
-    ctx->db_sync = -1;
+    ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
 
     /* Load the config map */
@@ -92,7 +93,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     }
 
     /* Config: path/pattern to read files */
-    if (!ctx->path) {
+    if (!ctx->path_list || mk_list_size(ctx->path_list) == 0) {
         flb_plg_error(ctx->ins, "no input 'path' was given");
         flb_free(ctx);
         return NULL;
@@ -235,6 +236,70 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
             flb_plg_error(ctx->ins, "could not open/create database");
         }
     }
+
+    /* Prepare Statement */
+    if (ctx->db) {
+        /* SQL_GET_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_GET_FILE,
+                                 -1,
+                                 &ctx->stmt_get_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_INSERT_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_INSERT_FILE,
+                                 -1,
+                                 &ctx->stmt_insert_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_ROTATE_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_ROTATE_FILE,
+                                 -1,
+                                 &ctx->stmt_rotate_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_UPDATE_OFFSET */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_UPDATE_OFFSET,
+                                 -1,
+                                 &ctx->stmt_offset,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* SQL_DELETE_FILE */
+        ret = sqlite3_prepare_v2(ctx->db->handler,
+                                 SQL_DELETE_FILE,
+                                 -1,
+                                 &ctx->stmt_delete_file,
+                                 0);
+        if (ret != SQLITE_OK) {
+            flb_plg_error(ctx->ins, "error preparing database SQL statement");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+    }
 #endif
 
 #ifdef FLB_HAVE_METRICS
@@ -270,6 +335,11 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
 #ifdef FLB_HAVE_SQLDB
     if (config->db != NULL) {
+        sqlite3_finalize(config->stmt_get_file);
+        sqlite3_finalize(config->stmt_insert_file);
+        sqlite3_finalize(config->stmt_delete_file);
+        sqlite3_finalize(config->stmt_rotate_file);
+        sqlite3_finalize(config->stmt_offset);
         flb_tail_db_close(config->db);
     }
 #endif

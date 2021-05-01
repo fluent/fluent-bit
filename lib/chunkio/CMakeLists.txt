@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 2.8)
 project(chunk-io)
 
 set(CIO_VERSION_MAJOR  1)
-set(CIO_VERSION_MINOR  0)
-set(CIO_VERSION_PATCH  2)
+set(CIO_VERSION_MINOR  1)
+set(CIO_VERSION_PATCH  1)
 set(CIO_VERSION_STR "${CIO_VERSION_MAJOR}.${CIO_VERSION_MINOR}.${CIO_VERSION_PATCH}")
 
 # CFLAGS
@@ -29,14 +29,9 @@ option(CIO_SANITIZE_ADDRESS  "Enable address sanitizer"     Off)
 option(CIO_TESTS             "Enable tests"                 Off)
 option(CIO_BACKEND_FILESYSTEM "Enable filesystem backend"   On)
 
-# Windows does not have file system backend support yet.
-if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-  set(CIO_BACKEND_FILESYSTEM Off)
-endif()
-
 # Force Option value
 macro(CIO_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
+  set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
 
 # Development/Test mode

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     int ret;
     int ulen;
     int io_flags = 0;
+    char *protocol = NULL;
+    char *host = NULL;
+    char *port = NULL;
     char *uri = NULL;
     char *tmp_uri = NULL;
     const char *tmp;
@@ -60,49 +63,20 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
      */
     tmp = flb_output_get_property("proxy", ins);
     if (tmp) {
-        /*
-         * Here we just want to lookup two things: host and port, we are
-         * going to skip validations as most of them are handled by the HTTP
-         * Client in a later stage.
-         */
-        char *p;
-        char *addr;
-
-        addr = strstr(tmp, "//");
-        if (!addr) {
+        ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not parse proxy parameter: '%s'", tmp);
             flb_free(ctx);
             return NULL;
         }
-        addr += 2;              /* get right to the host section */
-        if (*addr == '[') {     /* IPv6 */
-            p = strchr(addr, ']');
-            if (!p) {
-                flb_free(ctx);
-                return NULL;
-            }
-            ctx->proxy_host = strndup(addr + 1, (p - addr - 1));
-            p++;
-            if (*p == ':') {
-                p++;
-                ctx->proxy_port = atoi(p);
-            }
-            else {
-            }
-        }
-        else {
-            /* Port lookup */
-            p = strchr(addr, ':');
-            if (p) {
-                p++;
-                ctx->proxy_port = atoi(p);
-                ctx->proxy_host = strndup(addr, (p - addr) - 1);
-            }
-            else {
-                ctx->proxy_host = flb_strdup(addr);
-                ctx->proxy_port = 80;
-            }
-        }
+
+        ctx->proxy_host = host;
+        ctx->proxy_port = atoi(port);
         ctx->proxy = tmp;
+        flb_free(protocol);
+        flb_free(port);
+        flb_free(uri);
+        uri = NULL;
     }
     else {
         flb_output_net_default("127.0.0.1", 80, ins);
@@ -130,13 +104,13 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
-                                       io_flags, (void *)&ins->tls);
+                                       io_flags, ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,
                                        ins->host.name,
                                        ins->host.port,
-                                       io_flags, (void *)&ins->tls);
+                                       io_flags, ins->tls);
     }
 
     if (!upstream) {
@@ -183,6 +157,16 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             else {
                 ctx->out_format = ret;
             }
+        }
+    }
+
+    /* Date key */
+    ctx->date_key = ctx->json_date_key;
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (tmp) {
+        /* Just check if we have to disable it */
+        if (flb_utils_bool(tmp) == FLB_FALSE) {
+            ctx->date_key = NULL;
         }
     }
 

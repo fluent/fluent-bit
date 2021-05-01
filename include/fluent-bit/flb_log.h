@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +42,8 @@ extern FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 #define FLB_LOG_DEBUG   4
 #define FLB_LOG_TRACE   5
 #define FLB_LOG_HELP    6  /* unused by log level */
+
+#define FLB_LOG_IDEBUG  10
 
 /* Logging outputs */
 #define FLB_LOG_STDERR   0  /* send logs to STDERR         */
@@ -94,14 +96,14 @@ static inline int flb_log_check(int l) {
     return FLB_TRUE;
 }
 
-struct flb_log *flb_log_init(struct flb_config *config, int type,
-                             int level, char *out);
+struct flb_log *flb_log_create(struct flb_config *config, int type,
+                               int level, char *out);
 int flb_log_set_level(struct flb_config *config, int level);
 int flb_log_get_level_str(char *str);
 
 int flb_log_set_file(struct flb_config *config, char *out);
 
-int flb_log_stop(struct flb_log *log, struct flb_config *config);
+int flb_log_destroy(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 
@@ -125,6 +127,9 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
     if (flb_log_check(FLB_LOG_DEBUG))                               \
         flb_log_print(FLB_LOG_DEBUG, NULL, 0, fmt, ##__VA_ARGS__)
 
+#define flb_idebug(fmt, ...)                                        \
+    flb_log_print(FLB_LOG_IDEBUG, NULL, 0, fmt, ##__VA_ARGS__)
+
 #ifdef FLB_HAVE_TRACE
 #define flb_trace(fmt, ...)                                             \
     if (flb_log_check(FLB_LOG_TRACE))                                   \
@@ -134,7 +139,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 #define flb_trace(fmt, ...)  do {} while(0)
 #endif
 
-int flb_log_worker_init(void *data);
+int flb_log_worker_init(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
 #ifdef __FILENAME__

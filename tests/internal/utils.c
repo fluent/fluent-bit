@@ -18,8 +18,10 @@ struct url_check {
 
 struct url_check url_checks[] = {
     {0, "https://fluentbit.io/something",
-     "https", "fluentbit.io", NULL, "/something"},
-    {0, "https://fluentbit.io", "https", "fluentbit.io", NULL, "/"},
+     "https", "fluentbit.io", "443", "/something"},
+    {0, "http://fluentbit.io/something",
+     "http", "fluentbit.io", "80", "/something"},
+    {0, "https://fluentbit.io", "https", "fluentbit.io", "443", "/"},
     {0, "https://fluentbit.io:1234/something",
     "https", "fluentbit.io", "1234", "/something"},
     {0, "https://fluentbit.io:1234", "https", "fluentbit.io", "1234", "/"},
@@ -113,6 +115,7 @@ void test_url_split()
 void test_write_str()
 {
     char buf[10];
+    char japanese_a[4] = {0xe3, 0x81, 0x82};
     int size = sizeof(buf);
     int off;
     int ret;
@@ -130,13 +133,13 @@ void test_write_str()
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82", 3);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(memcmp(buf, "\\u3042", off) == 0);
+    TEST_CHECK(memcmp(buf, japanese_a, off) == 0);
 
     // Truncated bytes
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(memcmp(buf, "\\u3042", off) == 0);
+    TEST_CHECK(memcmp(buf, japanese_a, off) == 0);
 
     // Error: buffer too small
     off = 0;
@@ -144,9 +147,123 @@ void test_write_str()
     TEST_CHECK(ret == FLB_FALSE);
 }
 
+struct proxy_url_check {
+    int ret;
+    char *url;        /* full URL          */
+    char *prot;       /* expected protocol */
+    char *host;       /* expected host     */
+    char *port;       /* expected port     */
+    char *username;   /* expected username */
+    char *password;   /* expected password */
+};
+
+struct proxy_url_check proxy_url_checks[] = {
+    {0, "http://foo:bar@proxy.com:8080",
+     "http", "proxy.com", "8080", "foo", "bar"},
+    {0, "http://proxy.com",
+     "http", "proxy.com", "80", NULL, NULL},
+    {0, "http://proxy.com:8080",
+     "http", "proxy.com", "8080", NULL, NULL},
+    {-1, "https://proxy.com:8080",
+     NULL, NULL, NULL, NULL, NULL}
+
+};
+
+void test_proxy_url_split() {
+    int i;
+    int ret;
+    int size;
+    char *protocol;
+    char *host;
+    char *port;
+    char *username;
+    char *password;
+    struct proxy_url_check *u;
+
+    size = sizeof(proxy_url_checks) / sizeof(struct proxy_url_check);
+    for (i = 0; i < size; i++) {
+        u = &proxy_url_checks[i];
+
+        protocol = NULL;
+        host = NULL;
+        port = NULL;
+        username = NULL;
+        password = NULL;
+
+        ret = flb_utils_proxy_url_split(u->url, &protocol, &username, &password, &host, &port);
+        TEST_CHECK(ret == u->ret);
+        if (ret == -1) {
+            continue;
+        }
+
+        /* Protocol */
+        TEST_CHECK(protocol != NULL);
+        ret = strcmp(u->prot, protocol);
+        TEST_CHECK(ret == 0);
+        TEST_MSG("Expected protocol: %s", u->prot);
+        TEST_MSG("Produced protocol: %s", protocol);
+
+        /* Host */
+        TEST_CHECK(host != NULL);
+        ret = strcmp(u->host, host);
+        TEST_CHECK(ret == 0);
+        TEST_MSG("Expected host: %s", u->host);
+        TEST_MSG("Produced host: %s", host);
+
+        /* Port */
+        TEST_CHECK(port != NULL);
+        ret = strcmp(u->port, port);
+        TEST_CHECK(ret == 0);
+        TEST_MSG("Expected port: %s", u->port);
+        TEST_MSG("Produced port: %s", port);
+
+        /* Username */
+        if (u->username) {
+            TEST_CHECK(port != NULL);
+            ret = strcmp(u->port, port);
+            TEST_CHECK(ret == 0);
+            TEST_MSG("Expected username: %s", u->username);
+            TEST_MSG("Produced username: %s", username);
+
+        }
+        else {
+            TEST_CHECK(username == NULL);
+        }
+
+        /* Password */
+        if (u->password) {
+            TEST_CHECK(port != NULL);
+            ret = strcmp(u->port, port);
+            TEST_CHECK(ret == 0);
+            TEST_MSG("Expected password: %s", u->password);
+            TEST_MSG("Produced password: %s", password);
+        }
+        else {
+            TEST_CHECK(password == NULL);
+        }
+
+        if (protocol) {
+            flb_free(protocol);
+        }
+        if (host) {
+            flb_free(host);
+        }
+        if (port) {
+            flb_free(port);
+        }
+        if (username) {
+            flb_free(username);
+        }
+        if (password) {
+            flb_free(password);
+        }
+    }
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
     { "write_str", test_write_str },
+    { "proxy_url_split", test_proxy_url_split },
     { 0 }
 };

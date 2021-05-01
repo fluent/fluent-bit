@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
  *  Copyright (C) 2015-2017 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +23,9 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_sds.h>
 
 int api_v1_metrics(struct flb_hs *hs);
+flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt);
 
 #endif

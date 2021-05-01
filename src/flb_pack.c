@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -86,11 +86,15 @@ static inline int is_float(const char *buf, int len)
     const char *p = buf;
 
     while (p <= end) {
-        if (*p == '.') {
+        if (*p == 'e' && p < end && *(p + 1) == '-') {
+            return 1;
+        }
+        else if (*p == '.') {
             return 1;
         }
         p++;
     }
+
     return 0;
 }
 
@@ -131,11 +135,13 @@ static inline int pack_string_token(struct flb_pack_state *state,
 /* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(struct flb_pack_state *state,
                                const char *js,
-                               int *out_size, int *last_byte)
+                               int *out_size, int *last_byte,
+                               int *out_records)
 {
     int i;
     int flen;
     int arr_size;
+    int records = 0;
     const char *p;
     char *buf;
     const jsmntok_t *t;
@@ -163,6 +169,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
 
         if (t->parent == -1) {
             *last_byte = t->end;
+            records++;
         }
 
         flen = (t->end - t->start);
@@ -203,6 +210,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
     }
 
     *out_size = sbuf.size;
+    *out_records = records;
     buf = sbuf.data;
 
     return buf;
@@ -216,11 +224,11 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
-                  int *root_type)
-
+static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
+                                size_t *size, int *root_type, int *records)
 {
     int ret = -1;
+    int n_records;
     int out;
     int last;
     char *buf = NULL;
@@ -241,7 +249,7 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
         goto flb_pack_json_end;
     }
 
-    buf = tokens_to_msgpack(&state, js, &out, &last);
+    buf = tokens_to_msgpack(&state, js, &out, &last, &n_records);
     if (!buf) {
         ret = -1;
         goto flb_pack_json_end;
@@ -250,12 +258,31 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
     *root_type = state.tokens[0].type;
     *size = out;
     *buffer = buf;
-
+    *records = n_records;
     ret = 0;
 
  flb_pack_json_end:
     flb_pack_state_reset(&state);
     return ret;
+}
+
+/* Pack unlimited serialized JSON messages into msgpack */
+int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
+                  int *root_type)
+{
+    int records;
+
+    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records);
+}
+
+/*
+ * Pack unlimited serialized JSON messages into msgpack, finally it writes on
+ * 'out_records' the number of messages.
+ */
+int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
+                       int *root_type, int *out_records)
+{
+    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records);
 }
 
 /* Initialize a JSON packer state */
@@ -314,6 +341,7 @@ int flb_pack_json_state(const char *js, size_t len,
     int out;
     int delim = 0;
     int last =  0;
+    int records;
     char *buf;
     jsmntok_t *t;
 
@@ -362,7 +390,7 @@ int flb_pack_json_state(const char *js, size_t len,
         return FLB_ERR_JSON_INVAL;
     }
 
-    buf = tokens_to_msgpack(state, js, &out, &last);
+    buf = tokens_to_msgpack(state, js, &out, &last, &records);
     if (!buf) {
         return -1;
     }
@@ -376,7 +404,6 @@ int flb_pack_json_state(const char *js, size_t len,
 
 static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
 {
-    double unix_time;
     msgpack_object o;
     msgpack_object *obj;
     msgpack_object root;
@@ -398,8 +425,8 @@ static int pack_print_fluent_record(size_t cnt, msgpack_unpacked result)
     /* This is a Fluent Bit record, just do the proper unpacking/printing */
     flb_time_pop_from_msgpack(&tms, &result, &obj);
 
-    unix_time = flb_time_to_double(&tms);
-    fprintf(stdout, "[%zd] [%f, ", cnt, unix_time);
+    fprintf(stdout, "[%zd] [%"PRIu32".%09lu, ", cnt,
+            (uint32_t) tms.tm.tv_sec, tms.tm.tv_nsec);
     msgpack_object_print(stdout, *obj);
     fprintf(stdout, "]\n");
 
@@ -442,12 +469,46 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
+
+/*
+ * Check if a key exists in the map using the 'offset' as an index to define
+ * which element needs to start looking from
+ */
+static inline int key_exists_in_map(msgpack_object key, msgpack_object map, int offset)
+{
+    int i;
+    msgpack_object p;
+
+    if (key.type != MSGPACK_OBJECT_STR) {
+        return FLB_FALSE;
+    }
+
+    for (i = offset; i < map.via.map.size; i++) {
+        p = map.via.map.ptr[i].key;
+        if (p.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (key.via.str.size != p.via.str.size) {
+            continue;
+        }
+
+        if (memcmp(key.via.str.ptr, p.via.str.ptr, p.via.str.size) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int msgpack2json(char *buf, int *off, size_t left,
                         const msgpack_object *o)
 {
-    int ret = FLB_FALSE;
     int i;
+    int dup;
+    int ret = FLB_FALSE;
     int loop;
+    int packed;
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
@@ -463,7 +524,7 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%lu", (unsigned long)o->via.u64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRIu64, o->via.u64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -471,15 +532,20 @@ static int msgpack2json(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%ld", (signed long)o->via.i64);
+            i = snprintf(temp, sizeof(temp)-1, "%"PRId64, o->via.i64);
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
         {
-            char temp[32] = {0};
-            i = snprintf(temp, sizeof(temp)-1, "%f", o->via.f64);
+            char temp[512] = {0};
+            if (o->via.f64 == (double)(long long int)o->via.f64) {
+                i = snprintf(temp, sizeof(temp)-1, "%.1f", o->via.f64);
+            }
+            else {
+                i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
+            }
             ret = try_to_write(buf, off, left, temp, i);
         }
         break;
@@ -554,21 +620,33 @@ static int msgpack2json(char *buf, int *off, size_t left,
             goto msg2json_end;
         }
         if (loop != 0) {
+            msgpack_object k;
             msgpack_object_kv *p = o->via.map.ptr;
-            if (!msgpack2json(buf, off, left, &p->key) ||
-                !try_to_write(buf, off, left, ":", 1)  ||
-                !msgpack2json(buf, off, left, &p->val)) {
-                goto msg2json_end;
-            }
-            for (i = 1; i < loop; i++) {
+
+            packed = 0;
+            dup = FLB_FALSE;
+
+            k = o->via.map.ptr[0].key;
+            for (i = 0; i < loop; i++) {
+                k = o->via.map.ptr[i].key;
+                dup = key_exists_in_map(k, *o, i + 1);
+                if (dup == FLB_TRUE) {
+                    continue;
+                }
+
+                if (packed > 0) {
+                    if (!try_to_write(buf, off, left, ",", 1)) {
+                        goto msg2json_end;
+                    }
+                }
+
                 if (
-                    !try_to_write(buf, off, left, ",", 1) ||
                     !msgpack2json(buf, off, left, &(p+i)->key) ||
                     !try_to_write(buf, off, left, ":", 1)  ||
                     !msgpack2json(buf, off, left, &(p+i)->val) ) {
                     goto msg2json_end;
-
                 }
+                packed++;
             }
         }
 
@@ -617,7 +695,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     flb_sds_t out_buf;
     flb_sds_t tmp_buf;
 
-    out_size = in_size * 1.5;
+    out_size = in_size * 3 / 2;
     out_buf = flb_sds_create_size(out_size);
     if (!out_buf) {
         flb_errno();
@@ -625,9 +703,13 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     }
 
     msgpack_unpacked_init(&result);
-    msgpack_unpack_next(&result, in_buf, in_size, &off);
-    root = &result.data;
+    ret = msgpack_unpack_next(&result, in_buf, in_size, &off);
+    if (ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_sds_destroy(out_buf);
+        return NULL;
+    }
 
+    root = &result.data;
     while (1) {
         ret = flb_msgpack_to_json(out_buf, out_size, root);
         if (ret <= 0) {
@@ -715,12 +797,10 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     msgpack_object *obj;
+    msgpack_object *k;
+    msgpack_object *v;
     struct tm tm;
     struct flb_time tms;
-
-    if (!date_key) {
-        return NULL;
-    }
 
     /* Iterate the original buffer and perform adjustments */
     records = flb_mp_count(data, bytes);
@@ -731,14 +811,14 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
-        out_buf = flb_sds_create_size(bytes * 1.25);
+        out_buf = flb_sds_create_size(bytes + bytes / 4);
         if (!out_buf) {
             flb_errno();
             return NULL;
         }
     }
 
-    /* Create temporal msgpack buffer */
+    /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
 
@@ -760,6 +840,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
         /* Each array must have two entries: time and record */
         root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
         if (root.via.array.size != 2) {
             continue;
         }
@@ -769,42 +852,52 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 
         /* Get the record/map */
         map = root.via.array.ptr[1];
+        if (map.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
         map_size = map.via.map.size;
-        msgpack_pack_map(&tmp_pck, map_size + 1);
 
-        /* Append date key */
-        msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
-        msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+        if (date_key != NULL) {
+            msgpack_pack_map(&tmp_pck, map_size + 1);
+        }
+        else {
+            msgpack_pack_map(&tmp_pck, map_size);
+        }
 
-        /* Append date value */
-        switch (date_format) {
-        case FLB_PACK_JSON_DATE_DOUBLE:
-            msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
-            break;
-        case FLB_PACK_JSON_DATE_ISO8601:
+        if (date_key != NULL) {
+            /* Append date key */
+            msgpack_pack_str(&tmp_pck, flb_sds_len(date_key));
+            msgpack_pack_str_body(&tmp_pck, date_key, flb_sds_len(date_key));
+
+            /* Append date value */
+            switch (date_format) {
+            case FLB_PACK_JSON_DATE_DOUBLE:
+                msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                break;
+            case FLB_PACK_JSON_DATE_ISO8601:
             /* Format the time, use microsecond precision not nanoseconds */
-            gmtime_r(&tms.tm.tv_sec, &tm);
-            s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                         FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
+                gmtime_r(&tms.tm.tv_sec, &tm);
+                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_PACK_JSON_DATE_ISO8601_FMT, &tm);
 
-            len = snprintf(time_formatted + s,
-                           sizeof(time_formatted) - 1 - s,
-                           ".%06" PRIu64 "Z",
-                           (uint64_t) tms.tm.tv_nsec / 1000);
-            s += len;
-            msgpack_pack_str(&tmp_pck, s);
-            msgpack_pack_str_body(&tmp_pck, time_formatted, s);
-            break;
-        case FLB_PACK_JSON_DATE_EPOCH:
-            msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
-            break;
+                len = snprintf(time_formatted + s,
+                               sizeof(time_formatted) - 1 - s,
+                               ".%06" PRIu64 "Z",
+                               (uint64_t) tms.tm.tv_nsec / 1000);
+                s += len;
+                msgpack_pack_str(&tmp_pck, s);
+                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
+                break;
+            case FLB_PACK_JSON_DATE_EPOCH:
+                msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+                break;
+            }
         }
 
         /* Append remaining keys/values */
         for (i = 0; i < map_size; i++) {
-            msgpack_object *k = &map.via.map.ptr[i].key;
-            msgpack_object *v = &map.via.map.ptr[i].val;
-
+            k = &map.via.map.ptr[i].key;
+            v = &map.via.map.ptr[i].val;
             msgpack_pack_object(&tmp_pck, *k);
             msgpack_pack_object(&tmp_pck, *v);
         }
@@ -834,7 +927,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
             json_format == FLB_PACK_JSON_FORMAT_STREAM) {
 
-            /* Encode current record into JSON in a temporal variable */
+            /* Encode current record into JSON in a temporary variable */
             out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
             if (!out_js) {
                 msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -854,7 +947,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 return NULL;
             }
 
-            /* Release temporal json sds buffer */
+            /* Release temporary json sds buffer */
             flb_sds_destroy(out_js);
 
             /* If a realloc happened, check the returned address */
@@ -892,6 +985,11 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     }
     else {
         msgpack_sbuffer_destroy(&tmp_sbuf);
+    }
+
+    if (out_buf && flb_sds_len(out_buf) == 0) {
+        flb_sds_destroy(out_buf);
+        return NULL;
     }
 
     return out_buf;

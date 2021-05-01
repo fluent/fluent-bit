@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,7 +40,8 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
     if (ret == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "emitter_name '%s' already exists");
+        flb_plg_error(ctx->ins, "emitter_name '%s' already exists",
+                      ctx->emitter_name);
         return -1;
     }
 
@@ -56,6 +57,18 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         flb_plg_warn(ctx->ins,
                      "cannot set emitter_name, using fallback name '%s'",
                      ins->name);
+    }
+
+    /* Set the emitter_mem_buf_limit */
+    if(ctx->emitter_mem_buf_limit > 0) {
+        ins->mem_buf_limit = ctx->emitter_mem_buf_limit;
+    }
+
+    /* Set the storage type */
+    ret = flb_input_set_property(ins, "storage.type",
+                                 ctx->emitter_storage_type);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot set storage.type");
     }
 
     /* Initialize emitter plugin */
@@ -128,8 +141,8 @@ static int process_config(struct flb_rewrite_tag *ctx)
         entry = flb_slist_entry_get(val->val.list, 0);
         rule->ra_key = flb_ra_create(entry->str, FLB_FALSE);
         if (!rule->ra_key) {
-            flb_error("[filter_rewrite_tag] invalid record accessor key? '%s'",
-                      entry->str);
+            flb_plg_error(ctx->ins, "invalid record accessor key ? '%s'",
+                          entry->str);
             flb_free(rule);
             return -1;
         }
@@ -138,8 +151,8 @@ static int process_config(struct flb_rewrite_tag *ctx)
         entry = flb_slist_entry_get(val->val.list, 1);
         rule->regex = flb_regex_create(entry->str);
         if (!rule->regex) {
-            flb_error("[filter_rewrite_tag] could not compile regex pattern '%s'",
-                      entry->str);
+            flb_plg_error(ctx->ins, "could not compile regex pattern '%s'",
+                          entry->str);
             flb_ra_destroy(rule->ra_key);
             flb_free(rule);
             return -1;
@@ -150,7 +163,7 @@ static int process_config(struct flb_rewrite_tag *ctx)
         rule->ra_tag = flb_ra_create(entry->str, FLB_FALSE);
 
         if (!rule->ra_tag) {
-            flb_error("[filter_rewrite_tag] could not compose tag", entry->str);
+            flb_plg_error(ctx->ins, "could not compose tag: %s", entry->str);
             flb_ra_destroy(rule->ra_key);
             flb_regex_destroy(rule->regex);
             flb_free(rule);
@@ -166,7 +179,7 @@ static int process_config(struct flb_rewrite_tag *ctx)
     }
 
     if (mk_list_size(&ctx->rules) == 0) {
-        flb_warn("[filter_rewrite_tag] no rules have defined");
+        flb_plg_warn(ctx->ins, "no rules have defined");
         return 0;
     }
 
@@ -179,6 +192,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
 {
     int ret;
     flb_sds_t tmp;
+    flb_sds_t emitter_name = NULL;
     struct flb_rewrite_tag *ctx;
     (void) data;
 
@@ -192,6 +206,38 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     ctx->config = config;
     mk_list_init(&ctx->rules);
 
+    /*
+     * Emitter name: every rewrite_tag instance needs an emitter input plugin,
+     * with that one is able to emit records. We use a unique instance so we
+     * can use the metrics interface.
+     *
+     * If not set, we define an emitter name
+     *
+     * Validate if the emitter_name has been set before to check with the
+     * config map. If is not set, do a manual set of the property, so we let the
+     * config map handle the memory allocation.
+     */
+    tmp = (char *) flb_filter_get_property("emitter_name", ins);
+    if (!tmp) {
+        emitter_name = flb_sds_create_size(64);
+        if (!emitter_name) {
+            flb_free(ctx);
+            return -1;
+        }
+
+        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s",
+                             flb_filter_name(ins));
+        if (!tmp) {
+            flb_error("[filter rewrite_tag] cannot compose emitter_name");
+            flb_sds_destroy(emitter_name);
+            flb_free(ctx);
+            return -1;
+        }
+
+        flb_filter_set_property(ins, "emitter_name", emitter_name);
+        flb_sds_destroy(emitter_name);
+    }
+
     /* Set config_map properties in our local context */
     ret = flb_filter_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -199,26 +245,24 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
         return -1;
     }
 
+    /*
+     * Emitter Storage Type: the emitter input plugin to be created by default
+     * uses memory buffer, this option allows to define a filesystem mechanism
+     * for new records created (only if the main service is also filesystem
+     * enabled).
+     *
+     * On this code we just validate the input type: 'memory' or 'filesystem'.
+     */
+    tmp = ctx->emitter_storage_type;
+    if (strcasecmp(tmp, "memory") != 0 && strcasecmp(tmp, "filesystem") != 0) {
+        flb_plg_error(ins, "invalid 'emitter_storage.type' value. Only "
+                      "'memory' or 'filesystem' types are allowed");
+        flb_free(ctx);
+        return -1;
+    }
+
     /* Set plugin context */
     flb_filter_set_context(ins, ctx);
-
-    /*
-     * Emitter name: every rewrite_tag instance needs an emitter input plugin, with
-     * that one is able to emit records. We use a unique instance so we can use
-     * the metrics interface.
-     *
-     * If not set, we define an emitter name
-     */
-    if (!ctx->emitter_name) {
-        ctx->emitter_name = flb_sds_create_size(64);
-        tmp = flb_sds_printf(&ctx->emitter_name, "emitter_for_%s", ins->name);
-        if (!tmp) {
-            flb_error("[filter rewrite_tag] cannot compose emitter_name");
-            flb_free(ctx);
-            return -1;
-        }
-        ctx->emitter_name = tmp;
-    }
 
     /* Process the configuration */
     ret = process_config(ctx);
@@ -277,6 +321,11 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
 
     /* Release any capture info from 'results' */
     flb_regex_results_release(&result);
+
+    /* Validate new outgoing tag */
+    if (!out_tag) {
+        return FLB_FALSE;
+    }
 
     /* Emit record with new tag */
     ret = in_emitter_add_record(out_tag, flb_sds_len(out_tag), buf, buf_size,
@@ -408,6 +457,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "emitter_name", NULL,
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_name),
      NULL
+    },
+    {
+     FLB_CONFIG_MAP_STR, "emitter_storage.type", "memory",
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_storage_type),
+     NULL
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_RTAG_MEM_BUF_LIMIT_DEFAULT,
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_mem_buf_limit),
+     "set a memory buffer limit to restrict memory usage of emitter"
     },
     /* EOF */
     {0}

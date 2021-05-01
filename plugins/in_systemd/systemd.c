@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -89,7 +89,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
 #endif
-    char *tag;
+    char *tag = NULL;
     char new_tag[PATH_MAX];
     char last_tag[PATH_MAX];
     size_t tag_len;

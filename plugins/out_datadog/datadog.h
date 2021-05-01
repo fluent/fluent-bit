@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,6 +41,11 @@
 #define FLB_DATADOG_MIME_JSON      "application/json"
 
 struct flb_out_datadog {
+
+    /* Proxy */
+    const char *proxy;
+    char *proxy_host;
+    int proxy_port;
 
     /* Configuration */
     flb_sds_t scheme;

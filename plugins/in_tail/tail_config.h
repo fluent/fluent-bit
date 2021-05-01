@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
+#include <fluent-bit/flb_sqldb.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -38,13 +39,8 @@
 
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
-#ifdef _WIN32
-    intptr_t ch_manager[2];    /* pipe: channel manager    */
-    intptr_t ch_pending[2];    /* pipe: pending events     */
-#else
-    int ch_manager[2];         /* pipe: channel manager    */
-    int ch_pending[2];         /* pipe: pending events     */
-#endif
+    flb_pipefd_t ch_manager[2];    /* pipe: channel manager    */
+    flb_pipefd_t ch_pending[2];    /* pipe: pending events     */
     int ch_reads;              /* count number if signal reads */
     int ch_writes;             /* count number of signal writes */
 
@@ -55,8 +51,10 @@ struct flb_tail_config {
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
+    int coll_fd_watcher;
     int coll_fd_rotated;
     int coll_fd_pending;
+    int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
 
@@ -71,19 +69,29 @@ struct flb_tail_config {
 #endif
     int refresh_interval_sec;  /* seconds to re-scan           */
     long refresh_interval_nsec;/* nanoseconds to re-scan       */
+    int read_from_head;        /* read new files from head     */
     int rotate_wait;           /* sec to wait on rotated files */
+    int watcher_interval;      /* watcher interval             */
     int ignore_older;          /* ignore fields older than X seconds        */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
-    flb_sds_t path;            /* lookup path (glob)           */
+    struct mk_list *path_list; /* list of paths to scan (glob) */
     flb_sds_t path_key;        /* key name of file path        */
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+    flb_sds_t offset_key;      /* key name of file offset      */
 
     /* Database */
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     int db_sync;
+    int db_locking;
+    struct flb_sqldb *db_journal_mode;
+    sqlite3_stmt *stmt_get_file;
+    sqlite3_stmt *stmt_insert_file;
+    sqlite3_stmt *stmt_delete_file;
+    sqlite3_stmt *stmt_rotate_file;
+    sqlite3_stmt *stmt_offset;
 #endif
 
     /* Parser / Format */
@@ -98,6 +106,7 @@ struct flb_tail_config {
     /* Docker mode */
     int docker_mode;           /* Docker mode enabled ?  */
     int docker_mode_flush;     /* Docker mode flush/wait */
+    struct flb_parser *docker_mode_parser; /* Parser for separate multiline logs */
 
     /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_io.h>
@@ -35,12 +35,16 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
+#include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_pack.h>
 
-FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
+FLB_TLS_DEFINE(struct flb_out_coro_params, out_coro_params);
 
 void flb_output_prepare()
 {
-    FLB_TLS_INIT(flb_libco_params);
+    FLB_TLS_INIT(out_coro_params);
 }
 
 /* Validate the the output address protocol */
@@ -69,6 +73,7 @@ static int check_protocol(const char *prot, const char *output)
     return 0;
 }
 
+
 /* Invoke pre-run call for the output plugin */
 void flb_output_pre_run(struct flb_config *config)
 {
@@ -87,7 +92,9 @@ void flb_output_pre_run(struct flb_config *config)
 
 static void flb_output_free_properties(struct flb_output_instance *ins)
 {
+
     flb_kv_release(&ins->properties);
+    flb_kv_release(&ins->net_properties);
 
 #ifdef FLB_HAVE_TLS
     if (ins->tls_vhost) {
@@ -111,6 +118,102 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 #endif
 }
 
+void flb_output_coro_prepare_destroy(struct flb_output_coro *out_coro)
+{
+    struct flb_output_instance *ins = out_coro->o_ins;
+    struct flb_out_thread_instance *th_ins;
+
+    /* Move output coroutine context from active list to the destroy one */
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        pthread_mutex_lock(&th_ins->coro_mutex);
+        mk_list_del(&out_coro->_head);
+        mk_list_add(&out_coro->_head, &th_ins->coros_destroy);
+        pthread_mutex_unlock(&th_ins->coro_mutex);
+    }
+    else {
+        mk_list_del(&out_coro->_head);
+        mk_list_add(&out_coro->_head, &ins->coros_destroy);
+    }
+}
+
+int flb_output_coro_id_get(struct flb_output_instance *ins)
+{
+    int id;
+    int max = (2 << 13) - 1; /* max for 14 bits */
+    struct flb_out_thread_instance *th_ins;
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        id = th_ins->coro_id;
+        th_ins->coro_id++;
+
+        /* reset once it reach the maximum allowed */
+        if (th_ins->coro_id > max) {
+            th_ins->coro_id = 0;
+        }
+    }
+    else {
+        id = ins->coro_id;
+        ins->coro_id++;
+
+        /* reset once it reach the maximum allowed */
+        if (ins->coro_id > max) {
+            ins->coro_id = 0;
+        }
+    }
+
+    return id;
+}
+
+void flb_output_coro_add(struct flb_output_instance *ins, struct flb_coro *coro)
+{
+    struct flb_output_coro *out_coro;
+
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(coro);
+    mk_list_add(&out_coro->_head, &ins->coros);
+}
+
+/*
+ * Flush a task through the output plugin, either using a worker thread + coroutine
+ * or a simple co-routine in the current thread.
+ */
+int flb_output_task_flush(struct flb_task *task,
+                          struct flb_output_instance *out_ins,
+                          struct flb_config *config)
+{
+    int ret;
+    struct flb_output_coro *out_coro;
+
+    if (flb_output_is_threaded(out_ins) == FLB_TRUE) {
+        flb_task_users_inc(task);
+
+        /* Dispatch the task to the thread pool */
+        ret = flb_output_thread_pool_flush(task, out_ins, config);
+        if (ret == -1) {
+            flb_task_users_dec(task, FLB_FALSE);
+        }
+    }
+    else {
+        /* Direct co-routine handling */
+        out_coro = flb_output_coro_create(task,
+                                          task->i_ins,
+                                          out_ins,
+                                          config,
+                                          task->buf, task->size,
+                                          task->tag,
+                                          task->tag_len);
+        if (!out_coro) {
+            return -1;
+        }
+
+        flb_task_users_inc(task);
+        flb_coro_resume(out_coro->coro);
+    }
+
+    return 0;
+}
+
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
     if (ins->alias) {
@@ -124,6 +227,7 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
     flb_sds_destroy(ins->host.name);
     flb_sds_destroy(ins->host.address);
+    flb_sds_destroy(ins->host.listen);
     flb_sds_destroy(ins->match);
 
 #ifdef FLB_HAVE_REGEX
@@ -134,9 +238,13 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
-        if (ins->tls.context) {
-            flb_tls_context_destroy(ins->tls.context);
+        if (ins->tls) {
+            flb_tls_destroy(ins->tls);
         }
+    }
+
+    if (ins->tls_config_map) {
+        flb_config_map_destroy(ins->tls_config_map);
     }
 #endif
 
@@ -147,9 +255,26 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     }
 #endif
 
+    /* destroy callback context */
+    if (ins->callback) {
+        flb_callback_destroy(ins->callback);
+    }
+
     /* destroy config map */
     if (ins->config_map) {
         flb_config_map_destroy(ins->config_map);
+    }
+
+    if (ins->net_config_map) {
+        flb_config_map_destroy(ins->net_config_map);
+    }
+
+    if (ins->ch_events[0] > 0) {
+        mk_event_closesocket(ins->ch_events[0]);
+    }
+
+    if (ins->ch_events[1] > 0) {
+        mk_event_closesocket(ins->ch_events[1]);
     }
 
     /* release properties */
@@ -174,23 +299,24 @@ void flb_output_exit(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        /* Stop any worker thread */
+        if (flb_output_is_threaded(ins) == FLB_TRUE) {
+            flb_output_thread_pool_destroy(ins);
+        }
+
         /* Check a exit callback */
         if (p->cb_exit) {
             if(!p->proxy) {
                 p->cb_exit(ins->context, config);
-            } else {
+            }
+            else {
                 p->cb_exit(p, ins->context);
             }
-        } 
-
-        if (ins->upstream) {
-            flb_upstream_destroy(ins->upstream);
         }
-
         flb_output_instance_destroy(ins);
     }
 
-    params = FLB_TLS_GET(flb_libco_params);
+    params = FLB_TLS_GET(out_coro_params);
     if (params) {
         flb_free(params);
     }
@@ -209,6 +335,63 @@ static inline int instance_id(struct flb_config *config)
     return (ins->id + 1);
 }
 
+struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
+                                                    int out_id)
+{
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if (ins->id == out_id) {
+            break;
+        }
+        ins = NULL;
+    }
+
+    if (!ins) {
+        return NULL;
+    }
+
+    return ins;
+}
+
+/*
+ * Invoked everytime a flush callback has finished (returned). This function
+ * is called from the event loop.
+ */
+int flb_output_flush_finished(struct flb_config *config, int out_id)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *list;
+    struct flb_output_instance *ins;
+    struct flb_output_coro *out_coro;
+    struct flb_out_thread_instance *th_ins;
+
+    ins = flb_output_get_instance(config, out_id);
+    if (!ins) {
+        return -1;
+    }
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        list = &th_ins->coros_destroy;
+    }
+    else {
+        list = &ins->coros_destroy;
+    }
+
+    /* Look for output coroutines that needs to be destroyed */
+    mk_list_foreach_safe(head, tmp, list) {
+        out_coro = mk_list_entry(head, struct flb_output_coro, _head);
+        flb_output_coro_destroy(out_coro);
+    }
+
+    return 0;
+}
+
+
 /*
  * It validate an output type given the string, it return the
  * proper type and if valid, populate the global config.
@@ -217,7 +400,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data)
 {
     int ret = -1;
-    int mask_id;
     int flags = 0;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
@@ -225,17 +407,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     if (!output) {
         return NULL;
-    }
-
-    /* Get the last mask_id reported by an output instance plugin */
-    if (mk_list_is_empty(&config->outputs) == 0) {
-        mask_id = 0;
-    }
-    else {
-        instance = mk_list_entry_last(&config->outputs,
-                                      struct flb_output_instance,
-                                      _head);
-        mask_id = (instance->mask_id);
     }
 
     mk_list_foreach(head, &config->out_plugins) {
@@ -258,21 +429,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
     instance->config = config;
     instance->log_level = -1;
+    instance->test_mode = FLB_FALSE;
+    instance->is_threaded = FLB_FALSE;
 
-    /*
-     * Set mask_id: the mask_id is an unique number assigned to this
-     * output instance that is used later to set in an 'unsigned 64
-     * bit number' where a specific task (buffer/records) should be
-     * routed.
-     *
-     * note: This value is different than instance id.
-     */
-    if (mask_id == 0) {
-        instance->mask_id = 1;
-    }
-    else {
-        instance->mask_id = (mask_id * 2);
-    }
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
@@ -281,6 +440,11 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     snprintf(instance->name, sizeof(instance->name) - 1,
              "%s.%i", plugin->name, instance->id);
     instance->p = plugin;
+    instance->callback = flb_callback_create(instance->name);
+    if (!instance->callback) {
+        flb_free(instance);
+        return NULL;
+    }
 
     if (plugin->type == FLB_OUTPUT_PLUGIN_CORE) {
         instance->context = NULL;
@@ -303,7 +467,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->alias       = NULL;
     instance->flags       = instance->p->flags;
     instance->data        = data;
-    instance->upstream    = NULL;
     instance->match       = NULL;
 #ifdef FLB_HAVE_REGEX
     instance->match_regex = NULL;
@@ -311,6 +474,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->retry_limit = 1;
     instance->host.name   = NULL;
     instance->host.address = NULL;
+    instance->net_config_map = NULL;
+
+    /* Storage */
+    instance->total_limit_size = -1;
 
     /* Parent plugin flags */
     flags = instance->flags;
@@ -326,20 +493,16 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->flags |= FLB_IO_TLS;
     }
 
-    /* Keepalive */
-    instance->keepalive = FLB_FALSE;
-    instance->keepalive_timeout = FLB_OUTPUT_KA_TIMEOUT;
-
 #ifdef FLB_HAVE_TLS
-    instance->tls.context    = NULL;
-    instance->tls_debug      = -1;
-    instance->tls_verify     = FLB_TRUE;
-    instance->tls_vhost      = NULL;
-    instance->tls_ca_path    = NULL;
-    instance->tls_ca_file    = NULL;
-    instance->tls_crt_file   = NULL;
-    instance->tls_key_file   = NULL;
-    instance->tls_key_passwd = NULL;
+    instance->tls                   = NULL;
+    instance->tls_debug             = -1;
+    instance->tls_verify            = FLB_TRUE;
+    instance->tls_vhost             = NULL;
+    instance->tls_ca_path           = NULL;
+    instance->tls_ca_file           = NULL;
+    instance->tls_crt_file          = NULL;
+    instance->tls_key_file          = NULL;
+    instance->tls_key_passwd        = NULL;
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
@@ -351,7 +514,15 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     }
 
     flb_kv_init(&instance->properties);
+    flb_kv_init(&instance->net_properties);
+    mk_list_init(&instance->upstreams);
+    mk_list_init(&instance->coros);
+    mk_list_init(&instance->coros_destroy);
+
     mk_list_add(&instance->_head, &config->outputs);
+
+    /* Tests */
+    instance->test_formatter.callback = plugin->test_formatter.callback;
 
     return instance;
 }
@@ -374,11 +545,13 @@ int flb_output_set_property(struct flb_output_instance *ins,
 {
     int len;
     int ret;
+    ssize_t limit;
     flb_sds_t tmp;
     struct flb_kv *kv;
+    struct flb_config *config = ins->config;
 
     len = strlen(k);
-    tmp = flb_env_var_translate(ins->config->env, v);
+    tmp = flb_env_var_translate(config->env, v);
     if (tmp) {
         if (strlen(tmp) == 0) {
             flb_sds_destroy(tmp);
@@ -419,44 +592,65 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->host.port = 0;
         }
     }
-    else if (prop_key_check("keepalive", k, len) == 0){
-        if (tmp) {
-            ins->keepalive = flb_utils_bool(tmp);
-            flb_sds_destroy(tmp);
-        }
-        else {
-            ins->keepalive = FLB_FALSE;
-        }
-    }
-    else if (prop_key_check("keepalive_timeout", k, len) == 0){
-        if (tmp) {
-            ins->keepalive_timeout = atoi(tmp);
-            flb_sds_destroy(tmp);
-        }
-        else {
-            ins->keepalive_timeout = 10;
-        }
-    }
     else if (prop_key_check("ipv6", k, len) == 0 && tmp) {
         ins->host.ipv6 = flb_utils_bool(tmp);
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
-            if (strcasecmp(tmp, "false") == 0 ||
+            if (strcasecmp(tmp, "no_limits") == 0 ||
+                strcasecmp(tmp, "false") == 0 ||
                 strcasecmp(tmp, "off") == 0) {
                 /* No limits for retries */
-                ins->retry_limit = -1;
+                ins->retry_limit = FLB_OUT_RETRY_UNLIMITED;
+            }
+            else if (strcasecmp(tmp, "no_retries") == 0) {
+                ins->retry_limit = FLB_OUT_RETRY_NONE;
             }
             else {
                 ins->retry_limit = atoi(tmp);
+                if (ins->retry_limit <= 0) {
+                    flb_warn("[config] invalid retry_limit. set default.");
+                    /* set default when input is invalid number */
+                    ins->retry_limit = 1;
+                }
             }
             flb_sds_destroy(tmp);
         }
         else {
-            ins->retry_limit = 0;
+            ins->retry_limit = 1;
         }
     }
+    else if (strncasecmp("net.", k, 4) == 0 && tmp) {
+        kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
+        if (!kv) {
+            if (tmp) {
+                flb_sds_destroy(tmp);
+            }
+            return -1;
+        }
+        kv->val = tmp;
+    }
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    else if (strncasecmp("_debug.http.", k, 12) == 0 && tmp) {
+        ret = flb_http_client_debug_property_is_valid((char *) k, tmp);
+        if (ret == FLB_TRUE) {
+            kv = flb_kv_item_create(&ins->properties, (char *) k, NULL);
+            if (!kv) {
+                if (tmp) {
+                    flb_sds_destroy(tmp);
+                }
+                return -1;
+            }
+            kv->val = tmp;
+        }
+        else {
+            flb_error("[config] invalid property '%s' on instance '%s'",
+                      k, flb_output_name(ins));
+            flb_sds_destroy(tmp);
+        }
+    }
+#endif
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         if (strcasecmp(tmp, "true") == 0 || strcasecmp(tmp, "on") == 0) {
@@ -505,6 +699,34 @@ int flb_output_set_property(struct flb_output_instance *ins,
         ins->tls_key_passwd = tmp;
     }
 #endif
+    else if (prop_key_check("storage.total_limit_size", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "off") == 0 ||
+            flb_utils_bool(tmp) == FLB_FALSE) {
+            /* no limit for filesystem storage */
+            limit = -1;
+            flb_info("[config] unlimited filesystem buffer for %s plugin",
+                     ins->name);
+        }
+        else {
+            limit = flb_utils_size_to_bytes(tmp);
+            if (limit == -1) {
+                flb_sds_destroy(tmp);
+                return -1;
+            }
+
+            if (limit == 0) {
+                limit = -1;
+            }
+        }
+
+        flb_sds_destroy(tmp);
+        ins->total_limit_size = (size_t) limit;
+    }
+    else if (prop_key_check("workers", k, len) == 0 && tmp) {
+        /* Set the number of workers */
+        ins->tp_workers = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -572,6 +794,28 @@ int flb_output_init_all(struct flb_config *config)
         }
         p = ins->p;
 
+        /* Output Events Channel */
+        ret = mk_event_channel_create(config->evl,
+                                      &ins->ch_events[0],
+                                      &ins->ch_events[1],
+                                      ins);
+        if (ret != 0) {
+            flb_error("could not create events channels for '%s'",
+                      flb_output_name(ins));
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        flb_debug("[%s:%s] created event channels: read=%i write=%i",
+                  ins->p->name, flb_output_name(ins),
+                  ins->ch_events[0], ins->ch_events[1]);
+
+        /*
+         * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+         * default, we need to overwrite this value so we can do a clean check
+         * into the Engine when the event is triggered.
+         */
+        ins->event.type = FLB_ENGINE_EV_OUTPUT;
+
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
         /* Get name or alias for the instance */
@@ -605,15 +849,15 @@ int flb_output_init_all(struct flb_config *config)
 
 #ifdef FLB_HAVE_TLS
         if (ins->use_tls == FLB_TRUE) {
-            ins->tls.context = flb_tls_context_new(ins->tls_verify,
-                                                   ins->tls_debug,
-                                                   ins->tls_vhost,
-                                                   ins->tls_ca_path,
-                                                   ins->tls_ca_file,
-                                                   ins->tls_crt_file,
-                                                   ins->tls_key_file,
-                                                   ins->tls_key_passwd);
-            if (!ins->tls.context) {
+            ins->tls = flb_tls_create(ins->tls_verify,
+                                      ins->tls_debug,
+                                      ins->tls_vhost,
+                                      ins->tls_ca_path,
+                                      ins->tls_ca_file,
+                                      ins->tls_crt_file,
+                                      ins->tls_key_file,
+                                      ins->tls_key_passwd);
+            if (!ins->tls) {
                 flb_error("[output %s] error initializing TLS context",
                           ins->name);
                 flb_output_instance_destroy(ins);
@@ -630,7 +874,7 @@ int flb_output_init_all(struct flb_config *config)
              * Create a dynamic version of the configmap that will be used by the specific
              * instance in question.
              */
-            config_map = flb_config_map_create(p->config_map);
+            config_map = flb_config_map_create(config, p->config_map);
             if (!config_map) {
                 flb_error("[output] error loading config map for '%s' plugin",
                           p->name);
@@ -651,13 +895,64 @@ int flb_output_init_all(struct flb_config *config)
             }
         }
 
+        /* Get Upstream net_setup configmap */
+        ins->net_config_map = flb_upstream_get_config_map(config);
+        if (!ins->net_config_map) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+
+#ifdef FLB_HAVE_TLS
+        struct flb_config_map *m;
+
+        /* TLS config map (just for 'help' formatting purposes) */
+        ins->tls_config_map = flb_tls_get_config_map(config);
+
+        /* Override first configmap value based on it plugin flag */
+        m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
+        if (p->flags & FLB_IO_TLS) {
+            m->value.val.boolean = FLB_TRUE;
+        }
+        else {
+            m->value.val.boolean = FLB_FALSE;
+        }
+#endif
+        /*
+         * Validate 'net.*' properties: if the plugin use the Upstream interface,
+         * it might receive some networking settings.
+         */
+        if (mk_list_size(&ins->net_properties) > 0) {
+            ret = flb_config_map_properties_check(ins->p->name,
+                                                  &ins->net_properties,
+                                                  ins->net_config_map);
+            if (ret == -1) {
+                if (config->program_name) {
+                    flb_helper("try the command: %s -o %s -h\n",
+                               config->program_name, ins->p->name);
+                }
+                flb_output_instance_destroy(ins);
+                return -1;
+            }
+        }
+
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
-        mk_list_init(&ins->th_queue);
         if (ret == -1) {
             flb_error("[output] Failed to initialize '%s' plugin",
                       p->name);
             return -1;
+        }
+
+        /* Multi-threading enabled ? (through 'workers' property) */
+        if (ins->tp_workers > 0) {
+            ret = flb_output_thread_pool_create(config, ins);
+            if (ret == -1) {
+                flb_error("[output] could not start thread pool for '%s' plugin",
+                          p->name);
+                return -1;
+            }
+
+            flb_output_thread_pool_start(ins);
         }
     }
 
@@ -710,15 +1005,46 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
         flags |= FLB_IO_IPV6;
     }
 
-    /* KeepAlive */
-    if (ins->keepalive == FLB_TRUE) {
-        flags |= FLB_IO_TCP_KA;
-
-        /* Keepalive timeout */
-        u->ka_timeout = ins->keepalive_timeout;
-    }
-
     /* Set flags */
     u->flags |= flags;
+
+    /*
+     * If the output plugin flush callbacks will run in multiple threads, enable
+     * the thread safe mode for the Upstream context.
+     */
+    if (ins->tp_workers > 0) {
+        flb_upstream_thread_safe(u);
+        mk_list_add(&u->_head, &ins->upstreams);
+    }
+
+    /* Set networking options 'net.*' received through instance properties */
+    memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
     return 0;
+}
+
+int flb_output_upstream_ha_set(void *ha, struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_upstream_node *node;
+    struct flb_upstream_ha *upstream_ha = ha;
+
+    mk_list_foreach(head, &upstream_ha->nodes) {
+        node = mk_list_entry(head, struct flb_upstream_node, _head);
+        flb_output_upstream_set(node->u, ins);
+    }
+
+    return 0;
+}
+
+/*
+ * Helper function to set HTTP callbacks using the output instance 'callback'
+ * context.
+ */
+int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins)
+{
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    return flb_http_client_debug_setup(ins->callback, &ins->properties);
+#else
+    return 0;
+#endif
 }

@@ -61,3 +61,27 @@ int cio_errno_print(int errnum, const char *file, int line)
             file, line, errnum, buf);
     return 0;
 }
+
+#ifdef _WIN32
+void cio_winapi_error_print(const char *func, int line)
+{
+    int error = GetLastError();
+    char buf[256];
+    int success;
+
+    success = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |
+                             FORMAT_MESSAGE_IGNORE_INSERTS,
+                             NULL,
+                             error,
+                             LANG_SYSTEM_DEFAULT,
+                             buf,
+                             sizeof(buf),
+                             NULL);
+    if (success) {
+        fprintf(stderr, "[%s() line=%i error=%i] %s\n", func, line, error, buf);
+    }
+    else {
+        fprintf(stderr, "[%s() line=%i error=%i] Win32 API failed\n", func, line, error);
+    }
+}
+#endif

@@ -3,7 +3,7 @@ project(fluent-bit)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  4)
+set(FLB_VERSION_MINOR  8)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -17,8 +17,24 @@ endif()
 
 # Update CFLAGS
 if (MSVC)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W3")
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  add_definitions(-D_CRT_NONSTDC_NO_WARNINGS)
+
+  # Use custom CFLAGS for MSVC
+  #
+  #   /Zi ...... Generate pdb files.
+  #   /MT ...... Static link C runtimes.
+  #   /wd4711 .. C4711 (function selected for inline expansion)
+  #   /wd4100 .. C4100 (unreferenced formal parameter)
+  #   /wd5045 .. C5045 (Spectre mitigation)
+  #
+  set(CMAKE_C_FLAGS "/DWIN32 /D_WINDOWS /DNDEBUG /O2 /Zi /wd4100 /wd4711 /wd5045")
+  set(CMAKE_EXE_LINKER_FLAGS "/Debug /INCREMENTAL:NO")
+  set(CMAKE_BUILD_TYPE None)
+
+  # Use add_compile_options() to set /MT since Visual Studio
+  # Generator does not notice /MT in CMAKE_C_FLAGS.
+  add_compile_options(/MT)
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
@@ -44,35 +60,39 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
-option(FLB_ALL                "Enable all features"           No)
-option(FLB_DEBUG              "Build with debug symbols"      No)
-option(FLB_SMALL              "Optimise for small size"       No)
-option(FLB_COVERAGE           "Build with code-coverage"      No)
-option(FLB_JEMALLOC           "Build with Jemalloc support"   No)
-option(FLB_REGEX              "Build with Regex support"     Yes)
-option(FLB_UTF8_ENCODER       "Build with UTF8 encoding support" Yes)
-option(FLB_PARSER             "Build with Parser support"    Yes)
-option(FLB_TLS                "Build with SSL/TLS support"    No)
-option(FLB_BINARY             "Build executable binary"      Yes)
-option(FLB_EXAMPLES           "Build examples"               Yes)
-option(FLB_SHARED_LIB         "Build shared library"         Yes)
-option(FLB_VALGRIND           "Enable Valgrind support"       No)
-option(FLB_TRACE              "Enable trace mode"             No)
-option(FLB_TESTS_RUNTIME      "Enable runtime tests"          No)
-option(FLB_TESTS_INTERNAL     "Enable internal tests"         No)
-option(FLB_MTRACE             "Enable mtrace support"         No)
-option(FLB_POSIX_TLS          "Force POSIX thread storage"    No)
-option(FLB_INOTIFY            "Enable inotify support"       Yes)
-option(FLB_SQLDB              "Enable SQL embedded DB"       Yes)
-option(FLB_HTTP_SERVER        "Enable HTTP Server"            No)
-option(FLB_BACKTRACE          "Enable stacktrace support"    Yes)
-option(FLB_LUAJIT             "Enable Lua Scripting support" Yes)
-option(FLB_RECORD_ACCESSOR    "Enable record accessor"       Yes)
-option(FLB_SIGNV4             "Enable AWS Signv4 support"    Yes)
-option(FLB_SYSTEM_STRPTIME    "Use strptime in system libc"  Yes)
-option(FLB_STATIC_CONF        "Build binary using static configuration")
-option(FLB_STREAM_PROCESSOR   "Enable Stream Processor"      Yes)
-option(FLB_CORO_STACK_SIZE    "Set coroutine stack size")
+option(FLB_ALL                 "Enable all features"           No)
+option(FLB_DEBUG               "Build with debug mode (-g)"    Yes)
+option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
+option(FLB_SMALL               "Optimise for small size"       No)
+option(FLB_COVERAGE            "Build with code-coverage"      No)
+option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
+option(FLB_REGEX               "Build with Regex support"     Yes)
+option(FLB_UTF8_ENCODER        "Build with UTF8 encoding support" Yes)
+option(FLB_PARSER              "Build with Parser support"    Yes)
+option(FLB_TLS                 "Build with SSL/TLS support"   Yes)
+option(FLB_BINARY              "Build executable binary"      Yes)
+option(FLB_EXAMPLES            "Build examples"               Yes)
+option(FLB_SHARED_LIB          "Build shared library"         Yes)
+option(FLB_VALGRIND            "Enable Valgrind support"       No)
+option(FLB_TRACE               "Enable trace mode"             No)
+option(FLB_TESTS_RUNTIME       "Enable runtime tests"          No)
+option(FLB_TESTS_INTERNAL      "Enable internal tests"         No)
+option(FLB_TESTS_INTERNAL_FUZZ "Enable internal fuzz tests"    No)
+option(FLB_TESTS_OSSFUZZ       "Enable OSS-Fuzz build"         No)
+option(FLB_MTRACE              "Enable mtrace support"         No)
+option(FLB_POSIX_TLS           "Force POSIX thread storage"    No)
+option(FLB_INOTIFY             "Enable inotify support"       Yes)
+option(FLB_SQLDB               "Enable SQL embedded DB"       Yes)
+option(FLB_HTTP_SERVER         "Enable HTTP Server"           Yes)
+option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
+option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
+option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
+option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
+option(FLB_AWS                "Enable AWS support"            Yes)
+option(FLB_STATIC_CONF         "Build binary using static configuration")
+option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
+option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
+option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 
 # Metrics: Experimental Feature, disabled by default on 0.12 series
 # but enabled in the upcoming 0.13 release. Note that development
@@ -82,29 +102,16 @@ option(FLB_METRICS            "Enable metrics support"       No)
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
-# Advanced options for Flushing methods
-# =====================================
-# Flush methods defines under what kind of context/environment the plugins
-# flush callback is invoked. Since this is done through co-routines
-# there are two options available:
-#
-# FLB_FLUSH_LIBCO: set by default, use lib/flb_libco implementation which
-# supports amd64, arm, x86 and ppc.
-#
-# FLB_FLUSH_UCONTEXT (DEPRECATED): It uses POSIX ucontext for co-routines
-# implementation.
-# Despites this is POSIX deprecated, it's supported on Linux and BSD
-# systems, but specific old-toolchains do not implement it.
-
 # Build-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
 option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
 option(FLB_IN_DOCKER          "Enable Docker input plugin"          Yes)
+option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
 option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
 option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
-option(FLB_IN_HTTP            "Enable HTTP input plugin"             No)
+option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
 option(FLB_IN_MEM             "Enable Memory input plugin"          Yes)
 option(FLB_IN_KMSG            "Enable Kernel log input plugin"      Yes)
 option(FLB_IN_LIB             "Enable library mode input plugin"    Yes)
@@ -126,6 +133,7 @@ option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
 option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
 option(FLB_IN_EMITTER         "Enable emitter input plugin"         Yes)
 option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
+option(FLB_OUT_AZURE_BLOB     "Enable Azure output plugin"          Yes)
 option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
 option(FLB_OUT_COUNTER        "Enable Counter output plugin"        Yes)
 option(FLB_OUT_DATADOG        "Enable DataDog output plugin"        Yes)
@@ -136,20 +144,31 @@ option(FLB_OUT_GELF           "Enable GELF output plugin"           Yes)
 option(FLB_OUT_HTTP           "Enable HTTP output plugin"           Yes)
 option(FLB_OUT_INFLUXDB       "Enable InfluxDB output plugin"       Yes)
 option(FLB_OUT_NATS           "Enable NATS output plugin"           Yes)
+option(FLB_OUT_NRLOGS         "Enable New Relic output plugin"      Yes)
 option(FLB_OUT_TCP            "Enable TCP output plugin"            Yes)
 option(FLB_OUT_PLOT           "Enable Plot output plugin"           Yes)
 option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
 option(FLB_OUT_TD             "Enable Treasure Data output plugin"  Yes)
 option(FLB_OUT_RETRY          "Enable Retry test output plugin"      No)
+option(FLB_OUT_PGSQL          "Enable PostgreSQL output plugin"      No)
 option(FLB_OUT_SLACK          "Enable Slack output plugin"          Yes)
 option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"         Yes)
 option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"    Yes)
 option(FLB_OUT_STDOUT         "Enable STDOUT output plugin"         Yes)
+option(FLB_OUT_SYSLOG         "Enable Syslog output plugin"         Yes)
 option(FLB_OUT_LIB            "Enable library mode output plugin"   Yes)
 option(FLB_OUT_NULL           "Enable dev null output plugin"       Yes)
 option(FLB_OUT_FLOWCOUNTER    "Enable flowcount output plugin"      Yes)
+option(FLB_OUT_LOGDNA         "Enable LogDNA output plugin"         Yes)
+option(FLB_OUT_LOKI           "Enable Loki output plugin"           Yes)
 option(FLB_OUT_KAFKA          "Enable Kafka output plugin"           No)
 option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"     Yes)
+option(FLB_OUT_CLOUDWATCH_LOGS "Enable AWS CloudWatch output plugin" Yes)
+option(FLB_OUT_KINESIS_FIREHOSE "Enable AWS Firehose output plugin" Yes)
+option(FLB_OUT_KINESIS_STREAMS "Enable AWS Kinesis output plugin" Yes)
+option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
+option(FLB_OUT_WEBSOCKET      "Enable Websocket output plugin"      Yes)
+option(FLB_FILTER_ALTER_SIZE  "Enable alter_size filter"            Yes)
 option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
 option(FLB_FILTER_EXPECT      "Enable expect filter"                Yes)
 option(FLB_FILTER_GREP        "Enable grep filter"                  Yes)
@@ -159,9 +178,18 @@ option(FLB_FILTER_PARSER      "Enable parser filter"                Yes)
 option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"            Yes)
 option(FLB_FILTER_REWRITE_TAG "Enable tag rewrite filter"           Yes)
 option(FLB_FILTER_THROTTLE    "Enable throttle filter"              Yes)
+option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
+option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
+option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
+
+# Debug callbacks
+option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
+
+# Run ldconfig on package post-install
+option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" Yes)
 
 # Enable all features
 if(FLB_ALL)
@@ -195,16 +223,20 @@ if(FLB_ALL)
   set(FLB_OUT_RETRY    1)
   set(FLB_OUT_TD       1)
   set(FLB_OUT_STDOUT   1)
+  set(FLB_OUT_S3       1)
+  set(FLB_OUT_SYSLOG   1)
   set(FLB_OUT_LIB      1)
   set(FLB_OUT_FLOWCOUNTER 1)
+  set(FLB_OUT_WEBSOCKET   1)
 endif()
 
 if(FLB_DEV)
-  set(FLB_DEBUG          On)
-  set(FLB_TRACE          On)
-  set(FLB_METRICS        On)
-  set(FLB_HTTP_SERVER    On)
-  set(FLB_TESTS_INTERNAL On)
+  set(FLB_DEBUG             On)
+  set(FLB_TRACE             On)
+  set(FLB_METRICS           On)
+  set(FLB_HTTP_SERVER       On)
+  set(FLB_HTTP_CLIENT_DEBUG On)
+  set(FLB_TESTS_INTERNAL    On)
 endif()
 
 # SSL/TLS: add encryption support
@@ -212,6 +244,13 @@ if(FLB_OUT_TD)
   set(FLB_TLS ON)
 endif()
 
+if(FLB_HTTP_CLIENT_DEBUG)
+  FLB_DEFINITION(FLB_HAVE_HTTP_CLIENT_DEBUG)
+endif()
+
+if (FLB_TESTS_OSSFUZZ)
+  FLB_DEFINITION(FLB_HAVE_TESTS_OSSFUZZ)
+endif()
 
 # Set Fluent Bit dependency libraries path
 include(cmake/libraries.cmake)
@@ -248,7 +287,12 @@ if(FLEX_FOUND AND BISON_FOUND)
 endif()
 
 if(FLB_SMALL)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 -s -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
+  if(CMAKE_COMPILER_IS_GNUCC)
+    set(strip_flag  " -s ")
+  else()
+    set(strip_flag  "")
+  endif()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0 ${strip_flag} -fno-stack-protector -fomit-frame-pointer -DNDEBUG -U_FORTIFY_SOURCE")
 endif()
 
 if(FLB_COVERAGE)
@@ -259,6 +303,8 @@ endif()
 # Enable Debug symbols if specified
 if(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
+elseif(FLB_RELEASE)
+  set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 endif()
 
 if(FLB_PARSER)
@@ -318,10 +364,29 @@ add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 # Miniz (zip)
 add_subdirectory(${FLB_PATH_LIB_MINIZ} EXCLUDE_FROM_ALL)
 
+# Avro
+if(FLB_AVRO_ENCODER)
+  # jansson
+  option(JANSSON_BUILD_DOCS         OFF)
+  option(JANSSON_EXAMPLES           OFF)
+  option(JANSSON_WITHOUT_TESTS       ON)
+  option(JANSSON_BUILD_SHARED_LIBS  OFF)
+  add_subdirectory(${FLB_PATH_LIB_JANSSON})
+
+  #avro
+  add_subdirectory(${FLB_PATH_LIB_AVRO} EXCLUDE_FROM_ALL)
+endif()
+
 # tutf8e
 if(FLB_UTF8_ENCODER)
   add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
 endif()
+
+# xxHash
+FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
+set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
+set(XXHASH_BUILD_XXHSUM OFF)
+add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
 
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
@@ -339,7 +404,7 @@ endif()
 
 # MK Core
 macro(MK_SET_OPTION option value)
-  set(${option} ${value} CACHE "" INTERNAL FORCE)
+  set(${option} ${value} CACHE INTERNAL "" FORCE)
 endmacro()
 MK_SET_OPTION(MK_SYSTEM_MALLOC  ON)
 MK_SET_OPTION(MK_DEBUG          ON)
@@ -353,15 +418,34 @@ endif()
 
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
+
+  # Build mbedtls: yes, in this transition period we always enable it
   option(ENABLE_TESTING  OFF)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+
+  # Link OpenSSL statically on Windows.
+  if (FLB_SYSTEM_WINDOWS)
+    set(OPENSSL_USE_STATIC_LIBS ON)
+    set(OPENSSL_MSVC_STATIC_RT  ON)
+  endif()
+
+  # find OpenSSL (our preferred choice now)
+  find_package(OpenSSL)
+  if(OPENSSL_FOUND)
+    FLB_DEFINITION(FLB_HAVE_OPENSSL)
+  endif()
 endif()
 
 # Metrics
 if(FLB_METRICS)
   FLB_DEFINITION(FLB_HAVE_METRICS)
+endif()
+
+# AWS
+if (FLB_AWS)
+  FLB_DEFINITION(FLB_HAVE_AWS)
 endif()
 
 # Signv4
@@ -510,7 +594,6 @@ if(FLB_TD)
   FLB_OPTION(FLB_JEMALLOC ON)
   set(FLB_PROG_NAME "TD Agent Bit")
   set(FLB_OUT_NAME "td-agent-bit")
-  set(WITHOUT_HEADERS On)
 else()
   set(FLB_PROG_NAME "Fluent Bit")
   set(FLB_OUT_NAME "fluent-bit")
@@ -526,11 +609,6 @@ else()
     set(AUTOCONF_HOST_OPT "--host=${GNU_HOST}")
 endif()
 
-# strptime(2) support
-if (FLB_SYSTEM_STRPTIME)
-  FLB_DEFINITION(FLB_HAVE_SYSTEM_STRPTIME)
-endif()
-
 # Memory Allocator
 # ================
 if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -540,9 +618,9 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
+    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
@@ -558,9 +636,9 @@ endif()
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
   ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-5a99ff7f/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE)
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
@@ -582,11 +660,24 @@ if(FLB_UTF8_ENCODER)
   FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
 endif()
 
+# avro-c (Avro Encoding)
+# =====================
+if(FLB_AVRO_ENCODER)
+  FLB_DEFINITION(FLB_HAVE_AVRO_ENCODER)
+endif()
+
 # LuaJIT (Scripting Support)
 # ==========================
 if(FLB_LUAJIT)
   include(cmake/luajit.cmake)
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
+endif()
+
+# PostgreSQL
+# ==========
+find_package(PostgreSQL)
+if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
+   FLB_OPTION(FLB_OUT_PGSQL OFF)
 endif()
 
 # Pthread Local Storage
@@ -651,15 +742,19 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(FLB_INSTALL_INCLUDEDIR "include")
 else()
   set(FLB_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
-  set(FLB_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
   set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
-  set(FLB_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_INCLUDEDIR})
+  set(FLB_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
+
+if(NOT FLB_SHARED_LIB)
+  set(FLB_EXAMPLES OFF)
+endif()
 
 if(FLB_EXAMPLES)
   add_subdirectory(examples)
@@ -684,7 +779,6 @@ set(CPACK_PACKAGE_NAME "td-agent-bit")
 set(CPACK_PACKAGE_RELEASE 1)
 set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
 set(CPACK_PACKAGE_VENDOR "Treasure Data")
-set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/td-agent-bit")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
@@ -700,8 +794,18 @@ if(FLB_SYSTEM_WINDOWS)
   endif()
 endif()
 
+# Enable components
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+set(CPACK_RPM_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_ALL ${CPACK_COMPONENTS_ALL} binary library headers headers-extra)
+set(CPACK_COMPONENTS_GROUPING "ONE_PER_GROUP")
+
+set(CPACK_COMPONENT_BINARY_GROUP "RUNTIME")
+set(CPACK_COMPONENT_LIBRARY_GROUP "RUNTIME")
+
 # Debian package setup and name sanitizer
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
 find_program(DPKG_PROGRAM dpkg DOC "dpkg program of Debian-based systems")
 if(DPKG_PROGRAM)
   execute_process(
@@ -709,14 +813,29 @@ if(DPKG_PROGRAM)
     OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-  #set(CPACK_PACKAGE_FILE_NAME
-  #  "${CPACK_PACKAGE_NAME_LOWERCASE}_${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}")
 
-  set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}")
-
-  set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+  set(CPACK_DEBIAN_HEADERS_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}-headers.deb")
+  set(CPACK_DEBIAN_HEADERS_EXTRA_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}-headers-extra.deb")
+  set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "${CPACK_PACKAGE_NAME}")
+  set(CPACK_DEBIAN_RUNTIME_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+  set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA
     ${CMAKE_CURRENT_SOURCE_DIR}/debian/conffiles
     )
+
+  if(FLB_RUN_LDCONFIG)
+    set(LDCONFIG_DIR ${FLB_INSTALL_LIBDIR})
+    file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "
+mkdir -p /etc/ld.so.conf.d
+echo \"${LDCONFIG_DIR}\" > /etc/ld.so.conf.d/libfluent-bit.conf
+ldconfig
+    ")
+    file(WRITE ${PROJECT_BINARY_DIR}/scripts/prerm "
+rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
+ldconfig
+    ")
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+  endif(FLB_RUN_LDCONFIG)
+
 endif()
 
 # RPM Generation information
@@ -739,10 +858,12 @@ set(CPACK_RPM_USER_FILELIST
   "%ignore /usr/local/bin"
   "%ignore /opt"
   "%ignore /etc")
+
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
-if(CPACK_GENERATOR MATCHES "RPM")
-  set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
-endif()
+set(CPACK_RPM_RUNTIME_PACKAGE_NAME "${CPACK_PACKAGE_NAME}")
+set(CPACK_RPM_HEADERS_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}-headers.rpm")
+set(CPACK_RPM_HEADERS_EXTRA_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}-headers-extra.rpm")
+set(CPACK_RPM_RUNTIME_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}.rpm")
 
 # CPack: DEB
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)

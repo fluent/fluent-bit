@@ -15,7 +15,8 @@
 
    - code     : -1 record must be deleted
                  0 record not modified, keep the original
-                 1 record was modified, replace content
+                 1 record was modified, replace timestamp and record.
+                 2 record was modified, replace record and keep timestamp.
    - timestamp: Unix timestamp with precision (double)
    - record   : Table with multiple key/val
 

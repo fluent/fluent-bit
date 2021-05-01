@@ -2,7 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,10 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_coro.h>
+#include <fluent-bit/flb_callback.h>
+#include <fluent-bit/flb_kv.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
 #include <stdarg.h>
@@ -104,7 +108,9 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
-    flb_thread_prepare();
+    flb_tls_init();
+    flb_coro_init();
+    flb_upstream_init();
     flb_output_prepare();
 }
 
@@ -189,6 +195,10 @@ flb_ctx_t *flb_create()
 /* Release resources associated to the library context */
 void flb_destroy(flb_ctx_t *ctx)
 {
+    if (!ctx) {
+        return;
+    }
+
     if (ctx->event_channel) {
         mk_event_del(ctx->event_loop, ctx->event_channel);
         flb_free(ctx->event_channel);
@@ -196,7 +206,17 @@ void flb_destroy(flb_ctx_t *ctx)
 
     /* Remove resources from the event loop */
     mk_event_loop_destroy(ctx->event_loop);
+
+    /* cfg->is_running is set to false when flb_engine_shutdown has been invoked (event loop) */
+    if(ctx->config) {
+        if (ctx->config->is_running == FLB_TRUE) {
+            flb_engine_shutdown(ctx->config);
+        }
+        flb_config_exit(ctx->config);
+    }
+
     flb_free(ctx);
+    ctx = NULL;
 
 #ifdef FLB_HAVE_MTRACE
     /* Stop tracing malloc and free */
@@ -218,11 +238,11 @@ int flb_input(flb_ctx_t *ctx, const char *input, void *data)
 }
 
 /* Defines a new output instance */
-int flb_output(flb_ctx_t *ctx, const char *output, void *data)
+int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, data);
+    o_ins = flb_output_new(ctx->config, output, cb);
     if (!o_ins) {
         return -1;
     }
@@ -276,6 +296,108 @@ int flb_input_set(flb_ctx_t *ctx, int ffd, ...)
     return 0;
 }
 
+static inline int flb_config_map_property_check(char *plugin_name, struct mk_list *config_map, char *key, char *val)
+{
+    struct flb_kv *kv;
+    struct mk_list properties;
+    int r;
+
+    mk_list_init(&properties);
+
+    kv = flb_kv_item_create(&properties, (char *) key, (char *) val);
+    if (!kv) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_properties_check(plugin_name, &properties, config_map);
+    flb_kv_item_destroy(kv);
+    return r;
+}
+
+/* Check if a given k, v is a valid config directive for the given output plugin */
+int flb_output_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
+{
+    struct flb_output_instance *o_ins;
+    struct mk_list *config_map;
+    struct flb_output_plugin *p;
+    int r;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+      return FLB_LIB_ERROR;
+    }
+
+    p = o_ins->p;
+    if (!p->config_map) {
+        return FLB_LIB_NO_CONFIG_MAP;
+    }
+
+    config_map = flb_config_map_create(ctx->config, p->config_map);
+    if (!config_map) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_property_check(p->name, config_map, key, val);
+    flb_config_map_destroy(config_map);
+    return r;
+}
+
+/* Check if a given k, v is a valid config directive for the given input plugin */
+int flb_input_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
+{
+    struct flb_input_instance *i_ins;
+    struct flb_input_plugin *p;
+    struct mk_list *config_map;
+    int r;
+
+    i_ins = in_instance_get(ctx, ffd);
+    if (!i_ins) {
+      return FLB_LIB_ERROR;
+    }
+
+    p = i_ins->p;
+    if (!p->config_map) {
+        return FLB_LIB_NO_CONFIG_MAP;
+    }
+
+    config_map = flb_config_map_create(ctx->config, p->config_map);
+    if (!config_map) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_property_check(p->name, config_map, key, val);
+    flb_config_map_destroy(config_map);
+    return r;
+}
+
+/* Check if a given k, v is a valid config directive for the given filter plugin */
+int flb_filter_property_check(flb_ctx_t *ctx, int ffd, char *key, char *val)
+{
+    struct flb_filter_instance *f_ins;
+    struct flb_filter_plugin *p;
+    struct mk_list *config_map;
+    int r;
+
+    f_ins = filter_instance_get(ctx, ffd);
+    if (!f_ins) {
+      return FLB_LIB_ERROR;
+    }
+
+    p = f_ins->p;
+    if (!p->config_map) {
+        return FLB_LIB_NO_CONFIG_MAP;
+    }
+
+    config_map = flb_config_map_create(ctx->config, p->config_map);
+    if (!config_map) {
+        return FLB_LIB_ERROR;
+    }
+
+    r = flb_config_map_property_check(p->name, config_map, key, val);
+    flb_config_map_destroy(config_map);
+    return r;
+}
+
 /* Set an output interface property */
 int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
 {
@@ -307,6 +429,52 @@ int flb_output_set(flb_ctx_t *ctx, int ffd, ...)
     }
 
     va_end(va);
+    return 0;
+}
+
+int flb_output_set_callback(flb_ctx_t *ctx, int ffd, char *name,
+                            void (*cb)(char *, void *, void *))
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    return flb_callback_set(o_ins->callback, name, cb);
+}
+
+int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
+                        void (*out_callback) (void *, int, int, void *, size_t, void *),
+                        void *out_callback_data,
+                        void *test_ctx)
+{
+    struct flb_output_instance *o_ins;
+
+    o_ins = out_instance_get(ctx, ffd);
+    if (!o_ins) {
+        return -1;
+    }
+
+    /*
+     * Enabling a test, set the output instance in 'test' mode, so no real
+     * flush callback is invoked, only the desired implemented test.
+     */
+
+    /* Formatter test */
+    if (strcmp(test_name, "formatter") == 0) {
+        o_ins->test_mode = FLB_TRUE;
+        o_ins->test_formatter.rt_ctx = ctx;
+        o_ins->test_formatter.rt_ffd = ffd;
+        o_ins->test_formatter.rt_out_callback = out_callback;
+        o_ins->test_formatter.rt_data = out_callback_data;
+        o_ins->test_formatter.flush_ctx = test_ctx;
+    }
+    else {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -429,14 +597,17 @@ int flb_lib_push(flb_ctx_t *ctx, int ffd, const void *data, size_t len)
 static void flb_lib_worker(void *data)
 {
     int ret;
-    struct flb_config *config = data;
+    flb_ctx_t *ctx = data;
+    struct flb_config *config;
 
-    flb_log_init(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    config = ctx->config;
+    mk_utils_worker_rename("flb-pipeline");
     ret = flb_engine_start(config);
     if (ret == -1) {
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    ctx->status = FLB_LIB_NONE;
 }
 
 /* Return the current time to be used by lib callers */
@@ -462,7 +633,7 @@ int flb_start(flb_ctx_t *ctx)
     pthread_once(&flb_lib_once, flb_init_env);
 
     config = ctx->config;
-    ret = mk_utils_worker_spawn(flb_lib_worker, config, &tid);
+    ret = mk_utils_worker_spawn(flb_lib_worker, ctx, &tid);
     if (ret == -1) {
         return -1;
     }
@@ -490,6 +661,14 @@ int flb_start(flb_ctx_t *ctx)
         }
     }
 
+    return 0;
+}
+
+int flb_loop(flb_ctx_t *ctx)
+{
+    while (ctx->status == FLB_LIB_OK) {
+        sleep(1);
+    }
     return 0;
 }
 

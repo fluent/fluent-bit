@@ -22,9 +22,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <string.h>
 #include <ctype.h>
+
+#include <mk_core/mk_unistd.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_mimetype.h>
@@ -41,7 +42,7 @@ static int rbtree_compare(const void *lhs, const void *rhs)
 }
 
 /* Match mime type for requested resource */
-inline struct mk_mimetype *mk_mimetype_lookup(struct mk_server *server, char *name)
+struct mk_mimetype *mk_mimetype_lookup(struct mk_server *server, char *name)
 {
     int cmp;
     struct rb_tree_node *node = server->mimetype_rb_head.root;

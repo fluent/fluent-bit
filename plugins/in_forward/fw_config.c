@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,7 +54,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     /* Chunk size */
     chunk_size = flb_input_get_property("buffer_chunk_size", i_ins);
     if (!chunk_size) {
-        config->buffer_chunk_size = FLB_IN_FW_CHUNK; /* 32KB */
+        config->buffer_chunk_size = FLB_IN_FW_CHUNK_SIZE; /* 1MB */
     }
     else {
         /* Convert KB unit to Bytes */
@@ -64,10 +64,10 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     /* Buffer size */
     buffer_size = flb_input_get_property("buffer_max_size", i_ins);
     if (!buffer_size) {
-        config->buffer_max_size = config->buffer_chunk_size;
+        config->buffer_max_size = FLB_IN_FW_CHUNK_MAX_SIZE; /* 6MB */
     }
     else {
-        /* Convert KB unit to Bytes */
+        /* Convert unit to bytes */
         config->buffer_max_size  = flb_utils_size_to_bytes(buffer_size);
     }
 

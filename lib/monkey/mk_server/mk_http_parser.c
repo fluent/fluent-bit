@@ -217,7 +217,7 @@ static inline int header_lookup(struct mk_http_parser *p, char *buffer)
                 if (sep > 0) {
                     int plen;
                     short int port_size = 6;
-                    char port[port_size];
+                    char port[6]; /* Can't use port_size to declare a stack allocated array in vc++ */
 
                     plen = header->val.len - sep - 1;
                     if (plen <= 0 || plen >= port_size) {

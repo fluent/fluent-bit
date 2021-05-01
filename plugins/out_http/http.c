@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
@@ -37,6 +38,8 @@
 #include "http.h"
 #include "http_conf.h"
 
+#include <fluent-bit/flb_callback.h>
+
 static int cb_http_init(struct flb_output_instance *ins,
                         struct flb_config *config, void *data)
 {
@@ -50,6 +53,12 @@ static int cb_http_init(struct flb_output_instance *ins,
 
     /* Set the plugin context */
     flb_output_set_context(ins, ctx);
+
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
 
     return 0;
 }
@@ -103,6 +112,21 @@ static int http_post(struct flb_out_http *ctx,
                         payload_buf, payload_size,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
+
+
+    if (c->proxy.host) {
+        flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
+                      c->proxy.host, c->proxy.port);
+    }
+
+    /* Allow duplicated headers ? */
+    flb_http_allow_duplicated_headers(c, ctx->allow_dup_headers);
+
+    /*
+     * Direct assignment of the callback context to the HTTP client context.
+     * This needs to be improved through a more clean API.
+     */
+    c->cb_ctx = ctx->ins->callback;
 
     /* Append headers */
     if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
@@ -165,12 +189,21 @@ static int http_post(struct flb_out_http *ctx,
          *
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
-                          ctx->host, ctx->port, c->resp.status);
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->host, ctx->port,
+                              c->resp.status, c->resp.payload);
+            }
+            else {
+                flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->host, ctx->port, c->resp.status);
+            }
             out_ret = FLB_RETRY;
         }
         else {
-            if (c->resp.payload) {
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                              ctx->host, ctx->port,
                              c->resp.status, c->resp.payload);
@@ -288,7 +321,7 @@ static void cb_http_flush(const void *data, size_t bytes,
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
                                                ctx->json_date_format,
-                                               ctx->json_date_key);
+                                               ctx->date_key);
         if (json != NULL) {
             ret = http_post(ctx, json, flb_sds_len(json), tag, tag_len);
             flb_sds_destroy(json);
@@ -317,79 +350,89 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specify an HTTP Proxy. The expected format of this value is http://host:port. "
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "allow_duplicated_headers", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_http, allow_dup_headers),
+     "Specify if duplicated headers are allowed or not"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_http, log_response_payload),
+     "Specify if the response paylod should be logged or not"
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, http_user),
-     NULL
+     "Set HTTP auth user"
     },
     {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_out_http, http_passwd),
-     NULL
+     "Set HTTP auth password"
     },
     {
      FLB_CONFIG_MAP_STR, "header_tag", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, header_tag),
-     NULL
+     "Set a HTTP header which value is the Tag"
     },
     {
      FLB_CONFIG_MAP_STR, "format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Specify the format of the date. Supported formats are 'double' and 'iso8601'"
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_out_http, json_date_key),
-     NULL
+     "Specify the name of the date field in output"
     },
     {
      FLB_CONFIG_MAP_STR, "compress", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Set payload compression mechanism. Option available is 'gzip'"
     },
     {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_http, headers),
-     NULL,
+     "Add a HTTP header key/value pair. Multiple headers can be set"
     },
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, uri),
-     NULL,
+     "Specify an optional HTTP URI for the target web server, e.g: /something"
     },
 
     /* Gelf Properties */
     {
      FLB_CONFIG_MAP_STR, "gelf_timestamp_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.timestamp_key),
-     NULL
+     "Specify the key to use for 'timestamp' in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_host_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.host_key),
-     NULL
+     "Specify the key to use for the 'host' in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_short_message_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.short_message_key),
-     NULL
+     "Specify the key to use as the 'short' message in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_full_message_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.full_message_key),
-     NULL
+     "Specify the key to use for the 'full' message in gelf format"
     },
     {
      FLB_CONFIG_MAP_STR, "gelf_level_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
-     NULL
+     "Specify the key to use for the 'level' in gelf format"
     },
 
     /* EOF */

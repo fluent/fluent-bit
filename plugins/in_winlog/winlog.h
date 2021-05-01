@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,18 @@
 
 #ifndef FLB_WINLOG_H
 #define FLB_WINLOG_H
+
+struct winlog_config {
+    unsigned int interval_sec;
+    unsigned int interval_nsec;
+    unsigned int bufsize;
+    int string_inserts;
+    char *buf;
+    struct mk_list *active_channel;
+    struct flb_sqldb *db;
+    flb_pipefd_t coll_fd;
+    struct flb_input_instance *ins;
+};
 
 struct winlog_channel {
     HANDLE h;
@@ -56,6 +68,9 @@ int winlog_read(struct winlog_channel *ch, char *buf, unsigned int size, unsigne
 struct mk_list *winlog_open_all(const char *channels);
 void winlog_close_all(struct mk_list *list);
 
+void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
+                       struct winlog_channel *ch, struct winlog_config *ctx);
+
 /*
  * Save the read offset to disk.
  */
@@ -87,7 +102,7 @@ int winlog_sqlite_save(struct winlog_channel *ch, struct flb_sqldb *db);
 #define SQL_UPDATE_CHANNEL                                          \
     "INSERT INTO in_winlog_channels"                                \
     "  (name, record_number, time_written, created)"                \
-    "  VALUES ('%s', %u, %u, %u)"                                   \
+    "  VALUES ('%s', %u, %u, %llu)"                                   \
     "  ON CONFLICT(name) DO UPDATE"                                 \
     "  SET record_number = excluded.record_number,"                 \
     "      time_written = excluded.time_written"

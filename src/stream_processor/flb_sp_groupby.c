@@ -24,10 +24,11 @@
 int flb_sp_groupby_compare(const void *lhs, const void *rhs)
 {
     int i;
-    struct aggr_node *left = (struct aggr_node *) lhs;
-    struct aggr_node *right = (struct aggr_node *) rhs;
-    struct aggr_num *lval;
-    struct aggr_num *rval;
+    int strcmp_result;
+    struct aggregate_node *left = (struct aggregate_node *) lhs;
+    struct aggregate_node *right = (struct aggregate_node *) rhs;
+    struct aggregate_num *lval;
+    struct aggregate_num *rval;
 
     for (i = 0; i < left->groupby_keys; i++) {
         lval = &left->groupby_nums[i];
@@ -68,7 +69,10 @@ int flb_sp_groupby_compare(const void *lhs, const void *rhs)
             }
         }
         else if (lval->type == FLB_SP_STRING && rval->type == FLB_SP_STRING) {
-            return strcmp((const char *) lval->string, (const char *) rval->string);
+            strcmp_result = strcmp((const char *) lval->string, (const char *) rval->string);
+            if (strcmp_result != 0) {
+              return strcmp_result;
+            }
         }
         else { /* Sides have different types */
             return -1;

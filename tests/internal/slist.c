@@ -101,6 +101,71 @@ void test_slist_split_string()
 
 }
 
+void token_check(struct mk_list *list, int id, char *str)
+{
+    int i = 0;
+    int len;
+    int ret;
+    struct mk_list *head;
+    struct flb_slist_entry *e = NULL;
+
+    mk_list_foreach(head, list) {
+        if (i == id) {
+            e = mk_list_entry(head, struct flb_slist_entry, _head);
+            break;
+        }
+        e = NULL;
+        i++;
+    }
+    TEST_CHECK(e != NULL);
+
+    len = strlen(str);
+    ret = flb_sds_cmp(e->str, str, len);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        fprintf(stderr, "[token %i] expected '%s', got '%s'\n\n",
+                i, str, e->str);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void test_slist_split_tokens()
+{
+    struct mk_list list;
+    char *txt =                                             \
+        "  this \"is a tokens parser\" \" apples    \", "
+        "no\"quoted \"this is \\\"quoted\\\"\" "
+        "don't escape insi\\\"de q\\\"uoted strings\\\"";
+
+    mk_list_init(&list);
+    flb_slist_split_tokens(&list, txt, -1);
+
+    token_check(&list,  0, "this");
+    token_check(&list,  1, "is a tokens parser");
+    token_check(&list,  2, " apples    ");
+    token_check(&list,  3, ",");
+    token_check(&list,  4, "no\"quoted");
+    token_check(&list,  5, "this is \"quoted\"");
+    token_check(&list,  6, "don't");
+    token_check(&list,  7, "escape");
+    token_check(&list,  8, "insi\\\"de");
+    token_check(&list,  9, "q\\\"uoted");
+    token_check(&list, 10, "strings\\\"");
+
+    flb_slist_destroy(&list);
+
+    mk_list_init(&list);
+    flb_slist_split_string(&list, "aaa bbb ccc ddd eee", ' ', 3);
+    token_check(&list, 3, "ddd eee");
+    flb_slist_destroy(&list);
+
+    mk_list_init(&list);
+    flb_slist_split_tokens(&list, "aaa bbb ccc ddd eee", 3);
+    token_check(&list, 3, "ddd eee");
+    flb_slist_destroy(&list);
+
+}
+
 void test_bugs()
 {
     int ret;
@@ -119,8 +184,9 @@ void test_bugs()
 }
 
 TEST_LIST = {
-    { "add"  , test_slist_add},
-    { "split", test_slist_split_string},
-    { "bugs" , test_bugs},
+    { "add"         , test_slist_add},
+    { "split_string", test_slist_split_string},
+    { "split_tokens", test_slist_split_tokens},
+    { "bugs"        , test_bugs},
     { 0 }
 };

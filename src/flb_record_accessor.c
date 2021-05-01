@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
@@ -46,18 +46,6 @@ static struct flb_ra_parser *ra_parse_string(struct flb_record_accessor *ra,
     return rp;
 }
 
-static struct flb_ra_parser *ra_parse_regex_id(struct flb_record_accessor *ra,
-                                               int c)
-{
-    struct flb_ra_parser *rp;
-
-    rp = flb_ra_parser_regex_id_create(c);
-    if (!rp) {
-        return NULL;
-    }
-    return rp;
-}
-
 /* Create a parser context for a key map or function definition */
 static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
                                            flb_sds_t buf, int start, int end)
@@ -77,10 +65,10 @@ static struct flb_ra_parser *ra_parse_meta(struct flb_record_accessor *ra,
 /*
  * Supported data
  *
- * ${X}                         => environment variable
- * $key, $key[x], $key[x][y][z] => record key value
- * $0, $1,..$9                  => regex id
- * $X()                         => built-in function
+ * ${X}                               => environment variable
+ * $key, $key['x'], $key['x'][N]['z'] => record key value or array index
+ * $0, $1,..$9                        => regex id
+ * $X()                               => built-in function
  */
 static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
 {
@@ -91,6 +79,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
     int len;
     int pre = 0;
     int end = 0;
+    int quote_cnt;
     struct flb_ra_parser *rp;
     struct flb_ra_parser *rp_str = NULL;
 
@@ -130,7 +119,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
         if (isdigit(buf[n])) {
             /* Add REGEX_ID entry */
             c = atoi(buf + n);
-            rp = ra_parse_regex_id(ra, c);
+            rp = flb_ra_parser_regex_id_create(c);
             if (!rp) {
                 return -1;
             }
@@ -184,8 +173,16 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
             continue;
         }
 
+        quote_cnt = 0;
         for (end = i + 1; end < len; end++) {
-            if (buf[end] == '.' || buf[end] == ' ' || buf[end] == ',' || buf[end] == '"') {
+            if (buf[end] == '\'') {
+              ++quote_cnt;
+            }
+            else if (buf[end] == '.' && (quote_cnt & 0x01)) {
+                /* ignore '.' if it is inside a string/subkey */
+                continue;
+            }
+            else if (buf[end] == '.' || buf[end] == ' ' || buf[end] == ',' || buf[end] == '"') {
                 break;
             }
         }
@@ -221,7 +218,8 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
 
     /* Append remaining string */
     if (i - 1 > end && pre < i) {
-        rp_str = ra_parse_string(ra, buf, pre, i);
+        end = flb_sds_len(buf);
+        rp_str = ra_parse_string(ra, buf, pre, end);
         if (rp_str) {
             mk_list_add(&rp_str->_head, &ra->list);
         }
@@ -240,6 +238,10 @@ void flb_ra_destroy(struct flb_record_accessor *ra)
         rp = mk_list_entry(head, struct flb_ra_parser, _head);
         mk_list_del(&rp->_head);
         flb_ra_parser_destroy(rp);
+    }
+
+    if (ra->pattern) {
+        flb_sds_destroy(ra->pattern);
     }
     flb_free(ra);
 }
@@ -280,7 +282,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     }
 
     /* Allocate context */
-    ra = flb_malloc(sizeof(struct flb_record_accessor));
+    ra = flb_calloc(1, sizeof(struct flb_record_accessor));
     if (!ra) {
         flb_errno();
         flb_error("[record accessor] cannot create context");
@@ -289,8 +291,17 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
         }
         return NULL;
     }
+    ra->pattern = flb_sds_create(str);
+    if (!ra->pattern) {
+        flb_error("[record accessor] could not allocate pattern");
+        flb_free(ra);
+        if (buf) {
+            flb_sds_destroy(buf);
+        }
+        return NULL;
+    }
+
     mk_list_init(&ra->list);
-    flb_slist_create(&ra->list);
 
     /*
      * The buffer needs to processed where we create a list of parts, basically
@@ -405,8 +416,9 @@ static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
 static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
                                      msgpack_object map, int *found)
 {
-    char str[32];
     int len;
+    char *js;
+    char str[32];
     flb_sds_t tmp = NULL;
     struct flb_ra_value *v;
 
@@ -422,11 +434,23 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
 
     /* Based on data type, convert to it string representation */
     if (v->type == FLB_RA_BOOL) {
-        if (v->val.boolean) {
-            tmp = flb_sds_cat(buf, "true", 4);
+        /* Check if is a map or a real bool */
+        if (v->o.type == MSGPACK_OBJECT_MAP) {
+            /* Convert msgpack map to JSON string */
+            js = flb_msgpack_to_json_str(1024, &v->o);
+            if (js) {
+                len = strlen(js);
+                tmp = flb_sds_cat(buf, js, len);
+                flb_free(js);
+            }
         }
-        else {
-            tmp = flb_sds_cat(buf, "false", 5);
+        else if (v->o.type == MSGPACK_OBJECT_BOOLEAN) {
+            if (v->val.boolean) {
+                tmp = flb_sds_cat(buf, "true", 4);
+            }
+            else {
+                tmp = flb_sds_cat(buf, "false", 5);
+            }
         }
     }
     else if (v->type == FLB_RA_INT) {
@@ -482,10 +506,10 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
         else if (rp->type == FLB_RA_PARSER_REGEX_ID && result) {
             tmp = ra_translate_regex_id(rp, result, buf);
         }
-        else if (rp->type == FLB_RA_PARSER_TAG) {
+        else if (rp->type == FLB_RA_PARSER_TAG && tag) {
             tmp = ra_translate_tag(rp, buf, tag, tag_len);
         }
-        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+        else if (rp->type == FLB_RA_PARSER_TAG_PART && tag) {
             tmp = ra_translate_tag_part(rp, buf, tag, tag_len);
         }
         else {
@@ -507,6 +531,40 @@ flb_sds_t flb_ra_translate(struct flb_record_accessor *ra,
     }
 
     return buf;
+}
+
+/*
+ * If the record accessor rules do not generate content based on a keymap or
+ * regex, it's considered to be 'static', so the value returned will always be
+ * the same.
+ *
+ * If the 'ra' is static, return FLB_TRUE, otherwise FLB_FALSE.
+ */
+int flb_ra_is_static(struct flb_record_accessor *ra)
+{
+    struct mk_list *head;
+    struct flb_ra_parser *rp;
+
+    mk_list_foreach(head, &ra->list) {
+        rp = mk_list_entry(head, struct flb_ra_parser, _head);
+        if (rp->type == FLB_RA_PARSER_STRING) {
+            continue;
+        }
+        else if (rp->type == FLB_RA_PARSER_KEYMAP) {
+            return FLB_FALSE;
+        }
+        else if (rp->type == FLB_RA_PARSER_REGEX_ID) {
+            return FLB_FALSE;
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG) {
+            continue;
+        }
+        else if (rp->type == FLB_RA_PARSER_TAG_PART) {
+            continue;
+        }
+    }
+
+    return FLB_TRUE;
 }
 
 /*
@@ -537,6 +595,32 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
                                   regex, result);
 }
 
+/*
+ * If 'record accessor' pattern matches an entry in the 'map', set the
+ * reference in 'out_key' and 'out_val' for the entries in question.
+ *
+ * Returns FLB_TRUE if the pattern matched a kv pair, otherwise it returns
+ * FLB_FALSE.
+ */
+int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                       msgpack_object **start_key,
+                       msgpack_object **out_key, msgpack_object **out_val)
+{
+    struct flb_ra_parser *rp;
+
+    if (mk_list_size(&ra->list) == 0) {
+        return -1;
+    }
+
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (!rp->key) {
+        return FLB_FALSE;
+    }
+
+    return flb_ra_key_value_get(rp->key->name, map, rp->key->subkeys,
+                                start_key, out_key, out_val);
+}
+
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
                                              msgpack_object map)
 {
@@ -547,5 +631,9 @@ struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
     }
 
     rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (!rp->key) {
+        return NULL;
+    }
+
     return flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
 }

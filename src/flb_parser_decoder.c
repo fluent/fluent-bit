@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,7 @@ static int decode_json(struct flb_parser_dec *dec,
 {
     int ret;
     int root_type;
+    int records;
     char *buf;
     const char *p;
     size_t size;
@@ -53,8 +54,14 @@ static int decode_json(struct flb_parser_dec *dec,
         return -1;
     }
 
-    ret = flb_pack_json(p, len, &buf, &size, &root_type);
+    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records);
     if (ret != 0) {
+        return -1;
+    }
+
+    /* We expect to decode only one JSON element */
+    if (records != 1) {
+        flb_free(buf);
         return -1;
     }
 
@@ -96,6 +103,41 @@ static int decode_escaped_utf8(struct flb_parser_dec *dec,
     *out_buf = dec->buffer;
     *out_size = len;
     *out_type = TYPE_OUT_STRING;
+
+    return 0;
+}
+
+static int decode_mysql_quoted(struct flb_parser_dec *dec,
+                               char *in_buf, size_t in_size,
+                               char **out_buf, size_t *out_size, int *out_type)
+{
+    int len;
+    if(in_size < 2) {
+        dec->buffer[0] = in_buf[0];
+        dec->buffer[1] = 0;
+        *out_buf = dec->buffer;
+        *out_size = in_size;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else if(in_buf[0] == '\'' && in_buf[in_size-1] == '\'') {
+        len = flb_mysql_unquote_string(in_buf+1, in_size-2, &dec->buffer);
+        *out_buf = dec->buffer;
+        *out_size = len;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else if(in_buf[0] == '\"' && in_buf[in_size-1] == '\"') {
+        len = flb_mysql_unquote_string(in_buf+1, in_size-2, &dec->buffer);
+        *out_buf = dec->buffer;
+        *out_size = len;
+        *out_type = TYPE_OUT_STRING;
+    }
+    else {
+        memcpy(dec->buffer, in_buf, in_size);
+        dec->buffer[in_size] = 0;
+        *out_buf = dec->buffer;
+        *out_size = in_size;
+        *out_type = TYPE_OUT_STRING;
+    }
 
     return 0;
 }
@@ -322,7 +364,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
 
         /*
          * We got a match: 'key name' == 'decoder field name', validate
-         * that we have enough space in our temporal buffer.
+         * that we have enough space in our temporary buffer.
          */
         if (flb_sds_alloc(dec->buffer) < flb_sds_alloc(data_sds)) {
             /* Increase buffer size */
@@ -345,7 +387,7 @@ int flb_parser_decoder_do(struct mk_list *decoders,
         /*
          * If some rule type is FLB_PARSER_DEC_DEFAULT, means that it will
          * try to register some extra fields as part of the record. For such
-         * case we prepare a temporal buffer to hold these extra keys.
+         * case we prepare a temporary buffer to hold these extra keys.
          *
          * The content of this buffer is just a serialized number of maps.
          */
@@ -383,6 +425,11 @@ int flb_parser_decoder_do(struct mk_list *decoders,
                 ret = decode_escaped_utf8(dec,
                                      (char *) data_sds, flb_sds_len(data_sds),
                                      &dec_buf, &dec_size, &dec_type);
+            }
+            else if (rule->backend == FLB_PARSER_DEC_MYSQL_QUOTED) {
+                ret = decode_mysql_quoted(dec,
+                                          (char *) data_sds, flb_sds_len(data_sds),
+                                          &dec_buf, &dec_size, &dec_type);
             }
 
             /* Check decoder status */
@@ -629,6 +676,9 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
         else if (strcasecmp(decoder->value, "escaped_utf8") == 0) {
             backend = FLB_PARSER_DEC_ESCAPED_UTF8;
         }
+        else if (strcasecmp(decoder->value, "mysql_quoted") == 0) {
+            backend = FLB_PARSER_DEC_MYSQL_QUOTED;
+        }
         else {
             flb_error("[parser] field decoder '%s' unknown", decoder->value);
             flb_utils_split_free(split);
@@ -673,7 +723,7 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
             }
         }
 
-        /* Remove temporal split */
+        /* Remove temporary split */
         flb_utils_split_free(split);
         mk_list_add(&dec_rule->_head, &dec->rules);
         c++;

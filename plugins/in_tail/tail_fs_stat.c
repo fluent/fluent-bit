@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +30,10 @@
 #include "tail_db.h"
 #include "tail_config.h"
 #include "tail_signal.h"
+
+#ifdef FLB_SYSTEM_WINDOWS
+#include "win32.h"
+#endif
 
 struct fs_stat {
     /* last time check */
@@ -82,7 +86,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    off_t offset;
+    int64_t offset;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -116,6 +120,36 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
+        /* Check if the file was truncated */
+        if (file->offset > st.st_size) {
+            offset = lseek(file->fd, 0, SEEK_SET);
+            if (offset == -1) {
+                flb_errno();
+                return -1;
+            }
+
+            flb_plg_debug(ctx->ins, "file truncated %s", file->name);
+            file->offset = offset;
+            file->buf_len = 0;
+            memcpy(&fst->st, &st, sizeof(struct stat));
+
+#ifdef FLB_HAVE_SQLDB
+            /* Update offset in database file */
+            if (ctx->db) {
+                flb_tail_db_file_offset(file, ctx);
+            }
+#endif
+        }
+
+        if (file->offset < st.st_size) {
+            file->pending_bytes = (st.st_size - file->offset);
+            tail_signal_pending(ctx);
+        }
+        else {
+            file->pending_bytes = 0;
+        }
+
+
         /* Discover the current file name for the open file descriptor */
         name = flb_tail_file_name(file);
         if (!name) {
@@ -133,37 +167,11 @@ static int tail_fs_check(struct flb_input_instance *ins,
          * flb_tail_file_name_cmp. If applicable, it compares to the underlying
          * real_name of the file.
          */
-        if (flb_tail_target_file_name_cmp(name, file) != 0) {
+        if (flb_tail_file_is_rotated(ctx, file) == FLB_TRUE) {
             flb_tail_file_rotated(file);
         }
         flb_free(name);
 
-        /* Check if the file was truncated */
-        if (file->offset > st.st_size) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
-                return -1;
-            }
-
-            flb_plg_debug(ctx->ins, "file truncated %s", file->name);
-            file->offset = offset;
-            file->buf_len = 0;
-            memcpy(&fst->st, &st, sizeof(struct stat));
-
-            /* Update offset in database file */
-            if (ctx->db) {
-                flb_tail_db_file_offset(file, ctx);
-            }
-        }
-
-        if (file->offset < st.st_size) {
-            file->pending_bytes = (st.st_size - file->offset);
-            tail_signal_pending(ctx);
-        }
-        else {
-            file->pending_bytes = 0;
-        }
     }
 
     return 0;

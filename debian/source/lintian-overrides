@@ -1,0 +1,11 @@
+td-agent-bit source: configure-generated-file-in-source lib/onigmo/config.log
+td-agent-bit source: configure-generated-file-in-source lib/onigmo/config.status
+td-agent-bit source: source-is-missing lib/monkey/htdocs/js/bootstrap.min.js
+td-agent-bit source: source-is-missing lib/monkey/htdocs/js/jquery.js line length is 32086 characters (>512)
+td-agent-bit source: missing-field-in-dep5-copyright license (paragraph at line 10)
+td-agent-bit source: missing-field-in-dep5-copyright license (paragraph at line 5)
+td-agent-bit source: missing-notice-file-for-apache-license lib/monkey/NOTICE
+td-agent-bit source: missing-license-text-in-dep5-copyright (paragraph at line 8)
+td-agent-bit source: empty-short-license-in-dep5-copyright (paragraph at line 8)
+td-agent-bit source: space-in-std-shortname-in-dep5-copyright apache 2.0 (paragraph at line 13)
+td-agent-bit source: package-uses-deprecated-debhelper-compat-version 7

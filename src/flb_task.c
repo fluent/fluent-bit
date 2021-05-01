@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
@@ -65,7 +66,6 @@ static inline void map_free_task_id(int id, struct flb_config *config)
     config->tasks_map[id].task = NULL;
 }
 
-
 void flb_task_retry_destroy(struct flb_task_retry *retry)
 {
     int ret;
@@ -92,7 +92,7 @@ int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *c
     struct flb_task *task;
 
     task = retry->parent;
-    seconds = flb_sched_request_create(config, retry, retry->attemps);
+    seconds = flb_sched_request_create(config, retry, retry->attempts);
     if (seconds == -1) {
         /*
          * This is the worse case scenario: 'cannot re-schedule a retry'. If the Chunk
@@ -113,24 +113,19 @@ int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *c
 }
 
 struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
-                                             void *data)
+                                             struct flb_output_instance *ins)
 {
     struct mk_list *head;
     struct mk_list *tmp;
     struct flb_task_retry *retry = NULL;
-    struct flb_output_instance *o_ins;
-    struct flb_output_thread *out_th;
-
-    out_th = (struct flb_output_thread *) data;
-    o_ins = out_th->o_ins;
 
     /* First discover if is there any previous retry context in the task */
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
-        if (retry->o_ins == o_ins) {
-            if (retry->attemps >= o_ins->retry_limit && o_ins->retry_limit >= 0) {
-                flb_debug("[task] task_id=%i reached retry-attemps limit %i/%i",
-                          task->id, retry->attemps, o_ins->retry_limit);
+        if (retry->o_ins == ins) {
+            if (retry->attempts >= ins->retry_limit && ins->retry_limit >= 0) {
+                flb_debug("[task] task_id=%i reached retry-attempts limit %i/%i",
+                          task->id, retry->attempts, ins->retry_limit);
                 flb_task_retry_destroy(retry);
                 return NULL;
             }
@@ -147,18 +142,18 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
             return NULL;
         }
 
-        retry->attemps = 1;
-        retry->o_ins   = o_ins;
+        retry->attempts = 1;
+        retry->o_ins   = ins;
         retry->parent  = task;
         mk_list_add(&retry->_head, &task->retries);
 
-        flb_debug("[retry] new retry created for task_id=%i attemps=%i",
-                  out_th->task->id, retry->attemps);
+        flb_debug("[retry] new retry created for task_id=%i attempts=%i",
+                  task->id, retry->attempts);
     }
     else {
-        retry->attemps++;
-        flb_debug("[retry] re-using retry for task_id=%i attemps=%i",
-                  out_th->task->id, retry->attemps);
+        retry->attempts++;
+        flb_debug("[retry] re-using retry for task_id=%i attempts=%i",
+                  task->id, retry->attempts);
     }
 
     /*
@@ -168,6 +163,14 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
      * the file content down.
      */
     flb_input_chunk_set_up_down(task->ic);
+
+    /*
+     * Besides limits adjusted above, a retry that's going to only one place
+     * must be down.
+     */
+    if (mk_list_size(&task->routes) == 1) {
+        flb_input_chunk_down(task->ic);
+    }
 
     return retry;
 }
@@ -190,16 +193,16 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     struct mk_list *head;
     struct flb_task_retry *retry;
     struct flb_output_instance *o_ins;
-    struct flb_output_thread *out_th;
+    struct flb_output_coro *out_coro;
 
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
-    o_ins = out_th->o_ins;
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(data);
+    o_ins = out_coro->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
     mk_list_foreach(head, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
         if (retry->o_ins == o_ins) {
-            return retry->attemps;
+            return retry->attempts;
         }
     }
 
@@ -207,21 +210,16 @@ int flb_task_retry_count(struct flb_task *task, void *data)
 }
 
 /* Check if a 'retry' context exists for a specific task, if so, cleanup */
-int flb_task_retry_clean(struct flb_task *task, void *data)
+int flb_task_retry_clean(struct flb_task *task, struct flb_output_instance *ins)
 {
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_task_retry *retry;
-    struct flb_output_instance *o_ins;
-    struct flb_output_thread *out_th;
-
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(data);
-    o_ins = out_th->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
     mk_list_foreach_safe(head, tmp, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
-        if (retry->o_ins == o_ins) {
+        if (retry->o_ins == ins) {
             flb_task_retry_destroy(retry);
             return 0;
         }
@@ -257,9 +255,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     task->id        = task_id;
     task->config    = config;
     task->status    = FLB_TASK_NEW;
-    task->n_threads = 0;
     task->users     = 0;
-    mk_list_init(&task->threads);
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
 
@@ -271,11 +267,18 @@ int flb_task_running_count(struct flb_config *config)
 {
     int count = 0;
     struct mk_list *head;
+    struct mk_list *t_head;
+    struct flb_task *task;
     struct flb_input_instance *ins;
 
     mk_list_foreach(head, &config->inputs) {
         ins = mk_list_entry(head, struct flb_input_instance, _head);
-        count += mk_list_size(&ins->tasks);
+        mk_list_foreach(t_head, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+            if (task->users > 0) {
+                count++;
+            }
+        }
     }
 
     return count;
@@ -340,10 +343,10 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  int *err)
 {
     int count = 0;
-    uint64_t routes_mask = 0;
     struct flb_task *task;
     struct flb_task_route *route;
     struct flb_output_instance *o_ins;
+    struct flb_input_chunk *task_ic;
     struct mk_list *o_head;
 
     /* No error status */
@@ -368,6 +371,9 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->tag[tag_len] = '\0';
     task->tag_len = tag_len;
 
+    task_ic = (struct flb_input_chunk *) ic;
+    task_ic->task = task;
+
     /* Keep track of origins */
     task->ref_id = ref_id;
     task->buf    = buf;
@@ -376,18 +382,16 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->ic     = ic;
     mk_list_add(&task->_head, &i_ins->tasks);
 
-    /* Find matching routes for the incoming tag */
+#ifdef FLB_HAVE_METRICS
+    task->records = ((struct flb_input_chunk *) ic)->total_records;
+#endif
+
+    /* Find matching routes for the incoming task */
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
 
-        if (flb_router_match(task->tag, task->tag_len, o_ins->match
-#ifdef FLB_HAVE_REGEX
-                             , o_ins->match_regex
-#else
-                             , NULL
-#endif
-                             )) {
+        if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
@@ -397,9 +401,6 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             route->out = o_ins;
             mk_list_add(&route->_head, &task->routes);
             count++;
-
-            /* set the routes as a mask */
-            routes_mask |= o_ins->mask_id;
         }
     }
 
@@ -450,19 +451,4 @@ void flb_task_destroy(struct flb_task *task, int del)
     flb_input_chunk_set_limits(task->i_ins);
     flb_free(task->tag);
     flb_free(task);
-}
-
-/* Register a thread into the tasks list */
-void flb_task_add_thread(struct flb_thread *thread,
-                         struct flb_task *task)
-{
-    struct flb_output_thread *out_th;
-
-    out_th = (struct flb_output_thread *) FLB_THREAD_DATA(thread);
-
-    /* Always set an incremental thread_id */
-    out_th->id = task->n_threads;
-    task->n_threads++;
-    task->users++;
-    mk_list_add(&out_th->_head, &task->threads);
 }

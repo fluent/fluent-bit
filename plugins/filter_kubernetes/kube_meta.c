@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -145,34 +146,24 @@ static int get_local_pod_info(struct flb_kube *ctx)
     return FLB_TRUE;
 }
 
-/* Gather metadata from API Server */
-static int get_api_server_info(struct flb_kube *ctx,
-                               const char *namespace, const char *podname,
-                               char **out_buf, size_t *out_size)
-{
-    int ret;
+/*
+ * If a file exists called namespace_podname.meta, load it and use it.
+ * If not, fall back to API. This is primarily for diagnostic purposes,
+ * e.g. debugging new parsers.
+ */
+static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
+                              const char *podname, char **buffer, size_t *size,
+                              int *root_type) {
+
+    int fd = -1;
+    char *payload = NULL;
+    size_t payload_size = 0;
+    struct stat sb;
     int packed = -1;
-    int root_type;
-    size_t b_sent;
+    int ret;
     char uri[1024];
-    char *buf;
-    size_t size;
-    struct flb_http_client *c;
-    struct flb_upstream_conn *u_conn;
 
-    *out_buf = NULL;
-    *out_size = 0;
-
-    /*
-     * If a file exists called namespace_podname.meta, load it and use it.
-     * If not, fall back to API. This is primarily for diagnostic purposes,
-     * e.g. debugging new parsers.
-     */
     if (ctx->meta_preload_cache_dir && namespace && podname) {
-        int fd = -1;
-        char *payload = NULL;
-        size_t payload_size = 0;
-        struct stat sb;
 
         ret = snprintf(uri, sizeof(uri) - 1, "%s/%s_%s.meta",
                        ctx->meta_preload_cache_dir, namespace, podname);
@@ -197,7 +188,7 @@ static int get_api_server_info(struct flb_kube *ctx,
 
         if (payload_size) {
             packed = flb_pack_json(payload, payload_size,
-                                   &buf, &size, &root_type);
+                                   buffer, size, root_type);
         }
 
         if (payload) {
@@ -205,58 +196,147 @@ static int get_api_server_info(struct flb_kube *ctx,
         }
     }
 
-    if (packed == -1) {
-        if (!ctx->upstream) {
-            return -1;
+    return packed;
+}
+
+/* Gather metadata from HTTP Request,
+ * this could send out HTTP Request either to KUBE Server API or Kubelet
+ */
+static int get_meta_info_from_request(struct flb_kube *ctx,
+                                      const char *namespace,
+                                      const char *podname,
+                                      char **buffer, size_t *size,
+                                      int *root_type,
+                                      char* uri)
+{
+    struct flb_http_client *c;
+    struct flb_upstream_conn *u_conn;
+    int ret;
+    size_t b_sent;
+    int packed;
+
+    if (!ctx->upstream) {
+        return -1;
+    }
+
+    u_conn = flb_upstream_conn_get(ctx->upstream);
+
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "kubelet upstream connection error");
+        return -1;
+    }
+
+    /* Compose HTTP Client request*/
+    c = flb_http_client(u_conn, FLB_HTTP_GET,
+                        uri,
+                        NULL, 0, NULL, 0, NULL, 0);
+    flb_http_buffer_size(c, ctx->buffer_size);
+
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c, "Connection", 10, "close", 5);
+    if (ctx->auth_len > 0) {
+        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    flb_plg_debug(ctx->ins, "Request (ns=%s, pod=%s) http_do=%i, "
+                  "HTTP Status: %i",
+                  namespace, podname, ret, c->resp.status);
+
+    if (ret != 0 || c->resp.status != 200) {
+        if (c->resp.payload_size > 0) {
+            flb_plg_debug(ctx->ins, "HTTP response\n%s",
+                          c->resp.payload);
         }
-
-        u_conn = flb_upstream_conn_get(ctx->upstream);
-        if (!u_conn) {
-            flb_plg_error(ctx->ins, "upstream connection error");
-            return -1;
-        }
-
-        ret = snprintf(uri, sizeof(uri) - 1,
-                       FLB_KUBE_API_FMT,
-                       namespace, podname);
-        if (ret == -1) {
-            flb_upstream_conn_release(u_conn);
-            return -1;
-        }
-
-        /* Compose HTTP Client request */
-        c = flb_http_client(u_conn, FLB_HTTP_GET,
-                            uri,
-                            NULL, 0, NULL, 0, NULL, 0);
-        flb_http_buffer_size(c, ctx->buffer_size);
-
-        flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-        flb_http_add_header(c, "Connection", 10, "close", 5);
-        if (ctx->auth_len > 0) {
-            flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
-        }
-
-        /* Perform request */
-        ret = flb_http_do(c, &b_sent);
-        flb_plg_debug(ctx->ins, "API Server (ns=%s, pod=%s) http_do=%i, "
-                      "HTTP Status: %i",
-                      namespace, podname, ret, c->resp.status);
-
-        if (ret != 0 || c->resp.status != 200) {
-            if (c->resp.payload_size > 0) {
-                flb_plg_debug(ctx->ins, "API Server response\n%s",
-                              c->resp.payload);
-            }
-            flb_http_client_destroy(c);
-            flb_upstream_conn_release(u_conn);
-            return -1;
-        }
-        packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
-                               &buf, &size, &root_type);
-
-        /* release resources */
         flb_http_client_destroy(c);
         flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
+    packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
+                                   buffer, size, root_type);
+
+    /* release resources */
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
+    return packed;
+
+}
+
+/* Gather pods list information from Kubelet */
+static int get_pods_from_kubelet(struct flb_kube *ctx,
+                                 const char *namespace, const char *podname,
+                                 char **out_buf, size_t *out_size)
+{
+    int ret;
+    int packed = -1;
+    int root_type;
+    char uri[1024];
+    char *buf;
+    size_t size;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    /* used for unit test purposes*/
+    packed = get_meta_file_info(ctx, namespace, podname, &buf, &size,
+                                &root_type);
+
+    if (packed == -1) {
+
+        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBELET_PODS);
+        if (ret == -1) {
+            return -1;
+        }
+        flb_plg_debug(ctx->ins,
+                      "Send out request to Kubelet for pods information.");
+        packed = get_meta_info_from_request(ctx, namespace, podname,
+                                            &buf, &size, &root_type, uri);
+    }
+
+    /* validate pack */
+    if (packed == -1) {
+        return -1;
+    }
+
+    *out_buf = buf;
+    *out_size = size;
+
+    return 0;
+}
+
+/* Gather metadata from API Server */
+static int get_api_server_info(struct flb_kube *ctx,
+                               const char *namespace, const char *podname,
+                               char **out_buf, size_t *out_size)
+{
+    int ret;
+    int packed = -1;
+    int root_type;
+    char uri[1024];
+    char *buf;
+    size_t size;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    /* used for unit test purposes*/
+    packed = get_meta_file_info(ctx, namespace, podname,
+                                &buf, &size, &root_type);
+
+    if (packed == -1) {
+
+        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_FMT, namespace,
+                       podname);
+
+        if (ret == -1) {
+            return -1;
+        }
+        flb_plg_debug(ctx->ins,
+                      "Send out request to API Server for pods information");
+        packed = get_meta_info_from_request(ctx, namespace, podname,
+                                            &buf, &size, &root_type, uri);
     }
 
     /* validate pack */
@@ -476,6 +556,147 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     }
 }
 
+static int search_podname_and_namespace(struct flb_kube_meta *meta,
+                                        struct flb_kube *ctx,
+                                        msgpack_object map)
+{
+    int i;
+    int podname_found = FLB_FALSE;
+    int namespace_found = FLB_FALSE;
+    int target_podname_found = FLB_FALSE;
+    int target_namespace_found = FLB_FALSE;
+
+    msgpack_object k;
+    msgpack_object v;
+
+    for (i = 0; (!podname_found || !namespace_found) &&
+                 i < map.via.map.size; i++) {
+
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+        if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "name", 4)) {
+
+            podname_found = FLB_TRUE;
+            if (!strncmp(v.via.str.ptr, meta->podname, meta->podname_len)) {
+                target_podname_found = FLB_TRUE;
+            }
+
+        }
+        else if (k.via.str.size == 9 && !strncmp(k.via.str.ptr,
+                                                 "namespace", 9)) {
+
+            namespace_found = FLB_TRUE;
+            if (!strncmp((char *)v.via.str.ptr,
+                          meta->namespace,
+                          meta->namespace_len)) {
+                target_namespace_found = FLB_TRUE;
+            }
+        }
+    }
+
+    if (!target_podname_found || !target_namespace_found) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int search_metadata_in_items(struct flb_kube_meta *meta,
+                                    struct flb_kube *ctx,
+                                    msgpack_object items_array,
+                                    msgpack_object *target_item_map)
+{
+    int i, j;
+
+    int target_found = FLB_FALSE;
+    msgpack_object item_info_map;
+    msgpack_object k;
+    msgpack_object v;
+
+    for (i = 0; !target_found && i < items_array.via.array.size; i++) {
+
+        item_info_map = items_array.via.array.ptr[i];
+        if (item_info_map.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+        for (j = 0; j < item_info_map.via.map.size; j++) {
+
+            k = item_info_map.via.map.ptr[j].key;
+            if (k.via.str.size == 8 &&
+                !strncmp(k.via.str.ptr, "metadata", 8)) {
+
+                v = item_info_map.via.map.ptr[j].val;
+                if (search_podname_and_namespace(meta, ctx, v) == 0) {
+                    target_found = FLB_TRUE;
+                    *target_item_map = item_info_map;
+                    flb_plg_debug(ctx->ins,
+                                  "kubelet find pod: %s and ns: %s match",
+                                            meta->podname, meta->namespace);
+                }
+                break;
+            }
+        }
+    }
+
+    if (!target_found) {
+        flb_plg_debug(ctx->ins,
+                      "kubelet didn't find pod: %s, ns: %s match",
+                      meta->podname, meta->namespace);
+        return -1;
+    }
+    return 0;
+}
+
+/* At this point map points to the ROOT map, eg:
+ *
+ * {
+ *  "kind": "PodList",
+ *  "apiVersion": "v1",
+ *  "metadata": {},
+ *  "items": [{
+ *    "metadata": {
+ *      "name": "fluent-bit-rz47v",
+ *      "generateName": "fluent-bit-",
+ *      "namespace": "kube-system",
+ *      "selfLink": "/api/v1/namespaces/kube-system/pods/fluent-bit-rz47v",
+ *      ....
+ *    }
+ *   }]
+ *
+ */
+static int search_item_in_items(struct flb_kube_meta *meta,
+                                struct flb_kube *ctx,
+                                msgpack_object api_map,
+                                msgpack_object *target_item_map)
+{
+
+    int i;
+    int items_array_found = FLB_FALSE;
+
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_object items_array;
+
+    for (i = 0; !items_array_found && i < api_map.via.map.size; i++) {
+
+        k = api_map.via.map.ptr[i].key;
+        if (k.via.str.size == 5 && !strncmp(k.via.str.ptr, "items", 5)) {
+
+            v = api_map.via.map.ptr[i].val;
+            if (v.type == MSGPACK_OBJECT_ARRAY) {
+                items_array = v;
+                items_array_found = FLB_TRUE;
+            }
+        }
+    }
+
+    int ret = search_metadata_in_items(meta, ctx, items_array,
+                                       target_item_map);
+
+    return ret;
+}
+
 static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                       const char *api_buf, size_t api_size,
                       char **out_buf, size_t *out_size)
@@ -486,6 +707,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     int meta_found = FLB_FALSE;
     int spec_found = FLB_FALSE;
     int status_found = FLB_FALSE;
+    int target_found = FLB_TRUE;
     int have_uid = -1;
     int have_labels = -1;
     int have_annotations = -1;
@@ -496,6 +718,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
 
     msgpack_unpacked api_result;
     msgpack_unpacked meta_result;
+    msgpack_object item_result;
     msgpack_object k;
     msgpack_object v;
     msgpack_object meta_val;
@@ -527,7 +750,16 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         msgpack_unpacked_init(&api_result);
         ret = msgpack_unpack_next(&api_result, api_buf, api_size, &off);
         if (ret == MSGPACK_UNPACK_SUCCESS) {
-            api_map = api_result.data;
+
+            if (ctx->use_kubelet) {
+                ret = search_item_in_items(meta, ctx, api_result.data, &item_result);
+                if (ret == -1) {
+                    target_found = FLB_FALSE;
+                }
+                api_map = target_found ? item_result : api_result.data;
+            } else  {
+                api_map = api_result.data;
+            }
 
             /* At this point map points to the ROOT map, eg:
              *
@@ -546,12 +778,14 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
              * We are also interested in the spec.nodeName.
              * We are also interested in the status.containerStatuses.
              */
-            for (i = 0; !(meta_found && spec_found && status_found) &&
+            for (i = 0; target_found && !(meta_found && spec_found && status_found) &&
                         i < api_map.via.map.size; i++) {
                 k = api_map.via.map.ptr[i].key;
                 if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
                     meta_val = api_map.via.map.ptr[i].val;
-                    meta_found = FLB_TRUE;
+                    if (meta_val.type == MSGPACK_OBJECT_MAP) {
+                        meta_found = FLB_TRUE;
+                    }
                 }
                 else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
                    spec_val = api_map.via.map.ptr[i].val;
@@ -839,6 +1073,9 @@ static inline int extract_meta(struct flb_kube *ctx,
         if (meta->container_name) {
             n += meta->container_name_len + 1;
         }
+        if (ctx->cache_use_docker_id && meta->docker_id) {
+            n += meta->docker_id_len + 1;
+        }
         meta->cache_key = flb_malloc(n);
         if (!meta->cache_key) {
             flb_errno();
@@ -863,6 +1100,13 @@ static inline int extract_meta(struct flb_kube *ctx,
             off += meta->container_name_len;
         }
 
+        if (ctx->cache_use_docker_id && meta->docker_id) {
+            /* Separator */
+            meta->cache_key[off++] = ':';
+            memcpy(meta->cache_key + off, meta->docker_id, meta->docker_id_len);
+            off += meta->docker_id_len;
+        }
+
         meta->cache_key[off] = '\0';
         meta->cache_key_len = off;
     }
@@ -885,9 +1129,16 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     char *api_buf;
     size_t api_size;
 
-    get_api_server_info(ctx,
-                        meta->namespace, meta->podname,
-                        &api_buf, &api_size);
+    if (ctx->use_kubelet) {
+        ret = get_pods_from_kubelet(ctx, meta->namespace, meta->podname,
+                                    &api_buf, &api_size);
+    } else {
+        ret = get_api_server_info(ctx, meta->namespace, meta->podname,
+                                  &api_buf, &api_size);
+    }
+    if (ret == -1) {
+        return -1;
+    }
 
     ret = merge_meta(meta, ctx,
                      api_buf, api_size,
@@ -900,6 +1151,31 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     return ret;
 }
 
+/*
+ * Work around kubernetes/kubernetes/issues/78479 by waiting
+ * for DNS to start up.
+ */
+static int wait_for_dns(struct flb_kube *ctx)
+{
+    int i;
+    struct addrinfo *res;
+    struct addrinfo hints;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    for (i = 0; i < ctx->dns_retries; i++) {
+        if (getaddrinfo(ctx->api_host, NULL, &hints, &res) == 0) {
+            freeaddrinfo(res);
+            return 0;
+        }
+        flb_plg_info(ctx->ins, "host: %s Wait %i secs until DNS starts up (%i/%i)",
+                     ctx->api_host, ctx->dns_wait_time, i + 1, ctx->dns_retries);
+        sleep(ctx->dns_wait_time);
+    }
+    return -1;
+}
 
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
@@ -911,15 +1187,16 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
             ctx->tls_ca_file  = flb_strdup(FLB_KUBE_CA);
         }
-        ctx->tls.context = flb_tls_context_new(ctx->tls_verify,
-                                               ctx->tls_debug,
-                                               NULL, /* skip vhost */
-                                               ctx->tls_ca_path,
-                                               ctx->tls_ca_file,
-                                               NULL, NULL, NULL);
-        if (!ctx->tls.context) {
+        ctx->tls = flb_tls_create(ctx->tls_verify,
+                                  ctx->tls_debug,
+                                  ctx->tls_vhost,
+                                  ctx->tls_ca_path,
+                                  ctx->tls_ca_file,
+                                  NULL, NULL, NULL);
+        if (!ctx->tls) {
             return -1;
         }
+
         io_type = FLB_IO_TLS;
     }
 
@@ -928,9 +1205,10 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
                                         ctx->api_host,
                                         ctx->api_port,
                                         io_type,
-                                        &ctx->tls);
+                                        ctx->tls);
     if (!ctx->upstream) {
         /* note: if ctx->tls.context is set, it's destroyed upon context exit */
+        flb_plg_debug(ctx->ins, "kube network init create upstream failed");
         return -1;
     }
 
@@ -960,10 +1238,24 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
     if (ret == FLB_TRUE) {
         flb_plg_info(ctx->ins, "local POD info OK");
 
-        /* Gather info from API server */
-        flb_plg_info(ctx->ins, "testing connectivity with API server...");
-        ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
-                                  &meta_buf, &meta_size);
+        ret = wait_for_dns(ctx);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "could not resolve %s", ctx->api_host);
+            return -1;
+        }
+
+        if (ctx->use_kubelet) {
+            /* Gather info from Kubelet */
+            flb_plg_info(ctx->ins, "testing connectivity with Kubelet...");
+            ret = get_pods_from_kubelet(ctx, ctx->namespace, ctx->podname,
+                                              &meta_buf, &meta_size);
+        }
+        else {
+            /* Gather info from API server */
+            flb_plg_info(ctx->ins, "testing connectivity with API server...");
+            ret = get_api_server_info(ctx, ctx->namespace, ctx->podname,
+                                   &meta_buf, &meta_size);
+        }
         if (ret == -1) {
             if (!ctx->podname) {
                 flb_plg_warn(ctx->ins, "could not get meta for local POD");
@@ -974,7 +1266,7 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
             }
             return -1;
         }
-        flb_plg_info(ctx->ins, "API server connectivity OK");
+        flb_plg_info(ctx->ins, "connectivity OK");
         flb_free(meta_buf);
     }
     else {
@@ -1041,7 +1333,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     /* Check if we have some data associated to the cache key */
     ret = flb_hash_get(ctx->hash_table,
                        meta->cache_key, meta->cache_key_len,
-                       &hash_meta_buf, &hash_meta_size);
+                       (void *) &hash_meta_buf, &hash_meta_size);
     if (ret == -1) {
         /* Retrieve API server meta and merge with local meta */
         ret = get_and_merge_meta(ctx, meta,

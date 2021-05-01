@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,7 +45,7 @@ int fw_conn_event(void *data)
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
             if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
-                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%i bytes)",
+                flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%lu bytes)",
                              event->fd, (ctx->buffer_max_size));
                 fw_conn_del(conn);
                 return -1;

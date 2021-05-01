@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -99,6 +99,9 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Set our global opaque data (plugin context*/
+    rd_kafka_conf_set_opaque(ctx->conf, ctx);
+
     /* Callback: message delivery */
     rd_kafka_conf_set_dr_msg_cb(ctx->conf, cb_kafka_msg);
 
@@ -115,6 +118,15 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         ctx->topic_key = NULL;
     }
 
+    /* Config: dynamic_topic */
+    tmp = flb_output_get_property("dynamic_topic", ins);
+    if (tmp) {
+        ctx->dynamic_topic = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->dynamic_topic = FLB_FALSE;
+    }
+
     /* Config: Format */
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
@@ -127,6 +139,11 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "gelf") == 0) {
             ctx->format = FLB_KAFKA_FMT_GELF;
         }
+#ifdef FLB_HAVE_AVRO_ENCODER
+        else if (strcasecmp(tmp, "avro") == 0) {
+            ctx->format = FLB_KAFKA_FMT_AVRO;
+        }
+#endif
     }
     else {
         ctx->format = FLB_KAFKA_FMT_JSON;
@@ -174,6 +191,19 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Config: queue_full_retries */
+    tmp = flb_output_get_property("queue_full_retries", ins);
+    if (!tmp) {
+        ctx->queue_full_retries = FLB_KAFKA_QUEUE_FULL_RETRIES;
+    }
+    else {
+        /* set number of retries: note that if the number is zero, means forever */
+        ctx->queue_full_retries = atoi(tmp);
+        if (ctx->queue_full_retries < 0) {
+            ctx->queue_full_retries = 0;
+        }
+    }
+
     /* Config Gelf_Timestamp_Key */
     tmp = flb_output_get_property("gelf_timestamp_key", ins);
     if (tmp) {
@@ -214,6 +244,18 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_AVRO_ENCODER
+    /* Config AVRO */
+    tmp = flb_output_get_property("schema_str", ins);
+    if (tmp) {
+        ctx->avro_fields.schema_str = flb_sds_create(tmp);
+    }
+    tmp = flb_output_get_property("schema_id", ins);
+    if (tmp) {
+        ctx->avro_fields.schema_id = flb_sds_create(tmp);
+    }
+#endif
+
     /* Config: Topic */
     mk_list_init(&ctx->topics);
     tmp = flb_output_get_property("topics", ins);
@@ -240,6 +282,10 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     }
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->brokers, tmp);
+#ifdef FLB_HAVE_AVRO_ENCODER
+    flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
+#endif
+
     return ctx;
 }
 
@@ -276,6 +322,12 @@ int flb_kafka_conf_destroy(struct flb_kafka *ctx)
     flb_sds_destroy(ctx->gelf_fields.short_message_key);
     flb_sds_destroy(ctx->gelf_fields.full_message_key);
     flb_sds_destroy(ctx->gelf_fields.level_key);
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    // avro
+    flb_sds_destroy(ctx->avro_fields.schema_id);
+    flb_sds_destroy(ctx->avro_fields.schema_str);
+#endif
 
     flb_free(ctx);
     return 0;
