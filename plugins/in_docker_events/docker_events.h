@@ -33,6 +33,7 @@
 struct flb_in_de_config
 {
     int fd;                         /* File descriptor */
+    int coll_id;                    /* collector id */
     flb_sds_t unix_path;            /* Unix path for socket */
     char *buf;
     size_t buf_size;
