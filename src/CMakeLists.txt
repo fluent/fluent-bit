@@ -56,6 +56,13 @@ set(src
   flb_routes_mask.c
   )
 
+# Multiline subsystem
+add_subdirectory(multiline)
+set(src
+  ${src}
+  ${src_multiline}
+  )
+
 if(FLB_SYSTEM_WINDOWS)
   set(src
     ${src}
