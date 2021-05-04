@@ -320,6 +320,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("engine.tasks_limit", k, len) == 0 && tmp) {
+        limit = atoi(tmp);
+        if (limit <= 0) {
+            flb_error("[input] %s: invalid engine.tasks_limit value '%s'",
+                      ins->name, tmp);
+            return -1;
+        }
+        ins->tasks_limit = limit;
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
