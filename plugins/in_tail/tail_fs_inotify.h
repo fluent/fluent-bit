@@ -18,10 +18,21 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
+#ifndef FLB_TAIL_FS_INOTIFY_H
+#define FLB_TAIL_FS_INOTIFY_H
 
-#ifdef FLB_HAVE_INOTIFY
-    #include "tail_fs_inotify.c"
-#else
-    #include "tail_fs_stat.c"
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
+
+#include "tail_config.h"
+#include "tail_file_internal.h"
+
+int flb_tail_fs_inotify_init(struct flb_input_instance *in,
+                          struct flb_tail_config *ctx, struct flb_config *config);
+int flb_tail_fs_inotify_add(struct flb_tail_file *file);
+int flb_tail_fs_inotify_remove(struct flb_tail_file *file);
+int flb_tail_fs_inotify_exit(struct flb_tail_config *ctx);
+void flb_tail_fs_inotify_pause(struct flb_tail_config *ctx);
+void flb_tail_fs_inotify_resume(struct flb_tail_config *ctx);
+
 #endif

@@ -79,6 +79,9 @@ struct flb_tail_config {
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+#ifdef FLB_HAVE_INOTIFY
+    int   inotify_watcher;     /* enable/disable inotify monitor */
+#endif
     flb_sds_t offset_key;      /* key name of file offset      */
 
     /* Database */
