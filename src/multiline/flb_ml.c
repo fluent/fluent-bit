@@ -53,10 +53,14 @@ static int ml_flush_stdout(struct flb_ml *ml,
                            struct flb_ml_stream *mst,
                            void *data, void *buf_data, size_t buf_size)
 {
-    fprintf(stdout, "\n%s----- MULTILINE FLUSH -----%s\n", ANSI_GREEN, ANSI_RESET);
-    fprintf(stdout, "%s%s----------- EOF -----------%s\n",
-            (char *) buf_data, ANSI_GREEN, ANSI_RESET);
+    fprintf(stdout, "\n%s----- MULTILINE FLUSH -----%s\n",
+            ANSI_GREEN, ANSI_RESET);
 
+    /* Print incoming flush buffer */
+    flb_pack_print(buf_data, buf_size);
+
+    fprintf(stdout, "%s----------- EOF -----------%s\n",
+            ANSI_GREEN, ANSI_RESET);
     return 0;
 }
 
@@ -311,7 +315,9 @@ int flb_ml_append(struct flb_ml *ml, struct flb_ml_stream *mst,
     int release = FLB_FALSE;
     void *out_buf = NULL;
     size_t out_size = 0;
-    struct flb_time out_time = {0};
+    struct flb_time out_time;
+
+    flb_time_zero(&out_time);
 
     if (ml->parser && type == FLB_ML_TYPE_TEXT) {
         /* Parse incoming content */
@@ -333,11 +339,13 @@ int flb_ml_append(struct flb_ml *ml, struct flb_ml_stream *mst,
         out_size = size;
     }
 
-    if (flb_time_to_double(&out_time) == 0.0 && tm) {
-        flb_time_copy(&out_time, tm);
-    }
-    else {
-        flb_time_get(&out_time);
+    if (flb_time_to_double(&out_time) == 0.0) {
+        if (tm) {
+            flb_time_copy(&out_time, tm);
+        }
+        else {
+            flb_time_get(&out_time);
+        }
     }
 
     /* Process the binary record */
