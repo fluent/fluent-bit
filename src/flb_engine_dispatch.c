@@ -275,8 +275,11 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         if (!task) {
             /*
              * If task creation failed, check the error status flag. An error
-             * is associated with memory allocation or exhaustion of tasks_id,
-             * on that case the input chunk must be preserved and retried
+             * is associated with memory allocation, exhaustion of tasks_id,
+             * or simply the input plugin has reached the 'engine.tasks_limit'
+             * value.
+             *
+             * On that case the input chunk must be preserved and retried
              * later. So we just release it busy lock.
              */
             if (t_err == FLB_TRUE) {
