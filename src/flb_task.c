@@ -349,6 +349,13 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     struct flb_input_chunk *task_ic;
     struct mk_list *o_head;
 
+    /* Check if the input plugin has a Tasks limit set, if set, validate */
+    if (i_ins->tasks_limit > 0 &&
+        mk_list_size(&i_ins->tasks) >= i_ins->tasks_limit) {
+        *err = FLB_TRUE;
+        return NULL;
+    }
+
     /* No error status */
     *err = FLB_FALSE;
 
