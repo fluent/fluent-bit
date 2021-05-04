@@ -75,6 +75,78 @@ static int de_unix_create(struct flb_in_de_config *ctx)
     return 0;
 }
 
+static int in_de_collect(struct flb_input_instance *ins,
+                         struct flb_config *config, void *in_context);
+
+static int reconnect_docker_sock(struct flb_input_instance *ins,
+                                 struct flb_config *config,
+                                 struct flb_in_de_config *ctx)
+{
+    int ret;
+
+    /* remove old socket collector */
+    if (ctx->coll_id >= 0) {
+        ret = flb_input_collector_delete(ctx->coll_id, ins);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "failed to pause event");
+            return -1;
+        }
+        ctx->coll_id = -1;
+    }
+    if (ctx->fd > 0) {
+        close(ctx->fd);
+        ctx->fd = -1;
+    }
+
+    /* create socket again */
+    if (de_unix_create(ctx) < 0) {
+        flb_plg_error(ctx->ins, "failed to re-initialize socket");
+        return -1;
+    }
+    /* set event */
+    ctx->coll_id = flb_input_set_collector_event(ins,
+                                                 in_de_collect,
+                                                 ctx->fd, config);
+    if (ctx->coll_id < 0) {
+        flb_plg_error(ctx->ins,
+                      "could not set collector for IN_DOCKER_EVENTS plugin");
+        close(ctx->fd);
+        ctx->fd = -1;
+        return -1;
+    }
+    ret = flb_input_collector_start(ctx->coll_id, ins);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins,
+                      "could not start collector for IN_DOCKER_EVENTS plugin");
+        flb_input_collector_delete(ctx->coll_id, ins);
+        close(ctx->fd);
+        ctx->coll_id = -1;
+        ctx->fd = -1;
+        return -1;
+    }
+    return 0;
+}
+
+static int reconnect_docker_sock_retry(struct flb_input_instance *ins,
+                                       struct flb_config *config,
+                                       struct flb_in_de_config *ctx)
+{
+    int i;
+    int ret;
+    for (i=0; i<ctx->reconnect_retry_limits; i++) {
+        ret = reconnect_docker_sock(ins, config, ctx);
+        if (ret >= 0) {
+            return ret;
+        }
+        flb_plg_info(ctx->ins, "Retry(%d) after %d seconds.",i+1,
+                     ctx->reconnect_retry_interval);
+        sleep(ctx->reconnect_retry_interval);
+    }
+
+    flb_plg_error(ctx->ins, "Failed to reconnect docker.");
+    return -1;
+}
+
 /**
  * Callback function to process events recieved on the unix
  * socket.
@@ -157,35 +229,12 @@ static int in_de_collect(struct flb_input_instance *ins,
     }
     else if (ret == 0) {
         /* EOF */
+
         /* docker service may be restarted */
         flb_plg_info(ctx->ins, "EOF detected. Re-initialize");
-        /* remove old socket collector */
-        ret = flb_input_collector_delete(ctx->coll_id, ins);
-        close(ctx->fd);
+        ret = reconnect_docker_sock_retry(ins, config, ctx);
         if (ret < 0) {
-            flb_plg_error(ctx->ins, "failed to pause event");
-            return -1;
-        }
-        ctx->fd = -1;
-        /* create socket again */
-        if (de_unix_create(ctx) < 0) {
-            flb_plg_error(ctx->ins, "failed to re-initialize socket");
-            return -1;
-        }
-        /* set event */
-        ctx->coll_id = flb_input_set_collector_event(ins,
-                                                     in_de_collect,
-                                                     ctx->fd, config);
-        if (ctx->coll_id < 0) {
-            flb_plg_error(ctx->ins,
-                          "could not set collector for IN_DOCKER_EVENTS plugin");
-            return -1;
-        }
-        ret = flb_input_collector_start(ctx->coll_id, ins);
-        if (ret < 0) {
-            flb_plg_error(ctx->ins,
-                          "could not start collector for IN_DOCKER_EVENTS plugin");
-            return -1;
+            return ret;
         }
     }
     else {
@@ -285,6 +334,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "key", DEFAULT_FIELD_NAME,
      0, FLB_TRUE, offsetof(struct flb_in_de_config, key),
      "Set the key name to store unparsed Docker events"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "reconnect.retry_limits", "5",
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, reconnect_retry_limits),
+     "Maximum number to retry to connect docker socket"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "reconnect.retry_interval", "1",
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, reconnect_retry_interval),
+     "Retry interval to connect docker socket"
     },
     /* EOF */
     {0}
