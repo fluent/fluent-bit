@@ -231,6 +231,7 @@ struct flb_input_instance {
      * linked into this list header.
      */
     struct mk_list tasks;
+    int tasks_limit;
 
     struct mk_list coros;                /* list of input coros         */
 
