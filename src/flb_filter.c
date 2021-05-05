@@ -152,6 +152,14 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
 #ifdef FLB_HAVE_METRICS
             name = (char *) flb_filter_name(f_ins);
+
+            cmt_counter_add(f_ins->cmt_records, ts, in_records,
+                    1, (char *[]) {name});
+            cmt_counter_add(f_ins->cmt_bytes, ts, content_size,
+                    1, (char *[]) {name});
+
+            flb_metrics_sum(FLB_METRIC_N_RECORDS, in_records, f_ins->metrics);
+            flb_metrics_sum(FLB_METRIC_N_BYTES, content_size, f_ins->metrics);
 #endif
 
             /* Override buffer just if it was modified */
@@ -443,6 +451,22 @@ int flb_filter_init_all(struct flb_config *config)
         }
 
         /* Register generic filter plugin metrics */
+        ins->cmt_records = cmt_counter_create(ins->cmt,
+                                                  "fluentbit", "filter",
+                                                  "records_total",
+                                                  "Total number of new records processed.",
+                                                  1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
+
+        /* Register generic filter plugin metrics */
+        ins->cmt_bytes = cmt_counter_create(ins->cmt,
+                                                  "fluentbit", "filter",
+                                                  "bytes_total",
+                                                  "Total number of new bytes processed.",
+                                                  1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
+
+        /* Register generic filter plugin metrics */
         ins->cmt_add_records = cmt_counter_create(ins->cmt,
                                                   "fluentbit", "filter",
                                                   "add_records_total",
@@ -474,6 +498,8 @@ int flb_filter_init_all(struct flb_config *config)
         /* Register filter metrics */
         flb_metrics_add(FLB_METRIC_N_DROPPED, "drop_records", ins->metrics);
         flb_metrics_add(FLB_METRIC_N_ADDED, "add_records", ins->metrics);
+        flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
+        flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", ins->metrics);
 #endif
 
         /*
