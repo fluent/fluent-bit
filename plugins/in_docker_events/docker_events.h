@@ -38,8 +38,15 @@ struct flb_in_de_config
     char *buf;
     size_t buf_size;
     flb_sds_t key;
+
+    /* retries */
     int reconnect_retry_limits;
     int reconnect_retry_interval;
+
+    /* retries (internal) */
+    int current_retries;
+    int retry_coll_id;
+
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
 
