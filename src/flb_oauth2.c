@@ -328,8 +328,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
     now = time(NULL);
     if (ctx->access_token) {
-        /* validate expired token */
-        if (ctx->expires < now && flb_sds_len(ctx->access_token) > 0) {
+        /* validate unexpired token */
+        if (ctx->expires > now && flb_sds_len(ctx->access_token) > 0) {
             return ctx->access_token;
         }
     }
