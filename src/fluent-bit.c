@@ -76,9 +76,13 @@ struct flb_stacktrace flb_st;
 #define PLUGIN_OUTPUT   1
 #define PLUGIN_FILTER   2
 
-#define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
-#define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
-#define s_get_key(a, b, c) (char *) get_key(a, b, c)
+#define print_opt(a, b)      printf("  %-24s%s\n", a, b)
+#define print_opt_i(a, b, c) printf("  %-24s%s (default: %i)\n", a, b, c)
+#define print_opt_s(a, b, c) printf("  %-24s%s (default: %s)\n", a, b, c)
+
+#define get_key(a, b, c)     mk_rconf_section_get_key(a, b, c)
+#define n_get_key(a, b, c)   (intptr_t) get_key(a, b, c)
+#define s_get_key(a, b, c)   (char *) get_key(a, b, c)
 
 static void flb_version()
 {
@@ -108,46 +112,46 @@ static void flb_help(int rc, struct flb_config *config)
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
-    printf("  -b  --storage_path=PATH\tspecify a storage buffering path\n");
-    printf("  -c  --config=FILE\tspecify an optional configuration file\n");
-    printf("  -D, --dry-run\tdry run\n");
+    print_opt("-b  --storage_path=PATH", "specify a storage buffering path");
+    print_opt("-c  --config=FILE", "specify an optional configuration file");
 #ifdef FLB_HAVE_FORK
-    printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
+    print_opt("-d, --daemon", "run Fluent Bit in background mode");
 #endif
-    printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
-           FLB_CONFIG_FLUSH_SECS);
-    printf("  -F  --filter=FILTER\t set a filter\n");
-    printf("  -i, --input=INPUT\tset an input\n");
-    printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
-    printf("  -o, --output=OUTPUT\tset an output\n");
-    printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    print_opt("-D, --dry-run", "dry run");
+    print_opt_i("-f, --flush=SECONDS", "flush timeout in seconds",
+                FLB_CONFIG_FLUSH_SECS);
+    print_opt("-F  --filter=FILTER", "set a filter");
+    print_opt("-i, --input=INPUT", "set an input");
+    print_opt("-m, --match=MATCH", "set plugin match, same as '-p match=abc'");
+    print_opt("-o, --output=OUTPUT", "set an output");
+    print_opt("-p, --prop=\"A=B\"", "set plugin configuration property");
 #ifdef FLB_HAVE_PARSER
-    printf("  -R, --parser=FILE\tspecify a parser configuration file\n");
+    print_opt("-R, --parser=FILE", "specify a parser configuration file");
 #endif
-    printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
-    printf("  -l, --log_file=FILE\twrite log info to a file\n");
-    printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
+    print_opt("-e, --plugin=FILE", "load an external plugin (shared lib)");
+    print_opt("-l, --log_file=FILE", "write log info to a file");
+    print_opt("-t, --tag=TAG", "set plugin tag, same as '-p tag=abc'");
 #ifdef FLB_HAVE_STREAM_PROCESSOR
-    printf("  -T, --sp-task=SQL\tdefine a stream processor task\n");
+    print_opt("-T, --sp-task=SQL", "define a stream processor task");
 #endif
-    printf("  -v, --verbose\t\tincrease logging verbosity (default: info)\n");
+    print_opt("-v, --verbose", "increase logging verbosity (default: info)");
 #ifdef FLB_HAVE_TRACE
-    printf("  -vv\t\t\ttrace mode (available)\n");
+    print_opt("-vv", "trace mode (available)");
 #endif
-    printf("  -w, --workdir\t\tset the working directory\n");
+    print_opt("-w, --workdir", "set the working directory");
 #ifdef FLB_HAVE_HTTP_SERVER
-    printf("  -H, --http\t\tenable monitoring HTTP server\n");
-    printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
-           FLB_CONFIG_HTTP_PORT);
+    print_opt("-H, --http", "enable monitoring HTTP server");
+    print_opt_s("-P, --port", "set HTTP server TCP port",
+                FLB_CONFIG_HTTP_PORT);
 #endif
-    printf("  -s, --coro_stack_size\tSet coroutines stack size in bytes "
-           "(default: %i)\n", config->coro_stack_size);
-    printf("  -q, --quiet\t\tquiet mode\n");
-    printf("  -S, --sosreport\tsupport report for Enterprise customers\n");
-    printf("  -V, --version\t\tshow version number\n");
-    printf("  -h, --help\t\tprint this help\n\n");
+    print_opt_i("-s, --coro_stack_size", "set coroutines stack size in bytes",
+                config->coro_stack_size);
+    print_opt("-q, --quiet", "quiet mode");
+    print_opt("-S, --sosreport", "support report for Enterprise customers");
+    print_opt("-V, --version", "show version number");
+    print_opt("-h, --help", "print this help");
 
-    printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("\n%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
 
     /* Iterate each supported input */
     mk_list_foreach(head, &config->in_plugins) {
@@ -156,13 +160,13 @@ static void flb_help(int rc, struct flb_config *config)
             /* useless..., just skip it. */
             continue;
         }
-        printf("  %-22s%s\n", in->name, in->description);
+        print_opt(in->name, in->description);
     }
 
     printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
     mk_list_foreach(head, &config->filter_plugins) {
         filter = mk_list_entry(head, struct flb_filter_plugin, _head);
-        printf("  %-22s%s\n", filter->name, filter->description);
+        print_opt(filter->name, filter->description);
     }
 
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
@@ -172,12 +176,12 @@ static void flb_help(int rc, struct flb_config *config)
             /* useless..., just skip it. */
             continue;
         }
-        printf("  %-22s%s\n", out->name, out->description);
+        print_opt(out->name, out->description);
     }
 
     printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);
     printf(" Event Loop  = %s\n", mk_event_backend());
-    printf(" Build Flags = %s\n", FLB_INFO_FLAGS);
+    printf(" Build Flags =%s\n", FLB_INFO_FLAGS);
     exit(rc);
 }
 
