@@ -110,6 +110,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
             out_size = 0;
 
             content_size = cio_chunk_get_content_size(ic->chunk);
+            flb_metrics_sum(FLB_METRIC_N_RECORDS, in_records, f_ins->metrics);
+            flb_metrics_sum(FLB_METRIC_N_BYTES, content_size, f_ins->metrics);
 
             /* where to position the new content if modified ? */
             write_at = (content_size - work_size);
@@ -393,6 +395,8 @@ int flb_filter_init_all(struct flb_config *config)
         /* Register filter metrics */
         flb_metrics_add(FLB_METRIC_N_DROPPED, "drop_records", ins->metrics);
         flb_metrics_add(FLB_METRIC_N_ADDED, "add_records", ins->metrics);
+        flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
+        flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", ins->metrics);
 #endif
 
         /*
