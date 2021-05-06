@@ -111,6 +111,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     *out_size = tmp_out_size;
     if (mp_buf != tmp_out_buf) {
         flb_free(mp_buf);
+        mp_buf = NULL;
     }
 
     /* Do time resolution ? */
@@ -141,6 +142,7 @@ int flb_parser_json_do(struct flb_parser *parser,
         /* Ensure the pointer we are about to read is not NULL */
         if (k->via.str.ptr == NULL) {
             flb_free(mp_buf);
+            flb_free(tmp_out_buf);
             *out_buf = NULL;
             msgpack_unpacked_destroy(&result);
             return -1;
