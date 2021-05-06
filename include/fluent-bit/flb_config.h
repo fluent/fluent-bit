@@ -154,6 +154,16 @@ struct flb_config {
      */
     char *http_proxy;
 
+    /*
+     * A comma-separated list of host names that shouldn't go through
+     * any proxy is set in (only an asterisk, * matches all hosts).
+     * As a convention (https://curl.se/docs/manual.html), this value can be set
+     * and respected by `NO_PROXY` environment variable when `HTTP_PROXY` is used.
+     * Example: NO_PROXY="127.0.0.1,localhost,kubernetes.default.svc"
+     * Note: only `,` is allowed as seperator between URLs.
+     */
+    char *no_proxy;
+
     /* Chunk I/O Buffering */
     void *cio;
     char *storage_path;
