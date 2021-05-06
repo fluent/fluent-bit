@@ -289,6 +289,7 @@ set(FLB_DEPS
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   mbedtls
+  c-ares
   )
 
 if(OPENSSL_FOUND)
