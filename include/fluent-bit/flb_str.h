@@ -58,4 +58,13 @@ static inline char *flb_strndup(const char *s, size_t n)
     return str;
 }
 
+/* emptyval checks whether a string has a non-null value "". */
+static inline int flb_str_emptyval(const char *s)
+{
+    if (s != NULL && strcmp(s, "") == 0) {
+        return FLB_TRUE;
+    }
+    return FLB_FALSE;
+}
+
 #endif
