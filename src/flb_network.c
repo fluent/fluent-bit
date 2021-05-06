@@ -46,6 +46,7 @@
 #include <fluent-bit/flb_upstream.h>
 
 #include <monkey/mk_core.h>
+#include <ares.h>
 
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
@@ -407,6 +408,12 @@ static int net_connect_async(int fd,
         return -1;
     }
 
+    return 0;
+}
+
+int flb_net_getaddrinfo(struct addrinfo **res)
+{
+    fprintf(stdout, "FIXME\n");
     return 0;
 }
 
