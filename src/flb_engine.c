@@ -189,6 +189,10 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         if (ins->metrics) {
             flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, task->records, ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size, ins->metrics);
+
+            /* Set the number of active tasks */
+            flb_metrics_set(FLB_METRIC_N_TASKS,
+                            mk_list_size(&task->i_ins->tasks), ins->metrics);
         }
 #endif
         /* Inform the user if a 'retry' succedeed */

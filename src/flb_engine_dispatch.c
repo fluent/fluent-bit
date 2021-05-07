@@ -304,5 +304,13 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
         }
     }
 
+
+#ifdef FLB_HAVE_METRICS
+    if (in->metrics) {
+        flb_metrics_set(FLB_METRIC_N_TASKS,
+                        mk_list_size(&in->tasks), in->metrics);
+    }
+#endif
+
     return 0;
 }
