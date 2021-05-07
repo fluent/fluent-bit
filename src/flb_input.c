@@ -440,6 +440,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
         flb_metrics_add(FLB_METRIC_N_BYTES, "bytes", ins->metrics);
+        flb_metrics_add(FLB_METRIC_N_TASKS, "tasks", ins->metrics);
     }
 #endif
 
