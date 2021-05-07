@@ -15,6 +15,10 @@ if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
   set(CFLAGS "${CFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
 endif()
 
+if (UNIX)
+  set(CFLAGS "${CFLAGS} -fpic")
+endif()
+
 # luajit (UNIX)
 # =============
 ExternalProject_Add(luajit
