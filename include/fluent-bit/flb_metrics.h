@@ -31,6 +31,7 @@
 #define FLB_METRIC_N_BYTES     1
 #define FLB_METRIC_N_DROPPED   2
 #define FLB_METRIC_N_ADDED     3
+#define FLB_METRIC_N_TASKS     4
 
 #define FLB_METRIC_OUT_OK_RECORDS     10
 #define FLB_METRIC_OUT_OK_BYTES       11
@@ -59,6 +60,7 @@ int flb_metrics_title(const char *title, struct flb_metrics *metrics);
 struct flb_metric *flb_metrics_get_id(int id, struct flb_metrics *metrics);
 int flb_metrics_add(int id, const char *title, struct flb_metrics *metrics);
 int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics);
+int flb_metrics_set(int id, size_t val, struct flb_metrics *metrics);
 int flb_metrics_print(struct flb_metrics *metrics);
 int flb_metrics_dump_values(char **out_buf, size_t *out_size,
                             struct flb_metrics *me);

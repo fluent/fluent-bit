@@ -169,6 +169,19 @@ int flb_metrics_sum(int id, size_t val, struct flb_metrics *metrics)
     return 0;
 }
 
+int flb_metrics_set(int id, size_t val, struct flb_metrics *metrics)
+{
+    struct flb_metric *m;
+
+    m = flb_metrics_get_id(id, metrics);
+    if (!m) {
+        return -1;
+    }
+
+    m->val = val;
+    return 0;
+}
+
 int flb_metrics_destroy(struct flb_metrics *metrics)
 {
     int count = 0;
