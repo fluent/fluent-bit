@@ -124,16 +124,6 @@ jobs:
         run: terraform output -no-color -raw gcp-project-id
         working-directory: terraform/gcp/
 
-      - name: Get NFS server
-        id: get-gcp-nfs-server
-        run: terraform output -no-color -raw nfs-server
-        working-directory: terraform/gcp/
-
-      - name: Get NFS storage path
-        id: get-gcp-nfs-path
-        run: terraform output -no-color -raw nfs-path
-        working-directory: terraform/gcp/
-
       - uses: google-github-actions/setup-gcloud@master
         with:
           service_account_key: ${{ secrets.GCP_SA_KEY }}
@@ -156,7 +146,7 @@ jobs:
 
       - run: make long
         env:
-          NFS_SERVER: ${{ steps.get-gcp-nfs-server.outputs.stdout }}
-          NFS_PATH: ${{ steps.get-gcp-nfs-path.outputs.stdout }}
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
           IMAGE_TAG: x86_64-3398
+          GRAFANA_USERNAME: ${{ secrets.GRAFANA_USERNAME }}
+          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
