@@ -416,6 +416,9 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         else if (strcasecmp(v_str, "trace") == 0) {
             config->verbose = 5;
         }
+        else if (strcasecmp(v_str, "off") == 0) {
+            config->verbose = FLB_LOG_OFF;
+        }
         else {
             return -1;
         }
