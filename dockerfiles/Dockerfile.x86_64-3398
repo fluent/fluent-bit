@@ -52,7 +52,7 @@ COPY conf/fluent-bit.conf \
 FROM python:3-slim-buster
 MAINTAINER Eduardo Silva <eduardo@treasure-data.com>
 LABEL Description="Fluent Bit docker image for testing issue #3398" Vendor="Fluent Organization" Version="1.1"
-
+RUN true
 # Copy certificates
 COPY --from=builder /usr/share/ca-certificates/  /usr/share/ca-certificates/
 COPY --from=builder /etc/ssl/ /etc/ssl/
