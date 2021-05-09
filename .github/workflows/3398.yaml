@@ -42,6 +42,7 @@ jobs:
 
   run-long-running:
     name: run long-running integration tests on GCP - k8s ${{ matrix.k8s-release }}
+    needs: docker_build
     strategy:
       max-parallel: 3
       fail-fast: false
