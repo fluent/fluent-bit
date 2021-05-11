@@ -339,6 +339,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     size_t len;
     int count = 13;
 
+    flb_plg_debug(ctx->ins, "Start packing Windows event");
+
     if (ctx->string_inserts) {
         count++;
     }
@@ -349,11 +351,15 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     msgpack_pack_map(mp_pck, count);
 
     /* RecordNumber */
+    flb_plg_debug(ctx->ins, "  RecordNumber = %i", evt->RecordNumber);
+
     msgpack_pack_str(mp_pck, 12);
     msgpack_pack_str_body(mp_pck, "RecordNumber", 12);
     msgpack_pack_uint32(mp_pck, evt->RecordNumber);
 
     /* TimeGenerated */
+    flb_plg_debug(ctx->ins, "  TimeGenerated = %i", evt->TimeGenerated);
+
     msgpack_pack_str(mp_pck, 13);
     msgpack_pack_str_body(mp_pck, "TimeGenerated", 13);
     if (pack_time(mp_pck, evt->TimeGenerated)) {
@@ -362,6 +368,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* TimeWritten */
+    flb_plg_debug(ctx->ins, "  TimeWritten = %i", evt->TimeWritten);
+
     msgpack_pack_str(mp_pck, 11);
     msgpack_pack_str_body(mp_pck, "TimeWritten", 11);
     if (pack_time(mp_pck, evt->TimeWritten)) {
@@ -370,16 +378,22 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* EventId */
+    flb_plg_debug(ctx->ins, "  EventID = %i", evt->EventID & 0xffff);
+
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "EventID", 7);
     msgpack_pack_uint16(mp_pck, evt->EventID & 0xffff);
 
     /* Qualifiers */
+    flb_plg_debug(ctx->ins, "  Qualifiers = %i", evt->EventID >> 16);
+
     msgpack_pack_str(mp_pck, 10);
     msgpack_pack_str_body(mp_pck, "Qualifiers", 10);
     msgpack_pack_uint16(mp_pck, evt->EventID >> 16);
 
     /* EventType */
+    flb_plg_debug(ctx->ins, "  EventType = %i", evt->EventType);
+
     msgpack_pack_str(mp_pck, 9);
     msgpack_pack_str_body(mp_pck, "EventType", 9);
     if (pack_event_type(mp_pck, evt->EventType)) {
@@ -388,11 +402,15 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* EventCategory */
+    flb_plg_debug(ctx->ins, "  EventCategory = %i", evt->EventCategory);
+
     msgpack_pack_str(mp_pck, 13);
     msgpack_pack_str_body(mp_pck, "EventCategory", 13);
     msgpack_pack_uint16(mp_pck, evt->EventCategory);
 
     /* Channel */
+    flb_plg_debug(ctx->ins, "  Channel = %s", ch->name);
+
     len = strlen(ch->name);
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "Channel", 7);
@@ -400,6 +418,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     msgpack_pack_str_body(mp_pck, ch->name, len);
 
     /* Source Name */
+    flb_plg_debug(ctx->ins, "  SourceName = %ls", source_name);
+
     msgpack_pack_str(mp_pck, 10);
     msgpack_pack_str_body(mp_pck, "SourceName", 10);
     if (pack_wstr(mp_pck, source_name)) {
@@ -408,6 +428,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* Computer Name */
+    flb_plg_debug(ctx->ins, "  ComputerName = %ls", computer_name);
+
     msgpack_pack_str(mp_pck, 12);
     msgpack_pack_str_body(mp_pck, "ComputerName", 12);
     if (pack_wstr(mp_pck, computer_name)) {
@@ -416,6 +438,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* Event-specific Data */
+    flb_plg_debug(ctx->ins, "  DataLength = (%i bytes)", evt->DataLength);
+
     msgpack_pack_str(mp_pck, 4);
     msgpack_pack_str_body(mp_pck, "Data", 4);
     if (pack_binary(mp_pck, BINDATA(evt), evt->DataLength)) {
@@ -423,6 +447,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* Sid */
+    flb_plg_debug(ctx->ins, "  Sid = (%i bytes)", evt->UserSidLength);
+
     msgpack_pack_str(mp_pck, 3);
     msgpack_pack_str_body(mp_pck, "Sid", 3);
     if (pack_sid(mp_pck, evt, ctx)) {
@@ -430,6 +456,8 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* Message */
+    flb_plg_debug(ctx->ins, "  Message");
+
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "Message", 7);
     if (pack_message(mp_pck, evt, ch, ctx)) {
@@ -437,9 +465,13 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     /* StringInserts (optional) */
+    flb_plg_debug(ctx->ins, "  StringInserts = (%i entries)", evt->NumStrings);
+
     if (ctx->string_inserts) {
         msgpack_pack_str(mp_pck, 13);
         msgpack_pack_str_body(mp_pck, "StringInserts", 13);
         pack_strings(mp_pck, evt);
     }
+
+    flb_plg_debug(ctx->ins, "end");
 }
