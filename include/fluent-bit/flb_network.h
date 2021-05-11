@@ -55,6 +55,14 @@ struct flb_net_host {
     struct flb_uri *uri;   /* Extra URI parameters */
 };
 
+/* Defines an async DNS lookup context */
+struct flb_dns_lookup_context {
+    struct mk_event         event;
+    void                   *channel;
+    struct flb_sched_timer *timer;
+    flb_pipefd_t            fd;
+};
+
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23
 #endif

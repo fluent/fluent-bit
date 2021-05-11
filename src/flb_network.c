@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_scheduler.h>
 
 #include <monkey/mk_core.h>
 #include <ares.h>
@@ -411,9 +412,147 @@ static int net_connect_async(int fd,
     return 0;
 }
 
-int flb_net_getaddrinfo(struct addrinfo **res)
+void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts, 
+                                  struct ares_addrinfo *res)
 {
-    fprintf(stdout, "FIXME\n");
+    struct flb_dns_lookup_context *context;
+
+    context = (struct flb_dns_lookup_context *) arg;
+
+    printf("FLB_NET_GETADDRINFO_CALLBACK\n");
+}
+
+int flb_net_getaddrinfo_event_handler(void *arg)
+{
+    struct flb_dns_lookup_context *lookup_context;
+    ares_channel          query_channel;
+    struct mk_event_loop *evl;
+    int                   fd;
+
+    fprintf(stdout, "FLB_NET_GETADDRINFO_EVENT_HANDLER\n");
+
+    evl = flb_engine_evl_get();
+
+    lookup_context = (struct flb_dns_lookup_context *) arg;
+
+    fd = lookup_context->event.fd;
+    query_channel = lookup_context->channel;
+
+    mk_event_del(evl, arg);
+
+    ares_process_fd(query_channel, fd, fd);
+
+    return 0;
+}
+
+struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct flb_sched *sched)
+{
+    struct flb_dns_lookup_context *context;
+    struct mk_event *event;
+    struct mk_event_loop *evl;
+    flb_pipefd_t fd;
+
+    printf("FLB_NET_DNS_LOOKUP_CONTEXT_CREATE\n");
+
+    evl = flb_engine_evl_get();
+
+    /* Create dns lookup context */
+    context = flb_calloc(1, sizeof(struct flb_dns_lookup_context));
+    if (!context) {
+        flb_errno();
+        return NULL;
+    }
+
+    context->timer = flb_sched_timer_create(sched);
+
+    /* Initialize event */
+    event = &context->timer->event;
+    event->mask   = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
+
+    /* Create a timeout into the main event loop */
+    fd = mk_event_timeout_create(evl, 9999, 0, event); /* 9999 seconds, this is the lookup timeout */
+    if (fd == -1) {
+        free(context);
+        return NULL;
+    }
+
+    context->fd = fd;
+
+    /*
+     * Note: mk_event_timeout_create() sets a type = MK_EVENT_NOTIFICATION by
+     * default, we need to overwrite this value so we can do a clean check
+     * into the Engine when the event is triggered.
+     */
+    event->type = FLB_ENGINE_EV_DNS_LOOKUP;
+    /* mk_list_add(&request->_head, &sched->requests); */
+
+    return context;
+}
+
+int flb_net_getaddrinfo(const char *node, const char *service, struct ares_addrinfo_hints *hints, 
+                        struct addrinfo **res)
+{
+    ares_socket_t           sockets[ARES_GETSOCK_MAXNUM];
+    static int              ares_initialized = 0;
+    struct flb_sched       *sched;
+    struct mk_event_loop   *evl;
+    int                     socket_presence_flag;
+    int                     socket_index;
+    int                     result;
+    struct flb_dns_lookup_context *lookup_context;
+
+    printf("FLB_NET_GETADDRINFO\n");
+
+    sched = flb_sched_ctx_get();
+    evl = flb_engine_evl_get();
+
+    if(0 == ares_initialized) {
+        ares_initialized = 1;
+
+        result = ares_library_init(ARES_LIB_INIT_ALL);
+
+        if(0 != result) {
+            return EAI_FAIL;
+        }
+    }
+
+    lookup_context = flb_net_dns_lookup_context_create(sched);
+    if (!lookup_context) {
+        return EAI_AGAIN;
+    }
+
+    result = ares_init((ares_channel)&lookup_context->channel);
+
+    if (ARES_SUCCESS != result) {
+        /* flb_net_dns_lookup_context_create(lookup_context); */
+        return EAI_AGAIN;
+    }
+
+    memset(sockets, 0, sizeof(sockets));
+
+    ares_getaddrinfo(lookup_context->channel, node, service, hints, 
+                     flb_net_getaddrinfo_callback, lookup_context);
+
+    result = ares_getsock(lookup_context->channel, sockets, ARES_GETSOCK_MAXNUM);
+
+    for (socket_index = 0 ; socket_index < ARES_GETSOCK_MAXNUM ; socket_index++) {
+        socket_presence_flag = ARES_GETSOCK_READABLE(result, socket_index) | 
+                               ARES_GETSOCK_WRITABLE(result, socket_index);
+
+        if (0 != socket_presence_flag) {
+            lookup_context->event.mask    = MK_EVENT_EMPTY;
+            lookup_context->event.status  = MK_EVENT_NONE;
+            lookup_context->event.data    = lookup_context;
+            lookup_context->event.handler = flb_net_getaddrinfo_event_handler;
+
+            mk_event_add(evl, sockets[socket_index], MK_EVENT_CUSTOM, MK_EVENT_EMPTY, &lookup_context->event);
+        }
+        else {
+            break;
+        }
+    }
+
     return 0;
 }
 
@@ -481,6 +620,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     flb_sockfd_t fd = -1;
     char _port[6];
     struct addrinfo hints;
+    struct ares_addrinfo_hints hints_;
     struct addrinfo *res, *rp;
 
     if (is_async == FLB_TRUE && !u_conn) {
@@ -492,11 +632,18 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
+    memset(&hints_, 0, sizeof(hints_));
+    hints_.ai_family = AF_UNSPEC;
+    hints_.ai_socktype = SOCK_STREAM;
+
     /* Set hints */
     set_ip_family(host, &hints);
 
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
+
+
+    ret = flb_net_getaddrinfo(host, _port, &hints_, &res);
 
     /* retrieve DNS info */
     ret = getaddrinfo(host, _port, &hints, &res);
