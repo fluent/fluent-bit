@@ -411,8 +411,12 @@ static int net_connect_async(int fd,
     return 0;
 }
 
-int flb_net_getaddrinfo(struct addrinfo **res)
+/* getaddrinfo() wrapper */
+int flb_net_getaddrinfo(const char *node, const char *service,
+                        const struct addrinfo *hints,
+                        struct addrinfo **res)
 {
+
     fprintf(stdout, "FIXME\n");
     return 0;
 }
@@ -497,6 +501,86 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
+
+
+    /* ===== ISSUE 3398 TEST ====== */
+    int pos;
+    int upper;
+    int lower;
+    char *target;
+    struct fixed_ip {
+        char *ip;
+    };
+    struct sockaddr_in test_addr;
+    struct fixed_ip addrs[] = {
+        {"142.250.179.138"},
+        {"173.194.192.95"},
+        {"142.250.72.138"}
+    };
+
+    upper = 2;
+    lower = 0;
+
+    srand(time(NULL));
+    pos = (rand() % (upper - lower + 1)) + lower;
+    target = addrs[pos].ip;
+
+    flb_debug("DNS test using IP: %s\n", target);
+    memset(&test_addr, '\0', sizeof(struct sockaddr_in));
+
+    test_addr.sin_family = AF_INET;
+    test_addr.sin_addr.s_addr = inet_addr(target);
+    test_addr.sin_port = htons(443);
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == -1) {
+        flb_error("[net] coult not create client socket, retrying");
+        return -1;
+
+    }
+
+    /* asynchronous socket ? */
+    if (is_async == FLB_TRUE) {
+        flb_net_socket_nonblocking(fd);
+    }
+
+    /* Disable Nagle's algorithm */
+    flb_net_socket_tcp_nodelay(fd);
+
+    if (u_conn) {
+        u_conn->fd = fd;
+        u_conn->event.fd = fd;
+    }
+
+    /* Perform TCP connection */
+    if (is_async == FLB_TRUE) {
+        ret = net_connect_async(fd,
+                                (struct sockaddr *) &test_addr, sizeof(test_addr),
+                                (char *) host, port, connect_timeout,
+                                async_ctx, u_conn);
+
+    }
+    else {
+        ret = net_connect_sync(fd,
+                               (struct sockaddr *) &test_addr, sizeof(test_addr),
+                               (char *) host, port, connect_timeout);
+    }
+
+    if (ret == -1) {
+        /* If the connection failed, just abort and report the problem */
+        flb_error("[net] socket #%i could not connect to %s:%s",
+                  fd, host, _port);
+        if (u_conn) {
+            u_conn->fd = -1;
+            u_conn->event.fd = -1;
+        }
+        flb_socket_close(fd);
+        fd = -1;
+    }
+
+    return fd;
+
+    /* ---- END OF TEST ----- */
 
     /* retrieve DNS info */
     ret = getaddrinfo(host, _port, &hints, &res);
