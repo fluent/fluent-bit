@@ -58,12 +58,12 @@ struct flb_net_host {
 /* Defines an async DNS lookup context */
 struct flb_dns_lookup_context {
     struct mk_event         response_event;
-    struct mk_event         result_event;
+    int                     result_code;
+    struct mk_event_loop   *event_loop;
+    struct flb_coro        *coroutine;
     void                   *channel;
-    int                     result;
-    struct flb_coro        *coro; 
-    struct addrinfo        *res;
-    flb_pipefd_t            fd;
+    int                     closing;
+    struct addrinfo        *result;
 };
 
 #ifndef TCP_FASTOPEN

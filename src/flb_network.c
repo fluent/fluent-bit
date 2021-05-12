@@ -417,68 +417,65 @@ void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
 {
     struct flb_dns_lookup_context *context;
     int                            record_index;
-    int                            record_count;
-    size_t                         space_required;
-    size_t                         additional_space_required;
+    size_t                         result_size;
+    size_t                         record_list_size;
+    size_t                         address_list_size;
     struct addrinfo               *current_system_record;
     struct ares_addrinfo_node     *current_ares_record;
     struct addrinfo               *translated_records;
     unsigned char                 *recordset_block;
-    unsigned char                 *additional_space_block;
-    size_t                         additional_space_block_index;
+    unsigned char                 *address_list_block;
+    size_t                         address_list_block_index;
 
     printf("FLB_NET_GETADDRINFO_CALLBACK : %p\n", arg);
 
     context = (struct flb_dns_lookup_context *) arg;
 
     if(ARES_SUCCESS == status) {
-        context->result = 0;
+        context->result_code = 0;
     }
     else {
-        context->result = 1;
+        context->result_code = 1;
 
         goto finish;
     }
 
-    additional_space_required = 0;
+    record_list_size = 0;
+    address_list_size = 0;
 
-    for(record_count = 0,
-        current_ares_record = res->nodes ; 
+    for(current_ares_record = res->nodes ; 
         NULL != current_ares_record ;
-        record_count++,
-        additional_space_required += current_ares_record->ai_addrlen,
         current_ares_record = current_ares_record->ai_next) {
+        record_list_size += sizeof(struct addrinfo);
+        address_list_size += current_ares_record->ai_addrlen;
     }
 
-    if(0 < record_count) {
-        space_required  = (sizeof(struct addrinfo) * record_count);
-        space_required += additional_space_required;
+    result_size = record_list_size + address_list_size;
 
-        recordset_block = flb_malloc(space_required);
+    if(0 < result_size) {
+        recordset_block = flb_malloc(result_size);
 
         if (NULL == recordset_block) {
             flb_errno();
             
-            context->result = 1;
+            context->result_code = 1;
+
+            goto finish;
         }
     }
     else {
-        context->result = 2;
-    }
+        context->result_code = 2;
 
-    if(0 != context->result) {
         goto finish;
     }
 
-    printf("RECORD COUNT : %d\n", record_count);
+    translated_records = (struct addrinfo *) recordset_block;
 
-    translated_records = (struct addrinfo *) &recordset_block[0];
+    address_list_block = &recordset_block[record_list_size];
+    address_list_block_index = 0;
 
-    additional_space_block = &recordset_block[(sizeof(struct addrinfo) * record_count)];
-    additional_space_block_index = 0;
-
-    for(record_index = 0,
-        current_ares_record = res->nodes, 
+    record_index = 0;
+    for(current_ares_record = res->nodes, 
         current_system_record = translated_records; 
         NULL != current_ares_record ;
         current_ares_record = current_ares_record->ai_next,
@@ -490,88 +487,81 @@ void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         current_system_record->ai_protocol = current_ares_record->ai_protocol;
         current_system_record->ai_addrlen = current_ares_record->ai_addrlen;
 
-        current_system_record->ai_addr = &additional_space_block[additional_space_block_index];
+        current_system_record->ai_addr = \
+            (struct sockaddr *) &address_list_block[address_list_block_index];
 
         current_system_record->ai_next = &translated_records[++record_index];
 
         memcpy(current_system_record->ai_addr, current_ares_record->ai_addr,
                current_system_record->ai_addrlen);
 
-        additional_space_block_index += current_system_record->ai_addrlen;
+        address_list_block_index += current_system_record->ai_addrlen;
     }    
 
-    context->res = translated_records;
+    context->result = translated_records;
+    context->closing = 1;
 
 finish:
-    flb_coro_resume(context->coro);
+    flb_coro_resume(context->coroutine);
 }
+
 
 int flb_net_getaddrinfo_event_handler(void *arg)
 {
-    struct flb_dns_lookup_context *lookup_context;
-    ares_channel          query_channel;
-    struct mk_event_loop *evl;
-    int                   fd;
+    struct flb_dns_lookup_context *context;
 
-    evl = flb_engine_evl_get();
+    context = (struct flb_dns_lookup_context *) arg;
 
-    lookup_context = (struct flb_dns_lookup_context *) arg;
+    printf("FLB_NET_GETADDRINFO_EVENT_HANDLER\n");
+    fflush(stdout);
 
-    // printf("{}{}{}}{}%d\n", lookup_context->response_event.type);
-
-    fd = lookup_context->response_event.fd;
-    query_channel = lookup_context->channel;
-
-    // mk_event_del(evl, arg);
-
-    // printf("Calling ARES_PROCESS_FD on %d\n", fd);
-
-    ares_process_fd(query_channel, fd, fd);
+    if(0 == context->closing) {
+        ares_process_fd(context->channel, 
+                        context->response_event.fd, 
+                        context->response_event.fd);
+    }
 
     return 0;
 }
 
-struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct flb_sched *sched, struct mk_event_loop *evl)
+int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
+                                      int type,
+                                      void *userdata)
 {
     struct flb_dns_lookup_context *context;
+    int event_mask;
 
-    printf("FLB_NET_DNS_LOOKUP_CONTEXT_CREATE\n");
+    context = (struct flb_dns_lookup_context *) userdata;
 
-    /* Create dns lookup context */
-    context = flb_calloc(1, sizeof(struct flb_dns_lookup_context));
-    if (!context) {
-        flb_errno();
-        return NULL;
+    printf("ARES SOCK CREATE CALLBACK : %d - %d - %p\n", socket_fd, type, userdata);
+
+    context->response_event.mask    = MK_EVENT_EMPTY;
+    context->response_event.status  = MK_EVENT_NONE;
+    context->response_event.data    = context;
+    context->response_event.handler = flb_net_getaddrinfo_event_handler;
+    context->response_event.fd      = socket_fd;
+
+    event_mask = MK_EVENT_READ;
+
+    if(1 == type){
+        event_mask |= MK_EVENT_WRITE;
     }
 
-    return context;
+    printf("MK_EVENT_ADD : %d\n", socket_fd);
+
+    mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM, 
+                 event_mask, &context->response_event);
+
+    return ARES_SUCCESS;
 }
 
-int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints, 
-                        struct addrinfo **res)
+struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *event_loop, struct flb_coro *coroutine)
 {
-    struct ares_addrinfo_hints    ares_hints;
-    ares_socket_t                  sockets[ARES_GETSOCK_MAXNUM];
-    static int                     ares_initialized = 0;
-    struct flb_sched              *sched;
-    struct mk_event_loop          *evl;
-    int                            socket_presence_flag;
-    int                            socket_index;
-    int                            result;
-    struct flb_dns_lookup_context *lookup_context;
-    struct flb_coro               *coro;
-    int                            monitored_socket_count;
+    struct flb_dns_lookup_context *context;
+    static int ares_initialized = 0;
+    int result;
 
-    ares_hints.ai_flags = hints->ai_flags;
-    ares_hints.ai_family = hints->ai_family;
-    ares_hints.ai_socktype = hints->ai_socktype;
-    ares_hints.ai_protocol = hints->ai_protocol;
-
-    printf("FLB_NET_GETADDRINFO\n");
-
-    sched = flb_sched_ctx_get();
-    evl = flb_engine_evl_get();
-    coro = flb_coro_get();
+    printf("FLB_NET_DNS_LOOKUP_CONTEXT_CREATE\n");
 
     if(0 == ares_initialized) {
         ares_initialized = 1;
@@ -579,101 +569,110 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
         result = ares_library_init(ARES_LIB_INIT_ALL);
 
         if(0 != result) {
-            return EAI_FAIL;
+            return NULL;
         }
     }
 
-    lookup_context = flb_net_dns_lookup_context_create(sched, evl);
+    context = flb_calloc(1, sizeof(struct flb_dns_lookup_context));
+    if (!context) {
+        flb_errno();
+        return NULL;
+    }
+
+    result = ares_init((ares_channel *)&context->channel);
+
+    if (ARES_SUCCESS != result) {
+        flb_free(context);
+        return NULL;
+    }
+
+    context->event_loop = event_loop;
+    context->coroutine = coroutine;
+    context->closing = 0;
+
+/*
+    if(0){
+        struct ares_addr_node servers[1];
+
+        memset(servers, 0, sizeof(servers));
+
+        servers[0].family = AF_INET;    
+        servers[0].addr.addr4.s_addr = inet_addr("8.8.8.8");
+
+        ares_set_servers(lookup_context->channel, servers);
+    }
+
+    if(0){
+        struct ares_options options;
+        memset(&options, 0, sizeof(options));
+
+        options.flags = ARES_FLAG_USEVC;// | ARES_FLAG_STAYOPEN;
+
+        ares_init_options((ares_channel *) &context->channel,
+                          &options,
+                          ARES_OPT_FLAGS);
+    }
+*/
+
+    ares_set_socket_callback(context->channel, 
+                             flb_net_ares_sock_create_callback,
+                             context);
+
+    return context;
+}
+
+void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
+{
+    ares_destroy(context->channel);
+    flb_free(context);
+}
+
+
+int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints, 
+                        struct addrinfo **res)
+{
+    struct flb_dns_lookup_context *lookup_context;
+    struct ares_addrinfo_hints     ares_hints;
+    struct mk_event_loop          *event_loop;
+    struct flb_coro               *coroutine;
+    int                            result;
+
+    printf("FLB_NET_GETADDRINFO\n");
+
+    event_loop = flb_engine_evl_get();
+    coroutine = flb_coro_get();
+
+    lookup_context = flb_net_dns_lookup_context_create(event_loop, coroutine);
 
     if (!lookup_context) {
         return EAI_AGAIN;
     }
 
-    result = ares_init((ares_channel *)&lookup_context->channel);
-
-    if (ARES_SUCCESS != result) {
-        /* flb_net_dns_lookup_context_create(lookup_context); */
-        return EAI_AGAIN;
-    }
-
-    lookup_context->coro = coro;
-
-
-if(0){
-    struct ares_addr_node servers[1];
-
-    memset(servers, 0, sizeof(servers));
-
-    servers[0].family = AF_INET;    
-    servers[0].addr.addr4.s_addr = inet_addr("8.8.8.8");
-
-    ares_set_servers(lookup_context->channel, servers);
-
-
-}
-
-if(1){
-    struct ares_options options;    
-    memset(&options, 0, sizeof(options));
-
-    options.flags = ARES_FLAG_USEVC | ARES_FLAG_STAYOPEN;
-
-    ares_init_options(&lookup_context->channel,
-                      &options,
-                      ARES_OPT_FLAGS);
-}
-
-    memset(sockets, 0, sizeof(sockets));
+    ares_hints.ai_flags = hints->ai_flags;
+    ares_hints.ai_family = hints->ai_family;
+    ares_hints.ai_socktype = hints->ai_socktype;
+    ares_hints.ai_protocol = hints->ai_protocol;
 
     ares_getaddrinfo(lookup_context->channel, node, service, &ares_hints, 
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    result = ares_getsock(lookup_context->channel, sockets, ARES_GETSOCK_MAXNUM);
+    printf("YIELDING\n");
 
-    monitored_socket_count = 0;
+    flb_coro_yield(coroutine, FLB_FALSE);
 
-    for (socket_index = 0 ; socket_index < ARES_GETSOCK_MAXNUM ; socket_index++) {
-        socket_presence_flag = ARES_GETSOCK_READABLE(result, socket_index) | 
-                               ARES_GETSOCK_WRITABLE(result, socket_index);
+    printf("RESULT CODE : %d\n", lookup_context->result_code);
 
-        if (0 != socket_presence_flag) {
-            int mask__;
-
-            mask__ = 0;
-
-            if(ARES_GETSOCK_READABLE(result, socket_index)){
-                mask__ |= MK_EVENT_READ;
-            }
-
-            if(ARES_GETSOCK_WRITABLE(result, socket_index)){
-                mask__ |= MK_EVENT_WRITE;
-            }
-
-            monitored_socket_count++;
-
-            lookup_context->response_event.mask    = MK_EVENT_EMPTY;
-            lookup_context->response_event.status  = MK_EVENT_NONE;
-            lookup_context->response_event.data    = lookup_context;
-            lookup_context->response_event.handler = flb_net_getaddrinfo_event_handler;
-            lookup_context->response_event.fd      = sockets[socket_index];
-
-            mk_event_add(evl, sockets[socket_index], FLB_ENGINE_EV_CUSTOM, mask__, &lookup_context->response_event);
-        }
-        else {
-            break;
-        }
-    }
-
-    flb_coro_yield(coro, FLB_FALSE);
-
-    if(0 == lookup_context->result) {
-        *res = lookup_context->res;
+    if(0 == lookup_context->result_code) {
+        *res = lookup_context->result;
+        result = 0;
     }
     else {
-        result = lookup_context->result;
+        result = lookup_context->result_code;
     }
 
-    return 0;
+    flb_net_dns_lookup_context_destroy(lookup_context);
+
+    return result;
 }
 
 int flb_net_bind_address(int fd, char *source_addr)
