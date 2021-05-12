@@ -57,9 +57,12 @@ struct flb_net_host {
 
 /* Defines an async DNS lookup context */
 struct flb_dns_lookup_context {
-    struct mk_event         event;
+    struct mk_event         response_event;
+    struct mk_event         result_event;
     void                   *channel;
-    struct flb_sched_timer *timer;
+    int                     result;
+    struct flb_coro        *coro; 
+    struct addrinfo        *res;
     flb_pipefd_t            fd;
 };
 
