@@ -199,7 +199,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
  * will drop the the oldest chunks when the limitation on local disk is reached.
  */
 int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
-                                        size_t chunk_size)
+                                        size_t chunk_size, int overlimit)
 {
     int count;
     ssize_t bytes;
@@ -211,16 +211,17 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     struct flb_input_chunk *old_ic;
 
     /*
-     * For each output instances, we have to determine how many chunks needs to be
-     * removed. We will adjust the routes_mask to only route to the output plugin
-     * that have enough space after deleting some chunks fome the queue.
+     * For each output instances that will be over the limit after adding the new chunk,
+     * we have to determine how many chunks needs to be removed. We will adjust the
+     * routes_mask to only route to the output plugin that have enough space after
+     * deleting some chunks fome the queue.
      */
     mk_list_foreach(head, &ic->in->config->outputs) {
         count = 0;
         o_ins = mk_list_entry(head, struct flb_output_instance, _head);
 
-        if ((o_ins->total_limit_size == -1) ||
-            (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
+        if ((o_ins->total_limit_size == -1) || ((1 << o_ins->id) & overlimit) == 0 ||
+           (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) == 0)) {
             continue;
         }
 
@@ -332,13 +333,11 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
         }
 
         flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left "
-                  "in plugin %s",
-                  flb_input_chunk_get_name(ic), chunk_size,
-                  o_ins->total_limit_size - o_ins->fs_chunks_size,
-                  o_ins->name);
+                  "in plugin %s", flb_input_chunk_get_name(ic), chunk_size,
+                  o_ins->total_limit_size - o_ins->fs_chunks_size, o_ins->name);
         
         if (o_ins->fs_chunks_size + chunk_size > o_ins->total_limit_size) {
-            overlimit = 1;
+            overlimit |= (1 << o_ins->id);
         }
     }
 
@@ -353,7 +352,7 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
 	int overlimit;
     overlimit = flb_input_chunk_has_overlimit_routes(ic, chunk_size);
     if (overlimit != 0) {
-        flb_input_chunk_find_space_new_data(ic, chunk_size);
+        flb_input_chunk_find_space_new_data(ic, chunk_size, overlimit);
     }
 
     return !flb_routes_mask_is_empty(ic->routes_mask);
@@ -571,6 +570,9 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 
         if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
             o_ins->fs_chunks_size -= bytes;
+            flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
+                      "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
+                      bytes, o_ins->name, o_ins->fs_chunks_size);
         }
     }
 
