@@ -1131,37 +1131,6 @@ static int get_severity_level(severity_t * s, const msgpack_object * o,
     return -1;
 }
 
-
-static int get_stream(msgpack_object_map map)
-{
-    int i;
-    int len_stdout;
-    int val_size;
-    msgpack_object k;
-    msgpack_object v;
-
-    /* len(stdout) == len(stderr) */
-    len_stdout = sizeof(STDOUT) - 1;
-    for (i = 0; i < map.size; i++) {
-        k = map.ptr[i].key;
-        v = map.ptr[i].val;
-        if (k.type == MSGPACK_OBJECT_STR &&
-            strncmp(k.via.str.ptr, "stream", k.via.str.size) == 0) {
-            val_size = v.via.str.size;
-            if (val_size == len_stdout) {
-                if (strncmp(v.via.str.ptr, STDOUT, val_size) == 0) {
-                    return STREAM_STDOUT;
-                }
-                else if (strncmp(v.via.str.ptr, STDERR, val_size) == 0) {
-                    return STREAM_STDERR;
-                }
-            }
-        }
-    }
-
-    return STREAM_UNKNOWN;
-}
-
 static insert_id_status validate_insert_id(msgpack_object * insert_id_value,
                                            const msgpack_object * obj)
 {
@@ -1389,7 +1358,6 @@ static int stackdriver_format(struct flb_config *config,
     int array_size = 0;
     /* The default value is 3: timestamp, jsonPayload, logName. */
     int entry_size = 3;
-    int stream;
     size_t s;
     size_t off = 0;
     char path[PATH_MAX];
@@ -1417,6 +1385,8 @@ static int stackdriver_format(struct flb_config *config,
     /* Parameters for log name */
     int log_name_extracted = FLB_FALSE;
     flb_sds_t log_name = NULL;
+    flb_sds_t stream = NULL;
+    flb_sds_t stream_key;
 
     /* Parameters for insertId */
     msgpack_object insert_id_obj;
@@ -1941,12 +1911,13 @@ static int stackdriver_format(struct flb_config *config,
 
         /* avoid modifying the original tag */
         newtag = tag;
-        if (ctx->is_k8s_resource_type) {
-            stream = get_stream(result.data.via.array.ptr[1].via.map);
-            if (stream == STREAM_STDOUT) {
+        stream_key = flb_sds_create("stream");
+        if (ctx->is_k8s_resource_type
+            && get_string(&stream, obj, stream_key) == 0) {
+            if (flb_sds_cmp(stream, STDOUT, flb_sds_len(stream)) == 0) {
                 newtag = "stdout";
             }
-            else if (stream == STREAM_STDERR) {
+            else if (flb_sds_cmp(stream, STDERR, flb_sds_len(stream)) == 0) {
                 newtag = "stderr";
             }
         }
@@ -1970,6 +1941,8 @@ static int stackdriver_format(struct flb_config *config,
         msgpack_pack_str_body(&mp_pck, "logName", 7);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, path, len);
+        flb_sds_destroy(stream_key);
+        flb_sds_destroy(stream);
 
         /* timestamp */
         msgpack_pack_str(&mp_pck, 9);
