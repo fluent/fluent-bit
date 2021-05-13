@@ -33,6 +33,9 @@
 #define FMT_EVTLOG L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\%S\\%s"
 #define FMT_EVTALT L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Publishers\\%s"
 
+/* 127 is the max number of function params */
+#define PARAM_MAXNUM 127
+
 #define SRCNAME(evt) ((wchar_t *) ((char *) (evt) + sizeof(EVENTLOGRECORD)))
 #define BINDATA(evt) ((unsigned char *) (evt) + (evt)->DataOffset)
 
@@ -266,7 +269,7 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     if (evt->NumStrings) {
-        args = flb_malloc(sizeof(DWORD_PTR) * evt->NumStrings);
+        args = flb_calloc(PARAM_MAXNUM, sizeof(DWORD_PTR));
         if (args == NULL) {
             flb_errno();
             flb_free(paths);
