@@ -499,11 +499,10 @@ void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
     context->result = translated_records;
 
 finish:
-    write(context->result_event.ch_events[1], ".", 1);
+    context->finished = 1;
 }
 
-
-int flb_net_getaddrinfo_event_handler(void *arg)
+static int flb_net_getaddrinfo_event_handler(void *arg)
 {
     struct flb_dns_lookup_context *context;
 
@@ -512,6 +511,10 @@ int flb_net_getaddrinfo_event_handler(void *arg)
     ares_process_fd(context->ares_channel, 
                     context->response_event.fd, 
                     context->response_event.fd);
+
+    if(1 == context->finished) {
+        flb_coro_resume(context->coroutine);
+    }
 
     return 0;
 }
@@ -575,21 +578,9 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
         return NULL;
     }
 
-    result = mk_event_channel_create(event_loop,
-                                     &context->result_event.ch_events[0],
-                                     &context->result_event.ch_events[1],
-                                     &context->result_event);
-    if (result != 0) {
-        flb_error("could not create events channels for dns lookup context");
-        ares_destroy(context->ares_channel);
-        flb_free(context);
-        return NULL;
-    }
-
-    context->result_event.event.type = FLB_ENGINE_EV_DNS_LOOKUP;
-    context->result_event.parent = context;
     context->event_loop = event_loop;
     context->coroutine = coroutine;
+    context->finished = 0;
 
     ares_set_socket_callback(context->ares_channel, 
                              flb_net_ares_sock_create_callback,
@@ -600,16 +591,6 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
 
 void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
 {
-    mk_event_del(context->event_loop, &context->result_event.event);
-
-    if (context->result_event.ch_events[0] > 0) {
-        mk_event_closesocket(context->result_event.ch_events[0]);
-    }
-
-    if (context->result_event.ch_events[1] > 0) {
-        mk_event_closesocket(context->result_event.ch_events[1]);
-    }
-
     mk_event_del(context->event_loop, &context->response_event);
 
     ares_destroy(context->ares_channel);
@@ -742,7 +723,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     snprintf(_port, sizeof(_port), "%lu", port);
 
     coro = flb_coro_get();
-
+    
     /* retrieve DNS info */
     if(NULL != coro) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res);
