@@ -427,8 +427,6 @@ void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
     unsigned char                 *address_list_block;
     size_t                         address_list_block_index;
 
-    printf("FLB_NET_GETADDRINFO_CALLBACK : %p\n", arg);
-
     context = (struct flb_dns_lookup_context *) arg;
 
     if(ARES_SUCCESS == status) {
@@ -499,10 +497,9 @@ void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
     }    
 
     context->result = translated_records;
-    context->closing = 1;
 
 finish:
-    flb_coro_resume(context->coroutine);
+    write(context->result_event.ch_events[1], ".", 1);
 }
 
 
@@ -512,14 +509,9 @@ int flb_net_getaddrinfo_event_handler(void *arg)
 
     context = (struct flb_dns_lookup_context *) arg;
 
-    printf("FLB_NET_GETADDRINFO_EVENT_HANDLER\n");
-    fflush(stdout);
-
-    if(0 == context->closing) {
-        ares_process_fd(context->channel, 
-                        context->response_event.fd, 
-                        context->response_event.fd);
-    }
+    ares_process_fd(context->ares_channel, 
+                    context->response_event.fd, 
+                    context->response_event.fd);
 
     return 0;
 }
@@ -533,11 +525,9 @@ int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     context = (struct flb_dns_lookup_context *) userdata;
 
-    printf("ARES SOCK CREATE CALLBACK : %d - %d - %p\n", socket_fd, type, userdata);
-
     context->response_event.mask    = MK_EVENT_EMPTY;
     context->response_event.status  = MK_EVENT_NONE;
-    context->response_event.data    = context;
+    context->response_event.data    = &context->response_event;
     context->response_event.handler = flb_net_getaddrinfo_event_handler;
     context->response_event.fd      = socket_fd;
 
@@ -546,8 +536,6 @@ int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
     if(1 == type){
         event_mask |= MK_EVENT_WRITE;
     }
-
-    printf("MK_EVENT_ADD : %d\n", socket_fd);
 
     mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM, 
                  event_mask, &context->response_event);
@@ -561,8 +549,6 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
     static int ares_initialized = 0;
     int result;
 
-    printf("FLB_NET_DNS_LOOKUP_CONTEXT_CREATE\n");
-
     if(0 == ares_initialized) {
         ares_initialized = 1;
 
@@ -573,48 +559,39 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
         }
     }
 
+    /* The initialization order here is important since it makes it easier to handle 
+     * failures
+    */
     context = flb_calloc(1, sizeof(struct flb_dns_lookup_context));
     if (!context) {
         flb_errno();
         return NULL;
     }
 
-    result = ares_init((ares_channel *)&context->channel);
+    result = ares_init((ares_channel *)&context->ares_channel);
 
     if (ARES_SUCCESS != result) {
         flb_free(context);
         return NULL;
     }
 
+    result = mk_event_channel_create(event_loop,
+                                     &context->result_event.ch_events[0],
+                                     &context->result_event.ch_events[1],
+                                     &context->result_event);
+    if (result != 0) {
+        flb_error("could not create events channels for dns lookup context");
+        ares_destroy(context->ares_channel);
+        flb_free(context);
+        return NULL;
+    }
+
+    context->result_event.event.type = FLB_ENGINE_EV_DNS_LOOKUP;
+    context->result_event.parent = context;
     context->event_loop = event_loop;
     context->coroutine = coroutine;
-    context->closing = 0;
 
-/*
-    if(0){
-        struct ares_addr_node servers[1];
-
-        memset(servers, 0, sizeof(servers));
-
-        servers[0].family = AF_INET;    
-        servers[0].addr.addr4.s_addr = inet_addr("8.8.8.8");
-
-        ares_set_servers(lookup_context->channel, servers);
-    }
-
-    if(0){
-        struct ares_options options;
-        memset(&options, 0, sizeof(options));
-
-        options.flags = ARES_FLAG_USEVC;// | ARES_FLAG_STAYOPEN;
-
-        ares_init_options((ares_channel *) &context->channel,
-                          &options,
-                          ARES_OPT_FLAGS);
-    }
-*/
-
-    ares_set_socket_callback(context->channel, 
+    ares_set_socket_callback(context->ares_channel, 
                              flb_net_ares_sock_create_callback,
                              context);
 
@@ -623,7 +600,20 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
 
 void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
 {
-    ares_destroy(context->channel);
+    mk_event_del(context->event_loop, &context->result_event.event);
+
+    if (context->result_event.ch_events[0] > 0) {
+        mk_event_closesocket(context->result_event.ch_events[0]);
+    }
+
+    if (context->result_event.ch_events[1] > 0) {
+        mk_event_closesocket(context->result_event.ch_events[1]);
+    }
+
+    mk_event_del(context->event_loop, &context->response_event);
+
+    ares_destroy(context->ares_channel);
+
     flb_free(context);
 }
 
@@ -636,8 +626,6 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     struct mk_event_loop          *event_loop;
     struct flb_coro               *coroutine;
     int                            result;
-
-    printf("FLB_NET_GETADDRINFO\n");
 
     event_loop = flb_engine_evl_get();
     coroutine = flb_coro_get();
@@ -653,14 +641,10 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     ares_hints.ai_socktype = hints->ai_socktype;
     ares_hints.ai_protocol = hints->ai_protocol;
 
-    ares_getaddrinfo(lookup_context->channel, node, service, &ares_hints, 
+    ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints, 
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    printf("YIELDING\n");
-
     flb_coro_yield(coroutine, FLB_FALSE);
-
-    printf("RESULT CODE : %d\n", lookup_context->result_code);
 
     if(0 == lookup_context->result_code) {
         *res = lookup_context->result;

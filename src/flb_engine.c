@@ -665,6 +665,13 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
+            else if (event->type == FLB_ENGINE_EV_DNS_LOOKUP) {
+                struct flb_dns_lookup_result_event *dns_lookup_context;
+
+                dns_lookup_context = (struct flb_dns_lookup_result_event *) event;
+
+                flb_coro_resume(dns_lookup_context->parent->coroutine);
+            }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_coro *co;
