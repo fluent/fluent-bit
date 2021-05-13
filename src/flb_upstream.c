@@ -185,7 +185,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     flb_net_setup_init(&u->net);
 
     /* Set upstream to the http_proxy if it is specified. */
-    if (config->http_proxy) {
+    if (flb_should_proxy_for_host(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
         ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
                                         &proxy_username, &proxy_password,
@@ -236,6 +236,39 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     mk_list_add(&u->_head, &config->upstreams);
     return u;
 }
+
+/*
+ * Checks whehter a destinate URL should be proxied.
+ */
+int flb_should_proxy_for_host(const char *host, const char *proxy, const char *no_proxy)
+{
+    /* No HTTP_PROXY, should not set up proxy for the upstream `host`. */
+    if (proxy == NULL) {
+        return FLB_FALSE;
+    }
+
+    /* No NO_PROXY with HTTP_PROXY set, should set up proxy for the upstream `host`. */
+    if (no_proxy == NULL) {
+        return FLB_TRUE;
+    }
+
+    /* NO_PROXY=`*`, it matches all hosts. */
+    if (strcmp(no_proxy, "*") == 0) {
+        return FLB_FALSE;
+    }
+
+    /* check the URL list in the NO_PROXY  */
+    char *no_proxy_url = strtok(no_proxy, ",");
+    while (no_proxy_url != NULL) {
+        if (strcmp(host, no_proxy_url) == 0) {
+            return FLB_FALSE;
+        }
+        no_proxy_url = strtok(NULL, ",");
+    }
+
+    return FLB_TRUE;
+}
+
 
 
 /* Create an upstream context using a valid URL (protocol, host and port) */

@@ -876,6 +876,24 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
     return 0;
 }
 
+int flb_input_collector_delete(int coll_id, struct flb_input_instance *in)
+{
+    struct flb_input_collector *coll;
+
+    coll = get_collector(coll_id, in);
+    if (!coll) {
+        return -1;
+    }
+    if (flb_input_collector_pause(coll_id, in) < 0) {
+        return -1;
+    }
+
+    mk_list_del(&coll->_head);
+    mk_list_del(&coll->_head_ins);
+    flb_free(coll);
+    return 0;
+}
+
 int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
 {
     int fd;

@@ -328,8 +328,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
     now = time(NULL);
     if (ctx->access_token) {
-        /* validate expired token */
-        if (ctx->expires < now && flb_sds_len(ctx->access_token) > 0) {
+        /* validate unexpired token */
+        if (ctx->expires > now && flb_sds_len(ctx->access_token) > 0) {
             return ctx->access_token;
         }
     }
@@ -390,6 +390,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);
             flb_http_client_destroy(c);
+            ctx->issued = time(NULL);
+            ctx->expires = ctx->issued + ctx->expires_in;
             return ctx->access_token;
         }
     }

@@ -459,7 +459,12 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     }
     else if (v->type == FLB_RA_FLOAT) {
         len = snprintf(str, sizeof(str) - 1, "%f", v->val.f64);
-        tmp = flb_sds_cat(buf, str, len);
+        if (len >= sizeof(str)) {
+            tmp = flb_sds_cat(buf, str, sizeof(str)-1);
+        }
+        else {
+            tmp = flb_sds_cat(buf, str, len);
+        }
     }
     else if (v->type == FLB_RA_STRING) {
         tmp = flb_sds_cat(buf, v->val.string, flb_sds_len(v->val.string));
