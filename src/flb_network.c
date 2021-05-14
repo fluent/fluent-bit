@@ -424,29 +424,6 @@ static int net_connect_async(int fd,
     return 0;
 }
 
-static void flb_net_free_translated_addrinfo(struct addrinfo *input)
-{
-    struct addrinfo *current_record;
-    struct addrinfo *next_record;
-
-    if(NULL != input) {
-        next_record = NULL;
-
-        for(current_record = input ; 
-            NULL != current_record ; 
-            current_record = next_record) {
-
-            if(NULL != current_record->ai_addr) {
-                flb_free(current_record->ai_addr);
-            }
-
-            next_record = current_record->ai_next;
-
-            flb_free(current_record);
-        }
-    }
-}
-
 static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *input)
 {
     struct ares_addrinfo_node *current_ares_record;
@@ -517,9 +494,31 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
     return output;
 }
 
+static void flb_net_free_translated_addrinfo(struct addrinfo *input)
+{
+    struct addrinfo *current_record;
+    struct addrinfo *next_record;
 
-void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts, 
-                                  struct ares_addrinfo *res)
+    if(NULL != input) {
+        next_record = NULL;
+
+        for(current_record = input ; 
+            NULL != current_record ; 
+            current_record = next_record) {
+
+            if(NULL != current_record->ai_addr) {
+                flb_free(current_record->ai_addr);
+            }
+
+            next_record = current_record->ai_next;
+
+            flb_free(current_record);
+        }
+    }
+}
+
+static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts, 
+                                         struct ares_addrinfo *res)
 {
     struct flb_dns_lookup_context *context;
 
@@ -559,9 +558,9 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
     return 0;
 }
 
-int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
-                                      int type,
-                                      void *userdata)
+static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
+                                             int type,
+                                             void *userdata)
 {
     struct flb_dns_lookup_context *context;
     int event_mask;
@@ -576,6 +575,14 @@ int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     event_mask = MK_EVENT_READ;
 
+    /* c-ares doesn't use a macro for the socket type so :
+     * 1 means it's a TCP socket
+     * 2 means it's a UDP socket
+     *
+     * For TCP sockets we want to monitor for write events because we need to call
+     * ares_process_fd in order to issue the query unlike UDP sockets which automatically
+     * send the query after creating the socket.
+     */
     if(1 == type){
         event_mask |= MK_EVENT_WRITE;
     }
