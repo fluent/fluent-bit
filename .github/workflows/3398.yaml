@@ -124,6 +124,11 @@ jobs:
         run: terraform output -no-color -raw gcp-project-id
         working-directory: terraform/gcp/
 
+      - name: Get the k8s disk id from terraform output
+        id: get-gcp-disk-id
+        run: terraform output -no-color -raw gcp-disk-id
+        working-directory: terraform/gcp/
+
       - uses: google-github-actions/setup-gcloud@master
         with:
           service_account_key: ${{ secrets.GCP_SA_KEY }}
@@ -148,5 +153,6 @@ jobs:
         env:
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
           IMAGE_TAG: x86_64-3398
+          GCP_DISK_ID: ${{ steps.get-gcp-disk-id.outputs.stdout }}
           GRAFANA_USERNAME: ${{ secrets.GRAFANA_USERNAME }}
           GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
