@@ -53,6 +53,18 @@
 #define SOL_TCP IPPROTO_TCP
 #endif
 
+void flb_net_init()
+{
+    int result;
+
+    result = ares_library_init_mem(ARES_LIB_INIT_ALL, flb_malloc, flb_free, flb_realloc);
+
+    if(0 != result) {
+        flb_error("[network] c-ares memory settings initialization error : %s",
+                  ares_strerror(result));
+    }
+}
+
 void flb_net_setup_init(struct flb_net_setup *net)
 {
     net->keepalive = FLB_TRUE;
@@ -412,93 +424,121 @@ static int net_connect_async(int fd,
     return 0;
 }
 
+static void flb_net_free_translated_addrinfo(struct addrinfo *input)
+{
+    struct addrinfo *current_record;
+    struct addrinfo *next_record;
+
+    if(NULL != input) {
+        next_record = NULL;
+
+        for(current_record = input ; 
+            NULL != current_record ; 
+            current_record = next_record) {
+
+            if(NULL != current_record->ai_addr) {
+                flb_free(current_record->ai_addr);
+            }
+
+            next_record = current_record->ai_next;
+
+            flb_free(current_record);
+        }
+    }
+}
+
+static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *input)
+{
+    struct ares_addrinfo_node *current_ares_record;
+    struct addrinfo *previous_output_record;
+    struct addrinfo *current_output_record;
+    struct addrinfo *next_output_record;
+    struct addrinfo *output;
+    int failure_detected;
+
+    output = NULL;
+    failure_detected = 0;
+    current_output_record = NULL;
+    previous_output_record = NULL;
+
+    if(NULL != input) {
+        for(current_ares_record = input->nodes ; 
+            NULL != current_ares_record ; 
+            current_ares_record = current_ares_record->ai_next) {
+
+            current_output_record = flb_malloc(sizeof(struct addrinfo));
+
+            if(NULL == current_output_record) {
+                flb_errno();
+                failure_detected = 1;
+                break;
+            }
+
+            memset(current_output_record, 0, sizeof(struct addrinfo));
+
+            if(NULL == output) {
+                output = current_output_record;
+            }
+
+            current_output_record->ai_flags = current_ares_record->ai_flags;
+            current_output_record->ai_family = current_ares_record->ai_family;
+            current_output_record->ai_socktype = current_ares_record->ai_socktype;
+            current_output_record->ai_protocol = current_ares_record->ai_protocol;
+            current_output_record->ai_addrlen = current_ares_record->ai_addrlen;
+
+            current_output_record->ai_addr = flb_malloc(current_output_record->ai_addrlen);
+
+            if(NULL == current_output_record->ai_addr) {
+                flb_errno();
+                failure_detected = 1;
+                break;
+            }
+
+            memcpy(current_output_record->ai_addr, 
+                   current_ares_record->ai_addr,
+                   current_output_record->ai_addrlen);
+
+            if(NULL != previous_output_record) {
+                previous_output_record->ai_next = current_output_record;
+            }
+
+            previous_output_record = current_output_record;
+        }
+    }
+
+    if(1 == failure_detected) {
+        if(NULL != output) {
+            flb_net_free_translated_addrinfo(output);
+
+            output = NULL;
+        }
+    }
+
+    return output;
+}
+
+
 void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts, 
                                   struct ares_addrinfo *res)
 {
     struct flb_dns_lookup_context *context;
-    int                            record_index;
-    size_t                         result_size;
-    size_t                         record_list_size;
-    size_t                         address_list_size;
-    struct addrinfo               *current_system_record;
-    struct ares_addrinfo_node     *current_ares_record;
-    struct addrinfo               *translated_records;
-    unsigned char                 *recordset_block;
-    unsigned char                 *address_list_block;
-    size_t                         address_list_block_index;
 
     context = (struct flb_dns_lookup_context *) arg;
 
     if(ARES_SUCCESS == status) {
-        context->result_code = 0;
-    }
-    else {
-        context->result_code = 1;
+        context->result = flb_net_translate_ares_addrinfo(res);
 
-        goto finish;
-    }
-
-    record_list_size = 0;
-    address_list_size = 0;
-
-    for(current_ares_record = res->nodes ; 
-        NULL != current_ares_record ;
-        current_ares_record = current_ares_record->ai_next) {
-        record_list_size += sizeof(struct addrinfo);
-        address_list_size += current_ares_record->ai_addrlen;
-    }
-
-    result_size = record_list_size + address_list_size;
-
-    if(0 < result_size) {
-        recordset_block = flb_malloc(result_size);
-
-        if (NULL == recordset_block) {
-            flb_errno();
-            
-            context->result_code = 1;
-
-            goto finish;
+        if(NULL == context->result) {
+            context->result_code = 2;
+        }
+        else {
+            context->result_code = 0;
         }
     }
     else {
-        context->result_code = 2;
-
-        goto finish;
+        context->result_code = 1;
     }
 
-    translated_records = (struct addrinfo *) recordset_block;
-
-    address_list_block = &recordset_block[record_list_size];
-    address_list_block_index = 0;
-
-    record_index = 0;
-    for(current_ares_record = res->nodes, 
-        current_system_record = translated_records; 
-        NULL != current_ares_record ;
-        current_ares_record = current_ares_record->ai_next,
-        current_system_record = current_system_record->ai_next) {
-
-        current_system_record->ai_flags = current_ares_record->ai_flags;
-        current_system_record->ai_family = current_ares_record->ai_family;
-        current_system_record->ai_socktype = current_ares_record->ai_socktype;
-        current_system_record->ai_protocol = current_ares_record->ai_protocol;
-        current_system_record->ai_addrlen = current_ares_record->ai_addrlen;
-
-        current_system_record->ai_addr = \
-            (struct sockaddr *) &address_list_block[address_list_block_index];
-
-        current_system_record->ai_next = &translated_records[++record_index];
-
-        memcpy(current_system_record->ai_addr, current_ares_record->ai_addr,
-               current_system_record->ai_addrlen);
-
-        address_list_block_index += current_system_record->ai_addrlen;
-    }    
-
-    context->result = translated_records;
-
-finish:
     context->finished = 1;
 }
 
@@ -549,18 +589,7 @@ int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *event_loop, struct flb_coro *coroutine)
 {
     struct flb_dns_lookup_context *context;
-    static int ares_initialized = 0;
     int result;
-
-    if(0 == ares_initialized) {
-        ares_initialized = 1;
-
-        result = ares_library_init(ARES_LIB_INIT_ALL);
-
-        if(0 != result) {
-            return NULL;
-        }
-    }
 
     /* The initialization order here is important since it makes it easier to handle 
      * failures
@@ -801,7 +830,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if(NULL != coro) {
-        flb_free(res);
+        flb_net_free_translated_addrinfo(res);
     }
     else {
         freeaddrinfo(res);

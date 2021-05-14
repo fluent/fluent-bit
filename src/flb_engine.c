@@ -456,6 +456,9 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event_loop *evl;
     struct flb_sched *sched;
 
+    /* Initialize the networking layer */
+    flb_net_init();
+
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
