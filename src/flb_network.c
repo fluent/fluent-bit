@@ -665,11 +665,9 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
 
     if(0 == lookup_context->result_code) {
         *res = lookup_context->result;
-        result = 0;
     }
-    else {
-        result = lookup_context->result_code;
-    }
+
+    result = lookup_context->result_code;
 
     flb_net_dns_lookup_context_destroy(lookup_context);
 
