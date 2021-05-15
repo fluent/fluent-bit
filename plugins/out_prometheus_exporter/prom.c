@@ -82,6 +82,11 @@ static void cb_prom_flush(const void *data, size_t bytes,
 
 static int cb_prom_exit(void *data, struct flb_config *config)
 {
+    struct prom_exporter *ctx = data;
+    struct prom_http *ph = ctx->http;
+    if (ph) {
+        prom_http_server_destroy(ph);
+    }
     return 0;
 }
 
