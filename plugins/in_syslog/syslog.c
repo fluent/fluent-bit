@@ -72,14 +72,17 @@ static int in_syslog_collect_udp(struct flb_input_instance *i_ins,
     int bytes;
     struct flb_syslog *ctx = in_context;
     (void) i_ins;
+    struct flb_syslog_client_info client_info;
 
     bytes = recvfrom(ctx->server_fd,
                      ctx->buffer_data, ctx->buffer_size - 1, 0,
-                     NULL, NULL);
+                     (struct sockaddr*) &client_info.client, &client_info.client_len);
+
     if (bytes > 0) {
         ctx->buffer_data[bytes] = '\0';
         ctx->buffer_len = bytes;
-        syslog_prot_process_udp(ctx->buffer_data, ctx->buffer_len, ctx);
+
+        syslog_prot_process_udp(ctx->buffer_data, ctx->buffer_len, ctx, &client_info);
     }
     else {
         flb_errno();

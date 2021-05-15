@@ -26,6 +26,6 @@
 #include "syslog.h"
 
 int syslog_prot_process(struct syslog_conn *conn);
-int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx);
+int syslog_prot_process_udp(char *buf, size_t size, struct flb_syslog *ctx, struct flb_syslog_client_info *client_info);
 
 #endif
