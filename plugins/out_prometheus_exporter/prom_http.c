@@ -220,7 +220,13 @@ struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
 
 void prom_http_server_destroy(struct prom_http *ph)
 {
-
+    if (ph) {
+        /* TODO: release mk_vhost */
+        if (ph->ctx) {
+            mk_destroy(ph->ctx);
+        }
+        flb_free(ph);
+    }
 }
 
 int prom_http_server_start(struct prom_http *ph)
