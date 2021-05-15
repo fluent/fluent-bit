@@ -288,6 +288,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         flb_config_map_destroy(config_map);
     }
 
+#ifdef FLB_HAVE_TLS
     if (ins->p->flags & (FLB_IO_TLS | FLB_IO_OPT_TLS)) {
         flb_mp_map_header_append(&mh);
         pack_str(&mp_pck, "network_tls");
@@ -309,6 +310,7 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
         }
         flb_config_map_destroy(config_map);
     }
+#endif
     flb_mp_map_header_end(&mh);
 
     *out_buf = mp_sbuf.data;

@@ -21,6 +21,8 @@
 #ifndef FLB_HTTP_CLIENT_H
 #define FLB_HTTP_CLIENT_H
 
+#ifdef FLB_HAVE_TLS
+
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_upstream.h>
 
@@ -167,5 +169,7 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
 int flb_http_strip_port_from_host(struct flb_http_client *c);
 int flb_http_allow_duplicated_headers(struct flb_http_client *c, int allow);
 int flb_http_client_debug_property_is_valid(char *key, char *val);
+
+#endif /* FLB_HAVE_TLS */
 
 #endif
