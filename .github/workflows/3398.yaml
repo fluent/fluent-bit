@@ -156,3 +156,4 @@ jobs:
           GCP_DISK_ID: ${{ steps.get-gcp-disk-id.outputs.stdout }}
           GRAFANA_USERNAME: ${{ secrets.GRAFANA_USERNAME }}
           GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
