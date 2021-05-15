@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - issue-3398
+      - 1.7
 
 name: Build and publish for issue-3398
 jobs:
