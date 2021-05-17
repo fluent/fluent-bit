@@ -424,6 +424,29 @@ static int net_connect_async(int fd,
     return 0;
 }
 
+static void flb_net_free_translated_addrinfo(struct addrinfo *input)
+{
+    struct addrinfo *current_record;
+    struct addrinfo *next_record;
+
+    if(NULL != input) {
+        next_record = NULL;
+
+        for(current_record = input ;
+            NULL != current_record ;
+            current_record = next_record) {
+
+            if(NULL != current_record->ai_addr) {
+                flb_free(current_record->ai_addr);
+            }
+
+            next_record = current_record->ai_next;
+
+            flb_free(current_record);
+        }
+    }
+}
+
 static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *input)
 {
     struct ares_addrinfo_node *current_ares_record;
@@ -492,29 +515,6 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
     }
 
     return output;
-}
-
-static void flb_net_free_translated_addrinfo(struct addrinfo *input)
-{
-    struct addrinfo *current_record;
-    struct addrinfo *next_record;
-
-    if(NULL != input) {
-        next_record = NULL;
-
-        for(current_record = input ;
-            NULL != current_record ;
-            current_record = next_record) {
-
-            if(NULL != current_record->ai_addr) {
-                flb_free(current_record->ai_addr);
-            }
-
-            next_record = current_record->ai_next;
-
-            flb_free(current_record);
-        }
-    }
 }
 
 static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
