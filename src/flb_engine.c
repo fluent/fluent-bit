@@ -456,6 +456,9 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event_loop *evl;
     struct flb_sched *sched;
 
+    /* Initialize the networking layer */
+    flb_net_init();
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP
     if (config->http_server == FLB_TRUE) {
