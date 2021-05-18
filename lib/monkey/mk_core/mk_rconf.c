@@ -433,7 +433,7 @@ static int mk_rconf_read_glob(struct mk_rconf *conf, const char * path)
     size_t i;
     int ret_glb = -1;
 
-    if (conf->root_path) {
+    if (conf->root_path && path[0] != "/") {
         snprintf(tmp, PATH_MAX, "%s/%s", conf->root_path, path);
         glb_path = tmp;
     }
