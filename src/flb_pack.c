@@ -199,7 +199,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
                     msgpack_pack_double(&pck, atof(p));
                 }
                 else {
-                    msgpack_pack_int64(&pck, atol(p));
+                    msgpack_pack_int64(&pck, atoll(p));
                 }
             }
             break;
