@@ -269,6 +269,12 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     /* Get decompressed length */
     dlen = read_le32(&p[in_len - 4]);
 
+    /* Limit decompressed length to 100MB */
+    if (dlen > 100000000) {
+        flb_error("[gzip] maximum decompression size is 100MB");
+        return -1;
+    }
+
     /* Get CRC32 checksum of original data */
     crc = read_le32(&p[in_len - 8]);
 
