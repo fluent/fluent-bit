@@ -40,6 +40,67 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
 
+pthread_key_t oauth2_type;
+pthread_key_t oauth2_token;
+
+static void oauth2_cache_exit(void *ptr)
+{
+    if (ptr) {
+        flb_sds_destroy(ptr);
+    }
+}
+
+static void oauth2_cache_init()
+{
+    /* oauth2 pthread key */
+    pthread_key_create(&oauth2_type, oauth2_cache_exit);
+    pthread_key_create(&oauth2_token, oauth2_cache_exit);
+}
+
+/* Set oauth2 type and token in pthread keys */
+static void oauth2_cache_set(char *type, char *token)
+{
+    flb_sds_t tmp;
+
+    /* oauth2 type */
+    tmp = pthread_getspecific(oauth2_type);
+    if (tmp) {
+        flb_sds_destroy(tmp);
+    }
+    tmp = flb_sds_create(type);
+    pthread_setspecific(oauth2_type, tmp);
+
+    /* oauth2 access token */
+    tmp = pthread_getspecific(oauth2_token);
+    if (tmp) {
+        flb_sds_destroy(tmp);
+    }
+    tmp = flb_sds_create(token);
+    pthread_setspecific(oauth2_token, tmp);
+}
+
+/* By using pthread keys cached values, compose the authorizatoin token */
+static flb_sds_t oauth2_cache_to_token()
+{
+    flb_sds_t type;
+    flb_sds_t token;
+    flb_sds_t output;
+
+    type = pthread_getspecific(oauth2_type);
+    if (!type) {
+        return NULL;
+    }
+
+    output = flb_sds_create(type);
+    if (!output) {
+        return NULL;
+    }
+
+    token = pthread_getspecific(oauth2_token);
+    flb_sds_printf(&output, " %s", token);
+    return output;
+}
+
 /*
  * Base64 Encoding in JWT must:
  *
@@ -264,7 +325,18 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
     int ret = 0;
     flb_sds_t output = NULL;
 
-    if (pthread_mutex_lock(&ctx->token_mutex)){
+    ret = pthread_mutex_trylock(&ctx->token_mutex);
+    if (ret == EBUSY) {
+        /*
+         * If the routine is locked we just use our pre-cached values and
+         * compose the expected authorization value.
+         *
+         * If the routine fails it will return NULL and the caller will just
+         * issue a FLB_RETRY.
+         */
+        return oauth2_cache_to_token();
+    }
+    else if (ret != 0) {
         flb_plg_error(ctx->ins, "error locking mutex");
         return NULL;
     }
@@ -275,7 +347,11 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
 
     /* Copy string to prevent race conditions (get_oauth2 can free the string) */
     if (ret == 0) {
-        output = flb_sds_create(ctx->o->access_token);
+        /* Update pthread keys cached values */
+        oauth2_cache_set(ctx->o->token_type, ctx->o->access_token);
+
+        /* Compose outgoing buffer using cached values */
+        output = oauth2_cache_to_token();
     }
 
     if (pthread_mutex_unlock(&ctx->token_mutex)){
@@ -845,7 +921,7 @@ int is_tag_match_regex(struct flb_stackdriver *ctx, const char *tag, int tag_len
     ret = flb_regex_match(ctx->regex,
                           (unsigned char *) tag_str_to_be_matcheds,
                           len_to_be_matched);
-                          
+
     /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
     return ret;
 }
@@ -869,12 +945,12 @@ int is_local_resource_id_match_regex(struct flb_stackdriver *ctx)
     ret = flb_regex_match(ctx->regex,
                           (unsigned char *) str_to_be_matcheds,
                           len_to_be_matched);
-    
+
     /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
     return ret;
 }
 
-/* 
+/*
  * extract_resource_labels_from_regex(4) will only be called if the
  * tag or local_resource_id field matches the regex rule
  */
@@ -942,8 +1018,11 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         io_flags |= FLB_IO_IPV6;
     }
 
+    /* Initialize oauth2 cache pthread keys */
+    oauth2_cache_init();
+
     /* Create mutex for acquiring oauth tokens (they are shared across flush coroutines) */
-    pthread_mutex_init ( &ctx->token_mutex, NULL);
+    pthread_mutex_init(&ctx->token_mutex, NULL);
 
     /* Create Upstream context for Stackdriver Logging (no oauth2 service) */
     ctx->u = flb_upstream_create_url(config, FLB_STD_WRITE_URL,
@@ -976,7 +1055,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         token = get_google_token(ctx);
         if (!token) {
             flb_plg_warn(ctx->ins, "token retrieval failed");
-        } else {
+        }
+        else {
             flb_sds_destroy(token);
         }
     }
