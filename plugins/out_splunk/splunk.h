@@ -32,6 +32,7 @@
 #define FLB_SPLUNK_DEFAULT_EVENT_INDEX   "index"
 #define FLB_SPLUNK_DEFAULT_EVENT_FIELDS  "fields"
 #define FLB_SPLUNK_DEFAULT_EVENT         "event"
+#define FLB_SPLUNK_DEFAULT_HTTP_MAX      "2M"
 
 #define FLB_SPLUNK_CHANNEL_IDENTIFIER_HEADER "X-Splunk-Request-Channel"
 
@@ -102,6 +103,9 @@ struct flb_splunk {
 
     /* Send fields directly or pack data into "event" object */
     int splunk_send_raw;
+
+    /* HTTP Client Setup */
+    size_t buffer_size;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
