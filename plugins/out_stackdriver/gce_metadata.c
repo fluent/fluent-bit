@@ -69,7 +69,7 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     c = flb_http_client(metadata_conn, FLB_HTTP_GET, uri,
                         "", 0, NULL, 0, NULL, 0);
 
-    flb_http_buffer_size(c, 4096);
+    flb_http_buffer_size(c, FLB_STD_METADATA_TOKEN_SIZE_MAX);
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/text", 16);
@@ -113,7 +113,7 @@ int gce_metadata_read_token(struct flb_stackdriver *ctx)
 {
     int ret;
     flb_sds_t uri = flb_sds_create(FLB_STD_METADATA_SERVICE_ACCOUNT_URI);
-    flb_sds_t payload = flb_sds_create_size(4096);
+    flb_sds_t payload = flb_sds_create_size(FLB_STD_METADATA_TOKEN_SIZE_MAX);
 
     uri = flb_sds_cat(uri, ctx->client_email, flb_sds_len(ctx->client_email));
     uri = flb_sds_cat(uri, "/token", 6);

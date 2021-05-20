@@ -43,6 +43,12 @@
 pthread_key_t oauth2_type;
 pthread_key_t oauth2_token;
 
+int is_tag_match_regex(struct flb_stackdriver *ctx, const char *tag, int tag_len);
+int is_local_resource_id_match_regex(struct flb_stackdriver *ctx);
+int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
+                                       const char *tag, int tag_len,
+                                       int from_tag);
+
 static void oauth2_cache_exit(void *ptr)
 {
     if (ptr) {
@@ -60,23 +66,24 @@ static void oauth2_cache_init()
 /* Set oauth2 type and token in pthread keys */
 static void oauth2_cache_set(char *type, char *token)
 {
-    flb_sds_t tmp;
+    flb_sds_t buf_type;
+    flb_sds_t buf_token;
 
     /* oauth2 type */
-    tmp = pthread_getspecific(oauth2_type);
-    if (tmp) {
-        flb_sds_destroy(tmp);
+    buf_type = pthread_getspecific(oauth2_type);
+    if (buf_type) {
+        flb_sds_destroy(buf_type);
     }
-    tmp = flb_sds_create(type);
-    pthread_setspecific(oauth2_type, tmp);
+    buf_type = flb_sds_create(type);
+    pthread_setspecific(oauth2_type, buf_type);
 
     /* oauth2 access token */
-    tmp = pthread_getspecific(oauth2_token);
-    if (tmp) {
-        flb_sds_destroy(tmp);
+    buf_token = pthread_getspecific(oauth2_token);
+    if (buf_token) {
+        flb_sds_destroy(buf_token);
     }
-    tmp = flb_sds_create(token);
-    pthread_setspecific(oauth2_token, tmp);
+    buf_token = flb_sds_create(token);
+    pthread_setspecific(oauth2_token, buf_token);
 }
 
 /* By using pthread keys cached values, compose the authorizatoin token */
@@ -2065,17 +2072,6 @@ static int stackdriver_format(struct flb_config *config,
     return 0;
 }
 
-static void set_authorization_header(struct flb_http_client *c,
-                                     char *token)
-{
-    int len;
-    char header[512];
-
-    len = snprintf(header, sizeof(header) - 1,
-                   "Bearer %s", token);
-    flb_http_add_header(c, "Authorization", 13, header, len);
-}
-
 static void cb_stackdriver_flush(const void *data, size_t bytes,
                                  const char *tag, int tag_len,
                                  struct flb_input_instance *i_ins,
@@ -2141,9 +2137,7 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     }
 
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
-
-    /* Compose and append Authorization header */
-    set_authorization_header(c, token);
+    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
