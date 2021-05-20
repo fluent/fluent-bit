@@ -482,7 +482,7 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
-    flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
+    flb_http_buffer_size(c, ctx->buffer_size);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     /* Try to use http_user and http_passwd if not, fallback to auth_header */
@@ -582,6 +582,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_splunk, http_passwd),
      "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "http_buffer_size", FLB_SPLUNK_DEFAULT_HTTP_MAX,
+     0, FLB_TRUE, offsetof(struct flb_splunk, buffer_size),
+     "Specify the buffer size used to read the response from the Splunk HTTP "
+     "service. This option is useful for debugging purposes where is required to read "
+     "full responses, note that response size grows depending of the number of records "
+     "inserted. To set an unlimited amount of memory set this value to 'false', "
+     "otherwise the value must be according to the Unit Size specification"
     },
 
     {
