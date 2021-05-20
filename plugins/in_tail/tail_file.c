@@ -372,6 +372,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     else if (file->skip_next) {
         *bytes = file->buf_len;
     }
+    else {
+        *bytes = processed_bytes;
+    }
 
     msgpack_sbuffer_destroy(out_sbuf);
     return lines;
