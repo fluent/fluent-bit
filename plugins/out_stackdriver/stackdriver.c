@@ -2153,6 +2153,9 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         if (c->resp.status == 200) {
             ret_code = FLB_OK;
         }
+        else if (c->resp.status >= 400 && c->resp.status < 500) {
+            ret_code = FLB_ERROR;
+        }
         else {
             if (c->resp.payload_size > 0) {
                 /* we got an error */
