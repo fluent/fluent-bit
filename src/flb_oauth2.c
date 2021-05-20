@@ -115,6 +115,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
         }
         else if (key_cmp(key, key_len, "expires_in") == 0) {
             ctx->expires_in = atol(val);
+
+            /*
+             * Our internal expiration time must be lower that the one set
+             * by the remote end-point, so we can use valid cached values
+             * if a token renewal is in place. So we decrease the expire
+             * interval -10%.
+             */
+            ctx->expires_in -= (ctx->expires_in * 0.10);
         }
     }
 
