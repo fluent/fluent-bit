@@ -452,7 +452,6 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
     struct ares_addrinfo_node *current_ares_record;
     struct addrinfo *previous_output_record;
     struct addrinfo *current_output_record;
-    struct addrinfo *next_output_record;
     struct addrinfo *output;
     int failure_detected;
 
