@@ -690,10 +690,7 @@ static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
  */
 size_t flb_input_chunk_total_size(struct flb_input_instance *in)
 {
-    ssize_t bytes;
     size_t total = 0;
-    struct mk_list *head;
-    struct flb_input_chunk *ic;
     struct flb_storage_input *storage;
 
     storage = (struct flb_storage_input *) in->storage;
