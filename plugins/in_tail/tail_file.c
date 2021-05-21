@@ -202,7 +202,6 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
-    int has_data = FLB_FALSE;
     int lines = 0;
     int ret;
     size_t processed_bytes = 0;
@@ -236,15 +235,15 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
-        ++data;
+        data++;
+        processed_bytes++;
     }
 
     while (data < end && (p = memchr(data, '\n', end - data))) {
-        has_data = FLB_TRUE;
         len = (p - data);
         if (file->skip_next == FLB_TRUE) {
             data += len + 1;
-            processed_bytes += len;
+            processed_bytes += len + 1;
             file->skip_next = FLB_FALSE;
             continue;
         }
@@ -361,7 +360,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     }
     file->parsed = file->buf_len;
 
-    if (has_data) {
+    if (lines > 0) {
         /* Append buffer content to a chunk */
         *bytes = processed_bytes;
         flb_input_chunk_append_raw(ctx->ins,
@@ -370,8 +369,11 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                    out_sbuf->data,
                                    out_sbuf->size);
     }
-    else {
+    else if (file->skip_next) {
         *bytes = file->buf_len;
+    }
+    else {
+        *bytes = processed_bytes;
     }
 
     msgpack_sbuffer_destroy(out_sbuf);
@@ -950,6 +952,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             }
 
             /* Do buffer adjustments */
+            file->offset += file->buf_len;
             file->buf_len = 0;
             file->skip_next = FLB_TRUE;
         }
