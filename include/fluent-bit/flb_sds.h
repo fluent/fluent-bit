@@ -103,6 +103,7 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len);
 flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
                                        char *esc, size_t esc_size);
 flb_sds_t flb_sds_cat_utf8(flb_sds_t *sds, const char *str, int len);
+int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len);
 flb_sds_t flb_sds_increase(flb_sds_t s, size_t len);
 flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len);
 void flb_sds_destroy(flb_sds_t s);
