@@ -803,6 +803,91 @@ static int set_monitored_resource_labels(struct flb_stackdriver *ctx, char *type
     return -1;
 }
 
+static int is_tag_match_regex(struct flb_stackdriver *ctx,
+                              const char *tag, int tag_len)
+{
+    int ret;
+    int tag_prefix_len;
+    int len_to_be_matched;
+    const char *tag_str_to_be_matcheds;
+
+    tag_prefix_len = flb_sds_len(ctx->tag_prefix);
+    tag_str_to_be_matcheds = tag + tag_prefix_len;
+    len_to_be_matched = tag_len - tag_prefix_len;
+
+    ret = flb_regex_match(ctx->regex,
+                          (unsigned char *) tag_str_to_be_matcheds,
+                          len_to_be_matched);
+
+    /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
+    return ret;
+}
+
+static int is_local_resource_id_match_regex(struct flb_stackdriver *ctx)
+{
+    int ret;
+    int prefix_len;
+    int len_to_be_matched;
+    const char *str_to_be_matcheds;
+
+    if (!ctx->local_resource_id) {
+        flb_plg_warn(ctx->ins, "local_resource_id not found in the payload");
+        return -1;
+    }
+
+    prefix_len = flb_sds_len(ctx->tag_prefix);
+    str_to_be_matcheds = ctx->local_resource_id + prefix_len;
+    len_to_be_matched = flb_sds_len(ctx->local_resource_id) - prefix_len;
+
+    ret = flb_regex_match(ctx->regex,
+                          (unsigned char *) str_to_be_matcheds,
+                          len_to_be_matched);
+
+    /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
+    return ret;
+}
+
+static void cb_results(const char *name, const char *value,
+                       size_t vlen, void *data);
+/*
+ * extract_resource_labels_from_regex(4) will only be called if the
+ * tag or local_resource_id field matches the regex rule
+ */
+static int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
+                                              const char *tag, int tag_len,
+                                              int from_tag)
+{
+    int ret = 1;
+    int prefix_len;
+    int len_to_be_matched;
+    int local_resource_id_len;
+    const char *str_to_be_matcheds;
+    struct flb_regex_search result;
+
+    prefix_len = flb_sds_len(ctx->tag_prefix);
+    if (from_tag == FLB_TRUE) {
+        local_resource_id_len = tag_len;
+        str_to_be_matcheds = tag + prefix_len;
+    }
+    else {
+        // this will be called only if the payload contains local_resource_id
+        local_resource_id_len = flb_sds_len(ctx->local_resource_id);
+        str_to_be_matcheds = ctx->local_resource_id + prefix_len;
+    }
+
+    len_to_be_matched = local_resource_id_len - prefix_len;
+    ret = flb_regex_do(ctx->regex, str_to_be_matcheds, len_to_be_matched, &result);
+    if (ret <= 0) {
+        flb_plg_warn(ctx->ins, "invalid pattern for given value %s when"
+                     " extracting resource labels", str_to_be_matcheds);
+        return -1;
+    }
+
+    flb_regex_parse(ctx->regex, &result, cb_results, ctx);
+
+    return ret;
+}
+
 static int process_local_resource_id(struct flb_stackdriver *ctx,
                                      const char *tag, int tag_len, char *type)
 {
@@ -905,88 +990,6 @@ int flb_stackdriver_regex_init(struct flb_stackdriver *ctx)
     }
 
     return 0;
-}
-
-int is_tag_match_regex(struct flb_stackdriver *ctx, const char *tag, int tag_len)
-{
-    int ret;
-    int tag_prefix_len;
-    int len_to_be_matched;
-    const char *tag_str_to_be_matcheds;
-
-    tag_prefix_len = flb_sds_len(ctx->tag_prefix);
-    tag_str_to_be_matcheds = tag + tag_prefix_len;
-    len_to_be_matched = tag_len - tag_prefix_len;
-
-    ret = flb_regex_match(ctx->regex,
-                          (unsigned char *) tag_str_to_be_matcheds,
-                          len_to_be_matched);
-
-    /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
-    return ret;
-}
-
-int is_local_resource_id_match_regex(struct flb_stackdriver *ctx)
-{
-    int ret;
-    int prefix_len;
-    int len_to_be_matched;
-    const char *str_to_be_matcheds;
-
-    if (!ctx->local_resource_id) {
-        flb_plg_warn(ctx->ins, "local_resource_id not found in the payload");
-        return -1;
-    }
-
-    prefix_len = flb_sds_len(ctx->tag_prefix);
-    str_to_be_matcheds = ctx->local_resource_id + prefix_len;
-    len_to_be_matched = flb_sds_len(ctx->local_resource_id) - prefix_len;
-
-    ret = flb_regex_match(ctx->regex,
-                          (unsigned char *) str_to_be_matcheds,
-                          len_to_be_matched);
-
-    /* 1 -> match;  0 -> doesn't match;  < 0 -> error */
-    return ret;
-}
-
-/*
- * extract_resource_labels_from_regex(4) will only be called if the
- * tag or local_resource_id field matches the regex rule
- */
-int extract_resource_labels_from_regex(struct flb_stackdriver *ctx,
-                                       const char *tag, int tag_len,
-                                       int from_tag)
-{
-    int ret = 1;
-    int prefix_len;
-    int len_to_be_matched;
-    int local_resource_id_len;
-    const char *str_to_be_matcheds;
-    struct flb_regex_search result;
-
-    prefix_len = flb_sds_len(ctx->tag_prefix);
-    if (from_tag == FLB_TRUE) {
-        local_resource_id_len = tag_len;
-        str_to_be_matcheds = tag + prefix_len;
-    }
-    else {
-        // this will be called only if the payload contains local_resource_id
-        local_resource_id_len = flb_sds_len(ctx->local_resource_id);
-        str_to_be_matcheds = ctx->local_resource_id + prefix_len;
-    }
-
-    len_to_be_matched = local_resource_id_len - prefix_len;
-    ret = flb_regex_do(ctx->regex, str_to_be_matcheds, len_to_be_matched, &result);
-    if (ret <= 0) {
-        flb_plg_warn(ctx->ins, "invalid pattern for given value %s when"
-                     " extracting resource labels", str_to_be_matcheds);
-        return -1;
-    }
-
-    flb_regex_parse(ctx->regex, &result, cb_results, ctx);
-
-    return ret;
 }
 
 static int cb_stackdriver_init(struct flb_output_instance *ins,
