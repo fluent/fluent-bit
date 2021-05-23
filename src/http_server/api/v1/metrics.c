@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_time.h>
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
@@ -239,7 +240,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     char time_str[64];
     char start_time_str[64];
     char* *metrics_arr;
-    struct timeval tp;
+    struct flb_time tp;
     struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
@@ -274,8 +275,8 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
 
     /* current time */
-    gettimeofday(&tp, NULL);
-    now = tp.tv_sec * 1000 + tp.tv_usec / 1000;
+    flb_time_get(&tp);
+    now = flb_time_to_nanosec(&tp) / 1000000; /* in milliseconds */
     time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
     start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1, "%lu", config->init_time);
 
