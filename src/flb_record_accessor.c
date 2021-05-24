@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
@@ -42,18 +43,6 @@ static struct flb_ra_parser *ra_parse_string(struct flb_record_accessor *ra,
         return NULL;
     }
 
-    return rp;
-}
-
-static struct flb_ra_parser *ra_parse_regex_id(struct flb_record_accessor *ra,
-                                               int c)
-{
-    struct flb_ra_parser *rp;
-
-    rp = flb_ra_parser_regex_id_create(c);
-    if (!rp) {
-        return NULL;
-    }
     return rp;
 }
 
@@ -130,7 +119,7 @@ static int ra_parse_buffer(struct flb_record_accessor *ra, flb_sds_t buf)
         if (isdigit(buf[n])) {
             /* Add REGEX_ID entry */
             c = atoi(buf + n);
-            rp = ra_parse_regex_id(ra, c);
+            rp = flb_ra_parser_regex_id_create(c);
             if (!rp) {
                 return -1;
             }
@@ -427,8 +416,9 @@ static flb_sds_t ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf)
 static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
                                      msgpack_object map, int *found)
 {
-    char str[32];
     int len;
+    char *js;
+    char str[32];
     flb_sds_t tmp = NULL;
     struct flb_ra_value *v;
 
@@ -444,11 +434,23 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
 
     /* Based on data type, convert to it string representation */
     if (v->type == FLB_RA_BOOL) {
-        if (v->val.boolean) {
-            tmp = flb_sds_cat(buf, "true", 4);
+        /* Check if is a map or a real bool */
+        if (v->o.type == MSGPACK_OBJECT_MAP) {
+            /* Convert msgpack map to JSON string */
+            js = flb_msgpack_to_json_str(1024, &v->o);
+            if (js) {
+                len = strlen(js);
+                tmp = flb_sds_cat(buf, js, len);
+                flb_free(js);
+            }
         }
-        else {
-            tmp = flb_sds_cat(buf, "false", 5);
+        else if (v->o.type == MSGPACK_OBJECT_BOOLEAN) {
+            if (v->val.boolean) {
+                tmp = flb_sds_cat(buf, "true", 4);
+            }
+            else {
+                tmp = flb_sds_cat(buf, "false", 5);
+            }
         }
     }
     else if (v->type == FLB_RA_INT) {
@@ -457,7 +459,12 @@ static flb_sds_t ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf,
     }
     else if (v->type == FLB_RA_FLOAT) {
         len = snprintf(str, sizeof(str) - 1, "%f", v->val.f64);
-        tmp = flb_sds_cat(buf, str, len);
+        if (len >= sizeof(str)) {
+            tmp = flb_sds_cat(buf, str, sizeof(str)-1);
+        }
+        else {
+            tmp = flb_sds_cat(buf, str, len);
+        }
     }
     else if (v->type == FLB_RA_STRING) {
         tmp = flb_sds_cat(buf, v->val.string, flb_sds_len(v->val.string));

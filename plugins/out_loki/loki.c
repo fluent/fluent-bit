@@ -599,6 +599,13 @@ static void loki_config_destroy(struct flb_loki *ctx)
     if (ctx->ra_k8s) {
         flb_ra_destroy(ctx->ra_k8s);
     }
+    if (ctx->ra_tenant_id_key) {
+        flb_ra_destroy(ctx->ra_tenant_id_key);
+        if (ctx->dynamic_tenant_id) {
+            flb_sds_destroy(ctx->dynamic_tenant_id);
+            ctx->dynamic_tenant_id = NULL;
+        }
+    }
 
     if (ctx->remove_mpa) {
         flb_mp_accessor_destroy(ctx->remove_mpa);
@@ -651,6 +658,16 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
     ret = prepare_remove_keys(ctx);
     if (ret == -1) {
         return NULL;
+    }
+
+    /* tenant_id_key */
+    if (ctx->tenant_id_key_config) {
+        ctx->ra_tenant_id_key = flb_ra_create(ctx->tenant_id_key_config, FLB_FALSE);
+        if (!ctx->ra_tenant_id_key) {
+            flb_plg_error(ctx->ins,
+                          "could not create record accessor for Tenant ID");
+        }
+        ctx->dynamic_tenant_id = NULL;
     }
 
     /* Line Format */
@@ -796,6 +813,57 @@ static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
     }
 }
 
+// seek tenant id from map and set it to ctx->dynamic_tenant_id
+static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
+{
+    struct flb_ra_value *rval = NULL;
+    flb_sds_t tmp_str;
+    int cmp_len;
+
+    rval = flb_ra_get_value_object(ctx->ra_tenant_id_key, *map);
+
+    if (rval == NULL) {
+        flb_plg_warn(ctx->ins, "the value of %s is missing",
+                     ctx->tenant_id_key_config);
+        return -1;
+    }
+    else if (rval->o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_warn(ctx->ins, "the value of %s is not string",
+                     ctx->tenant_id_key_config);
+        return -1;
+    }
+
+    tmp_str = flb_sds_create_len(rval->o.via.str.ptr,
+                                 rval->o.via.str.size);
+    if (tmp_str == NULL) {
+        flb_plg_warn(ctx->ins, "cannot create tenant ID string from record");
+        flb_ra_key_value_destroy(rval);
+        return -1;
+    }
+
+    // check if already dynamic_tenant_id is set.
+    if (ctx->dynamic_tenant_id) {
+        cmp_len = flb_sds_len(ctx->dynamic_tenant_id);
+        if ((rval->o.via.str.size == cmp_len) &&
+            flb_sds_cmp(tmp_str, ctx->dynamic_tenant_id, cmp_len) == 0) {
+            // tenant_id is same. nothing to do.
+            flb_ra_key_value_destroy(rval);
+            flb_sds_destroy(tmp_str);
+            return 0;
+        }
+        flb_plg_warn(ctx->ins, "Tenant ID is overwritten %s -> %s",
+                     ctx->dynamic_tenant_id, tmp_str);
+        flb_sds_destroy(ctx->dynamic_tenant_id);
+    }
+
+    // this sds will be released after setting http header.
+    ctx->dynamic_tenant_id = tmp_str;
+    flb_plg_debug(ctx->ins, "Tenant ID is %s", ctx->dynamic_tenant_id);
+
+    flb_ra_key_value_destroy(rval);
+    return 0;
+}
+
 static int pack_record(struct flb_loki *ctx,
                        msgpack_packer *mp_pck, msgpack_object *rec)
 {
@@ -826,6 +894,45 @@ static int pack_record(struct flb_loki *ctx,
                 return -1;
             }
             rec = &mp_buffer.data;
+        }
+    }
+
+    // Get tenant id from record.
+    if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
+        get_tenant_id_from_record(ctx, rec);
+    }
+
+    /* Drop single key */
+    if (ctx->drop_single_key == FLB_TRUE && rec->type == MSGPACK_OBJECT_MAP && rec->via.map.size == 1) {
+        if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
+            rec = &rec->via.map.ptr[0].val;
+        } else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
+            val = rec->via.map.ptr[0].val;
+
+            if (val.type == MSGPACK_OBJECT_STR) {
+                msgpack_pack_str(mp_pck, val.via.str.size);
+                msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
+            } else {
+                buf = flb_sds_create_size(size_hint);
+                if (!buf) {
+                    msgpack_unpacked_destroy(&mp_buffer);
+                    if (tmp_sbuf_data) {
+                        flb_free(tmp_sbuf_data);
+                    }
+                    return -1;
+                }
+                pack_format_line_value(buf, &val);
+                msgpack_pack_str(mp_pck, flb_sds_len(buf));
+                msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
+                flb_sds_destroy(buf);
+            }
+
+            msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
+
+            return 0;
         }
     }
 
@@ -1103,7 +1210,15 @@ static void cb_loki_flush(const void *data, size_t bytes,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
 
     /* Add X-Scope-OrgID header */
-    if (ctx->tenant_id) {
+    if (ctx->dynamic_tenant_id) {
+        flb_http_add_header(c,
+                            FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
+                            ctx->dynamic_tenant_id,
+                            flb_sds_len(ctx->dynamic_tenant_id));
+        flb_sds_destroy(ctx->dynamic_tenant_id);
+        ctx->dynamic_tenant_id = NULL; // clear for next flush
+    }
+    else if (ctx->tenant_id) {
         flb_http_add_header(c,
                             FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
                             ctx->tenant_id, flb_sds_len(ctx->tenant_id));
@@ -1140,14 +1255,14 @@ static void cb_loki_flush(const void *data, size_t bytes,
         }
         else {
             if (c->resp.payload) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             ctx->tcp_host, ctx->tcp_port,
-                             c->resp.status, c->resp.payload);
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->tcp_host, ctx->tcp_port,
+                              c->resp.status, c->resp.payload);
             }
             else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
-                             ctx->tcp_host, ctx->tcp_port,
-                             c->resp.status);
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->tcp_host, ctx->tcp_port,
+                              c->resp.status);
             }
         }
     }
@@ -1183,6 +1298,12 @@ static struct flb_config_map config_map[] = {
      "it assumes Loki is running in single-tenant mode and no X-Scope-OrgID "
      "header is sent."
     },
+    {
+     FLB_CONFIG_MAP_STR, "tenant_id_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, tenant_id_key_config),
+     "If set, X-Scope-OrgID will be the value of the key from incoming record. "
+     "It is useful to set X-Scode-OrgID dynamically."
+    },
 
     {
      FLB_CONFIG_MAP_CLIST, "labels", NULL,
@@ -1194,6 +1315,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "auto_kubernetes_labels", "false",
      0, FLB_TRUE, offsetof(struct flb_loki, auto_kubernetes_labels),
      "If set to true, it will add all Kubernetes labels to Loki labels.",
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "drop_single_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_loki, drop_single_key),
+     "If set to true and only a single key remains, the log line sent to Loki "
+     "will be the value of that key.",
     },
 
     {

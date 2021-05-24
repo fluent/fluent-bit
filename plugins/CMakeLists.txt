@@ -148,6 +148,7 @@ endif()
 
 if (FLB_SYSTEM_WINDOWS)
   REGISTER_IN_PLUGIN("in_winlog")
+  REGISTER_IN_PLUGIN("in_winstat")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 else()
   REGISTER_IN_PLUGIN("in_serial")
@@ -204,6 +205,7 @@ REGISTER_OUT_PLUGIN("out_websocket")
 REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
 REGISTER_OUT_PLUGIN("out_kinesis_firehose")
 REGISTER_OUT_PLUGIN("out_kinesis_streams")
+REGISTER_OUT_PLUGIN("out_prometheus_exporter")
 REGISTER_OUT_PLUGIN("out_s3")
 
 # FILTERS

@@ -649,9 +649,11 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     int ret;
 
     /* Process normal properties */
-    ret = flb_config_map_set(&ins->properties, ins->config_map, context);
-    if (ret == -1) {
-        return -1;
+    if (ins->config_map) {
+        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+        if (ret == -1) {
+            return -1;
+        }
     }
 
     /* Net properties */

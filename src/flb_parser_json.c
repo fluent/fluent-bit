@@ -111,6 +111,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     *out_size = tmp_out_size;
     if (mp_buf != tmp_out_buf) {
         flb_free(mp_buf);
+        mp_buf = NULL;
     }
 
     /* Do time resolution ? */
@@ -140,7 +141,13 @@ int flb_parser_json_do(struct flb_parser *parser,
 
         /* Ensure the pointer we are about to read is not NULL */
         if (k->via.str.ptr == NULL) {
-            flb_free(mp_buf);
+            if (mp_buf == tmp_out_buf) {
+                flb_free(mp_buf);
+            }
+            else {
+                flb_free(mp_buf);
+                flb_free(tmp_out_buf);
+            }
             *out_buf = NULL;
             msgpack_unpacked_destroy(&result);
             return -1;
@@ -164,6 +171,12 @@ int flb_parser_json_do(struct flb_parser *parser,
 
     /* No time_key field found */
     if (i >= map_size || !k || !v) {
+        msgpack_unpacked_destroy(&result);
+        return *out_size;
+    }
+
+    /* Ensure we have an accurate type */
+    if (v->type != MSGPACK_OBJECT_STR) {
         msgpack_unpacked_destroy(&result);
         return *out_size;
     }

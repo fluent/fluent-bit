@@ -314,6 +314,11 @@ char conf_file[] = "# Parser: no_year\n"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    /* Limit the size of the config files to 32KB. */
+    if (size > 32768) {
+        return 0;
+    }
+
     /* Write the config file to a location we know OSS-Fuzz has */
     char filename[256];
     sprintf(filename, "/tmp/libfuzzer.%d", getpid());

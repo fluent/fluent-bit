@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_ra_key.h>
@@ -52,14 +53,172 @@ static int cb_splunk_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static int pack_map_meta(struct flb_splunk *ctx,
+                         struct flb_mp_map_header *mh,
+                         msgpack_packer *mp_pck,
+                         msgpack_object map,
+                         char *tag, int tag_len)
+{
+    int c = 0;
+    int index_key_set = FLB_FALSE;
+    int sourcetype_key_set = FLB_FALSE;
+    flb_sds_t str;
+    struct mk_list *head;
+    struct flb_splunk_field *f;
+    struct flb_mp_map_header mh_fields;
+    struct flb_ra_value *rval;
+
+    /* event host */
+    if (ctx->event_host) {
+        str = flb_ra_translate(ctx->ra_event_host, tag, tag_len,
+                               map, NULL);
+        if (str) {
+            if (flb_sds_len(str) > 0) {
+                flb_mp_map_header_append(mh);
+                msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_HOST) -1);
+                msgpack_pack_str_body(mp_pck,
+                                      FLB_SPLUNK_DEFAULT_EVENT_HOST,
+                                      sizeof(FLB_SPLUNK_DEFAULT_EVENT_HOST) - 1);
+                msgpack_pack_str(mp_pck, flb_sds_len(str));
+                msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
+                c++;
+            }
+            flb_sds_destroy(str);
+        }
+    }
+
+    /* event source */
+    if (ctx->event_source) {
+        str = flb_ra_translate(ctx->ra_event_source, tag, tag_len,
+                               map, NULL);
+        if (str) {
+            if (flb_sds_len(str) > 0) {
+                flb_mp_map_header_append(mh);
+                msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCE) -1);
+                msgpack_pack_str_body(mp_pck,
+                                      FLB_SPLUNK_DEFAULT_EVENT_SOURCE,
+                                      sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCE) - 1);
+                msgpack_pack_str(mp_pck, flb_sds_len(str));
+                msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
+                c++;
+            }
+            flb_sds_destroy(str);
+        }
+    }
+
+    /* event sourcetype (key lookup) */
+    if (ctx->event_sourcetype_key) {
+        str = flb_ra_translate(ctx->ra_event_sourcetype_key, tag, tag_len,
+                               map, NULL);
+        if (str) {
+            /* sourcetype_key was found */
+            if (flb_sds_len(str) > 0) {
+                flb_mp_map_header_append(mh);
+                msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCET) -1);
+                msgpack_pack_str_body(mp_pck,
+                                      FLB_SPLUNK_DEFAULT_EVENT_SOURCET,
+                                      sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCET) - 1);
+                msgpack_pack_str(mp_pck, flb_sds_len(str));
+                msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
+                sourcetype_key_set = FLB_TRUE;
+                c++;
+            }
+            flb_sds_destroy(str);
+        }
+        /* If not found, it will fallback to the value set in event_sourcetype */
+    }
+
+    if (sourcetype_key_set == FLB_FALSE && ctx->event_sourcetype) {
+        flb_mp_map_header_append(mh);
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCET) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_EVENT_SOURCET,
+                              sizeof(FLB_SPLUNK_DEFAULT_EVENT_SOURCET) - 1);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->event_sourcetype));
+        msgpack_pack_str_body(mp_pck,
+                              ctx->event_sourcetype, flb_sds_len(ctx->event_sourcetype));
+        c++;
+    }
+
+    /* event index (key lookup) */
+    if (ctx->event_index_key) {
+        str = flb_ra_translate(ctx->ra_event_index_key, tag, tag_len,
+                               map, NULL);
+        if (str) {
+            /* sourcetype_key was found */
+            if (flb_sds_len(str) > 0) {
+                flb_mp_map_header_append(mh);
+                msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_INDEX) -1);
+                msgpack_pack_str_body(mp_pck,
+                                      FLB_SPLUNK_DEFAULT_EVENT_INDEX,
+                                      sizeof(FLB_SPLUNK_DEFAULT_EVENT_INDEX) - 1);
+                msgpack_pack_str(mp_pck, flb_sds_len(str));
+                msgpack_pack_str_body(mp_pck, str, flb_sds_len(str));
+                index_key_set = FLB_TRUE;
+                c++;
+            }
+            flb_sds_destroy(str);
+        }
+        /* If not found, it will fallback to the value set in event_index */
+    }
+
+    if (index_key_set == FLB_FALSE && ctx->event_index) {
+        flb_mp_map_header_append(mh);
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_INDEX) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_EVENT_INDEX,
+                              sizeof(FLB_SPLUNK_DEFAULT_EVENT_INDEX) - 1);
+        msgpack_pack_str(mp_pck, flb_sds_len(ctx->event_index));
+        msgpack_pack_str_body(mp_pck,
+                              ctx->event_index, flb_sds_len(ctx->event_index));
+        c++;
+    }
+
+    /* event 'fields' */
+    if (mk_list_size(&ctx->fields) > 0) {
+        flb_mp_map_header_append(mh);
+        msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT_FIELDS) -1);
+        msgpack_pack_str_body(mp_pck,
+                              FLB_SPLUNK_DEFAULT_EVENT_FIELDS,
+                              sizeof(FLB_SPLUNK_DEFAULT_EVENT_FIELDS) - 1);
+
+        /* Pack map */
+        flb_mp_map_header_init(&mh_fields, mp_pck);
+
+        mk_list_foreach(head, &ctx->fields) {
+            f = mk_list_entry(head, struct flb_splunk_field, _head);
+            rval = flb_ra_get_value_object(f->ra, map);
+            if (!rval) {
+                continue;
+            }
+
+            flb_mp_map_header_append(&mh_fields);
+
+            /* key */
+            msgpack_pack_str(mp_pck, flb_sds_len(f->key_name));
+            msgpack_pack_str_body(mp_pck, f->key_name, flb_sds_len(f->key_name));
+
+            /* value */
+            msgpack_pack_object(mp_pck, rval->o);
+            flb_ra_key_value_destroy(rval);
+        }
+        flb_mp_map_header_end(&mh_fields);
+        c++;
+    }
+
+    return 0;
+}
+
 static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
-                    struct flb_time *tm, msgpack_object map)
+                    struct flb_time *tm, msgpack_object map,
+                    char *tag, int tag_len)
 {
     int i;
     double t;
     int map_size;
     msgpack_object k;
     msgpack_object v;
+    struct flb_mp_map_header mh;
 
     t = flb_time_to_double(tm);
     map_size = map.via.map.size;
@@ -68,20 +227,28 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
         msgpack_pack_map(mp_pck, map_size /* all k/v */);
     }
     else {
-        msgpack_pack_map(mp_pck, 2 /* time + event */);
+        flb_mp_map_header_init(&mh, mp_pck);
 
         /* Append the time key */
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
         msgpack_pack_str_body(mp_pck,
                               FLB_SPLUNK_DEFAULT_TIME,
                               sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
         msgpack_pack_double(mp_pck, t);
 
+        /* Pack Splunk metadata */
+        pack_map_meta(ctx, &mh, mp_pck, map, tag, tag_len);
+
         /* Add k/v pairs under the key 'event' instead of to the top level object */
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT) -1);
         msgpack_pack_str_body(mp_pck,
                               FLB_SPLUNK_DEFAULT_EVENT,
                               sizeof(FLB_SPLUNK_DEFAULT_EVENT) - 1);
+
+        flb_mp_map_header_end(&mh);
+
         msgpack_pack_map(mp_pck, map_size);
     }
 
@@ -99,41 +266,52 @@ static int pack_map(struct flb_splunk *ctx, msgpack_packer *mp_pck,
 
 
 static inline int pack_event_key(struct flb_splunk *ctx, msgpack_packer *mp_pck,
-                                 struct flb_time *tm, msgpack_object map)
+                                 struct flb_time *tm, msgpack_object map,
+                                 char *tag, int tag_len)
 {
     double t;
-    struct flb_ra_value *rval;
+    struct flb_mp_map_header mh;
+    flb_sds_t val;
 
     t = flb_time_to_double(tm);
-    rval = flb_ra_get_value_object(ctx->ra_event_key, map);
-    if (!rval) {
+    val = flb_ra_translate(ctx->ra_event_key, tag, tag_len, map, NULL);
+    if (!val || flb_sds_len(val) == 0) {
         return -1;
     }
 
     if (ctx->splunk_send_raw == FLB_FALSE) {
-        msgpack_pack_map(mp_pck, 2 /* time + raw event key value */);
+        flb_mp_map_header_init(&mh, mp_pck);
 
         /* Append the time key */
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_TIME) -1);
         msgpack_pack_str_body(mp_pck,
                               FLB_SPLUNK_DEFAULT_TIME,
                               sizeof(FLB_SPLUNK_DEFAULT_TIME) - 1);
         msgpack_pack_double(mp_pck, t);
 
+        /* Pack Splunk metadata */
+        pack_map_meta(ctx, &mh, mp_pck, map, tag, tag_len);
+
         /* Add k/v pairs under the key 'event' instead of to the top level object */
+        flb_mp_map_header_append(&mh);
         msgpack_pack_str(mp_pck, sizeof(FLB_SPLUNK_DEFAULT_EVENT) -1);
         msgpack_pack_str_body(mp_pck,
                               FLB_SPLUNK_DEFAULT_EVENT,
                               sizeof(FLB_SPLUNK_DEFAULT_EVENT) - 1);
+
+        flb_mp_map_header_end(&mh);
     }
 
-    msgpack_pack_object(mp_pck, rval->o);
+    msgpack_pack_str(mp_pck, flb_sds_len(val));
+    msgpack_pack_str_body(mp_pck, val, flb_sds_len(val));
+    flb_sds_destroy(val);
 
-    flb_ra_key_value_destroy(rval);
     return 0;
 }
 
 static inline int splunk_format(const void *in_buf, size_t in_bytes,
+                                char *tag, int tag_len,
                                 char **out_buf, size_t *out_size,
                                 struct flb_splunk *ctx)
 {
@@ -181,17 +359,17 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
 
         if (ctx->event_key) {
             /* Pack the value of a event key */
-            ret = pack_event_key(ctx, &mp_pck, &tm, map);
+            ret = pack_event_key(ctx, &mp_pck, &tm, map, tag, tag_len);
         }
         else {
             /* Pack as a map */
-            ret = pack_map(ctx, &mp_pck, &tm, map);
+            ret = pack_map(ctx, &mp_pck, &tm, map, tag, tag_len);
         }
 
         /* Validate packaging */
         if (ret != 0) {
             /* Format invalid record */
-            err = flb_msgpack_to_json_str(1048, &map);
+            err = flb_msgpack_to_json_str(2048, &map);
             if (err) {
                 /* Print error and continue processing other records */
                 flb_plg_warn(ctx->ins, "could not process record: %s", err);
@@ -267,7 +445,7 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     }
 
     /* Convert binary logs into a JSON payload */
-    ret = splunk_format(data, bytes, &buf_data, &buf_size, ctx);
+    ret = splunk_format(data, bytes, (char *) tag, tag_len, &buf_data, &buf_size, ctx);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -304,7 +482,7 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
-    flb_http_buffer_size(c, FLB_HTTP_DATA_SIZE_MAX);
+    flb_http_buffer_size(c, ctx->buffer_size);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     /* Try to use http_user and http_passwd if not, fallback to auth_header */
@@ -407,9 +585,65 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_SIZE, "http_buffer_size", FLB_SPLUNK_DEFAULT_HTTP_MAX,
+     0, FLB_TRUE, offsetof(struct flb_splunk, buffer_size),
+     "Specify the buffer size used to read the response from the Splunk HTTP "
+     "service. This option is useful for debugging purposes where is required to read "
+     "full responses, note that response size grows depending of the number of records "
+     "inserted. To set an unlimited amount of memory set this value to 'false', "
+     "otherwise the value must be according to the Unit Size specification"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "event_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_splunk, event_key),
      "Specify the key name that will be used to send a single value as part of the record."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_host", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_host),
+     "Set the host value to the event data. The value allows a record accessor "
+     "pattern."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_source", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_source),
+     "Set the source value to assign to the event data."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_sourcetype", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_sourcetype),
+     "Set the sourcetype value to assign to the event data."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_sourcetype_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_sourcetype_key),
+     "Set a record key that will populate 'sourcetype'. If the key is found, it will "
+     "have precedence over the value set in 'event_sourcetype'."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_index", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_index),
+     "The name of the index by which the event data is to be indexed."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "event_index_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_splunk, event_index_key),
+     "Set a record key that will populate the 'index' field. If the key is found, "
+     "it will have precedence over the value set in 'event_index'."
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_2, "event_field", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_splunk, event_fields),
+     "Set event fields for the record. This option can be set multiple times and "
+     "the format is 'key_name record_accessor_pattern'."
     },
 
     {
@@ -446,7 +680,9 @@ static int cb_splunk_format_test(struct flb_config *config,
                                  void **out_data, size_t *out_size)
 {
     struct flb_splunk *ctx = plugin_context;
-    return splunk_format(data, bytes, (char**)out_data, out_size,ctx);
+
+    return splunk_format(data, bytes, (char *) tag, tag_len,
+                         (char**) out_data, out_size,ctx);
 }
 
 struct flb_output_plugin out_splunk_plugin = {

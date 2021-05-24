@@ -568,11 +568,44 @@ static int cb_lua_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "script", NULL,
+     0, FLB_FALSE, 0,
+     "The path of lua script."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "call", NULL,
+     0, FLB_TRUE, offsetof(struct lua_filter, call),
+     "Lua function name that will be triggered to do filtering."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "type_int_key", NULL,
+     0, FLB_FALSE, 0,
+     "If these keys are matched, the fields are converted to integer. "
+     "If more than one key, delimit by space."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "protected_mode", "true",
+     0, FLB_TRUE, offsetof(struct lua_filter, protected_mode),
+     "If enabled, Lua script will be executed in protected mode. "
+     "It prevents to crash when invalid Lua script is executed."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "time_as_table", "false",
+     0, FLB_TRUE, offsetof(struct lua_filter, time_as_table),
+     "If enabled, Fluent-bit will pass the timestamp as a Lua table "
+     "with keys \"sec\" for seconds since epoch and \"nsec\" for nanoseconds."
+    },
+    {0}
+};
+
 struct flb_filter_plugin filter_lua_plugin = {
     .name         = "lua",
     .description  = "Lua Scripting Filter",
     .cb_init      = cb_lua_init,
     .cb_filter    = cb_lua_filter,
     .cb_exit      = cb_lua_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

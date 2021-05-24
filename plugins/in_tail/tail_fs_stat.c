@@ -178,10 +178,12 @@ static int tail_fs_check(struct flb_input_instance *ins,
 }
 
 /* File System events based on stat(2) */
-int flb_tail_fs_init(struct flb_input_instance *in,
-                     struct flb_tail_config *ctx, struct flb_config *config)
+int flb_tail_fs_stat_init(struct flb_input_instance *in,
+                          struct flb_tail_config *ctx, struct flb_config *config)
 {
     int ret;
+
+    flb_plg_debug(ctx->ins, "flb_tail_fs_stat_init() initializing stat tail input");
 
     /* Set a manual timer to collect events every 0.250 seconds */
     ret = flb_input_set_collector_time(in, tail_fs_event,
@@ -202,19 +204,19 @@ int flb_tail_fs_init(struct flb_input_instance *in,
     return 0;
 }
 
-void flb_tail_fs_pause(struct flb_tail_config *ctx)
+void flb_tail_fs_stat_pause(struct flb_tail_config *ctx)
 {
     flb_input_collector_pause(ctx->coll_fd_fs1, ctx->ins);
     flb_input_collector_pause(ctx->coll_fd_fs2, ctx->ins);
 }
 
-void flb_tail_fs_resume(struct flb_tail_config *ctx)
+void flb_tail_fs_stat_resume(struct flb_tail_config *ctx)
 {
     flb_input_collector_resume(ctx->coll_fd_fs1, ctx->ins);
     flb_input_collector_resume(ctx->coll_fd_fs2, ctx->ins);
 }
 
-int flb_tail_fs_add(struct flb_tail_file *file)
+int flb_tail_fs_stat_add(struct flb_tail_file *file)
 {
     int ret;
     struct fs_stat *fst;
@@ -237,7 +239,7 @@ int flb_tail_fs_add(struct flb_tail_file *file)
     return 0;
 }
 
-int flb_tail_fs_remove(struct flb_tail_file *file)
+int flb_tail_fs_stat_remove(struct flb_tail_file *file)
 {
     if (file->tail_mode == FLB_TAIL_EVENT) {
         flb_free(file->fs_backend);
@@ -245,7 +247,7 @@ int flb_tail_fs_remove(struct flb_tail_file *file)
     return 0;
 }
 
-int flb_tail_fs_exit(struct flb_tail_config *ctx)
+int flb_tail_fs_stat_exit(struct flb_tail_config *ctx)
 {
     (void) ctx;
     return 0;

@@ -457,6 +457,8 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event_loop *evl;
     struct flb_sched *sched;
 
+    /* Initialize the networking layer */
+    flb_net_init();
     flb_pack_set_null_as_nan(config->convert_nan_to_null);
 
     /* Create the event loop and set it in the global configuration */
@@ -715,11 +717,6 @@ int flb_engine_shutdown(struct flb_config *config)
 
     /* router */
     flb_router_exit(config);
-
-#ifdef FLB_HAVE_PARSER
-    /* parsers */
-    flb_parser_exit(config);
-#endif
 
     /* cleanup plugins */
     flb_filter_exit(config);

@@ -18,6 +18,27 @@ void cb_worker(void *data)
     mk_info("[api test] test worker callback; data=%p", data);
 }
 
+
+void cb_sp_test_task_detail(mk_request_t *request, void *data)
+{
+    int i;
+    (void) data;
+
+    mk_http_status(request, 200);
+    mk_http_send(request, "CB_SP_TEST_TASK_DETAIL", strlen("CB_SP_TEST_TASK_DETAIL"), NULL);
+    mk_http_done(request);
+}
+
+void cb_sp_test_task_main(mk_request_t *request, void *data)
+{
+    int i;
+    (void) data;
+
+    mk_http_status(request, 200);
+    mk_http_send(request, "CB_SP_TEST_TASK_MAIN", strlen("CB_SP_TEST_TASK_MAIN"), NULL);
+    mk_http_done(request);
+}
+
 void cb_main(mk_request_t *request, void *data)
 {
     int i;
@@ -133,9 +154,17 @@ int main()
     mk_vhost_set(ctx, vid,
                  "Name", "monotop",
                  NULL);
+
+    mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task/[A-Za-z_][0-9A-Za-z_\\-]*", 
+                     cb_sp_test_task_detail, NULL);
+    
+    mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task",
+                     cb_sp_test_task_main, NULL);
+
     mk_vhost_handler(ctx, vid, "/test_chunks", cb_test_chunks, NULL);
     mk_vhost_handler(ctx, vid, "/test_big_chunk", cb_test_big_chunk, NULL);
     mk_vhost_handler(ctx, vid, "/", cb_main, NULL);
+
 
     mk_worker_callback(ctx,
                        cb_worker,

@@ -21,8 +21,8 @@
 #ifndef FLB_IN_FW_CONN_H
 #define FLB_IN_FW_CONN_H
 
-#define FLB_IN_FW_CHUNK_SIZE      1024000 /* 1MB */
-#define FLB_IN_FW_CHUNK_MAX_SIZE  FLB_IN_FW_CHUNK_SIZE * 6 /* 6M */
+#define FLB_IN_FW_CHUNK_SIZE      "1024000" /* 1MB */
+#define FLB_IN_FW_CHUNK_MAX_SIZE  "6144000" /* =FLB_IN_FW_CHUNK_SIZE * 6.  6MB */
 
 enum {
     FW_NEW        = 1,  /* it's a new connection                */

@@ -168,9 +168,14 @@ struct flb_config *flb_config_init()
 #endif
 
     config->http_proxy = getenv("HTTP_PROXY");
-    if (config->http_proxy != NULL && strcmp(config->http_proxy, "") == 0) {
+    if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
         /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
         config->http_proxy = NULL;
+    }
+    config->no_proxy = getenv("NO_PROXY");
+    if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
+        /* NoProxy  should not be set when the `NO_PROXYY` is set to "" or there is no Proxy. */
+        config->no_proxy = NULL;
     }
 
     config->cio          = NULL;
@@ -352,6 +357,11 @@ void flb_config_exit(struct flb_config *config)
     }
 #endif
 
+#ifdef FLB_HAVE_PARSER
+    /* parsers */
+    flb_parser_exit(config);
+#endif
+
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
@@ -412,6 +422,9 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         }
         else if (strcasecmp(v_str, "trace") == 0) {
             config->verbose = 5;
+        }
+        else if (strcasecmp(v_str, "off") == 0) {
+            config->verbose = FLB_LOG_OFF;
         }
         else {
             return -1;
