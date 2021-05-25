@@ -95,6 +95,7 @@ struct flb_ml *flb_ml_mode_docker(struct flb_config *config,
                        FLB_FALSE,               /* negate         */
                        flush_ms,                /* flush_ms       */
                        "log",                   /* key_content    */
+                       "stream",                /* key_group      */
                        NULL,                    /* key_pattern    */
                        parser);                 /* parser         */
     if (!ml) {

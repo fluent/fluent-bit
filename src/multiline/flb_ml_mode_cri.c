@@ -64,6 +64,7 @@ struct flb_ml *flb_ml_mode_cri(struct flb_config *config, int flush_ms)
                        FLB_FALSE,           /* negate    */
                        flush_ms,            /* flush_ms  */
                        "log",               /* key_content */
+                       "stream",            /* key_group   */
                        "_p",                /* key_pattern */
                        parser);             /* parser */
     if (!ml) {

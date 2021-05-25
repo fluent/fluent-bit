@@ -34,8 +34,8 @@ static void rule_error(struct flb_ml *ml)
 
 /* Our first multiline mode: 'docker' */
 struct flb_ml *flb_ml_mode_python(struct flb_config *config,
-                                                int flush_ms,
-                                                char *key)
+                                  int flush_ms,
+                                  char *key)
 {
     int ret;
     struct flb_ml *ml;
@@ -46,6 +46,7 @@ struct flb_ml *flb_ml_mode_python(struct flb_config *config,
                        FLB_FALSE,       /* negate    */
                        flush_ms,        /* flush_ms  */
                        key,             /* key_content */
+                       NULL,            /* key_group   */
                        NULL,            /* key_pattern */
                        NULL);           /* parser */
 

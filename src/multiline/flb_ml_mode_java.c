@@ -45,6 +45,7 @@ struct flb_ml *flb_ml_mode_java(struct flb_config *config, int flush_ms,
                        FLB_FALSE,       /* negate    */
                        flush_ms,        /* flush_ms  */
                        key,             /* key_content */
+                       NULL,            /* key_group   */
                        NULL,            /* key_pattern */
                        NULL);           /* parser */
 
