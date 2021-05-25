@@ -87,14 +87,15 @@ static inline int match_negate(struct flb_ml *ml, int matched)
 }
 
 int flb_ml_register_context(struct flb_ml *ml, struct flb_ml_stream *mst,
+                            struct flb_ml_stream_group *group,
                             struct flb_time *tm, msgpack_object *map)
 {
     if (tm) {
-        flb_time_copy(&mst->mp_time, tm);
+        flb_time_copy(&group->mp_time, tm);
     }
 
     if (map) {
-        msgpack_pack_object(&mst->mp_pck, *map);
+        msgpack_pack_object(&group->mp_pck, *map);
     }
 
     return 0;
@@ -111,13 +112,20 @@ static int package_content(struct flb_ml *ml,
                            struct flb_ml_stream *mst,
                            msgpack_object *full_map,
                            void *buf, size_t size, struct flb_time *tm,
-                           msgpack_object *val_content, msgpack_object *val_pattern)
+                           msgpack_object *val_content,
+                           msgpack_object *val_pattern,
+                           msgpack_object *val_group)
 {
     int len;
     int ret;
     int rule_match = FLB_FALSE;
+    int processed = FLB_FALSE;
     size_t offset = 0;
     msgpack_object *val = val_content;
+    struct flb_ml_stream_group *group;
+
+    /* Get stream group */
+    group = flb_ml_stream_group_get(ml, mst, val_group);
 
     if (val_pattern) {
         val = val_pattern;
@@ -127,8 +135,9 @@ static int package_content(struct flb_ml *ml,
 
     }
     else if (ml->type == FLB_ML_REGEX) {
-        ret = flb_ml_rule_process(ml, mst, full_map, buf, size, tm,
+        ret = flb_ml_rule_process(ml, mst, group, full_map, buf, size, tm,
                                   val_content, val_pattern);
+        processed = FLB_TRUE;
     }
     else if (ml->type == FLB_ML_ENDSWITH) {
         len = flb_sds_len(ml->match_str);
@@ -143,19 +152,20 @@ static int package_content(struct flb_ml *ml,
                 rule_match = match_negate(ml, FLB_FALSE);
             }
 
-            if (mst->mp_sbuf.size == 0) {
-                flb_ml_register_context(ml, mst, tm, full_map);
+            if (group->mp_sbuf.size == 0) {
+                flb_ml_register_context(ml, mst, group, tm, full_map);
             }
 
             /* Concatenate value */
-            flb_sds_cat(mst->buf,
-                        val_content->via.str.ptr,
-                        val_content->via.str.size);
+            flb_sds_cat_safe(&group->buf,
+                             val_content->via.str.ptr,
+                             val_content->via.str.size);
 
             /* on ENDSWITH mode, a rule match means flush the content */
             if (rule_match) {
-                flb_ml_flush(ml, mst);
+                flb_ml_flush(ml, mst, group);
             }
+            processed = FLB_TRUE;
         }
     }
     else if (ml->type == FLB_ML_EQ) {
@@ -168,19 +178,33 @@ static int package_content(struct flb_ml *ml,
             rule_match = match_negate(ml, FLB_FALSE);
         }
 
-        if (mst->mp_sbuf.size == 0) {
-            flb_ml_register_context(ml, mst, tm, full_map);
+        if (group->mp_sbuf.size == 0) {
+            flb_ml_register_context(ml, mst, group, tm, full_map);
         }
 
         /* Concatenate value */
-        flb_sds_cat(mst->buf,
-                    val_content->via.str.ptr,
-                    val_content->via.str.size);
+        flb_sds_cat_safe(&group->buf,
+                         val_content->via.str.ptr,
+                         val_content->via.str.size);
 
         /* on ENDSWITH mode, a rule match means flush the content */
         if (rule_match) {
-            flb_ml_flush(ml, mst);
+            flb_ml_flush(ml, mst, group);
         }
+        processed = FLB_TRUE;
+    }
+
+    /*
+     * If the incoming buffer could not be processed on any of the rules above,
+     * process it as a raw text generating a single record with the given
+     * content.
+     */
+    if (!processed) {
+        flb_ml_flush(ml, mst, group);
+
+        /* Concatenate value */
+        flb_sds_cat_safe(&group->buf, buf, size);
+        flb_ml_flush(ml, mst, group);
     }
 
     return rule_match;
@@ -235,17 +259,19 @@ static int process_append(struct flb_ml *ml,
     int ret;
     int id_content = -1;
     int id_pattern = -1;
+    int id_group = -1;
     int unpacked = FLB_FALSE;
     size_t off = 0;
     msgpack_object *full_map = NULL;
-    msgpack_object *val_content;
-    msgpack_object val_pattern;
+    msgpack_object *val_content = NULL;
+    msgpack_object *val_pattern = NULL;
+    msgpack_object *val_group = NULL;
     msgpack_unpacked result;
     struct flb_time tm_record;
 
     /* Lookup the key */
     if (type == FLB_ML_TYPE_TEXT) {
-        package_content(ml, mst, NULL, buf, size, tm, NULL, NULL);
+        package_content(ml, mst, NULL, buf, size, tm, NULL, NULL, NULL);
         return 0;
     }
     else if (type == FLB_ML_TYPE_RECORD) {
@@ -285,21 +311,35 @@ static int process_append(struct flb_ml *ml,
         return -1;
     }
     val_content = &full_map->via.map.ptr[id_content].val;
+    if (val_content->type != MSGPACK_OBJECT_STR) {
+        val_content = NULL;
+    }
 
     /* Optional: Lookup for key_pattern entry */
     if (ml->key_pattern) {
         id_pattern = get_key_id(full_map, ml->key_pattern);
         if (id_pattern >= 0) {
-            val_pattern = full_map->via.map.ptr[id_pattern].val;
+            val_pattern = &full_map->via.map.ptr[id_pattern].val;
+            if (val_pattern->type != MSGPACK_OBJECT_STR) {
+                val_pattern = NULL;
+            }
         }
     }
 
-    if (id_pattern >= 0) {
-        package_content(ml, mst, full_map, buf, size, tm, val_content, &val_pattern);
+    /* Optional: lookup for key_group entry */
+    if (ml->key_group) {
+        id_group = get_key_id(full_map, ml->key_group);
+        if (id_group >= 0) {
+            val_group = &full_map->via.map.ptr[id_group].val;
+            if (val_group->type != MSGPACK_OBJECT_STR) {
+                val_group = NULL;
+            }
+        }
     }
-    else {
-        package_content(ml, mst, full_map, buf, size, tm, val_content, NULL);
-    }
+
+    /* Package the content */
+    package_content(ml, mst, full_map, buf, size, tm,
+                    val_content, val_pattern, val_group);
 
     if (unpacked) {
         msgpack_unpacked_destroy(&result);
@@ -331,7 +371,9 @@ int flb_ml_append(struct flb_ml *ml, struct flb_ml_stream *mst,
             type = FLB_ML_TYPE_MAP;
         }
         else {
-            return -1;
+            out_buf = buf;
+            out_size = size;
+            //return -1;
         }
     }
     else if (type == FLB_ML_TYPE_TEXT) {
@@ -340,7 +382,7 @@ int flb_ml_append(struct flb_ml *ml, struct flb_ml_stream *mst,
     }
 
     if (flb_time_to_double(&out_time) == 0.0) {
-        if (tm) {
+        if (tm && flb_time_to_double(tm) != 0.0) {
             flb_time_copy(&out_time, tm);
         }
         else {
@@ -392,6 +434,7 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx,
                              int type, char *match_str, int negate,
                              int flush_ms,
                              char *key_content,
+                             char *key_group,
                              char *key_pattern,
                              struct flb_parser *parser)
 {
@@ -422,6 +465,14 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx,
         }
     }
 
+    if (key_group) {
+        ml->key_group = flb_sds_create(key_group);
+        if (!ml->key_group) {
+            flb_ml_destroy(ml);
+            return NULL;
+        }
+    }
+
     if (key_pattern) {
         ml->key_pattern = flb_sds_create(key_pattern);
         if (!ml->key_pattern) {
@@ -441,11 +492,18 @@ int flb_ml_destroy(struct flb_ml *ml)
     struct mk_list *head;
     struct flb_ml_stream *mst;
 
+    if (!ml) {
+        return 0;
+    }
+
     if (ml->match_str) {
         flb_sds_destroy(ml->match_str);
     }
     if (ml->key_content) {
         flb_sds_destroy(ml->key_content);
+    }
+    if (ml->key_group) {
+        flb_sds_destroy(ml->key_group);
     }
     if (ml->key_pattern) {
         flb_sds_destroy(ml->key_pattern);
@@ -464,7 +522,8 @@ int flb_ml_destroy(struct flb_ml *ml)
     return 0;
 }
 
-int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst)
+int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst,
+                 struct flb_ml_stream_group *group)
 {
     int i;
     int ret;
@@ -478,20 +537,22 @@ int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst)
     msgpack_packer mp_pck;
     msgpack_unpacked result;
 
+    len = flb_sds_len(group->buf);
+
     /* init msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* compose final record if we have a first line context */
-    if (mst->mp_sbuf.size > 0) {
+    if (group->mp_sbuf.size > 0) {
         msgpack_unpacked_init(&result);
         ret = msgpack_unpack_next(&result,
-                                  mst->mp_sbuf.data, mst->mp_sbuf.size,
+                                  group->mp_sbuf.data, group->mp_sbuf.size,
                                   &off);
         if (ret != MSGPACK_UNPACK_SUCCESS) {
             flb_error("[multiline] could not unpack first line state buffer");
             msgpack_unpacked_destroy(&result);
-            mst->mp_sbuf.size = 0;
+            group->mp_sbuf.size = 0;
             return -1;
         }
         map = result.data;
@@ -499,13 +560,13 @@ int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst)
         if (map.type != MSGPACK_OBJECT_MAP) {
             flb_error("[multiline] expected MAP type in first line state buffer");
             msgpack_unpacked_destroy(&result);
-            mst->mp_sbuf.size = 0;
+            group->mp_sbuf.size = 0;
             return -1;
         }
 
         /* Take the first line keys and repack */
         msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&mst->mp_time, &mp_pck, 0);
+        flb_time_append_to_msgpack(&group->mp_time, &mp_pck, 0);
 
         len = flb_sds_len(ml->key_content);
         size = map.via.map.size;
@@ -528,9 +589,9 @@ int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst)
                 msgpack_pack_object(&mp_pck, k);
 
                 /* value */
-                len = flb_sds_len(mst->buf);
+                len = flb_sds_len(group->buf);
                 msgpack_pack_str(&mp_pck, len);
-                msgpack_pack_str_body(&mp_pck, mst->buf, len);
+                msgpack_pack_str_body(&mp_pck, group->buf, len);
             }
             else {
                 /* key / val */
@@ -539,12 +600,12 @@ int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst)
             }
         }
         msgpack_unpacked_destroy(&result);
-        mst->mp_sbuf.size = 0;
+        group->mp_sbuf.size = 0;
     }
-    else {
+    else if (len > 0) {
         /* Pack raw content as Fluent Bit record */
         msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&mst->mp_time, &mp_pck, 0);
+        flb_time_append_to_msgpack(&group->mp_time, &mp_pck, 0);
         msgpack_pack_map(&mp_pck, 1);
 
         /* key */
@@ -559,14 +620,146 @@ int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst)
         }
 
         /* val */
-        len = flb_sds_len(mst->buf);
+        len = flb_sds_len(group->buf);
         msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, mst->buf, len);
+        msgpack_pack_str_body(&mp_pck, group->buf, len);
     }
 
-    mst->cb_flush(ml, mst, mst->cb_data, mp_sbuf.data, mp_sbuf.size);
+    if (mp_sbuf.size > 0) {
+        mst->cb_flush(ml, mst, mst->cb_data, mp_sbuf.data, mp_sbuf.size);
+    }
+
     msgpack_sbuffer_destroy(&mp_sbuf);
-    flb_sds_len_set(mst->buf, 0);
+    flb_sds_len_set(group->buf, 0);
+
+    return 0;
+}
+
+static struct flb_ml_stream_group *stream_group_create(struct flb_ml *ml,
+                                                       struct flb_ml_stream *mst,
+                                                       char *name, int len)
+{
+    struct flb_ml_stream_group *group;
+
+    if (!name) {
+        name = "_default";
+    }
+
+    group = flb_calloc(1, sizeof(struct flb_ml_stream_group));
+    if (!group) {
+        flb_errno();
+        return NULL;
+    }
+    group->name = flb_sds_create_len(name, len);
+    if (!group->name) {
+        flb_free(group);
+        return NULL;
+    }
+
+    /* status */
+    group->first_line = FLB_TRUE;
+
+    /* multiline buffer */
+    group->buf = flb_sds_create_size(FLB_ML_BUF_SIZE);
+    if (!group->buf) {
+        flb_error("cannot allocate multiline stream buffer in group %s", name);
+        flb_sds_destroy(group->name);
+        flb_free(group);
+        return NULL;
+    }
+
+    /* msgpack buffer */
+    msgpack_sbuffer_init(&group->mp_sbuf);
+    msgpack_packer_init(&group->mp_pck, &group->mp_sbuf, msgpack_sbuffer_write);
+
+    mk_list_add(&group->_head, &mst->groups);
+
+    return group;
+}
+
+struct flb_ml_stream_group *flb_ml_stream_group_get(struct flb_ml *ml,
+                                                    struct flb_ml_stream *mst,
+                                                    msgpack_object *group_name)
+{
+    int len;
+    char *name;
+    struct mk_list *head;
+    struct flb_ml_stream_group *group = NULL;
+
+    /* If key_group was not defined, we already have a default group */
+    if (!ml->key_group) {
+        group = mk_list_entry_first(&mst->groups,
+                                    struct flb_ml_stream_group,
+                                    _head);
+        return group;
+    }
+
+    /* Lookup for a candidate group */
+    len = group_name->via.str.size;
+    name = (char *)group_name->via.str.ptr;
+
+    mk_list_foreach(head, &mst->groups) {
+        group = mk_list_entry(head, struct flb_ml_stream_group, _head);
+        if (flb_sds_cmp(group->name, name, len) == 0) {
+            return group;
+        }
+        else {
+            group = NULL;
+            continue;
+        }
+    }
+
+    /* No group has been found, create a new one */
+    if (mk_list_size(&mst->groups) >= FLB_ML_MAX_GROUPS) {
+        flb_error("[multiline] stream %s exceeded number of allowed groups (%i)",
+                  mst->name, FLB_ML_MAX_GROUPS);
+        return NULL;
+    }
+
+    group = stream_group_create(ml, mst, name, len);
+    return group;
+}
+
+static void stream_group_destroy(struct flb_ml_stream_group *group)
+{
+    if (group->name) {
+        flb_sds_destroy(group->name);
+    }
+    if (group->buf) {
+        flb_sds_destroy(group->buf);
+    }
+    msgpack_sbuffer_destroy(&group->mp_sbuf);
+    mk_list_del(&group->_head);
+    flb_free(group);
+}
+
+static void stream_group_destroy_all(struct flb_ml_stream *mst)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_ml_stream_group *group;
+
+    mk_list_foreach_safe(head, tmp, &mst->groups) {
+        group = mk_list_entry(head, struct flb_ml_stream_group, _head);
+        stream_group_destroy(group);
+    }
+}
+
+static int stream_group_init(struct flb_ml *ml, struct flb_ml_stream *mst)
+{
+    struct flb_ml_stream_group *group = NULL;
+
+    mk_list_init(&mst->groups);
+    if (!ml->key_group) {
+        /* create a default group */
+        group = stream_group_create(ml, mst, NULL, 0);
+        if (!group) {
+            flb_error("[multiline] error initializing default group for "
+                      "stream '%s'", mst->name);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -579,6 +772,7 @@ struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
                                                             size_t buf_size),
                                            void *cb_data)
 {
+    int ret;
     char tmp[64];
     struct flb_ml_stream *mst;
 
@@ -599,14 +793,6 @@ struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
         return NULL;
     }
 
-    /* status */
-    mst->first_line = FLB_TRUE;
-    mst->buf = flb_sds_create_size(FLB_ML_BUF_SIZE);
-    if (!mst->buf) {
-        flb_error("cannot allocate multiline stream buffer");
-        flb_free(mst);
-        return NULL;
-    }
 
     /* Flush Callback and opaque data type */
     if (cb_flush) {
@@ -617,9 +803,11 @@ struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
     }
     mst->cb_data = cb_data;
 
-    /* msgpack buffers */
-    msgpack_sbuffer_init(&mst->mp_sbuf);
-    msgpack_packer_init(&mst->mp_pck, &mst->mp_sbuf, msgpack_sbuffer_write);
+    ret = stream_group_init(ml, mst);
+    if (ret != 0) {
+        flb_free(mst);
+        return NULL;
+    }
 
     mk_list_add(&mst->_head, &ml->streams);
     return mst;
@@ -628,15 +816,13 @@ struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
 int flb_ml_stream_destroy(struct flb_ml_stream *mst)
 {
     mk_list_del(&mst->_head);
-
     if (mst->name) {
         flb_sds_destroy(mst->name);
     }
 
-    if (mst->buf) {
-        flb_sds_destroy(mst->buf);
-    }
-    msgpack_sbuffer_destroy(&mst->mp_sbuf);
+    /* destroy groups */
+    stream_group_destroy_all(mst);
+
     flb_free(mst);
 
     return 0;
