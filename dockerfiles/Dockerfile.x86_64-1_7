@@ -49,7 +49,7 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM python:3-slim-buster
+FROM amd64/debian:buster-slim
 MAINTAINER Eduardo Silva <eduardo@treasure-data.com>
 LABEL Description="Fluent Bit docker image for testing branch 1.7" Vendor="Fluent Organization" Version="1.1"
 RUN true
