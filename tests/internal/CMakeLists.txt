@@ -85,6 +85,13 @@ if(FLB_AWS)
     )
 endif()
 
+if(FLB_AWS_ERROR_REPORTER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    error_reporter.c
+    )
+endif()
+
 set(UNIT_TESTS_DATA
   data/pack/json_single_map_001.json
   data/pack/json_single_map_002.json
