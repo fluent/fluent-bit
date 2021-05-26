@@ -9,7 +9,7 @@ jobs:
       max-parallel: 3
       fail-fast: false
       matrix:
-        tag: [ 'master', 'master_dbg' ]
+        tag: [ 'master', 'master_debug' ]
     runs-on: ubuntu-latest
     steps:
       - name: Setup environment
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v2
       - name: Build a docker image for master branch
         run: |
-          docker build --no-cache -f ./dockerfiles/Dockerfile.${{ env.arch }}-${{ matrix.tag }} -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ matrix.tag }} .
+          DOCKER_BUILDKIT=1 docker build --no-cache -f ./dockerfiles/Dockerfile.${{ env.arch }}-${{ matrix.tag }} -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ matrix.tag }} .
         env:
           arch: x86_64
           dockerhub_organization: fluentbitdev
