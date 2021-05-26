@@ -738,7 +738,6 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     char _port[6];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
-    struct flb_coro *coro;
 
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
@@ -755,10 +754,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
 
-    coro = flb_coro_get();
-
     /* retrieve DNS info */
-    if(NULL != coro) {
+    if (is_async) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res);
     }
     else {
@@ -833,7 +830,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         break;
     }
 
-    if(NULL != coro) {
+    if (is_async) {
         flb_net_free_translated_addrinfo(res);
     }
     else {
