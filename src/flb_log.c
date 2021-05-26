@@ -34,6 +34,12 @@
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
 
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
+
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
 /* Simple structure to dispatch messages to the log collector */
@@ -423,6 +429,16 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     else {
         fprintf(stderr, "%s", (char *) msg.msg);
     }
+
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        if (type == FLB_LOG_ERROR) {
+            flb_aws_error_reporter_write(error_reporter, msg.msg + len);
+        }
+
+        flb_aws_error_reporter_clean(error_reporter);
+    }
+    #endif
 }
 
 int flb_errno_print(int errnum, const char *file, int line)
