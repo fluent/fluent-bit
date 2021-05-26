@@ -567,6 +567,8 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     context = (struct flb_dns_lookup_context *) userdata;
 
+    context->ares_socket_created = 1;
+
     context->response_event.mask    = MK_EVENT_EMPTY;
     context->response_event.status  = MK_EVENT_NONE;
     context->response_event.data    = &context->response_event;
@@ -614,6 +616,7 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
         return NULL;
     }
 
+    context->ares_socket_created = 0;
     context->event_loop = event_loop;
     context->coroutine = coroutine;
     context->finished = 0;
@@ -661,9 +664,11 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints,
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    flb_coro_yield(coroutine, FLB_FALSE);
+    if (1 == lookup_context->ares_socket_created) {
+        flb_coro_yield(coroutine, FLB_FALSE);
+    }
 
-    if(0 == lookup_context->result_code) {
+    if (0 == lookup_context->result_code) {
         *res = lookup_context->result;
     }
 
