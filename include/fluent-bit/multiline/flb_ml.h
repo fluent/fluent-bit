@@ -83,6 +83,8 @@ struct flb_ml_rule {
 struct flb_ml_stream_group {
     flb_sds_t name;           /* group name, unique identifier */
 
+    uint64_t last_flush;      /* last flush/check time */
+
     int counter_lines;        /* counter for the number of lines */
 
     /* Multiline content buffer */
@@ -210,8 +212,10 @@ int flb_ml_append_object(struct flb_ml *ml,
                          struct flb_ml_stream *mst,
                          struct flb_time *tm, msgpack_object *obj);
 
-int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst,
-                 struct flb_ml_stream_group *group);
+int flb_ml_auto_flush_start(struct flb_ml *ml);
+
+int flb_ml_flush_stream_group(struct flb_ml *ml, struct flb_ml_stream *mst,
+                              struct flb_ml_stream_group *group);
 
 /* Multiline streams */
 struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,

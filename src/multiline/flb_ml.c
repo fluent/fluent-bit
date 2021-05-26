@@ -24,8 +24,11 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
+
+#include <math.h>
 
 struct flb_config_map multiline_map[] = {
     {
@@ -84,6 +87,52 @@ static inline int match_negate(struct flb_ml *ml, int matched)
     }
 
     return rule_match;
+}
+
+static uint64_t time_ms_now()
+{
+    uint64_t ms;
+    struct flb_time tm;
+
+    flb_time_get(&tm);
+    ms = (tm.tm.tv_sec * 1000) + lround(tm.tm.tv_nsec/1.0e6);
+    return ms;
+}
+
+void flb_ml_flush_pending(struct flb_ml *ml)
+{
+    uint64_t time_ms;
+    struct mk_list *head;
+    struct mk_list *head_group = NULL;
+    struct flb_ml_stream *mst;
+    struct flb_ml_stream_group *group;
+
+    /* retrieve current time */
+    time_ms = time_ms_now();
+
+    /* Iterate streams */
+    mk_list_foreach(head, &ml->streams) {
+        mst = mk_list_entry(head, struct flb_ml_stream, _head);
+
+        /* Iterate groups */
+        mk_list_foreach(head_group, &mst->groups) {
+            group = mk_list_entry(head_group, struct flb_ml_stream_group, _head);
+            if ((group->last_flush + ml->flush_ms) < time_ms) {
+                flb_ml_flush_stream_group(ml, mst, group);
+            }
+        }
+    }
+}
+
+static void cb_ml_flush_timer(struct flb_config *ctx, void *data)
+{
+    struct flb_ml *ml = data;
+
+    /*
+     * Iterate over all streams and groups and for a flush for expired groups
+     * which has not flushed in the last N milliseconds.
+     */
+    flb_ml_flush_pending(ml);
 }
 
 int flb_ml_register_context(struct flb_ml *ml, struct flb_ml_stream *mst,
@@ -163,7 +212,7 @@ static int package_content(struct flb_ml *ml,
 
             /* on ENDSWITH mode, a rule match means flush the content */
             if (rule_match) {
-                flb_ml_flush(ml, mst, group);
+                flb_ml_flush_stream_group(ml, mst, group);
             }
             processed = FLB_TRUE;
         }
@@ -189,7 +238,7 @@ static int package_content(struct flb_ml *ml,
 
         /* on ENDSWITH mode, a rule match means flush the content */
         if (rule_match) {
-            flb_ml_flush(ml, mst, group);
+            flb_ml_flush_stream_group(ml, mst, group);
         }
         processed = FLB_TRUE;
     }
@@ -200,11 +249,11 @@ static int package_content(struct flb_ml *ml,
      * content.
      */
     if (!processed) {
-        flb_ml_flush(ml, mst, group);
+        flb_ml_flush_stream_group(ml, mst, group);
 
         /* Concatenate value */
         flb_sds_cat_safe(&group->buf, buf, size);
-        flb_ml_flush(ml, mst, group);
+        flb_ml_flush_stream_group(ml, mst, group);
     }
 
     return rule_match;
@@ -486,6 +535,30 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx,
     return ml;
 }
 
+int flb_ml_auto_flush_start(struct flb_ml *ml)
+{
+    int ret;
+    struct flb_config *ctx;
+
+    if (!ml) {
+        return -1;
+    }
+
+    ctx = ml->config;
+    if (!ctx->sched) {
+        flb_error("[multiline] scheduler context has not been created");
+        return -1;
+    }
+
+    /* Create flush timer */
+    ret = flb_sched_timer_cb_create(ctx->sched,
+                                    FLB_SCHED_TIMER_CB_PERM,
+                                    ml->flush_ms,
+                                    cb_ml_flush_timer,
+                                    ml);
+    return ret;
+}
+
 int flb_ml_destroy(struct flb_ml *ml)
 {
     struct mk_list *tmp;
@@ -522,8 +595,8 @@ int flb_ml_destroy(struct flb_ml *ml)
     return 0;
 }
 
-int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst,
-                 struct flb_ml_stream_group *group)
+int flb_ml_flush_stream_group(struct flb_ml *ml, struct flb_ml_stream *mst,
+                              struct flb_ml_stream_group *group)
 {
     int i;
     int ret;
@@ -632,6 +705,9 @@ int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst,
     msgpack_sbuffer_destroy(&mp_sbuf);
     flb_sds_len_set(group->buf, 0);
 
+    /* Update last flush time */
+    group->last_flush = time_ms_now();
+
     return 0;
 }
 
@@ -687,7 +763,7 @@ struct flb_ml_stream_group *flb_ml_stream_group_get(struct flb_ml *ml,
     struct flb_ml_stream_group *group = NULL;
 
     /* If key_group was not defined, we already have a default group */
-    if (!ml->key_group) {
+    if (!ml->key_group || !group_name) {
         group = mk_list_entry_first(&mst->groups,
                                     struct flb_ml_stream_group,
                                     _head);
@@ -750,14 +826,13 @@ static int stream_group_init(struct flb_ml *ml, struct flb_ml_stream *mst)
     struct flb_ml_stream_group *group = NULL;
 
     mk_list_init(&mst->groups);
-    if (!ml->key_group) {
-        /* create a default group */
-        group = stream_group_create(ml, mst, NULL, 0);
-        if (!group) {
-            flb_error("[multiline] error initializing default group for "
-                      "stream '%s'", mst->name);
-            return -1;
-        }
+
+    /* create a default group */
+    group = stream_group_create(ml, mst, NULL, 0);
+    if (!group) {
+        flb_error("[multiline] error initializing default group for "
+                  "stream '%s'", mst->name);
+        return -1;
     }
 
     return 0;
