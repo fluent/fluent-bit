@@ -147,6 +147,13 @@ if(FLB_AWS)
     )
 endif()
 
+if (FLB_AWS_ERROR_REPORTER)
+  set(src
+    ${src}
+    "aws/flb_aws_error_reporter.c"
+    )
+endif()
+
 if(FLB_LUAJIT)
   set(src
     ${src}
