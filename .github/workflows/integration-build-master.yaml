@@ -9,7 +9,7 @@ jobs:
       max-parallel: 3
       fail-fast: false
       matrix:
-        tag: [ 'master', 'master_dbg' ]
+        tag: [ 'master', 'master_debug' ]
     runs-on: ubuntu-latest
     steps:
       - name: Setup environment
