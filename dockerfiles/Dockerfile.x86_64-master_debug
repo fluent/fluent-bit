@@ -67,9 +67,13 @@ COPY --from=amd64/busybox:1.31.1 /bin/busybox /bin/busybox
 RUN chmod 555 /bin/busybox && \
     /bin/busybox --install -s /usr/local/bin
 
-FROM gcr.io/distroless/cc-debian10
+FROM amd64/debian:buster-slim
 MAINTAINER Eduardo Silva <eduardo@treasure-data.com>
-LABEL Description="Fluent Bit docker image" Vendor="Fluent Organization" Version="1.1"
+LABEL Description="Fluent Bit docker image for testing branch master" Vendor="Fluent Organization" Version="1.1"
+RUN true
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    bash gdb valgrind build-essential
 
 # Copy certificates
 COPY --from=builder /usr/share/ca-certificates/  /usr/share/ca-certificates/
