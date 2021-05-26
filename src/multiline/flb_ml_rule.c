@@ -210,7 +210,7 @@ static int try_flushing_buffer(struct flb_ml *ml,
     rule = group->rule_to_state;
     if (!rule) {
         if (flb_sds_len(group->buf) > 0) {
-            flb_ml_flush(ml, mst, group);
+            flb_ml_flush_stream_group(ml, mst, group);
             group->first_line = FLB_TRUE;
         }
         return 0;
@@ -226,7 +226,7 @@ static int try_flushing_buffer(struct flb_ml *ml,
     }
 
     if (next_start && flb_sds_len(group->buf) > 0) {
-        flb_ml_flush(ml, mst, group);
+        flb_ml_flush_stream_group(ml, mst, group);
         group->first_line = FLB_TRUE;
     }
 
@@ -286,7 +286,7 @@ int flb_ml_rule_process(struct flb_ml *ml,
 
         /* If a previous content exists, just flush it */
         if (flb_sds_len(group->buf) > 0) {
-            flb_ml_flush(ml, mst, group);
+            flb_ml_flush_stream_group(ml, mst, group);
         }
 
         /* If this is a first line, check for any rule that matches a start state */
