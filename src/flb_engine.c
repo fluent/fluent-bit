@@ -52,6 +52,12 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #endif
 
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
+
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
 
 
@@ -704,6 +710,16 @@ int flb_engine_start(struct flb_config *config)
         if (config->is_running == FLB_TRUE) {
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
+
+            /*
+            * depend on main thread to clean up expired message
+            * in aws error reporting message queue
+            */
+            #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+            if (is_error_reporting_enabled()) {
+                flb_aws_error_reporter_clean(error_reporter);
+            }
+            #endif
         }
     }
 }
