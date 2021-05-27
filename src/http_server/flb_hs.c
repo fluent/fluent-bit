@@ -26,6 +26,7 @@
 
 #include <monkey/mk_lib.h>
 #include "api/v1/register.h"
+#include "api/v1/health.h"
 
 static void cb_root(mk_request_t *request, void *data)
 {
@@ -39,6 +40,7 @@ static void cb_root(mk_request_t *request, void *data)
 /* Ingest pipeline metrics into the web service context */
 int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size)
 {
+    mk_mq_send(hs->ctx, hs->qid_health, data, size);
     return mk_mq_send(hs->ctx, hs->qid_metrics, data, size);
 }
 
@@ -114,12 +116,13 @@ int flb_hs_destroy(struct flb_hs *hs)
     if (!hs) {
         return 0;
     }
-
+    flb_hs_health_destroy();
     mk_stop(hs->ctx);
     mk_destroy(hs->ctx);
 
     flb_hs_endpoints_free(hs);
     flb_free(hs);
+
 
     return 0;
 }
