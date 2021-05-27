@@ -80,6 +80,7 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HTTP_SERVER,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, http_server)},
+
     {FLB_CONF_STR_HTTP_LISTEN,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, http_listen)},
@@ -87,6 +88,23 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HTTP_PORT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, http_port)},
+
+     {FLB_CONF_STR_HEALTH_CHECK,
+      FLB_CONF_TYPE_BOOL,
+      offsetof(struct flb_config, health_check)},
+
+    {FLB_CONF_STR_HC_ERRORS_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_errors_count)},
+
+    {FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_retry_failure_count)},
+
+    {FLB_CONF_STR_HC_PERIOD,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, health_check_period)},
+
 #endif
 
     /* Storage */
@@ -155,10 +173,14 @@ struct flb_config *flb_config_init()
     config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER
-    config->http_ctx     = NULL;
-    config->http_server  = FLB_FALSE;
-    config->http_listen  = flb_strdup(FLB_CONFIG_HTTP_LISTEN);
-    config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
+    config->http_ctx                     = NULL;
+    config->http_server                  = FLB_FALSE;
+    config->http_listen                  = flb_strdup(FLB_CONFIG_HTTP_LISTEN);
+    config->http_port                    = flb_strdup(FLB_CONFIG_HTTP_PORT);
+    config->health_check                 = FLB_FALSE;
+    config->hc_errors_count              = HC_ERRORS_COUNT_DEFAULT;
+    config->hc_retry_failure_count       = HC_RETRY_FAILURE_COUNTS_DEFAULT;
+    config->health_check_period          = HEALTH_CHECK_PERIOD;
 #endif
 
     config->http_proxy = getenv("HTTP_PROXY");

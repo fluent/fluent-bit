@@ -34,6 +34,9 @@
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
+#define HC_ERRORS_COUNT_DEFAULT 5
+#define HC_RETRY_FAILURE_COUNTS_DEFAULT 5
+#define HEALTH_CHECK_PERIOD 60
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
 /* Main struct to hold the configuration of the runtime service */
@@ -140,10 +143,14 @@ struct flb_config {
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
-    int http_server;          /* HTTP Server running    */
-    char *http_port;          /* HTTP Port / TCP number */
-    char *http_listen;        /* Interface Address      */
-    void *http_ctx;           /* Monkey HTTP context    */
+    int http_server;                /* HTTP Server running    */
+    char *http_port;                /* HTTP Port / TCP number */
+    char *http_listen;              /* Interface Address      */
+    void *http_ctx;                 /* Monkey HTTP context    */
+    int health_check;               /* health check enable    */
+    int hc_errors_count;               /* health check error counts as unhealthy*/
+    int hc_retry_failure_count;        /* health check retry failures count as unhealthy*/
+    int health_check_period;           /* period by second for health status check */
 #endif
 
     /*
@@ -257,9 +264,13 @@ enum conf_type {
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
-#define FLB_CONF_STR_HTTP_SERVER     "HTTP_Server"
-#define FLB_CONF_STR_HTTP_LISTEN     "HTTP_Listen"
-#define FLB_CONF_STR_HTTP_PORT       "HTTP_Port"
+#define FLB_CONF_STR_HTTP_SERVER                            "HTTP_Server"
+#define FLB_CONF_STR_HTTP_LISTEN                            "HTTP_Listen"
+#define FLB_CONF_STR_HTTP_PORT                              "HTTP_Port"
+#define FLB_CONF_STR_HEALTH_CHECK                           "Health_Check"
+#define FLB_CONF_STR_HC_ERRORS_COUNT                        "HC_Errors_Count"
+#define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
+#define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
 
 /* Storage / Chunk I/O */
