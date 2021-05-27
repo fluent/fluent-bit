@@ -12,8 +12,10 @@
 #include <string.h>
 #include <stdint.h>
 
+#ifndef __APPLE__
 #ifndef IOS
-#include <malloc.h>
+#include <malloc/malloc.h>
+#endif
 #endif
 
 #ifdef __cplusplus

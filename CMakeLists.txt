@@ -53,6 +53,14 @@ include(cmake/macros.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
+# Check for posix_memalign so that Apple Silicon can be supported
+include(CheckSymbolExists)
+check_symbol_exists(posix_memalign "stdlib.h" HAVE_POSIX_MEMALIGN)
+IF(HAVE_POSIX_MEMALIGN)
+  add_definitions(-DHAVE_POSIX_MEMALIGN)
+  MESSAGE("Found posix_memalign setting -DHAVE_POSIX_MEMALIGN")
+ENDIF(HAVE_POSIX_MEMALIGN)
+
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
