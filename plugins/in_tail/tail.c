@@ -620,6 +620,14 @@ static struct flb_config_map config_map[] = {
     },
 #endif
 
+#ifdef FLB_HAVE_UTF8_ENCODER
+    {
+     FLB_CONFIG_MAP_STR, "encoding", NULL,
+     0, FLB_FALSE, 0,
+     "specify the charset encoder to decode message",
+    },
+#endif
+
     /* Multiline Options */
 #ifdef FLB_HAVE_PARSER
     {

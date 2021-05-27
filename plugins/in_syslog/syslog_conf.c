@@ -134,6 +134,19 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+#ifdef FLB_HAVE_UTF8_ENCODER
+    /* utf8 encoder */
+    tmp = flb_input_get_property("encoding", ins);
+    if (tmp) {
+        ctx->encoding = flb_encoding_open(tmp);
+        if (!ctx->encoding) {
+            flb_error("[in_syslog] illegal encoding: %s", tmp);
+            syslog_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+#endif
+
     return ctx;
 }
 
@@ -143,6 +156,13 @@ int syslog_conf_destroy(struct flb_syslog *ctx)
         flb_free(ctx->buffer_data);
         ctx->buffer_data = NULL;
     }
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    if(ctx->encoding) {
+        flb_encoding_close(ctx->encoding);
+    }
+#endif
+
     syslog_server_destroy(ctx);
     flb_free(ctx);
 

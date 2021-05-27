@@ -56,6 +56,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
+#ifdef FLB_HAVE_UTF8_ENCODER
+    ctx->encoding = NULL;
+#endif
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
@@ -145,6 +148,18 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     if (ctx->multiline == FLB_TRUE) {
         ret = flb_tail_mult_create(ctx, ins, config);
         if (ret == -1) {
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
+#endif
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    tmp = flb_input_get_property("encoding", ins);
+    if (tmp) {
+        ctx->encoding = flb_encoding_open(tmp);
+        if (!ctx->encoding) {
+            flb_plg_error(ctx->ins,"illegal encoding: %s", tmp);
             flb_tail_config_destroy(ctx);
             return NULL;
         }
@@ -341,6 +356,12 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
         sqlite3_finalize(config->stmt_rotate_file);
         sqlite3_finalize(config->stmt_offset);
         flb_tail_db_close(config->db);
+    }
+#endif
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    if(config->encoding) {
+        flb_encoding_close(config->encoding);
     }
 #endif
 

@@ -198,6 +198,7 @@ if(FLB_ALL)
   # Global
   set(FLB_DEBUG        1)
   set(FLB_TLS          1)
+  set(FLB_UTF8_ENCODER 1)
 
   # Input plugins
   set(FLB_IN_CPU       1)
@@ -381,7 +382,8 @@ endif()
 
 # tutf8e
 if(FLB_UTF8_ENCODER)
-  add_subdirectory(${FLB_PATH_LIB_TUTF8E} EXCLUDE_FROM_ALL)
+  add_subdirectory(${FLB_PATH_LIB_TUTF8E})
+  FLB_DEFINITION(FLB_HAVE_UTF8_ENCODER)
 endif()
 
 # xxHash
