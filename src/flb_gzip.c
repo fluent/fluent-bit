@@ -294,6 +294,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
 
     /* Ensure size is above 0 */
     if (((p + in_len) - start - 8) <= 0) {
+        flb_free(out_buf);
         return -1;
     }
 
