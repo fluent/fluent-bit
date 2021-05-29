@@ -122,6 +122,11 @@ static int cb_file_init(struct flb_output_instance *ins,
         else if (!strcasecmp(tmp, "template")) {
             ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
         }
+        else {
+            flb_plg_error(ctx->ins, "unknown format %s. abort.", tmp);
+            flb_free(ctx);
+            return -1;
+        }
     }
 
     tmp = flb_output_get_property("delimiter", ins);
