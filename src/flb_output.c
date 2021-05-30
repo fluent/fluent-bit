@@ -841,6 +841,7 @@ int flb_output_init_all(struct flb_config *config)
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
             ret = flb_plugin_proxy_init(p->proxy, ins, config);
             if (ret == -1) {
+                flb_output_instance_destroy(ins);
                 return -1;
             }
             continue;
@@ -878,6 +879,7 @@ int flb_output_init_all(struct flb_config *config)
             if (!config_map) {
                 flb_error("[output] error loading config map for '%s' plugin",
                           p->name);
+                flb_output_instance_destroy(ins);
                 return -1;
             }
             ins->config_map = config_map;
@@ -940,6 +942,7 @@ int flb_output_init_all(struct flb_config *config)
         if (ret == -1) {
             flb_error("[output] Failed to initialize '%s' plugin",
                       p->name);
+            flb_output_instance_destroy(ins);
             return -1;
         }
 
@@ -949,6 +952,7 @@ int flb_output_init_all(struct flb_config *config)
             if (ret == -1) {
                 flb_error("[output] could not start thread pool for '%s' plugin",
                           p->name);
+                flb_output_instance_destroy(ins);
                 return -1;
             }
 
