@@ -532,6 +532,7 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         else {
             context->result_code = 0;
         }
+        ares_freeaddrinfo(res);
     }
     else {
         context->result_code = 1;
