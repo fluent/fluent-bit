@@ -454,8 +454,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
          */
         config_map = flb_config_map_create(config, p->config_map);
         if (!config_map) {
-            flb_error("[filter] error loading config map for '%s' plugin",
+            flb_error("[input] error loading config map for '%s' plugin",
                       p->name);
+            flb_input_instance_destroy(ins);
             return -1;
         }
         ins->config_map = config_map;
