@@ -772,7 +772,15 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                  */
                 shutdown(u_conn->fd, SHUT_RDWR);
                 u_conn->net_error = ETIMEDOUT;
-                prepare_destroy_conn(u_conn);
+
+                /*
+                 * According to this the shutdown should be enough to notify the coroutine
+                 * of the timeout, however, I don't think flb_net_tcp_connect would notice
+                 * i the timeout happened while trying to issue the DNS request (but that 
+                 * could be wrong), however, I'm leaving this commented to start a dialogue
+                 * to determine what would be the impact of such a change.
+                 */
+                /* prepare_destroy_conn(u_conn); */
             }
         }
 

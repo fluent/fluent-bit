@@ -547,14 +547,18 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
 
     context = (struct flb_dns_lookup_context *) arg;
 
-    ares_process_fd(context->ares_channel,
-                    context->response_event.fd,
-                    context->response_event.fd);
+    if(0 == context->finished) {
+        ares_process_fd(context->ares_channel,
+                        context->response_event.fd,
+                        context->response_event.fd);
 
-    if(1 == context->finished) {
-        flb_coro_resume(context->coroutine);
+        if(1 == context->finished) {
+            mk_event_del(context->event_loop, &context->response_event);
+
+            flb_coro_resume(context->coroutine);
+        }
     }
-
+    
     return 0;
 }
 
@@ -630,8 +634,6 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
 
 void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
 {
-    mk_event_del(context->event_loop, &context->response_event);
-
     ares_destroy(context->ares_channel);
 
     flb_free(context);
