@@ -50,6 +50,7 @@ struct flb_parser {
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
+    int logfmt_no_bare_keys; /* in logfmt parsers, require all keys to have values */
     char *time_frac_secs; /* time format have fractional seconds ? */
     struct flb_parser_types *types; /* type casting */
     int types_len;
@@ -95,6 +96,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *time_offset,
                                      int time_keep,
                                      int time_strict,
+                                     int logfmt_no_bare_keys,
                                      struct flb_parser_types *types,
                                      int types_len,
                                      struct mk_list *decoders,
