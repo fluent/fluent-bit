@@ -77,6 +77,7 @@ static int logfmt_parser(struct flb_parser *parser,
     const unsigned char *end = c + in_size;
     int last_byte;
     int do_pack = FLB_TRUE;
+    int value_set = FLB_FALSE;
     int value_str = FLB_FALSE;
     int value_escape = FLB_FALSE;
 
@@ -102,10 +103,12 @@ static int logfmt_parser(struct flb_parser *parser,
         key_len = c - key;
         /* value */
         value_len = 0;
+        value_set = FLB_FALSE;
         value_str = FLB_FALSE;
         value_escape =  FLB_FALSE;
 
         if (c < end && *c == '=') {
+            value_set = FLB_TRUE;
             c++;
             if (c < end) {
                 if (*c == '"') {
@@ -145,6 +148,12 @@ static int logfmt_parser(struct flb_parser *parser,
 
         if (key_len > 0) {
             int time_found = FLB_FALSE;
+            if (parser->logfmt_no_bare_keys && value_len == 0 && !value_set) {
+                if (!do_pack) {
+                    *map_size = 0;
+                }
+                return 0;
+            }
 
             if (parser->time_fmt && key_len == time_key_len &&
                 value_len > 0 &&

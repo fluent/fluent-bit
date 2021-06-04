@@ -99,7 +99,7 @@ void flb_test_filter_parser_extract_fields()
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, NULL, 0,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, NULL, 0,
                                NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -184,7 +184,7 @@ void flb_test_filter_parser_reserve_data_off()
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, NULL, 0,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, NULL, 0,
                                NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -260,7 +260,7 @@ void flb_test_filter_parser_handle_time_key()
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
                                "%Y-%m-%dT%H:%M:%S.%L",
                                "time",
-                               NULL, MK_FALSE, MK_TRUE,
+                               NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -336,7 +336,7 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     parser = flb_parser_create("timestamp", "regex", "^(?<time>.*)$", FLB_TRUE,
                                "%s.%L",
                                "time",
-                               NULL, MK_FALSE, MK_TRUE,
+                               NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -496,7 +496,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     parser = flb_parser_create("timestamp", "regex",
                                "^(?<time>.*)$", FLB_TRUE,
                                "%Y-%m-%dT%H:%M:%S.%L", "time",
-                               NULL, FLB_FALSE, MK_TRUE,
+                               NULL, FLB_FALSE, MK_TRUE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -572,7 +572,7 @@ void flb_test_filter_parser_preserve_original_field()
     /* Parser */
     parser = flb_parser_create("dummy_test", "regex", "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, NULL, 0,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE, NULL, 0,
                                NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -655,13 +655,13 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     /* Parser */
     parser = flb_parser_create("one", "regex", "^(?<one>.+?)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
     parser = flb_parser_create("two", "regex", "^(?<two>.+?)$",
                                FLB_TRUE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
@@ -740,7 +740,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     /* Parser */
     parser = flb_parser_create("one", "regex", "^(?<one>.+?)$",
                                FLB_FALSE,
-                               NULL, NULL, NULL, MK_FALSE, MK_TRUE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE, FLB_FALSE,
                                NULL, 0, NULL, ctx->config);
     TEST_CHECK(parser != NULL);
 
