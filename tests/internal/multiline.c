@@ -448,7 +448,6 @@ static void test_mode_java()
     mst = flb_ml_stream_create(ml, "java", flush_callback, (void *) &res);
     TEST_CHECK(mst != NULL);
 
-
     entries = sizeof(java_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
         r = &java_input[i];
@@ -583,6 +582,7 @@ static void test_mode_elastic()
     config = flb_config_init();
 
     ml = flb_ml_create(config,
+                       "test",               /* name      */
                        FLB_ML_REGEX,         /* type      */
                        NULL,                 /* match_str */
                        FLB_FALSE,            /* negate    */
@@ -590,7 +590,8 @@ static void test_mode_elastic()
                        "log",                /* key_content */
                        NULL,                 /* key_pattern */
                        NULL,                 /* key_group */
-                       NULL);                /* parser */
+                       NULL,                 /* parser ctx */
+                       NULL);                /* parser name */
 
     ret = flb_ml_rule_create(ml, "start_state", "/^\\[/", "elastic_cont", NULL);
     if (ret != 0) {
