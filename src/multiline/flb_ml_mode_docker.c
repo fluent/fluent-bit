@@ -90,6 +90,7 @@ struct flb_ml *flb_ml_mode_docker(struct flb_config *config,
      *   500 milliseconds (0.5 second) and flush the buffer.
      */
     ml = flb_ml_create(config,                  /* Fluent Bit context */
+                       "docker",                /* name           */
                        FLB_ML_ENDSWITH,         /* type           */
                        "\n",                    /* match_str      */
                        FLB_FALSE,               /* negate         */
@@ -97,7 +98,8 @@ struct flb_ml *flb_ml_mode_docker(struct flb_config *config,
                        "log",                   /* key_content    */
                        "stream",                /* key_group      */
                        NULL,                    /* key_pattern    */
-                       parser);                 /* parser         */
+                       parser,                  /* parser ctx     */
+                       NULL);                   /* parser name    */
     if (!ml) {
         flb_error("[multiline] could not create 'docker mode'");
         return NULL;

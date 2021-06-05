@@ -41,6 +41,7 @@ struct flb_ml *flb_ml_mode_python(struct flb_config *config,
     struct flb_ml *ml;
 
     ml = flb_ml_create(config,          /* Fluent Bit context */
+                       "python",        /* name      */
                        FLB_ML_REGEX,    /* type      */
                        NULL,            /* match_str */
                        FLB_FALSE,       /* negate    */
@@ -48,7 +49,8 @@ struct flb_ml *flb_ml_mode_python(struct flb_config *config,
                        key,             /* key_content */
                        NULL,            /* key_group   */
                        NULL,            /* key_pattern */
-                       NULL);           /* parser */
+                       NULL,            /* parser ctx  */
+                       NULL);           /* parser name */
 
     if (!ml) {
         flb_error("[multiline] could not create 'python mode'");
