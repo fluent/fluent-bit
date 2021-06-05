@@ -59,6 +59,7 @@ struct flb_ml *flb_ml_mode_cri(struct flb_config *config, int flush_ms)
     }
 
     ml = flb_ml_create(config,
+                       "cri",               /* name      */
                        FLB_ML_EQ,           /* type      */
                        "F",                 /* match_str */
                        FLB_FALSE,           /* negate    */
@@ -66,7 +67,9 @@ struct flb_ml *flb_ml_mode_cri(struct flb_config *config, int flush_ms)
                        "log",               /* key_content */
                        "stream",            /* key_group   */
                        "_p",                /* key_pattern */
-                       parser);             /* parser */
+                       parser,              /* parser ctx  */
+                       NULL);               /* parser name */
+
     if (!ml) {
         flb_error("[multiline] could not create 'docker mode'");
         return NULL;

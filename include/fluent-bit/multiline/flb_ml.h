@@ -122,6 +122,8 @@ struct flb_ml {
     int type;                 /* type: COUNT, REGEX, ENDSWITH or EQ */
     int negate;               /* negate start pattern ? */
 
+    flb_sds_t name;
+
     /*
      * If 'multiline type' is ENDSWITH or EQ, a 'match_str' string is passed
      * so we can compare against it. We don't use a regex pattern for efficiency.
@@ -172,7 +174,8 @@ struct flb_ml {
     void *cb_data;                             /* opaque data */
 
     /* internal */
-    struct flb_parser *parser;
+    struct flb_parser *parser;                 /* parser context */
+    flb_sds_t parser_name;                     /* parser name for delayed init */
 
     /*
      * Every multiline context has N streams, a stream represent a source
@@ -189,15 +192,20 @@ struct flb_ml {
 
     /* Fluent Bit parent context */
     struct flb_config *config;
+
+    /* Link node: every multiline context is linked on config->ml list */
+    struct mk_list _head;
 };
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx,
+                             char *name,
                              int type, char *match_str, int negate,
                              int flush_ms,
                              char *key_content,
                              char *key_group,
                              char *key_pattern,
-                             struct flb_parser *parser);
+                             struct flb_parser *parser_ctx,
+                             char *parser_name);
 
 int flb_ml_destroy(struct flb_ml *ml);
 
@@ -212,6 +220,7 @@ int flb_ml_append_object(struct flb_ml *ml,
                          struct flb_ml_stream *mst,
                          struct flb_time *tm, msgpack_object *obj);
 
+int flb_ml_parsers_init(struct flb_config *ctx);
 int flb_ml_auto_flush_start(struct flb_ml *ml);
 
 int flb_ml_flush_stream_group(struct flb_ml *ml, struct flb_ml_stream *mst,
@@ -243,6 +252,8 @@ void flb_ml_rule_destroy(struct flb_ml_rule *rule);
 void flb_ml_rule_destroy_all(struct flb_ml *ml);
 
 int flb_ml_init(struct flb_ml *ml);
+
+int flb_ml_type_lookup(char *str);
 
 #include "flb_ml_mode.h"
 

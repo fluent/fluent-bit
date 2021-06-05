@@ -99,6 +99,26 @@ static uint64_t time_ms_now()
     return ms;
 }
 
+int flb_ml_type_lookup(char *str)
+{
+    int type = -1;
+
+    if (strcasecmp(str, "count") == 0) {
+        type = FLB_ML_COUNT;
+    }
+    else if (strcasecmp(str, "regex") == 0) {
+        type = FLB_ML_REGEX;
+    }
+    else if (strcasecmp(str, "endswith") == 0) {
+        type = FLB_ML_ENDSWITH;
+    }
+    else if (strcasecmp(str, "equal") == 0 || strcasecmp(str, "eq") == 0) {
+        type = FLB_ML_EQ;
+    }
+
+    return type;
+}
+
 void flb_ml_flush_pending(struct flb_ml *ml)
 {
     uint64_t time_ms;
@@ -480,12 +500,13 @@ int flb_ml_append_object(struct flb_ml *ml,
 }
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx,
+                             char *name,
                              int type, char *match_str, int negate,
                              int flush_ms,
                              char *key_content,
                              char *key_group,
                              char *key_pattern,
-                             struct flb_parser *parser)
+                             struct flb_parser *parser_ctx, char *parser_name)
 {
     struct flb_ml *ml;
 
@@ -494,6 +515,7 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx,
         flb_errno();
         return NULL;
     }
+    ml->name = flb_sds_create(name);
     ml->type = type;
 
     if (match_str) {
@@ -503,8 +525,16 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx,
             return NULL;
         }
     }
-    ml->parser = parser;
+
+    ml->parser = parser_ctx;
+    if (parser_name) {
+        ml->parser_name = flb_sds_create(parser_name);
+    }
+
     ml->negate = negate;
+    mk_list_init(&ml->streams);
+    mk_list_init(&ml->regex_rules);
+    mk_list_add(&ml->_head, &ctx->multilines);
 
     if (key_content) {
         ml->key_content = flb_sds_create(key_content);
@@ -529,10 +559,36 @@ struct flb_ml *flb_ml_create(struct flb_config *ctx,
             return NULL;
         }
     }
-    mk_list_init(&ml->streams);
-    mk_list_init(&ml->regex_rules);
-
     return ml;
+}
+
+/*
+ * Some multiline contexts might define a parser name but not a parser context,
+ * for missing contexts, just lookup the parser and perform the assignment.
+ *
+ * The common use case is when reading config files with [PARSER] and [MULTILINE_PARSER]
+ * definitions, so we need to delay the parser loading.
+ */
+int flb_ml_parsers_init(struct flb_config *ctx)
+{
+    struct flb_ml *ml;
+    struct mk_list *head;
+    struct flb_parser *p;
+
+    mk_list_foreach(head, &ctx->multilines) {
+        ml = mk_list_entry(head, struct flb_ml, _head);
+        if (ml->parser_name && !ml->parser) {
+            p = flb_parser_get(ml->parser_name, ctx);
+            if (!p) {
+                flb_error("multiline parser '%s' points to an undefined parser '%s'",
+                          ml->name, ml->parser_name);
+                return -1;
+            }
+            ml->parser = p;
+        }
+    }
+
+    return 0;
 }
 
 int flb_ml_auto_flush_start(struct flb_ml *ml)
@@ -569,6 +625,10 @@ int flb_ml_destroy(struct flb_ml *ml)
         return 0;
     }
 
+    if (ml->name) {
+        flb_sds_destroy(ml->name);
+    }
+
     if (ml->match_str) {
         flb_sds_destroy(ml->match_str);
     }
@@ -590,6 +650,9 @@ int flb_ml_destroy(struct flb_ml *ml)
 
     /* Regex rules */
     flb_ml_rule_destroy_all(ml);
+
+    /* Unlink from struct flb_config->multilines */
+    mk_list_del(&ml->_head);
 
     flb_free(ml);
     return 0;
