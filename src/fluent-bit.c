@@ -694,11 +694,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
 
         /* Extra sanity checks */
-        if (strcasecmp(section->name, "PARSER") == 0) {
+        if (strcasecmp(section->name, "PARSER") == 0 ||
+            strcasecmp(section->name, "MULTILINE_PARSER") == 0) {
             fprintf(stderr,
-                    "Section [PARSER] is not valid in the main "
-                    "configuration file. It belongs to \n"
-                    "the Parsers_File configuration files.\n");
+                    "Sections [MULTILINE_PARSER] and [PARSER] are not valid in "
+                    "the main configuration file. It belongs to \n"
+                    "the 'parsers_file' configuration files.\n");
         }
         else {
             fprintf(stderr,
