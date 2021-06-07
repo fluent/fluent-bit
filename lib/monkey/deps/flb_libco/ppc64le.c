@@ -28,6 +28,7 @@ enum { state_size  = 1024 };
 enum { above_stack = 2048 };
 enum { stack_align = 256  };
 
+static thread_local uint64_t co_active_buffer[1024];
 static thread_local cothread_t co_active_handle = 0;
 
 text_section
@@ -234,12 +235,8 @@ void co_delete(cothread_t t) {
   free(t);
 }
 
-static void co_init_(void) {
-  co_active_handle = co_create_(state_size, (uintptr_t)&co_switch);
-}
-
 cothread_t co_active() {
-  if(!co_active_handle) co_init_();
+  if(!co_active_handle) co_active_handle = &co_active_buffer;
 
   return co_active_handle;
 }
