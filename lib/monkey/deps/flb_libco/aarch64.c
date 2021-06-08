@@ -12,10 +12,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#ifndef __APPLE__
-#ifndef IOS
+#if defined(HAVE_POSIX_MEMALIGN_IN_STDLIB)
+/* stdlib is already included */
+#elif defined(HAVE_POSIX_MEMALIGN_IN_PTHREAD_NP)
+#include <malloc_np.h>
+#else
 #include <malloc.h>
-#endif
 #endif
 
 #ifdef __cplusplus

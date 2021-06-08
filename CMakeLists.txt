@@ -53,13 +53,27 @@ include(cmake/macros.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
 find_package(Sanitizers)
 
-# Check for posix_memalign so that Apple Silicon can be supported
 include(CheckSymbolExists)
-check_symbol_exists(posix_memalign "stdlib.h" HAVE_POSIX_MEMALIGN)
-IF(HAVE_POSIX_MEMALIGN)
-  add_definitions(-DHAVE_POSIX_MEMALIGN)
-  MESSAGE("Found posix_memalign setting -DHAVE_POSIX_MEMALIGN")
-ENDIF(HAVE_POSIX_MEMALIGN)
+
+# Check for posix_memalign so that Apple Silicon can be supported
+check_symbol_exists(posix_memalign "stdlib.h" HAVE_POSIX_MEMALIGN_IN_STDLIB)
+
+IF(HAVE_POSIX_MEMALIGN_IN_STDLIB)
+  # We need HAVE_POSIX_MEMALIGN for the ifdefs to use posix_memalign
+  # We defined HAVE_POSIX_MEMALIGN_IN_STDLIB in order to avoid including in malloc.h
+  add_definitions(-DHAVE_POSIX_MEMALIGN_IN_STDLIB -DHAVE_POSIX_MEMALIGN)
+  MESSAGE("Found posix_memalign in stdlib.h -DHAVE_POSIX_MEMALIGN_IN_STDLIB -DHAVE_POSIX_MEMALIGN")
+ENDIF(HAVE_POSIX_MEMALIGN_IN_STDLIB)
+
+# Check for posix_memalign so that FreeBSD can be supported
+check_symbol_exists(posix_memalign "malloc_np.h" HAVE_POSIX_MEMALIGN_IN_PTHREAD_NP)
+
+IF(HAVE_POSIX_MEMALIGN_IN_PTHREAD_NP)
+  # We need HAVE_POSIX_MEMALIGN for the ifdefs to use posix_memalign
+  # We defined DHAVE_POSIX_MEMALIGN_IN_PTHREAD_NP in order to include malloc_np.h
+  add_definitions(-DHAVE_POSIX_MEMALIGN_IN_PTHREAD_NP -DHAVE_POSIX_MEMALIGN)
+  MESSAGE("Found posix_memalign in malloc_np.h -DHAVE_POSIX_MEMALIGN_IN_PTHREAD_NP -DHAVE_POSIX_MEMALIGN")
+ENDIF(HAVE_POSIX_MEMALIGN_IN_PTHREAD_NP)
 
 # Output paths
 set(FLB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
