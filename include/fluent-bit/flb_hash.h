@@ -54,12 +54,15 @@ struct flb_hash {
     int evict_mode;
     int max_entries;
     int total_count;
+    int cache_ttl;
     size_t size;
     struct mk_list entries;
     struct flb_hash_table *table;
 };
 
 struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries);
+struct flb_hash *flb_hash_create_with_ttl(int cache_ttl, int evict_mode, 
+                                          size_t size, int max_entries);
 void flb_hash_destroy(struct flb_hash *ht);
 
 int flb_hash_add(struct flb_hash *ht,
