@@ -648,6 +648,10 @@ endif()
 # =========================================
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    # From macOS Mojave, /usr/include does not store C SDK headers.
+    set(CFLAGS "${CFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
+  endif()
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
