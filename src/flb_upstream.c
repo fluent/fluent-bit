@@ -279,7 +279,7 @@ int flb_upstream_needs_proxy(const char *host, const char *proxy,
     ret = FLB_TRUE;
     mk_list_foreach(head, &no_proxy_list) {
         e = mk_list_entry(head, struct flb_slist_entry, _head);
-         if (strcmp(host, e->str)) {
+         if (strcmp(host, e->str) == 0) {
             ret = FLB_FALSE;
             break;
         }
