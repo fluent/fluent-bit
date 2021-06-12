@@ -564,7 +564,6 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
         decoders = NULL;
     }
 
-    mk_rconf_free(fconf);
     return 0;
 
  fconf_error:
@@ -688,7 +687,6 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
         flb_sds_destroy(key_group);
     }
 
-    mk_rconf_free(fconf);
     return 0;
 
  fconf_error:
