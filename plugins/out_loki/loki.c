@@ -830,6 +830,7 @@ static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
     else if (rval->o.type != MSGPACK_OBJECT_STR) {
         flb_plg_warn(ctx->ins, "the value of %s is not string",
                      ctx->tenant_id_key_config);
+        flb_ra_key_value_destroy(rval);
         return -1;
     }
 
