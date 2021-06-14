@@ -648,14 +648,17 @@ endif()
 # =========================================
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
-  if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  if (CMAKE_OSX_SYSROOT)
     # From macOS Mojave, /usr/include does not store C SDK headers.
-    set(CFLAGS "${CFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
+    # For libbacktrace building on macOS, we have to tell C headers where they are located.
+    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
+  else()
+    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
   endif()
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
+    BUILD_COMMAND $(MAKE) CC=${DEPS_C_COMPILER}
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
