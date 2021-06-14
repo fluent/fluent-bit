@@ -662,6 +662,10 @@ int get_tags_list(struct flb_influxdb *ctx, int n_size, msgpack_object *map, msg
             continue;
         }
 
+        if (v->type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
         /* key */
         const char *key = k->via.str.ptr;
         int key_len = k->via.str.size;
