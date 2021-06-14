@@ -18,7 +18,7 @@
 
 #define EC2_CREDENTIALS_RESPONSE "{\n\
     \"AccessKeyId\": \"ec2_akid\",\n\
-    \"Expiration\": \"2014-10-24T23:00:23Z\",\n\
+    \"Expiration\": \"2025-10-24T23:00:23Z\",\n\
     \"RoleArn\": \"EC2_ROLE_ARN\",\n\
     \"SecretAccessKey\": \"ec2_skid\",\n\
     \"Token\": \"ec2_token\"\n\

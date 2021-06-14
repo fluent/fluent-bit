@@ -1,11 +1,11 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <monkey/mk_lib.h>
+#include <mk_core/mk_unistd.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
-#include <unistd.h>
 
 #define API_ADDR   "127.0.0.1"
 #define API_PORT   "8080"
@@ -18,13 +18,39 @@ void cb_worker(void *data)
     mk_info("[api test] test worker callback; data=%p", data);
 }
 
-void cb_main(mk_request_t *request, void *data)
+
+void cb_sp_test_task_detail(mk_request_t *request, void *data)
 {
+    int i;
     (void) data;
 
     mk_http_status(request, 200);
-    mk_http_header(request, "X-Monkey", 8, "OK", 2);
-    mk_http_send(request, ":)\n", 3, NULL);
+    mk_http_send(request, "CB_SP_TEST_TASK_DETAIL", strlen("CB_SP_TEST_TASK_DETAIL"), NULL);
+    mk_http_done(request);
+}
+
+void cb_sp_test_task_main(mk_request_t *request, void *data)
+{
+    int i;
+    (void) data;
+
+    mk_http_status(request, 200);
+    mk_http_send(request, "CB_SP_TEST_TASK_MAIN", strlen("CB_SP_TEST_TASK_MAIN"), NULL);
+    mk_http_done(request);
+}
+
+void cb_main(mk_request_t *request, void *data)
+{
+    int i;
+    (void) data;
+
+    mk_http_status(request, 200);
+
+    for (i = 0; i < 20; i++) {
+        mk_http_send(request, "first", 5, NULL);
+        mk_http_send(request, "second", 6, NULL);
+        mk_http_send(request, "third", 5, NULL);
+    }
     mk_http_done(request);
 }
 
@@ -38,7 +64,7 @@ void cb_test_chunks(mk_request_t *request, void *data)
     mk_http_status(request, 200);
     mk_http_header(request, "X-Monkey", 8, "OK", 2);
 
-    for (i = 0; i < 1000; i++) {
+    for (i = 0; i < 4; i++) {
         len = snprintf(tmp, sizeof(tmp) -1, "test-chunk %6i\n ", i);
         mk_http_send(request, tmp, len, NULL);
     }
@@ -128,9 +154,17 @@ int main()
     mk_vhost_set(ctx, vid,
                  "Name", "monotop",
                  NULL);
+
+    mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task/[A-Za-z_][0-9A-Za-z_\\-]*", 
+                     cb_sp_test_task_detail, NULL);
+    
+    mk_vhost_handler(ctx, vid, "/api/v1/stream_processor/task",
+                     cb_sp_test_task_main, NULL);
+
     mk_vhost_handler(ctx, vid, "/test_chunks", cb_test_chunks, NULL);
     mk_vhost_handler(ctx, vid, "/test_big_chunk", cb_test_big_chunk, NULL);
     mk_vhost_handler(ctx, vid, "/", cb_main, NULL);
+
 
     mk_worker_callback(ctx,
                        cb_worker,

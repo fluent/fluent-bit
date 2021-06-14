@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,14 +25,11 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_time.h>
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
-
-#define _BSD_SOURCE
-
-#include <sys/time.h>
 
 #define PROMETHEUS_HEADER "text/plain; version=0.0.4"
 
@@ -133,6 +130,12 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
     buf->data = out_data;
 
     buf->raw_data = flb_malloc(size);
+    if (!buf->raw_data) {
+        flb_errno();
+        flb_sds_destroy(out_data);
+        flb_free(buf);
+        return;
+    }
     memcpy(buf->raw_data, data, size);
     buf->raw_size = size;
 
@@ -196,7 +199,7 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
         return flb_sds_cat(*metric_helptxt, " Number of output errors.\n", 26);
     }
     else if (strstr(metric_name, "output_retries_failed")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output retries failed.\n", 34);
+        return flb_sds_cat(*metric_helptxt, " Number of abandoned batches because the maximum number of re-tries was reached.\n", 81);
     }
     else if (strstr(metric_name, "output_retries")) {
         return flb_sds_cat(*metric_helptxt, " Number of output retries.\n", 27);
@@ -237,7 +240,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     char time_str[64];
     char start_time_str[64];
     char* *metrics_arr;
-    struct timeval tp;
+    struct flb_time tp;
     struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
@@ -263,6 +266,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     /* length of HELP text */
     metric_helptxt = flb_sds_create_size(128);
     if (!metric_helptxt) {
+        flb_sds_destroy(sds);
         mk_http_status(request, 500);
         mk_http_done(request);
         buf->users--;
@@ -271,8 +275,8 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
 
     /* current time */
-    gettimeofday(&tp, NULL);
-    now = tp.tv_sec * 1000 + tp.tv_usec / 1000;
+    flb_time_get(&tp);
+    now = flb_time_to_nanosec(&tp) / 1000000; /* in milliseconds */
     time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
     start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1, "%lu", config->init_time);
 
@@ -297,6 +301,18 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
         }
     }
     metrics_arr = flb_malloc(num_metrics * sizeof(char*));
+    if (!metrics_arr) {
+        flb_errno();
+
+        mk_http_status(request, 500);
+        mk_http_done(request);
+        buf->users--;
+
+        flb_sds_destroy(sds);
+        flb_sds_destroy(metric_helptxt);
+        msgpack_unpacked_destroy(&result);
+        return;
+    }
 
     for (i = 0; i < map.via.map.size; i++) {
         msgpack_object k;

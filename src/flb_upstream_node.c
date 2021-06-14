@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -171,7 +171,7 @@ const char *flb_upstream_node_get_property(const char *prop,
 {
     int ret;
     int len;
-    const char *value;
+    void *value;
     size_t size;
 
     len = strlen(prop);
@@ -181,7 +181,7 @@ const char *flb_upstream_node_get_property(const char *prop,
         return NULL;
     }
 
-    return value;
+    return (char *) value;
 }
 
 void flb_upstream_node_destroy(struct flb_upstream_node *node)

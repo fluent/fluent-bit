@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,10 +42,10 @@ struct modifier_key {
 struct record_modifier_ctx {
     int records_num;
     int remove_keys_num;
-    int whitelist_keys_num;
+    int allowlist_keys_num;
     struct mk_list records;
     struct mk_list remove_keys;
-    struct mk_list whitelist_keys;
+    struct mk_list allowlist_keys;
     struct flb_filter_instance *ins;
 };
 

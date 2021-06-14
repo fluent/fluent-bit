@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,19 +17,18 @@
  *  limitations under the License.
  */
 
- #include <fluent-bit/flb_info.h>
- #include <fluent-bit/flb_sds.h>
- #include <fluent-bit/flb_http_client.h>
- #include <fluent-bit/flb_aws_credentials.h>
- #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_jsmn.h>
 
- #include <jsmn/jsmn.h>
- #include <stdlib.h>
- #include <time.h>
-
- #include <sys/types.h>
- #include <sys/stat.h>
- #include <ctype.h>
+#include <stdlib.h>
+#include <time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <ctype.h>
 
 #define ACCESS_KEY_PROPERTY_NAME            "aws_access_key_id"
 #define SECRET_KEY_PROPERTY_NAME            "aws_secret_access_key"
@@ -146,6 +145,12 @@ void async_fn_profile(struct flb_aws_provider *provider)
     return;
 }
 
+void upstream_set_fn_profile(struct flb_aws_provider *provider,
+                             struct flb_output_instance *ins)
+{
+    return;
+}
+
 void destroy_fn_profile(struct flb_aws_provider *provider)
 {
     struct flb_aws_provider_profile *implementation = provider->implementation;
@@ -177,6 +182,7 @@ static struct flb_aws_provider_vtable profile_provider_vtable = {
     .destroy = destroy_fn_profile,
     .sync = sync_fn_profile,
     .async = async_fn_profile,
+    .upstream_set = upstream_set_fn_profile,
 };
 
 struct flb_aws_provider *flb_profile_provider_create()

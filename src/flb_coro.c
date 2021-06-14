@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,9 +24,23 @@
 
 FLB_TLS_DEFINE(struct flb_coro, flb_coro_key);
 
+static pthread_mutex_t coro_mutex_init;
+
 void flb_coro_init()
 {
     FLB_TLS_INIT(flb_coro_key);
+    pthread_mutex_init(&coro_mutex_init, NULL);
+}
+
+void flb_coro_thread_init()
+{
+    size_t s;
+    cothread_t th;
+
+    pthread_mutex_lock(&coro_mutex_init);
+    th = co_create(256, NULL, &s);
+    co_delete(th);
+    pthread_mutex_unlock(&coro_mutex_init);
 }
 
 struct flb_coro *flb_coro_get()

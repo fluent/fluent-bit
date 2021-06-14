@@ -19,7 +19,9 @@
 
 #define _GNU_SOURCE
 
-#include <pthread.h>
+#include <mk_core/mk_pthread.h>
+#include <mk_core/mk_event.h>
+
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_clock.h>
@@ -31,7 +33,11 @@ void mk_server_info(struct mk_server *server)
     struct mk_plugin *p;
     struct mk_config_listener *l;
 
+#ifdef _WIN32
+    printf(MK_BANNER_ENTRY "Process ID is %ld\n", (long)GetCurrentProcessId());
+#else
     printf(MK_BANNER_ENTRY "Process ID is %ld\n", (long) getpid());
+#endif
     mk_list_foreach(head, &server->listeners) {
         l = mk_list_entry(head, struct mk_config_listener, _head);
         printf(MK_BANNER_ENTRY "Server listening on %s:%s\n",
@@ -73,6 +79,14 @@ struct mk_server *mk_server_create()
         return NULL;
     }
 
+    /* I'll try to leave both initializations here because 
+     * it should be possible to run in windows using the accept
+     * backend in which case it doesn't make sense to tie the net stack
+     * initialization to libevent.
+     */
+    mk_net_init();
+    mk_event_init();
+
     /* Library mode: event loop */
     server->lib_mode = MK_TRUE;
     server->lib_evl = mk_event_loop_create(8);
@@ -81,11 +95,28 @@ struct mk_server *mk_server_create()
         return NULL;
     }
 
+
     /* Library mode: channel manager */
+
+    /* This code causes a memory corruption because it interprets the mk_server structure 
+     * pointer as a mk_event structure pointer but the mk_server structure doesn't start
+     * with a mk_event member, however, so I added an event to that structure to fix the 
+     * issue, however, I could be wrong so some input on this would be great.
+     */
+
+    memset(&server->lib_ch_event, 0, sizeof(struct mk_event));
+
+    ret = mk_event_channel_create(server->lib_evl,
+        &server->lib_ch_manager[0],
+        &server->lib_ch_manager[1],
+        &server->lib_ch_event);
+/*
     ret = mk_event_channel_create(server->lib_evl,
                                   &server->lib_ch_manager[0],
                                   &server->lib_ch_manager[1],
                                   server);
+*/
+
     if (ret != 0) {
         mk_event_loop_destroy(server->lib_evl);
         mk_mem_free(server);
@@ -113,7 +144,7 @@ struct mk_server *mk_server_create()
 
 #ifdef MK_HAVE_TRACE
     MK_TRACE("Monkey TRACE is enabled");
-    pthread_mutex_init(&mutex_trace, (pthread_mutexattr_t *) NULL);
+    //pthread_mutex_init(&mutex_trace, (pthread_mutexattr_t *) NULL);
 #endif
 
 #ifdef LINUX_TRACE

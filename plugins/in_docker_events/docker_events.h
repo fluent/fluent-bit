@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,10 +33,20 @@
 struct flb_in_de_config
 {
     int fd;                         /* File descriptor */
+    int coll_id;                    /* collector id */
     flb_sds_t unix_path;            /* Unix path for socket */
     char *buf;
     size_t buf_size;
     flb_sds_t key;
+
+    /* retries */
+    int reconnect_retry_limits;
+    int reconnect_retry_interval;
+
+    /* retries (internal) */
+    int current_retries;
+    int retry_coll_id;
+
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
 

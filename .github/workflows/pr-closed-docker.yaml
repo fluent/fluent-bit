@@ -1,0 +1,20 @@
+name: Remove docker images for stale/closed PR(s).
+on:
+  pull_request:
+    branches:
+      - master
+    types: [closed]
+jobs:
+  docker_cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: addnab/docker-run-action@v2
+        with:
+          image: lumir/remove-dockerhub-tag
+          run: python3 remove-dockerhub-tag.py --user ${{ env.dockerhub_username }} --password ${{ env.dockerhub_password }} ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }} || exit 0
+        env:
+          pr: ${{ github.event.number }}
+          arch: x86_64
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          dockerhub_organization: ${{ secrets.DOCKERHUB_DEV_ORGANIZATION }}

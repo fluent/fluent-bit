@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -421,7 +421,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
-    if (ins->log_level == -1) {
+    if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
     }
 
@@ -454,8 +454,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
          */
         config_map = flb_config_map_create(config, p->config_map);
         if (!config_map) {
-            flb_error("[filter] error loading config map for '%s' plugin",
+            flb_error("[input] error loading config map for '%s' plugin",
                       p->name);
+            flb_input_instance_destroy(ins);
             return -1;
         }
         ins->config_map = config_map;
@@ -591,7 +592,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *
@@ -873,6 +874,24 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 
     coll->running = FLB_FALSE;
 
+    return 0;
+}
+
+int flb_input_collector_delete(int coll_id, struct flb_input_instance *in)
+{
+    struct flb_input_collector *coll;
+
+    coll = get_collector(coll_id, in);
+    if (!coll) {
+        return -1;
+    }
+    if (flb_input_collector_pause(coll_id, in) < 0) {
+        return -1;
+    }
+
+    mk_list_del(&coll->_head);
+    mk_list_del(&coll->_head_ins);
+    flb_free(coll);
     return 0;
 }
 

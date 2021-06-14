@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -346,6 +346,20 @@ static flb_sds_t url_params_format(char *params)
             if (val) {
                 flb_sds_destroy(val);
             }
+            flb_slist_destroy(&split);
+            flb_kv_release(&list);
+            return NULL;
+        }
+
+        /*
+         * If key length is 0 then a problem occurs because val
+         * will not be set flb_kv_item_create_len, which eventually
+         * results in issues since kv->val will be equal to NULL.
+         * Thus, check here whether key length is satisfied
+         */
+        if (flb_sds_len(key) == 0) {
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
             flb_slist_destroy(&split);
             flb_kv_release(&list);
             return NULL;

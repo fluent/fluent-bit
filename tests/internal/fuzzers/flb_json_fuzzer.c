@@ -1,6 +1,6 @@
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,9 +19,12 @@
 #include <stdint.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
+#include "flb_fuzz_header.h"
 
 int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
 {
+    TIMEOUT_GUARD
+
     /* json packer */
     char *out_buf = NULL;
     size_t out_size;
@@ -35,13 +38,21 @@ int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
         int ret2 = msgpack_unpack_next(&result, out_buf, out_size, &off);
         if (ret2 == MSGPACK_UNPACK_SUCCESS) {
             msgpack_object root = result.data;
-            flb_msgpack_to_json_str(0, &root);
+            char *tmp = NULL;
+            tmp = flb_msgpack_to_json_str(0, &root);
+            if (tmp != NULL) {
+                flb_free(tmp);
+            }
         }
+        msgpack_unpacked_destroy(&result);
 
-        flb_pack_msgpack_to_json_format(out_buf, out_size,
+        flb_sds_t ret_s = flb_pack_msgpack_to_json_format(out_buf, out_size,
                 FLB_PACK_JSON_FORMAT_LINES,
                 FLB_PACK_JSON_DATE_EPOCH, NULL);
         free(out_buf);
+        if (ret_s != NULL) {
+            flb_sds_destroy(ret_s);
+        }
     }
 
     return 0;

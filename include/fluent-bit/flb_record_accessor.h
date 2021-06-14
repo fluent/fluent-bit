@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +30,7 @@ struct flb_record_accessor {
     size_t size_hint;
     flb_sds_t pattern;
     struct mk_list list;         /* List of parsed strings */
+    struct mk_list _head;        /* Head to custom list (only used by flb_mp.h) */
 };
 
 struct flb_record_accessor *flb_ra_create(char *str, int translate_env);
@@ -44,6 +45,11 @@ int flb_ra_strcmp(struct flb_record_accessor *ra, msgpack_object map,
 int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
                        struct flb_regex *regex,
                        struct flb_regex_search *result);
+
+int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                       msgpack_object **start_key,
+                       msgpack_object **out_key, msgpack_object **out_val);
+
 struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
                                              msgpack_object map);
 

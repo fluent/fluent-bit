@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +35,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *tag,
 {
     int len;
     flb_sds_t uri;
+    char *ext;
     char *encoded_blockid;
 
     len = strlen(blockid);
@@ -49,13 +50,20 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *tag,
         return NULL;
     }
 
-    if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s.%" PRIu64 "?blockid=%s&comp=block",
-                       ctx->path, tag, ms, encoded_blockid);
+    if (ctx->compress_blob == FLB_TRUE) {
+        ext = ".gz";
     }
     else {
-        flb_sds_printf(&uri, "/%s.%" PRIu64 "?blockid=%s&comp=block",
-                       tag, ms, encoded_blockid);
+        ext = "";
+    }
+
+    if (ctx->path) {
+        flb_sds_printf(&uri, "/%s/%s.%" PRIu64 "%s?blockid=%s&comp=block",
+                       ctx->path, tag, ms, ext, encoded_blockid);
+    }
+    else {
+        flb_sds_printf(&uri, "/%s.%" PRIu64 "%s?blockid=%s&comp=block",
+                       tag, ms, ext, encoded_blockid);
     }
 
     flb_sds_destroy(encoded_blockid);
@@ -65,6 +73,7 @@ flb_sds_t azb_block_blob_uri(struct flb_azure_blob *ctx, char *tag,
 flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
                                     char *tag, uint64_t ms)
 {
+    char *ext;
     flb_sds_t uri;
 
     uri = azb_uri_container(ctx);
@@ -72,12 +81,19 @@ flb_sds_t azb_block_blob_uri_commit(struct flb_azure_blob *ctx,
         return NULL;
     }
 
-    if (ctx->path) {
-        flb_sds_printf(&uri, "/%s/%s.%" PRIu64 "?comp=blocklist", ctx->path, tag,
-                       ms);
+    if (ctx->compress_blob == FLB_TRUE) {
+        ext = ".gz";
     }
     else {
-        flb_sds_printf(&uri, "/%s.%" PRIu64 "?comp=blocklist", tag, ms);
+        ext = "";
+    }
+
+    if (ctx->path) {
+        flb_sds_printf(&uri, "/%s/%s.%" PRIu64 "%s?comp=blocklist", ctx->path, tag,
+                       ms, ext);
+    }
+    else {
+        flb_sds_printf(&uri, "/%s.%" PRIu64 "%s?comp=blocklist", tag, ms, ext);
     }
 
     return uri;
@@ -177,7 +193,9 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, flb_sds_len(payload), FLB_FALSE, FLB_FALSE);
+    azb_http_client_setup(ctx, c, flb_sds_len(payload),
+                          FLB_FALSE,
+                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);

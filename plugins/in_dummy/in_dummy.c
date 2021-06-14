@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
@@ -127,10 +128,9 @@ static int configure(struct flb_dummy *ctx,
 
     ctx->ref_msgpack = NULL;
 
-    /* samples */
-    str = flb_input_get_property("samples", in);
-    if (str != NULL && atoi(str) >= 0) {
-        ctx->samples = atoi(str);
+    ret = flb_input_config_map_set(in, (void *) ctx);
+    if (ret == -1) {
+        return -1;
     }
 
     /* the message */
@@ -246,6 +246,37 @@ static int in_dummy_exit(void *data, struct flb_config *config)
 }
 
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_INT, "samples", "0",
+    0, FLB_TRUE, offsetof(struct flb_dummy, samples),
+    "set a number of times to generate event."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "dummy", DEFAULT_DUMMY_MESSAGE,
+    0, FLB_FALSE, 0,
+    "set the sample record to be generated. It should be a JSON object."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "rate", "1",
+    0, FLB_FALSE, 0,
+    "set a number of events per second."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "start_time_sec", "1",
+    0, FLB_FALSE, 0,
+    "set a dummy base timestamp in seconds."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "start_time_nsec", "0",
+    0, FLB_FALSE, 0,
+    "set a dummy base timestamp in nanoseconds."
+   },
+   {0}
+};
+
+
 struct flb_input_plugin in_dummy_plugin = {
     .name         = "dummy",
     .description  = "Generate dummy data",
@@ -253,5 +284,6 @@ struct flb_input_plugin in_dummy_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_dummy_collect,
     .cb_flush_buf = NULL,
+    .config_map   = config_map,
     .cb_exit      = in_dummy_exit
 };

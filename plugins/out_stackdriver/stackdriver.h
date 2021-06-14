@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_regex.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
@@ -66,10 +68,6 @@
 #define K8S_NODE      "k8s_node"
 #define K8S_POD       "k8s_pod"
 
-#define STREAM_STDOUT 1
-#define STREAM_STDERR 2
-#define STREAM_UNKNOWN 3
-
 #define STDOUT "stdout"
 #define STDERR "stderr"
 
@@ -91,6 +89,7 @@ struct flb_stackdriver {
     bool metadata_server_auth;
 
     /* metadata server (GCP specific, WIP) */
+    flb_sds_t metadata_server;
     flb_sds_t zone;
     flb_sds_t instance_id;
     flb_sds_t instance_name;
@@ -102,21 +101,43 @@ struct flb_stackdriver {
     flb_sds_t pod_name;
     flb_sds_t container_name;
     flb_sds_t node_name;
-    bool k8s_resource_type;
+    bool is_k8s_resource_type;
 
     flb_sds_t labels_key;
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
 
+    /* generic resources */
+    flb_sds_t location;
+    flb_sds_t namespace_id;
+    bool is_generic_resource_type;
+
+    /* generic_node specific */
+    flb_sds_t node_id;
+
+    /* generic_task specific */
+    flb_sds_t job;
+    flb_sds_t task_id;
+
     /* other */
+    flb_sds_t export_to_project_id;
     flb_sds_t resource;
     flb_sds_t severity_key;
     flb_sds_t trace_key;
     flb_sds_t log_name_key;
     bool autoformat_stackdriver_trace;
 
+    flb_sds_t stackdriver_agent;
+    
+    /* Regex context to parse tags */
+    flb_sds_t custom_k8s_regex;
+    struct flb_regex *regex;
+
     /* oauth2 context */
     struct flb_oauth2 *o;
+
+    /* mutex for acquiring oauth tokens */
+    pthread_mutex_t token_mutex;
 
     /* upstream context for stackdriver write end-point */
     struct flb_upstream *u;

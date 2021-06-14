@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -366,8 +366,7 @@ int flb_filter_init_all(struct flb_config *config)
             ) {
             flb_warn("[filter] NO match rule for %s filter instance, unloading.",
                      ins->name);
-            mk_list_del(&ins->_head);
-            flb_free(ins);
+            flb_filter_instance_destroy(ins);
             continue;
         }
         if (ins->log_level == -1) {

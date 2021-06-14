@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +39,28 @@
 #ifdef FLB_HAVE_REGEX
 #define FLB_HASH_TABLE_SIZE 50
 #endif
+
+/* return the file modification time in seconds since epoch */
+static inline int64_t flb_tail_stat_mtime(struct stat *st)
+{
+#if defined(FLB_HAVE_WINDOWS)
+    return (int64_t) st->st_mtime;
+#elif defined(__APPLE__) && !defined(_POSIX_C_SOURCE)
+    return (int64_t) st->st_mtimespec.tv_sec;
+#elif (_POSIX_C_SOURCE >= 200809L ||                                \
+    defined(_BSD_SOURCE) || defined(_SVID_SOURCE) ||                \
+    defined(__BIONIC__) || (defined (__SVR4) && defined (__sun)) || \
+    defined(__FreeBSD__) || defined (__linux__))
+    return (int64_t) st->st_mtim.tv_sec;
+#elif defined(_AIX)
+    return (int64_t) st->st_mtime;
+#else
+    return (int64_t) st->st_mtime;
+#endif
+
+    /* backend unsupported: submit a PR :) */
+    return -1;
+}
 
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
@@ -109,9 +131,10 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                         struct flb_config *config, void *context);
 int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            struct flb_time *time, char **data,
-                           size_t *data_size, struct flb_tail_file *file);
+                           size_t *data_size, struct flb_tail_file *file,
+                           size_t processed_bytes);
 int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
-                            struct flb_tail_file *file);
+                            struct flb_tail_file *file, size_t processed_bytes);
 
 #endif

@@ -38,6 +38,8 @@ struct mk_gmt_cache {
     unsigned long long hits;
 };
 
+int mk_utils_get_system_core_count();
+int mk_utils_get_system_page_size();
 
 int    mk_utils_utime2gmt(char **data, time_t date);
 time_t mk_utils_gmt2utime(char *date);

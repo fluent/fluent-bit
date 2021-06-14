@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +22,9 @@
 
 #include "stackdriver.h"
 
+/* Metadata server URL */
+#define FLB_STD_METADATA_SERVER "http://metadata.google.internal"
+
 /* Project ID metadata URI */
 #define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/project-id"
 
@@ -33,6 +36,9 @@
 
 /* Service account metadata URI */
 #define FLB_STD_METADATA_SERVICE_ACCOUNT_URI "/computeMetadata/v1/instance/service-accounts/"
+
+/* Max size of token response from metadata server */
+#define FLB_STD_METADATA_TOKEN_SIZE_MAX 14336
 
 int gce_metadata_read_token(struct flb_stackdriver *ctx);
 int gce_metadata_read_zone(struct flb_stackdriver *ctx);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -91,6 +91,8 @@ static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
 #define flb_coro_return(th) co_switch(th->caller)
 
 void flb_coro_init();
+void flb_coro_thread_init();
+
 struct flb_coro *flb_coro_get();
 void flb_coro_set(struct flb_coro *coro);
 
@@ -106,7 +108,7 @@ static FLB_INLINE struct flb_coro *flb_coro_create(void *data)
     struct flb_coro *coro;
 
     /* Create a thread context and initialize */
-    coro = (struct flb_coro *) flb_malloc(sizeof(struct flb_coro));
+    coro = (struct flb_coro *) flb_calloc(1, sizeof(struct flb_coro));
     if (!coro) {
         flb_errno();
         return NULL;

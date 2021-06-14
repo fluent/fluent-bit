@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
+#include <limits.h>
 
 /* Map msgpack object into flb_ra_value representation */
 static int msgpack_object_to_ra_value(msgpack_object o,
@@ -116,14 +117,14 @@ static int msgpack_object_strcmp(msgpack_object o, char *str, int len)
 
 /* Lookup perfect match of sub-keys and map content */
 static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
-                            msgpack_object **out)
+                            msgpack_object **out_key, msgpack_object **out_val)
 {
     int i = 0;
     int levels;
     int matched = 0;
     msgpack_object *found = NULL;
-    msgpack_object key;
-    msgpack_object *val;
+    msgpack_object *key = NULL;
+    msgpack_object *val = NULL;
     msgpack_object cur;
     struct mk_list *head;
     struct flb_ra_subentry *entry;
@@ -144,8 +145,9 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
                 return -1;
             }
 
-            /* Index limit */
-            if (cur.via.array.size < entry->array_id + 1) {
+            /* Index limit and ensure no overflow */
+            if (entry->array_id == INT_MAX ||
+                cur.via.array.size < entry->array_id + 1) {
                 return -1;
             }
 
@@ -163,16 +165,16 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
             continue;
         }
 
-        key = cur.via.map.ptr[i].key;
+        key = &cur.via.map.ptr[i].key;
         val = &cur.via.map.ptr[i].val;
 
         /* A bit obvious, but it's better to validate data type */
-        if (key.type != MSGPACK_OBJECT_STR) {
+        if (key->type != MSGPACK_OBJECT_STR) {
             found = NULL;
             continue;
         }
 
-        found = &key;
+        found = key;
         cur = cur.via.map.ptr[i].val;
 
     next:
@@ -188,7 +190,9 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
         return -1;
     }
 
-    *out = (msgpack_object *) val;
+    *out_key = (msgpack_object *) key;
+    *out_val = (msgpack_object *) val;
+
     return 0;
 }
 
@@ -199,7 +203,8 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     int i;
     int ret;
     msgpack_object val;
-    msgpack_object *out;
+    msgpack_object *out_key;
+    msgpack_object *out_val;
     struct flb_ra_value *result;
 
     /* Get the key position in the map */
@@ -221,9 +226,10 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
         && subkeys != NULL) {
-        ret = subkey_to_object(&val, subkeys, &out);
+
+        ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
-            ret = msgpack_object_to_ra_value(*out, result);
+            ret = msgpack_object_to_ra_value(*out_val, result);
             if (ret == -1) {
                 flb_free(result);
                 return NULL;
@@ -247,13 +253,53 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     return result;
 }
 
+int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
+                         struct mk_list *subkeys,
+                         msgpack_object **start_key,
+                         msgpack_object **out_key, msgpack_object **out_val)
+{
+    int i;
+    int ret;
+    msgpack_object val;
+    msgpack_object *o_key;
+    msgpack_object *o_val;
+
+    /* Get the key position in the map */
+    i = ra_key_val_id(ckey, map);
+    if (i == -1) {
+        return -1;
+    }
+
+    /* Reference entries */
+    *start_key = &map.via.map.ptr[i].key;
+    val = map.via.map.ptr[i].val;
+
+    if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
+        && subkeys != NULL) {
+        ret = subkey_to_object(&val, subkeys, &o_key, &o_val);
+        if (ret == 0) {
+            *out_key = o_key;
+            *out_val = o_val;
+            return 0;
+        }
+    }
+    else {
+        *out_key = &map.via.map.ptr[i].key;
+        *out_val = &map.via.map.ptr[i].val;
+        return 0;
+    }
+
+    return -1;
+}
+
 int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
                       struct mk_list *subkeys, char *str, int len)
 {
     int i;
     int ret;
     msgpack_object val;
-    msgpack_object *out;
+    msgpack_object *out_key;
+    msgpack_object *out_val;
 
     /* Get the key position in the map */
     i = ra_key_val_id(ckey, map);
@@ -266,9 +312,9 @@ int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
         && subkeys != NULL) {
-        ret = subkey_to_object(&val, subkeys, &out);
+        ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
-            return msgpack_object_strcmp(*out, str, len);
+            return msgpack_object_strcmp(*out_val, str, len);
         }
         else {
             return -1;
@@ -285,7 +331,8 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
     int i;
     int ret;
     msgpack_object val;
-    msgpack_object *out = NULL;
+    msgpack_object *out_key;
+    msgpack_object *out_val;
 
     /* Get the key position in the map */
     i = ra_key_val_id(ckey, map);
@@ -298,24 +345,24 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
         && subkeys != NULL) {
-        ret = subkey_to_object(&val, subkeys, &out);
+        ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
-            if (out->type != MSGPACK_OBJECT_STR) {
+            if (out_val->type != MSGPACK_OBJECT_STR) {
                 return -1;
             }
 
             if (result) {
                 /* Regex + capture mode */
                 return flb_regex_do(regex,
-                                    (char *) out->via.str.ptr,
-                                    out->via.str.size,
+                                    (char *) out_val->via.str.ptr,
+                                    out_val->via.str.size,
                                     result);
             }
             else {
                 /* No capture */
                 return flb_regex_match(regex,
-                                       (unsigned char *) out->via.str.ptr,
-                                       out->via.str.size);
+                                       (unsigned char *) out_val->via.str.ptr,
+                                       out_val->via.str.size);
             }
         }
         return -1;

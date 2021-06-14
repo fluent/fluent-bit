@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,12 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define poll WSAPoll
+#else
+#include <sys/poll.h>
+#endif
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
@@ -38,12 +44,26 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_scheduler.h>
 
 #include <monkey/mk_core.h>
+#include <ares.h>
 
 #ifndef SOL_TCP
 #define SOL_TCP IPPROTO_TCP
 #endif
+
+void flb_net_init()
+{
+    int result;
+
+    result = ares_library_init_mem(ARES_LIB_INIT_ALL, flb_malloc, flb_free, flb_realloc);
+
+    if(0 != result) {
+        flb_error("[network] c-ares memory settings initialization error : %s",
+                  ares_strerror(result));
+    }
+}
 
 void flb_net_setup_init(struct flb_net_setup *net)
 {
@@ -227,8 +247,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
     int ret;
     int err;
     int socket_errno;
-    fd_set wait_set;
-    struct timeval timeout;
+    struct pollfd pfd_read;
 
     /* Set socket to non-blocking mode */
     flb_net_socket_nonblocking(fd);
@@ -259,18 +278,15 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
                   fd, host, port);
 
         /*
-         * Prepare a timeout using select(2): we could use our own
+         * Prepare a timeout using poll(2): we could use our own
          * event loop mechanism for this, but it will require an
-         * extra file descriptor, the select(2) call is straightforward
+         * extra file descriptor, the poll(2) call is straightforward
          * for this use case.
          */
-        FD_ZERO(&wait_set);
-        FD_SET(fd, &wait_set);
 
-        /* Wait 'connect_timeout' seconds for an event */
-        timeout.tv_sec = connect_timeout;
-        timeout.tv_usec = 0;
-        ret = select(fd + 1, NULL, &wait_set, NULL, &timeout);
+        pfd_read.fd = fd;
+        pfd_read.events = POLLOUT;
+        ret = poll(&pfd_read, 1, connect_timeout * 1000);
         if (ret == 0) {
             /* Timeout */
             flb_error("[net] connection #%i timeout after %i seconds to: "
@@ -408,6 +424,261 @@ static int net_connect_async(int fd,
     return 0;
 }
 
+static void flb_net_free_translated_addrinfo(struct addrinfo *input)
+{
+    struct addrinfo *current_record;
+    struct addrinfo *next_record;
+
+    if(NULL != input) {
+        next_record = NULL;
+
+        for(current_record = input ;
+            NULL != current_record ;
+            current_record = next_record) {
+
+            if(NULL != current_record->ai_addr) {
+                flb_free(current_record->ai_addr);
+            }
+
+            next_record = current_record->ai_next;
+
+            flb_free(current_record);
+        }
+    }
+}
+
+static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *input)
+{
+    struct ares_addrinfo_node *current_ares_record;
+    struct addrinfo *previous_output_record;
+    struct addrinfo *current_output_record;
+    struct addrinfo *output;
+    int failure_detected;
+
+    output = NULL;
+    failure_detected = 0;
+    current_output_record = NULL;
+    previous_output_record = NULL;
+
+    if(NULL != input) {
+        for(current_ares_record = input->nodes ;
+            NULL != current_ares_record ;
+            current_ares_record = current_ares_record->ai_next) {
+
+            current_output_record = flb_malloc(sizeof(struct addrinfo));
+
+            if(NULL == current_output_record) {
+                flb_errno();
+                failure_detected = 1;
+                break;
+            }
+
+            memset(current_output_record, 0, sizeof(struct addrinfo));
+
+            if(NULL == output) {
+                output = current_output_record;
+            }
+
+            current_output_record->ai_flags = current_ares_record->ai_flags;
+            current_output_record->ai_family = current_ares_record->ai_family;
+            current_output_record->ai_socktype = current_ares_record->ai_socktype;
+            current_output_record->ai_protocol = current_ares_record->ai_protocol;
+            current_output_record->ai_addrlen = current_ares_record->ai_addrlen;
+
+            current_output_record->ai_addr = flb_malloc(current_output_record->ai_addrlen);
+
+            if(NULL == current_output_record->ai_addr) {
+                flb_errno();
+                failure_detected = 1;
+                break;
+            }
+
+            memcpy(current_output_record->ai_addr,
+                   current_ares_record->ai_addr,
+                   current_output_record->ai_addrlen);
+
+            if(NULL != previous_output_record) {
+                previous_output_record->ai_next = current_output_record;
+            }
+
+            previous_output_record = current_output_record;
+        }
+    }
+
+    if(1 == failure_detected) {
+        if(NULL != output) {
+            flb_net_free_translated_addrinfo(output);
+
+            output = NULL;
+        }
+    }
+
+    return output;
+}
+
+static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
+                                         struct ares_addrinfo *res)
+{
+    struct flb_dns_lookup_context *context;
+
+    context = (struct flb_dns_lookup_context *) arg;
+
+    if(ARES_SUCCESS == status) {
+        context->result = flb_net_translate_ares_addrinfo(res);
+
+        if(NULL == context->result) {
+            context->result_code = 2;
+        }
+        else {
+            context->result_code = 0;
+        }
+        ares_freeaddrinfo(res);
+    }
+    else {
+        context->result_code = 1;
+    }
+
+    context->finished = 1;
+}
+
+static int flb_net_getaddrinfo_event_handler(void *arg)
+{
+    struct flb_dns_lookup_context *context;
+
+    context = (struct flb_dns_lookup_context *) arg;
+
+    ares_process_fd(context->ares_channel,
+                    context->response_event.fd,
+                    context->response_event.fd);
+
+    if(1 == context->finished) {
+        flb_coro_resume(context->coroutine);
+    }
+
+    return 0;
+}
+
+static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
+                                             int type,
+                                             void *userdata)
+{
+    struct flb_dns_lookup_context *context;
+    int event_mask;
+
+    context = (struct flb_dns_lookup_context *) userdata;
+
+    context->ares_socket_created = 1;
+
+    context->response_event.mask    = MK_EVENT_EMPTY;
+    context->response_event.status  = MK_EVENT_NONE;
+    context->response_event.data    = &context->response_event;
+    context->response_event.handler = flb_net_getaddrinfo_event_handler;
+    context->response_event.fd      = socket_fd;
+
+    event_mask = MK_EVENT_READ;
+
+    /* c-ares doesn't use a macro for the socket type so :
+     * 1 means it's a TCP socket
+     * 2 means it's a UDP socket
+     *
+     * For TCP sockets we want to monitor for write events because we need to call
+     * ares_process_fd in order to issue the query unlike UDP sockets which automatically
+     * send the query after creating the socket.
+     */
+    if(1 == type){
+        event_mask |= MK_EVENT_WRITE;
+    }
+
+    mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM,
+                 event_mask, &context->response_event);
+
+    return ARES_SUCCESS;
+}
+
+struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *event_loop, struct flb_coro *coroutine)
+{
+    struct flb_dns_lookup_context *context;
+    int result;
+
+    /* The initialization order here is important since it makes it easier to handle
+     * failures
+    */
+    context = flb_calloc(1, sizeof(struct flb_dns_lookup_context));
+    if (!context) {
+        flb_errno();
+        return NULL;
+    }
+
+    result = ares_init((ares_channel *)&context->ares_channel);
+
+    if (ARES_SUCCESS != result) {
+        flb_free(context);
+        return NULL;
+    }
+
+    context->ares_socket_created = 0;
+    context->event_loop = event_loop;
+    context->coroutine = coroutine;
+    context->finished = 0;
+
+    ares_set_socket_callback(context->ares_channel,
+                             flb_net_ares_sock_create_callback,
+                             context);
+
+    return context;
+}
+
+void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
+{
+    mk_event_del(context->event_loop, &context->response_event);
+
+    ares_destroy(context->ares_channel);
+
+    flb_free(context);
+}
+
+
+int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
+                        struct addrinfo **res)
+{
+    struct flb_dns_lookup_context *lookup_context;
+    struct ares_addrinfo_hints     ares_hints;
+    struct mk_event_loop          *event_loop;
+    struct flb_coro               *coroutine;
+    int                            result;
+
+    event_loop = flb_engine_evl_get();
+    coroutine = flb_coro_get();
+
+    lookup_context = flb_net_dns_lookup_context_create(event_loop, coroutine);
+
+    if (!lookup_context) {
+        return EAI_AGAIN;
+    }
+
+    ares_hints.ai_flags = hints->ai_flags;
+    ares_hints.ai_family = hints->ai_family;
+    ares_hints.ai_socktype = hints->ai_socktype;
+    ares_hints.ai_protocol = hints->ai_protocol;
+
+    ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints,
+                     flb_net_getaddrinfo_callback, lookup_context);
+
+    if (1 == lookup_context->ares_socket_created) {
+        flb_coro_yield(coroutine, FLB_FALSE);
+    }
+
+    if (0 == lookup_context->result_code) {
+        *res = lookup_context->result;
+    }
+
+    result = lookup_context->result_code;
+
+    flb_net_dns_lookup_context_destroy(lookup_context);
+
+    return result;
+}
+
 int flb_net_bind_address(int fd, char *source_addr)
 {
     int ret;
@@ -490,7 +761,13 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     snprintf(_port, sizeof(_port), "%lu", port);
 
     /* retrieve DNS info */
-    ret = getaddrinfo(host, _port, &hints, &res);
+    if (is_async) {
+        ret = flb_net_getaddrinfo(host, _port, &hints, &res);
+    }
+    else {
+        ret = getaddrinfo(host, _port, &hints, &res);
+    }
+
     if (ret != 0) {
         flb_warn("[net] getaddrinfo(host='%s'): %s", host, gai_strerror(ret));
         return -1;
@@ -545,13 +822,26 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         if (ret == -1) {
-            flb_error("[net] cannot connect to %s:%s", host, _port);
+            /* If the connection failed, just abort and report the problem */
+            flb_error("[net] socket #%i could not connect to %s:%s",
+                      fd, host, _port);
+            if (u_conn) {
+                u_conn->fd = -1;
+                u_conn->event.fd = -1;
+            }
             flb_socket_close(fd);
-            continue;
+            fd = -1;
+            break;
         }
         break;
     }
-    freeaddrinfo(res);
+
+    if (is_async) {
+        flb_net_free_translated_addrinfo(res);
+    }
+    else {
+        freeaddrinfo(res);
+    }
 
     if (rp == NULL) {
         return -1;
@@ -617,9 +907,11 @@ flb_sockfd_t flb_net_udp_connect(const char *host, unsigned long port,
          * the same Fluent Bit I/O API to deliver a message.
          */
         if (connect(fd, rp->ai_addr, rp->ai_addrlen) == -1) {
-            flb_error("Cannot connect to %s port %s", host, _port);
+            flb_error("[net] UDP socket %i could connect to %s:%s",
+                      fd, host, _port);
             flb_socket_close(fd);
-            continue;
+            fd = -1;
+            break;
         }
         break;
     }

@@ -51,6 +51,11 @@ struct mk_string_line
 void *memrchr(const void *s, int c, size_t n);
 #endif
 
+#ifndef MK_HAVE_MEMMEM
+void *memmem(const void *haystack, size_t haystacklen,
+             const void *needle, size_t needlelen);
+#endif
+
 /* Lookup char into string, return position */
 int mk_string_char_search(const char *string, int c, int len);
 
@@ -72,7 +77,7 @@ int mk_string_trim(char **str);
 char *mk_string_build(char **buffer, unsigned long *len,
                       const char *format, ...) PRINTF_WARNINGS(3,4);
 
-#ifdef __GNUC__
+#if defined (__GNUC__) || defined (_WIN32)
 int mk_string_itop(uint64_t value, mk_ptr_t *p);
 #endif
 

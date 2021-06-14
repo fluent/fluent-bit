@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -177,6 +177,9 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
 
     task = config->tasks_map[task_id].task;
     ins  = flb_output_get_instance(config, out_id);
+    if (flb_output_is_threaded(ins) == FLB_FALSE) {
+        flb_output_flush_finished(config, out_id);
+    }
 
     /* A thread has finished, delete it */
     if (ret == FLB_OK) {
@@ -212,6 +215,17 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         flb_task_users_dec(task, FLB_TRUE);
     }
     else if (ret == FLB_RETRY) {
+        if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+            flb_info("[engine] chunk '%s' is not retried (no retry config): "
+                     "task_id=%i, input=%s > output=%s (out_id=%i)",
+                     flb_input_chunk_get_name(task->ic),
+                     task_id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins), out_id);
+            flb_task_users_dec(task, FLB_TRUE);
+            return 0;
+        }
+
         /* Create a Task-Retry */
         retry = flb_task_retry_create(task, ins);
         if (!retry) {
@@ -442,12 +456,8 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event_loop *evl;
     struct flb_sched *sched;
 
-    /* HTTP Server */
-#ifdef FLB_HAVE_HTTP
-    if (config->http_server == FLB_TRUE) {
-        flb_http_server_start(config);
-    }
-#endif
+    /* Initialize the networking layer */
+    flb_net_init();
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
@@ -494,6 +504,18 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Initialize the scheduler */
+    sched = flb_sched_create(config, config->evl);
+    if (!sched) {
+        flb_error("[engine] scheduler could not start");
+        return -1;
+    }
+    config->sched = sched;
+
+    /* Register the scheduler context */
+    flb_sched_ctx_init();
+    flb_sched_ctx_set(sched);
+
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
     if (ret == -1) {
@@ -532,17 +554,6 @@ int flb_engine_start(struct flb_config *config)
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
 
-    /* Initialize the scheduler */
-    sched = flb_sched_create(config, config->evl);
-    if (!sched) {
-        flb_error("[engine] scheduler could not start");
-        return -1;
-    }
-    config->sched = sched;
-
-    /* Register the scheduler context */
-    flb_sched_ctx_init();
-    flb_sched_ctx_set(sched);
 
 #ifdef FLB_HAVE_METRICS
     if (config->storage_metrics == FLB_TRUE) {
@@ -706,11 +717,6 @@ int flb_engine_shutdown(struct flb_config *config)
     /* router */
     flb_router_exit(config);
 
-#ifdef FLB_HAVE_PARSER
-    /* parsers */
-    flb_parser_exit(config);
-#endif
-
     /* cleanup plugins */
     flb_filter_exit(config);
     flb_input_exit_all(config);
@@ -731,8 +737,6 @@ int flb_engine_shutdown(struct flb_config *config)
         flb_hs_destroy(config->http_ctx);
     }
 #endif
-
-    flb_config_exit(config);
 
     return 0;
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,7 +52,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            const char *key, size_t key_len,
-                           const char *val, size_t val_len)
+                           const char *val, size_t val_len, size_t val_uint64)
 {
     int i;
     int size = root->via.map.size;
@@ -62,8 +62,13 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
     /* Append new k/v */
     msgpack_pack_str(pck, key_len);
     msgpack_pack_str_body(pck, key, key_len);
-    msgpack_pack_str(pck, val_len);
-    msgpack_pack_str_body(pck, val, val_len);
+    if (val != NULL) {
+        msgpack_pack_str(pck, val_len);
+        msgpack_pack_str_body(pck, val, val_len);
+    }
+    else {
+        msgpack_pack_uint64(pck, val_uint64);
+    }
 
     for (i = 0; i < size; i++) {
         msgpack_object k = root->via.map.ptr[i].key;
@@ -78,7 +83,8 @@ static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
 
 static int append_record_to_map(char **data, size_t *data_size,
                                 const char *key, size_t key_len,
-                                const char *val, size_t val_len)
+                                const char *val, size_t val_len,
+                                size_t val_uint64)
 {
     int ret;
     msgpack_unpacked result;
@@ -100,7 +106,7 @@ static int append_record_to_map(char **data, size_t *data_size,
 
     root = result.data;
     ret = unpack_and_pack(&pck, &root,
-                          key, key_len, val, val_len);
+                          key, key_len, val, val_len, val_uint64);
     if (ret < 0) {
         /* fail! */
         msgpack_unpacked_destroy(&result);
@@ -120,19 +126,29 @@ static int append_record_to_map(char **data, size_t *data_size,
 
 int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                            struct flb_time *time, char **data,
-                           size_t *data_size, struct flb_tail_file *file)
+                           size_t *data_size, struct flb_tail_file *file,
+                           size_t processed_bytes)
 {
     int map_num = 1;
 
     if (file->config->path_key != NULL) {
         map_num++; /* to append path_key */
     }
+    if (file->config->offset_key != NULL) {
+        map_num++; /* to append offset_key */
+    }
 
     if (file->config->path_key != NULL) {
         append_record_to_map(data, data_size,
                              file->config->path_key,
                              flb_sds_len(file->config->path_key),
-                             file->name, file->name_len);
+                             file->name, file->name_len, 0);
+    }
+    if (file->config->offset_key != NULL) {
+        append_record_to_map(data, data_size,
+                             file->config->path_key,
+                             flb_sds_len(file->config->offset_key),
+                             NULL, 0, file->offset + processed_bytes);
     }
 
     msgpack_pack_array(mp_pck, 2);
@@ -144,13 +160,16 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 
 int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                             struct flb_time *time, char *data, size_t data_size,
-                            struct flb_tail_file *file)
+                            struct flb_tail_file *file, size_t processed_bytes)
 {
     int map_num = 1;
     struct flb_tail_config *ctx = file->config;
 
     if (file->config->path_key != NULL) {
         map_num++; /* to append path_key */
+    }
+    if (file->config->offset_key != NULL) {
+        map_num++; /* to append offset_key */
     }
     msgpack_pack_array(mp_pck, 2);
     flb_time_append_to_msgpack(time, mp_pck, 0);
@@ -163,6 +182,13 @@ int flb_tail_file_pack_line(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                               flb_sds_len(file->config->path_key));
         msgpack_pack_str(mp_pck, file->name_len);
         msgpack_pack_str_body(mp_pck, file->name, file->name_len);
+    }
+    if (file->config->offset_key != NULL) {
+        /* append offset_key */
+        msgpack_pack_str(mp_pck, flb_sds_len(file->config->offset_key));
+        msgpack_pack_str_body(mp_pck, file->config->offset_key,
+                              flb_sds_len(file->config->offset_key));
+        msgpack_pack_uint64(mp_pck, file->offset + processed_bytes);
     }
 
     msgpack_pack_str(mp_pck, flb_sds_len(ctx->key));
@@ -206,12 +232,18 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     /* Parse the data content */
     data = file->buf_data;
     end = data + file->buf_len;
-    while ((p = memchr(data, '\n', end - data))) {
-        len = (p - data);
 
+    /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
+    while (data < end && *data == '\0') {
+        data++;
+        processed_bytes++;
+    }
+
+    while (data < end && (p = memchr(data, '\n', end - data))) {
+        len = (p - data);
         if (file->skip_next == FLB_TRUE) {
             data += len + 1;
-            processed_bytes += len;
+            processed_bytes += len + 1;
             file->skip_next = FLB_FALSE;
             continue;
         }
@@ -237,7 +269,6 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
-
         if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
@@ -268,32 +299,27 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                     flb_time_get(&out_time);
                 }
 
-                if (ctx->ignore_older > 0) {
-                    if ((now - ctx->ignore_older) > out_time.tm.tv_sec) {
-                        flb_free(out_buf);
-                        goto go_next;
-                    }
-                }
-
                 /* If multiline is enabled, flush any buffered data */
                 if (ctx->multiline == FLB_TRUE) {
                     flb_tail_mult_flush(out_sbuf, out_pck, file, ctx);
                 }
 
                 flb_tail_pack_line_map(out_sbuf, out_pck, &out_time,
-                                       (char**) &out_buf, &out_size, file);
+                                       (char**) &out_buf, &out_size, file,
+                                       processed_bytes);
                 flb_free(out_buf);
             }
             else {
                 /* Parser failed, pack raw text */
                 flb_time_get(&out_time);
                 flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                        data, len, file);
+                                        data, len, file, processed_bytes);
             }
         }
         else if (ctx->multiline == FLB_TRUE) {
             ret = flb_tail_mult_process_content(now,
-                                                line, line_len, file, ctx);
+                                                line, line_len,
+                                                file, ctx, processed_bytes);
 
             /* No multiline */
             if (ret == FLB_TAIL_MULT_NA) {
@@ -302,7 +328,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
                 flb_time_get(&out_time);
                 flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                        line, line_len, file);
+                                        line, line_len, file, processed_bytes);
             }
             else if (ret == FLB_TAIL_MULT_MORE) {
                 /* we need more data, do nothing */
@@ -315,7 +341,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         else {
             flb_time_get(&out_time);
             flb_tail_file_pack_line(out_sbuf, out_pck, &out_time,
-                                    line, line_len, file);
+                                    line, line_len, file, processed_bytes);
         }
 #else
         flb_time_get(&out_time);
@@ -333,14 +359,22 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         lines++;
     }
     file->parsed = file->buf_len;
-    *bytes = processed_bytes;
 
-    /* Append buffer content to a chunk */
-    flb_input_chunk_append_raw(ctx->ins,
-                               file->tag_buf,
-                               file->tag_len,
-                               out_sbuf->data,
-                               out_sbuf->size);
+    if (lines > 0) {
+        /* Append buffer content to a chunk */
+        *bytes = processed_bytes;
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   out_sbuf->data,
+                                   out_sbuf->size);
+    }
+    else if (file->skip_next) {
+        *bytes = file->buf_len;
+    }
+    else {
+        *bytes = processed_bytes;
+    }
 
     msgpack_sbuffer_destroy(out_sbuf);
     return lines;
@@ -363,7 +397,7 @@ static void cb_results(const char *name, const char *value,
         return;
     }
 
-    flb_hash_add(ht, name, strlen(name), value, vlen);
+    flb_hash_add(ht, name, strlen(name), (void *) value, vlen);
 }
 #endif
 
@@ -417,7 +451,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
                     end--;
 
                     len = end - beg + 1;
-                    ret = flb_hash_get(ht, beg, len, &tmp, &tmp_s);
+                    ret = flb_hash_get(ht, beg, len, (void *) &tmp, &tmp_s);
                     if (ret != -1) {
                         memcpy(out_buf + buf_s, tmp, tmp_s);
                         buf_s += tmp_s;
@@ -732,7 +766,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         mk_list_add(&file->_head, &ctx->files_event);
 
         /* Register this file into the fs_event monitoring */
-        ret = flb_tail_fs_add(file);
+        ret = flb_tail_fs_add(ctx, file);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not register file into fs_events");
             goto error;
@@ -798,7 +832,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_sds_destroy(file->dmode_buf);
     flb_sds_destroy(file->dmode_lastline);
     mk_list_del(&file->_head);
-    flb_tail_fs_remove(file);
+    flb_tail_fs_remove(ctx, file);
     /* avoid deleting file with -1 fd */
     if (file->fd != -1) {
         close(file->fd);
@@ -918,6 +952,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             }
 
             /* Do buffer adjustments */
+            file->offset += file->buf_len;
             file->buf_len = 0;
             file->skip_next = FLB_TRUE;
         }
@@ -1114,7 +1149,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     }
 
     /* Notify the fs-event handler that we will start monitoring this 'file' */
-    ret = flb_tail_fs_add(file);
+    ret = flb_tail_fs_add(ctx, file);
     if (ret == -1) {
         return -1;
     }
@@ -1293,9 +1328,10 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 }
 
 static int check_purge_deleted_file(struct flb_tail_config *ctx,
-                                    struct flb_tail_file *file)
+                                    struct flb_tail_file *file, time_t ts)
 {
     int ret;
+    int64_t mtime;
     struct stat st;
 
     ret = fstat(file->fd, &st);
@@ -1317,6 +1353,18 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         /* Remove file from the monitored list */
         flb_tail_file_remove(file);
         return FLB_TRUE;
+    }
+
+    if (ctx->ignore_older > 0) {
+        mtime = flb_tail_stat_mtime(&st);
+        if (mtime > 0) {
+            if ((ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "purge: monitored file (ignore older): %s",
+                              file->name);
+                flb_tail_file_remove(file);
+                return FLB_TRUE;
+            }
+        }
     }
 
     return FLB_FALSE;
@@ -1371,11 +1419,11 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
      */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        check_purge_deleted_file(ctx, file);
+        check_purge_deleted_file(ctx, file, now);
     }
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        check_purge_deleted_file(ctx, file);
+        check_purge_deleted_file(ctx, file, now);
     }
 
     return count;

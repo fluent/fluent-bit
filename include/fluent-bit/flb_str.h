@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,6 +56,15 @@ static inline char *flb_strndup(const char *s, size_t n)
     str[n] = '\0';
 
     return str;
+}
+
+/* emptyval checks whether a string has a non-null value "". */
+static inline int flb_str_emptyval(const char *s)
+{
+    if (s != NULL && strcmp(s, "") == 0) {
+        return FLB_TRUE;
+    }
+    return FLB_FALSE;
 }
 
 #endif

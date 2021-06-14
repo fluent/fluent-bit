@@ -25,10 +25,10 @@ int flb_sp_groupby_compare(const void *lhs, const void *rhs)
 {
     int i;
     int strcmp_result;
-    struct aggr_node *left = (struct aggr_node *) lhs;
-    struct aggr_node *right = (struct aggr_node *) rhs;
-    struct aggr_num *lval;
-    struct aggr_num *rval;
+    struct aggregate_node *left = (struct aggregate_node *) lhs;
+    struct aggregate_node *right = (struct aggregate_node *) rhs;
+    struct aggregate_num *lval;
+    struct aggregate_num *rval;
 
     for (i = 0; i < left->groupby_keys; i++) {
         lval = &left->groupby_nums[i];

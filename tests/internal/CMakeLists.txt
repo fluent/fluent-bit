@@ -19,6 +19,8 @@ set(UNIT_TESTS_FILES
   config_map.c
   mp.c
   input_chunk.c
+  flb_time.c
+  multiline.c
   )
 
 if (NOT WIN32)

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,23 +77,12 @@ int flb_gzip_compress(void *in_data, size_t in_len,
     z_stream strm;
     mz_ulong crc;
 
-
     /*
-     * GZIP relies on an algorithm with worst-case expansion
-     * of 5 bytes per 32KB data. This means we need to create a variable
-     * length output, that depends on the input length.
-     * See RFC 1951 for details.
+     * Calculating the upper bound for a gzip compression is
+     * non-trivial, so we rely on miniz's own calculation
+     * to guarantee memory safety.
      */
-    int max_input_expansion = ((int)(in_len / 32000) + 1) * 5;
-
-    /*
-     * Max compressed size is equal to sum of:
-     *   10 byte header
-     *   8 byte foot
-     *   max input expansion
-     *   size of input
-     */
-    out_size = 10 + 8 + max_input_expansion + in_len;
+    out_size = compressBound(in_len);
     out_buf = flb_malloc(out_size);
 
     if (!out_buf) {
@@ -269,6 +258,12 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
     /* Get decompressed length */
     dlen = read_le32(&p[in_len - 4]);
 
+    /* Limit decompressed length to 100MB */
+    if (dlen > 100000000) {
+        flb_error("[gzip] maximum decompression size is 100MB");
+        return -1;
+    }
+
     /* Get CRC32 checksum of original data */
     crc = read_le32(&p[in_len - 8]);
 
@@ -285,6 +280,12 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
         return -1;
     }
     out_size = dlen;
+
+    /* Ensure size is above 0 */
+    if (((p + in_len) - start - 8) <= 0) {
+        flb_free(out_buf);
+        return -1;
+    }
 
     /* Map zip content */
     zip_data = (uint8_t *) start;

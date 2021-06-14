@@ -344,6 +344,9 @@ void test_pointer()
     TEST_CHECK(ret >= 0);
     TEST_CHECK((void *) out_buf == (void *) val2);
 
+    out_buf = flb_hash_get_ptr(ht, "key2", 4);
+    TEST_CHECK((void *) out_buf == (void *) val2);
+
     ret = flb_hash_del_ptr(ht, "key2", 4, (void *) out_buf);
     TEST_CHECK(ret == 0);
 

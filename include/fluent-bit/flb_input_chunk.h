@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_routes_mask.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -51,7 +52,8 @@ struct flb_input_chunk {
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct flb_task *task;          /* reference to the outgoing task */
-    uint64_t routes_mask;           /* track the output plugin the chunk routes to */
+    uint64_t routes_mask
+        [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
     struct mk_list _head;
 };
 
