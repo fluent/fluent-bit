@@ -95,6 +95,21 @@ static int check_stream_path(struct cio_ctx *ctx, const char *path)
     return ret;
 }
 
+struct cio_stream *cio_stream_get(struct cio_ctx *ctx, const char *name)
+{
+    struct mk_list *head;
+    struct cio_stream *st;
+
+    mk_list_foreach(head, &ctx->streams) {
+        st = mk_list_entry(head, struct cio_stream, _head);
+        if (strcmp(st->name, name) == 0) {
+            return st;
+        }
+    }
+
+    return NULL;
+}
+
 struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
                                      int type)
 {
@@ -124,6 +139,13 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
     }
 #endif
 
+    /* Find duplicated */
+    st = cio_stream_get(ctx, name);
+    if (st) {
+        cio_log_error(ctx, "[cio stream] stream already registered: %s", name);
+        return NULL;
+    }
+
     /* If backend is the file system, validate the stream path */
     if (type == CIO_STORE_FS) {
         ret = check_stream_path(ctx, name);
@@ -147,6 +169,8 @@ struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
 
     st->parent = ctx;
     mk_list_init(&st->chunks);
+    mk_list_init(&st->chunks_up);
+    mk_list_init(&st->chunks_down);
     mk_list_add(&st->_head, &ctx->streams);
 
     cio_log_debug(ctx, "[cio stream] new stream registered: %s", name);
@@ -228,4 +252,25 @@ void cio_stream_destroy_all(struct cio_ctx *ctx)
         st = mk_list_entry(head, struct cio_stream, _head);
         cio_stream_destroy(st);
     }
+}
+
+/* Return the total number of bytes being used by Chunks up in memory */
+size_t cio_stream_size_chunks_up(struct cio_stream *st)
+{
+    ssize_t bytes;
+    size_t total = 0;
+    struct cio_chunk *ch;
+    struct mk_list *head;
+
+    mk_list_foreach(head, &st->chunks_up) {
+        ch = mk_list_entry(head, struct cio_chunk, _state_head);
+
+        bytes = cio_chunk_get_content_size(ch);
+        if (bytes <= 0) {
+            continue;
+        }
+        total += bytes;
+    }
+
+    return total;
 }

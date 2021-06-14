@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +54,7 @@ struct flb_kube_meta {
 #define FLB_KUBE_API_HOST "kubernetes.default.svc"
 #define FLB_KUBE_API_PORT 443
 #define FLB_KUBE_API_FMT "/api/v1/namespaces/%s/pods/%s"
+#define FLB_KUBELET_PODS "/pods"
 
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);

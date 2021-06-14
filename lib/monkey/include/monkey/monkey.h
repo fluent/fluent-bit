@@ -28,10 +28,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <pthread.h>
+
+#include <monkey/mk_core.h>
 
 #ifdef LINUX_TRACE
 #define TRACEPOINT_CREATE_PROBES

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -181,7 +181,7 @@ static struct flb_hash_entry *hash_get_entry(struct flb_hash *ht,
                                              const char *key, int key_len, int *out_id)
 {
     int id;
-    unsigned int hash;
+    uint64_t hash;
     struct mk_list *head;
     struct flb_hash_table *table;
     struct flb_hash_entry *entry;
@@ -426,11 +426,26 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id,
     return 0;
 }
 
+void *flb_hash_get_ptr(struct flb_hash *ht,
+                 const char *key, int key_len)
+{
+    int id;
+    struct flb_hash_entry *entry;
+
+    entry = hash_get_entry(ht, key, key_len, &id);
+    if (!entry) {
+        return NULL;
+    }
+
+    entry->hits++;
+    return entry->val;
+}
+
 int flb_hash_del(struct flb_hash *ht, const char *key)
 {
     int id;
     int len;
-    unsigned int hash;
+    uint64_t hash;
     struct mk_list *head;
     struct flb_hash_entry *entry = NULL;
     struct flb_hash_table *table;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,8 +63,8 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
 
-FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
-                                  struct flb_coro *coro)
+int flb_io_net_connect(struct flb_upstream_conn *u_conn,
+                       struct flb_coro *coro)
 {
     int ret;
     int async = FLB_FALSE;
@@ -73,6 +73,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
+        u_conn->fd = -1;
+        u_conn->event.fd = -1;
     }
 
     /* Check which connection mode must be done */
@@ -107,7 +109,6 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     if (u->flags & FLB_IO_TLS) {
         ret = flb_tls_session_create(u->tls, u_conn, coro);
         if (ret != 0) {
-            flb_socket_close(fd);
             return -1;
         }
     }
@@ -323,7 +324,6 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
-                flb_socket_close(u_conn->fd);
                 return -1;
             }
             flb_coro_yield(co, MK_FALSE);

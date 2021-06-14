@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -213,9 +213,18 @@ struct flb_input_instance {
 
     struct mk_list _head;                /* link to config->inputs     */
     struct mk_list routes;               /* flb_router_path's list     */
-    struct mk_list chunks;               /* storage chunks             */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
+
+    /* Storage Chunks */
+    struct mk_list chunks;               /* linked list of all chunks  */
+
+    /*
+     * The following list helps to separate the chunks per it
+     * status, it can be 'up' or 'down'.
+     */
+    struct mk_list chunks_up;            /* linked list of all chunks up */
+    struct mk_list chunks_down;          /* linked list of all chunks down */
 
     /*
      * Every co-routine created by the engine when flushing data, it's
@@ -499,6 +508,7 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *ins);
 int flb_input_collectors_start(struct flb_config *config);
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_resume(int coll_id, struct flb_input_instance *ins);
+int flb_input_collector_delete(int coll_id, struct flb_input_instance *ins);
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config);
 int flb_input_set_collector_time(struct flb_input_instance *ins,
                                  int (*cb_collect) (struct flb_input_instance *,

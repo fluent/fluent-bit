@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +45,8 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_upstream_ha.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -182,6 +184,10 @@ struct flb_output_plugin {
     struct mk_list _head;
 };
 
+// constants for retry_limit
+#define FLB_OUT_RETRY_UNLIMITED -1
+#define FLB_OUT_RETRY_NONE       0
+
 /*
  * Each initialized plugin must have an instance, same plugin may be
  * loaded more than one time.
@@ -191,7 +197,6 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     struct mk_event event;               /* events handler               */
-    uint64_t mask_id;                    /* internal bitmask for routing */
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
@@ -278,6 +283,8 @@ struct flb_output_instance {
     struct mk_list *net_config_map;
     struct mk_list net_properties;
 
+    struct mk_list *tls_config_map;
+
     struct mk_list _head;                /* link to config->inputs       */
 
 #ifdef FLB_HAVE_METRICS
@@ -329,14 +336,16 @@ struct flb_output_instance {
      * list and placed into 'coros_destroy', a cleanup function will
      * run later to cleanup the coroutine context.
      *
-     * If this plugin instance runs in multi-thread mode, we use the
-     * 'coro_mutex' to do a safe access to the 'coros' list and coro_id
-     * fields.
+     * note on multi-threading mode
+     * ----------------------------
+     * Every output instance in threaded mode has it own context which
+     * has similar fields like 'coro_id', 'coros', 'coros_destroy'.
+     *
+     * On that mode, field fields are not used.
      */
     int coro_id;
     struct mk_list coros;
     struct mk_list coros_destroy;
-    pthread_mutex_t coro_mutex;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -361,6 +370,7 @@ static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
 static FLB_INLINE void flb_output_coro_destroy(struct flb_output_coro *out_coro)
 {
     flb_debug("[out coro] cb_destroy coro_id=%i", out_coro->id);
+
     mk_list_del(&out_coro->_head);
     flb_coro_destroy(out_coro->coro);
     flb_free(out_coro);
@@ -472,8 +482,9 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
                                                const char *tag, int tag_len)
 {
     size_t stack_size;
-    struct flb_output_coro *out_coro;
     struct flb_coro *coro;
+    struct flb_output_coro *out_coro;
+    struct flb_out_thread_instance *th_ins;
 
     /* Custom output-thread info */
     out_coro = (struct flb_output_coro *) flb_malloc(sizeof(struct flb_output_coro));
@@ -510,13 +521,14 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
 #endif
 
     if (o_ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_lock(&o_ins->coro_mutex);
+        th_ins = flb_output_thread_instance_get();
+
+        pthread_mutex_lock(&th_ins->coro_mutex);
+        mk_list_add(&out_coro->_head, &th_ins->coros);
+        pthread_mutex_unlock(&th_ins->coro_mutex);
     }
-
-    mk_list_add(&out_coro->_head, &o_ins->coros);
-
-    if (o_ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_unlock(&o_ins->coro_mutex);
+    else {
+        mk_list_add(&out_coro->_head, &o_ins->coros);
     }
 
     /* Workaround for makecontext() */
@@ -548,7 +560,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     struct flb_task *task;
     struct flb_output_coro *out_coro;
     struct flb_output_instance *o_ins;
-    struct flb_out_thread_instance *th_ins;
+    struct flb_out_thread_instance *th_ins = NULL;
 
     out_coro = (struct flb_output_coro *) co->data;
     o_ins = out_coro->o_ins;
@@ -574,7 +586,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
      * event loop.
      */
     if (flb_output_is_threaded(o_ins) == FLB_TRUE) {
-        /* Retrieve the thread instance */
+        /* Retrieve the thread instance and prepare pipe channel */
         th_ins = flb_output_thread_instance_get();
         pipe_fd = th_ins->ch_thread_events[1];
     }
@@ -598,16 +610,17 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
 /* return the number of co-routines running in the instance */
 static inline int flb_output_coros_size(struct flb_output_instance *ins)
 {
-    int size;
+    int size = 0;
 
-    if (ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_lock(&ins->coro_mutex);
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        /*
+         * On threaded mode, we need to count the active co-routines of
+         * every running thread of the thread pool.
+         */
+        size = flb_output_thread_pool_coros_size(ins);
     }
-
-    size = mk_list_size(&ins->coros);
-
-    if (ins->is_threaded == FLB_TRUE) {
-        pthread_mutex_unlock(&ins->coro_mutex);
+    else {
+        size = mk_list_size(&ins->coros);
     }
 
     return size;
@@ -636,9 +649,11 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     int ret;
 
     /* Process normal properties */
-    ret = flb_config_map_set(&ins->properties, ins->config_map, context);
-    if (ret == -1) {
-        return -1;
+    if (ins->config_map) {
+        ret = flb_config_map_set(&ins->properties, ins->config_map, context);
+        if (ret == -1) {
+            return -1;
+        }
     }
 
     /* Net properties */
@@ -648,6 +663,8 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     }
     return ret;
 }
+
+int flb_output_help(struct flb_output_instance *ins, void **out_buf, size_t *out_size);
 
 struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
                                                     int out_id);
@@ -668,7 +685,10 @@ void flb_output_set_context(struct flb_output_instance *ins, void *context);
 int flb_output_instance_destroy(struct flb_output_instance *ins);
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
+
 int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *ins);
+int flb_output_upstream_ha_set(void *ha, struct flb_output_instance *ins);
+
 void flb_output_prepare();
 int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 

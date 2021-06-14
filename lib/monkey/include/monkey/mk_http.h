@@ -220,6 +220,6 @@ int mk_http_request_end(struct mk_http_session *cs, struct mk_server *server);
 
 #define mk_http_session_get(conn)               \
     (struct mk_http_session *)                  \
-    (((void *) conn) + sizeof(struct mk_sched_conn))
+    (((uint8_t *) conn) + sizeof(struct mk_sched_conn))
 
 #endif

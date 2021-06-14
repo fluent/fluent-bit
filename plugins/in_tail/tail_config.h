@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +54,7 @@ struct flb_tail_config {
     int coll_fd_watcher;
     int coll_fd_rotated;
     int coll_fd_pending;
+    int coll_fd_inactive;
     int coll_fd_dmode_flush;
     int coll_fd_mult_flush;
 
@@ -78,12 +79,17 @@ struct flb_tail_config {
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */
     int   exit_on_eof;         /* exit fluent-bit on EOF, test */
+#ifdef FLB_HAVE_INOTIFY
+    int   inotify_watcher;     /* enable/disable inotify monitor */
+#endif
+    flb_sds_t offset_key;      /* key name of file offset      */
 
     /* Database */
 #ifdef FLB_HAVE_SQLDB
     struct flb_sqldb *db;
     int db_sync;
     int db_locking;
+    struct flb_sqldb *db_journal_mode;
     sqlite3_stmt *stmt_get_file;
     sqlite3_stmt *stmt_insert_file;
     sqlite3_stmt *stmt_delete_file;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,7 @@ void flb_utils_split_free_entry(struct flb_split_entry *entry);
 void flb_utils_split_free(struct mk_list *list);
 int flb_utils_timer_consume(flb_pipefd_t fd);
 int64_t flb_utils_size_to_bytes(const char *size);
-int flb_utils_hex2int(char *hex, int len);
+int64_t flb_utils_hex2int(char *hex, int len);
 int flb_utils_time_to_seconds(const char *time);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
 int flb_utils_bool(const char *val);

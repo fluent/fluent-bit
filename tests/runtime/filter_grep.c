@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 
 /* Test data */
@@ -49,7 +50,7 @@ void flb_test_filter_grep_regex(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -93,7 +94,7 @@ void flb_test_filter_grep_exclude(void)
         TEST_CHECK(bytes == strlen(p));
     }
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
 
     flb_stop(ctx);
     flb_destroy(ctx);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -225,6 +225,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     /* initialize credentials and set to sync mode */
     ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
     ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+    ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
     if (ctx->endpoint == NULL) {
         ctx->endpoint = flb_aws_endpoint("firehose", (char *) ctx->region);

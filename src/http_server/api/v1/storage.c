@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -129,10 +129,12 @@ static void cb_mq_storage_metrics(mk_mq_t *queue, void *data, size_t size)
     cleanup_metrics();
 }
 
+/* FIXME: pending implementation of metrics exit interface
 static void cb_mq_storage_metrics_exit(mk_mq_t *queue, void *data)
 {
 
 }
+*/
 
 /* API: expose built-in storage metrics /api/v1/storage */
 static void cb_storage(mk_request_t *request, void *data)

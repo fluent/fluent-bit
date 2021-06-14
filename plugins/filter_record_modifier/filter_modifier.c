@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,7 +45,7 @@ static int configure(struct record_modifier_ctx *ctx,
 
     ctx->records_num = 0;
     ctx->remove_keys_num = 0;
-    ctx->whitelist_keys_num = 0;
+    ctx->allowlist_keys_num = 0;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
@@ -69,7 +69,8 @@ static int configure(struct record_modifier_ctx *ctx,
             mk_list_add(&mod_key->_head, &ctx->remove_keys);
             ctx->remove_keys_num++;
         }
-        else if (!strcasecmp(kv->key, "whitelist_key")) {
+        else if (!strcasecmp(kv->key, "allowlist_key") ||
+                 !strcasecmp(kv->key, "whitelist_key")) {
             mod_key = flb_malloc(sizeof(struct modifier_key));
             if (!mod_key) {
                 flb_errno();
@@ -84,8 +85,8 @@ static int configure(struct record_modifier_ctx *ctx,
             else {
                 mod_key->dynamic_key = FLB_FALSE;
             }
-            mk_list_add(&mod_key->_head, &ctx->whitelist_keys);
-            ctx->whitelist_keys_num++;
+            mk_list_add(&mod_key->_head, &ctx->allowlist_keys);
+            ctx->allowlist_keys_num++;
         }
         else if (!strcasecmp(kv->key, "record")) {
             mod_record = flb_malloc(sizeof(struct modifier_record));
@@ -116,8 +117,8 @@ static int configure(struct record_modifier_ctx *ctx,
         }
     }
 
-    if (ctx->remove_keys_num > 0 && ctx->whitelist_keys_num > 0) {
-        flb_plg_error(ctx->ins, "remove_keys and whitelist_keys are exclusive "
+    if (ctx->remove_keys_num > 0 && ctx->allowlist_keys_num > 0) {
+        flb_plg_error(ctx->ins, "remove_keys and allowlist_keys are exclusive "
                       "with each other.");
         return -1;
     }
@@ -136,7 +137,7 @@ static int delete_list(struct record_modifier_ctx *ctx)
         mk_list_del(&key->_head);
         flb_free(key);
     }
-    mk_list_foreach_safe(head, tmp, &ctx->whitelist_keys) {
+    mk_list_foreach_safe(head, tmp, &ctx->allowlist_keys) {
         key = mk_list_entry(head, struct modifier_key,  _head);
         mk_list_del(&key->_head);
         flb_free(key);
@@ -167,7 +168,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
     }
     mk_list_init(&ctx->records);
     mk_list_init(&ctx->remove_keys);
-    mk_list_init(&ctx->whitelist_keys);
+    mk_list_init(&ctx->allowlist_keys);
     ctx->ins = f_ins;
 
     if ( configure(ctx, f_ins) < 0 ){
@@ -204,8 +205,8 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
         check = &(ctx->remove_keys);
         is_to_delete = FLB_TRUE;
     }
-    else if(ctx->whitelist_keys_num > 0) {
-        check = &(ctx->whitelist_keys);
+    else if(ctx->allowlist_keys_num > 0) {
+        check = &(ctx->allowlist_keys);
         is_to_delete = FLB_FALSE;
     }
 

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -161,9 +161,14 @@ struct flb_config *flb_config_init()
 #endif
 
     config->http_proxy = getenv("HTTP_PROXY");
-    if (config->http_proxy != NULL && strcmp(config->http_proxy, "") == 0) {
+    if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
         /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
         config->http_proxy = NULL;
+    }
+    config->no_proxy = getenv("NO_PROXY");
+    if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
+        /* NoProxy  should not be set when the `NO_PROXYY` is set to "" or there is no Proxy. */
+        config->no_proxy = NULL;
     }
 
     config->cio          = NULL;
@@ -193,6 +198,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
     mk_list_init(&config->parsers);
+    mk_list_init(&config->multilines);
     mk_list_init(&config->filters);
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
@@ -315,6 +321,11 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* Working directory */
+    if (config->workdir) {
+        flb_free(config->workdir);
+    }
+
     /* Destroy any DSO context */
     flb_plugin_destroy(config->dso_plugins);
 
@@ -338,6 +349,11 @@ void flb_config_exit(struct flb_config *config)
     if (config->http_port) {
         flb_free(config->http_port);
     }
+#endif
+
+#ifdef FLB_HAVE_PARSER
+    /* parsers */
+    flb_parser_exit(config);
 #endif
 
     if (config->storage_path) {
@@ -400,6 +416,9 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         }
         else if (strcasecmp(v_str, "trace") == 0) {
             config->verbose = 5;
+        }
+        else if (strcasecmp(v_str, "off") == 0) {
+            config->verbose = FLB_LOG_OFF;
         }
         else {
             return -1;

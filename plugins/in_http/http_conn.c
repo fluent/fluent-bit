@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,12 +27,13 @@
 
 static int http_conn_event(void *data)
 {
-    int ret;
     int status;
     size_t size;
     ssize_t available;
     ssize_t bytes;
     char *tmp;
+    char *request_end;
+    size_t request_len;
     struct http_conn *conn = data;
     struct mk_event *event;
     struct flb_http *ctx = conn->ctx;
@@ -85,9 +86,51 @@ static int http_conn_event(void *data)
 
         status = mk_http_parser(request, &session->parser,
                                 conn->buf_data, conn->buf_len, NULL);
+
         if (status == MK_HTTP_PARSER_OK) {
             /* Do more logic parsing and checks for this request */
-            ret = http_prot_handle(ctx, conn, session, request);
+            http_prot_handle(ctx, conn, session, request);
+
+            /* Evict the processed request from the connection buffer and reinitialize
+             * the HTTP parser.
+             */
+
+            request_end = NULL;
+
+            if (NULL != request->data.data) {
+                request_end = &request->data.data[request->data.len];
+            }
+            else {
+                request_end = strstr(conn->buf_data, "\r\n\r\n");
+
+                if(NULL != request_end) {
+                    request_end = &request_end[4];
+                }
+            }
+
+            if (NULL != request_end) {
+                request_len = (size_t)(request_end - conn->buf_data);
+
+                if (0 < (conn->buf_len - request_len)) {
+                    memmove(conn->buf_data, &conn->buf_data[request_len],
+                            conn->buf_len - request_len);
+
+                    conn->buf_data[conn->buf_len - request_len] = '\0';
+                    conn->buf_len -= request_len;
+                }
+                else {
+                    memset(conn->buf_data, 0, request_len);
+
+                    conn->buf_len = 0;
+                }
+
+                /* Reinitialize the parser so the next request is properly
+                 * handled, the additional memset intends to wipe any left over data
+                 * from the headers parsed in the previous request.
+                 */
+                memset(&session->parser, 0, sizeof(mk_http_parser));
+                mk_http_parser_init(&session->parser);
+            }
         }
 
         /* FIXME: add Protocol handler here */
@@ -186,6 +229,7 @@ int http_conn_del(struct http_conn *conn)
 
     mk_event_del(ctx->evl, &conn->event);
     mk_list_del(&conn->_head);
+    flb_socket_close(conn->fd);
     flb_free(conn->buf_data);
     flb_free(conn);
 

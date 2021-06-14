@@ -1,0 +1,127 @@
+language: c++
+dist: bionic
+sudo: false
+addons:
+    apt:
+        packages:
+            - cmake
+            - lcov
+            - clang-tools-7
+            - valgrind
+
+matrix:
+    include:
+        - os: linux
+          compiler: gcc
+          env: BUILD_TYPE=normal
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=normal
+        - os: linux
+          compiler: gcc
+          env: BUILD_TYPE=cmake
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=cmake
+        - os: linux
+          compiler: gcc
+          env: BUILD_TYPE=coverage
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=ubsan
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=asan
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=lsan
+        - os: linux
+          compiler: clang
+          env: BUILD_TYPE=analyze
+        - os: linux
+          compiler: gcc
+          env: BUILD_TYPE=valgrind
+        - os: osx
+          osx_image: xcode11.4
+          compiler: gcc
+          env: BUILD_TYPE=normal
+        - os: osx
+          osx_image: xcode11.4
+          compiler: clang
+          env: BUILD_TYPE=normal
+        - os: osx
+          osx_image: xcode11.4
+          compiler: clang
+          env: BUILD_TYPE=cmake
+        - os: osx
+          osx_image: xcode11.4
+          compiler: clang
+          language: objective-c
+          env: BUILD_TYPE=ios
+        - os: osx
+          osx_image: xcode11.4
+          compiler: clang
+          language: objective-c
+          env: BUILD_TYPE=ios-cmake
+install:
+    - if [ "$TRAVIS_OS_NAME" != "osx" ]; then pip install --user cpp-coveralls > /dev/null; fi
+    - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew reinstall libtool > /dev/null; fi
+before_script:
+    - |
+        if [ "$BUILD_TYPE" = "coverage" ]; then
+             export CONFIG_OPTS="--enable-debug --disable-shared --enable-code-coverage --enable-tests"
+        fi
+    - |
+         if [ "$BUILD_TYPE" = "asan" ]; then
+             export CONFIG_OPTS=--enable-debug
+             export CFLAGS=-fsanitize=address
+             export CXXFLAGS=-fsanitize=address
+             export LDFLAGS=-fsanitize=address
+         fi
+    - |
+         if [ "$BUILD_TYPE" = "lsan" ]; then
+             export CONFIG_OPTS=--enable-debug
+             export CFLAGS=-fsanitize=leak
+             export CXXFLAGS=-fsanitize=leak
+             export LDFLAGS=-fsanitize=leak
+         fi
+    - |
+         if [ "$BUILD_TYPE" = "ubsan" ]; then
+             export CFLAGS="-fsanitize=undefined -fno-sanitize-recover"
+             export LDFLAGS="-fsanitize=undefined"
+         fi
+    - |
+         if [ "$BUILD_TYPE" = "analyze" ]; then
+             export SCAN_WRAP="scan-build-7 --status-bugs"
+             export CONFIG_OPTS="--enable-debug --disable-tests"
+             export CXX="clang++-7"
+             export CC="clang-7"
+         fi
+    - |
+         if [ "$BUILD_TYPE" = "valgrind" ]; then
+             export TEST_WRAP='valgrind --leak-check=full'
+             # Skip container tests as valgrind doesn't cope with clone()
+             export TEST_FILTER="--gtest_filter=-*Container*:-*LiveSearchANY*"
+         fi
+    - |
+         if [ "$BUILD_TYPE" = "ios" ]; then
+             export CONFIG_OPTS="--host=arm-apple-darwin10 --disable-tests"
+             export DEVPATH=`xcode-select -print-path`/Platforms/iPhoneOS.platform/Developer
+             export IOSFLAGS="-isysroot $DEVPATH/SDKs/iPhoneOS.sdk -arch armv7 -miphoneos-version-min=8.0.0"
+             export CFLAGS=$IOSFLAGS
+             export CXXFLAGS=$IOSFLAGS
+             export LDFLAGS=$IOSFLAGS
+         fi
+    - |
+         if [ "$BUILD_TYPE" = "ios-cmake" ]; then
+             export SYSROOT="$(xcode-select -print-path)/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/"
+             export IOSFLAGS="-miphoneos-version-min=10.0"
+             export ARCHITECTURES="armv7;armv7s;arm64"
+             export CFLAGS=$IOSFLAGS
+             export CXXFLAGS=$IOSFLAGS
+             export LDFLAGS=$IOSFLAGS
+         fi
+script:
+    - ./travis/build.sh && ./travis/test.sh
+    - if [ "$BUILD_TYPE" = "normal" ]; then ./travis/distcheck.sh ; fi
+    - if [ "$BUILD_TYPE" = "coverage" ]; then ./travis/covupload.sh ; fi

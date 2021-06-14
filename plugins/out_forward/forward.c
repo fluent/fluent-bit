@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -745,6 +745,8 @@ static int forward_config_ha(const char *upstream_file,
         /* Set our forward_config context into the node */
         flb_upstream_node_set_data(fc, node);
     }
+
+    flb_output_upstream_ha_set(ctx->ha, ctx->ins);
 
     return 0;
 }

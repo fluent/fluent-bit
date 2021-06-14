@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -159,7 +159,8 @@ static flb_sds_t canonical_resource(struct flb_azure_blob *ctx,
 flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
                                      struct flb_http_client *c,
                                      ssize_t content_length,
-                                     int content_type)
+                                     int content_type,
+                                     int content_encoding)
 {
     int ret;
     size_t size;
@@ -169,6 +170,8 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     flb_sds_t can_headers;
     flb_sds_t tmp = NULL;
     char *b64 = NULL;
+    char *encoding;
+    char *ctype = "";
     unsigned char signature[32];
 
     size = strlen(c->uri) + (mk_list_size(&c->headers) * 64) + 256;
@@ -196,9 +199,17 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
         return NULL;
     }
 
+    if (content_encoding == AZURE_BLOB_CE_GZIP) {
+        encoding = "gzip";
+    }
+    else {
+        encoding = "";
+    }
+
     flb_sds_printf(&can_req,
-                   "\n"           /* Content-Encoding */
-                   "\n"           /* Content-Language */
+                   "%s\n"       /* Content-Encoding */
+                   "\n",        /* Content-Language */
+                   encoding
                    );
 
     if (content_length >= 0) {
@@ -212,6 +223,16 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
                        );
     }
 
+    if (content_type == AZURE_BLOB_CT_NONE) {
+        ctype = "";
+    }
+    else if (content_type == AZURE_BLOB_CT_JSON) {
+        ctype = "application/json";
+    }
+    else if (content_type == AZURE_BLOB_CT_GZIP) {
+        ctype = "application/gzip";
+    }
+
     flb_sds_printf(&can_req,
                    "\n"    /* Content-MD5 */
                    "%s\n"  /* Content-Type */
@@ -221,7 +242,7 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
                    "\n"    /* If-None-Match */
                    "\n"    /* If-Unmodified-Since */
                    "\n"    /* Range */,
-                   content_type ? AZURE_BLOB_CT_JSON: "");
+                   ctype);
 
     /* Append canonicalized headers */
     can_headers = canonical_headers(c);
@@ -248,7 +269,6 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
     if (!tmp) {
         flb_sds_destroy(can_res);
         flb_sds_destroy(can_req);
-        flb_sds_destroy(can_headers);
         return NULL;
     }
     can_req = tmp;
@@ -280,8 +300,8 @@ flb_sds_t azb_http_canonical_request(struct flb_azure_blob *ctx,
 }
 
 int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
-                          ssize_t content_length, int content_type,
-                          int blob_type)
+                          ssize_t content_length, int blob_type,
+                          int content_type, int content_encoding)
 {
     int len;
     time_t now;
@@ -294,10 +314,21 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     /* Header: Content-Type */
-    if (content_type == FLB_TRUE) {
+    if (content_type == AZURE_BLOB_CT_JSON) {
         flb_http_add_header(c,
                             AZURE_BLOB_CT, sizeof(AZURE_BLOB_CT) - 1,
-                            AZURE_BLOB_CT_JSON, sizeof(AZURE_BLOB_CT_JSON) - 1);
+                            "application/json", 16);
+    }
+    else if (content_type == AZURE_BLOB_CT_GZIP) {
+        flb_http_add_header(c,
+                            AZURE_BLOB_CT, sizeof(AZURE_BLOB_CT) - 1,
+                            "application/gzip", 16);
+    }
+
+    if (content_encoding == AZURE_BLOB_CE_GZIP) {
+        flb_http_add_header(c,
+                            AZURE_BLOB_CE, sizeof(AZURE_BLOB_CE) - 1,
+                            "gzip", 4);
     }
 
     /* Azure header: x-ms-blob-type */
@@ -320,7 +351,8 @@ int azb_http_client_setup(struct flb_azure_blob *ctx, struct flb_http_client *c,
     /* Azure header: x-ms-version */
     flb_http_add_header(c, "x-ms-version", 12, "2019-12-12", 10);
 
-    can_req = azb_http_canonical_request(ctx, c, content_length, content_type);
+    can_req = azb_http_canonical_request(ctx, c, content_length, content_type,
+                                         content_encoding);
 
     auth = flb_sds_create_size(64 + flb_sds_len(can_req));
 

@@ -39,7 +39,6 @@ struct ev_map {
 
 static inline int _mk_event_init()
 {
-    event_init();
     return 0;
 }
 
@@ -161,6 +160,7 @@ static inline int _mk_event_update(struct mk_event_ctx *ctx, evutil_socket_t fd,
 static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
                                 int type, uint32_t events, void *data)
 {
+    int ret;
     int flags = 0;
     struct event *libev;
     struct mk_event *event;
@@ -198,7 +198,10 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, evutil_socket_t fd,
     ev_map->event = libev;
     ev_map->ctx   = ctx;
 
-    event_add(libev, NULL);
+    ret = event_add(libev, NULL);
+    if (ret < 0) {
+        return -1;
+    }
 
     return 0;
 }

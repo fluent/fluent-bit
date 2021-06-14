@@ -19,9 +19,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <time.h>
-#include <unistd.h>
+
+#include <mk_core/mk_pthread.h>
+#include <mk_core/mk_unistd.h>
 
 #include <monkey/mk_core.h>
 #include <monkey/mk_config.h>
@@ -38,6 +39,23 @@ mk_ptr_t headers_preset = { NULL, HEADER_PRESET_SIZE - 1 };
 
 static char *log_time_buffers[2];
 static char *header_time_buffers[2];
+
+#ifdef _WIN32
+static struct tm* localtime_r(const time_t* timep, struct tm* result)
+{
+    localtime_s(result, timep);
+
+    return result;
+}
+
+static struct tm* gmtime_r(const time_t* timep, struct tm* result)
+{
+    gmtime_s(result, timep);
+
+    return result;
+}
+#endif
+
 
 /*
  * The mk_ptr_ts have two buffers for avoid in half-way access from

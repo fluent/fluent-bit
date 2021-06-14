@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,7 +42,18 @@
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_utils.h>
 
+
 #include <mbedtls/base64.h>
+
+void flb_http_client_debug(struct flb_http_client *c,
+                           struct flb_callback *cb_ctx)
+{
+#ifdef FLB_HAVE_HTTP_CLIENT_DEBUG
+    if (cb_ctx) {
+        flb_http_client_debug_enable(c, cb_ctx);
+    }
+#endif
+}
 
 /*
  * Removes the port from the host header
@@ -218,6 +229,9 @@ static int check_connection(struct flb_http_client *c)
     if (ret == FLB_HTTP_NOT_FOUND) {
         return FLB_HTTP_NOT_FOUND;
     }
+    else if (ret == FLB_HTTP_MORE) {
+        return FLB_HTTP_MORE;
+    }
 
     buf = flb_malloc(len + 1);
     if (!buf) {
@@ -278,7 +292,9 @@ static int process_chunked_data(struct flb_http_client *c)
         flb_errno();
         return FLB_HTTP_ERROR;
     }
-
+    if (val < 0) {
+        return FLB_HTTP_ERROR;
+    }
     /*
      * 'val' contains the expected number of bytes, check current lengths
      * and do buffer adjustments.
@@ -376,6 +392,9 @@ static int process_data(struct flb_http_client *c)
         memcpy(code, c->resp.data + 9, 3);
         code[3] = '\0';
         c->resp.status = atoi(code);
+        if (c->resp.status < 100 || c->resp.status > 599) {
+            return FLB_HTTP_ERROR;
+        }
     }
 
     /* Try to lookup content length */
@@ -1111,8 +1130,8 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         if (!tmp) {
             return -1;
         }
-        c->header_buf = tmp;
-        c->header_len = new_size;
+        c->header_buf  = tmp;
+        c->header_size = new_size;
     }
 
     /* Append the ending header CRLF */
@@ -1171,6 +1190,10 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
                  * We could not allocate more space, let the caller handle
                  * this.
                  */
+                flb_warn("[http_client] cannot increase buffer: current=%zu "
+                         "requested=%zu max=%zu", c->resp.data_size,
+                         c->resp.data_size + FLB_HTTP_DATA_CHUNK,
+                         c->resp.data_size_max);
                 flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
                 return 0;
             }

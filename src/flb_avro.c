@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -269,6 +269,10 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
 
     size_t avro_buffer_size = in_size * 3;
     char *out_buff = flb_malloc(avro_buffer_size);
+    if (!out_buff) {
+        flb_errno();
+        return NULL;
+    }
 
     avro_writer_t awriter;
     flb_debug("in flb_msgpack_raw_to_avro_sds\n");

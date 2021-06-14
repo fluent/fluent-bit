@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -135,6 +135,9 @@ struct flb_http_client {
     /* Reference to Callback context */
     void *cb_ctx;
 };
+
+void flb_http_client_debug(struct flb_http_client *c,
+                           struct flb_callback *cb_ctx);
 
 struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
                                         int method, const char *uri,

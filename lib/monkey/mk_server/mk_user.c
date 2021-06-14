@@ -25,6 +25,7 @@
 #include <monkey/mk_utils.h>
 #include <monkey/mk_config.h>
 
+#ifndef _WIN32
 #include <pwd.h>
 #include <sys/resource.h>
 #include <sys/types.h>
@@ -36,7 +37,8 @@ int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr,
     int limit;
     const int offset = 2; /* The user is defined after the '/~' string, so offset = 2 */
     const int user_len = 255;
-    char user[user_len], *user_uri;
+    char user[/*user_len*/ 255]; /* VC++ Doesn't allow for this to be a const int*/
+    char *user_uri;
     struct passwd *s_user;
 
     if (sr->uri_processed.len <= 2) {
@@ -147,3 +149,27 @@ int mk_user_undo_uidgid(struct mk_server *server)
     }
     return 0;
 }
+
+#else
+/*
+    None of these functionalities are going to be available in windows at the moment
+*/
+
+int mk_user_init(struct mk_http_session* cs, struct mk_http_request* sr,
+    struct mk_server* server)
+{
+    return -1;
+}
+
+int mk_user_set_uidgid(struct mk_server* server)
+{
+    mk_err("Cannot impersonate users in windows");
+
+    return 0;
+}
+
+int mk_user_undo_uidgid(struct mk_server* server)
+{
+    return 0;
+}
+#endif

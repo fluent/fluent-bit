@@ -1,0 +1,7 @@
+#!/bin/bash
+
+curl -L https://github.com/multiarch/qemu-user-static/releases/download/v4.1.0-1/qemu-arm-static -o qemu-arm-static
+curl -L https://github.com/multiarch/qemu-user-static/releases/download/v4.1.0-1/qemu-aarch64-static -o qemu-aarch64-static
+
+chmod 755 qemu-arm-static
+chmod 755 qemu-aarch64-static

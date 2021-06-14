@@ -17,12 +17,12 @@ sed -i "s/FLB_VERSION_PATCH  [0-9]/FLB_VERSION_PATCH  $patch/g" CMakeLists.txt
 git commit -s -m "build: bump to v$1" -- CMakeLists.txt
 
 # Dockerfile
-sed -i "s/ENV FLB_MAJOR [0-9]/ENV FLB_MAJOR $major/g" Dockerfile
-sed -i "s/ENV FLB_MINOR [0-9]/ENV FLB_MINOR $minor/g" Dockerfile
-sed -i "s/ENV FLB_PATCH [0-9]/ENV FLB_PATCH $patch/g" Dockerfile
-sed -i "s/ENV FLB_VERSION [0-9].[0-9].[0-9]/ENV FLB_VERSION $1/g" Dockerfile
+sed -i "s/ENV FLB_MAJOR [0-9]/ENV FLB_MAJOR $major/g" dockerfiles/Dockerfile*
+sed -i "s/ENV FLB_MINOR [0-9]/ENV FLB_MINOR $minor/g" dockerfiles/Dockerfile*
+sed -i "s/ENV FLB_PATCH [0-9]/ENV FLB_PATCH $patch/g" dockerfiles/Dockerfile*
+sed -i "s/ENV FLB_VERSION [0-9].[0-9].[0-9]/ENV FLB_VERSION $1/g" dockerfiles/Dockerfile*
 
-git commit -s -m "dockerfile: bump to v$1" -- Dockerfile
+git commit -s -m "dockerfile: bump to v$1" -- dockerfiles/*
 
 # Snap
 sed -i "s/version: '[0-9].[0-9].[0-9]'/version: '$1'/g" snap/snapcraft.yaml

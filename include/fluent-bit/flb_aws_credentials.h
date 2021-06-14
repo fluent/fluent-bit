@@ -28,8 +28,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 
-/* Refresh creds if they will expire in 5 min or less */
-#define FLB_AWS_REFRESH_WINDOW         300
+/* Refresh creds if they will expire in 1 min or less */
+#define FLB_AWS_REFRESH_WINDOW         60
 
 /* 5 second timeout for credential related http requests */
 #define FLB_AWS_CREDENTIAL_NET_TIMEOUT 5
@@ -93,6 +93,13 @@ typedef void(flb_aws_provider_sync_fn)(struct flb_aws_provider *provider);
 typedef void(flb_aws_provider_async_fn)(struct flb_aws_provider *provider);
 
 /*
+ * Call flb_output_upstream_set() on all upstreams created 
+ * by this provider and all sub-providers. 
+ */
+typedef void(flb_aws_provider_upstream_set_fn)(struct flb_aws_provider *provider, 
+                                               struct flb_output_instance *ins);
+
+/*
  * This structure is a virtual table for the functions implemented by each
  * provider
  */
@@ -103,6 +110,7 @@ struct flb_aws_provider_vtable {
     flb_aws_provider_destroy_fn *destroy;
     flb_aws_provider_sync_fn *sync;
     flb_aws_provider_async_fn *async;
+    flb_aws_provider_upstream_set_fn *upstream_set;
 };
 
 /*

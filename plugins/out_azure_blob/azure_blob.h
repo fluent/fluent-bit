@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,9 +25,19 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_sds.h>
 
-#define AZURE_BLOB_CT         "Content-Type"
-#define AZURE_BLOB_CT_JSON    "application/json"
-#define AZURE_ENDPOINT_PREFIX ".blob.core.windows.net"
+/* Content-Type */
+#define AZURE_BLOB_CT          "Content-Type"
+#define AZURE_BLOB_CT_NONE     0
+#define AZURE_BLOB_CT_JSON     1 /* application/json */
+#define AZURE_BLOB_CT_GZIP     2 /* application/gzip */
+
+/* Content-Encoding */
+#define AZURE_BLOB_CE          "Content-Encoding"
+#define AZURE_BLOB_CE_NONE     0
+#define AZURE_BLOB_CE_GZIP     1 /* gzip */
+
+/* service endpoint */
+#define AZURE_ENDPOINT_PREFIX  ".blob.core.windows.net"
 
 #define AZURE_BLOB_APPENDBLOB 0
 #define AZURE_BLOB_BLOCKBLOB  1
@@ -35,6 +45,8 @@
 struct flb_azure_blob {
     int auto_create_container;
     int emulator_mode;
+    int compress_gzip;
+    int compress_blob;
     flb_sds_t account_name;
     flb_sds_t container_name;
     flb_sds_t blob_type;

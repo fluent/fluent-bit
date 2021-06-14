@@ -45,7 +45,7 @@ xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\">\n\
     <Credentials>\n\
       <SessionToken>eks_token</SessionToken>\n\
       <SecretAccessKey>eks_skid</SecretAccessKey>\n\
-      <Expiration>2014-10-24T23:00:23Z</Expiration>\n\
+      <Expiration>2025-10-24T23:00:23Z</Expiration>\n\
       <AccessKeyId>eks_akid</AccessKeyId>\n\
     </Credentials>\n\
     <Provider>www.amazon.com</Provider>\n\
@@ -67,7 +67,7 @@ xmlns=\"https://sts.amazonaws.com/doc/\n\
       <AccessKeyId>sts_akid</AccessKeyId>\n\
       <SecretAccessKey>sts_skid</SecretAccessKey>\n\
       <SessionToken>sts_token</SessionToken>\n\
-      <Expiration>2019-11-09T13:34:41Z</Expiration>\n\
+      <Expiration>2025-11-09T13:34:41Z</Expiration>\n\
     </Credentials>\n\
     <PackedPolicySize>6</PackedPolicySize>\n\
   </AssumeRoleResult>\n\

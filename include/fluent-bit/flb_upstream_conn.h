@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -92,6 +92,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *u_conn);
 int flb_upstream_conn_timeouts(struct mk_list *list);
 int flb_upstream_conn_pending_destroy(struct flb_upstream *u);
 int flb_upstream_conn_pending_destroy_list(struct mk_list *list);
+int flb_upstream_conn_active_destroy_list(struct mk_list *list);
 
 
 #endif

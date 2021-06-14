@@ -25,9 +25,9 @@ ExternalProject_Add(onigmo
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${ONIGMO_SRC}
   INSTALL_DIR ${ONIGMO_DEST}
-  CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
+  CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --host=${HOST} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -Os\ -g0\ -s\ -fno-stack-protector\ -fomit-frame-pointer\ -DNDEBUG\ -U_FORTIFY_SOURCE
-  BUILD_COMMAND $(MAKE)
+  BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
   INSTALL_COMMAND $(MAKE) DESTDIR= install)
 else()
 ExternalProject_Add(onigmo
@@ -35,9 +35,9 @@ ExternalProject_Add(onigmo
   EXCLUDE_FROM_ALL TRUE
   SOURCE_DIR ${ONIGMO_SRC}
   INSTALL_DIR ${ONIGMO_DEST}
-  CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
+  CONFIGURE_COMMAND ./configure ${AUTOCONF_HOST_OPT} --host=${HOST} --with-pic --disable-shared --enable-static --prefix=${ONIGMO_DEST}
   CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-  BUILD_COMMAND $(MAKE)
+  BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
   INSTALL_COMMAND $(MAKE) DESTDIR= install)
 endif()
 

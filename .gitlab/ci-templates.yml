@@ -1,5 +1,0 @@
-.gcc-template:
-  before_script:
-    - export CC=gcc
-    - apt-get update -y
-    - apt-get install cmake flex bison -y

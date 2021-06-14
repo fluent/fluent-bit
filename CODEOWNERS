@@ -13,12 +13,23 @@
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos
-/cmake/                  @fujimotos
+/CMakeLists.txt          @fujimotos @niedbalski
+/cmake/                  @fujimotos @niedbalski
+
+# CI 
+# -------------------------
+/.github/                @niedbalski
+/appveyor.yml            @niedbalski
+/dockerfiles/            @niedbalski
 
 # Core: Signv4
 # ------------
 /src/flb_signv4.c        @pettitwesley
+/src/flb_lib.c           @edsiper @niedbalski
+
+@ Core: AWS Auth & Utils
+# ------------
+/src/aws                 @pettitwesley
 
 # Core: Stream Processor
 # ----------------
@@ -43,3 +54,8 @@
 /plugins/out_datadog     @clamoriniere
 /plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
+# AWS Plugins 
+/plugins/out_s3               @pettitwesley
+/plugins/out_cloudwatch_logs  @pettitwesley
+/plugins/out_kinesis_firehose @pettitwesley
+/plugins/out_kinesis_streams  @pettitwesley

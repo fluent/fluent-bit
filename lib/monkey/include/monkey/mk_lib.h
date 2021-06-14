@@ -28,8 +28,7 @@
 #include <monkey/mk_config.h>
 #include <monkey/mk_fifo.h>
 #include <monkey/mk_http_internal.h>
-
-#include <pthread.h>
+#include <monkey/mk_core.h>
 
 struct mk_lib_ctx {
     pthread_t worker_tid;

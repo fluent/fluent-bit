@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -191,6 +191,8 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     int ret;
     int count = 0;
     glob_t globbuf;
+    time_t now;
+    int64_t mtime;
     struct stat st;
 
     flb_plg_debug(ctx->ins, "scanning path %s", path);
@@ -226,7 +228,9 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
         }
     }
 
+
     /* For every entry found, generate an output list */
+    now = time(NULL);
     for (i = 0; i < globbuf.gl_pathc; i++) {
         ret = stat(globbuf.gl_pathv[i], &st);
         if (ret == 0 && S_ISREG(st.st_mode)) {
@@ -234,6 +238,17 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
                 flb_plg_debug(ctx->ins, "excluded=%s", globbuf.gl_pathv[i]);
                 continue;
+            }
+
+            if (ctx->ignore_older > 0) {
+                mtime = flb_tail_stat_mtime(&st);
+                if (mtime > 0) {
+                    if ((now - ctx->ignore_older) > mtime) {
+                        flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
+                                      globbuf.gl_pathv[i]);
+                        continue;
+                    }
+                }
             }
 
             /* Append file to list */

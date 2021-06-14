@@ -3,7 +3,7 @@ project(fluent-bit)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  7)
+set(FLB_VERSION_MINOR  8)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
@@ -35,8 +35,6 @@ if (MSVC)
   # Use add_compile_options() to set /MT since Visual Studio
   # Generator does not notice /MT in CMAKE_C_FLAGS.
   add_compile_options(/MT)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fno-common")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 endif()
@@ -63,8 +61,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/library")
 
 # Build Options
 option(FLB_ALL                 "Enable all features"           No)
-option(FLB_DEBUG               "Build with debug symbols"     Yes)
-option(FLB_RELEASE             "Build with debug symbols"      No)
+option(FLB_DEBUG               "Build with debug mode (-g)"    Yes)
+option(FLB_RELEASE             "Build with release mode (-O2 -g -DNDEBUG)"   No)
 option(FLB_SMALL               "Optimise for small size"       No)
 option(FLB_COVERAGE            "Build with code-coverage"      No)
 option(FLB_JEMALLOC            "Build with Jemalloc support"   No)
@@ -130,6 +128,7 @@ option(FLB_IN_SYSTEMD         "Enable Systemd input plugin"         Yes)
 option(FLB_IN_DUMMY           "Enable Dummy input plugin"           Yes)
 option(FLB_IN_NETIF           "Enable NetworkIF input plugin"       Yes)
 option(FLB_IN_WINLOG          "Enable Windows Log input plugin"      No)
+option(FLB_IN_WINSTAT         "Enable Windows Stat input plugin"     No)
 option(FLB_IN_COLLECTD        "Enable Collectd input plugin"        Yes)
 option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
 option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
@@ -167,7 +166,10 @@ option(FLB_OUT_KAFKA          "Enable Kafka output plugin"           No)
 option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"     Yes)
 option(FLB_OUT_CLOUDWATCH_LOGS "Enable AWS CloudWatch output plugin" Yes)
 option(FLB_OUT_KINESIS_FIREHOSE "Enable AWS Firehose output plugin" Yes)
+option(FLB_OUT_KINESIS_STREAMS "Enable AWS Kinesis output plugin" Yes)
+option(FLB_OUT_PROMETHEUS_EXPORTER "Enable Prometheus exporter plugin" Yes)
 option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
+option(FLB_OUT_WEBSOCKET      "Enable Websocket output plugin"      Yes)
 option(FLB_FILTER_ALTER_SIZE  "Enable alter_size filter"            Yes)
 option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
 option(FLB_FILTER_EXPECT      "Enable expect filter"                Yes)
@@ -187,6 +189,9 @@ option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
+
+# Run ldconfig on package post-install
+option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" Yes)
 
 # Enable all features
 if(FLB_ALL)
@@ -224,6 +229,7 @@ if(FLB_ALL)
   set(FLB_OUT_SYSLOG   1)
   set(FLB_OUT_LIB      1)
   set(FLB_OUT_FLOWCOUNTER 1)
+  set(FLB_OUT_WEBSOCKET   1)
 endif()
 
 if(FLB_DEV)
@@ -384,6 +390,17 @@ set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
 set(XXHASH_BUILD_XXHSUM OFF)
 add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
 
+# CMetrics
+add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
+
+# C-Ares (DNS library)
+FLB_OPTION(CARES_STATIC      ON)
+FLB_OPTION(CARES_SHARED      OFF)
+FLB_OPTION(CARES_INSTALL     OFF)
+FLB_OPTION(CARES_BUILD_TESTS OFF)
+FLB_OPTION(CARES_BUILD_TOOLS OFF)
+add_subdirectory(${FLB_PATH_LIB_CARES})# EXCLUDE_FROM_ALL)
+
 # Chunk I/O
 FLB_OPTION(CIO_LIB_STATIC  ON)
 FLB_OPTION(CIO_LIB_SHARED  OFF)
@@ -420,6 +437,12 @@ if(FLB_TLS)
   option(ENABLE_PROGRAMS OFF)
   option(INSTALL_MBEDTLS_HEADERS OFF)
   add_subdirectory(${FLB_PATH_LIB_MBEDTLS} EXCLUDE_FROM_ALL)
+
+  # Link OpenSSL statically on Windows.
+  if (FLB_SYSTEM_WINDOWS)
+    set(OPENSSL_USE_STATIC_LIBS ON)
+    set(OPENSSL_MSVC_STATIC_RT  ON)
+  endif()
 
   # find OpenSSL (our preferred choice now)
   find_package(OpenSSL)
@@ -584,7 +607,6 @@ if(FLB_TD)
   FLB_OPTION(FLB_JEMALLOC ON)
   set(FLB_PROG_NAME "TD Agent Bit")
   set(FLB_OUT_NAME "td-agent-bit")
-  set(WITHOUT_HEADERS On)
 else()
   set(FLB_PROG_NAME "Fluent Bit")
   set(FLB_OUT_NAME "fluent-bit")
@@ -609,9 +631,9 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE)
+    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
@@ -626,10 +648,14 @@ endif()
 # =========================================
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    # From macOS Mojave, /usr/include does not store C SDK headers.
+    set(CFLAGS "${CFLAGS} -isysroot ${CMAKE_OSX_SYSROOT}")
+  endif()
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE)
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
@@ -733,15 +759,26 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(FLB_INSTALL_INCLUDEDIR "include")
 else()
   set(FLB_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
-  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${FLB_OUT_NAME}")
+  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
   set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
-  set(FLB_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_INCLUDEDIR})
+  set(FLB_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
+  if(${CMAKE_INSTALL_PREFIX} MATCHES "/usr/local")
+    set(FLB_INSTALL_SYSTEMDUNITDIR "/lib/systemd/system/")
+    set(FLB_INSTALL_UPSTARTUNITDIR "/etc/init")
+  else()
+    set(FLB_INSTALL_SYSTEMDUNITDIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/")
+    set(FLB_INSTALL_UPSTARTUNITDIR "${CMAKE_INSTALL_PREFIX}/etc/init")
+  endif()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
 add_subdirectory(include)
 add_subdirectory(plugins)
 add_subdirectory(src)
+
+if(NOT FLB_SHARED_LIB)
+  set(FLB_EXAMPLES OFF)
+endif()
 
 if(FLB_EXAMPLES)
   add_subdirectory(examples)
@@ -781,8 +818,18 @@ if(FLB_SYSTEM_WINDOWS)
   endif()
 endif()
 
+# Enable components
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+set(CPACK_RPM_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_ALL ${CPACK_COMPONENTS_ALL} binary library headers headers-extra)
+set(CPACK_COMPONENTS_GROUPING "ONE_PER_GROUP")
+
+set(CPACK_COMPONENT_BINARY_GROUP "RUNTIME")
+set(CPACK_COMPONENT_LIBRARY_GROUP "RUNTIME")
+
 # Debian package setup and name sanitizer
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
 find_program(DPKG_PROGRAM dpkg DOC "dpkg program of Debian-based systems")
 if(DPKG_PROGRAM)
   execute_process(
@@ -790,14 +837,29 @@ if(DPKG_PROGRAM)
     OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-  #set(CPACK_PACKAGE_FILE_NAME
-  #  "${CPACK_PACKAGE_NAME_LOWERCASE}_${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}")
 
-  set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}")
-
-  set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+  set(CPACK_DEBIAN_HEADERS_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}-headers.deb")
+  set(CPACK_DEBIAN_HEADERS_EXTRA_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}-headers-extra.deb")
+  set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME "${CPACK_PACKAGE_NAME}")
+  set(CPACK_DEBIAN_RUNTIME_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+  set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA
     ${CMAKE_CURRENT_SOURCE_DIR}/debian/conffiles
     )
+
+  if(FLB_RUN_LDCONFIG)
+    set(LDCONFIG_DIR ${FLB_INSTALL_LIBDIR})
+    file(WRITE ${PROJECT_BINARY_DIR}/scripts/postinst "
+mkdir -p /etc/ld.so.conf.d
+echo \"${LDCONFIG_DIR}\" > /etc/ld.so.conf.d/libfluent-bit.conf
+ldconfig
+    ")
+    file(WRITE ${PROJECT_BINARY_DIR}/scripts/prerm "
+rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
+ldconfig
+    ")
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+  endif(FLB_RUN_LDCONFIG)
+
 endif()
 
 # RPM Generation information
@@ -820,10 +882,12 @@ set(CPACK_RPM_USER_FILELIST
   "%ignore /usr/local/bin"
   "%ignore /opt"
   "%ignore /etc")
+
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
-if(CPACK_GENERATOR MATCHES "RPM")
-  set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
-endif()
+set(CPACK_RPM_RUNTIME_PACKAGE_NAME "${CPACK_PACKAGE_NAME}")
+set(CPACK_RPM_HEADERS_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}-headers.rpm")
+set(CPACK_RPM_HEADERS_EXTRA_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}-headers-extra.rpm")
+set(CPACK_RPM_RUNTIME_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}.rpm")
 
 # CPack: DEB
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)

@@ -57,7 +57,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                     flb_input_collector_resume(random_i2, entry);
                     flb_input_net_default_listener(nm4, random_i1, entry);
                     flb_input_collector_start(random_i2, entry);
-                    flb_router_get_routes_mask_by_tag(nm4, 10, entry);
                 }
             }
             break;
@@ -65,6 +64,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 struct mk_list *head;
                 struct flb_input_instance *entry;
                 mk_list_foreach(head, &ctx->config->inputs) {
+                    entry = mk_list_entry(head, struct flb_input_instance, _head);
                     if (entry->storage != NULL) {
                         char bufbuf[100];
                         flb_input_chunk_append_raw(entry, "A", 1, "\0", 0);
@@ -73,8 +73,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                         ic = flb_input_chunk_create(entry, nm3, 10);
                         if (ic != NULL) {
                             flb_input_chunk_get_size(ic);
-                            flb_input_chunk_find_space_new_data(ic, 0x00, 100);
-                            flb_input_chunk_get_overlimit_routes_mask(ic, 100);
                             flb_input_chunk_set_up_down(ic);
                             flb_input_chunk_down(ic);
                             flb_input_chunk_set_up(ic);
@@ -102,9 +100,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                     flb_output_name(entry);
                 }
             }
-            break;
-        case 8:
-            flb_router_exit(ctx->config);
             break;
         default:
             flb_lib_push(ctx, in_ffd, null_terminated, NM_SIZE);
@@ -163,9 +158,6 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     flb_output_set(ctx, out_ffd,"auto_create_group", "On", NULL);
     flb_output_set(ctx, out_ffd,"net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd,"Retry_Limit", "1", NULL);
-
-    flb_storage_create(ctx->config);
-    ctx->config->storage_metrics = FLB_TRUE;
 
     /* start the engine */
     flb_start(ctx);
