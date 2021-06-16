@@ -833,6 +833,10 @@ int flb_output_init_all(struct flb_config *config)
                             "retries", ins->metrics);
             flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
                         "retries_failed", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_DROPPED_RECORDS,
+                        "dropped_records", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
+                        "retried_records", ins->metrics);
         }
 #endif
 
