@@ -198,6 +198,9 @@ static int bigquery_get_oauth2_token(struct flb_bigquery *ctx)
     time_t expires;
     char payload[1024];
 
+    /* Clear any previous oauth2 payload content */
+    flb_oauth2_payload_clear(ctx->o);
+
     /* JWT encode for oauth2 */
     issued = time(NULL);
     expires = issued + FLB_BIGQUERY_TOKEN_REFRESH;
