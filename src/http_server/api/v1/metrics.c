@@ -250,7 +250,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     char time_str[64];
     char start_time_str[64];
     char* *metrics_arr;
-    struct timeval tp;
+    struct flb_time tp;
     struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
