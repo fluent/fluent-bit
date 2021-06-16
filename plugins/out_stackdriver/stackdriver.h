@@ -73,6 +73,12 @@
 
 #define DEFAULT_TAG_REGEX "(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
 
+/* Metrics */
+#ifdef FLB_HAVE_METRICS
+#define FLB_STACKDRIVER_SUCCESSFUL_REQUESTS  1000   /* successful requests */
+#define FLB_STACKDRIVER_FAILED_REQUESTS      1001   /* failed requests */
+#endif
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -128,7 +134,7 @@ struct flb_stackdriver {
     bool autoformat_stackdriver_trace;
 
     flb_sds_t stackdriver_agent;
-    
+
     /* Regex context to parse tags */
     flb_sds_t custom_k8s_regex;
     struct flb_regex *regex;
