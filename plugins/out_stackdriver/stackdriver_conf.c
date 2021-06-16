@@ -435,6 +435,14 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->custom_k8s_regex = flb_sds_create(tmp);
     }
 
+    /* Register metrics */
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
+                    "stackdriver_successful_requests", ctx->ins->metrics);
+    flb_metrics_add(FLB_STACKDRIVER_FAILED_REQUESTS,
+                    "stackdriver_failed_requests", ctx->ins->metrics);
+#endif
+
     return ctx;
 }
 
@@ -509,7 +517,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     if (ctx->regex) {
         flb_regex_destroy(ctx->regex);
     }
-    
+
     flb_free(ctx);
 
     return 0;
