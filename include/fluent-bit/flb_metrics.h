@@ -32,11 +32,14 @@
 #define FLB_METRIC_N_DROPPED   2
 #define FLB_METRIC_N_ADDED     3
 
-#define FLB_METRIC_OUT_OK_RECORDS     10
-#define FLB_METRIC_OUT_OK_BYTES       11
-#define FLB_METRIC_OUT_ERROR          12
-#define FLB_METRIC_OUT_RETRY          13
-#define FLB_METRIC_OUT_RETRY_FAILED   14
+/* Genaral output plugin metrics */
+#define FLB_METRIC_OUT_OK_RECORDS      10       /* proc_records   */
+#define FLB_METRIC_OUT_OK_BYTES        11       /* proc_bytes     */
+#define FLB_METRIC_OUT_ERROR           12       /* errors         */
+#define FLB_METRIC_OUT_RETRY           13       /* retries        */
+#define FLB_METRIC_OUT_RETRY_FAILED    14       /* retries_failed */
+#define FLB_METRIC_OUT_DROPPED_RECORDS 15       /* dropped_records_total */
+#define FLB_METRIC_OUT_RETRIED_RECORDS 16       /* retried_records_total */
 
 struct flb_metric {
     int id;
