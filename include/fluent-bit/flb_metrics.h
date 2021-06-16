@@ -44,14 +44,14 @@
 struct flb_metric {
     int id;
     int title_len;
-    char title[32];
+    char title[64];
     size_t val;
     struct mk_list _head;
 };
 
 struct flb_metrics {
     int title_len;         /* Title string length */
-    char title[32];        /* Title or id for this metrics context */
+    char title[64];        /* Title or id for this metrics context */
     int count;             /* Total count of metrics registered */
     struct mk_list list;   /* Head of metrics list */
 };
