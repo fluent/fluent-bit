@@ -128,9 +128,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
              ctx->api_https ? "https" : "http",
              ctx->api_host, ctx->api_port);
 
-    ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
-                                      FLB_HASH_TABLE_SIZE,
-                                      FLB_HASH_TABLE_SIZE);
+    if (ctx->kube_meta_cache_ttl > 0) {
+        ctx->hash_table = flb_hash_create_with_ttl(ctx->kube_meta_cache_ttl,
+                                                   FLB_HASH_EVICT_OLDER,
+                                                   FLB_HASH_TABLE_SIZE,
+                                                   FLB_HASH_TABLE_SIZE);
+    }
+    else {
+        ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
+                                          FLB_HASH_TABLE_SIZE,
+                                          FLB_HASH_TABLE_SIZE);
+    }
+    
     if (!ctx->hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;

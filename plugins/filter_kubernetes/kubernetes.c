@@ -833,6 +833,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, kubelet_port),
      "kubelet port to connect with when using kubelet"
     },
+    /*
+     * Set TTL for K8s cached metadata 
+     */
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_cache_ttl", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_cache_ttl),
+     "configurable TTL for K8s cached metadata"
+    },
     /* EOF */
     {0}
 };
