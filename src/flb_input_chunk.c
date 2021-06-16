@@ -836,7 +836,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     if (buf_size == 0) {
-        flb_info("[input chunk] skip ingesting data with 0 bytes");
+        flb_debug("[input chunk] skip ingesting data with 0 bytes");
         return -1;
     }
 
