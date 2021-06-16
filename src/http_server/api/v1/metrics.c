@@ -213,6 +213,12 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
     else if (strstr(metric_name, "output_proc_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
     }
+    else if (strstr(metric_name, "output_dropped_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of dropped records.\n", 28);
+    }
+    else if (strstr(metric_name, "output_retried_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of retried records.\n", 28);
+    }
     else {
         return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
     }
