@@ -1,4 +1,4 @@
 set(src
-        skywalking.c)
+  skywalking.c)
 
 FLB_PLUGIN(out_skywalking "${src}" "")

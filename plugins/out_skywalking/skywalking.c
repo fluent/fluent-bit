@@ -31,72 +31,83 @@
 #define DEFAULT_SW_INS_NAME "fluent-bit"
 #define DEFAULT_SW_LOG_PATH "/v3/logs"
 
-static int cb_sw_init(struct flb_output_instance *ins, struct flb_config *config, void *data) {
+static void sw_output_ctx_destroy(struct flb_output_sw* ctx) {
+    if (!ctx) {
+        return;
+    }
+
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
+
+    flb_sds_destroy(ctx->http_scheme);
+    flb_sds_destroy(ctx->uri);
+    flb_free(ctx);
+}
+
+static int cb_sw_init(struct flb_output_instance *ins,
+                      struct flb_config *config, void *data)
+{
+    int ret;
     int io_flags;
     struct flb_output_sw *ctx;
-    const char* tmp;
 
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_output_sw));
     if (!ctx) {
-        flb_errno();
-        return -1;
-    }
-    ctx->ins = ins;
-
-    /* setup access token */
-    tmp = flb_output_get_property("auth_token", ins);
-    if (tmp) {
-        flb_plg_debug(ctx->ins, "OAP token: %s", ctx->auth_token);
-        ctx->auth_token = flb_sds_create(tmp);
-    }
-
-    /* setup uri */
-    ctx->uri = flb_sds_create(DEFAULT_SW_LOG_PATH);
-    if (!ctx->uri) {
-        flb_plg_error(ctx->ins, "failed to configure endpoint");
         flb_free(ctx);
         return -1;
     }
 
-    /* configure service/instance name */
-    tmp = flb_output_get_property("service_name", ins);
-    if (tmp) {
-        ctx->svc_name = flb_sds_create(tmp);
-    } else {
-        ctx->svc_name = flb_sds_create(DEFAULT_SW_SVC_NAME);
+    ctx->ins = ins;
+
+    ret = flb_output_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        sw_output_ctx_destroy(ctx);
+        return -1;
     }
 
-    tmp = flb_output_get_property("instance_name", ins);
-    if (tmp) {
-        ctx->svc_inst_name = flb_sds_create(tmp);
-    } else {
-        ctx->svc_inst_name = flb_sds_create(DEFAULT_SW_INS_NAME);
+    if (ctx->port == 0) {
+        ctx->port = DEFAULT_SW_OAP_PORT;
+    }
+
+    ctx->uri = flb_sds_create(DEFAULT_SW_LOG_PATH);
+    if (!ctx->uri) {
+        flb_plg_error(ctx->ins, "failed to configure endpoint");
+        sw_output_ctx_destroy(ctx);
+        return -1;
+    }
+
+    if (!ctx->svc_name) {
+        flb_plg_error(ctx->ins, "failed to configure service name");
+        sw_output_ctx_destroy(ctx);
+        return -1;
+    }
+
+    if (!ctx->svc_inst_name) {
+        flb_plg_error(ctx->ins, "failed to configure instance name");
+        sw_output_ctx_destroy(ctx);
+        return -1;
     }
 
     flb_plg_debug(ctx->ins, "configured %s/%s", ctx->svc_name, ctx->svc_inst_name);
-
-    flb_output_net_default(DEFAULT_SW_OAP_HOST, DEFAULT_SW_OAP_PORT, ins);
+    flb_plg_debug(ctx->ins, "OAP address is %s:%d", ctx->host, ctx->port);
 
     /* scheme configuration */
     if (ins->use_tls == FLB_TRUE) {
         io_flags = FLB_IO_TLS;
         ctx->http_scheme = flb_sds_create("https://");
-    } else {
+    }
+    else {
         io_flags = FLB_IO_TCP;
         ctx->http_scheme = flb_sds_create("http://");
     }
-
-    /* setup host and port */
-    ctx->host = ins->host.name;
-    ctx->port = ins->host.port;
-    flb_plg_debug(ctx->ins, "OAP address: %s:%d", ctx->host, ctx->port);
 
     /* configure upstream instance */
     ctx->u = flb_upstream_create(config, ctx->host, ctx->port, io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "failed to create upstream context");
-        flb_free(ctx);
+        sw_output_ctx_destroy(ctx);
         return -1;
     }
 
@@ -109,22 +120,25 @@ static int cb_sw_init(struct flb_output_instance *ins, struct flb_config *config
     return 0;
 }
 
-static int64_t timestamp_format(const struct flb_time* tms) {
-  int64_t timestamp = 0;
+static int64_t timestamp_format(const struct flb_time* tms)
+{
+    int64_t timestamp = 0;
 
-  /* Format the time, use milliseconds precision not nanoseconds */
-  timestamp = tms->tm.tv_sec * 1000;
-  timestamp += tms->tm.tv_nsec / 1000000;
+    /* Format the time, use milliseconds precision not nanoseconds */
+    timestamp = tms->tm.tv_sec * 1000;
+    timestamp += tms->tm.tv_nsec / 1000000;
 
-  /* round up if necessary */
-  if (tms->tm.tv_nsec % 1000000 >= 500000) {
-      ++timestamp;
-  }
-  return timestamp;
+    /* round up if necessary */
+    if (tms->tm.tv_nsec % 1000000 >= 500000) {
+        ++timestamp;
+    }
+    return timestamp;
 }
 
 static void sw_msgpack_pack_kv_str(msgpack_packer* pk, const char* key,
-                                   size_t key_len, const char *value, size_t value_len) {
+                                   size_t key_len, const char *value,
+                                   size_t value_len)
+{
     msgpack_pack_str(pk, key_len);
     msgpack_pack_str_body(pk, key, key_len);
     msgpack_pack_str(pk, value_len);
@@ -132,14 +146,16 @@ static void sw_msgpack_pack_kv_str(msgpack_packer* pk, const char* key,
 }
 
 static void sw_msgpack_pack_kv_int64_t(msgpack_packer* pk, const char* key,
-                                       size_t key_len, int64_t value) {
+                                       size_t key_len, int64_t value)
+{
     msgpack_pack_str(pk, key_len);
     msgpack_pack_str_body(pk, key, key_len);
     msgpack_pack_int64(pk, value);
 }
 
 static void sw_msgpack_pack_log_body(msgpack_packer* pk,
-                                     msgpack_object* obj, size_t obj_size) {
+                                     msgpack_object* obj, size_t obj_size)
+{
     int i, j = 0;
     int log_entry_num = 0;
     msgpack_sbuffer sbuf;
@@ -148,7 +164,12 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
     msgpack_object value;
     flb_sds_t out_body_str;
     size_t out_body_str_len;
-    int* valid_log_entry = (int*)flb_malloc(obj_size * sizeof(int));
+    int* valid_log_entry = NULL;
+
+    valid_log_entry = (int*)flb_malloc(obj_size * sizeof(int));
+    if (!valid_log_entry) {
+        return;
+    }
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&body_pk, &sbuf, msgpack_sbuffer_write);
@@ -157,7 +178,8 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
         key = obj->via.map.ptr[i].key;
         value = obj->via.map.ptr[i].val;
 
-        if (key.type != MSGPACK_OBJECT_STR || value.type != MSGPACK_OBJECT_STR) {
+        if (key.type != MSGPACK_OBJECT_STR ||
+            value.type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
@@ -171,10 +193,16 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
     for (i = 0; i < log_entry_num; ++i) {
         key = obj->via.map.ptr[valid_log_entry[i]].key;
         value = obj->via.map.ptr[valid_log_entry[i]].val;
-        sw_msgpack_pack_kv_str(&body_pk, key.via.str.ptr, key.via.str.size, value.via.str.ptr, value.via.str.size);
+        sw_msgpack_pack_kv_str(&body_pk, key.via.str.ptr, key.via.str.size,
+                               value.via.str.ptr, value.via.str.size);
     }
 
     out_body_str = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+    if (!out_body_str) {
+        msgpack_sbuffer_destroy(&sbuf);
+        flb_free(valid_log_entry);
+        return;
+    }
     out_body_str_len = flb_sds_len(out_body_str);
 
     msgpack_pack_str(pk, 4);
@@ -192,12 +220,15 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
     msgpack_pack_str(pk, out_body_str_len);
     msgpack_pack_str_body(pk, out_body_str, out_body_str_len);
 
-    msgpack_sbuffer_destroy(&sbuf);
     flb_sds_destroy(out_body_str);
+    msgpack_sbuffer_destroy(&sbuf);
+    flb_free(valid_log_entry);
 }
 
 static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
-                     void** buf, size_t* buf_len) {
+                     void** buf, size_t* buf_len)
+{
+    int ret = 0;
     int chunk_size = 0;
     size_t off = 0;
     uint32_t map_size;
@@ -206,26 +237,22 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    msgpack_object *obj;
+    msgpack_object* obj;
     struct flb_time tms;
     int64_t timestamp;
     flb_sds_t out_str;
 
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
-
     msgpack_unpacked_init(&result);
 
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-        ++chunk_size;
-    }
-
+    chunk_size = flb_mp_count(data, bytes);
     flb_plg_debug(ctx->ins, "%i messages flushed", chunk_size);
 
     msgpack_pack_array(&pk, chunk_size);
-    off = 0;
 
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result, data, bytes, &off)
+           == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
 
         /* Get timestamp and object */
@@ -239,29 +266,36 @@ static int sw_format(struct flb_output_sw* ctx, const void *data, size_t bytes,
 
         sw_msgpack_pack_kv_int64_t(&pk, "timestamp", 9, timestamp);
         sw_msgpack_pack_kv_str(&pk, "service", 7, ctx->svc_name,
-                flb_sds_len(ctx->svc_name));
-        sw_msgpack_pack_kv_str(&pk, "serviceInstance", 15, ctx->svc_inst_name,
-                flb_sds_len(ctx->svc_inst_name));
+                               flb_sds_len(ctx->svc_name));
+        sw_msgpack_pack_kv_str(&pk, "serviceInstance", 15,
+                               ctx->svc_inst_name, flb_sds_len(ctx->svc_inst_name));
         sw_msgpack_pack_log_body(&pk, &map, map_size);
     }
 
     out_str = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
+    if (!out_str) {
+        ret = -1;
+        goto done;
+    }
 
     *buf = out_str;
     *buf_len = flb_sds_len(out_str);
 
+done:
     msgpack_sbuffer_destroy(&sbuf);
     msgpack_unpacked_destroy(&result);
 
-    return 0;
+    return ret;
 }
 
-static int mock_oap_request(struct flb_http_client* client, int mock_status) {
+static int mock_oap_request(struct flb_http_client* client, int mock_status)
+{
     client->resp.status = mock_status;
     return 0;
 }
 
-static bool check_sw_under_test() {
+static bool check_sw_under_test()
+{
     if (getenv("FLB_SW_PLUGIN_UNDER_TEST") != NULL) {
         return FLB_TRUE;
     }
@@ -271,111 +305,118 @@ static bool check_sw_under_test() {
 static void cb_sw_flush(const void *data, size_t bytes,
                         const char *tag, int tag_len,
                         struct flb_input_instance *i_ins,
-                        void *out_context, struct flb_config *config) {
+                        void *out_context, struct flb_config *config)
+{
     int flush_ret = -1;
     int tmp_ret = -1;
     struct flb_output_sw *ctx = out_context;
     struct flb_upstream_conn *conn = NULL;
     struct flb_http_client *client = NULL;
-    void* buf;
+    void* buf = NULL;
     size_t buf_len;
     size_t sent_size;
 
-    conn = flb_upstream_conn_get(ctx->u);
-    if (!conn) {
-        flb_plg_error(ctx->ins, "failed to establish connection to %s:%i", ctx->host, ctx->port);
-        flush_ret = FLB_RETRY;
-        goto done;
-    }
-
-    tmp_ret =  sw_format(ctx, data, bytes, &buf, &buf_len);
+    tmp_ret = sw_format(ctx, data, bytes, &buf, &buf_len);
     if (tmp_ret != 0) {
         flb_plg_error(ctx->ins, "failed to create buffer");
-        printf("err\n");
-        flush_ret = FLB_ERROR;
-        goto done;
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    conn = flb_upstream_conn_get(ctx->u);
+    if (!conn) {
+        flb_plg_error(ctx->ins, "failed to establish connection to %s:%i",
+                ctx->host, ctx->port);
+        flb_sds_destroy(buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     client = flb_http_client(conn, FLB_HTTP_POST, ctx->uri,
             (const char*)buf, buf_len, ctx->host, ctx->port, NULL, 0);
     if (!client) {
         flb_plg_error(ctx->ins, "failed to create HTTP client");
-        flush_ret = FLB_ERROR;
-        goto done;
+        flb_sds_destroy(buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     if (ctx->auth_token && flb_sds_len(ctx->auth_token) != 0) {
-        flb_http_add_header(client, "Authentication", 10, ctx->auth_token, strlen(ctx->auth_token));
+        flb_http_add_header(client, "Authentication", 10,
+                            ctx->auth_token, strlen(ctx->auth_token));
     }
 
-    flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
-    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(client, "Content-Type", 12,
+                    "application/json", 16);
+    flb_http_add_header(client, "User-Agent", 10,
+                        "Fluent-Bit", 10);
 
     if (check_sw_under_test() == FLB_TRUE) {
         tmp_ret = mock_oap_request(client, 200);
-    } else {
+    }
+    else {
         tmp_ret = flb_http_do(client, &sent_size);
     }
 
     if (tmp_ret == 0) {
-        flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i", ctx->host, ctx->port, client->resp.status);
+        flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i", ctx->host,
+                      ctx->port, client->resp.status);
 
         if (client->resp.status < 200 || client->resp.status > 205) {
             flush_ret = FLB_RETRY;
-        } else {
+        }
+        else {
             flush_ret = FLB_OK;
         }
-    } else {
-        flb_plg_error(ctx->ins, "failed to flush buffer to %s:%i", ctx->host, ctx->port);
+    }
+    else {
+        flb_plg_error(ctx->ins, "failed to flush buffer to %s:%i",
+                      ctx->host, ctx->port);
         flush_ret = FLB_RETRY;
     }
 
-done:
-    if (buf) {
-        flb_sds_destroy(buf);
-    }
-    if (client) {
-        flb_http_client_destroy(client);
-    }
-    if (conn) {
-        flb_upstream_conn_release(conn);
-    }
+    flb_sds_destroy(buf);
+    flb_http_client_destroy(client);
+    flb_upstream_conn_release(conn);
 
     FLB_OUTPUT_RETURN(flush_ret);
 }
 
-static int cb_sw_exit(void *data, struct flb_config *config) {
+static int cb_sw_exit(void *data, struct flb_config *config)
+{
     struct flb_output_sw *ctx;
+
     ctx = (struct flb_output_sw*)data;
-    if (!ctx) {
-        return 0;
-    }
+    sw_output_ctx_destroy(ctx);
 
-    if (ctx->host) {
-        flb_sds_destroy(ctx->host);
-    }
-    if (ctx->auth_token) {
-        flb_sds_destroy(ctx->auth_token);
-    }
-    if (ctx->svc_name) {
-        flb_sds_destroy(ctx->svc_name);
-    }
-    if (ctx->svc_inst_name) {
-        flb_sds_destroy(ctx->svc_inst_name);
-    }
-    if (ctx->u) {
-        flb_upstream_destroy(ctx->u);
-    }
-    if (ctx->http_scheme) {
-        flb_sds_destroy(ctx->http_scheme);
-    }
-    if (ctx->uri) {
-        flb_sds_destroy(ctx->uri);
-    }
-
-    flb_free(ctx);
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+    {
+        FLB_CONFIG_MAP_STR, "host", DEFAULT_SW_OAP_HOST,
+        0, FLB_TRUE, offsetof(struct flb_output_sw, host),
+        "SkyWalking OAP hostname"
+    },
+    {
+        FLB_CONFIG_MAP_INT, "port", NULL,
+        0, FLB_TRUE, offsetof(struct flb_output_sw, port),
+        "SkyWalking OAP port"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "auth_token", NULL,
+        0, FLB_TRUE, offsetof(struct flb_output_sw, auth_token),
+        "Auth token for SkyWalking OAP"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "svc_name", DEFAULT_SW_SVC_NAME,
+        0, FLB_TRUE, offsetof(struct flb_output_sw, svc_name),
+        "Service name"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "svc_inst_name", DEFAULT_SW_INS_NAME,
+        0, FLB_TRUE, offsetof(struct flb_output_sw, svc_inst_name),
+        "Instance name"
+    },
+    {0}
+};
 
 struct flb_output_plugin out_skywalking_plugin = {
     .name = "skywalking",
@@ -384,4 +425,5 @@ struct flb_output_plugin out_skywalking_plugin = {
     .cb_flush = cb_sw_flush,
     .cb_exit = cb_sw_exit,
     .flags = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .config_map = config_map
 };
