@@ -401,6 +401,7 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    // TODO: this msg is innaccurate if events are skipped
     flb_plg_debug(ctx->ins, "Sent %d events to CloudWatch", event_count);
 
     FLB_OUTPUT_RETURN(FLB_OK);
