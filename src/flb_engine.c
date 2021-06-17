@@ -216,6 +216,9 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     }
     else if (ret == FLB_RETRY) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+#ifdef FLB_HAVE_METRICS
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
+#endif
             flb_info("[engine] chunk '%s' is not retried (no retry config): "
                      "task_id=%i, input=%s > output=%s (out_id=%i)",
                      flb_input_chunk_get_name(task->ic),
@@ -237,6 +240,7 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
              */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
             /* Notify about this failed retry */
             flb_warn("[engine] chunk '%s' cannot be retried: "
@@ -249,10 +253,6 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
             flb_task_users_dec(task, FLB_TRUE);
             return 0;
         }
-
-#ifdef FLB_HAVE_METRICS
-        flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
-#endif
 
         /* Always destroy the old coroutine */
         flb_task_users_dec(task, FLB_FALSE);
@@ -285,11 +285,18 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
                      task->id,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
+
+            /* Update the metrics since a new retry is coming */
+#ifdef FLB_HAVE_METRICS
+            flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_RETRIED_RECORDS, task->records, ins->metrics);
+#endif
         }
     }
     else if (ret == FLB_ERROR) {
 #ifdef FLB_HAVE_METRICS
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
+        flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -504,6 +511,18 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Initialize the scheduler */
+    sched = flb_sched_create(config, config->evl);
+    if (!sched) {
+        flb_error("[engine] scheduler could not start");
+        return -1;
+    }
+    config->sched = sched;
+
+    /* Register the scheduler context */
+    flb_sched_ctx_init();
+    flb_sched_ctx_set(sched);
+
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
     if (ret == -1) {
@@ -542,17 +561,6 @@ int flb_engine_start(struct flb_config *config)
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
 
-    /* Initialize the scheduler */
-    sched = flb_sched_create(config, config->evl);
-    if (!sched) {
-        flb_error("[engine] scheduler could not start");
-        return -1;
-    }
-    config->sched = sched;
-
-    /* Register the scheduler context */
-    flb_sched_ctx_init();
-    flb_sched_ctx_set(sched);
 
 #ifdef FLB_HAVE_METRICS
     if (config->storage_metrics == FLB_TRUE) {

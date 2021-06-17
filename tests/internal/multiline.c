@@ -19,37 +19,60 @@ struct expected_result {
 
 struct record_check docker_input[] = {
   {"{\"log\": \"aa\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
+  {"{\"log\": \"aa\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
   {"{\"log\": \"bb\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
+  {"{\"log\": \"bb\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01232z\"}"},
   {"{\"log\": \"cc\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
+  {"{\"log\": \"cc\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01233z\"}"},
   {"{\"log\": \"dd\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
+  {"{\"log\": \"dd\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01234z\"}"},
   {"{\"log\": \"ee\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01235z\"}"},
+  {"{\"log\": \"ee\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01235z\"}"},
   {"{\"log\": \"ff\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01236z\"}"},
+  {"{\"log\": \"ff\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01236z\"}"},
   {"{\"log\": \"gg\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01237z\"}"},
+  {"{\"log\": \"gg\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01237z\"}"},
 };
 
 struct record_check docker_output[] = {
   {"aa\n"},
+  {"aa\n"},
+  {"bbccdd\n"},
   {"bbccdd\n"},
   {"ee\n"},
+  {"ee\n"},
+  {"ffgg\n"},
   {"ffgg\n"}
 };
 
 struct record_check cri_input[] = {
-  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1. some "},
+  {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
+  {"2019-05-07T18:57:50.904275087+00:00 stderr P 1b. some "},
   {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
+  {"2019-05-07T18:57:51.904275088+00:00 stderr P multiline "},
   {"2019-05-07T18:57:52.904275089+00:00 stdout F log"},
-  {"2019-05-07T18:57:53.904275090+00:00 stdout P 2. another "},
+  {"2019-05-07T18:57:52.904275089+00:00 stderr F log"},
+  {"2019-05-07T18:57:53.904275090+00:00 stdout P 2a. another "},
+  {"2019-05-07T18:57:53.904275090+00:00 stderr P 2b. another "},
   {"2019-05-07T18:57:54.904275091+00:00 stdout P multiline "},
+  {"2019-05-07T18:57:54.904275091+00:00 stderr P multiline "},
   {"2019-05-07T18:57:55.904275092+00:00 stdout F log"},
-  {"2019-05-07T18:57:56.904275093+00:00 stdout F 3. non multiline 1"},
-  {"2019-05-07T18:57:57.904275094+00:00 stdout F 4. non multiline 2"}
+  {"2019-05-07T18:57:55.904275092+00:00 stderr F log"},
+  {"2019-05-07T18:57:56.904275093+00:00 stdout F 3a. non multiline 1"},
+  {"2019-05-07T18:57:56.904275093+00:00 stderr F 3b. non multiline 1"},
+  {"2019-05-07T18:57:57.904275094+00:00 stdout F 4a. non multiline 2"},
+  {"2019-05-07T18:57:57.904275094+00:00 stderr F 4b. non multiline 2"}
 };
 
 struct record_check cri_output[] = {
-  {"1. some multiline log"},
-  {"2. another multiline log"},
-  {"3. non multiline 1"},
-  {"4. non multiline 2"}
+  {"1a. some multiline log"},
+  {"1b. some multiline log"},
+  {"2a. another multiline log"},
+  {"2b. another multiline log"},
+  {"3a. non multiline 1"},
+  {"3b. non multiline 1"},
+  {"4a. non multiline 2"},
+  {"4b. non multiline 2"}
 };
 
 struct record_check java_input[] = {
@@ -425,7 +448,6 @@ static void test_mode_java()
     mst = flb_ml_stream_create(ml, "java", flush_callback, (void *) &res);
     TEST_CHECK(mst != NULL);
 
-
     entries = sizeof(java_input) / sizeof(struct record_check);
     for (i = 0; i < entries; i++) {
         r = &java_input[i];
@@ -560,13 +582,16 @@ static void test_mode_elastic()
     config = flb_config_init();
 
     ml = flb_ml_create(config,
+                       "test",               /* name      */
                        FLB_ML_REGEX,         /* type      */
                        NULL,                 /* match_str */
                        FLB_FALSE,            /* negate    */
                        1000,                 /* flush_ms  */
                        "log",                /* key_content */
                        NULL,                 /* key_pattern */
-                       NULL);                /* parser */
+                       NULL,                 /* key_group */
+                       NULL,                 /* parser ctx */
+                       NULL);                /* parser name */
 
     ret = flb_ml_rule_create(ml, "start_state", "/^\\[/", "elastic_cont", NULL);
     if (ret != 0) {

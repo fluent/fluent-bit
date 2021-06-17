@@ -1545,7 +1545,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "total_file_size", "100000000",
      0, FLB_TRUE, offsetof(struct flb_s3, file_size),
-     "Specifies the size of files in S3. Maximum size is 50GB, minimim is 1MB"
+     "Specifies the size of files in S3. Maximum size is 50GB, minimum is 1MB"
     },
     {
      FLB_CONFIG_MAP_SIZE, "upload_chunk_size", "5242880",

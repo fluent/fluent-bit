@@ -6,6 +6,12 @@ on:
       - completed
 jobs:
   publish-docker-images:
+    strategy:
+      max-parallel: 3
+      fail-fast: false
+      matrix:
+        tag: [ 'master', 'master_debug' ]
+
     name: publish the docker images for master
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -21,7 +27,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: integration-build-docker-master.yaml
           run_id: ${{ github.event.workflow_run.id }}
-          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master
+          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-${{ matrix.tag }}
           path: images
         env:
           arch: x86_64
@@ -29,7 +35,7 @@ jobs:
 
       - name: Import docker image
         run: |
-          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master
+          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-${{ matrix.tag }}
         env:
           arch: x86_64
           dockerhub_organization: fluentbitdev
@@ -42,13 +48,14 @@ jobs:
 
       - name: Push image to Docker Hub
         run: |
-          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ matrix.tag }}
         env:
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
       - run: |
           ./scripts/grafana-add-tag.sh
+        if: matrix.tag == 'master'
         env:
           GRAFANA_CLOUD_TOKEN: ${{ secrets.GRAFANA_CLOUD_TOKEN }}
           COMMIT_ID: ${{ github.event.workflow_run.head_sha }}
@@ -61,7 +68,7 @@ jobs:
       max-parallel: 3
       fail-fast: false
       matrix:
-        k8s-release: [ '1.19', '1.20' ] #, 1.19/stable, 1.18/stable ]
+        k8s-release: [ '1.19' ]#, '1.20' ] #, 1.19/stable, 1.18/stable ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

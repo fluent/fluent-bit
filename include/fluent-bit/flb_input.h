@@ -478,13 +478,6 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
     return FLB_FALSE;
 }
 
-static inline void FLB_INPUT_RETURN()
-{
-    struct flb_coro *coro = flb_coro_get();
-    flb_input_return(coro);
-    flb_coro_return(coro);
-}
-
 static inline int flb_input_config_map_set(struct flb_input_instance *ins,
                                            void *context)
 {

@@ -66,7 +66,7 @@ struct flb_dns_lookup_result_event {
 
 struct flb_dns_lookup_context {
     struct mk_event response_event;                  /* c-ares socket event */
-    // struct flb_dns_lookup_result_event result_event; /* result signaling event */
+    int ares_socket_created;
     void *ares_channel;
     int result_code;
     int finished;

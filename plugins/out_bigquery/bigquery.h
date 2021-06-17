@@ -67,6 +67,9 @@ struct flb_bigquery {
     /* oauth2 context */
     struct flb_oauth2 *o;
 
+    /* mutex for acquiring oauth tokens */
+    pthread_mutex_t token_mutex;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 

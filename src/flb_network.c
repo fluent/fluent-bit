@@ -532,6 +532,7 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         else {
             context->result_code = 0;
         }
+        ares_freeaddrinfo(res);
     }
     else {
         context->result_code = 1;
@@ -565,6 +566,8 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
     int event_mask;
 
     context = (struct flb_dns_lookup_context *) userdata;
+
+    context->ares_socket_created = 1;
 
     context->response_event.mask    = MK_EVENT_EMPTY;
     context->response_event.status  = MK_EVENT_NONE;
@@ -613,6 +616,7 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
         return NULL;
     }
 
+    context->ares_socket_created = 0;
     context->event_loop = event_loop;
     context->coroutine = coroutine;
     context->finished = 0;
@@ -660,9 +664,11 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints,
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    flb_coro_yield(coroutine, FLB_FALSE);
+    if (1 == lookup_context->ares_socket_created) {
+        flb_coro_yield(coroutine, FLB_FALSE);
+    }
 
-    if(0 == lookup_context->result_code) {
+    if (0 == lookup_context->result_code) {
         *res = lookup_context->result;
     }
 
@@ -738,7 +744,6 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     char _port[6];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
-    struct flb_coro *coro;
 
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
@@ -755,10 +760,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
 
-    coro = flb_coro_get();
-
     /* retrieve DNS info */
-    if(NULL != coro) {
+    if (is_async) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res);
     }
     else {
@@ -833,7 +836,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         break;
     }
 
-    if(NULL != coro) {
+    if (is_async) {
         flb_net_free_translated_addrinfo(res);
     }
     else {

@@ -47,7 +47,10 @@
 #define FLB_ML_TYPE_MAP         2   /* msgpack object/map (k/v pairs) */
 
 /* Default multiline buffer size: 4Kb */
-#define FLB_ML_BUF_SIZE  1024*4
+#define FLB_ML_BUF_SIZE         1024*4
+
+/* Maximum number of groups per stream */
+#define FLB_ML_MAX_GROUPS       6
 
 struct flb_ml;
 struct flb_ml_stream;
@@ -77,8 +80,10 @@ struct flb_ml_rule {
     struct mk_list _head;
 };
 
-struct flb_ml_stream {
-    flb_sds_t name;           /* Name of the stream, mostly for debugging purposes */
+struct flb_ml_stream_group {
+    flb_sds_t name;           /* group name, unique identifier */
+
+    uint64_t last_flush;      /* last flush/check time */
 
     int counter_lines;        /* counter for the number of lines */
 
@@ -95,6 +100,13 @@ struct flb_ml_stream {
     msgpack_packer mp_pck;    /* temporary msgpack packer              */
     struct flb_time mp_time;  /* multiline time parsed from first line */
 
+    struct mk_list _head;
+};
+
+struct flb_ml_stream {
+    flb_sds_t name;           /* Name of the stream, mostly for debugging purposes */
+    struct mk_list groups;    /* Groups inside a stream */
+
     /* Flush callback and opaque data type */
     int (*cb_flush) (struct flb_ml *,
                      struct flb_ml_stream *,
@@ -109,6 +121,8 @@ struct flb_ml_stream {
 struct flb_ml {
     int type;                 /* type: COUNT, REGEX, ENDSWITH or EQ */
     int negate;               /* negate start pattern ? */
+
+    flb_sds_t name;
 
     /*
      * If 'multiline type' is ENDSWITH or EQ, a 'match_str' string is passed
@@ -134,6 +148,19 @@ struct flb_ml {
      */
     flb_sds_t key_pattern;
 
+
+    /*
+     * Optional: define a 'key' name that specify a specific group of logs.
+     * As an example, consider containerized logs coming from Docker or CRI
+     * where the logs must be group by stream 'stdout' and 'stderr'. On that
+     * case key_group = 'stream'.
+     *
+     * If the origin stream will not have groups, this can be null and the
+     * multiline context creator will only use a default group for everything
+     * under the same stream.
+     */
+    flb_sds_t key_group;
+
     /* Flush interval */
     int flush_ms;
 
@@ -147,7 +174,8 @@ struct flb_ml {
     void *cb_data;                             /* opaque data */
 
     /* internal */
-    struct flb_parser *parser;
+    struct flb_parser *parser;                 /* parser context */
+    flb_sds_t parser_name;                     /* parser name for delayed init */
 
     /*
      * Every multiline context has N streams, a stream represent a source
@@ -164,18 +192,25 @@ struct flb_ml {
 
     /* Fluent Bit parent context */
     struct flb_config *config;
+
+    /* Link node: every multiline context is linked on config->ml list */
+    struct mk_list _head;
 };
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx,
+                             char *name,
                              int type, char *match_str, int negate,
                              int flush_ms,
                              char *key_content,
+                             char *key_group,
                              char *key_pattern,
-                             struct flb_parser *parser);
+                             struct flb_parser *parser_ctx,
+                             char *parser_name);
 
 int flb_ml_destroy(struct flb_ml *ml);
 
 int flb_ml_register_context(struct flb_ml *ml, struct flb_ml_stream *mst,
+                            struct flb_ml_stream_group *group,
                             struct flb_time *tm, msgpack_object *map);
 
 int flb_ml_append(struct flb_ml *ml, struct flb_ml_stream *mst,
@@ -185,7 +220,11 @@ int flb_ml_append_object(struct flb_ml *ml,
                          struct flb_ml_stream *mst,
                          struct flb_time *tm, msgpack_object *obj);
 
-int flb_ml_flush(struct flb_ml *ml, struct flb_ml_stream *mst);
+int flb_ml_parsers_init(struct flb_config *ctx);
+int flb_ml_auto_flush_start(struct flb_ml *ml);
+
+int flb_ml_flush_stream_group(struct flb_ml *ml, struct flb_ml_stream *mst,
+                              struct flb_ml_stream_group *group);
 
 /* Multiline streams */
 struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
@@ -199,6 +238,10 @@ struct flb_ml_stream *flb_ml_stream_create(struct flb_ml *ml,
 
 int flb_ml_stream_destroy(struct flb_ml_stream *mst);
 
+struct flb_ml_stream_group *flb_ml_stream_group_get(struct flb_ml *ml,
+                                                    struct flb_ml_stream *mst,
+                                                    msgpack_object *full_map);
+
 /* Regex Rules */
 int flb_ml_rule_create(struct flb_ml *ml,
                        flb_sds_t from_states,
@@ -209,6 +252,8 @@ void flb_ml_rule_destroy(struct flb_ml_rule *rule);
 void flb_ml_rule_destroy_all(struct flb_ml *ml);
 
 int flb_ml_init(struct flb_ml *ml);
+
+int flb_ml_type_lookup(char *str);
 
 #include "flb_ml_mode.h"
 

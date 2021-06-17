@@ -199,18 +199,19 @@ static int set_to_state_map(struct flb_ml *ml,
 }
 
 static int try_flushing_buffer(struct flb_ml *ml,
-                               struct flb_ml_stream *mst)
+                               struct flb_ml_stream *mst,
+                               struct flb_ml_stream_group *group)
 {
     int next_start = FLB_FALSE;
     struct mk_list *head;
     struct to_state *st;
     struct flb_ml_rule *rule;
 
-    rule = mst->rule_to_state;
+    rule = group->rule_to_state;
     if (!rule) {
-        if (flb_sds_len(mst->buf) > 0) {
-            flb_ml_flush(ml, mst);
-            mst->first_line = FLB_TRUE;
+        if (flb_sds_len(group->buf) > 0) {
+            flb_ml_flush_stream_group(ml, mst, group);
+            group->first_line = FLB_TRUE;
         }
         return 0;
     }
@@ -224,9 +225,9 @@ static int try_flushing_buffer(struct flb_ml *ml,
         }
     }
 
-    if (next_start && flb_sds_len(mst->buf) > 0) {
-        flb_ml_flush(ml, mst);
-        mst->first_line = FLB_TRUE;
+    if (next_start && flb_sds_len(group->buf) > 0) {
+        flb_ml_flush_stream_group(ml, mst, group);
+        group->first_line = FLB_TRUE;
     }
 
     return 0;
@@ -257,14 +258,15 @@ int flb_ml_rule_init(struct flb_ml *ml)
 
 int flb_ml_rule_process(struct flb_ml *ml,
                         struct flb_ml_stream *mst,
+                        struct flb_ml_stream_group *group,
                         msgpack_object *full_map,
                         void *buf, size_t size, struct flb_time *tm,
                         msgpack_object *val_content,
                         msgpack_object *val_pattern)
 {
     int ret;
-    char *buf_data;
-    size_t buf_size;
+    char *buf_data = NULL;
+    size_t buf_size = 0;
     struct mk_list *head;
     struct to_state *st = NULL;
     struct flb_ml_rule *rule = NULL;
@@ -279,12 +281,12 @@ int flb_ml_rule_process(struct flb_ml *ml,
         buf_size = size;
     }
 
-    if (mst->first_line) {
-        mst->rule_to_state = NULL;
+    if (group->first_line) {
+        group->rule_to_state = NULL;
 
         /* If a previous content exists, just flush it */
-        if (flb_sds_len(mst->buf) > 0) {
-            flb_ml_flush(ml, mst);
+        if (flb_sds_len(group->buf) > 0) {
+            flb_ml_flush_stream_group(ml, mst, group);
         }
 
         /* If this is a first line, check for any rule that matches a start state */
@@ -303,18 +305,18 @@ int flb_ml_rule_process(struct flb_ml *ml,
                                   buf_size);
             if (ret) {
                 /* Regex matched */
-                flb_sds_cat(mst->buf, buf_data, buf_size);
-                mst->first_line = FLB_FALSE;
+                flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+                group->first_line = FLB_FALSE;
 
                 /* Copy full map content in stream buffer */
-                flb_ml_register_context(ml, mst, tm, full_map);
+                flb_ml_register_context(ml, mst, group, tm, full_map);
                 break;
             }
             rule = NULL;
         }
     }
-    else if (mst->rule_to_state) {
-        tmp_rule = mst->rule_to_state;
+    else if (group->rule_to_state) {
+        tmp_rule = group->rule_to_state;
         rule = NULL;
 
         /* Lookup all possible next rules by state reference */
@@ -326,7 +328,7 @@ int flb_ml_rule_process(struct flb_ml *ml,
                                   (unsigned char *) buf_data, buf_size);
             if (ret) {
                 /* Regex matched */
-                flb_sds_cat(mst->buf, buf_data, buf_size);
+                flb_sds_cat_safe(&group->buf, buf_data, buf_size);
                 rule = st->rule;
                 break;
             }
@@ -343,17 +345,18 @@ int flb_ml_rule_process(struct flb_ml *ml,
          * reference the rule that recently matched the pattern. So on the
          * next iteration we can query the possible 'to_states' in the list.
          */
-        mst->rule_to_state = rule;
-        try_flushing_buffer(ml, mst);
+        group->rule_to_state = rule;
+        try_flushing_buffer(ml, mst, group);
     }
     else {
         /* Flush any previous content */
-        mst->rule_to_state = NULL;
-        try_flushing_buffer(ml, mst);
+        group->rule_to_state = NULL;
+        try_flushing_buffer(ml, mst, group);
 
         /* Append un-matched content to buffer and flush */
-        flb_sds_cat(mst->buf, buf_data, buf_size);
-        try_flushing_buffer(ml, mst);
+        flb_ml_register_context(ml, mst, group, tm, full_map);
+        flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+        try_flushing_buffer(ml, mst, group);
     }
 
     return 0;

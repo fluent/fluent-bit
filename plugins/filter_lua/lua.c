@@ -142,6 +142,23 @@ static int lua_arraylength(lua_State *l)
 }
 
 static void lua_tomsgpack(struct lua_filter *lf, msgpack_packer *pck, int index);
+static void lua_toarray(struct lua_filter *lf, msgpack_packer *pck, int index)
+{
+    int len;
+    int i;
+    lua_State *l = lf->lua->state;
+
+    lua_pushnumber(l, (lua_Number)lua_objlen(l, -1)); // lua_len
+    len = (int)lua_tointeger(l, -1);
+    lua_pop(l, 1);
+
+    msgpack_pack_array(pck, len);
+    for (i = 1; i <= len; i++) {
+        lua_rawgeti(l, -1, i);
+        lua_tomsgpack(lf, pck, 0);
+        lua_pop(l, 1);
+    }
+}
 static void try_to_convert_data_type(struct lua_filter *lf,
                                      msgpack_packer *pck,
                                      int index)
@@ -154,15 +171,29 @@ static void try_to_convert_data_type(struct lua_filter *lf,
     struct mk_list  *head     = NULL;
     struct l2c_type *l2c      = NULL;
 
+    // convert to int
     if ((lua_type(l, -2) == LUA_TSTRING)
         && lua_type(l, -1) == LUA_TNUMBER){
         tmp = lua_tolstring(l, -2, &len);
 
         mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
             l2c = mk_list_entry(head, struct l2c_type, _head);
-            if (!strncmp(l2c->key, tmp, len)) {
+            if (!strncmp(l2c->key, tmp, len) && l2c->type == L2C_TYPE_INT) {
                 lua_tomsgpack(lf, pck, -1);
                 msgpack_pack_int64(pck, (int64_t)lua_tonumber(l, -1));
+                return;
+            }
+        }
+    }
+    else if ((lua_type(l, -2) == LUA_TSTRING)
+             && lua_type(l, -1) == LUA_TTABLE){
+        tmp = lua_tolstring(l, -2, &len);
+
+        mk_list_foreach_safe(head, tmp_list, &lf->l2c_types) {
+            l2c = mk_list_entry(head, struct l2c_type, _head);
+            if (!strncmp(l2c->key, tmp, len) && l2c->type == L2C_TYPE_ARRAY) {
+                lua_tomsgpack(lf, pck, -1);
+                lua_toarray(lf, pck, 0);
                 return;
             }
         }
@@ -583,6 +614,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "type_int_key", NULL,
      0, FLB_FALSE, 0,
      "If these keys are matched, the fields are converted to integer. "
+     "If more than one key, delimit by space."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "type_array_key", NULL,
+     0, FLB_FALSE, 0,
+     "If these keys are matched, the fields are converted to array. "
      "If more than one key, delimit by space."
     },
     {

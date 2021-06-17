@@ -34,6 +34,7 @@ void flb_ml_rule_destroy(struct flb_ml_rule *rule);
 void flb_ml_rule_destroy_all(struct flb_ml *ml);
 int flb_ml_rule_process(struct flb_ml *ml,
                         struct flb_ml_stream *mst,
+                        struct flb_ml_stream_group *group,
                         msgpack_object *full_map,
                         void *buf, size_t size, struct flb_time *tm,
                         msgpack_object *val_content,

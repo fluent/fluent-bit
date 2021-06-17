@@ -70,6 +70,9 @@ struct flb_config_map upstream_net[] = {
     {0}
 };
 
+int flb_upstream_needs_proxy(const char *host, const char *proxy,
+                             const char *no_proxy);
+
 /* Enable thread-safe mode for upstream connection */
 void flb_upstream_thread_safe(struct flb_upstream *u)
 {
@@ -241,7 +244,8 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 /*
  * Checks whehter a destinate URL should be proxied.
  */
-int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no_proxy)
+int flb_upstream_needs_proxy(const char *host, const char *proxy,
+                             const char *no_proxy)
 {
     int ret;
     struct mk_list no_proxy_list;
@@ -275,7 +279,7 @@ int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no
     ret = FLB_TRUE;
     mk_list_foreach(head, &no_proxy_list) {
         e = mk_list_entry(head, struct flb_slist_entry, _head);
-         if (strcmp(host, e->str)) {
+         if (strcmp(host, e->str) == 0) {
             ret = FLB_FALSE;
             break;
         }

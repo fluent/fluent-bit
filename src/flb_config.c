@@ -198,6 +198,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
     mk_list_init(&config->parsers);
+    mk_list_init(&config->multilines);
     mk_list_init(&config->filters);
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);

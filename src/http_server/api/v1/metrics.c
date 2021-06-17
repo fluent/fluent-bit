@@ -210,6 +210,12 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
     else if (strstr(metric_name, "output_proc_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
     }
+    else if (strstr(metric_name, "output_dropped_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of dropped records.\n", 28);
+    }
+    else if (strstr(metric_name, "output_retried_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of retried records.\n", 28);
+    }
     else {
         return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
     }
@@ -224,6 +230,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     int len;
     int time_len;
     int start_time_len;
+    uint64_t uptime;
     size_t index;
     size_t num_metrics = 0;
     long now;
@@ -274,12 +281,6 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     }
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
 
-    /* current time */
-    flb_time_get(&tp);
-    now = flb_time_to_nanosec(&tp) / 1000000; /* in milliseconds */
-    time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
-    start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1, "%lu", config->init_time);
-
     /*
      * fluentbit_input_records[name="cpu0", hostname="${HOSTNAME}"] NUM TIMESTAMP
      * fluentbit_input_bytes[name="cpu0", hostname="${HOSTNAME}"] NUM TIMESTAMP
@@ -313,6 +314,10 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
         msgpack_unpacked_destroy(&result);
         return;
     }
+
+    flb_time_get(&tp);
+    now = flb_time_to_nanosec(&tp) / 1000000; /* in milliseconds */
+    time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
 
     for (i = 0; i < map.via.map.size; i++) {
         msgpack_object k;
@@ -411,11 +416,34 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
             null_check(tmp_sds);
         }
     }
+
+    /* Attach uptime */
+    uptime = time(NULL) - config->init_time;
+    len = snprintf(time_str, sizeof(time_str) - 1, "%lu", uptime);
+
+    tmp_sds = flb_sds_cat(sds,
+                          "# HELP fluentbit_uptime Number of seconds that Fluent Bit has "
+                          "been running.\n", 76);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "# TYPE fluentbit_uptime counter\n", 32);
+    null_check(tmp_sds);
+
+    tmp_sds = flb_sds_cat(sds, "fluentbit_uptime ", 17);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, time_str, len);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "\n", 1);
+    null_check(tmp_sds);
+
     /* Attach process_start_time_seconds metric. */
+    start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1,
+                              "%lu", config->init_time);
+
     tmp_sds = flb_sds_cat(sds, "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.\n", 89);
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, "# TYPE process_start_time_seconds gauge\n", 40);
     null_check(tmp_sds);
+
     tmp_sds = flb_sds_cat(sds, "process_start_time_seconds ", 27);
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, start_time_str, start_time_len);

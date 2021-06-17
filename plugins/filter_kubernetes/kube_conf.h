@@ -154,6 +154,8 @@ struct flb_kube {
     int use_kubelet;
     int kubelet_port;
 
+    int kube_meta_cache_ttl;
+
     struct flb_tls *tls;
 
     struct flb_config *config;

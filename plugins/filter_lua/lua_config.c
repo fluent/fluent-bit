@@ -131,6 +131,26 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
 
             tmp_key = flb_strndup(sentry->value, sentry->len);
             l2c->key = flb_sds_create(tmp_key);
+            l2c->type = L2C_TYPE_INT;
+            flb_free(tmp_key);
+
+            mk_list_add(&l2c->_head, &lf->l2c_types);
+            lf->l2c_types_num++;
+        }
+        flb_utils_split_free(split);
+    }
+
+    tmp = flb_filter_get_property("type_array_key", ins);
+    if (tmp) {
+        split = flb_utils_split(tmp, ' ', L2C_TYPES_NUM_MAX);
+        mk_list_foreach_safe(head, tmp_list, split) {
+            l2c = flb_malloc(sizeof(struct l2c_type));
+
+            sentry = mk_list_entry(head, struct flb_split_entry, _head);
+
+            tmp_key = flb_strndup(sentry->value, sentry->len);
+            l2c->key = flb_sds_create(tmp_key);
+            l2c->type = L2C_TYPE_ARRAY;
             flb_free(tmp_key);
 
             mk_list_add(&l2c->_head, &lf->l2c_types);
