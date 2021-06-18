@@ -86,7 +86,7 @@ struct flb_tail_config {
     struct flb_sqldb *db;
     int db_sync;
     int db_locking;
-    struct flb_sqldb *db_journal_mode;
+    flb_sds_t db_journal_mode;
     sqlite3_stmt *stmt_get_file;
     sqlite3_stmt *stmt_insert_file;
     sqlite3_stmt *stmt_delete_file;
