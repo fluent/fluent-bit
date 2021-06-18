@@ -64,7 +64,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
-
     /* Create the channel manager */
     ret = flb_pipe_create(ctx->ch_manager);
     if (ret == -1) {
@@ -234,6 +233,24 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         ctx->db = flb_tail_db_open(tmp, ins, ctx, config);
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Journal mode check */
+    tmp = flb_input_get_property("db.journal_mode", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "DELETE") != 0 &&
+            strcasecmp(tmp, "TRUNCATE") != 0 &&
+            strcasecmp(tmp, "PERSIST") != 0 &&
+            strcasecmp(tmp, "MEMORY") != 0 &&
+            strcasecmp(tmp, "WAL") != 0 &&
+            strcasecmp(tmp, "OFF") != 0) {
+
+            flb_plg_error(ctx->ins, "invalid db.journal_mode=%s", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
         }
     }
 

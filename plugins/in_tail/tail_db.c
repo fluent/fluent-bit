@@ -76,7 +76,7 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         }
     }
 
-   if (ctx->db_journal_mode >= 0) {
+    if (ctx->db_journal_mode) {
         snprintf(tmp, sizeof(tmp) - 1, SQL_PRAGMA_JOURNAL_MODE,
                  ctx->db_journal_mode);
         ret = flb_sqldb_query(db, tmp, NULL, NULL);
