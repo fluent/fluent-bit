@@ -408,11 +408,11 @@ static int bigquery_format(const void *data, size_t bytes,
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    msgpack_unpacked_destroy(&result);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
-        msgpack_unpacked_destroy(&result);
         return -1;
     }
 
@@ -448,20 +448,20 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Reformat msgpack to bigquery JSON payload */
-    ret = bigquery_format(data, bytes, tag, tag_len,
-                          &payload_buf, &payload_size, ctx);
-    if (ret != 0) {
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
     /* Get or renew Token */
     token = get_google_token(ctx);
     if (!token) {
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Reformat msgpack to bigquery JSON payload */
+    ret = bigquery_format(data, bytes, tag, tag_len,
+                          &payload_buf, &payload_size, ctx);
+    if (ret != 0) {
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -471,6 +471,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
         flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
         flb_sds_destroy(payload_buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
