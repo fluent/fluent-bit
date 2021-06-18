@@ -812,9 +812,13 @@ static int is_tag_match_regex(struct flb_stackdriver *ctx,
     const char *tag_str_to_be_matcheds;
 
     tag_prefix_len = flb_sds_len(ctx->tag_prefix);
+    if (tag_len > tag_prefix_len &&
+        flb_sds_cmp(ctx->tag_prefix, tag, tag_prefix_len) != 0) {
+        return 0;
+    }
+
     tag_str_to_be_matcheds = tag + tag_prefix_len;
     len_to_be_matched = tag_len - tag_prefix_len;
-
     ret = flb_regex_match(ctx->regex,
                           (unsigned char *) tag_str_to_be_matcheds,
                           len_to_be_matched);
