@@ -378,9 +378,9 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     ret = flb_msgpack_to_json(tmp_buf_ptr,
                                   buf->tmp_buf_size - buf->tmp_buf_offset,
                                   obj);
-    if (ret < 0) {
+    if (ret <= 0) {
         /*
-         * negative value means failure to write to buffer,
+         * failure to write to buffer,
          * which means we ran out of space, and must send the logs
          */
         return 1;
