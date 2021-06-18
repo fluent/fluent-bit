@@ -44,6 +44,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     const char *url;
     const char *tmp;
     const char *p;
+    const char *cmd;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
@@ -60,6 +61,16 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         flb_free(ctx);
         return NULL;
     }
+
+    /* K8s Token Command */
+    cmd = flb_filter_get_property("kube_token_command", ins);
+    if (cmd) {
+        ctx->kube_token_command = cmd;
+    }
+    else {
+        ctx->kube_token_command = NULL;
+    }
+    ctx->kube_token_create = 0;  
 
     /* Merge Parser */
     tmp = flb_filter_get_property("merge_parser", ins);
