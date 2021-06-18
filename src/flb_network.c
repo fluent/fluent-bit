@@ -460,14 +460,14 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
     current_output_record = NULL;
     previous_output_record = NULL;
 
-    if(NULL != input) {
-        for(current_ares_record = input->nodes ;
-            NULL != current_ares_record ;
-            current_ares_record = current_ares_record->ai_next) {
+    if (NULL != input) {
+        for (current_ares_record = input->nodes ;
+             NULL != current_ares_record ;
+             current_ares_record = current_ares_record->ai_next) {
 
             current_output_record = flb_malloc(sizeof(struct addrinfo));
 
-            if(NULL == current_output_record) {
+            if (NULL == current_output_record) {
                 flb_errno();
                 failure_detected = 1;
                 break;
@@ -475,7 +475,7 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
 
             memset(current_output_record, 0, sizeof(struct addrinfo));
 
-            if(NULL == output) {
+            if (NULL == output) {
                 output = current_output_record;
             }
 
@@ -487,7 +487,7 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
 
             current_output_record->ai_addr = flb_malloc(current_output_record->ai_addrlen);
 
-            if(NULL == current_output_record->ai_addr) {
+            if (NULL == current_output_record->ai_addr) {
                 flb_errno();
                 failure_detected = 1;
                 break;
@@ -497,7 +497,7 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
                    current_ares_record->ai_addr,
                    current_output_record->ai_addrlen);
 
-            if(NULL != previous_output_record) {
+            if (NULL != previous_output_record) {
                 previous_output_record->ai_next = current_output_record;
             }
 
@@ -505,10 +505,9 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
         }
     }
 
-    if(1 == failure_detected) {
-        if(NULL != output) {
+    if (1 == failure_detected) {
+        if (NULL != output) {
             flb_net_free_translated_addrinfo(output);
-
             output = NULL;
         }
     }
@@ -523,10 +522,10 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
 
     context = (struct flb_dns_lookup_context *) arg;
 
-    if(ARES_SUCCESS == status) {
+    if (ARES_SUCCESS == status) {
         context->result = flb_net_translate_ares_addrinfo(res);
 
-        if(NULL == context->result) {
+        if (NULL == context->result) {
             context->result_code = 2;
         }
         else {
@@ -551,7 +550,7 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
                     context->response_event.fd,
                     context->response_event.fd);
 
-    if(1 == context->finished) {
+    if (1 == context->finished) {
         flb_coro_resume(context->coroutine);
     }
 
@@ -562,6 +561,7 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
                                              int type,
                                              void *userdata)
 {
+    int ret;
     struct flb_dns_lookup_context *context;
     int event_mask;
 
@@ -577,7 +577,8 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     event_mask = MK_EVENT_READ;
 
-    /* c-ares doesn't use a macro for the socket type so :
+    /*
+     * c-ares doesn't use a macro for the socket type so :
      * 1 means it's a TCP socket
      * 2 means it's a UDP socket
      *
@@ -585,20 +586,26 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
      * ares_process_fd in order to issue the query unlike UDP sockets which automatically
      * send the query after creating the socket.
      */
-    if(1 == type){
+    if (1 == type) {
         event_mask |= MK_EVENT_WRITE;
     }
 
-    mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM,
-                 event_mask, &context->response_event);
+    ret = mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM,
+                       event_mask, &context->response_event);
+    if (ret != 0) {
+        return -1;
+    }
 
     return ARES_SUCCESS;
 }
 
-struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *event_loop, struct flb_coro *coroutine)
+struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *evl,
+                                                                 struct flb_coro *coroutine)
 {
-    struct flb_dns_lookup_context *context;
     int result;
+    int optmask = 0;
+    struct ares_options opts = {0};
+    struct flb_dns_lookup_context *context;
 
     /* The initialization order here is important since it makes it easier to handle
      * failures
@@ -609,7 +616,13 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
         return NULL;
     }
 
-    result = ares_init((ares_channel *)&context->ares_channel);
+    /* c-ares options: make sure it uses TCP and limit number of tries to 2 */
+    optmask = ARES_OPT_FLAGS;
+    opts.flags = ARES_FLAG_USEVC;
+    opts.tries = 2;
+
+    result = ares_init_options((ares_channel *) &context->ares_channel,
+                               &opts, optmask);
 
     if (ARES_SUCCESS != result) {
         flb_free(context);
@@ -617,23 +630,20 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
     }
 
     context->ares_socket_created = 0;
-    context->event_loop = event_loop;
+    context->event_loop = evl;
     context->coroutine = coroutine;
     context->finished = 0;
 
     ares_set_socket_callback(context->ares_channel,
                              flb_net_ares_sock_create_callback,
                              context);
-
     return context;
 }
 
 void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
 {
     mk_event_del(context->event_loop, &context->response_event);
-
     ares_destroy(context->ares_channel);
-
     flb_free(context);
 }
 
