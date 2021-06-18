@@ -302,4 +302,7 @@ void flb_test_file_format_invalid(void)
             remove(TEST_LOGFILE);
         }
     }
+    else {
+        flb_destroy(ctx);
+    }
 }
