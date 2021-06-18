@@ -624,6 +624,11 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     }
 
+    tmp = flb_output_get_property("log_key", ins);
+    if (tmp) {
+        ctx->log_key = tmp;
+    }
+
     /* Initialize local storage */
     ret = s3_store_init(ctx);
     if (ret == -1) {
@@ -1343,6 +1348,163 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     }
 }
 
+static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
+                                                  uint64_t bytes)
+{
+    int i;
+    int records = 0;
+    int map_size;
+    int check = FLB_FALSE;
+    int found = FLB_FALSE;
+    int log_key_missing = FLB_FALSE;
+    int ret;
+    int alloc_error = 0;
+    struct flb_s3 *ctx = out_context;
+    char *val_buf;
+    char *orig_val_buf;
+    char *key_str = NULL;
+    size_t key_str_size = 0;
+    size_t off = 0;
+    size_t msgpack_size = bytes + bytes / 4;
+    flb_sds_t out_buf = NULL;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_sbuffer tmp_sbuf;
+    msgpack_object key;
+    msgpack_object val;
+
+    /* Iterate the original buffer and perform adjustments */
+    records = flb_mp_count(data, bytes);
+    if (records <= 0) {
+        return NULL;
+    }
+
+    /* Allocate buffer to store log_key contents */
+    orig_val_buf = flb_malloc(msgpack_size);
+    if (orig_val_buf == NULL) {
+        flb_plg_error(ctx->ins, "Could not allocate enough "
+                      "memory to read record");
+        flb_errno();
+        return NULL;
+    }
+
+    /* Create temporary msgpack buffer */
+    msgpack_sbuffer_init(&tmp_sbuf);
+
+    msgpack_unpacked_init(&result);
+    while (!alloc_error && 
+           msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+        /* Each array must have two entries: time and record */
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        /* Get the record/map */
+        map = root.via.array.ptr[1];
+        if (map.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+        map_size = map.via.map.size;
+
+        /* Extract log_key from record and append to output buffer */
+        for (i = 0; i < map_size; i++) {
+            key = map.via.map.ptr[i].key;
+            val = map.via.map.ptr[i].val;
+
+            if (key.type == MSGPACK_OBJECT_BIN) {
+                key_str  = (char *) key.via.bin.ptr;
+                key_str_size = key.via.bin.size;
+                check = FLB_TRUE;
+            }
+            if (key.type == MSGPACK_OBJECT_STR) {
+                key_str  = (char *) key.via.str.ptr;
+                key_str_size = key.via.str.size;
+                check = FLB_TRUE;
+            }
+
+            if (check == FLB_TRUE) {
+                if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
+                    found = FLB_TRUE;
+                    val_buf = orig_val_buf;
+
+                    /* Fill val_buf with log_key contents */
+                    ret = flb_msgpack_to_json(val_buf, msgpack_size, &val);
+                    if (ret < 0) {
+                        break;
+                    }
+
+                    /* Remove double quotes from extracted log_key value */
+                    if (val_buf[0] == '\"' && val_buf[strlen(val_buf)-1] == '\"') {
+                        val_buf[strlen(val_buf)-1] = '\0';
+                        val_buf++;
+                    }
+
+                    /* Create or concatenate to out_buf for full record chunk */
+                    if (out_buf == NULL) {
+                        out_buf = flb_sds_create(val_buf);
+                        if (out_buf == NULL) {
+                            flb_plg_error(ctx->ins, "Error creating buffer to "
+                                          "store log_key contents.");
+                            flb_errno();
+                            alloc_error = 1;
+                            break;
+                        }
+                    } else {
+                        out_buf = flb_sds_cat(out_buf, val_buf, strlen(val_buf));
+                        if (out_buf == NULL) {
+                            flb_plg_error(ctx->ins, "Error concatenating to buffer to "
+                                          "store log_key contents.");
+                            flb_errno();
+                            alloc_error = 1;
+                            break;
+                        }
+                    }
+
+                    /* Add newline between each JSON record in output */
+                    out_buf = flb_sds_cat(out_buf, "\n", 1);
+                    if (out_buf == NULL) {
+                        flb_plg_error(ctx->ins, "Error adding newline when constructing "
+                                      "buffer to store log_key contents.");
+                        flb_errno();
+                        alloc_error = 1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        /* If log_key was not found in the current record, mark log key as missing */
+        if (found == FLB_FALSE) {
+            log_key_missing = FLB_TRUE;
+        }
+    }
+
+    /* Throw error once per chunk if at least one log key was not found */
+    if (log_key_missing == FLB_TRUE) {
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in at "
+                      "least one record of the chunk", ctx->log_key);
+    }
+
+    /* Free orig_val_buf we used as a temporary buffer */
+    flb_free(orig_val_buf);
+
+    /* Release the unpacker and buffer */
+    msgpack_unpacked_destroy(&result);
+
+    /* If nothing was read, destroy buffer */
+    if (out_buf && flb_sds_len(out_buf) == 0) {
+        flb_sds_destroy(out_buf);
+        return NULL;
+    }
+
+    return out_buf;
+}
+
 static void cb_s3_flush(const void *data, size_t bytes,
                             const char *tag, int tag_len,
                             struct flb_input_instance *i_ins,
@@ -1404,10 +1566,14 @@ static void cb_s3_flush(const void *data, size_t bytes,
         ctx->timer_created = FLB_TRUE;
     }
 
-    json = flb_pack_msgpack_to_json_format(data, bytes,
-                                           FLB_PACK_JSON_FORMAT_LINES,
-                                           ctx->json_date_format,
-                                           ctx->date_key);
+    if (ctx->log_key) {
+        json = flb_pack_msgpack_extract_log_key(ctx, data, bytes);
+    } else {
+        json = flb_pack_msgpack_to_json_format(data, bytes,
+                                               FLB_PACK_JSON_FORMAT_LINES,
+                                               ctx->json_date_format,
+                                               ctx->date_key);
+    }
 
     if (json == NULL) {
         flb_plg_error(ctx->ins, "Could not marshal msgpack to JSON");
@@ -1649,6 +1815,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "send_content_md5", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, send_content_md5),
      "Send the Content-MD5 header with object uploads, as is required when Object Lock is enabled"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_key", NULL,
+     0, FLB_FALSE, 0,
+     "By default, the whole log record will be sent to S3. "
+     "If you specify a key name with this option, then only the value of "
+     "that key will be sent to S3. For example, if you are using "
+     "the Fluentd Docker log driver, you can specify log_key log and only "
+     "the log message will be sent to S3."
     },
 
     /* EOF */
