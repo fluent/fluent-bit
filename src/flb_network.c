@@ -526,7 +526,8 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         context->result = flb_net_translate_ares_addrinfo(res);
 
         if (NULL == context->result) {
-            context->result_code = 2;
+            // Currently, translation fails when malloc error occured.
+            context->result_code = EAI_MEMORY;
         }
         else {
             context->result_code = 0;
@@ -534,7 +535,44 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         ares_freeaddrinfo(res);
     }
     else {
-        context->result_code = 1;
+        // status is set at ares_getaddrinfo.
+        // see https://c-ares.haxx.se/ares_getaddrinfo.html
+        switch(status) {
+        case ARES_ENOTIMP:
+            // family should be AF_INET, AF_INET6 or AF_UNSPEC.
+            // If not, ares returns ARES_ENOTIMP.
+            context->result_code = EAI_FAMILY;
+            break;
+        case ARES_ENOTFOUND:
+            // c-ares returns this status when domain is onion.
+            context->result_code = EAI_FAIL;
+            break;
+        case ARES_ESERVICE:
+            // Failed to strtoul(service, ..);
+            context->result_code = EAI_NONAME;
+            break;
+        case ARES_ENOMEM:
+            context->result_code = EAI_MEMORY;
+            break;
+        case ARES_ECANCELLED:
+            context->result_code = EAI_AGAIN;
+            break;
+        case ARES_EDESTRUCTION:
+            // ares channel is destroyed.
+#ifdef FLB_SYSTEM_WINDOWS
+            context->result_code = EAI_FAIL;
+#else
+            context->result_code = EAI_SYSTEM;
+#endif
+            break;
+        default:
+            // other error.
+#ifdef FLB_SYSTEM_WINDOWS
+            context->result_code = EAI_FAIL;
+#else
+            context->result_code = EAI_SYSTEM;
+#endif
+        }
     }
 
     context->finished = 1;
@@ -779,7 +817,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (ret != 0) {
-        flb_warn("[net] getaddrinfo(host='%s'): %s", host, gai_strerror(ret));
+        flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, gai_strerror(ret));
         return -1;
     }
 
