@@ -423,6 +423,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins, "'s3_key_format' must start with a '/'");
             return -1;
         }
+        if (strstr((char *) tmp, "$INDEX")) {
+            ctx->key_fmt_has_seq_index = FLB_TRUE;
+            ctx->seq_index = 0; // TODO: Get this value from buffer file
+        }
         if (strstr((char *) tmp, "$UUID")) {
             ctx->key_fmt_has_uuid = FLB_TRUE;
         }
@@ -1048,14 +1052,16 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     size_t final_body_size;
     char final_body_md5[25];
 
-    s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters,
+                            ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         return -1;
     }
 
     len = strlen(s3_key);
-    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid) {
+    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid &&
+        !ctx->key_fmt_has_seq_index) {
         append_random = FLB_TRUE;
         len += 16;
     }
@@ -1144,6 +1150,12 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
             flb_sds_destroy(uri);
             flb_http_client_destroy(c);
+
+            /* Only increment value once success has been confirmed */
+            if (ctx->key_fmt_has_seq_index) {
+                ctx->seq_index++;
+            }
+
             return 0;
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
@@ -1220,7 +1232,8 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
         flb_errno();
         return NULL;
     }
-    s3_key = flb_get_s3_key(ctx->s3_key_format, time(NULL), tag, ctx->tag_delimiters);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, time(NULL), tag, ctx->tag_delimiters,
+                            ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         flb_free(m_upload);
@@ -1627,8 +1640,8 @@ static struct flb_config_map config_map[] = {
     "by the rewrite_tag filter. Add $TAG in the format string to insert the full "
     "log tag; add $TAG[0] to insert the first part of the tag in the s3 key. "
     "The tag is split into “parts” using the characters specified with the "
-    "s3_key_format_tag_delimiters option. See the in depth examples and tutorial"
-    " in the documentation."
+    "s3_key_format_tag_delimiters option. Add $INDEX to enable sequential indexing "
+    "for file names. See the in depth examples and tutorial in the documentation."
     },
 
     {

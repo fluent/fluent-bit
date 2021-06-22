@@ -27,6 +27,7 @@
 #define TAG_DELIMITER "."
 #define TAG_DELIMITERS ".-"
 #define INVALID_TAG_DELIMITERS ",/"
+#define VALID_SEQ_INDEX 0
 
 
 static void test_flb_aws_error()
@@ -75,7 +76,8 @@ static void test_flb_get_s3_key_multi_tag_exists()
     flb_sds_t s3_key_format = NULL;
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, TAG, TAG_DELIMITER);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, TAG, TAG_DELIMITER,
+                                   VALID_SEQ_INDEX);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_TAG_PART) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -86,7 +88,8 @@ static void test_flb_get_s3_key_full_tag()
     flb_sds_t s3_key_format = NULL;
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_FULL_TAG, t, TAG, TAG_DELIMITER);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_FULL_TAG, t, TAG, TAG_DELIMITER,
+                                   VALID_SEQ_INDEX));
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_FULL_TAG) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -97,7 +100,8 @@ static void test_flb_get_s3_key_tag_special_characters()
     flb_sds_t s3_key_format = NULL;
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_SPECIAL_CHARCATERS_TAG, t, TAG, TAG_DELIMITER);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_SPECIAL_CHARCATERS_TAG, t, TAG, TAG_DELIMITER
+                                   VALID_SEQ_INDEX);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_SPECIAL_CHARCATERS_TAG) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -108,7 +112,8 @@ static void test_flb_get_s3_key_multi_tag_delimiter()
     flb_sds_t s3_key_format = NULL;
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, MULTI_DELIMITER_TAG, TAG_DELIMITERS);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, MULTI_DELIMITER_TAG, TAG_DELIMITERS
+                                   VALID_SEQ_INDEX);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_TAG_PART) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -119,7 +124,8 @@ static void test_flb_get_s3_key_invalid_tag_delimiter()
     flb_sds_t s3_key_format = NULL;
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, MULTI_DELIMITER_TAG, INVALID_TAG_DELIMITERS);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_TAG_PART, t, MULTI_DELIMITER_TAG, INVALID_TAG_DELIMITERS
+                                   VALID_SEQ_INDEX);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECT_KEY_INVALID_DELIMITER)  == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -130,7 +136,8 @@ static void test_flb_get_s3_key_invalid_tag_index()
     flb_sds_t s3_key_format = NULL;
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_INVALID_TAG, t, TAG, TAG_DELIMITER);
+    s3_key_format = flb_get_s3_key(S3_KEY_FORMAT_INVALID_TAG, t, TAG, TAG_DELIMITER
+                                   VALID_SEQ_INDEX);
     TEST_CHECK(strcmp(s3_key_format, S3_OBJECY_KEY_INVALID_TAG) == 0);
 
     flb_sds_destroy(s3_key_format);
@@ -149,11 +156,30 @@ static void test_flb_get_s3_key_invalid_key_length()
     snprintf(buf, sizeof(buf), "%s%s", S3_KEY_FORMAT_SPECIAL_CHARCATERS_TAG, tmp);
     struct tm day = { 0, 0, 0, 15, 7, 120};
     time_t t = mktime(&day);
-    s3_key_format = flb_get_s3_key(buf, t, TAG, TAG_DELIMITER);
+    s3_key_format = flb_get_s3_key(buf, t, TAG, TAG_DELIMITER
+                                   VALID_SEQ_INDEX);
     TEST_CHECK(strlen(s3_key_format) <= 1024);
 
     flb_sds_destroy(s3_key_format);
 }
+
+// Tools: $INDEX, $UUID, $TAG, delimiters, timestamp
+
+// Static string
+
+// Everything specified
+
+// $INDEX only
+
+// Multiple $INDEX calls (~10)
+
+// Maximum $INDEX value call
+
+// $UUID only
+
+// timestamp only
+
+// $UUID and $INDEX specified
 
 TEST_LIST = {
     { "parse_api_error" , test_flb_aws_error},
