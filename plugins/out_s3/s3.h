@@ -139,6 +139,12 @@ struct flb_s3 {
     int timer_ms;
     int key_fmt_has_uuid;
 
+    uint64_t seq_index;
+    int decrement_index;
+    int key_fmt_has_seq_index;
+    flb_sds_t metadata_dir;
+    flb_sds_t seq_index_file;
+
     struct flb_output_instance *ins;
 };
 

@@ -39,6 +39,7 @@
 #define MAX_TAG_PARTS 10
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
+#define INDEX_STRING "$INDEX"
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -683,13 +684,16 @@ static char* replace_uri_tokens(const char* original_string, const char* current
 }
 
 /* Constructs S3 object key as per the format. */
-flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char *tag_delimiter)
+flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag,
+                         char *tag_delimiter, uint64_t seq_index)
 {
     int i = 0;
     int ret = 0;
+    int seq_index_len;
     char *tag_token = NULL;
     char *key;
     char *random_alphanumeric;
+    char *seq_index_str;
     int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
@@ -795,6 +799,28 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
     tmp_key = NULL;
+
+    /* Find all occurences of $INDEX and replace with the appropriate index. */
+    if (strstr((char *) format, INDEX_STRING)) {
+        seq_index_len = snprintf(NULL, 0, "%"PRIu64, seq_index);
+        seq_index_str = flb_malloc(seq_index_len + 1);
+        if (seq_index_str == NULL) {
+            goto error;
+        }
+
+        sprintf(seq_index_str, "%"PRIu64, seq_index);
+        seq_index_str[seq_index_len] = '\0';
+        tmp_key = replace_uri_tokens(s3_key, INDEX_STRING, seq_index_str);
+
+        if (strlen(tmp_key) > S3_KEY_SIZE) {
+            flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+        }
+
+        flb_sds_destroy(s3_key);
+        s3_key = tmp_key;
+        tmp_key = NULL;
+        flb_free(seq_index_str);
+    }
 
     /* Find all occurences of $UUID and replace with a random string. */
     random_alphanumeric = flb_sts_session_name();
