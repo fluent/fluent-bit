@@ -114,6 +114,10 @@ static int http_post(struct flb_out_http *ctx,
                         ctx->proxy, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "[http_client] failed to create HTTP client");
+        flb_upstream_conn_release(u_conn);
+        if (compressed == FLB_TRUE) {
+            flb_free(payload_buf);
+        }
         return FLB_RETRY;
     }
 
