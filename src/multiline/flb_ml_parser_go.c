@@ -20,121 +20,122 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 
 #define rule flb_ml_rule_create
 
-static void rule_error(struct flb_ml *ml)
+static void rule_error(struct flb_ml_parser *mlp)
 {
     int id;
 
-    id = mk_list_size(&ml->regex_rules);
+    id = mk_list_size(&mlp->regex_rules);
     flb_error("[multiline: go] rule #%i could not be created", id);
-    flb_ml_destroy(ml);
+    flb_ml_parser_destroy(mlp);
 }
 
-/* Golang mode */
-struct flb_ml *flb_ml_mode_go(struct flb_config *config, int flush_ms,
-                              char *key)
+/* Go mode */
+struct flb_ml_parser *flb_ml_parser_go(struct flb_config *config, char *key)
 {
     int ret;
-    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
 
-    ml = flb_ml_create(config,          /* Fluent Bit context */
-                       "go",            /* name      */
-                       FLB_ML_REGEX,    /* type      */
-                       NULL,            /* match_str */
-                       FLB_FALSE,       /* negate    */
-                       flush_ms,        /* flush_ms  */
-                       key,             /* key_content */
-                       NULL,            /* key_group   */
-                       NULL,            /* key_pattern */
-                       NULL,            /* parser ctx  */
-                       NULL);           /* parser name */
+    mlp = flb_ml_parser_create(config,               /* Fluent Bit context */
+                               "go",                 /* name      */
+                               FLB_ML_REGEX,         /* type      */
+                               NULL,                 /* match_str */
+                               FLB_FALSE,            /* negate    */
+                               FLB_ML_FLUSH_TIMEOUT, /* flush_ms  */
+                               key,                  /* key_content */
+                               NULL,                 /* key_group   */
+                               NULL,                 /* key_pattern */
+                               NULL,                 /* parser ctx  */
+                               NULL);                /* parser name */
 
-    if (!ml) {
+    if (!mlp) {
         flb_error("[multiline] could not create 'python mode'");
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "start_state",
                "/\\bpanic: /",
                "go_after_panic", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "start_state",
                "/http: panic serving/",
                "go_goroutine", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "go_after_panic",
                "/^$/",
                "go_goroutine", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "go_after_panic, go_after_signal, go_frame_1",
                "/^$/",
                "go_goroutine", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "go_after_panic",
                "/^\\[signal /",
                "go_after_signal", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "go_goroutine",
                "/^goroutine \\d+ \\[[^\\]]+\\]:$/",
                "go_frame_1", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "go_frame_1",
                "/^(?:[^\\s.:]+\\.)*[^\\s.():]+\\(|^created by /",
                "go_frame_2", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
-    ret = rule(ml,
+    ret = rule(mlp,
                "go_frame_2",
                "/^\\s/",
                "go_frame_1", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
     /* Map the rules (mandatory for regex rules) */
-    ret = flb_ml_init(ml);
+    ret = flb_ml_parser_init(mlp);
     if (ret != 0) {
-        flb_error("[multiline: python] error on mapping rules");
-        flb_ml_destroy(ml);
+        flb_error("[multiline: go] error on mapping rules");
+        flb_ml_parser_destroy(mlp);
         return NULL;
     }
 
-    return ml;
+    return mlp;
 }

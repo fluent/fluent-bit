@@ -20,80 +20,80 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 
 #define rule flb_ml_rule_create
 
-static void rule_error(struct flb_ml *ml)
+static void rule_error(struct flb_ml_parser *mlp)
 {
     int id;
 
-    id = mk_list_size(&ml->regex_rules);
+    id = mk_list_size(&mlp->regex_rules);
     flb_error("[multiline: python] rule #%i could not be created", id);
-    flb_ml_destroy(ml);
+    flb_ml_parser_destroy(mlp);
 }
 
-/* Our first multiline mode: 'docker' */
-struct flb_ml *flb_ml_mode_python(struct flb_config *config,
-                                  int flush_ms,
-                                  char *key)
+/* Python */
+struct flb_ml_parser *flb_ml_parser_python(struct flb_config *config, char *key)
 {
     int ret;
-    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
 
-    ml = flb_ml_create(config,          /* Fluent Bit context */
-                       "python",        /* name      */
-                       FLB_ML_REGEX,    /* type      */
-                       NULL,            /* match_str */
-                       FLB_FALSE,       /* negate    */
-                       flush_ms,        /* flush_ms  */
-                       key,             /* key_content */
-                       NULL,            /* key_group   */
-                       NULL,            /* key_pattern */
-                       NULL,            /* parser ctx  */
-                       NULL);           /* parser name */
+    mlp = flb_ml_parser_create(config,               /* Fluent Bit context */
+                               "python",             /* name      */
+                               FLB_ML_REGEX,         /* type      */
+                               NULL,                 /* match_str */
+                               FLB_FALSE,            /* negate    */
+                               FLB_ML_FLUSH_TIMEOUT, /* flush_ms  */
+                               key,                  /* key_content */
+                               NULL,                 /* key_group   */
+                               NULL,                 /* key_pattern */
+                               NULL,                 /* parser ctx  */
+                               NULL);                /* parser name */
 
-    if (!ml) {
+    if (!mlp) {
         flb_error("[multiline] could not create 'python mode'");
         return NULL;
     }
 
     /* rule(:start_state, /^Traceback \(most recent call last\):$/, :python) */
-    ret = rule(ml,
+    ret = rule(mlp,
                "start_state", "/^Traceback \\(most recent call last\\):$/",
                "python", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
     /* rule(:python, /^[\t ]+File /, :python_code) */
-    ret = rule(ml, "python", "/^[\\t ]+File /", "python_code", NULL);
+    ret = rule(mlp, "python", "/^[\\t ]+File /", "python_code", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
     /* rule(:python_code, /[^\t ]/, :python) */
-    ret = rule(ml, "python_code", "/[^\\t ]/", "python", NULL);
+    ret = rule(mlp, "python_code", "/[^\\t ]/", "python", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
     /* rule(:python, /^(?:[^\s.():]+\.)*[^\s.():]+:/, :start_state) */
-    ret = rule(ml, "python", "/^(?:[^\\s.():]+\\.)*[^\\s.():]+:/", "start_state", NULL);
+    ret = rule(mlp, "python", "/^(?:[^\\s.():]+\\.)*[^\\s.():]+:/", "start_state", NULL);
     if (ret != 0) {
-        rule_error(ml);
+        rule_error(mlp);
         return NULL;
     }
 
     /* Map the rules (mandatory for regex rules) */
-    ret = flb_ml_init(ml);
+    ret = flb_ml_parser_init(mlp);
     if (ret != 0) {
         flb_error("[multiline: python] error on mapping rules");
-        flb_ml_destroy(ml);
+        flb_ml_parser_destroy(mlp);
         return NULL;
     }
 
-    return ml;
+    return mlp;
 }
