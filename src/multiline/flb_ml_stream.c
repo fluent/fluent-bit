@@ -280,6 +280,41 @@ struct flb_ml_stream *flb_ml_stream_get(struct flb_ml_parser_ins *parser,
     return NULL;
 }
 
+void flb_ml_stream_id_destroy_all(struct flb_ml *ml, uint64_t stream_id)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *head_group;
+    struct mk_list *head_stream;
+    struct flb_ml_group *group;
+    struct flb_ml_stream *mst;
+    struct flb_ml_parser_ins *parser_i;
+
+    /* groups */
+    mk_list_foreach(head, &ml->groups) {
+        group = mk_list_entry(head, struct flb_ml_group, _head);
+
+        /* parser instances */
+        mk_list_foreach(head_group, &group->parsers) {
+            parser_i = mk_list_entry(head_group, struct flb_ml_parser_ins, _head);
+
+            /* streams */
+            mk_list_foreach_safe(head_stream, tmp, &parser_i->streams) {
+                mst = mk_list_entry(head_stream, struct flb_ml_stream, _head);
+                if (mst->id != stream_id) {
+                    continue;
+                }
+
+                /* flush any pending data */
+                flb_ml_flush_parser_instance(ml, parser_i, stream_id);
+
+                /* destroy internal groups of the stream */
+                flb_ml_stream_destroy(mst);
+            }
+        }
+    }
+}
+
 int flb_ml_stream_destroy(struct flb_ml_stream *mst)
 {
     mk_list_del(&mst->_head);
