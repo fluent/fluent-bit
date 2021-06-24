@@ -268,6 +268,11 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
                          struct flb_time *tm, msgpack_object *obj);
 
 int flb_ml_parsers_init(struct flb_config *ctx);
+
+void flb_ml_flush_parser_instance(struct flb_ml *ml,
+                                  struct flb_ml_parser_ins *parser_i,
+                                  uint64_t stream_id);
+
 int flb_ml_auto_flush_init(struct flb_ml *ml);
 
 int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
@@ -287,6 +292,8 @@ int flb_ml_stream_create(struct flb_ml *ml,
                          uint64_t *stream_id);
 
 int flb_ml_stream_destroy(struct flb_ml_stream *mst);
+
+void flb_ml_stream_id_destroy_all(struct flb_ml *ml, uint64_t stream_id);
 
 struct flb_ml_stream *flb_ml_stream_get(struct flb_ml_parser_ins *parser,
                                         uint64_t stream_id);

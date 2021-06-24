@@ -80,9 +80,9 @@ int flb_ml_type_lookup(char *str)
     return type;
 }
 
-static void flb_ml_flush_parser_instance(struct flb_ml *ml,
-                                         struct flb_ml_parser_ins *parser_i,
-                                         uint64_t stream_id)
+void flb_ml_flush_parser_instance(struct flb_ml *ml,
+                                  struct flb_ml_parser_ins *parser_i,
+                                  uint64_t stream_id)
 {
     struct mk_list *head;
     struct mk_list *head_group;
