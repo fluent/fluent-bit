@@ -267,6 +267,7 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                         msgpack_object *val_pattern)
 {
     int ret;
+    int len;
     char *buf_data = NULL;
     size_t buf_size = 0;
     struct mk_list *head;
@@ -330,7 +331,18 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                                   (unsigned char *) buf_data, buf_size);
             if (ret) {
                 /* Regex matched */
-                flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+
+                len = flb_sds_len(group->buf);
+                if (len >= 1 && group->buf[len - 1] != '\n') {
+                    flb_sds_cat_safe(&group->buf, "\n", 1);
+                }
+
+                if (buf_size == 0) {
+                    flb_sds_cat_safe(&group->buf, "\n", 1);
+                }
+                else {
+                    flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+                }
                 rule = st->rule;
                 break;
             }
