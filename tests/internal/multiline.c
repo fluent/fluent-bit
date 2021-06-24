@@ -108,7 +108,7 @@ struct record_check java_input[] = {
   {"     at com.example.myproject.Book.getId(Book.java:22)\n"},
   {"     at com.example.myproject.Author.getBookIds(Author.java:35)\n"},
   {"     ... 1 more"},
-  {"single line"}
+  {"single line\n"}
 };
 
 struct record_check java_output[] = {
@@ -122,7 +122,7 @@ struct record_check java_output[] = {
     "     ... 1 more"
   },
   {
-    "single line"
+    "single line\n"
   }
 };
 
@@ -338,13 +338,6 @@ static int flush_callback(struct flb_ml_parser *parser,
         }
     }
     TEST_CHECK(found == FLB_TRUE);
-
-    if (!exp->buf) {
-        printf("expected length: %i, received: NULL\n", len);
-        msgpack_unpacked_destroy(&result);
-        exit(1);
-        return -1;
-    }
 
     len = strlen(exp->buf);
     TEST_CHECK(val.via.str.size == len);
