@@ -248,19 +248,24 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             continue;
         }
 
-        /* Empty line (just \n) */
-        if (len == 0) {
+        /*
+         * Empty line (just \n): we skip empty lines only if we are NOT using
+         * multiline core mode.
+         */
+        if (len == 0 && !ctx->ml_ctx) {
             data++;
             processed_bytes++;
             continue;
         }
 
         /* Process '\r\n' */
-        crlf = (data[len-1] == '\r');
-        if (len == 1 && crlf) {
-            data += 2;
-            processed_bytes += 2;
-            continue;
+        if (len >= 2) {
+            crlf = (data[len-1] == '\r');
+            if (len == 1 && crlf) {
+                data += 2;
+                processed_bytes += 2;
+                continue;
+            }
         }
 
         /* Reset time for each line */
@@ -269,7 +274,14 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
-        if (ctx->docker_mode) {
+
+        if (ctx->ml_ctx) {
+            ret = flb_ml_append(ctx->ml_ctx, file->ml_stream_id,
+                                FLB_ML_TYPE_TEXT,
+                                &out_time, line, line_len);
+            goto go_next;
+        }
+        else if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
                                                  file, ctx, out_sbuf, out_pck);
@@ -627,11 +639,26 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
+static int ml_flush_callback(struct flb_ml_parser *parser,
+                             struct flb_ml_stream *mst,
+                             void *data, char *buf_data, size_t buf_size)
+{
+    struct flb_tail_file *file = data;
+
+    flb_input_chunk_append_raw(file->config->ins,
+                               file->tag_buf,
+                               file->tag_len,
+                               buf_data,
+                               buf_size);
+    return 0;
+}
+
 int flb_tail_file_append(char *path, struct stat *st, int mode,
                          struct flb_tail_config *ctx)
 {
     int fd;
     int ret;
+    uint64_t stream_id;
     size_t len;
     char *tag;
     size_t tag_len;
@@ -715,6 +742,22 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 #endif
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
+
+    /* Multiline core mode */
+    if (ctx->ml_ctx) {
+        /* Create a stream for this file */
+        ret = flb_ml_stream_create(ctx->ml_ctx,
+                                   file->name, file->name_len,
+                                   ml_flush_callback, file,
+                                   &stream_id);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not create multiline stream for file: %s",
+                          file->name);
+            goto error;
+        }
+        file->ml_stream_id = stream_id;
+    }
 
     /* Local buffer */
     file->buf_size = ctx->buf_chunk_size;
@@ -816,6 +859,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    /* remove the multiline.core stream */
+    if (ctx->ml_ctx && file->ml_stream_id > 0) {
+        flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+    }
+
     if (file->rotated > 0) {
 #ifdef FLB_HAVE_SQLDB
         /*
@@ -833,6 +881,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_sds_destroy(file->dmode_lastline);
     mk_list_del(&file->_head);
     flb_tail_fs_remove(ctx, file);
+
     /* avoid deleting file with -1 fd */
     if (file->fd != -1) {
         close(file->fd);
