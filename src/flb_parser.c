@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -352,10 +353,14 @@ void flb_parser_exit(struct flb_config *config)
     struct mk_list *head;
     struct flb_parser *parser;
 
+    /* release 'parsers' */
     mk_list_foreach_safe(head, tmp, &config->parsers) {
         parser = mk_list_entry(head, struct flb_parser, _head);
         flb_parser_destroy(parser);
     }
+
+    /* release 'multiline parsers' */
+    flb_ml_exit(config);
 }
 
 static int proc_types_str(const char *types_str, struct flb_parser_types **types)
@@ -606,7 +611,7 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
     int flush_timeout;
     struct mk_list *head;
     struct mk_rconf_section *section;
-    struct flb_ml *ml;
+    struct flb_ml_parser *ml_parser;
 
     /* Read all [PARSER] sections */
     mk_list_foreach(head, &fconf->sections) {
@@ -676,9 +681,13 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
             flush_timeout = atoi(tmp);
         }
 
-        ml = flb_ml_create(config, name, type, match_string, negate,
-                           flush_timeout, key_content, key_group, key_pattern,
-                           NULL, parser);
+        ml_parser = flb_ml_parser_create(config, name, type, match_string,
+                                         negate, flush_timeout, key_content,
+                                         key_group, key_pattern,
+                                         NULL, parser);
+        if (!ml_parser) {
+            goto fconf_error;
+        }
 
         flb_sds_destroy(name);
         flb_sds_destroy(match_string);
@@ -742,6 +751,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         return -1;
     }
 
+    /* processs [MULTILINE_PARSER]'s sections */
     ret = multiline_parser_conf_file(cfg, fconf, config);
     if (ret == -1) {
         mk_rconf_free(fconf);
