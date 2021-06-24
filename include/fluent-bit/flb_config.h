@@ -94,8 +94,8 @@ struct flb_config {
     /* Parsers instances */
     struct mk_list parsers;
 
-    /* Multiline instances */
-    struct mk_list multilines;
+    /* Multiline core parser definitions */
+    struct mk_list multiline_parsers;
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
