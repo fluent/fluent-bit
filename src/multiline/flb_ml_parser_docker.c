@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 
 /* Creates a parser for Docker */
 static struct flb_parser *docker_parser_create(struct flb_config *config)
@@ -42,11 +43,10 @@ static struct flb_parser *docker_parser_create(struct flb_config *config)
 }
 
 /* Our first multiline mode: 'docker' */
-struct flb_ml *flb_ml_mode_docker(struct flb_config *config,
-                                                int flush_ms)
+struct flb_ml_parser *flb_ml_parser_docker(struct flb_config *config)
 {
     struct flb_parser *parser;
-    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
 
     /* Create a Docker parser */
     parser = docker_parser_create(config);
@@ -89,21 +89,21 @@ struct flb_ml *flb_ml_mode_docker(struct flb_config *config,
      *   a continuation message. In case a message is not complete just wait until
      *   500 milliseconds (0.5 second) and flush the buffer.
      */
-    ml = flb_ml_create(config,                  /* Fluent Bit context */
-                       "docker",                /* name           */
-                       FLB_ML_ENDSWITH,         /* type           */
-                       "\n",                    /* match_str      */
-                       FLB_FALSE,               /* negate         */
-                       flush_ms,                /* flush_ms       */
-                       "log",                   /* key_content    */
-                       "stream",                /* key_group      */
-                       NULL,                    /* key_pattern    */
-                       parser,                  /* parser ctx     */
-                       NULL);                   /* parser name    */
-    if (!ml) {
+    mlp = flb_ml_parser_create(config,                  /* Fluent Bit context */
+                               "docker",                /* name           */
+                               FLB_ML_ENDSWITH,         /* type           */
+                               "\n",                    /* match_str      */
+                               FLB_FALSE,               /* negate         */
+                               FLB_ML_FLUSH_TIMEOUT,    /* flush_ms  */
+                               "log",                   /* key_content    */
+                               "stream",                /* key_group      */
+                               NULL,                    /* key_pattern    */
+                               parser,                  /* parser ctx     */
+                               NULL);                   /* parser name    */
+    if (!mlp) {
         flb_error("[multiline] could not create 'docker mode'");
         return NULL;
     }
 
-    return ml;
+    return mlp;
 }

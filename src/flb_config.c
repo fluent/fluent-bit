@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/multiline/flb_ml.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -198,7 +199,6 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->out_plugins);
     mk_list_init(&config->inputs);
     mk_list_init(&config->parsers);
-    mk_list_init(&config->multilines);
     mk_list_init(&config->filters);
     mk_list_init(&config->outputs);
     mk_list_init(&config->proxies);
@@ -209,6 +209,11 @@ struct flb_config *flb_config_init()
 
     /* Environment */
     config->env = flb_env_create();
+
+
+    /* Multiline core */
+    mk_list_init(&config->multiline_parsers);
+    flb_ml_init(config);
 
     /* Register static plugins */
     ret = flb_plugins_register(config);

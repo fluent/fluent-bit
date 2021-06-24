@@ -18,22 +18,15 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_ML_MODE_H
-#define FLB_ML_MODE_H
+#ifndef FLB_ML_GROUP_H
+#define FLB_ML_GROUP_H
 
-struct flb_ml *flb_ml_mode_create(struct flb_config *config, char *mode,
-                                  int flush_ms, char *key);
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 
-/* Python language mode */
-struct flb_ml *flb_ml_mode_python(struct flb_config *config,
-                                  int flush_ms, char *key);
-
-/* Java language mode */
-struct flb_ml *flb_ml_mode_java(struct flb_config *config,
-                                int flush_ms, char *key);
-
-/* Go language mode */
-struct flb_ml *flb_ml_mode_go(struct flb_config *config,
-                              int flush_ms, char *key);
+struct flb_ml_group *flb_ml_group_create(struct flb_ml *ml);
+void flb_ml_group_destroy(struct flb_ml_group *group);
+int flb_ml_group_add_parser(struct flb_ml *ctx, struct flb_ml_parser_ins *p);
 
 #endif

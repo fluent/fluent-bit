@@ -21,7 +21,9 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_slist.h>
+
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
 
 struct to_state {
     struct flb_ml_rule *rule;
@@ -43,11 +45,11 @@ struct flb_slist_entry *get_start_state(struct mk_list *list)
     return NULL;
 }
 
-int flb_ml_rule_create(struct flb_ml *ml,
-                              flb_sds_t from_states,
-                              char *regex_pattern,
-                              flb_sds_t to_state,
-                              char *end_pattern)
+int flb_ml_rule_create(struct flb_ml_parser *ml_parser,
+                       flb_sds_t from_states,
+                       char *regex_pattern,
+                       flb_sds_t to_state,
+                       char *end_pattern)
 {
     int ret;
     struct flb_ml_rule *rule;
@@ -59,7 +61,7 @@ int flb_ml_rule_create(struct flb_ml *ml,
     }
     flb_slist_create(&rule->from_states);
     mk_list_init(&rule->to_state_map);
-    mk_list_add(&rule->_head, &ml->regex_rules);
+    mk_list_add(&rule->_head, &ml_parser->regex_rules);
 
     /* from_states */
     ret = flb_slist_split_string(&rule->from_states, from_states, ',', -1);
@@ -131,13 +133,13 @@ void flb_ml_rule_destroy(struct flb_ml_rule *rule)
     flb_free(rule);
 }
 
-void flb_ml_rule_destroy_all(struct flb_ml *ml)
+void flb_ml_rule_destroy_all(struct flb_ml_parser *ml_parser)
 {
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_ml_rule *rule;
 
-    mk_list_foreach_safe(head, tmp, &ml->regex_rules) {
+    mk_list_foreach_safe(head, tmp, &ml_parser->regex_rules) {
         rule = mk_list_entry(head, struct flb_ml_rule, _head);
         flb_ml_rule_destroy(rule);
     }
@@ -159,7 +161,7 @@ static inline int to_states_matches_rule(struct flb_ml_rule *rule,
     return FLB_FALSE;
 }
 
-static int set_to_state_map(struct flb_ml *ml,
+static int set_to_state_map(struct flb_ml_parser *ml_parser,
                             struct flb_ml_rule *rule)
 {
     int ret;
@@ -173,7 +175,7 @@ static int set_to_state_map(struct flb_ml *ml,
     }
 
     /* Iterate all rules that matches the to_state */
-    mk_list_foreach(head, &ml->regex_rules) {
+    mk_list_foreach(head, &ml_parser->regex_rules) {
         r = mk_list_entry(head, struct flb_ml_rule, _head);
 
         /*
@@ -198,7 +200,7 @@ static int set_to_state_map(struct flb_ml *ml,
     return 0;
 }
 
-static int try_flushing_buffer(struct flb_ml *ml,
+static int try_flushing_buffer(struct flb_ml_parser *ml_parser,
                                struct flb_ml_stream *mst,
                                struct flb_ml_stream_group *group)
 {
@@ -210,7 +212,7 @@ static int try_flushing_buffer(struct flb_ml *ml,
     rule = group->rule_to_state;
     if (!rule) {
         if (flb_sds_len(group->buf) > 0) {
-            flb_ml_flush_stream_group(ml, mst, group);
+            flb_ml_flush_stream_group(ml_parser, mst, group);
             group->first_line = FLB_TRUE;
         }
         return 0;
@@ -226,7 +228,7 @@ static int try_flushing_buffer(struct flb_ml *ml,
     }
 
     if (next_start && flb_sds_len(group->buf) > 0) {
-        flb_ml_flush_stream_group(ml, mst, group);
+        flb_ml_flush_stream_group(ml_parser, mst, group);
         group->first_line = FLB_TRUE;
     }
 
@@ -234,7 +236,7 @@ static int try_flushing_buffer(struct flb_ml *ml,
 }
 
 /* Initialize all rules */
-int flb_ml_rule_init(struct flb_ml *ml)
+int flb_ml_rule_init(struct flb_ml_parser *ml_parser)
 {
     int ret;
     struct mk_list *head;
@@ -243,10 +245,10 @@ int flb_ml_rule_init(struct flb_ml *ml)
     /* FIXME: sort rules by start_state first (let's trust in the caller) */
 
     /* For each rule, compose it to_state_map list */
-    mk_list_foreach(head, &ml->regex_rules) {
+    mk_list_foreach(head, &ml_parser->regex_rules) {
         rule = mk_list_entry(head, struct flb_ml_rule, _head);
         /* Populate 'rule->to_state_map' list */
-        ret = set_to_state_map(ml, rule);
+        ret = set_to_state_map(ml_parser, rule);
         if (ret == -1) {
             return -1;
         }
@@ -256,7 +258,7 @@ int flb_ml_rule_init(struct flb_ml *ml)
 }
 
 
-int flb_ml_rule_process(struct flb_ml *ml,
+int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                         struct flb_ml_stream *mst,
                         struct flb_ml_stream_group *group,
                         msgpack_object *full_map,
@@ -265,6 +267,7 @@ int flb_ml_rule_process(struct flb_ml *ml,
                         msgpack_object *val_pattern)
 {
     int ret;
+    int len;
     char *buf_data = NULL;
     size_t buf_size = 0;
     struct mk_list *head;
@@ -286,11 +289,11 @@ int flb_ml_rule_process(struct flb_ml *ml,
 
         /* If a previous content exists, just flush it */
         if (flb_sds_len(group->buf) > 0) {
-            flb_ml_flush_stream_group(ml, mst, group);
+            flb_ml_flush_stream_group(ml_parser, mst, group);
         }
 
         /* If this is a first line, check for any rule that matches a start state */
-        mk_list_foreach(head, &ml->regex_rules) {
+        mk_list_foreach(head, &ml_parser->regex_rules) {
             rule = mk_list_entry(head, struct flb_ml_rule, _head);
 
             /* Is this rule matching a start_state ? */
@@ -309,7 +312,7 @@ int flb_ml_rule_process(struct flb_ml *ml,
                 group->first_line = FLB_FALSE;
 
                 /* Copy full map content in stream buffer */
-                flb_ml_register_context(ml, mst, group, tm, full_map);
+                flb_ml_register_context(group, tm, full_map);
                 break;
             }
             rule = NULL;
@@ -328,7 +331,18 @@ int flb_ml_rule_process(struct flb_ml *ml,
                                   (unsigned char *) buf_data, buf_size);
             if (ret) {
                 /* Regex matched */
-                flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+
+                len = flb_sds_len(group->buf);
+                if (len >= 1 && group->buf[len - 1] != '\n') {
+                    flb_sds_cat_safe(&group->buf, "\n", 1);
+                }
+
+                if (buf_size == 0) {
+                    flb_sds_cat_safe(&group->buf, "\n", 1);
+                }
+                else {
+                    flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+                }
                 rule = st->rule;
                 break;
             }
@@ -346,17 +360,19 @@ int flb_ml_rule_process(struct flb_ml *ml,
          * next iteration we can query the possible 'to_states' in the list.
          */
         group->rule_to_state = rule;
-        try_flushing_buffer(ml, mst, group);
+        try_flushing_buffer(ml_parser, mst, group);
     }
     else {
+        return -1;
+
         /* Flush any previous content */
         group->rule_to_state = NULL;
-        try_flushing_buffer(ml, mst, group);
+        try_flushing_buffer(ml_parser, mst, group);
 
         /* Append un-matched content to buffer and flush */
-        flb_ml_register_context(ml, mst, group, tm, full_map);
+        flb_ml_register_context(group, tm, full_map);
         flb_sds_cat_safe(&group->buf, buf_data, buf_size);
-        try_flushing_buffer(ml, mst, group);
+        try_flushing_buffer(ml_parser, mst, group);
     }
 
     return 0;
