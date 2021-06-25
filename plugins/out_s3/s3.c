@@ -1245,7 +1245,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     if (ctx->key_fmt_has_seq_index) {
         ctx->seq_index++;
 
-        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index, ctx->decrement_index);
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index, 1);
         if (ret < 0) {
             ctx->seq_index--;
             flb_sds_destroy(s3_key);
@@ -1303,8 +1303,7 @@ decrement_index:
     if (ctx->key_fmt_has_seq_index) {
         ctx->seq_index--;
 
-        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index,
-                              ctx->decrement_index);
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index, 0);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to decrement index after request error");
             return -1;
