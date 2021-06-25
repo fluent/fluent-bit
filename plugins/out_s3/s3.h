@@ -113,6 +113,7 @@ struct flb_s3 {
     int free_endpoint;
     int use_put_object;
     int send_content_md5;
+    int static_file_path;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
