@@ -1055,7 +1055,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     }
 
     len = strlen(s3_key);
-    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid) {
+    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid && !ctx->static_file_path) {
         append_random = FLB_TRUE;
         len += 16;
     }
@@ -1650,6 +1650,14 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "send_content_md5", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, send_content_md5),
      "Send the Content-MD5 header with object uploads, as is required when Object Lock is enabled"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "static_file_path", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, static_file_path),
+     "Disables behavior where UUID string is automatically appended to end of S3 key name when "
+     "$UUID is not provided in s3_key_format. $UUID, time formatters, $TAG, and other dynamic "
+     "key formatters all work as expected while this feature is set to true."
     },
 
     /* EOF */
