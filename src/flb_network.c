@@ -526,7 +526,7 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         context->result = flb_net_translate_ares_addrinfo(res);
 
         if (NULL == context->result) {
-            // Currently, translation fails when malloc error occured.
+            /* Currently, translation fails when malloc error occured. */
             context->result_code = EAI_MEMORY;
         }
         else {
@@ -535,20 +535,24 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
         ares_freeaddrinfo(res);
     }
     else {
-        // status is set at ares_getaddrinfo.
-        // see https://c-ares.haxx.se/ares_getaddrinfo.html
+        /* 
+         * status is set at ares_getaddrinfo.
+         * see https://c-ares.haxx.se/ares_getaddrinfo.html
+         */
         switch(status) {
         case ARES_ENOTIMP:
-            // family should be AF_INET, AF_INET6 or AF_UNSPEC.
-            // If not, ares returns ARES_ENOTIMP.
+            /*
+             * family should be AF_INET, AF_INET6 or AF_UNSPEC.
+             * If not, ares returns ARES_ENOTIMP.
+             */
             context->result_code = EAI_FAMILY;
             break;
         case ARES_ENOTFOUND:
-            // c-ares returns this status when domain is onion.
+            /* c-ares returns this status when domain is onion. */
             context->result_code = EAI_FAIL;
             break;
         case ARES_ESERVICE:
-            // Failed to strtoul(service, ..);
+            /* Failed to strtoul(service, ..); */
             context->result_code = EAI_NONAME;
             break;
         case ARES_ENOMEM:
@@ -558,7 +562,7 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
             context->result_code = EAI_AGAIN;
             break;
         case ARES_EDESTRUCTION:
-            // ares channel is destroyed.
+            /* ares channel is destroyed. */
 #ifdef FLB_SYSTEM_WINDOWS
             context->result_code = EAI_FAIL;
 #else
@@ -566,7 +570,7 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
 #endif
             break;
         default:
-            // other error.
+            /* other error. */
 #ifdef FLB_SYSTEM_WINDOWS
             context->result_code = EAI_FAIL;
 #else
