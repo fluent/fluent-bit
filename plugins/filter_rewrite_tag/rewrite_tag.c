@@ -174,6 +174,15 @@ static int process_config(struct flb_rewrite_tag *ctx)
         entry = flb_slist_entry_get(val->val.list, 3);
         rule->keep_record = flb_utils_bool(entry->str);
 
+        /* rule with and operator set ? */
+        entry = flb_slist_entry_get(val->val.list, 4);
+        if (entry) {
+            rule->and_combination = flb_utils_bool(entry->str);
+        }
+        else {
+            rule->and_combination = FLB_FALSE;
+        }
+
         /* Link new rule */
         mk_list_add(&rule->_head, &ctx->rules);
     }
@@ -299,17 +308,36 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
     struct mk_list *head;
     struct rewrite_rule *rule = NULL;
     struct flb_regex_search result = {0};
+    int rule_last_and = FLB_FALSE;
+    int rule_last = FLB_FALSE;
+    int rule_and_failed = FLB_FALSE;
 
     mk_list_foreach(head, &ctx->rules) {
         rule = mk_list_entry(head, struct rewrite_rule, _head);
+
+        if (rule_last_and && !rule_last) {
+                rule_last_and = rule->and_combination;
+                rule_last = FLB_FALSE;
+                rule = NULL;
+            continue;
+        }
+
         ret = flb_ra_regex_match(rule->ra_key, map, rule->regex, &result);
         if (ret < 0) { /* no match */
+            rule_last_and = rule->and_combination;
+            rule_last = FLB_FALSE;
             rule = NULL;
             continue;
         }
 
-        /* A record matched, just break and check 'rule' */
-        break;
+        /* A record matched the rule */
+        /* OR combination: just break and check 'rule' */
+        if (!rule->and_combination) {
+            break;
+        }
+        /* AND combination: save state, go to next rule, next rule must match */
+        rule_last_and = FLB_TRUE;
+        rule_last = FLB_TRUE;
     }
 
     if (!rule) {
