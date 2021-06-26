@@ -642,6 +642,46 @@ static void flb_test_cond_key_exists()
     filter_test_destroy(ctx);
 }
 
+/* Condition: KEY_EXISTS / If nested key exists, make a copy */
+static void flb_test_cond_key_exists_nest()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_exists $nest['k1']",
+                         "add", "key found",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"key\":\"found\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\", \"nest\":{\"k1\":\"nest\"}}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 /* Condition: KEY_DOES_NOT_EXISTS / If key does not exists, add a dummy key */
 static void flb_test_cond_key_does_not_exist()
 {
@@ -675,6 +715,46 @@ static void flb_test_cond_key_does_not_exist()
 
     /* Ingest data samples */
     p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_DOES_NOT_EXISTS / If key does not exists, add a dummy key */
+static void flb_test_cond_key_does_not_exist_nest()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_does_not_exist $nest['k1']",
+                         "add", "key not_found",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"key\":\"not_found\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"sample2\", \"nest\":{\"k\":\"sample\"}}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -802,6 +882,46 @@ static void flb_test_cond_key_value_equals()
     filter_test_destroy(ctx);
 }
 
+/* Condition: KEY_VALUE_EQUALS / If key value matches, add a dummy key */
+static void flb_test_cond_key_value_equals_nest()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_equals $nest['k1'] sample2",
+                         "add", "key found",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"key\":\"found\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\", \"nest\":{\"k1\":\"sample2\"}}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 /* Condition: KEY_VALUE_DOES_NOT_EQUAL / If key value mismatch, add a key */
 static void flb_test_cond_key_value_does_not_equal()
 {
@@ -835,6 +955,46 @@ static void flb_test_cond_key_value_does_not_equal()
 
     /* Ingest data samples */
     p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_DOES_NOT_EQUAL / If key value mismatch, add a key */
+static void flb_test_cond_key_value_does_not_equal_nest()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_does_not_equal $nest['k1'] sample2",
+                         "add", "key not_found",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"key\":\"not_found\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"aa\":\"sample1\",\"bb\":\"sample2\",\"c1\":\"sample3\", \"nest\":{\"k1\":\"sample3\"}}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -882,6 +1042,46 @@ static void flb_test_cond_key_value_matches()
     filter_test_destroy(ctx);
 }
 
+/* Condition: KEY_VALUE_MATCHES / If key match, add a key */
+static void flb_test_cond_key_value_matches_nest()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_matches $nest['k2'] ^[a-z][0-9]$",
+                         "add", "kv matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"kv\":\"matches\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"z2\", \"nest\":{\"k2\":\"z2\"}}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
 /* Condition: KEY_VALUE_DOES_NOT_MATCH / If key mismatch, add a key */
 static void flb_test_cond_key_value_does_not_match()
 {
@@ -915,6 +1115,46 @@ static void flb_test_cond_key_value_does_not_match()
 
     /* Ingest data samples */
     p = "[0,{\"k1\":\"sample1\",\"k2\":\"22\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    filter_test_destroy(ctx);
+}
+
+/* Condition: KEY_VALUE_DOES_NOT_MATCH / If key mismatch, add a key */
+static void flb_test_cond_key_value_does_not_match_nest()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "condition", "key_value_does_not_match $nest['k2'] ^[a-z][0-9]$",
+                         "add", "kv no_matches",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"kv\":\"no_matches\"";
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0,{\"k1\":\"sample1\",\"k2\":\"22\",\"nest\":{\"k2\":\"22\"}}]";
     len = strlen(p);
     bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
     TEST_CHECK(bytes == len);
@@ -1180,6 +1420,14 @@ TEST_LIST = {
     {"op_copy_no_exists"        , flb_test_op_copy_no_exists },
     {"op_hard_copy_exists"      , flb_test_op_hard_copy_exists },
     {"op_hard_copy_no_exists"   , flb_test_op_hard_copy_no_exists },
+
+    /* Conditions (nested) */
+    {"cond_key_value_matches_nest", flb_test_cond_key_value_matches_nest },
+    {"cond_key_value_does_not_match_nest", flb_test_cond_key_value_does_not_match_nest },
+    {"cond_key_exists_nest", flb_test_cond_key_exists_nest },
+    {"cond_key_does_not_exist_nest", flb_test_cond_key_does_not_exist_nest },
+    {"cond_key_value_equals_nest", flb_test_cond_key_value_equals_nest },
+    {"cond_key_value_does_not_equal_nest", flb_test_cond_key_value_does_not_equal_nest },
 
     /* Conditions */
     {"cond_key_exists", flb_test_cond_key_exists },
