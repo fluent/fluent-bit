@@ -20,6 +20,7 @@ set(src
   flb_kernel.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_metric.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -292,6 +293,7 @@ set(FLB_DEPS
   chunkio-static
   miniz
   xxhash
+  cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
