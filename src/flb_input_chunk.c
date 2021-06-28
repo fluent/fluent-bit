@@ -478,7 +478,6 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                   storage->stream->name, name);
         return NULL;
     }
-
     /*
      * If the returned chunk at open is 'down', just put it up, write the
      * content and set it down again.
@@ -508,12 +507,19 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     }
 
     /* Create context for the input instance */
-    ic = flb_malloc(sizeof(struct flb_input_chunk));
+    ic = flb_calloc(1, sizeof(struct flb_input_chunk));
     if (!ic) {
         flb_errno();
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
+
+    /*
+     * Check chunk content type to be created: depending of the value set by
+     * the input plugin, this can be FLB_INPUT_LOGS or FLB_INPUT_METRICS
+     */
+    ic->event_type = in->event_type;
+
     ic->busy = FLB_FALSE;
     ic->chunk = chunk;
     ic->fs_backlog = FLB_FALSE;
@@ -538,7 +544,13 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         cio_chunk_down(chunk);
     }
 
-    flb_hash_add(in->ht_chunks, tag, tag_len, ic, 0);
+    if (in->event_type == FLB_INPUT_LOGS) {
+        flb_hash_add(in->ht_log_chunks, tag, tag_len, ic, 0);
+    }
+    else if (in->event_type == FLB_INPUT_METRICS) {
+        flb_hash_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
+    }
+
     return ic;
 }
 
@@ -604,7 +616,14 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
          * entries if it was replaced: note that we always keep the last
          * chunk for a specific Tag.
          */
-        flb_hash_del_ptr(ic->in->ht_chunks, tag_buf, tag_len, (void *) ic);
+        if (ic->event_type == FLB_INPUT_LOGS) {
+            flb_hash_del_ptr(ic->in->ht_log_chunks,
+                             tag_buf, tag_len, (void *) ic);
+        }
+        else if (ic->event_type == FLB_INPUT_METRICS) {
+            flb_hash_del_ptr(ic->in->ht_metric_chunks,
+                             tag_buf, tag_len, (void *) ic);
+        }
     }
 
     cio_chunk_close(ic->chunk, del);
@@ -625,7 +644,15 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
 
-    id = flb_hash_get(in->ht_chunks, tag, tag_len, (void *) &ic, &out_size);
+    if (in->event_type == FLB_INPUT_LOGS) {
+        id = flb_hash_get(in->ht_log_chunks, tag, tag_len,
+                          (void *) &ic, &out_size);
+    }
+    else if (in->event_type == FLB_INPUT_METRICS) {
+        id = flb_hash_get(in->ht_metric_chunks, tag, tag_len,
+                          (void *) &ic, &out_size);
+    }
+
     if (id >= 0) {
         if (ic->busy == FLB_TRUE || cio_chunk_is_locked(ic->chunk)) {
             ic = NULL;
