@@ -48,20 +48,25 @@
 #define FLB_COLLECT_FD_EVENT    2
 #define FLB_COLLECT_FD_SERVER   4
 
-/* Input plugin masks */
-#define FLB_INPUT_NET          4  /* input address may set host and port   */
-#define FLB_INPUT_CORO       128  /* plugin requires a thread on callbacks */
-#define FLB_INPUT_PRIVATE    256  /* plugin is not published/exposed       */
-#define FLB_INPUT_NOTAG      512  /* plugin might don't have tags          */
+/* Input plugin flag masks */
+#define FLB_INPUT_NET          4   /* input address may set host and port   */
+#define FLB_INPUT_CORO       128   /* plugin requires a thread on callbacks */
+#define FLB_INPUT_PRIVATE    256   /* plugin is not published/exposed       */
+#define FLB_INPUT_NOTAG      512   /* plugin might don't have tags          */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
 #define FLB_INPUT_PAUSED      0
 
+/* Input plugin event type */
+#define FLB_INPUT_LOGS        0
+#define FLB_INPUT_METRICS     1
+
 struct flb_input_instance;
 
 struct flb_input_plugin {
-    int flags;
+    int flags;                /* plugin flags */
+    int event_type;           /* event type to be genarated: logs ?, metrics ? */
 
     /* The Input name */
     char *name;
@@ -123,6 +128,8 @@ struct flb_input_plugin {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_input_instance {
+    int event_type;                  /* FLB_INPUT_LOGS, FLB_INPUT_METRICS */
+
     /*
      * The instance flags are derivated from the fixed plugin flags. This
      * is done to offer some flexibility where a plugin instance per
@@ -239,11 +246,14 @@ struct flb_input_instance {
 #endif
 
     /*
-     * Index for generated chunks: simple hash table that keeps the latest
+     * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimize the
      * lookup for candidates chunks to write data.
+     *
+     * Starting from v1.8 we have separate hash tables for logs and metrics.
      */
-    struct flb_hash *ht_chunks;
+    struct flb_hash *ht_log_chunks;
+    struct flb_hash *ht_metric_chunks;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -538,5 +548,8 @@ int flb_input_name_exists(const char *name, struct flb_config *config);
 
 void flb_input_net_default_listener(const char *listen, int port,
                                     struct flb_input_instance *ins);
+
+int flb_input_event_type_is_metric(struct flb_input_instance *ins);
+int flb_input_event_type_is_log(struct flb_input_instance *ins);
 
 #endif
