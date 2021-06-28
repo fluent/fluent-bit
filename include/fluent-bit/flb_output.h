@@ -58,6 +58,10 @@
 #define FLB_OUTPUT_PLUGIN_PROXY   1
 #define FLB_OUTPUT_NO_MULTIPLEX 512
 
+/* Event type handlers */
+#define FLB_OUTPUT_LOGS        1
+#define FLB_OUTPUT_METRICS     2
+
 /*
  * Tests callbacks
  * ===============
@@ -128,6 +132,14 @@ struct flb_test_out_formatter {
 
 struct flb_output_plugin {
     /*
+     * a 'mask' to define what kind of data the plugin can manage:
+     *
+     *  - FLB_OUTPUT_LOGS
+     *  - FLB_OUTPUT_METRICS
+     */
+    int event_type;
+
+    /*
      * The type defines if this is a core-based plugin or it's handled by
      * some specific proxy.
      */
@@ -197,6 +209,14 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     struct mk_event event;               /* events handler               */
+
+    /*
+     * a 'mask' to define what kind of data the plugin can manage:
+     *
+     *  - FLB_OUTPUT_LOGS
+     *  - FLB_OUTPUT_METRICS
+     */
+    int event_type;
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
