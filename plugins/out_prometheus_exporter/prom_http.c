@@ -234,12 +234,10 @@ int prom_http_server_start(struct prom_http *ph)
     return mk_start(ph->ctx);
 }
 
-
 int prom_http_server_stop(struct prom_http *ph)
 {
     return mk_stop(ph->ctx);
 }
-
 
 int prom_http_server_mq_push_metrics(struct prom_http *ph,
                                      void *data, size_t size)

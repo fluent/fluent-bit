@@ -19,6 +19,9 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_encode_text.h>
+#include <cmetrics/cmt_decode_msgpack.h>
 
 #include "prom.h"
 #include "prom_http.h"
@@ -70,9 +73,28 @@ static void cb_prom_flush(const void *data, size_t bytes,
                           struct flb_config *config)
 {
     int ret;
+    cmt_sds_t text;
+    struct cmt *cmt;
     struct prom_exporter *ctx = out_context;
 
-    ret = prom_http_server_mq_push_metrics(ctx->http, (char *) data, bytes);
+    ret = cmt_decode_msgpack(&cmt, (char *) data, bytes);
+    if (ret != 0) {
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_text_create(cmt);
+    if (!text) {
+        cmt_destroy(cmt);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+    cmt_destroy(cmt);
+
+    ret = prom_http_server_mq_push_metrics(ctx->http,
+                                           (char *) text,
+                                           flb_sds_len(text));
+    cmt_encode_text_destroy(text);
+
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -83,10 +105,11 @@ static void cb_prom_flush(const void *data, size_t bytes,
 static int cb_prom_exit(void *data, struct flb_config *config)
 {
     struct prom_exporter *ctx = data;
-    struct prom_http *ph = ctx->http;
-    if (ph) {
-        prom_http_server_destroy(ph);
-    }
+
+    prom_http_server_stop(ctx->http);
+    prom_http_server_destroy(ctx->http);
+    flb_free(ctx);
+
     return 0;
 }
 
@@ -113,6 +136,7 @@ struct flb_output_plugin out_prometheus_exporter_plugin = {
     .cb_init     = cb_prom_init,
     .cb_flush    = cb_prom_flush,
     .cb_exit     = cb_prom_exit,
-    .config_map  = config_map,
     .flags       = FLB_OUTPUT_NET,
+    .event_type  = FLB_OUTPUT_METRICS,
+    .config_map  = config_map,
 };
