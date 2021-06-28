@@ -46,6 +46,10 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
+#define COMPRESS_NONE  0
+#define COMPRESS_GZIP  1
+#define COMPRESS_ARROW 2
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -95,11 +99,11 @@ struct flb_s3 {
     char *endpoint;
     char *sts_endpoint;
     char *canned_acl;
-    char *compression;
     char *content_type;
     int free_endpoint;
     int use_put_object;
     int send_content_md5;
+    int compression;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
