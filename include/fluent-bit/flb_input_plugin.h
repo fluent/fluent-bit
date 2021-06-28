@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_log.h>
 
 #define flb_plg_error(ctx, fmt, ...)                                    \
