@@ -337,7 +337,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
-                                 void *ic,
+                                 struct flb_input_chunk *ic,
                                  const char *tag_buf, int tag_len,
                                  struct flb_config *config,
                                  int *err)
@@ -390,6 +390,16 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
+
+        /* skip output plugins that don't handle proper event types */
+        if (ic->event_type == FLB_INPUT_LOGS &&
+            !(o_ins->event_type & FLB_OUTPUT_LOGS)) {
+            continue;
+        }
+        else if (ic->event_type == FLB_INPUT_METRICS &&
+                 !(o_ins->event_type & FLB_OUTPUT_METRICS)) {
+            continue;
+        }
 
         if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
             route = flb_malloc(sizeof(struct flb_task_route));
