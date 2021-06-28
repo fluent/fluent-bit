@@ -146,7 +146,7 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     }
     if (file->config->offset_key != NULL) {
         append_record_to_map(data, data_size,
-                             file->config->path_key,
+                             file->config->offset_key,
                              flb_sds_len(file->config->offset_key),
                              NULL, 0, file->offset + processed_bytes);
     }
