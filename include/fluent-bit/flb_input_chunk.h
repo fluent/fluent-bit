@@ -43,7 +43,7 @@
 #define FLB_INPUT_CHUNK_FS_MAX_SIZE   2048000  /* 2MB */
 
 struct flb_input_chunk {
-    int type;                       /* chunk type: logs or metrics */
+    int event_type;                 /* chunk type: logs or metrics */
     int busy;                       /* buffer is being flushed  */
     int fs_backlog;                 /* chunk originated from fs backlog */
     int sp_done;                    /* sp already processed this chunk */
