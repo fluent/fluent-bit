@@ -1655,8 +1655,8 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "static_file_path", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, static_file_path),
      "Disables behavior where UUID string is automatically appended to end of S3 key name when "
-     "$UUID is not provided in s3_key_format. If this is enabled without a dynamic key format, "
-     "the previous file will be overwritten."
+     "$UUID is not provided in s3_key_format. $UUID, time formatters, $TAG, and other dynamic "
+     "key formatters all work as expected while this feature is set to true."
     },
 
     /* EOF */
