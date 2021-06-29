@@ -392,12 +392,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                               struct flb_output_instance, _head);
 
         /* skip output plugins that don't handle proper event types */
-        if (ic->event_type == FLB_INPUT_LOGS &&
-            !(o_ins->event_type & FLB_OUTPUT_LOGS)) {
-            continue;
-        }
-        else if (ic->event_type == FLB_INPUT_METRICS &&
-                 !(o_ins->event_type & FLB_OUTPUT_METRICS)) {
+        if (!flb_router_match_type(ic->event_type, o_ins)) {
             continue;
         }
 
