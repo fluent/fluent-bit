@@ -171,7 +171,9 @@ int flb_router_io_set(struct flb_config *config)
                                     struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs,
                                     struct flb_output_instance, _head);
-        if (!o_ins->match
+
+        if (flb_router_match_type(i_ins->event_type, o_ins) &&
+            !o_ins->match
 #ifdef FLB_HAVE_REGEX
             && !o_ins->match_regex
 #endif
@@ -209,6 +211,10 @@ int flb_router_io_set(struct flb_config *config)
                 ) {
                 flb_warn("[router] NO match for %s output instance",
                           o_ins->name);
+                continue;
+            }
+
+            if (!flb_router_match_type(i_ins->event_type, o_ins)) {
                 continue;
             }
 
@@ -250,6 +256,3 @@ void flb_router_exit(struct flb_config *config)
         }
     }
 }
-
-
-
