@@ -36,6 +36,8 @@
 #include <signal.h>
 #include <stdarg.h>
 
+#include <cmetrics/cmetrics.h>
+
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
 #endif
@@ -112,6 +114,9 @@ void flb_init_env()
     flb_coro_init();
     flb_upstream_init();
     flb_output_prepare();
+
+    /* libraries */
+    cmt_initialize();
 }
 
 flb_ctx_t *flb_create()
