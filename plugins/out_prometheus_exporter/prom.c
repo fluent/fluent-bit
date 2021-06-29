@@ -83,7 +83,7 @@ static void cb_prom_flush(const void *data, size_t bytes,
     }
 
     /* convert to text representation */
-    text = cmt_encode_text_create(cmt);
+    text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     if (!text) {
         cmt_destroy(cmt);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -93,7 +93,7 @@ static void cb_prom_flush(const void *data, size_t bytes,
     ret = prom_http_server_mq_push_metrics(ctx->http,
                                            (char *) text,
                                            flb_sds_len(text));
-    cmt_encode_text_destroy(text);
+    cmt_encode_prometheus_destroy(text);
 
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
