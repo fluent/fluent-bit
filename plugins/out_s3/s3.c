@@ -1678,16 +1678,6 @@ static int cb_s3_exit(void *data, struct flb_config *config)
         }
     }
 
-    if (remove(ctx->seq_index_file) != 0) {
-        flb_plg_error(ctx->ins, "Could not successfully delete metadata file on exit. "
-                      "Overwriting index to 0");
-        ret = write_seq_index(ctx->seq_index_file, 0, 0);
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "Failed to overwrite index to 0");
-            return -1;
-        }
-    }
-
     s3_store_exit(ctx);
     s3_context_destroy(ctx);
 
