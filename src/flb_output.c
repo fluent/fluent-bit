@@ -427,7 +427,14 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         flb_errno();
         return NULL;
     }
-    instance->event_type = plugin->event_type;
+
+    /* Initialize event type, if not set, default to FLB_OUTPUT_LOGS */
+    if (plugin->event_type == 0) {
+        instance->event_type = FLB_OUTPUT_LOGS;
+    }
+    else {
+        instance->event_type = plugin->event_type;
+    }
     instance->config = config;
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
