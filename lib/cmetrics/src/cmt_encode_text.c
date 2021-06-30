@@ -23,76 +23,35 @@
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_compat.h>
 
-/*
- * Prometheus Exposition Format
- * ----------------------------
- * https://github.com/prometheus/docs/blob/master/content/docs/instrumenting/exposition_formats.md
- */
-
-static void metric_banner(cmt_sds_t *buf, struct cmt_map *map,
-                          struct cmt_metric *metric)
-{
-    struct cmt_opts *opts;
-
-    opts = map->opts;
-
-    /* HELP */
-    cmt_sds_cat_safe(buf, "# HELP ", 7);
-    cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
-
-    cmt_sds_cat_safe(buf, " ", 1);
-    cmt_sds_cat_safe(buf, opts->description, cmt_sds_len(opts->description));
-    cmt_sds_cat_safe(buf, "\n", 1);
-
-    /* TYPE */
-    cmt_sds_cat_safe(buf, "# TYPE ", 7);
-    cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
-
-    if (map->type == CMT_COUNTER) {
-        cmt_sds_cat_safe(buf, " counter\n", 9);
-    }
-    else if (map->type == CMT_GAUGE) {
-        cmt_sds_cat_safe(buf, " gauge\n", 7);
-    }
-}
-
-static void append_metric_value(cmt_sds_t *buf, struct cmt_metric *metric,
-                                int add_timestamp)
+static void append_metric_value(cmt_sds_t *buf, struct cmt_metric *metric)
 {
     int len;
     double val;
-    uint64_t ts;
     char tmp[128];
 
     /* Retrieve metric value */
     val = cmt_metric_get_value(metric);
 
-    if (add_timestamp) {
-        ts = cmt_metric_get_timestamp(metric);
-
-        /* convert from nanoseconds to milliseconds */
-        ts /= 1000000;
-
-        len = snprintf(tmp, sizeof(tmp) - 1, " %.17g %" PRIu64 "\n", val, ts);
-    }
-    else {
-        len = snprintf(tmp, sizeof(tmp) - 1, " %.17g\n", val);
-    }
+    len = snprintf(tmp, sizeof(tmp) - 1, " = %.17g\n", val);
     cmt_sds_cat_safe(buf, tmp, len);
 }
 
-static void format_metric(struct cmt *cmt,
-                          cmt_sds_t *buf, struct cmt_map *map,
-                          struct cmt_metric *metric, int add_timestamp)
+static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
+                          struct cmt_metric *metric)
 {
     int i;
     int n;
+    int len;
     int count = 0;
     int static_labels = 0;
-    int labels_open = CMT_FALSE;
     double val;
+    char tmp[128];
+    uint64_t ts;
+    struct tm tm;
+    struct timespec tms;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
     struct mk_list *head;
@@ -101,6 +60,18 @@ static void format_metric(struct cmt *cmt,
 
     opts = map->opts;
 
+    /* timestamp (RFC3339Nano) */
+    ts = cmt_metric_get_timestamp(metric);
+
+    cmt_time_from_ns(&tms, ts);
+
+    cmt_platform_gmtime_r(&tms.tv_sec, &tm);
+    len = strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H:%M:%S.", &tm);
+    cmt_sds_cat_safe(buf, tmp, len);
+
+    len = snprintf(tmp, sizeof(tmp) - 1, "%09luZ ", tms.tv_nsec);
+    cmt_sds_cat_safe(buf, tmp, len);
+
     /* Metric info */
     cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
 
@@ -108,8 +79,6 @@ static void format_metric(struct cmt *cmt,
     static_labels = cmt_labels_count(cmt->static_labels);
     if (static_labels > 0) {
         cmt_sds_cat_safe(buf, "{", 1);
-        labels_open = CMT_TRUE;
-
         mk_list_foreach(head, &cmt->static_labels->list) {
             count++;
             slabel = mk_list_entry(head, struct cmt_label, _head);
@@ -124,7 +93,6 @@ static void format_metric(struct cmt *cmt,
         }
     }
 
-    /* Append static labels */
     n = mk_list_size(&metric->labels);
     if (n > 0) {
         if (static_labels > 0) {
@@ -156,46 +124,36 @@ static void format_metric(struct cmt *cmt,
                                          _head, &map->label_keys);
         }
         cmt_sds_cat_safe(buf, "}", 1);
-        append_metric_value(buf, metric, add_timestamp);
+
+        append_metric_value(buf, metric);
     }
     else {
         if (static_labels > 0) {
             cmt_sds_cat_safe(buf, "}", 1);
         }
-        append_metric_value(buf, metric, add_timestamp);
+        append_metric_value(buf, metric);
     }
-
 }
 
-static void format_metrics(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
-                           int add_timestamp)
+static void format_metrics(struct cmt *cmt,
+                           cmt_sds_t *buf, struct cmt_map *map, int add_timestamp)
 {
-    int banner_set = CMT_FALSE;
     struct mk_list *head;
     struct cmt_metric *metric;
 
     /* Simple metric, no labels */
-    if (map->metric_static_set) {
-        metric_banner(buf, map, &map->metric);
-        banner_set = CMT_TRUE;
-        format_metric(cmt, buf, map, &map->metric, add_timestamp);
-    }
-
-    if (mk_list_size(&map->metrics) > 0) {
-        metric = mk_list_entry_first(&map->metrics, struct cmt_metric, _head);
-        if (!banner_set) {
-            metric_banner(buf, map, metric);
-        }
+    if (map->metric_static_set == 1) {
+        format_metric(cmt, buf, map, &map->metric);
     }
 
     mk_list_foreach(head, &map->metrics) {
         metric = mk_list_entry(head, struct cmt_metric, _head);
-        format_metric(cmt, buf, map, metric, add_timestamp);
+        format_metric(cmt, buf, map, metric);
     }
 }
 
 /* Format all the registered metrics in Prometheus Text format */
-cmt_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
+cmt_sds_t cmt_encode_text_create(struct cmt *cmt, int add_timestamp)
 {
     cmt_sds_t buf;
     struct mk_list *head;
@@ -223,7 +181,7 @@ cmt_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
     return buf;
 }
 
-void cmt_encode_prometheus_destroy(cmt_sds_t text)
+void cmt_encode_text_destroy(cmt_sds_t text)
 {
     cmt_sds_destroy(text);
 }

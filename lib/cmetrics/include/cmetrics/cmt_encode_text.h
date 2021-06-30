@@ -17,13 +17,14 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_TIME_H
-#define CMT_TIME_H
 
-#include <inttypes.h>
-#include <time.h>
+#ifndef CMT_ENCODE_TEXT_H
+#define CMT_ENCODE_TEXT_H
 
-uint64_t cmt_time_now();
-void cmt_time_from_ns(struct timespec *tm, uint64_t ns);
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_sds.h>
+
+cmt_sds_t cmt_encode_text_create(struct cmt *cmt);
+void cmt_encode_text_destroy(cmt_sds_t text);
 
 #endif
