@@ -335,7 +335,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
         flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left "
                   "in plugin %s", flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size - o_ins->fs_chunks_size, o_ins->name);
-        
+
         if (o_ins->fs_chunks_size + chunk_size > o_ins->total_limit_size) {
             overlimit |= (1 << o_ins->id);
         }
@@ -362,7 +362,7 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
                                             void *chunk)
 {
-    int records;
+    int records = 0;
     int tag_len;
     int has_routes;
     int ret;
@@ -396,10 +396,39 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     /* Validate records in the chunk */
     ret = flb_mp_validate_chunk(buf_data, buf_size, &records, &offset);
     if (ret == -1) {
+        /* If there are valid records, truncate the chunk size */
+        if (records <= 0) {
+            flb_plg_error(in,
+                          "chunk validation failed, data might be corrupted. "
+                          "No valid records found, the chunk will be discarded.");
+            flb_free(ic);
+            return NULL;
+        }
+        if (records > 0 && offset > 32) {
+            flb_plg_warn(in,
+                         "chunk validation failed, data might be corrupted. "
+                         "Found %d valid records, failed content starts "
+                         "right after byte %lu. Recovering valid records.",
+                         records, offset);
+
+            /* truncate the chunk to recover valid records */
+            cio_chunk_write_at(chunk, offset, NULL, 0);
+        }
+        else {
+            flb_plg_error(in,
+                          "chunk validation failed, data might be corrupted. "
+                          "Found %d valid records, failed content starts "
+                          "right after byte %lu. Cannot recover chunk,",
+                          records, offset);
+            flb_free(ic);
+            return NULL;
+        }
+    }
+
+    if (records == 0) {
         flb_plg_error(in,
                       "chunk validation failed, data might be corrupted. "
-                      "Found %d valid records, failed content starts "
-                      "right after byte %lu.", records, offset);
+                      "No valid records found, the chunk will be discarded.");
         flb_free(ic);
         return NULL;
     }
