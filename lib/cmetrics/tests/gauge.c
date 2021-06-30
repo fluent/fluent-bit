@@ -31,6 +31,8 @@ void test_gauge()
     struct cmt *cmt;
     struct cmt_gauge *g;
 
+    cmt_initialize();
+
     cmt = cmt_create();
     TEST_CHECK(cmt != NULL);
 
@@ -85,6 +87,8 @@ void test_labels()
     struct cmt *cmt;
     struct cmt_gauge *g;
 
+    cmt_initialize();
+
     cmt = cmt_create();
     TEST_CHECK(cmt != NULL);
 
@@ -103,13 +107,16 @@ void test_labels()
 
     /* Default value for hash zero */
     ret = cmt_gauge_get_val(g, 0, NULL, &val);
-    TEST_CHECK(ret == 0);
-    TEST_CHECK(val == 0.0);
+    TEST_CHECK(ret == -1);
 
     /* Increment hash zero by 1 */
     ret = cmt_gauge_inc(g, ts, 0, NULL);
     TEST_CHECK(ret == 0);
-    TEST_CHECK(val == 0.0);
+
+    /* Check the new value */
+    ret = cmt_gauge_get_val(g, 0, NULL, &val);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == 1.0);
 
     /* Add two */
     ret = cmt_gauge_add(g, ts, 2, 0, NULL);

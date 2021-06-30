@@ -17,13 +17,24 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_TIME_H
-#define CMT_TIME_H
+#ifndef CMT_LABEL_H
+#define CMT_LABEL_H
 
-#include <inttypes.h>
-#include <time.h>
+#include <cmetrics/cmetrics.h>
 
-uint64_t cmt_time_now();
-void cmt_time_from_ns(struct timespec *tm, uint64_t ns);
+struct cmt_label {
+    cmt_sds_t key;             /* Label key */
+    cmt_sds_t val;             /* Label value */
+    struct mk_list _head;      /* Link to list cmt_labels->list */
+};
+
+struct cmt_labels {
+    struct mk_list list;
+};
+
+struct cmt_labels *cmt_labels_create();
+void cmt_labels_destroy(struct cmt_labels *labels);
+int cmt_labels_add_kv(struct cmt_labels *labels, char *key, char *val);
+int cmt_labels_count(struct cmt_labels *labels);
 
 #endif

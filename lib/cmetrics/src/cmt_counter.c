@@ -81,7 +81,8 @@ int cmt_counter_inc(struct cmt_counter *counter,
     struct cmt_metric *metric;
 
     metric = cmt_map_metric_get(&counter->opts,
-                                counter->map, labels_count, label_vals);
+                                counter->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -95,7 +96,8 @@ int cmt_counter_add(struct cmt_counter *counter, uint64_t timestamp, double val,
     struct cmt_metric *metric;
 
     metric = cmt_map_metric_get(&counter->opts,
-                                counter->map, labels_count, label_vals);
+                                counter->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -112,7 +114,8 @@ int cmt_counter_set(struct cmt_counter *counter, uint64_t timestamp, double val,
     struct cmt_metric *metric;
 
     metric = cmt_map_metric_get(&counter->opts, counter->map,
-                                labels_count, label_vals);
+                                labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }

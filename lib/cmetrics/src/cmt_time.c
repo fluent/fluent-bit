@@ -51,3 +51,15 @@ uint64_t cmt_time_now()
 
     return (((uint64_t) tm.tv_sec * 1000000000L) + tm.tv_nsec);
 }
+
+void cmt_time_from_ns(struct timespec *tm, uint64_t ns)
+{
+    if (ns < 1000000000L) {
+        tm->tv_sec = 0;
+        tm->tv_nsec = ns;
+    }
+    else {
+        tm->tv_sec = ns / 1000000000L;
+        tm->tv_nsec = ns - (tm->tv_sec * 1000000000L);
+    }
+}

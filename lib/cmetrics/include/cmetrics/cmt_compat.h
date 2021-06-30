@@ -17,13 +17,26 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_TIME_H
-#define CMT_TIME_H
+#ifndef CMT_COMPAT_H
+#define CMT_COMPAT_H
 
-#include <inttypes.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
-uint64_t cmt_time_now();
-void cmt_time_from_ns(struct timespec *tm, uint64_t ns);
+static inline struct tm *cmt_platform_gmtime_r(const time_t *timep, struct tm *result)
+{
+#ifdef CMT_HAVE_GMTIME_S
+    if (gmtime_s(result, timep)) {
+        return NULL;
+    }
+
+    return result;
+#else
+    /* FIXME: Need to handle gmtime_r(3) lacking platform? */
+    return gmtime_r(timep, result) ;
+#endif
+}
 
 #endif

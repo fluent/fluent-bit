@@ -19,6 +19,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_log.h>
+#include <cmetrics/cmt_compat.h>
 
 #include <stdio.h>
 #include <stdarg.h>

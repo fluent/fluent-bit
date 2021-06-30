@@ -21,8 +21,16 @@
 #include <cmetrics/cmt_log.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_atomic.h>
+#include <cmetrics/cmt_compat.h>
+#include <cmetrics/cmt_label.h>
 
 #include <stdlib.h>
+
+void cmt_initialize()
+{
+    cmt_atomic_initialize();
+}
 
 struct cmt *cmt_create()
 {
@@ -33,6 +41,13 @@ struct cmt *cmt_create()
         cmt_errno();
         return NULL;
     }
+
+    cmt->static_labels = cmt_labels_create();
+    if (!cmt->static_labels) {
+        free(cmt);
+        return NULL;
+    }
+
     mk_list_init(&cmt->counters);
     mk_list_init(&cmt->gauges);
     mk_list_init(&cmt->histograms);
@@ -57,5 +72,14 @@ void cmt_destroy(struct cmt *cmt)
         cmt_counter_destroy(c);
     }
 
+    if (cmt->static_labels) {
+        cmt_labels_destroy(cmt->static_labels);
+    }
+
     free(cmt);
+}
+
+int cmt_label_add(struct cmt *cmt, char *key, char *val)
+{
+    return cmt_labels_add_kv(cmt->static_labels, key, val);
 }
