@@ -63,6 +63,11 @@ struct flb_influxdb {
     /* tag_keys: space separated list of key */
     struct mk_list *tag_keys;
 
+    /* Tags List */
+    int tags_list_enabled;
+    char *tags_list_key;
+    int tags_list_key_len;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
