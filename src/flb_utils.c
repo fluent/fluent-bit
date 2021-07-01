@@ -455,7 +455,7 @@ int64_t flb_utils_hex2int(char *hex, int len)
 
     while ((c = *hex++) && i < len) {
         /* Ensure no overflow */
-        if (res >= (int)((INT64_MAX/0x10) - 0xff)) {
+        if (res >= (int64_t)((INT64_MAX/0x10) - 0xff)) {
             return -1;
         }
 
