@@ -106,7 +106,7 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 {
     struct prom_exporter *ctx = data;
 
-    prom_http_server_stop(ctx->http);
+    //FIXME: prom_http_server_stop(ctx->http);
     prom_http_server_destroy(ctx->http);
     flb_free(ctx);
 
