@@ -83,6 +83,12 @@ if(FLB_AWS)
     aws_credentials_http.c
     aws_credentials_profile.c
     )
+  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+    set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      aws_credentials_process.c
+      )
+  endif()
 endif()
 
 if(FLB_AWS_ERROR_REPORTER)

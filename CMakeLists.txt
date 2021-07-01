@@ -88,7 +88,7 @@ option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
-option(FLB_AWS                "Enable AWS support"            Yes)
+option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
@@ -462,6 +462,18 @@ endif()
 # AWS
 if (FLB_AWS)
   FLB_DEFINITION(FLB_HAVE_AWS)
+
+  # Support for credential_process in the AWS config file is currently Linux-only.
+  # The current implementation might work for other Unix systems, but would require
+  # further testing to confirm.
+  # Spawning a sub-process in Windows is very different and will require its own
+  # implementation.
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    FLB_OPTION(FLB_HAVE_AWS_CREDENTIAL_PROCESS ON)
+    FLB_DEFINITION(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+  else()
+    FLB_OPTION(FLB_HAVE_AWS_CREDENTIAL_PROCESS OFF)
+  endif()
 endif()
 
 if (FLB_AWS_ERROR_REPORTER)
