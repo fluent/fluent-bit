@@ -137,6 +137,7 @@ endif()
 if(FLB_AWS)
   set(src
     ${src}
+    "aws/flb_aws_credentials_log.h"
     "aws/flb_aws_util.c"
     "aws/flb_aws_credentials.c"
     "aws/flb_aws_credentials_sts.c"
@@ -144,6 +145,12 @@ if(FLB_AWS)
     "aws/flb_aws_credentials_http.c"
     "aws/flb_aws_credentials_profile.c"
     )
+  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+    set(src
+      ${src}
+      "aws/flb_aws_credentials_process.c"
+      )
+  endif()
 endif()
 
 if(FLB_LUAJIT)
