@@ -1361,7 +1361,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     int alloc_error = 0;
     struct flb_s3 *ctx = out_context;
     char *val_buf;
-    char *orig_val_buf;
     char *key_str = NULL;
     size_t key_str_size = 0;
     size_t off = 0;
@@ -1381,8 +1380,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Allocate buffer to store log_key contents */
-    orig_val_buf = flb_malloc(msgpack_size);
-    if (orig_val_buf == NULL) {
+    val_buf = flb_malloc(msgpack_size);
+    if (val_buf == NULL) {
         flb_plg_error(ctx->ins, "Could not allocate enough "
                       "memory to read record");
         flb_errno();
@@ -1430,18 +1429,25 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
             if (check == FLB_TRUE) {
                 if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
-                    val_buf = orig_val_buf;
 
-                    /* Fill val_buf with log_key contents */
-                    ret = flb_msgpack_to_json(val_buf, msgpack_size, &val);
-                    if (ret < 0) {
-                        break;
+                    /* 
+                     * Copy contents of value into buffer. Necessary to sprintf
+                     * strings because flb_msgpack_to_json does not handle nested
+                     * JSON gracefully and double escapes them.
+                     */
+                    if (val.type == MSGPACK_OBJECT_BIN) {
+                        strncpy(val_buf, val.via.bin.ptr, val.via.bin.size);
+                        val_buf[val.via.bin.size] = '\0';
                     }
-
-                    /* Remove double quotes from extracted log_key value */
-                    if (val_buf[0] == '\"' && val_buf[strlen(val_buf)-1] == '\"') {
-                        val_buf[strlen(val_buf)-1] = '\0';
-                        val_buf++;
+                    else if (val.type == MSGPACK_OBJECT_STR) {
+                        strncpy(val_buf, val.via.str.ptr, val.via.str.size);
+                        val_buf[val.via.str.size] = '\0';
+                    }
+                    else {
+                        ret = flb_msgpack_to_json(val_buf, msgpack_size, &val);
+                        if (ret < 0) {
+                            break;
+                        }
                     }
 
                     /* Create or concatenate to out_buf for full record chunk */
@@ -1491,7 +1497,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     /* Free orig_val_buf we used as a temporary buffer */
-    flb_free(orig_val_buf);
+    flb_free(val_buf);
 
     /* Release the unpacker and buffer */
     msgpack_unpacked_destroy(&result);
