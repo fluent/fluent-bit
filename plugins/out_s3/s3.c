@@ -264,11 +264,10 @@ static int read_seq_index(char *seq_index_file, uint64_t *seq_index)
         return -1;
     }
 
-    ret = getw(fp);
-    if (ret == -1) {
+    ret = fscanf(fp, "%"PRIu64, seq_index);
+    if (ret != 1) {
         return -1;
     }
-    *seq_index = ret;
 
     fclose(fp);
     return 0;
@@ -285,8 +284,8 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
         return -1;
     }
 
-    ret = putw(seq_index, fp);
-    if (ret != 0) {
+    ret = fprintf(fp, "%"PRIu64, seq_index);
+    if (ret < 0) {
         return -1;
     }
 
