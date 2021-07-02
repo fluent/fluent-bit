@@ -55,7 +55,6 @@ static int cb_sw_init(struct flb_output_instance *ins,
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_output_sw));
     if (!ctx) {
-        flb_free(ctx);
         return -1;
     }
 
@@ -168,6 +167,7 @@ static void sw_msgpack_pack_log_body(msgpack_packer* pk,
 
     valid_log_entry = (int*)flb_malloc(obj_size * sizeof(int));
     if (!valid_log_entry) {
+        flb_errno();
         return;
     }
 
