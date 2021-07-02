@@ -35,6 +35,10 @@ RUN Write-Host ('Creating folders'); `
     New-Item -Type Directory -Path /local; `
     New-Item -Type Directory -Path /fluent-bit;
 
+COPY vcruntime140.dll /
+COPY vccorlib140.dll /
+COPY msvcp140.dll  /
+
 WORKDIR /local
 
 #
@@ -53,10 +57,9 @@ ADD https://aka.ms/vs/15/release/vc_redist.x64.exe /local/vc_redist.x64.exe
 
 RUN Write-Host ('Installing Visual C++ Redistributable Package'); `
     Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
-    Copy-Item -Path /Windows/System32/msvcp140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
-    Copy-Item -Path /Windows/System32/vcruntime140.dll -Destination /fluent-bit/bin/;
-
+    Copy-Item -Path /msvcp140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path /vccorlib140.dll -Destination /fluent-bit/bin/; `
+    Copy-Item -Path /vcruntime140.dll -Destination /fluent-bit/bin/
 #
 # Runtime Image - Windows Server Nano
 #
