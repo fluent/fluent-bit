@@ -1431,7 +1431,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                     found = FLB_TRUE;
 
                     /* 
-                     * Copy contents of value into buffer. Necessary to sprintf
+                     * Copy contents of value into buffer. Necessary to strncpy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
                      */
