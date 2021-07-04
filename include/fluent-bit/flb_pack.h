@@ -68,6 +68,7 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size, int *
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records);
 
+int flb_pack_set_null_as_nan(int b);
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 
