@@ -73,11 +73,12 @@ static void cb_prom_flush(const void *data, size_t bytes,
                           struct flb_config *config)
 {
     int ret;
+    size_t off = 0;
     cmt_sds_t text;
     struct cmt *cmt;
     struct prom_exporter *ctx = out_context;
 
-    ret = cmt_decode_msgpack(&cmt, (char *) data, bytes);
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
