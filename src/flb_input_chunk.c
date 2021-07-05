@@ -1015,7 +1015,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
         return 0;
     }
 #ifdef FLB_HAVE_STREAM_PROCESSOR
-    else if (in->config->stream_processor_ctx) {
+    else if (in->config->stream_processor_ctx &&
+             ic->event_type == FLB_INPUT_LOGS) {
         char *c_data;
         size_t c_size;
 
