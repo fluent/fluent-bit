@@ -43,6 +43,7 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
+#include <cmetrics/cmetrics.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -516,6 +517,10 @@ int flb_engine_start(struct flb_config *config)
     if (ret == -1) {
         return -1;
     }
+
+    /* Init Metrics engine */
+    cmt_initialize();
+    flb_info("[cmetrics] version=%s", cmt_version());
 
     /* Initialize the scheduler */
     sched = flb_sched_create(config, config->evl);
