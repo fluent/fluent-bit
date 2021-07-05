@@ -232,6 +232,10 @@ int flb_ml_parser_destroy(struct flb_ml_parser *ml_parser)
         flb_sds_destroy(ml_parser->name);
     }
 
+    if (ml_parser->parser_name) {
+        flb_sds_destroy(ml_parser->parser_name);
+    }
+
     if (ml_parser->match_str) {
         flb_sds_destroy(ml_parser->match_str);
     }
