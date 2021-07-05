@@ -52,6 +52,7 @@ int flb_ml_rule_create(struct flb_ml_parser *ml_parser,
                        char *end_pattern)
 {
     int ret;
+    int first_rule = FLB_FALSE;
     struct flb_ml_rule *rule;
 
     rule = flb_calloc(1, sizeof(struct flb_ml_rule));
@@ -61,6 +62,10 @@ int flb_ml_rule_create(struct flb_ml_parser *ml_parser,
     }
     flb_slist_create(&rule->from_states);
     mk_list_init(&rule->to_state_map);
+
+    if (mk_list_size(&ml_parser->regex_rules) == 0) {
+        first_rule = FLB_TRUE;
+    }
     mk_list_add(&rule->_head, &ml_parser->regex_rules);
 
     /* from_states */
@@ -75,6 +80,11 @@ int flb_ml_rule_create(struct flb_ml_parser *ml_parser,
     if (get_start_state(&rule->from_states)) {
         rule->start_state = FLB_TRUE;
     }
+    else if (first_rule) {
+        flb_error("[multiline] rule don't contain a 'start_state'");
+        flb_ml_rule_destroy(rule);
+        return -1;
+    }
 
     /* regex content pattern */
     rule->regex = flb_regex_create(regex_pattern);
@@ -84,10 +94,12 @@ int flb_ml_rule_create(struct flb_ml_parser *ml_parser,
     }
 
     /* to_state */
-    rule->to_state = flb_sds_create(to_state);
-    if (!rule->to_state) {
-        flb_ml_rule_destroy(rule);
-        return -1;
+    if (to_state) {
+        rule->to_state = flb_sds_create(to_state);
+        if (!rule->to_state) {
+            flb_ml_rule_destroy(rule);
+            return -1;
+        }
     }
 
     /* regex end pattern */
@@ -145,6 +157,28 @@ void flb_ml_rule_destroy_all(struct flb_ml_parser *ml_parser)
     }
 }
 
+static inline int to_states_exists(struct flb_ml_parser *ml_parser,
+                                   flb_sds_t state)
+{
+    struct mk_list *head;
+    struct mk_list *r_head;
+    struct flb_ml_rule *rule;
+    struct flb_slist_entry *e;
+
+    mk_list_foreach(head, &ml_parser->regex_rules) {
+        rule = mk_list_entry(head, struct flb_ml_rule, _head);
+
+        mk_list_foreach(r_head, &rule->from_states) {
+            e = mk_list_entry(r_head, struct flb_slist_entry, _head);
+            if (strcmp(e->str, state) == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static inline int to_states_matches_rule(struct flb_ml_rule *rule,
                                          flb_sds_t state)
 {
@@ -177,6 +211,14 @@ static int set_to_state_map(struct flb_ml_parser *ml_parser,
     /* Iterate all rules that matches the to_state */
     mk_list_foreach(head, &ml_parser->regex_rules) {
         r = mk_list_entry(head, struct flb_ml_rule, _head);
+
+        /* Check if rule->to_state, matches an existing (registered) from_state */
+        ret = to_states_exists(ml_parser, rule->to_state);
+        if (!ret) {
+            flb_error("[multiline parser: %s] to_state='%s' is not registered",
+                      ml_parser->name, rule->to_state);
+            return -1;
+        }
 
         /*
          * A rule can have many 'from_states', check if the current 'rule->to_state'
