@@ -53,8 +53,6 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 
-#include <cmetrics/cmetrics.h>
-
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
 #endif
@@ -951,9 +949,6 @@ int flb_main(int argc, char **argv)
 
     /* Initialize Monkey Core library */
     mk_core_init();
-
-    /* Metrics engine */
-    cmt_initialize();
 
     /* Create Fluent Bit context */
     ctx = flb_create();
