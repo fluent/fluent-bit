@@ -91,9 +91,7 @@ int cmt_labels_add_kv(struct cmt_labels *labels, char *key, char *val)
 int cmt_labels_count(struct cmt_labels *labels)
 {
     int c = 0;
-    struct mk_list *tmp;
     struct mk_list *head;
-    struct cmt_label *l;
 
     mk_list_foreach(head, &labels->list) {
         c++;

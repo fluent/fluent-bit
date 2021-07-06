@@ -58,14 +58,8 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
 {
     int i;
     int n;
-    int len;
     int count = 0;
-    double val;
-    char tmp[128];
-    uint64_t ts;
     int static_labels = 0;
-    struct tm tm;
-    struct timespec tms;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
     struct mk_list *head;

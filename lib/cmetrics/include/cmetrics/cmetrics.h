@@ -38,6 +38,7 @@
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_label.h>
+#include <cmetrics/cmt_version.h>
 
 struct cmt {
     /* logging */
@@ -58,5 +59,6 @@ void cmt_initialize();
 struct cmt *cmt_create();
 void cmt_destroy(struct cmt *cmt);
 int cmt_label_add(struct cmt *cmt, char *key, char *val);
+char *cmt_version();
 
 #endif
