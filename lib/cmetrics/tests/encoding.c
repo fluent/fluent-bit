@@ -218,13 +218,15 @@ void test_cmt_msgpack_partial_processing()
     struct cmt *cmt1 = NULL;
     struct cmt *cmt2 = NULL;
     double base_counter_value = 0;
+    size_t expected_gauge_count = 0;
     double current_counter_value = 0;
+    size_t expected_counter_count = 0;
     struct cmt_counter *first_counter = NULL;
     cmt_sds_t serialized_data_buffer = NULL;
     size_t serialized_data_buffer_length = 0;
 
-    /* Generate a simple encoder context*/
-    cmt1 = generate_simple_encoder_test_data();
+    /* Generate an encoder context with more than one counter */
+    cmt1 = generate_encoder_test_data();
     TEST_CHECK(NULL != cmt1);
 
     /* Find the first counter so we can get its value before re-encoding it N times
@@ -237,6 +239,9 @@ void test_cmt_msgpack_partial_processing()
 
     ret = cmt_counter_get_val(first_counter, 0, NULL, &base_counter_value);
     TEST_CHECK(0 == ret);
+
+    expected_counter_count = mk_list_size(&cmt1->counters);
+    expected_gauge_count = mk_list_size(&cmt1->gauges);
 
     /* Since we are modifying the counter on each iteration we have to re-encode it */
     for (iteration = 0 ;
@@ -292,6 +297,9 @@ void test_cmt_msgpack_partial_processing()
         TEST_CHECK(0 == ret);
 
         TEST_CHECK(base_counter_value == (current_counter_value - iteration - 1));
+
+        TEST_CHECK(expected_counter_count == mk_list_size(&cmt2->counters));
+        TEST_CHECK(expected_gauge_count == mk_list_size(&cmt2->gauges));
 
         cmt_decode_msgpack_destroy(cmt2);
 
@@ -522,7 +530,7 @@ void test_influx()
 }
 
 TEST_LIST = {
-    //FIXME{"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
+    {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
     {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},

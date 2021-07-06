@@ -354,9 +354,11 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     struct mk_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
+    size_t metric_count;
 
     /*
      * CMetrics data schema
+[
      * {
      *   'meta' => {
      *                 'ver' => INTEGER
@@ -382,9 +384,17 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
      *                 }
      *               ]
      * }
+]     
      */
 
     mpack_writer_init_growable(&writer, &data, &size);
+
+    metric_count  = 0;
+    metric_count += mk_list_size(&cmt->counters);
+    metric_count += mk_list_size(&cmt->gauges);
+
+    /* We want an array to group all these metrics in a context */    
+    mpack_start_array(&writer, metric_count);
 
     /* Counters */
     mk_list_foreach(head, &cmt->counters) {
@@ -402,6 +412,8 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
         fprintf(stderr, "An error occurred encoding the data!\n");
         return -1;
     }
+
+    mpack_finish_array(&writer);
 
     *out_buf = data;
     *out_size = size;
