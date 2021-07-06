@@ -91,8 +91,6 @@ static void format_metric(struct cmt *cmt,
     int n;
     int count = 0;
     int static_labels = 0;
-    int labels_open = CMT_FALSE;
-    double val;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
     struct mk_list *head;
@@ -108,7 +106,6 @@ static void format_metric(struct cmt *cmt,
     static_labels = cmt_labels_count(cmt->static_labels);
     if (static_labels > 0) {
         cmt_sds_cat_safe(buf, "{", 1);
-        labels_open = CMT_TRUE;
 
         mk_list_foreach(head, &cmt->static_labels->list) {
             count++;

@@ -47,7 +47,6 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
     int len;
     int count = 0;
     int static_labels = 0;
-    double val;
     char tmp[128];
     uint64_t ts;
     struct tm tm;
@@ -135,8 +134,7 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
     }
 }
 
-static void format_metrics(struct cmt *cmt,
-                           cmt_sds_t *buf, struct cmt_map *map, int add_timestamp)
+static void format_metrics(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map)
 {
     struct mk_list *head;
     struct cmt_metric *metric;
@@ -153,7 +151,7 @@ static void format_metrics(struct cmt *cmt,
 }
 
 /* Format all the registered metrics in Prometheus Text format */
-cmt_sds_t cmt_encode_text_create(struct cmt *cmt, int add_timestamp)
+cmt_sds_t cmt_encode_text_create(struct cmt *cmt)
 {
     cmt_sds_t buf;
     struct mk_list *head;
@@ -169,13 +167,13 @@ cmt_sds_t cmt_encode_text_create(struct cmt *cmt, int add_timestamp)
     /* Counters */
     mk_list_foreach(head, &cmt->counters) {
         counter = mk_list_entry(head, struct cmt_counter, _head);
-        format_metrics(cmt, &buf, counter->map, add_timestamp);
+        format_metrics(cmt, &buf, counter->map);
     }
 
     /* Gauges */
     mk_list_foreach(head, &cmt->gauges) {
         gauge = mk_list_entry(head, struct cmt_gauge, _head);
-        format_metrics(cmt, &buf, gauge->map, add_timestamp);
+        format_metrics(cmt, &buf, gauge->map);
     }
 
     return buf;

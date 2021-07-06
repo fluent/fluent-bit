@@ -99,6 +99,11 @@ configure_file(
   "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_info.h"
   )
 
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_version.h.in"
+  "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_version.h"
+  )
+
 # Installation Directories
 # ========================
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
