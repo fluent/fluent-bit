@@ -95,9 +95,9 @@ static int cpufreq_update(struct flb_ne *ctx)
     struct mk_list list;
     struct mk_list *head;
     struct flb_slist_entry *entry;
-    const char *pattern = "/sys/devices/system/cpu/cpu[0-9]*";
+    const char *pattern = "/devices/system/cpu/cpu[0-9]*";
 
-    ret = ne_utils_path_scan(ctx, pattern, NE_SCAN_DIR, &list);
+    ret = ne_utils_path_scan(ctx, ctx->path_sysfs, pattern, NE_SCAN_DIR, &list);
     if (ret != 0) {
         return -1;
     }
@@ -119,7 +119,8 @@ static int cpufreq_update(struct flb_ne *ctx)
         cpu_id++;
 
         /* node_cpu_frequency_hertz */
-        ret = ne_utils_file_read_uint64(entry->str, "cpufreq", "cpuinfo_cur_freq",
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str, "cpufreq", "cpuinfo_cur_freq",
                                         &val);
         if (ret == 0) {
             cmt_gauge_set(ctx->cpu_freq_hertz, ts,
@@ -128,7 +129,8 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_frequency_max_hertz */
-        ret = ne_utils_file_read_uint64(entry->str, "cpufreq", "cpuinfo_max_freq",
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str, "cpufreq", "cpuinfo_max_freq",
                                         &val);
         if (ret == 0) {
             cmt_gauge_set(ctx->cpu_freq_max_hertz, ts,
@@ -137,7 +139,8 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_frequency_min_hertz */
-        ret = ne_utils_file_read_uint64(entry->str, "cpufreq", "cpuinfo_min_freq",
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str, "cpufreq", "cpuinfo_min_freq",
                                         &val);
         if (ret == 0) {
             cmt_gauge_set(ctx->cpu_freq_min_hertz, ts,
@@ -147,7 +150,8 @@ static int cpufreq_update(struct flb_ne *ctx)
 
 
         /* node_cpu_scaling_frequency_hertz */
-        ret = ne_utils_file_read_uint64(entry->str, "cpufreq", "scaling_cur_freq",
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str, "cpufreq", "scaling_cur_freq",
                                         &val);
         if (ret == 0) {
             cmt_gauge_set(ctx->cpu_scaling_freq_hertz, ts,
@@ -156,7 +160,8 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_scaling_frequency_max_hertz */
-        ret = ne_utils_file_read_uint64(entry->str, "cpufreq", "scaling_max_freq",
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str, "cpufreq", "scaling_max_freq",
                                         &val);
         if (ret == 0) {
             cmt_gauge_set(ctx->cpu_scaling_freq_max_hertz, ts,
@@ -165,7 +170,8 @@ static int cpufreq_update(struct flb_ne *ctx)
         }
 
         /* node_cpu_frequency_min_hertz */
-        ret = ne_utils_file_read_uint64(entry->str, "cpufreq", "scaling_min_freq",
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str, "cpufreq", "scaling_min_freq",
                                         &val);
         if (ret == 0) {
             cmt_gauge_set(ctx->cpu_scaling_freq_min_hertz, ts,

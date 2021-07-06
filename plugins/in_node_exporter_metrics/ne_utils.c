@@ -66,7 +66,8 @@ int ne_utils_str_to_uint64(char *str, uint64_t *out_val)
     return 0;
 }
 
-int ne_utils_file_read_uint64(const char *path,
+int ne_utils_file_read_uint64(const char *mount,
+                              const char *path,
                               const char *join_a, const char *join_b,
                               uint64_t *out_val)
 {
@@ -79,10 +80,13 @@ int ne_utils_file_read_uint64(const char *path,
     char tmp[32];
 
     /* Compose the final path */
-    p = flb_sds_create(path);
+    p = flb_sds_create(mount);
     if (!p) {
         return -1;
     }
+
+    len = strlen(path);
+    flb_sds_cat_safe(&p, path, len);
 
     if (join_a) {
         flb_sds_cat_safe(&p, "/", 1);
@@ -124,16 +128,18 @@ int ne_utils_file_read_uint64(const char *path,
  * Read a file and every non-empty line is stored as a flb_slist_entry in the
  * given list.
  */
-int ne_utils_file_read_lines(const char *path, struct mk_list *list)
+int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list *list)
 {
     int len;
     int ret;
     FILE *f;
     char line[512];
+    char real_path[2048];
 
     mk_list_init(list);
 
-    f = fopen(path, "r");
+    snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
+    f = fopen(real_path, "r");
     if (f == NULL) {
         flb_errno();
         return -1;
@@ -161,13 +167,14 @@ int ne_utils_file_read_lines(const char *path, struct mk_list *list)
     return 0;
 }
 
-int ne_utils_path_scan(struct flb_ne *ctx, const char *path, int expected,
-                       struct mk_list *list)
+int ne_utils_path_scan(struct flb_ne *ctx, const char *mount, const char *path,
+                       int expected, struct mk_list *list)
 {
     int i;
     int ret;
     glob_t globbuf;
     struct stat st;
+    char real_path[2048];
 
     if (!path) {
         return -1;
@@ -176,8 +183,9 @@ int ne_utils_path_scan(struct flb_ne *ctx, const char *path, int expected,
     /* Safe reset for globfree() */
     globbuf.gl_pathv = NULL;
 
-    /* Scan the given path */
-    ret = glob(path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
+    /* Scan the real path */
+    snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
+    ret = glob(real_path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
     if (ret != 0) {
         switch (ret) {
         case GLOB_NOSPACE:

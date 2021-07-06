@@ -138,6 +138,18 @@ static struct flb_config_map config_map[] = {
      "scrape interval to collect metrics from the node."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "path.procfs", "/proc",
+     0, FLB_TRUE, offsetof(struct flb_ne, path_procfs),
+     "procfs mount point"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "path.sysfs", "/sys",
+     0, FLB_TRUE, offsetof(struct flb_ne, path_sysfs),
+     "sysfs mount point"
+    },
+
     /* EOF */
     {0}
 };

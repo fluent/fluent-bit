@@ -38,6 +38,8 @@
 
 struct flb_ne {
     /* configuration */
+    flb_sds_t path_procfs;
+    flb_sds_t path_sysfs;
     int scrape_interval;
 
     int coll_fd;                                      /* collector fd     */
