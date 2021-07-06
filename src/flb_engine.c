@@ -420,6 +420,7 @@ int flb_engine_failed(struct flb_config *config)
 
     /* Check the channel is valid (enabled by library mode) */
     if (config->ch_notif[1] <= 0) {
+        flb_error("[engine] no channel to notify FAILED message");
         return -1;
     }
 
@@ -475,6 +476,7 @@ int flb_engine_start(struct flb_config *config)
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
+        flb_error("[engine] could not create event loop");
         return -1;
     }
     config->evl = evl;
@@ -486,6 +488,7 @@ int flb_engine_start(struct flb_config *config)
     /* Start the Logging service */
     ret = flb_engine_log_start(config);
     if (ret == -1) {
+        flb_error("[engine] log failed");
         return -1;
     }
 
@@ -514,6 +517,7 @@ int flb_engine_start(struct flb_config *config)
     /* Start the Storage engine */
     ret = flb_storage_create(config);
     if (ret == -1) {
+        flb_error("[engine] storage creation failed");
         return -1;
     }
 
@@ -532,12 +536,14 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
     if (ret == -1) {
+        flb_error("[engine] input initialization failed");
         return -1;
     }
 
     /* Initialize filter plugins */
     ret = flb_filter_init_all(config);
     if (ret == -1) {
+        flb_error("[engine] filter initialization failed");
         return -1;
     }
 
@@ -547,6 +553,7 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize output plugins */
     ret = flb_output_init_all(config);
     if (ret == -1) {
+        flb_error("[engine] output initialization failed");
         return -1;
     }
 
