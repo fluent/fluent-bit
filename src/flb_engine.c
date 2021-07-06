@@ -476,7 +476,7 @@ int flb_engine_start(struct flb_config *config)
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
     if (!evl) {
-        flb_error("[engine] could not create event loop");
+        fprintf(stderr, "[log] could not create event loop\n");
         return -1;
     }
     config->evl = evl;
@@ -488,7 +488,7 @@ int flb_engine_start(struct flb_config *config)
     /* Start the Logging service */
     ret = flb_engine_log_start(config);
     if (ret == -1) {
-        flb_error("[engine] log failed");
+        fprintf(stderr, "[engine] log start failed\n");
         return -1;
     }
 
