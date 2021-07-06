@@ -76,6 +76,9 @@ struct flb_ne {
     void *dt_metrics;
     struct flb_regex *dt_regex_skip_devices;
 
+    /* uname */
+    struct cmt_gauge *uname;
+
     /* filesystem: abbreviation 'fs' */
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
