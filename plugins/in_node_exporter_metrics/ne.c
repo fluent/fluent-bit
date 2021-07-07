@@ -33,6 +33,7 @@
 #include "ne_meminfo.h"
 #include "ne_diskstats.h"
 #include "ne_uname.h"
+#include "ne_stat_linux.h"
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
@@ -44,6 +45,7 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
     ne_meminfo_update(ctx);
     ne_diskstats_update(ctx);
     ne_uname_update(ctx);
+    ne_stat_update(ctx);
 
     /* Append the updated metrics */
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
@@ -99,6 +101,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_meminfo_init(ctx);
     ne_diskstats_init(ctx);
     ne_uname_init(ctx);
+    ne_stat_init(ctx);
 
     update_metrics(in, ctx);
     return 0;
