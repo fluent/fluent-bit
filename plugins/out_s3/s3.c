@@ -1435,22 +1435,14 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                     if (val.type == MSGPACK_OBJECT_BIN) {
                         memcpy(val_buf + val_offset, val.via.bin.ptr, val.via.bin.size);
                         val_offset += val.via.bin.size;
-
-                        /* Fragmented string detection */
-                        if (val.via.bin.size != 4096) {
-                            val_buf[val_offset] = '\n';
-                            val_offset++;
-                        }
+                        val_buf[val_offset] = '\n';
+                        val_offset++;
                     }
                     else if (val.type == MSGPACK_OBJECT_STR) {
                         memcpy(val_buf + val_offset, val.via.str.ptr, val.via.str.size);
                         val_offset += val.via.str.size;
-
-                        /* Fragmented string detection */
-                        if (val.via.str.size != 4096) {
-                            val_buf[val_offset] = '\n';
-                            val_offset++;
-                        }
+                        val_buf[val_offset] = '\n';
+                        val_offset++;
                     }
                     else {
                         ret = flb_msgpack_to_json(val_buf + val_offset, msgpack_size, &val);
