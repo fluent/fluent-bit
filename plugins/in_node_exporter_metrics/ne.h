@@ -79,6 +79,14 @@ struct flb_ne {
     /* uname */
     struct cmt_gauge *uname;
 
+    /* stat_linux */
+    struct cmt_counter *st_intr;
+    struct cmt_counter *st_context_switches;
+    struct cmt_gauge   *st_boot_time;
+    struct cmt_counter *st_forks;
+    struct cmt_gauge   *st_procs_running;
+    struct cmt_gauge   *st_procs_blocked;
+
     /* filesystem: abbreviation 'fs' */
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
