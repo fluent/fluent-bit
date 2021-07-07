@@ -87,6 +87,14 @@ struct flb_ne {
     struct cmt_gauge   *st_procs_running;
     struct cmt_gauge   *st_procs_blocked;
 
+    /* time */
+    struct cmt_gauge *time;
+
+    /* loadavg */
+    struct cmt_gauge *lavg_1;
+    struct cmt_gauge *lavg_5;
+    struct cmt_gauge *lavg_15;
+
     /* filesystem: abbreviation 'fs' */
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
