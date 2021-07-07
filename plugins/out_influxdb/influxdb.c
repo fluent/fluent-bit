@@ -26,6 +26,10 @@
 
 #include <stdio.h>
 
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_influx.h>
+
 #include "influxdb.h"
 #include "influxdb_bulk.h"
 
@@ -62,7 +66,7 @@ static void influxdb_tsmod(struct flb_time *ts, struct flb_time *dupe,
  * by InfluxDB.
  */
 static char *influxdb_format(const char *tag, int tag_len,
-                             const void *data, size_t bytes, int *out_size,
+                             const void *data, size_t bytes, size_t *out_size,
                              struct flb_influxdb *ctx)
 {
     int i;
@@ -466,6 +470,38 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     return 0;
 }
 
+static int format_metrics(struct flb_output_instance *ins,
+                          const void *data, size_t bytes,
+                          char **out_buf, size_t *out_size)
+{
+    int ret;
+    size_t off = 0;
+    cmt_sds_t text;
+    struct cmt *cmt = NULL;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not process metrics payload");
+        return -1;
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_influx_create(cmt);
+    if (!text) {
+        cmt_destroy(cmt);
+        return -1;
+    }
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    *out_buf = text;
+    *out_size = flb_sds_len(text);
+
+    return 0;
+}
+
 static void cb_influxdb_flush(const void *data, size_t bytes,
                               const char *tag, int tag_len,
                               struct flb_input_instance *i_ins,
@@ -473,24 +509,42 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
                               struct flb_config *config)
 {
     int ret;
-    int bytes_out;
+    int is_metric = FLB_FALSE;
     size_t b_sent;
+    size_t bytes_out;
     char *pack;
     char tmp[128];
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     struct flb_influxdb *ctx = out_context;
 
-    /* Convert format */
-    pack = influxdb_format(tag, tag_len, data, bytes, &bytes_out, ctx);
-    if (!pack) {
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+    /* Convert format: metrics / logs */
+    if (flb_input_event_type_is_metric(i_ins)) {
+        /* format metrics */
+        ret = format_metrics(ctx->ins, (char *) data, bytes,
+                             &pack, &bytes_out);
+        if (ret == -1) {
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
+        is_metric = FLB_TRUE;
+    }
+    else {
+        /* format logs */
+        pack = influxdb_format(tag, tag_len, data, bytes, &bytes_out, ctx);
+        if (!pack) {
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
     }
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
-        flb_free(pack);
+        if (is_metric) {
+            cmt_encode_influx_destroy(pack);
+        }
+        else {
+            flb_free(pack);
+        }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -527,7 +581,12 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
 
     flb_http_client_destroy(c);
 
-    flb_free(pack);
+    if (is_metric) {
+        cmt_encode_influx_destroy(pack);
+    }
+    else {
+        flb_free(pack);
+    }
 
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
@@ -610,4 +669,5 @@ struct flb_output_plugin out_influxdb_plugin = {
     .cb_flush     = cb_influxdb_flush,
     .cb_exit      = cb_influxdb_exit,
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS
 };
