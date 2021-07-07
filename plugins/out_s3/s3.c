@@ -1365,11 +1365,11 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     size_t key_str_size = 0;
     size_t off = 0;
     size_t msgpack_size = bytes + bytes / 4;
-    flb_sds_t out_buf = NULL;
+    size_t val_offset = 0;
+    flb_sds_t out_buf;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
-    msgpack_sbuffer tmp_sbuf;
     msgpack_object key;
     msgpack_object val;
 
@@ -1387,9 +1387,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
         flb_errno();
         return NULL;
     }
-
-    /* Create temporary msgpack buffer */
-    msgpack_sbuffer_init(&tmp_sbuf);
 
     msgpack_unpacked_init(&result);
     while (!alloc_error && 
@@ -1431,54 +1428,38 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                     found = FLB_TRUE;
 
                     /* 
-                     * Copy contents of value into buffer. Necessary to strncpy
+                     * Copy contents of value into buffer. Necessary to copy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
                      */
                     if (val.type == MSGPACK_OBJECT_BIN) {
-                        strncpy(val_buf, val.via.bin.ptr, val.via.bin.size);
-                        val_buf[val.via.bin.size] = '\0';
+                        memcpy(val_buf + val_offset, val.via.bin.ptr, val.via.bin.size);
+                        val_offset += val.via.bin.size;
+
+                        /* Fragmented string detection */
+                        if (val.via.bin.size != 4096) {
+                            val_buf[val_offset] = '\n';
+                            val_offset++;
+                        }
                     }
                     else if (val.type == MSGPACK_OBJECT_STR) {
-                        strncpy(val_buf, val.via.str.ptr, val.via.str.size);
-                        val_buf[val.via.str.size] = '\0';
+                        memcpy(val_buf + val_offset, val.via.str.ptr, val.via.str.size);
+                        val_offset += val.via.str.size;
+
+                        /* Fragmented string detection */
+                        if (val.via.str.size != 4096) {
+                            val_buf[val_offset] = '\n';
+                            val_offset++;
+                        }
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf, msgpack_size, &val);
+                        ret = flb_msgpack_to_json(val_buf + val_offset, msgpack_size, &val);
                         if (ret < 0) {
                             break;
                         }
-                    }
-
-                    /* Create or concatenate to out_buf for full record chunk */
-                    if (out_buf == NULL) {
-                        out_buf = flb_sds_create(val_buf);
-                        if (out_buf == NULL) {
-                            flb_plg_error(ctx->ins, "Error creating buffer to "
-                                          "store log_key contents.");
-                            flb_errno();
-                            alloc_error = 1;
-                            break;
-                        }
-                    } else {
-                        out_buf = flb_sds_cat(out_buf, val_buf, strlen(val_buf));
-                        if (out_buf == NULL) {
-                            flb_plg_error(ctx->ins, "Error concatenating to buffer to "
-                                          "store log_key contents.");
-                            flb_errno();
-                            alloc_error = 1;
-                            break;
-                        }
-                    }
-
-                    /* Add newline between each JSON record in output */
-                    out_buf = flb_sds_cat(out_buf, "\n", 1);
-                    if (out_buf == NULL) {
-                        flb_plg_error(ctx->ins, "Error adding newline when constructing "
-                                      "buffer to store log_key contents.");
-                        flb_errno();
-                        alloc_error = 1;
-                        break;
+                        val_offset += ret;
+                        val_buf[val_offset] = '\n';
+                        val_offset++;
                     }
                 }
             }
@@ -1496,17 +1477,24 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                       "least one record of the chunk", ctx->log_key);
     }
 
-    /* Free orig_val_buf we used as a temporary buffer */
-    flb_free(val_buf);
-
     /* Release the unpacker and buffer */
     msgpack_unpacked_destroy(&result);
 
     /* If nothing was read, destroy buffer */
-    if (out_buf && flb_sds_len(out_buf) == 0) {
-        flb_sds_destroy(out_buf);
+    if (val_offset == 0) {
+        flb_free(val_buf);
         return NULL;
     }
+    val_buf[val_offset] = '\0';
+
+    /* Create output buffer to store contents */
+    out_buf = flb_sds_create(val_buf);
+    if (out_buf == NULL) {
+        flb_plg_error(ctx->ins, "Error creating buffer to store log_key contents.");
+        flb_errno();
+        return NULL;
+    }
+    flb_free(val_buf);
 
     return out_buf;
 }
@@ -1828,9 +1816,7 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "By default, the whole log record will be sent to S3. "
      "If you specify a key name with this option, then only the value of "
-     "that key will be sent to S3. For example, if you are using "
-     "the Fluentd Docker log driver, you can specify log_key log and only "
-     "the log message will be sent to S3."
+     "that key will be sent to S3."
     },
 
     /* EOF */
