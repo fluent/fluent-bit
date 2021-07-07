@@ -295,22 +295,13 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
 
 static int init_seq_index(void *context) {
     int ret;
-    int len;
     const char *tmp;
-    char *tmp_buf;
+    char tmp_buf[1024];
     struct flb_s3 *ctx = context;
 
     ctx->key_fmt_has_seq_index = FLB_TRUE;
 
-    /* Initialize local storage to store metadata files */
-    ret = s3_store_init(ctx);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
-                      ctx->store_dir);
-        return -1;
-    }
-
-    ctx->stream_metadata = flb_fstore_stream_create(ctx->fs, "metadata");
+    ctx->stream_metadata = flb_fstore_stream_create(ctx->fs, "sequence");
     if (!ctx->stream_metadata) {
         flb_plg_error(ctx->ins, "could not initialize metadata stream");
         flb_fstore_destroy(ctx->fs);
@@ -319,16 +310,15 @@ static int init_seq_index(void *context) {
     }
 
     /* Construct directories and file path names */
-    tmp = ctx->stream_metadata->path;
-    ctx->metadata_dir = flb_sds_create(tmp);
+    ctx->metadata_dir = flb_sds_create(ctx->stream_metadata->path);
     if (ctx->metadata_dir == NULL) {
         flb_plg_error(ctx->ins, "Failed to create metadata path");
         flb_errno();
         return -1;
     }
     tmp = "/index_metadata";
-    ctx->metadata_dir = flb_sds_cat(ctx->metadata_dir, tmp, strlen(tmp));
-    if (ctx->metadata_dir == NULL) {
+    ret = flb_sds_cat_safe(&ctx->metadata_dir, tmp, strlen(tmp));
+    if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to create metadata path");
         flb_errno();
         return -1;
@@ -341,22 +331,16 @@ static int init_seq_index(void *context) {
         return -1;
     }
     tmp = "/seq_index_";
-    ctx->seq_index_file = flb_sds_cat(ctx->seq_index_file, tmp, strlen(tmp));
-    if (ctx->seq_index_file == NULL) {
+    ret = flb_sds_cat_safe(&ctx->seq_index_file, tmp, strlen(tmp));
+    if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to create sequential index file path");
         flb_errno();
         return -1;
     }
-    len = snprintf(NULL, 0, "%d", ctx->ins->id);
-    tmp_buf = flb_malloc(len + 1);
-    if (tmp_buf == NULL) {
-        flb_plg_error(ctx->ins, "Could not allocate enough memory for file name");
-    }
-    snprintf(tmp_buf, len + 1, "%d", ctx->ins->id);
-    tmp_buf[len] = '\0';
-    ctx->seq_index_file = flb_sds_cat(ctx->seq_index_file, tmp_buf, strlen(tmp_buf));
-    flb_free(tmp_buf);
-    if (ctx->seq_index_file == NULL) {
+
+    sprintf(tmp_buf, "%d", ctx->ins->id);
+    ret = flb_sds_cat_safe(&ctx->seq_index_file, tmp_buf, strlen(tmp_buf));
+    if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to create sequential index file path");
         flb_errno();
         return -1;
@@ -562,6 +546,14 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->buffer_dir = tmp_sds;
+
+    /* Initialize local storage */
+    ret = s3_store_init(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
+                      ctx->store_dir);
+        return -1;
+    }
 
     tmp = flb_output_get_property("s3_key_format", ins);
     if (tmp) {
@@ -774,16 +766,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
             return -1;
         }
 
-    }
-
-    /* Initialize local storage */
-    if (!ctx->fs) {
-        ret = s3_store_init(ctx);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
-                          ctx->store_dir);
-            return -1;
-        }
     }
 
     /* read any remaining buffers from previous (failed) executions */
