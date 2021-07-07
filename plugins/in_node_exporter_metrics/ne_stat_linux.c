@@ -133,7 +133,9 @@ static int stat_update(struct flb_ne *ctx)
             ne_utils_str_to_double(s_val->str, &d_val);
             cmt_gauge_set(ctx->st_procs_blocked, ts, d_val, 0, NULL);
         }
+        flb_slist_destroy(&split_list);
     }
+    flb_slist_destroy(&list);
 
     return 0;
 }
