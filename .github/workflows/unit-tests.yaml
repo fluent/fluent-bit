@@ -78,3 +78,13 @@ jobs:
           CC: gcc
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
+
+  run-all-unit-tests:
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    name: Unit tests (matrix)
+    needs: run-unit-tests-amd64
+    steps:
+      - name: Check build matrix status
+        if: ${{ needs.build.result != 'success' }}
+        run: exit 1
