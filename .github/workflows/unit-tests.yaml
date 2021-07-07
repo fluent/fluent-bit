@@ -19,7 +19,7 @@ jobs:
       max-parallel: 48
       fail-fast: false
       matrix:
-        flb_option: [ "-DFLB_JEMALLOC=On", "-DFLB_JEMALLOC=Off", "-DFLB_SMALL=On", "-DSANITIZE_ADDRESS=On", "-DSANITIZE_UNDEFINED=On", "-DFLB_COVERAGE=On"]
+        flb_option: [ "-DFLB_JEMALLOC=On", "-DFLB_JEMALLOC=Off", "-DFLB_SMALL=On", "-DSANITIZE_ADDRESS=On", "-DSANITIZE_UNDEFINED=On", "-DFLB_COVERAGE=On", "-DFLB_SANITIZE_MEMORY=On", "-DFLB_SANITIZE_THREAD=On"]
         os: [ubuntu-18.04, macos-latest]
         compiler: [ gcc, clang ]
         exclude:
