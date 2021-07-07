@@ -120,8 +120,11 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
 
         cmt_sds_cat(opts->fqname, opts->namespace, cmt_sds_len(opts->namespace));
         cmt_sds_cat(opts->fqname, "_", 1);
-        cmt_sds_cat(opts->fqname, opts->subsystem, cmt_sds_len(opts->subsystem));
-        cmt_sds_cat(opts->fqname, "_", 1);
+
+        if (cmt_sds_len(opts->subsystem) > 0) {
+            cmt_sds_cat(opts->fqname, opts->subsystem, cmt_sds_len(opts->subsystem));
+            cmt_sds_cat(opts->fqname, "_", 1);
+        }
         cmt_sds_cat(opts->fqname, opts->name, cmt_sds_len(opts->name));
     }
 
