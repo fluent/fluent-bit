@@ -64,6 +64,7 @@ static struct cmt *generate_encoder_test_data()
     struct cmt *cmt;
     struct cmt_counter *c1;
     struct cmt_counter *c2;
+    struct cmt_counter *c3;
 
     cmt = cmt_create();
 
@@ -101,6 +102,11 @@ static struct cmt *generate_encoder_test_data()
     cmt_counter_get_val(c2, 2, (char *[]) {"localhost", "test"}, &val);
     cmt_counter_set(c2, ts, 12.15, 2, (char *[]) {"localhost", "test"});
     cmt_counter_set(c2, ts, 1, 2, (char *[]) {"localhost", "test"});
+
+    /* a counter without subsystem */
+    c3 = cmt_counter_create(cmt, "kubernetes", "", "cpu", "CPU load",
+                            2, (char *[]) {"hostname", "app"});
+    cmt_counter_set(c2, ts, 10, 0, NULL);
 
     return cmt;
 }
@@ -490,26 +496,34 @@ void test_influx()
     uint64_t ts;
     cmt_sds_t text;
     struct cmt *cmt;
-    struct cmt_counter *c;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
 
     char *out1 = \
         "cmt_labels test=1 1435658235000000123\n"
-        "cmt_labels,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n";
+        "cmt_labels,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n"
+        "cmt,host=aaa,app=bbb nosubsystem=1 1435658235000000123\n";
 
     char *out2 = \
         "cmt_labels,dev=Calyptia,lang=C test=1 1435658235000000123\n"
-        "cmt_labels,dev=Calyptia,lang=C,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n";
+        "cmt_labels,dev=Calyptia,lang=C,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n"
+        "cmt,dev=Calyptia,lang=C,host=aaa,app=bbb nosubsystem=1 1435658235000000123\n";
 
     cmt = cmt_create();
     TEST_CHECK(cmt != NULL);
 
-    c = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
-                           2, (char *[]) {"host", "app"});
+    c1 = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+                            2, (char *[]) {"host", "app"});
 
     ts = 1435658235000000123;
-    cmt_counter_inc(c, ts, 0, NULL);
-    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
-    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c1, ts, 0, NULL);
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+
+    c2 = cmt_counter_create(cmt, "cmt", "", "nosubsystem", "No subsystem",
+                            2, (char *[]) {"host", "app"});
+
+    cmt_counter_inc(c2, ts, 2, (char *[]) {"aaa", "bbb"});
 
     /* Encode to prometheus (no static labels) */
     text = cmt_encode_influx_create(cmt);
