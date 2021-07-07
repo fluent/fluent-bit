@@ -405,7 +405,7 @@ static int diskstats_update(struct flb_ne *ctx)
     mk_list_init(&list);
     mk_list_init(&split_list);
 
-    ret = ne_utils_file_read_lines("/proc/diskstats", &list);
+    ret = ne_utils_file_read_lines(ctx->path_procfs, "/diskstats", &list);
     if (ret == -1) {
         return -1;
     }

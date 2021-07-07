@@ -43,7 +43,7 @@ msgpack_unpacked test_init(avro_value_t *aobject, avro_schema_t *aschema, const 
     msgpack_unpacked_init(&msg);
     TEST_CHECK(msgpack_unpack_next(&msg, out_buf, out_size, NULL) == MSGPACK_UNPACK_SUCCESS);
 
-	avro_value_iface_decref(aclass);
+    avro_value_iface_decref(aclass);
     flb_free(data);
     flb_free(out_buf);
 
@@ -187,7 +187,7 @@ void test_parse_reordered_schema()
         const char *pod_name = NULL;
         size_t pod_name_size = 0;
         TEST_CHECK(avro_value_get_string(&pn, &pod_name, &pod_name_size) == 0);
-        TEST_CHECK(strcmp(pod_name, "yali-bert-completion-tensorboard-6786c9c8-wj25m") == 0);
+        TEST_CHECK(strcmp(pod_name, "rrrr-bert-completion-tb1-6786c9c8-wj25m") == 0);
         TEST_CHECK(pod_name[pod_name_size] == '\0');
         TEST_CHECK(strlen(pod_name) == (pod_name_size-1));
 
@@ -197,7 +197,7 @@ void test_parse_reordered_schema()
         const char *namespace_name = NULL;
         size_t namespace_name_size = 0;
         TEST_CHECK(avro_value_get_string(&nn, &namespace_name, &namespace_name_size) == 0);
-        TEST_CHECK(strcmp(namespace_name, "k8s-pilot") == 0);
+        TEST_CHECK(strcmp(namespace_name, "k8s-fgg") == 0);
 
         avro_value_t mapX;
         TEST_CHECK(avro_value_get_by_name(&kubernetes0, "annotations", &mapX, NULL) == 0);
@@ -213,15 +213,15 @@ void test_parse_reordered_schema()
         const char *doaser = NULL;
         size_t doaser_size;
         TEST_CHECK(avro_value_get_string(&doas, &doaser, &doaser_size) == 0);
-        TEST_CHECK((strcmp(doaser, "stdemb") == 0));
+        TEST_CHECK((strcmp(doaser, "weeb") == 0));
 
         // check the second item in the map
         avro_value_t iddecorator;
-        TEST_CHECK(avro_value_get_by_name(&mapX, "iddecorator.grid.li.username", &iddecorator, NULL) == 0);
+        TEST_CHECK(avro_value_get_by_name(&mapX, "iddecorator.dkdk.username", &iddecorator, NULL) == 0);
         const char *idder = NULL;
         size_t idder_size;
         TEST_CHECK(avro_value_get_string(&iddecorator, &idder, &idder_size) == 0);
-        TEST_CHECK((strcmp(idder, "yali") == 0));
+        TEST_CHECK((strcmp(idder, "rrrr") == 0));
 
         avro_schema_decref(aschema);
         msgpack_unpacked_destroy(&msg);

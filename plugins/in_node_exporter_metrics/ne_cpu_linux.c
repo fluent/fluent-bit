@@ -79,12 +79,12 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
     struct mk_list *head;
     struct mk_list list;
     struct flb_slist_entry *entry;
-    const char *pattern = "/sys/devices/system/cpu/cpu[0-9]*";
+    const char *pattern = "/devices/system/cpu/cpu[0-9]*";
     /* Status arrays */
     uint64_t core_throttles_set[32][256];
     uint64_t package_throttles_set[32];
 
-    ret = ne_utils_path_scan(ctx, pattern, NE_SCAN_DIR, &list);
+    ret = ne_utils_path_scan(ctx, ctx->path_sysfs, pattern, NE_SCAN_DIR, &list);
     if (ret != 0) {
         return -1;
     }
@@ -102,7 +102,8 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
         /* Core ID */
-        ret = ne_utils_file_read_uint64(entry->str,
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str,
                                         "topology", "core_id",
                                         &core_id);
         if (ret != 0) {
@@ -110,7 +111,8 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         }
 
         /* Phisical ID */
-        ret = ne_utils_file_read_uint64(entry->str,
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str,
                                         "topology", "physical_package_id",
                                         &physical_package_id);
         if (ret != 0) {
@@ -124,7 +126,8 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         core_throttles_set[physical_package_id][core_id] = 1;
 
         /* Package Metric: node_cpu_core_throttles_total */
-        ret = ne_utils_file_read_uint64(entry->str,
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str,
                                         "thermal_throttle", "core_throttle_count",
                                         &core_throttle_count);
         if (ret != 0) {
@@ -150,7 +153,8 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         package_throttles_set[physical_package_id] = 1;
 
         /* Package Metric: node_cpu_package_throttles_total */
-        ret = ne_utils_file_read_uint64(entry->str,
+        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+                                        entry->str,
                                         "thermal_throttle", "package_throttle_count",
                                         &package_throttle_count);
         if (ret != 0) {
@@ -300,7 +304,7 @@ static int cpu_stat_update(struct flb_ne *ctx, uint64_t ts)
     struct flb_slist_entry *line;
     struct cpu_stat_info st = {0};
 
-    ret = ne_utils_file_read_lines("/proc/stat", &list);
+    ret = ne_utils_file_read_lines(ctx->path_procfs, "/stat", &list);
     if (ret == -1) {
         return -1;
     }

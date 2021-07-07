@@ -159,7 +159,6 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
 {
     int i;
     int len;
-    int found = 0;
     char *ptr;
     uint64_t hash;
     XXH64_state_t state;

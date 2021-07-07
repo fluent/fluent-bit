@@ -32,6 +32,10 @@
 #include "ne_cpufreq.h"
 #include "ne_meminfo.h"
 #include "ne_diskstats.h"
+#include "ne_uname.h"
+#include "ne_stat_linux.h"
+#include "ne_time.h"
+#include "ne_loadavg.h"
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
@@ -42,6 +46,10 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
     ne_cpufreq_update(ctx);
     ne_meminfo_update(ctx);
     ne_diskstats_update(ctx);
+    ne_uname_update(ctx);
+    ne_stat_update(ctx);
+    ne_time_update(ctx);
+    ne_loadavg_update(ctx);
 
     /* Append the updated metrics */
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
@@ -96,6 +104,10 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_cpufreq_init(ctx);
     ne_meminfo_init(ctx);
     ne_diskstats_init(ctx);
+    ne_uname_init(ctx);
+    ne_stat_init(ctx);
+    ne_time_init(ctx);
+    ne_loadavg_init(ctx);
 
     update_metrics(in, ctx);
     return 0;
@@ -136,6 +148,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "scrape_interval", "5",
      0, FLB_TRUE, offsetof(struct flb_ne, scrape_interval),
      "scrape interval to collect metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "path.procfs", "/proc",
+     0, FLB_TRUE, offsetof(struct flb_ne, path_procfs),
+     "procfs mount point"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "path.sysfs", "/sys",
+     0, FLB_TRUE, offsetof(struct flb_ne, path_sysfs),
+     "sysfs mount point"
     },
 
     /* EOF */

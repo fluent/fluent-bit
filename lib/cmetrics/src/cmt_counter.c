@@ -109,8 +109,6 @@ int cmt_counter_add(struct cmt_counter *counter, uint64_t timestamp, double val,
 int cmt_counter_set(struct cmt_counter *counter, uint64_t timestamp, double val,
                     int labels_count, char **label_vals)
 {
-    int ret;
-    double cur;
     struct cmt_metric *metric;
 
     metric = cmt_map_metric_get(&counter->opts, counter->map,
@@ -132,7 +130,6 @@ int cmt_counter_get_val(struct cmt_counter *counter,
 {
     int ret;
     double val = 0;
-    struct cmt_metric *metric;
 
     ret = cmt_map_metric_get_val(&counter->opts,
                                  counter->map, labels_count, label_vals,

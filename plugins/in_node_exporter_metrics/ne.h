@@ -38,6 +38,8 @@
 
 struct flb_ne {
     /* configuration */
+    flb_sds_t path_procfs;
+    flb_sds_t path_sysfs;
     int scrape_interval;
 
     int coll_fd;                                      /* collector fd     */
@@ -73,6 +75,25 @@ struct flb_ne {
     /* diskstats: abbreviation 'dt' */
     void *dt_metrics;
     struct flb_regex *dt_regex_skip_devices;
+
+    /* uname */
+    struct cmt_gauge *uname;
+
+    /* stat_linux */
+    struct cmt_counter *st_intr;
+    struct cmt_counter *st_context_switches;
+    struct cmt_gauge   *st_boot_time;
+    struct cmt_counter *st_forks;
+    struct cmt_gauge   *st_procs_running;
+    struct cmt_gauge   *st_procs_blocked;
+
+    /* time */
+    struct cmt_gauge *time;
+
+    /* loadavg */
+    struct cmt_gauge *lavg_1;
+    struct cmt_gauge *lavg_5;
+    struct cmt_gauge *lavg_15;
 
     /* filesystem: abbreviation 'fs' */
     struct flb_regex *fs_regex_skip_mount;

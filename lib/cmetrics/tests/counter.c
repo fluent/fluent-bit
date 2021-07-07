@@ -28,12 +28,12 @@
 
 static struct cmt *generate_encoder_test_data()
 {
-    int ret;
     double val;
     uint64_t ts;
     struct cmt *cmt;
     struct cmt_counter *c;
 
+    printf("version: %s", cmt_version());
     cmt = cmt_create();
 
     c = cmt_counter_create(cmt, "kubernetes", "network", "load", "Network load",
@@ -41,153 +41,90 @@ static struct cmt *generate_encoder_test_data()
 
     ts = cmt_time_now();
 
-    ret = cmt_counter_get_val(c, 0, NULL, &val);
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_add(c, ts, 2, 0, NULL);
-    ret = cmt_counter_get_val(c, 0, NULL, &val);
+    cmt_counter_get_val(c, 0, NULL, &val);
+    cmt_counter_inc(c, ts, 0, NULL);
+    cmt_counter_add(c, ts, 2, 0, NULL);
+    cmt_counter_get_val(c, 0, NULL, &val);
 
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"localhost", "cmetrics"});
-    ret = cmt_counter_get_val(c, 2, (char *[]) {"localhost", "cmetrics"}, &val);
-    ret = cmt_counter_add(c, ts, 10.55, 2, (char *[]) {"localhost", "test"});
-    ret = cmt_counter_get_val(c, 2, (char *[]) {"localhost", "test"}, &val);
-    ret = cmt_counter_set(c, ts, 12.15, 2, (char *[]) {"localhost", "test"});
-    ret = cmt_counter_set(c, ts, 1, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_inc(c, ts, 2, (char *[]) {"localhost", "cmetrics"});
+    cmt_counter_get_val(c, 2, (char *[]) {"localhost", "cmetrics"}, &val);
+    cmt_counter_add(c, ts, 10.55, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_get_val(c, 2, (char *[]) {"localhost", "test"}, &val);
+    cmt_counter_set(c, ts, 12.15, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_set(c, ts, 1, 2, (char *[]) {"localhost", "test"});
 
     return cmt;
 }
 
 void test_msgpack()
 {
-    struct cmt *cmt;
-    int         result;
-    char       *msgpack_buffer_a;
-    char       *msgpack_buffer_b;
-    size_t      msgpack_buffer_size_a;
-    size_t      msgpack_buffer_size_b;
-
-    msgpack_buffer_a = NULL;
-    msgpack_buffer_b = NULL;
-    msgpack_buffer_size_a = 0;
-    msgpack_buffer_size_b = 0;
+    struct cmt *cmt = NULL;
+    struct cmt *cmt2 = NULL;
+    int         result = 0;
+    size_t      offset = 0;
+    char       *msgpack_buffer_a = NULL;
+    char       *msgpack_buffer_b = NULL;
+    size_t      msgpack_buffer_size_a = 0;
+    size_t      msgpack_buffer_size_b = 0;
 
     cmt_initialize();
 
     cmt = generate_encoder_test_data();
-
     TEST_CHECK(NULL != cmt);
 
-    if (NULL != cmt) {
-        goto cleanup;
-    }
-
-    result = cmt_encode_msgpack(cmt, &msgpack_buffer_a, &msgpack_buffer_size_a);
-
+    result = cmt_encode_msgpack_create(cmt, &msgpack_buffer_a, &msgpack_buffer_size_a);
     TEST_CHECK(0 == result);
 
-    if(0 != result) {
-        goto cleanup;
-    }
+    result = cmt_decode_msgpack_create(&cmt2, msgpack_buffer_a, msgpack_buffer_size_a,
+                                       &offset);
+    TEST_CHECK(0 == result);
 
-    result = cmt_decode_msgpack(&cmt, msgpack_buffer_a, msgpack_buffer_size_a);
-
-    if (0 != result) {
-        goto cleanup;
-    }
-
-    msgpack_buffer_size_b = 0;
-
-    result = cmt_encode_msgpack(cmt, &msgpack_buffer_b, &msgpack_buffer_size_b);
-
-    TEST_CHECK(result == 0);
-
-    if (0 != result) {
-        goto cleanup;
-    }
+    result = cmt_encode_msgpack_create(cmt, &msgpack_buffer_b, &msgpack_buffer_size_b);
+    TEST_CHECK(0 == result);
 
     TEST_CHECK(msgpack_buffer_size_a == msgpack_buffer_size_b);
 
-    if (msgpack_buffer_size_a != msgpack_buffer_size_b) {
-        goto cleanup;
-    }
-
     result = memcmp(msgpack_buffer_a, msgpack_buffer_b, msgpack_buffer_size_a);
 
-    TEST_CHECK(0 == result);
-
-    if (NULL != msgpack_buffer_a) {
-        free(msgpack_buffer_a);
-        msgpack_buffer_a = NULL;
-    }
-
-    if (NULL != msgpack_buffer_b) {
-        free(msgpack_buffer_b);
-        msgpack_buffer_b = NULL;
-    }
-
-cleanup:
-    if (NULL != cmt) {
-        cmt_destroy(cmt);
-    }
+    cmt_destroy(cmt);
+    cmt_decode_msgpack_destroy(cmt2);
+    cmt_encode_msgpack_destroy(msgpack_buffer_a);
+    cmt_encode_msgpack_destroy(msgpack_buffer_b);
 }
 
 void test_prometheus()
 {
-    struct cmt *cmt;
-    cmt_sds_t   prom;
+    struct cmt *cmt = NULL;
+    cmt_sds_t   prom = NULL;
 
     cmt_initialize();
 
     cmt = generate_encoder_test_data();
-
     TEST_CHECK(NULL != cmt);
 
-    if (NULL != cmt) {
-        goto cleanup;
-    }
-
     prom = cmt_encode_prometheus_create(cmt, CMT_TRUE);
-
     TEST_CHECK(NULL != prom);
-
-    if (NULL == prom) {
-        goto cleanup;
-    }
-
     printf("%s\n", prom);
 
+    cmt_destroy(cmt);
     cmt_encode_prometheus_destroy(prom);
-
-cleanup:
-    if (NULL != cmt) {
-        cmt_destroy(cmt);
-    }
 }
 
 void test_text()
 {
-    struct cmt *cmt;
-    cmt_sds_t   text;
+    struct cmt *cmt = NULL;
+    cmt_sds_t   text = NULL;
 
     cmt_initialize();
 
     cmt = generate_encoder_test_data();
     TEST_CHECK(cmt != NULL);
-    if (cmt == NULL) {
-        goto cleanup;
-    }
 
     text = cmt_encode_text_create(cmt);
     TEST_CHECK(text != NULL);
 
-    if (text == NULL) {
-        goto cleanup;
-    }
-    cmt_sds_destroy(text);
-
-cleanup:
-    if (cmt != NULL) {
-        cmt_destroy(cmt);
-    }
+    cmt_destroy(cmt);
+    cmt_encode_text_destroy(text);
 }
 
 
@@ -225,6 +162,7 @@ void test_counter()
     /* Add two */
     cmt_counter_add(c, ts, 2, 0, NULL);
     ret = cmt_counter_get_val(c, 0, NULL, &val);
+
     TEST_CHECK(ret == 0);
     TEST_CHECK(val == 3.0);
 

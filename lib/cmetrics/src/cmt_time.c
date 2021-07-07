@@ -30,7 +30,6 @@
 
 uint64_t cmt_time_now()
 {
-    uint64_t ts;
     struct timespec tm = {0};
 
 #if defined CMT_HAVE_TIMESPEC_GET

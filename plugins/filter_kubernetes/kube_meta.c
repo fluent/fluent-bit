@@ -44,6 +44,8 @@
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY "initContainerStatuses"
 #define FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN \
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
+#define FLB_KUBE_TOKEN_BUF_SIZE 8192       /* 8KB */
+#define FLB_KUBE_TOKEN_TTL 600             /* 10 minutes */
 
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
@@ -87,14 +89,152 @@ static int file_to_buffer(const char *path,
     return 0;
 }
 
+#ifdef FLB_HAVE_KUBE_TOKEN_COMMAND
+/* Run command to get Kubernetes authorization token */
+static int get_token_with_command(const char *command, 
+                                  char **out_buf, size_t *out_size)
+{
+    FILE *fp;
+    char buf[FLB_KUBE_TOKEN_BUF_SIZE];
+    char *temp;
+    char *res;
+    size_t size = 0;
+    size_t len = 0;
+
+    fp = popen(command, "r");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    res = flb_calloc(1, FLB_KUBE_TOKEN_BUF_SIZE);
+    if (!res) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+    
+    while (fgets(buf, sizeof(buf), fp) != NULL) {
+        len = strlen(buf);
+        if (len >= FLB_KUBE_TOKEN_BUF_SIZE - 1) {
+            temp = flb_realloc(res, (FLB_KUBE_TOKEN_BUF_SIZE + size) * 2);
+            if (temp == NULL) {
+                flb_errno();
+                flb_free(res);
+                fclose(fp);
+                return -1;
+            }
+            res = temp;
+        }
+        strcpy(res + size, buf);
+        size += len;
+    }
+
+    if (strlen(res) < 1) {
+        flb_free(res);
+        fclose(fp);
+        return -1;
+    }
+    
+    fclose(fp);
+
+    *out_buf = res;
+    *out_size = strlen(res);
+
+    return 0;
+}
+#endif 
+
+/* Set K8s Authorization Token and get HTTP Auth Header */
+static int get_http_auth_header(struct flb_kube *ctx) 
+{
+    int ret;
+    char *temp;
+    char *tk = NULL;
+    size_t tk_size = 0;
+    
+    if (ctx->kube_token_command != NULL) {
+#ifdef FLB_HAVE_KUBE_TOKEN_COMMAND
+        ret = get_token_with_command(ctx->kube_token_command, &tk, &tk_size);
+#else
+        ret = -1;
+#endif
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to run command %s", ctx->kube_token_command);
+        }
+        ctx->kube_token_create = time(NULL);
+    } 
+    else {
+        ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
+        }
+        /* Token from token file will not expire */
+        /* Set the creation time to 0 to aviod refresh */
+        ctx->kube_token_create = 0;
+    }
+
+    /* Token */
+    if (ctx->token != NULL) {
+        flb_free(ctx->token);
+    }
+    ctx->token = tk;
+    ctx->token_len = tk_size;
+
+    /* HTTP Auth Header */
+    if (ctx->auth == NULL) {
+        ctx->auth = flb_malloc(tk_size + 32);
+    }
+    else if (ctx->auth_len < tk_size + 32) {
+        temp = flb_realloc(ctx->auth, tk_size + 32);
+        if (temp == NULL) {
+            flb_free(ctx->auth);
+            ctx->auth = NULL;
+            return -1;
+        } 
+        ctx->auth = temp;
+    }
+    
+    if (!ctx->auth) {
+        return -1;
+    }
+    ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
+                             "Bearer %s",
+                             tk);
+    
+    return 0;
+}
+
+/* Refresh HTTP Auth Header if K8s Authorization Token is expired */
+static int refresh_token_if_needed(struct flb_kube *ctx)
+{
+    int expired = 0;
+    int ret;
+
+    if (ctx->kube_token_command != NULL) {
+        if (ctx->kube_token_create > 0) {
+            if (time(NULL) > ctx->kube_token_create + FLB_KUBE_TOKEN_TTL) {
+                expired = FLB_TRUE;
+            }
+        }
+        
+        if (expired || ctx->kube_token_create == 0) {
+            ret = get_http_auth_header(ctx);
+            if (ret == -1) {
+                flb_plg_warn(ctx->ins, "failed to set http auth header");
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 /* Load local information from a POD context */
 static int get_local_pod_info(struct flb_kube *ctx)
 {
     int ret;
     char *ns;
     size_t ns_size;
-    char *tk = NULL;
-    size_t tk_size = 0;
     char *hostname;
 
     /* Get the namespace name */
@@ -106,12 +246,6 @@ static int get_local_pod_info(struct flb_kube *ctx)
          */
         flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_NAMESPACE);
         return FLB_FALSE;
-    }
-
-    /* If a namespace was recognized, a token is mandatory */
-    ret = file_to_buffer(ctx->token_file, &tk, &tk_size);
-    if (ret == -1) {
-        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
     }
 
     /* Namespace */
@@ -131,18 +265,14 @@ static int get_local_pod_info(struct flb_kube *ctx)
         ctx->podname_len = strlen(ctx->podname);
     }
 
-    /* Token */
-    ctx->token = tk;
-    ctx->token_len = tk_size;
-
-    /* HTTP Auth Header */
-    ctx->auth = flb_malloc(tk_size + 32);
-    if (!ctx->auth) {
+    /* If a namespace was recognized, a token is mandatory */
+    /* Use the token to get HTTP Auth Header*/
+    ret = get_http_auth_header(ctx);
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins, "failed to set http auth header");
         return FLB_FALSE;
     }
-    ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
-                             "Bearer %s",
-                             tk);
+
     return FLB_TRUE;
 }
 
@@ -226,6 +356,12 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
         return -1;
     }
 
+    ret = refresh_token_if_needed(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to refresh token");
+        return -1;
+    }
+    
     /* Compose HTTP Client request*/
     c = flb_http_client(u_conn, FLB_HTTP_GET,
                         uri,

@@ -29,7 +29,7 @@
 
 static struct cmt *generate_simple_encoder_test_data()
 {
-    int ret;
+
     double val;
     uint64_t ts;
     struct cmt *cmt;
@@ -42,47 +42,71 @@ static struct cmt *generate_simple_encoder_test_data()
 
     ts = 0;
 
-    ret = cmt_counter_get_val(c, 0, NULL, &val);
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_add(c, ts, 2, 0, NULL);
-    ret = cmt_counter_get_val(c, 0, NULL, &val);
+    cmt_counter_get_val(c, 0, NULL, &val);
+    cmt_counter_inc(c, ts, 0, NULL);
+    cmt_counter_add(c, ts, 2, 0, NULL);
+    cmt_counter_get_val(c, 0, NULL, &val);
 
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"localhost", "cmetrics"});
-    ret = cmt_counter_get_val(c, 2, (char *[]) {"localhost", "cmetrics"}, &val);
-    ret = cmt_counter_add(c, ts, 10.55, 2, (char *[]) {"localhost", "test"});
-    ret = cmt_counter_get_val(c, 2, (char *[]) {"localhost", "test"}, &val);
-    ret = cmt_counter_set(c, ts, 12.15, 2, (char *[]) {"localhost", "test"});
-    ret = cmt_counter_set(c, ts, 1, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_inc(c, ts, 2, (char *[]) {"localhost", "cmetrics"});
+    cmt_counter_get_val(c, 2, (char *[]) {"localhost", "cmetrics"}, &val);
+    cmt_counter_add(c, ts, 10.55, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_get_val(c, 2, (char *[]) {"localhost", "test"}, &val);
+    cmt_counter_set(c, ts, 12.15, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_set(c, ts, 1, 2, (char *[]) {"localhost", "test"});
 
     return cmt;
 }
 
 static struct cmt *generate_encoder_test_data()
 {
-    int ret;
     double val;
     uint64_t ts;
     struct cmt *cmt;
-    struct cmt_counter *c;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
+    struct cmt_counter *c3;
 
     cmt = cmt_create();
 
-    c = cmt_counter_create(cmt, "kubernetes", "network", "load", "Network load",
-                           2, (char *[]) {"hostname", "app"});
+    c1 = cmt_counter_create(cmt, "kubernetes", "network", "load", "Network load",
+                            2, (char *[]) {"hostname", "app"});
 
-    ts = cmt_time_now();
+    ts = 0;
 
-    ret = cmt_counter_get_val(c, 0, NULL, &val);
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_add(c, ts, 2, 0, NULL);
-    ret = cmt_counter_get_val(c, 0, NULL, &val);
+    cmt_counter_get_val(c1, 0, NULL, &val);
+    cmt_counter_inc(c1, ts, 0, NULL);
+    cmt_counter_add(c1, ts, 2, 0, NULL);
+    cmt_counter_get_val(c1, 0, NULL, &val);
 
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"localhost", "cmetrics"});
-    ret = cmt_counter_get_val(c, 2, (char *[]) {"localhost", "cmetrics"}, &val);
-    ret = cmt_counter_add(c, ts, 10.55, 2, (char *[]) {"localhost", "test"});
-    ret = cmt_counter_get_val(c, 2, (char *[]) {"localhost", "test"}, &val);
-    ret = cmt_counter_set(c, ts, 12.15, 2, (char *[]) {"localhost", "test"});
-    ret = cmt_counter_set(c, ts, 1, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"localhost", "cmetrics"});
+    cmt_counter_get_val(c1, 2, (char *[]) {"localhost", "cmetrics"}, &val);
+    cmt_counter_add(c1, ts, 10.55, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_get_val(c1, 2, (char *[]) {"localhost", "test"}, &val);
+    cmt_counter_set(c1, ts, 12.15, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_set(c1, ts, 1, 2, (char *[]) {"localhost", "test"});
+
+
+    c2 = cmt_counter_create(cmt, "kubernetes", "network", "cpu", "CPU load",
+                            2, (char *[]) {"hostname", "app"});
+
+    ts = 0;
+
+    cmt_counter_get_val(c2, 0, NULL, &val);
+    cmt_counter_inc(c2, ts, 0, NULL);
+    cmt_counter_add(c2, ts, 2, 0, NULL);
+    cmt_counter_get_val(c2, 0, NULL, &val);
+
+    cmt_counter_inc(c2, ts, 2, (char *[]) {"localhost", "cmetrics"});
+    cmt_counter_get_val(c2, 2, (char *[]) {"localhost", "cmetrics"}, &val);
+    cmt_counter_add(c2, ts, 10.55, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_get_val(c2, 2, (char *[]) {"localhost", "test"}, &val);
+    cmt_counter_set(c2, ts, 12.15, 2, (char *[]) {"localhost", "test"});
+    cmt_counter_set(c2, ts, 1, 2, (char *[]) {"localhost", "test"});
+
+    /* a counter without subsystem */
+    c3 = cmt_counter_create(cmt, "kubernetes", "", "cpu", "CPU load",
+                            2, (char *[]) {"hostname", "app"});
+    cmt_counter_set(c2, ts, 10, 0, NULL);
 
     return cmt;
 }
@@ -98,10 +122,11 @@ static struct cmt *generate_encoder_test_data()
 void test_cmt_to_msgpack()
 {
     int ret;
+    size_t offset = 0;
     char *mp1_buf = NULL;
-    size_t mp1_size = 1;
+    size_t mp1_size = 0;
     char *mp2_buf = NULL;
-    size_t mp2_size = 2;
+    size_t mp2_size = 0;
     struct cmt *cmt1 = NULL;
     struct cmt *cmt2 = NULL;
 
@@ -112,15 +137,15 @@ void test_cmt_to_msgpack()
     TEST_CHECK(cmt1 != NULL);
 
     /* CMT1 -> Msgpack */
-    ret = cmt_encode_msgpack(cmt1, &mp1_buf, &mp1_size);
+    ret = cmt_encode_msgpack_create(cmt1, &mp1_buf, &mp1_size);
     TEST_CHECK(ret == 0);
 
     /* Msgpack -> CMT2 */
-    ret = cmt_decode_msgpack(&cmt2, mp1_buf, mp1_size);
+    ret = cmt_decode_msgpack_create(&cmt2, mp1_buf, mp1_size, &offset);
     TEST_CHECK(ret == 0);
 
     /* CMT2 -> Msgpack */
-    ret = cmt_encode_msgpack(cmt2, &mp2_buf, &mp2_size);
+    ret = cmt_encode_msgpack_create(cmt2, &mp2_buf, &mp2_size);
     TEST_CHECK(ret == 0);
 
     /* Compare msgpacks */
@@ -128,14 +153,202 @@ void test_cmt_to_msgpack()
     TEST_CHECK(memcmp(mp1_buf, mp2_buf, mp1_size) == 0);
 
     cmt_destroy(cmt1);
-    cmt_destroy(cmt2);
-    free(mp1_buf);
-    free(mp2_buf);
+    cmt_decode_msgpack_destroy(cmt2);
+    cmt_encode_msgpack_destroy(mp1_buf);
+    cmt_encode_msgpack_destroy(mp2_buf);
+}
+
+/*
+ * perform the following data encoding and compare msgpack buffsers
+ *
+ * CMT -> MSGPACK -> CMT -> TEXT
+ * CMT -> TEXT
+ *          |                  |
+ *          |---> compare <----|
+ */
+void test_cmt_to_msgpack_integrity()
+{
+    int ret;
+    size_t offset = 0;
+    char *mp1_buf = NULL;
+    size_t mp1_size = 0;
+    char *text1_buf = NULL;
+    size_t text1_size = 0;
+    char *text2_buf = NULL;
+    size_t text2_size = 0;
+    struct cmt *cmt1 = NULL;
+    struct cmt *cmt2 = NULL;
+
+    /* Generate context with data */
+    cmt1 = generate_encoder_test_data();
+    TEST_CHECK(cmt1 != NULL);
+
+    /* CMT1 -> Msgpack */
+    ret = cmt_encode_msgpack_create(cmt1, &mp1_buf, &mp1_size);
+    TEST_CHECK(ret == 0);
+
+    /* Msgpack -> CMT2 */
+    ret = cmt_decode_msgpack_create(&cmt2, mp1_buf, mp1_size, &offset);
+    TEST_CHECK(ret == 0);
+
+    /* CMT1 -> Text */
+    text1_buf = cmt_encode_text_create(cmt1);
+    TEST_CHECK(text1_buf != NULL);
+    text1_size = cmt_sds_len(text1_buf);
+
+    /* CMT2 -> Text */
+    text2_buf = cmt_encode_text_create(cmt2);
+    TEST_CHECK(text2_buf != NULL);
+    text2_size = cmt_sds_len(text2_buf);
+
+    /* Compare msgpacks */
+    TEST_CHECK(text1_size == text2_size);
+    TEST_CHECK(memcmp(text1_buf, text2_buf, text1_size) == 0);
+
+    cmt_destroy(cmt1);
+
+    cmt_decode_msgpack_destroy(cmt2);
+    cmt_encode_msgpack_destroy(mp1_buf);
+
+    cmt_encode_text_destroy(text1_buf);
+    cmt_encode_text_destroy(text2_buf);
+}
+
+void test_cmt_msgpack_partial_processing()
+{
+    int ret = 0;
+    int iteration = 0;
+    size_t offset = 0;
+    char *mp1_buf = NULL;
+    size_t mp1_size = 0;
+    struct cmt *cmt1 = NULL;
+    struct cmt *cmt2 = NULL;
+    double base_counter_value = 0;
+    size_t expected_gauge_count = 0;
+    double current_counter_value = 0;
+    size_t expected_counter_count = 0;
+    struct cmt_counter *first_counter = NULL;
+    cmt_sds_t serialized_data_buffer = NULL;
+    size_t serialized_data_buffer_length = 0;
+
+    /* Generate an encoder context with more than one counter */
+    cmt1 = generate_encoder_test_data();
+    TEST_CHECK(NULL != cmt1);
+
+    /* Find the first counter so we can get its value before re-encoding it N times
+     * for the test, that way we can ensure that the decoded contexts we get in the
+     * next phase are individual ones and not just a glitch
+     */
+
+    first_counter = mk_list_entry_first(&cmt1->counters, struct cmt_counter, _head);
+    TEST_CHECK(NULL != first_counter);
+
+    ret = cmt_counter_get_val(first_counter, 0, NULL, &base_counter_value);
+    TEST_CHECK(0 == ret);
+
+    expected_counter_count = mk_list_size(&cmt1->counters);
+    expected_gauge_count = mk_list_size(&cmt1->gauges);
+
+    /* Since we are modifying the counter on each iteration we have to re-encode it */
+    for (iteration = 0 ;
+         iteration < MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT ;
+         iteration++) {
+
+        ret = cmt_counter_inc(first_counter, 0, 0, NULL);
+        TEST_CHECK(0 == ret);
+
+        ret = cmt_encode_msgpack_create(cmt1, &mp1_buf, &mp1_size);
+        TEST_CHECK(0 == ret);
+
+        if (NULL == serialized_data_buffer) {
+            serialized_data_buffer = cmt_sds_create_len(mp1_buf, mp1_size);
+            TEST_CHECK(NULL != serialized_data_buffer);
+        }
+        else {
+            cmt_sds_cat_safe(&serialized_data_buffer, mp1_buf, mp1_size);
+            /* TEST_CHECK(0 == ret); */
+        }
+
+        cmt_encode_msgpack_destroy(mp1_buf);
+    }
+
+    cmt_destroy(cmt1);
+
+    /* In this phase we invoke the decoder with until it retunrs an error indicating that
+     * there is not enough data in the input buffer, for each cycle we compare the value
+     * for the first counter which should be be incremental.
+     *
+     * We also check that the iteration count matches the pre established count.
+     */
+
+    ret = 0;
+    offset = 0;
+    iteration = 0;
+    serialized_data_buffer_length = cmt_sds_len(serialized_data_buffer);
+
+    while (CMT_DECODE_MSGPACK_SUCCESS == ret) {
+        ret = cmt_decode_msgpack_create(&cmt2, serialized_data_buffer,
+                                        serialized_data_buffer_length, &offset);
+
+        if (CMT_DECODE_MSGPACK_INSUFFICIENT_DATA == ret) {
+            break;
+        }
+
+        TEST_CHECK(0 == ret);
+
+        first_counter = mk_list_entry_first(&cmt2->counters, struct cmt_counter, _head);
+        TEST_CHECK(NULL != first_counter);
+
+        ret = cmt_counter_get_val(first_counter, 0, NULL, &current_counter_value);
+        TEST_CHECK(0 == ret);
+
+        TEST_CHECK(base_counter_value == (current_counter_value - iteration - 1));
+
+        TEST_CHECK(expected_counter_count == mk_list_size(&cmt2->counters));
+        TEST_CHECK(expected_gauge_count == mk_list_size(&cmt2->gauges));
+
+        cmt_decode_msgpack_destroy(cmt2);
+
+        iteration++;
+    }
+
+    TEST_CHECK(MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT == iteration);
+
+    cmt_sds_destroy(serialized_data_buffer);
+}
+
+void test_cmt_to_msgpack_stability()
+{
+    int ret = 0;
+    int iteration = 0;
+    size_t offset = 0;
+    char *mp1_buf = NULL;
+    size_t mp1_size = 0;
+    struct cmt *cmt1 = NULL;
+    struct cmt *cmt2 = NULL;
+
+    for (iteration = 0 ; iteration < MSGPACK_STABILITY_TEST_ITERATION_COUNT ; iteration++) {
+        cmt1 = generate_encoder_test_data();
+        TEST_CHECK(cmt1 != NULL);
+
+        ret = cmt_encode_msgpack_create(cmt1, &mp1_buf, &mp1_size);
+        TEST_CHECK(ret == 0);
+
+        offset = 0;
+        ret = cmt_decode_msgpack_create(&cmt2, mp1_buf, mp1_size, &offset);
+        TEST_CHECK(ret == 0);
+
+        cmt_destroy(cmt1);
+        cmt_decode_msgpack_destroy(cmt2);
+        cmt_encode_msgpack_destroy(mp1_buf);
+    }
+
 }
 
 void test_cmt_to_msgpack_labels()
 {
     int ret;
+    size_t offset = 0;
     char *mp1_buf = NULL;
     size_t mp1_size = 1;
     char *mp2_buf = NULL;
@@ -154,15 +367,15 @@ void test_cmt_to_msgpack_labels()
     TEST_CHECK(NULL != cmt1);
 
     /* CMT1 -> Msgpack */
-    ret = cmt_encode_msgpack(cmt1, &mp1_buf, &mp1_size);
+    ret = cmt_encode_msgpack_create(cmt1, &mp1_buf, &mp1_size);
     TEST_CHECK(0 == ret);
 
     /* Msgpack -> CMT2 */
-    ret = cmt_decode_msgpack(&cmt2, mp1_buf, mp1_size);
+    ret = cmt_decode_msgpack_create(&cmt2, mp1_buf, mp1_size, &offset);
     TEST_CHECK(0 == ret);
 
     /* CMT2 -> Msgpack */
-    ret = cmt_encode_msgpack(cmt2, &mp2_buf, &mp2_size);
+    ret = cmt_encode_msgpack_create(cmt2, &mp2_buf, &mp2_size);
     TEST_CHECK(0 == ret);
 
     /* Compare msgpacks */
@@ -177,16 +390,15 @@ void test_cmt_to_msgpack_labels()
     TEST_CHECK(NULL != text_result);
     TEST_CHECK(0 == strcmp(text_result, expected_text));
 
-    cmt_encode_text_destroy(text_result);
     cmt_destroy(cmt1);
-    cmt_destroy(cmt2);
-    free(mp1_buf);
-    free(mp2_buf);
+    cmt_encode_text_destroy(text_result);
+    cmt_decode_msgpack_destroy(cmt2);
+    cmt_encode_msgpack_destroy(mp1_buf);
+    cmt_encode_msgpack_destroy(mp2_buf);
 }
 
 void test_prometheus()
 {
-    int ret;
     uint64_t ts;
     cmt_sds_t text;
     struct cmt *cmt;
@@ -211,9 +423,9 @@ void test_prometheus()
                            2, (char *[]) {"host", "app"});
 
     ts = 0;
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c, ts, 0, NULL);
+    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
 
     /* Encode to prometheus (no static labels) */
     text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
@@ -235,7 +447,6 @@ void test_prometheus()
 
 void test_text()
 {
-    int ret;
     uint64_t ts;
     cmt_sds_t text;
     struct cmt *cmt;
@@ -258,9 +469,9 @@ void test_text()
                            2, (char *[]) {"host", "app"});
 
     ts = 0;
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c, ts, 0, NULL);
+    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
 
     /* Encode to prometheus (no static labels) */
     text = cmt_encode_text_create(cmt);
@@ -282,30 +493,37 @@ void test_text()
 
 void test_influx()
 {
-    int ret;
     uint64_t ts;
     cmt_sds_t text;
     struct cmt *cmt;
-    struct cmt_counter *c;
+    struct cmt_counter *c1;
+    struct cmt_counter *c2;
 
     char *out1 = \
         "cmt_labels test=1 1435658235000000123\n"
-        "cmt_labels,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n";
+        "cmt_labels,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n"
+        "cmt,host=aaa,app=bbb nosubsystem=1 1435658235000000123\n";
 
     char *out2 = \
         "cmt_labels,dev=Calyptia,lang=C test=1 1435658235000000123\n"
-        "cmt_labels,dev=Calyptia,lang=C,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n";
+        "cmt_labels,dev=Calyptia,lang=C,host=calyptia.com,app=cmetrics test=2 1435658235000000123\n"
+        "cmt,dev=Calyptia,lang=C,host=aaa,app=bbb nosubsystem=1 1435658235000000123\n";
 
     cmt = cmt_create();
     TEST_CHECK(cmt != NULL);
 
-    c = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
-                           2, (char *[]) {"host", "app"});
+    c1 = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+                            2, (char *[]) {"host", "app"});
 
     ts = 1435658235000000123;
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c1, ts, 0, NULL);
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c1, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+
+    c2 = cmt_counter_create(cmt, "cmt", "", "nosubsystem", "No subsystem",
+                            2, (char *[]) {"host", "app"});
+
+    cmt_counter_inc(c2, ts, 2, (char *[]) {"aaa", "bbb"});
 
     /* Encode to prometheus (no static labels) */
     text = cmt_encode_influx_create(cmt);
@@ -326,10 +544,13 @@ void test_influx()
 }
 
 TEST_LIST = {
-    {"cmt_msgpack_labels", test_cmt_to_msgpack_labels},
-    {"cmt_msgpack",        test_cmt_to_msgpack},
-    {"prometheus" ,        test_prometheus},
-    {"text"       ,        test_text},
-    {"influx"     ,        test_influx},  
+    {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
+    {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
+    {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
+    {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},
+    {"cmt_msgpack",                    test_cmt_to_msgpack},
+    {"prometheus",                     test_prometheus},
+    {"text",                           test_text},
+    {"influx",                         test_influx},
     { 0 }
 };

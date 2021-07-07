@@ -251,6 +251,39 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                                                        size_t response_len,
                                                        time_t *expiration);
 
+struct flb_aws_credentials *flb_parse_json_credentials(char *response,
+                                                       size_t response_len,
+                                                       char *session_token_field,
+                                                       time_t *expiration);
+
+#ifdef FLB_HAVE_AWS_CREDENTIAL_PROCESS
+
+/*
+ * Parses the input string, which is assumed to be the credential_process
+ * from the config file, into a sequence of tokens.
+ * Returns the array of tokens on success, and NULL on failure.
+ * The array of tokens will be terminated by NULL for use with `execvp`.
+ * The caller is responsible for calling `flb_free` on the return value.
+ * Note that this function modifies the input string.
+ */
+char** parse_credential_process(char* input);
+
+/*
+ * Executes the given credential_process, which is assumed to have come
+ * from the config file, and parses its result into *creds and *expiration.
+ * Returns 0 on success and < 0 on failure.
+ *
+ * If it succeeds, *creds and *expiration will be set appropriately, and the
+ * caller is responsible for calling `flb_aws_credentials_destroy(*creds)`.
+ * If the credentials do not expire, then *expiration will be 0.
+ *
+ * If it fails, then *creds will be NULL.
+ */
+int exec_credential_process(char* process, struct flb_aws_credentials** creds,
+                            time_t* expiration);
+
+#endif /* FLB_HAVE_AWS_CREDENTIAL_PROCESS */
+
 /*
  * Fluent Bit is single-threaded but asynchonous. Only one co-routine will
  * be running at a time, and they only pause/resume for IO.

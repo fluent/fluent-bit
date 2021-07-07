@@ -729,6 +729,13 @@ static struct flb_config_map config_map[] = {
      "Kubernetes authorization token file"
     },
 
+    /* Kubernetes Token command */
+    {
+     FLB_CONFIG_MAP_STR, "kube_token_command", NULL,
+     0, FLB_FALSE, 0,
+     "command to get Kubernetes authorization token"
+    },
+
     /* Include Kubernetes Labels in the final record ? */
     {
      FLB_CONFIG_MAP_BOOL, "labels", "true",

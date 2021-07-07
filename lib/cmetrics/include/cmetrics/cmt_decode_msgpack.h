@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_mpack_utils.h>
 
 #define CMT_DECODE_MSGPACK_SUCCESS                    CMT_MPACK_SUCCESS
+#define CMT_DECODE_MSGPACK_INSUFFICIENT_DATA          CMT_MPACK_INSUFFICIENT_DATA
 #define CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR     CMT_MPACK_INVALID_ARGUMENT_ERROR
 #define CMT_DECODE_MSGPACK_ALLOCATION_ERROR           CMT_MPACK_ALLOCATION_ERROR
 #define CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR   CMT_MPACK_CORRUPT_INPUT_DATA_ERROR
@@ -36,6 +37,7 @@
 #define CMT_DECODE_MSGPACK_UNEXPECTED_DATA_TYPE_ERROR CMT_MPACK_UNEXPECTED_DATA_TYPE_ERROR
 
 #define CMT_DECODE_MSGPACK_DICTIONARY_LOOKUP_ERROR    CMT_MPACK_ERROR_CUTOFF + 1
+#define CMT_DECODE_MSGPACK_VERSION_ERROR              CMT_MPACK_ERROR_CUTOFF + 2
 
 struct cmt_msgpack_decode_context {
     struct cmt        *cmt;
@@ -44,6 +46,8 @@ struct cmt_msgpack_decode_context {
     struct mk_list     unique_label_list;
 };
 
-int cmt_decode_msgpack(struct cmt **out_cmt, void *in_buf, size_t in_size);
+int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size, 
+                              size_t *offset);
+void cmt_decode_msgpack_destroy(struct cmt *cmt);
 
 #endif

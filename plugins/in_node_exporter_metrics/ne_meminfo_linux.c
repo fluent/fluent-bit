@@ -32,6 +32,8 @@ static int meminfo_configure(struct flb_ne *ctx)
 {
     int ret;
     int parts;
+    int len;
+    char *p;
     char desc[] = "Memory information field ";
     struct cmt_gauge *g;
     struct mk_list *head;
@@ -51,7 +53,7 @@ static int meminfo_configure(struct flb_ne *ctx)
     mk_list_init(&list);
     mk_list_init(&split_list);
 
-    ret = ne_utils_file_read_lines("/proc/meminfo", &list);
+    ret = ne_utils_file_read_lines(ctx->path_procfs, "/meminfo", &list);
     if (ret == -1) {
         return -1;
     }
@@ -82,8 +84,20 @@ static int meminfo_configure(struct flb_ne *ctx)
         /* set metric name */
         entry = mk_list_entry_first(&split_list, struct flb_slist_entry, _head);
 
+        if ((p = strstr(entry->str, "(anon)")) ||
+            (p = strstr(entry->str, "(file)"))) {
+            *p = '_';
+            len = flb_sds_len(entry->str) - 2;
+            flb_sds_len_set(entry->str, len);
+        }
+        else {
+            len = flb_sds_len(entry->str) - 1;
+            flb_sds_len_set(entry->str, len);
+        }
+        entry->str[len] = '\0';
+
         flb_sds_len_set(metric_name, 0);
-        flb_sds_cat(metric_name, entry->str, flb_sds_len(entry->str) - 1);
+        flb_sds_cat(metric_name, entry->str, flb_sds_len(entry->str));
 
         /* Metric description */
         flb_sds_len_set(metric_desc, 0);
@@ -151,10 +165,12 @@ static int meminfo_update(struct flb_ne *ctx)
 {
     int i = 0;
     int ret;
+    int len;
     int parts;
     uint64_t ts;
     double val;
     size_t out_size;
+    char *p;
     flb_sds_t tmp;
     flb_sds_t metric_name = NULL;
     struct cmt_gauge *g;
@@ -165,7 +181,7 @@ static int meminfo_update(struct flb_ne *ctx)
     struct flb_slist_entry *entry;
 
     mk_list_init(&list);
-    ret = ne_utils_file_read_lines("/proc/meminfo", &list);
+    ret = ne_utils_file_read_lines(ctx->path_procfs, "/meminfo", &list);
     if (ret == -1) {
         return -1;
     }
@@ -189,6 +205,13 @@ static int meminfo_update(struct flb_ne *ctx)
         /* Metric name */
         entry = mk_list_entry_first(&split_list, struct flb_slist_entry, _head);
         metric_name = entry->str;
+
+        if ((p = strstr(entry->str, "(anon)")) ||
+            (p = strstr(entry->str, "(file)"))) {
+            *p = '_';
+            len = flb_sds_len(metric_name) - 1;
+            flb_sds_len_set(metric_name, len);
+        }
 
         /* Metric value */
         entry = mk_list_entry_next(&split_list, struct flb_slist_entry, _head,

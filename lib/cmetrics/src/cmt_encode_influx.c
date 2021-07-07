@@ -58,14 +58,8 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
 {
     int i;
     int n;
-    int len;
     int count = 0;
-    double val;
-    char tmp[128];
-    uint64_t ts;
     int static_labels = 0;
-    struct tm tm;
-    struct timespec tms;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
     struct mk_list *head;
@@ -76,8 +70,11 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
 
     /* Measurement */
     cmt_sds_cat_safe(buf, opts->namespace, cmt_sds_len(opts->namespace));
-    cmt_sds_cat_safe(buf, "_", 1);
-    cmt_sds_cat_safe(buf, opts->subsystem, cmt_sds_len(opts->subsystem));
+
+    if (cmt_sds_len(opts->subsystem) > 0) {
+        cmt_sds_cat_safe(buf, "_", 1);
+        cmt_sds_cat_safe(buf, opts->subsystem, cmt_sds_len(opts->subsystem));
+    }
 
     /* Static labels (tags) */
     static_labels = cmt_labels_count(cmt->static_labels);

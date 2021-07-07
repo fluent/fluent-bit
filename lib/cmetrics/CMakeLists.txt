@@ -11,7 +11,7 @@ endif()
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
 set(CMT_VERSION_MINOR  1)
-set(CMT_VERSION_PATCH  0)
+set(CMT_VERSION_PATCH  1)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Include helpers
@@ -97,6 +97,11 @@ check_c_source_compiles("
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_info.h"
+  )
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_version.h.in"
+  "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_version.h"
   )
 
 # Installation Directories

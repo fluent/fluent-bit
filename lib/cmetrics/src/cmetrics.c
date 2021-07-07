@@ -24,6 +24,7 @@
 #include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_label.h>
+#include <cmetrics/cmt_version.h>
 
 #include <stdlib.h>
 
@@ -82,4 +83,9 @@ void cmt_destroy(struct cmt *cmt)
 int cmt_label_add(struct cmt *cmt, char *key, char *val)
 {
     return cmt_labels_add_kv(cmt->static_labels, key, val);
+}
+
+char *cmt_version()
+{
+    return CMT_VERSION_STR;
 }

@@ -3,7 +3,6 @@
 
 int cmt_mpack_consume_double_tag(mpack_reader_t *reader, double *output_buffer)
 {
-    int         result;
     mpack_tag_t tag;
 
     if (NULL == output_buffer) {
@@ -31,7 +30,6 @@ int cmt_mpack_consume_double_tag(mpack_reader_t *reader, double *output_buffer)
 
 int cmt_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer)
 {
-    int         result;
     mpack_tag_t tag;
 
     if (NULL == output_buffer) {
@@ -60,7 +58,6 @@ int cmt_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer)
 int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffer)
 {
     uint32_t    string_length;
-    int         result;
     mpack_tag_t tag;
 
     if (NULL == output_buffer) {
@@ -83,7 +80,7 @@ int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffe
 
     string_length = mpack_tag_str_length(&tag);
 
-    /* This validation only applies to cmetrics and its use cases, we know 
+    /* This validation only applies to cmetrics and its use cases, we know
      * for a fact that our label names and values are not supposed to be really
      * long so a huge value here probably means that the data stream got corrupted.
      */
@@ -114,7 +111,7 @@ int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffe
 
     if (mpack_ok != mpack_reader_error(reader)) {
         cmt_sds_destroy(*output_buffer);
-        
+
         *output_buffer = NULL;
 
         return CMT_MPACK_ENGINE_ERROR;
@@ -123,8 +120,8 @@ int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffe
     return CMT_MPACK_SUCCESS;
 }
 
-int cmt_mpack_unpack_map(mpack_reader_t *reader, 
-                         struct cmt_mpack_map_entry_callback_t *callback_list, 
+int cmt_mpack_unpack_map(mpack_reader_t *reader,
+                         struct cmt_mpack_map_entry_callback_t *callback_list,
                          void *context)
 {
     struct cmt_mpack_map_entry_callback_t *callback_entry;
@@ -146,7 +143,7 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
 
     entry_count = mpack_tag_map_count(&tag);
 
-    /* This validation only applies to cmetrics and its use cases, we know 
+    /* This validation only applies to cmetrics and its use cases, we know
      * how our schema looks and how many entries the different fields have and none
      * of those exceed the number we set CMT_MPACK_MAX_MAP_ENTRY_COUNT to which is 10.
      * Making these sanity checks optional or configurable in runtime might be worth
@@ -158,7 +155,7 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
     }
 
     result = 0;
-    
+
     for (entry_index = 0 ; 0 == result && entry_index < entry_count ; entry_index++) {
         result = cmt_mpack_consume_string_tag(reader, &key_name);
 
@@ -187,14 +184,14 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
         if (mpack_ok != mpack_reader_error(reader))
         {
             return CMT_MPACK_PENDING_MAP_ENTRIES;
-        }        
+        }
     }
 
     return CMT_MPACK_SUCCESS;
 }
 
-int cmt_mpack_unpack_array(mpack_reader_t *reader, 
-                           cmt_mpack_unpacker_entry_callback_fn_t entry_processor_callback, 
+int cmt_mpack_unpack_array(mpack_reader_t *reader,
+                           cmt_mpack_unpacker_entry_callback_fn_t entry_processor_callback,
                            void *context)
 {
     uint32_t              entry_index;
@@ -215,8 +212,8 @@ int cmt_mpack_unpack_array(mpack_reader_t *reader,
 
     entry_count = mpack_tag_array_count(&tag);
 
-    /* This validation only applies to cmetrics and its use cases, we know 
-     * that in our schema we have the following arrays : 
+    /* This validation only applies to cmetrics and its use cases, we know
+     * that in our schema we have the following arrays :
      *     label text dictionary (strings)
      *     dimension labels (indexes)
      *     metric values

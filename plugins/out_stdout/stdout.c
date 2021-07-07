@@ -102,11 +102,12 @@ static void print_metrics_text(struct flb_output_instance *ins,
                                const void *data, size_t bytes)
 {
     int ret;
+    size_t off = 0;
     cmt_sds_t text;
     struct cmt *cmt = NULL;
 
     /* get cmetrics context */
-    ret = cmt_decode_msgpack(&cmt, data, bytes);
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
     if (ret != 0) {
         flb_plg_error(ins, "could not process metrics payload");
         return;

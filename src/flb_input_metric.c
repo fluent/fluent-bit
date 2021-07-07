@@ -34,7 +34,7 @@ int flb_input_metrics_append(struct flb_input_instance *ins,
     size_t mt_size;
 
     /* Convert metrics to msgpack */
-    ret = cmt_encode_msgpack(cmt, &mt_buf, &mt_size);
+    ret = cmt_encode_msgpack_create(cmt, &mt_buf, &mt_size);
     if (ret != 0) {
         flb_plg_error(ins, "could not encode metrics");
         return -1;
@@ -43,7 +43,7 @@ int flb_input_metrics_append(struct flb_input_instance *ins,
 
     /* Append packed metrics */
     ret = flb_input_chunk_append_raw(ins, tag, tag_len, mt_buf, mt_size);
-    flb_free(mt_buf);
+    cmt_encode_msgpack_destroy(mt_buf);
 
     return ret;
 }

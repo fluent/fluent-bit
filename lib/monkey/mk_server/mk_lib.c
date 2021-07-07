@@ -376,7 +376,7 @@ int mk_config_set(mk_ctx_t *ctx, ...)
 }
 
 /* Given a vhost id, return the vhost context */
-static struct mk_vhost *mk_vhost_lookup(mk_ctx_t *ctx, int id)
+struct mk_vhost *mk_vhost_lookup(mk_ctx_t *ctx, int id)
 {
     struct mk_vhost *host;
     struct mk_list *head;

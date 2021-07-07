@@ -23,7 +23,7 @@
 #include <cmetrics/cmt_atomic.h>
 
 
-static inline int cmt_metric_exchange(struct cmt_metric *metric, uint64_t timestamp, 
+static inline int cmt_metric_exchange(struct cmt_metric *metric, uint64_t timestamp,
                                       double new_value, double old_value)
 {
     uint64_t tmp_new;
@@ -33,7 +33,7 @@ static inline int cmt_metric_exchange(struct cmt_metric *metric, uint64_t timest
     tmp_new = cmt_math_d64_to_uint64(new_value);
     tmp_old = cmt_math_d64_to_uint64(old_value);
 
-    result = cmt_atomic_compare_exchange(&metric->val, tmp_old, tmp_new); 
+    result = cmt_atomic_compare_exchange(&metric->val, tmp_old, tmp_new);
 
     if(0 == result) {
         return 0;
@@ -48,7 +48,6 @@ static inline void add(struct cmt_metric *metric, uint64_t timestamp, double val
 {
     double   old;
     double   new;
-    uint64_t tmp;
     int      result;
 
     do {

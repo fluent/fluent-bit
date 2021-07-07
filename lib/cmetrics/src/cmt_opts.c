@@ -25,6 +25,7 @@ int cmt_opts_init(struct cmt_opts *opts,
                   char *namespace, char *subsystem, char *name,
                   char *description)
 {
+    int len;
     cmt_sds_t tmp;
 
     if (!name) {
@@ -59,14 +60,17 @@ int cmt_opts_init(struct cmt_opts *opts,
                           opts->subsystem, cmt_sds_len(opts->subsystem));
         if (!tmp) {
             return -1;
-        }
+            }
         opts->fqname = tmp;
 
-        tmp = cmt_sds_cat(opts->fqname, "_", 1);
-        if (!tmp) {
-            return -1;
+        len = cmt_sds_len(opts->fqname);
+        if (opts->fqname[len - 1] != '_') {
+            tmp = cmt_sds_cat(opts->fqname, "_", 1);
+            if (!tmp) {
+                return -1;
+            }
+            opts->fqname = tmp;
         }
-        opts->fqname = tmp;
     }
 
     opts->name = cmt_sds_create(name);

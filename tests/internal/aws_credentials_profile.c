@@ -5,13 +5,11 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_info.h>
 
-#include "flb_tests_internal.h"
+#include "aws_credentials_test_internal.h"
 
-#define TEST_CREDENTIALS_FILE  FLB_TESTS_DATA_PATH "/data/aws_credentials/\
-shared_credentials_file.ini"
+#define TEST_CREDENTIALS_FILE AWS_TEST_DATA_PATH("shared_credentials_file.ini")
 
-#define TEST_CREDENTIALS_NODEFAULT  FLB_TESTS_DATA_PATH "/data/aws_credentials/\
-shared_credentials_file_nodefault.ini"
+#define TEST_CREDENTIALS_NODEFAULT AWS_TEST_DATA_PATH("shared_credentials_file_nodefault.ini")
 
 /* these credentials look real but are not */
 #define AKID_DEFAULT_PROFILE  "ASIASDMPIJWXJAXT3O3T"
@@ -39,27 +37,6 @@ HjefwKEk9HjZfejC5WuCS173qFrU9kNb4IrYhnK+wmRzzJfgpWUwerdiJKBz95j1iW9rP1a\
 #define SKID_WEIRDWHITESPACE_PROFILE "skidweird"
 #define TOKEN_WEIRDWHITESPACE_PROFILE "tokenweird///token=="
 
-static int unset_profile_env()
-{
-    int ret;
-    ret = unsetenv("AWS_SHARED_CREDENTIALS_FILE");
-    if (ret < 0) {
-        flb_errno();
-        return -1;
-    }
-    ret = unsetenv("AWS_DEFAULT_PROFILE");
-    if (ret < 0) {
-        flb_errno();
-        return -1;
-    }
-    ret = unsetenv("AWS_PROFILE");
-    if (ret < 0) {
-        flb_errno();
-        return -1;
-    }
-    return 0;
-}
-
 static void test_profile_default()
 {
     struct flb_aws_provider *provider;
@@ -68,25 +45,16 @@ static void test_profile_default()
 
     TEST_CHECK(unset_profile_env() == 0);
 
-    /* set environment */
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     provider = flb_profile_provider_create();
-    if (!provider) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
-    if (!creds) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(creds != NULL);
+
     TEST_CHECK(strcmp(AKID_DEFAULT_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_DEFAULT_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(strcmp(TOKEN_DEFAULT_PROFILE, creds->session_token) == 0);
@@ -94,10 +62,8 @@ static void test_profile_default()
     flb_aws_credentials_destroy(creds);
 
     creds = provider->provider_vtable->get_credentials(provider);
-    if (!creds) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(creds != NULL);
+
     TEST_CHECK(strcmp(AKID_DEFAULT_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_DEFAULT_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(strcmp(TOKEN_DEFAULT_PROFILE, creds->session_token) == 0);
@@ -121,31 +87,19 @@ static void test_profile_non_default()
 
     TEST_CHECK(unset_profile_env() == 0);
 
-    /* set environment */
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     ret = setenv("AWS_PROFILE", "nondefault", 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     provider = flb_profile_provider_create();
-    if (!provider) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
-    if (!creds) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(creds != NULL);
+
     TEST_CHECK(strcmp(AKID_NONDEFAULT_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_NONDEFAULT_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(creds->session_token == NULL);
@@ -153,10 +107,8 @@ static void test_profile_non_default()
     flb_aws_credentials_destroy(creds);
 
     creds = provider->provider_vtable->get_credentials(provider);
-    if (!creds) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(creds != NULL);
+
     TEST_CHECK(strcmp(AKID_NONDEFAULT_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_NONDEFAULT_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(creds->session_token == NULL);
@@ -180,31 +132,19 @@ static void test_profile_no_space()
 
     TEST_CHECK(unset_profile_env() == 0);
 
-    /* set environment */
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     ret = setenv("AWS_DEFAULT_PROFILE", "nospace", 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     provider = flb_profile_provider_create();
-    if (!provider) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
-    if (!creds) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(creds != NULL);
+
     TEST_CHECK(strcmp(AKID_NOSPACE_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_NOSPACE_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(strcmp(TOKEN_NOSPACE_PROFILE, creds->session_token) == 0);
@@ -212,10 +152,8 @@ static void test_profile_no_space()
     flb_aws_credentials_destroy(creds);
 
     creds = provider->provider_vtable->get_credentials(provider);
-    if (!creds) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(creds != NULL);
+
     TEST_CHECK(strcmp(AKID_NOSPACE_PROFILE, creds->access_key_id) == 0);
     TEST_CHECK(strcmp(SKID_NOSPACE_PROFILE, creds->secret_access_key) == 0);
     TEST_CHECK(strcmp(TOKEN_NOSPACE_PROFILE, creds->session_token) == 0);
@@ -239,24 +177,14 @@ static void test_profile_weird_whitespace()
 
     TEST_CHECK(unset_profile_env() == 0);
 
-    /* set environment */
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     ret = setenv("AWS_DEFAULT_PROFILE", "weirdwhitespace", 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     provider = flb_profile_provider_create();
-    if (!provider) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -300,24 +228,14 @@ static void test_profile_missing()
 
     TEST_CHECK(unset_profile_env() == 0);
 
-    /* set environment */
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_FILE, 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     ret = setenv("AWS_DEFAULT_PROFILE", "missing", 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     provider = flb_profile_provider_create();
-    if (!provider) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -347,18 +265,11 @@ static void test_profile_nodefault()
 
     TEST_CHECK(unset_profile_env() == 0);
 
-    /* set environment */
     ret = setenv("AWS_SHARED_CREDENTIALS_FILE", TEST_CREDENTIALS_NODEFAULT, 1);
-    if (ret < 0) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(ret == 0);
 
     provider = flb_profile_provider_create();
-    if (!provider) {
-        flb_errno();
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -380,12 +291,13 @@ static void test_profile_nodefault()
     TEST_CHECK(unset_profile_env() == 0);
 }
 
+
 TEST_LIST = {
-    { "test_profile_default" , test_profile_default},
-    { "test_profile_non_default" , test_profile_non_default},
-    { "test_profile_no_space" , test_profile_no_space},
-    { "test_profile_weird_whitespace" , test_profile_weird_whitespace},
-    { "test_profile_missing" , test_profile_missing},
-    { "test_profile_nodefault" , test_profile_nodefault},
+    { "test_profile_default", test_profile_default },
+    { "test_profile_non_default", test_profile_non_default },
+    { "test_profile_no_space", test_profile_no_space },
+    { "test_profile_weird_whitespace", test_profile_weird_whitespace },
+    { "test_profile_missing", test_profile_missing },
+    { "test_profile_nodefault", test_profile_nodefault },
     { 0 }
 };

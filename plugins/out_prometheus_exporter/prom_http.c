@@ -77,6 +77,29 @@ static int cleanup_metrics()
     return c;
 }
 
+/* destructor callback */
+static void destruct_metrics(void *data)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *metrics_list = (struct mk_list*)data;
+    struct prom_http_buf *entry;
+
+    if (!metrics_list) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, metrics_list) {
+        entry = mk_list_entry(head, struct prom_http_buf, _head);
+        mk_list_del(&entry->_head);
+        flb_free(entry->buf_data);
+        flb_free(entry);
+    }
+
+    flb_free(metrics_list);
+}
+
 /*
  * Callback invoked every time a new payload of Metrics is received from
  * Fluent Bit engine through Message Queue channel.
@@ -126,7 +149,7 @@ static int http_server_mq_create(struct prom_http *ph)
 {
     int ret;
 
-    pthread_key_create(&ph_metrics_key, NULL);
+    pthread_key_create(&ph_metrics_key, destruct_metrics);
 
     ret = mk_mq_create(ph->ctx, "/metrics", cb_mq_metrics, NULL);
     if (ret == -1) {

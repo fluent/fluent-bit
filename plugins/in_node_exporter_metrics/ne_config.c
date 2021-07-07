@@ -41,12 +41,17 @@ struct flb_ne *flb_ne_config_create(struct flb_input_instance *ins,
         return NULL;
     }
 
+    /* mount points */
+    flb_plg_info(ins, "path.procfs = %s", ctx->path_procfs);
+    flb_plg_info(ins, "path.sysfs  = %s", ctx->path_sysfs);
+
     ctx->cmt = cmt_create();
     if (!ctx->cmt) {
         flb_plg_error(ins, "could not initialize CMetrics");
         flb_free(ctx);
         return NULL;
     }
+
 
     return ctx;
 }
