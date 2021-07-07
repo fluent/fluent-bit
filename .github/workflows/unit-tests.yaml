@@ -86,5 +86,5 @@ jobs:
     needs: run-unit-tests-amd64
     steps:
       - name: Check build matrix status
-        if: ${{ needs.build.result != 'success' }}
+        if: ${{ needs.run-unit-tests-amd64.result != 'success' }}
         run: exit 1
