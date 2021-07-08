@@ -879,7 +879,7 @@ ldconfig
 rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
 ldconfig
     ")
-    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA "${CPACK_DEBIAN_RUNTIME_PACKAGE_CONTROL_EXTRA};${PROJECT_BINARY_DIR}/scripts/postinst;${PROJECT_BINARY_DIR}/scripts/prerm")
   endif(FLB_RUN_LDCONFIG)
 
 endif()
