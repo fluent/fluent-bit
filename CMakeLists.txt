@@ -194,7 +194,7 @@ option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
 # Run ldconfig on package post-install
-option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" Yes)
+option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
 # Enable all features
 if(FLB_ALL)
