@@ -661,7 +661,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_SLIST_1, "http_header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_influxdb, headers),
      "Add a HTTP header key/value pair. Multiple headers can be set"
     },
