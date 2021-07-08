@@ -10,6 +10,8 @@ set(FLB_EXAMPLES              Yes)
 set(FLB_PARSER                Yes)
 set(FLB_TLS                   Yes)
 set(FLB_AWS                   Yes)
+set(FLB_HTTP_SERVER           Yes)
+set(FLB_METRICS               Yes)
 
 # INPUT plugins
 # =============
@@ -35,9 +37,10 @@ set(FLB_IN_SYSTEMD             No)
 set(FLB_IN_DUMMY              Yes)
 set(FLB_IN_NETIF               No)
 set(FLB_IN_WINLOG             Yes)
+set(FLB_IN_WINSTAT            Yes)
 set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STATSD             Yes)
-set(FLB_IN_STORAGE_BACKLOG     No)
+set(FLB_IN_STORAGE_BACKLOG    Yes)
 set(FLB_IN_EMITTER            Yes)
 
 # OUTPUT plugins
@@ -67,7 +70,7 @@ set(FLB_OUT_FLOWCOUNTER       Yes)
 set(FLB_OUT_KAFKA              No)
 set(FLB_OUT_KAFKA_REST         No)
 set(FLB_OUT_CLOUDWATCH_LOGS   Yes)
-set(FLB_OUT_S3                 No)
+set(FLB_OUT_S3                Yes)
 set(FLB_OUT_KINESIS_FIREHOSE   No)
 
 # FILTER plugins
@@ -83,6 +86,7 @@ set(FLB_FILTER_NEST           Yes)
 set(FLB_FILTER_LUA            Yes)
 set(FLB_FILTER_RECORD_MODIFIER Yes)
 set(FLB_FILTER_REWRITE_TAG    Yes)
+set(FLB_FILTER_GEOIP2         Yes)
 
 # Search bison and flex executables
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")

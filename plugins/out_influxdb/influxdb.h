@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,15 +30,28 @@
 struct flb_influxdb {
     uint64_t seq;
 
-    char uri[256];
+    char uri[2048];
 
+    /* v1 */
     /* database */
-    char *db_name;
-    int  db_len;
+    flb_sds_t database;
 
     /* HTTP Auth */
-    char *http_user;
-    char *http_passwd;
+    flb_sds_t http_user;
+    flb_sds_t http_passwd;
+
+    // v2
+    /* bucket */
+    flb_sds_t bucket;
+
+    /* organization */
+    flb_sds_t organization;
+
+    /* custom HTTP URI */
+    flb_sds_t custom_uri;
+
+    /* HTTP Token */
+    flb_sds_t http_token;
 
     /* sequence tag */
     char *seq_name;
@@ -49,6 +62,9 @@ struct flb_influxdb {
 
     /* tag_keys: space separated list of key */
     struct mk_list *tag_keys;
+
+    /* Arbitrary HTTP headers */
+    struct mk_list *headers;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

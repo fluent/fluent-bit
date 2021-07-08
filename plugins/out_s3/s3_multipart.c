@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,24 @@
 #define COMPLETE_MULTIPART_UPLOAD_PART_LEN 124
 
 flb_sds_t get_etag(char *response, size_t size);
+
+static struct flb_aws_header *create_canned_acl_header(char *canned_acl)
+{
+    struct flb_aws_header *acl_header = NULL;
+    
+    acl_header = flb_malloc(sizeof(struct flb_aws_header));
+    if (acl_header == NULL) {
+        flb_errno();
+        return NULL;
+    } 
+   
+    acl_header->key = "x-amz-acl";
+    acl_header->key_len = 9;
+    acl_header->val = canned_acl;
+    acl_header->val_len = strlen(canned_acl);
+
+    return acl_header;
+};
 
 static inline int try_to_write(char *buf, int *off, size_t left,
                                const char *str, size_t str_len)
@@ -138,13 +156,14 @@ static void parse_etags(struct multipart_upload *m_upload, char *data)
             flb_debug("[s3 restart parser] Did not find tab separator in line %s", start);
             return;
         }
-        end = '\0';
+        *end = '\0';
         part_num = atoi(start);
         if (part_num <= 0) {
             flb_debug("[s3 restart parser] Could not parse part_number from %s", start);
             return;
         }
         m_upload->part_number = part_num;
+        *end = '\t';
 
         start = strstr(line, "tag=");
         if (!start) {
@@ -477,6 +496,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t tmp;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    struct flb_aws_header *canned_acl_header;
 
     uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
     if (!uri) {
@@ -496,8 +516,21 @@ int create_multipart_upload(struct flb_s3 *ctx,
         c = mock_s3_call("TEST_CREATE_MULTIPART_UPLOAD_ERROR", "CreateMultipartUpload");
     }
     else {
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
-                                              uri, NULL, 0, NULL, 0);
+        if (ctx->canned_acl == NULL) {
+            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                                  uri, NULL, 0, NULL, 0);
+        }
+        else {
+            canned_acl_header = create_canned_acl_header(ctx->canned_acl);
+            if (canned_acl_header == NULL) {
+                flb_sds_destroy(uri);
+                flb_plg_error(ctx->ins, "Failed to create canned ACL header");
+                return -1;
+            }
+            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                                  uri, NULL, 0, canned_acl_header, 1);
+            flb_free(canned_acl_header);
+        }
     }
     flb_sds_destroy(uri);
     if (c) {
@@ -586,6 +619,9 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     int ret;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
+    struct flb_aws_header *headers = NULL;
+    int num_headers = 0;
+    char body_md5[25];
 
     uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
     if (!uri) {
@@ -603,6 +639,29 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     }
     uri = tmp;
 
+    memset(body_md5, 0, sizeof(body_md5));
+    if (ctx->send_content_md5 == FLB_TRUE) {
+        ret = get_md5_base64(body, body_size, body_md5, sizeof(body_md5));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
+            flb_sds_destroy(uri);
+            return -1;
+        }
+
+        num_headers = 1;
+        headers = flb_malloc(sizeof(struct flb_aws_header) * num_headers);
+        if (headers == NULL) {
+            flb_errno();
+            flb_sds_destroy(uri);
+            return -1;
+        }
+
+        headers[0].key = "Content-MD5";
+        headers[0].key_len = 11;
+        headers[0].val = body_md5;
+        headers[0].val_len = strlen(body_md5);
+    }
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_UPLOAD_PART_ERROR", "UploadPart");
@@ -610,8 +669,9 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     else {
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, body, body_size,
-                                              NULL, 0);
+                                              headers, num_headers);
     }
+    flb_free(headers);
     flb_sds_destroy(uri);
     if (c) {
         flb_plg_info(ctx->ins, "UploadPart http status=%d",

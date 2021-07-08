@@ -1,0 +1,210 @@
+name: Run integration tests for PR
+on:
+  pull_request_target:
+    branches:
+      - master
+    types:
+      - labeled
+      - opened
+      - edited
+      - reopened
+      - synchronize
+jobs:
+  publish-docker-images:
+    name: publish the docker images for PR
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for docker build to succeed
+        uses: fountainhead/action-wait-for-check@v1.0.0
+        id: wait-for-build
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: docker_build
+          timeoutSeconds: 3600
+          intervalSeconds: 10
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Wait until artifacts are propagated
+        uses: jakejarvis/wait-action@master
+        with:
+          time: '15s'
+
+      - name: Download docker image from build artifacts
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: integration-build-pr.yaml
+          pr: ${{ github.event.pull_request.number }}
+          repo: ${{ github.repository }}
+          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.pr }}
+          path: images
+        env:
+          pr: ${{github.event.pull_request.number}}
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+      - name: Import docker image
+        run: |
+          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master-pr-${{ env.pr }}
+        env:
+          pr: ${{github.event.pull_request.number}}
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image to Docker Hub
+        run: |
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }}
+        env:
+          pr: ${{ github.event.number }}
+          arch: x86_64
+          dockerhub_organization: fluentbitdev
+
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-docker-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit
+
+  run-integration-gcp:
+    name: run-integration on GCP - k8s ${{ matrix.k8s-release }}
+    needs: publish-docker-images
+    strategy:
+      max-parallel: 3
+      fail-fast: false
+      matrix:
+        k8s-release: [ '1.19' ] #, '1.20' ] #, 1.19/stable, 1.18/stable ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          repository: calyptia/fluent-bit-ci
+          path: ci
+
+      - uses: frabert/replace-string-action@master
+        id: formatted_release
+        with:
+          pattern: '(.*)\.(.*)$'
+          string: ${{ matrix.k8s-release }}
+          replace-with: '$1-$2'
+          flags: 'g'
+
+      - name: Replace the k8s release
+        run: |
+          sed -i -e "s/\$K8S_RELEASE/${{ env.k8s_release }}/g" default.auto.tfvars
+          sed -i -e "s/\$K8S_FORMATTED/${{ env.k8s_release_formatted }}/g" default.auto.tfvars
+          sed -i -e "s/\$K8S_FORMATTED/${{ env.k8s_release_formatted }}/g" config.tf
+        working-directory: ci/terraform/gcp/
+        env:
+          k8s_release: ${{ matrix.k8s-release }}
+          k8s_release_formatted: ${{ steps.formatted_release.outputs.replaced }}
+
+      - uses: hashicorp/setup-terraform@v1
+        with:
+          cli_config_credentials_hostname: 'app.terraform.io'
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Replace the GCP service account key
+        run: |
+          cat <<EOT >> default.auto.tfvars
+          gcp-sa-key    =  <<-EOF
+          ${{ secrets.GCP_SA_KEY }}
+          EOF
+          EOT
+        working-directory: ci/terraform/gcp/
+
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+        working-directory: ci/terraform/gcp/
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ci/terraform/gcp/
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+        working-directory: ci/terraform/gcp/
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          terraform apply -input=false -auto-approve
+        working-directory: ci/terraform/gcp/
+
+      - name: Get the k8s cluster name from terraform output
+        id: get-k8s-cluster-name
+        run: terraform output -no-color -raw k8s-cluster-name
+        working-directory: ci/terraform/gcp/
+
+      - name: Get the k8s cluster location from terraform output
+        id: get-k8s-cluster-location
+        run: terraform output -no-color -raw k8s-cluster-location
+        working-directory: ci/terraform/gcp/
+
+      - name: Get the k8s project id from terraform output
+        id: get-gcp-project-id
+        run: terraform output -no-color -raw gcp-project-id
+        working-directory: ci/terraform/gcp/
+
+      - name: Get the bigquery dataset id from terraform output
+        id: get-gcp-bigquery-dataset-id
+        run: terraform output -no-color -raw gcp-bigquery-dataset-id
+        working-directory: ci/terraform/gcp/
+
+      - name: Get the bigquery table id from terraform output
+        id: get-gcp-bigquery-table-id
+        run: terraform output -no-color -raw gcp-bigquery-table-id
+        working-directory: ci/terraform/gcp/
+
+      - uses: google-github-actions/setup-gcloud@master
+        with:
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
+
+      - uses: google-github-actions/get-gke-credentials@main
+        with:
+          cluster_name: ${{ steps.get-k8s-cluster-name.outputs.stdout }}
+          location: ${{ steps.get-k8s-cluster-location.outputs.stdout }}
+          credentials: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.16' # The Go version to download (if necessary) and use.
+
+      - uses: azure/setup-helm@v1
+        id: install
+
+      - run: go mod download
+        working-directory: ci/integration/
+
+      - run: make integration
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_BQ_DATASET_ID: ${{ steps.get-gcp-bigquery-dataset-id.outputs.stdout }}
+          GCP_BQ_TABLE_ID: ${{ steps.get-gcp-bigquery-table-id.outputs.stdout }}
+          GCP_PROJECT_ID: fluent-bit-ci
+          IMAGE_REPOSITORY: fluentbitdev/fluent-bit
+          IMAGE_TAG: x86_64-master-pr-${{ github.event.pull_request.number }}
+          GRAFANA_USERNAME: ${{ secrets.GRAFANA_USERNAME }}
+          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
+        working-directory: ci/
+
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-test-gcp-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit

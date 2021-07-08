@@ -34,7 +34,11 @@ struct cio_file {
     size_t realloc_size;      /* chunk size to increase alloc */
     char *path;               /* root path + stream   */
     char *map;                /* map of data          */
-
+#ifdef _WIN32
+    void *h;
+    crc_t crc_be;
+    int map_synced;
+#endif
     /* cached addr */
     char *st_content;
     crc_t crc_cur;
@@ -51,7 +55,6 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count);
 int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size);
 int cio_file_sync(struct cio_chunk *ch);
 int cio_file_fs_size_change(struct cio_file *cf, size_t new_size);
-int cio_file_close_stream(struct cio_stream *st);
 char *cio_file_hash(struct cio_file *cf);
 void cio_file_hash_print(struct cio_file *cf);
 void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out);

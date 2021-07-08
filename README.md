@@ -1,13 +1,22 @@
 # ![logo](fluentbit_logo.png)
 
-Travis CI:
-[![Build Status](https://travis-ci.org/fluent/fluent-bit.svg?branch=master)](https://travis-ci.org/fluent/fluent-bit)
+### CI Status
 
-[Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Embedded Linux, MacOS and BSD family operating systems. It's part of the [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
+| CI Workflow       | Status             |
+|-------------------|--------------------|
+| Unit Tests (master) | [![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=master)](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml) |
+| Integration Tests (master) | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml)|
+| Docker images (master) | [![CI/Docker Images](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml)|
+| Latest release build |  [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml)|
 
-Fluent Bit allows to collect log events or metrics from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, NATS, InfluxDB or any custom HTTP end-point within others.
 
-In addition, Fluent Bit comes with full [Stream Processing](https://docs.fluentbit.io/stream-processing/) capabilities: data manipulation and analytics using SQL queries.
+## Project Description
+
+[Fluent Bit](http://fluentbit.io) is a fast Log Processor and Forwarder for Linux, Windows, Embedded Linux, MacOS and BSD family operating systems. It's part of the Graduated [Fluentd](http://fluentd.org) Ecosystem and a [CNCF](https://cncf.io) sub-project.
+
+Fluent Bit allows to collect log events or metrics from different sources, process them and deliver them to different backends such as [Fluentd](http://fluentd.org), Elasticsearch, Splunk, DataDog, Kafka, New Relic, Azure services, AWS services, Google services, NATS, InfluxDB or any custom HTTP end-point.
+
+Fluent Bit comes with full SQL [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction) capabilities: data manipulation and analytics using SQL queries.
 
 Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
 
@@ -23,12 +32,12 @@ Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
   - Security: built-in TLS/SSL support
   - Asynchronous I/O
 - Pluggable Architecture and [Extensibility](https://docs.fluentbit.io/manual/development): Inputs, Filters and Outputs
-  - More than 50 built-in plugins available
+  - More than 70 built-in plugins available
   - Extensibility
     - Write any input, filter or output plugin in C language
-    - Bonus: write [Filters in Lua](https://docs.fluentbit.io/manual/filter/lua) or [Output plugins in Golang](https://docs.fluentbit.io/manual/development/golang-output-plugins)
+    - Write [Filters in Lua](https://docs.fluentbit.io/manual/filter/lua) or [Output plugins in Golang](https://docs.fluentbit.io/manual/development/golang-output-plugins)
 - [Monitoring](https://docs.fluentbit.io/manual/administration/monitoring): expose internal metrics over HTTP in JSON and [Prometheus](https://prometheus.io/) format
-- [Stream Processing](https://docs.fluentbit.io/stream-processing/): Perform data selection and transformation using simple SQL queries
+- [Stream Processing](https://docs.fluentbit.io/manual/stream-processing/introduction): Perform data selection and transformation using simple SQL queries
   - Create new streams of data using query results
   - Aggregation Windows
   - Data analysis and prediction: Timeseries forecasting
@@ -36,7 +45,7 @@ Fluent Bit runs on x86_64, x86, arm32v7 and arm64v8 architectures.
 
 ## Fluent Bit in Production
 
-[Fluent Bit](https://fluentbit.io) is used widely, just on 2019 it was deployed more than **62 Million** times. The following is a preview of who uses Fluent Bit heavily in production:
+[Fluent Bit](https://fluentbit.io) is used widely in production environments. In 2020 Fluent Bit was deployed more than **220 Million** times, and continues to be deploy over **1 million times a day**. The following is a preview of who uses Fluent Bit heavily in production:
 
 > If your company uses Fluent Bit and is not listed, feel free to open a Github issue and we will add the logo.
 
@@ -146,12 +155,13 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 | [influxdb](https://docs.fluentbit.io/manual/pipeline/outputs/influxdb) | InfluxDB | Flush records to InfluxDB time series database. |
 | [kafka](https://docs.fluentbit.io/manual/pipeline/outputs/kafka) | Apache Kafka | Flush records to Apache Kafka |
 | [kafka-rest](https://docs.fluentbit.io/manual/pipeline/outputs/kafka-rest-proxy) | Kafka REST Proxy | Flush records to a Kafka REST Proxy server. |
-| [nats](https://docs.fluentbit.io/manual/pipeline/outputs/nats) | NATS | flush records to a NATS server. |
-| [null](https://docs.fluentbit.io/manual/pipeline/outputs/null) | NULL | throw away events. |
+| [nats](https://docs.fluentbit.io/manual/pipeline/outputs/nats) | NATS | Flush records to a NATS server. |
+| [null](https://docs.fluentbit.io/manual/pipeline/outputs/null) | NULL | Throw away events. |
+| [s3](https://docs.fluentbit.io/manual/pipeline/outputs/s3) | S3 | Flush records to s3 |
 | [stackdriver](https://docs.fluentbit.io/manual/pipeline/outputs/stackdriver) | Google Stackdriver Logging | Flush records to Google Stackdriver Logging service. |
 | [stdout](https://docs.fluentbit.io/manual/pipeline/outputs/standard-output) | Standard Output | Flush records to the standard output. |
 | [splunk](https://docs.fluentbit.io/manual/pipeline/outputs/splunk) | Splunk | Flush records to a Splunk Enterprise service |
-| [tcp](https://docs.fluentbit.io/manual/pipeline/outputs/tcp-and-tls) | TCP & TLS | flush records to a TCP server. |
+| [tcp](https://docs.fluentbit.io/manual/pipeline/outputs/tcp-and-tls) | TCP & TLS | Flush records to a TCP server. |
 | [td](https://docs.fluentbit.io/manual/pipeline/outputs/treasure-data) | [Treasure Data](http://www.treasuredata.com) | Flush records to the [Treasure Data](http://www.treasuredata.com) cloud service for analytics. |
 
 ## Contributing
@@ -166,6 +176,7 @@ Feel free to join us on our Slack channel, Mailing List or IRC:
 
 - [Slack](http://slack.fluentd.org) (#fluent-bit channel)
 - [Mailing List](https://groups.google.com/forum/#!forum/fluent-bit)
+- [Discourse Forum](https://discuss.fluentd.org)
 - [Twitter](http://twitter.com/fluentbit)
 - [IRC](irc.freenode.net) #fluent-bit
 

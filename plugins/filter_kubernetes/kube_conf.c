@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +44,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     const char *url;
     const char *tmp;
     const char *p;
+    const char *cmd;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
@@ -61,6 +62,16 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
+    /* K8s Token Command */
+    cmd = flb_filter_get_property("kube_token_command", ins);
+    if (cmd) {
+        ctx->kube_token_command = cmd;
+    }
+    else {
+        ctx->kube_token_command = NULL;
+    }
+    ctx->kube_token_create = 0;  
+
     /* Merge Parser */
     tmp = flb_filter_get_property("merge_parser", ins);
     if (tmp) {
@@ -75,7 +86,19 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
 
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", ins);
-    if (!url) {
+
+    if (ctx->use_kubelet) {
+        ctx->api_host = flb_strdup(FLB_KUBELET_HOST);
+        ctx->api_port = ctx->kubelet_port;
+        ctx->api_https = FLB_TRUE;
+
+        /* This is for unit test diagnostic purposes */
+        if (ctx->meta_preload_cache_dir) {
+            ctx->api_https = FLB_FALSE;
+        }
+
+    }
+    else if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
         ctx->api_port = FLB_API_PORT;
         ctx->api_https = FLB_API_TLS;
@@ -116,9 +139,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
              ctx->api_https ? "https" : "http",
              ctx->api_host, ctx->api_port);
 
-    ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
-                                      FLB_HASH_TABLE_SIZE,
-                                      FLB_HASH_TABLE_SIZE);
+    if (ctx->kube_meta_cache_ttl > 0) {
+        ctx->hash_table = flb_hash_create_with_ttl(ctx->kube_meta_cache_ttl,
+                                                   FLB_HASH_EVICT_OLDER,
+                                                   FLB_HASH_TABLE_SIZE,
+                                                   FLB_HASH_TABLE_SIZE);
+    }
+    else {
+        ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
+                                          FLB_HASH_TABLE_SIZE,
+                                          FLB_HASH_TABLE_SIZE);
+    }
+    
     if (!ctx->hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
@@ -187,8 +219,8 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     }
 
 #ifdef FLB_HAVE_TLS
-    if (ctx->tls.context) {
-        flb_tls_context_destroy(ctx->tls.context);
+    if (ctx->tls) {
+        flb_tls_destroy(ctx->tls);
     }
 #endif
 

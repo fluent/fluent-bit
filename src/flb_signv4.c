@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -135,10 +135,15 @@ flb_sds_t flb_signv4_uri_normalize_path(char *uri, size_t len)
     struct flb_split_entry *entry;
     flb_sds_t out;
 
-    out = flb_sds_create_len(uri, len);
+    if (len == 0) {
+        return NULL;
+    }
+
+    out = flb_sds_create_len(uri, len+1);
     if (!out) {
         return NULL;
     }
+    out[len] = '\0';
 
     if (uri[len - 1] == '/') {
         end_slash = FLB_TRUE;
@@ -341,6 +346,20 @@ static flb_sds_t url_params_format(char *params)
             if (val) {
                 flb_sds_destroy(val);
             }
+            flb_slist_destroy(&split);
+            flb_kv_release(&list);
+            return NULL;
+        }
+
+        /*
+         * If key length is 0 then a problem occurs because val
+         * will not be set flb_kv_item_create_len, which eventually
+         * results in issues since kv->val will be equal to NULL.
+         * Thus, check here whether key length is satisfied
+         */
+        if (flb_sds_len(key) == 0) {
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
             flb_slist_destroy(&split);
             flb_kv_release(&list);
             return NULL;

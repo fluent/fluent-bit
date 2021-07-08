@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -128,6 +128,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->log_key = tmp;
     }
 
+    tmp = flb_output_get_property("extra_user_agent", ins);
+    if (tmp) {
+        ctx->extra_user_agent = tmp;
+    }
+
     tmp = flb_output_get_property("region", ins);
     if (tmp) {
         ctx->region = tmp;
@@ -157,6 +162,12 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
+    ctx->log_retention_days = 0;
+    tmp = flb_output_get_property("log_retention_days", ins);
+    if (tmp) {
+        ctx->log_retention_days = atoi(tmp);
+    }
+
     tmp = flb_output_get_property("role_arn", ins);
     if (tmp) {
         ctx->role_arn = tmp;
@@ -180,35 +191,35 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     }
 
     /* one tls instance for provider, one for cw client */
-    ctx->cred_tls.context = flb_tls_context_new(FLB_TRUE,
-                                                ins->tls_debug,
-                                                ins->tls_vhost,
-                                                ins->tls_ca_path,
-                                                ins->tls_ca_file,
-                                                ins->tls_crt_file,
-                                                ins->tls_key_file,
-                                                ins->tls_key_passwd);
+    ctx->cred_tls = flb_tls_create(FLB_TRUE,
+                                   ins->tls_debug,
+                                   ins->tls_vhost,
+                                   ins->tls_ca_path,
+                                   ins->tls_ca_file,
+                                   ins->tls_crt_file,
+                                   ins->tls_key_file,
+                                   ins->tls_key_passwd);
 
-    if (!ctx->cred_tls.context) {
+    if (!ctx->cred_tls) {
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
     }
 
-    ctx->client_tls.context = flb_tls_context_new(FLB_TRUE,
-                                                  ins->tls_debug,
-                                                  ins->tls_vhost,
-                                                  ins->tls_ca_path,
-                                                  ins->tls_ca_file,
-                                                  ins->tls_crt_file,
-                                                  ins->tls_key_file,
-                                                  ins->tls_key_passwd);
-    if (!ctx->client_tls.context) {
+    ctx->client_tls = flb_tls_create(FLB_TRUE,
+                                     ins->tls_debug,
+                                     ins->tls_vhost,
+                                     ins->tls_ca_path,
+                                     ins->tls_ca_file,
+                                     ins->tls_crt_file,
+                                     ins->tls_key_file,
+                                     ins->tls_key_passwd);
+    if (!ctx->client_tls) {
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
     }
 
     ctx->aws_provider = flb_standard_chain_provider_create(config,
-                                                           &ctx->cred_tls,
+                                                           ctx->cred_tls,
                                                            (char *) ctx->region,
                                                            (char *) ctx->sts_endpoint,
                                                            NULL,
@@ -228,15 +239,15 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         }
 
         /* STS provider needs yet another separate TLS instance */
-        ctx->sts_tls.context = flb_tls_context_new(FLB_TRUE,
-                                                   ins->tls_debug,
-                                                   ins->tls_vhost,
-                                                   ins->tls_ca_path,
-                                                   ins->tls_ca_file,
-                                                   ins->tls_crt_file,
-                                                   ins->tls_key_file,
-                                                   ins->tls_key_passwd);
-        if (!ctx->sts_tls.context) {
+        ctx->sts_tls = flb_tls_create(FLB_TRUE,
+                                      ins->tls_debug,
+                                      ins->tls_vhost,
+                                      ins->tls_ca_path,
+                                      ins->tls_ca_file,
+                                      ins->tls_crt_file,
+                                      ins->tls_key_file,
+                                      ins->tls_key_passwd);
+        if (!ctx->sts_tls) {
             flb_errno();
             goto error;
         }
@@ -244,7 +255,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->base_aws_provider = ctx->aws_provider;
 
         ctx->aws_provider = flb_sts_provider_create(config,
-                                                    &ctx->sts_tls,
+                                                    ctx->sts_tls,
                                                     ctx->base_aws_provider,
                                                     NULL,
                                                     (char *) ctx->role_arn,
@@ -266,6 +277,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     /* initialize credentials and set to sync mode */
     ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
     ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+    ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
     if (ctx->endpoint == NULL) {
         ctx->endpoint = flb_aws_endpoint("logs", (char *) ctx->region);
@@ -289,10 +301,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->proxy = NULL;
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
+    ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
-                                                        &ctx->client_tls);
+                                                        ctx->client_tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         goto error;
@@ -306,6 +319,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     upstream->flags &= ~(FLB_IO_ASYNC);
 
     ctx->cw_client->upstream = upstream;
+    flb_output_upstream_set(upstream, ctx->ins);
     ctx->cw_client->host = ctx->endpoint;
 
     /* alloc the payload/processing buffer */
@@ -387,7 +401,8 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_info(ctx->ins, "Sent %d events to CloudWatch", event_count);
+    // TODO: this msg is innaccurate if events are skipped
+    flb_plg_debug(ctx->ins, "Sent %d events to CloudWatch", event_count);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -411,16 +426,16 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             flb_aws_provider_destroy(ctx->aws_provider);
         }
 
-        if (ctx->cred_tls.context) {
-            flb_tls_context_destroy(ctx->cred_tls.context);
+        if (ctx->cred_tls) {
+            flb_tls_destroy(ctx->cred_tls);
         }
 
-        if (ctx->sts_tls.context) {
-            flb_tls_context_destroy(ctx->sts_tls.context);
+        if (ctx->sts_tls) {
+            flb_tls_destroy(ctx->sts_tls);
         }
 
-        if (ctx->client_tls.context) {
-            flb_tls_context_destroy(ctx->client_tls.context);
+        if (ctx->client_tls) {
+            flb_tls_destroy(ctx->client_tls);
         }
 
         if (ctx->cw_client) {
@@ -508,6 +523,15 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "extra_user_agent", NULL,
+     0, FLB_FALSE, 0,
+     "This option appends a string to the default user agent. "
+     "AWS asks that you not manually set this field yourself, "
+     "it is reserved for use in our vended configurations, "
+     "for example, EKS Container Insights."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "log_format", NULL,
      0, FLB_FALSE, 0,
      "An optional parameter that can be used to tell CloudWatch the format "
@@ -526,6 +550,14 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Automatically create the log group (log streams will always automatically"
      " be created)"
+    },
+
+    {
+     FLB_CONFIG_MAP_INT, "log_retention_days", "0",
+     0, FLB_FALSE, 0,
+     "If set to a number greater than zero, and newly create log group's "
+     "retention policy is set to this many days. "
+     "Valid values are: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]"
     },
 
     {

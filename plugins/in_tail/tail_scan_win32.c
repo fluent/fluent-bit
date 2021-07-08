@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,8 +60,10 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
  * This function is a thin wrapper over flb_tail_file_append(),
  * adding normalization and sanity checks on top of it.
  */
-static int tail_register_file(const char *target, struct flb_tail_config *ctx)
+static int tail_register_file(const char *target, struct flb_tail_config *ctx,
+                              time_t ts)
 {
+    int64_t mtime;
     struct stat st;
     char path[MAX_PATH];
 
@@ -72,6 +74,17 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx)
 
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
         return -1;
+    }
+
+    if (ctx->ignore_older > 0) {
+        mtime = flb_tail_stat_mtime(&st);
+        if (mtime > 0) {
+            if ((ts - ctx->ignore_older) > mtime) {
+                flb_plg_debug(ctx->ins, "excluded=%s (ignore_older)",
+                              target);
+                return -1;
+            }
+        }
     }
 
     if (tail_is_excluded(path, ctx) == FLB_TRUE) {
@@ -98,6 +111,8 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
     char buf[MAX_PATH];
     int ret;
     int n_added = 0;
+    time_t now;
+    int64_t mtime;
     HANDLE h;
     WIN32_FIND_DATA data;
 
@@ -137,6 +152,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         return 0;  /* none matched */
     }
 
+    now = time(NULL);
     do {
         /* Ignore the current and parent dirs */
         if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
@@ -168,7 +184,7 @@ static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
         }
 
         /* Try to register the target file */
-        ret = tail_register_file(buf, ctx);
+        ret = tail_register_file(buf, ctx, now);
         if (ret == 0) {
             n_added++;
         }
@@ -213,13 +229,15 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
     int ret;
     int n_added = 0;
+    time_t now;
 
     if (strchr(path, '*')) {
         return tail_scan_pattern(path, ctx);
     }
 
     /* No wildcard involved. Let's just handle the file... */
-    ret = tail_register_file(path, ctx);
+    now = time(NULL);
+    ret = tail_register_file(path, ctx, now);
     if (ret == 0) {
         n_added++;
     }

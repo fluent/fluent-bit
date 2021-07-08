@@ -1,6 +1,24 @@
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_parser_decoder.h>
@@ -11,6 +29,8 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    TIMEOUT_GUARD
+
     char *format      = NULL;
     char *time_fmt    = NULL;
     char *time_key    = NULL;
@@ -35,13 +55,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
     else if (GET_MOD_EQ(4,1)) {
         format = "regex";
-        /*
+#ifdef PREG_FUZZ
         pregex = malloc(30);
         pregex[29] = '\0';
         memcpy(pregex, data, 29);
         data += 29;
         size -= 29;
-        */
+#else
+        pregex = "^(?<INT>[^ ]+) (?<FLOAT>[^ ]+) (?<BOOL>[^ ]+) (?<STRING>.+)$";
+#endif
     }
     else if (GET_MOD_EQ(4,2)) {
         format = "ltsv";
@@ -122,8 +144,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
     }
     MOVE_INPUT(1);
+    /* print our config struct */
+    flb_utils_print_setup(fuzz_config);
+
+    /* now call into the parser */
     fuzz_parser = flb_parser_create("fuzzer", format, pregex,
-            time_fmt, time_key, time_offset, time_keep,
+            time_fmt, time_key, time_offset, time_keep, 0,
             types, types_len, list, fuzz_config);
 
     /* Second step is to use the random parser to parse random input */
@@ -163,9 +189,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (time_offset != NULL) {
         flb_free(time_offset);
     }
+#ifdef PREG_FUZZ
     if (pregex != NULL) {
         flb_free(pregex);
     }
+#endif
 
     return 0;
 }

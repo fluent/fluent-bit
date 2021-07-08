@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +25,7 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
-
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
 
 #define free_temporary_buffers()                 \
     if (prot) {                                 \
@@ -116,6 +115,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
         }
         else if (key_cmp(key, key_len, "expires_in") == 0) {
             ctx->expires_in = atol(val);
+
+            /*
+             * Our internal expiration time must be lower that the one set
+             * by the remote end-point, so we can use valid cached values
+             * if a token renewal is in place. So we decrease the expire
+             * interval -10%.
+             */
+            ctx->expires_in -= (ctx->expires_in * 0.10);
         }
     }
 
@@ -206,22 +213,22 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     }
 
     /* Create TLS context */
-    ctx->tls.context = flb_tls_context_new(FLB_TRUE,  /* verify */
-                                           -1,        /* debug */
-                                           NULL,      /* vhost */
-                                           NULL,      /* ca_path */
-                                           NULL,      /* ca_file */
-                                           NULL,      /* crt_file */
-                                           NULL,      /* key_file */
-                                           NULL);     /* key_passwd */
-    if (!ctx->tls.context) {
+    ctx->tls = flb_tls_create(FLB_TRUE,  /* verify */
+                              -1,        /* debug */
+                              NULL,      /* vhost */
+                              NULL,      /* ca_path */
+                              NULL,      /* ca_file */
+                              NULL,      /* crt_file */
+                              NULL,      /* key_file */
+                              NULL);     /* key_passwd */
+    if (!ctx->tls) {
         flb_error("[oauth2] error initializing TLS context");
         goto error;
     }
 
     /* Create Upstream context */
     ctx->u = flb_upstream_create_url(config, auth_url,
-                                     FLB_IO_TLS, &ctx->tls);
+                                     FLB_IO_TLS, ctx->tls);
     if (!ctx->u) {
         flb_error("[oauth2] error creating upstream context");
         goto error;
@@ -238,6 +245,22 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     flb_oauth2_destroy(ctx);
 
     return NULL;
+}
+
+/* Clear the current payload and token */
+void flb_oauth2_payload_clear(struct flb_oauth2 *ctx)
+{
+    flb_sds_len_set(ctx->payload, 0);
+    ctx->payload[0] = '\0';
+    ctx->expires_in = 0;
+    if (ctx->access_token){
+        flb_sds_destroy(ctx->access_token);
+        ctx->access_token = NULL;
+    }
+    if (ctx->token_type){
+        flb_sds_destroy(ctx->token_type);
+        ctx->token_type = NULL;
+    }
 }
 
 /* Append a key/value to the request body */
@@ -287,8 +310,6 @@ int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
 
 void flb_oauth2_destroy(struct flb_oauth2 *ctx)
 {
-    flb_tls_context_destroy(ctx->tls.context);
-
     flb_sds_destroy(ctx->auth_url);
     flb_sds_destroy(ctx->payload);
 
@@ -300,6 +321,8 @@ void flb_oauth2_destroy(struct flb_oauth2 *ctx)
     flb_sds_destroy(ctx->token_type);
 
     flb_upstream_destroy(ctx->u);
+    flb_tls_destroy(ctx->tls);
+
     flb_free(ctx);
 }
 
@@ -313,8 +336,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
 
     now = time(NULL);
     if (ctx->access_token) {
-        /* validate expired token */
-        if (ctx->expires < now && flb_sds_len(ctx->access_token) > 0) {
+        /* validate unexpired token */
+        if (ctx->expires > now && flb_sds_len(ctx->access_token) > 0) {
             return ctx->access_token;
         }
     }
@@ -375,6 +398,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);
             flb_http_client_destroy(c);
+            ctx->issued = time(NULL);
+            ctx->expires = ctx->issued + ctx->expires_in;
             return ctx->access_token;
         }
     }

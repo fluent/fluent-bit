@@ -18,6 +18,11 @@
  *  limitations under the License.
  */
 
+#ifndef FLB_SP_WINDOW
+#define FLB_SP_WINDOW
+
+#include <fluent-bit/stream_processor/flb_sp.h>
+
 #define FLB_SP_WINDOW_DEFAULT   0
 #define FLB_SP_WINDOW_TUMBLING  1
 #define FLB_SP_WINDOW_HOPPING   2
@@ -25,3 +30,5 @@
 void flb_sp_window_prune(struct flb_sp_task *task);
 int flb_sp_window_populate(struct flb_sp_task *task, const char *buf_data,
                            size_t buf_size);
+
+#endif

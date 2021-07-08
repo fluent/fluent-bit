@@ -30,6 +30,10 @@
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_log.h>
 
+#ifdef _WIN32
+#include "win32/dirent.h"
+#endif
+
 #ifdef CIO_HAVE_BACKEND_FILESYSTEM
 static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
                                  char *chunk_extension)
@@ -95,7 +99,7 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
         }
 
         /* register every directory as a stream */
-        cio_chunk_open(ctx, st, ent->d_name, CIO_OPEN_RD, 0, &err);
+        cio_chunk_open(ctx, st, ent->d_name, ctx->flags, 0, &err);
     }
 
     closedir(dir);

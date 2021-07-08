@@ -25,7 +25,8 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <regex.h>
+//#include <regex.h>
+#include <re.h>
 
 #include <monkey/monkey.h>
 #include <monkey/mk_user.h>
@@ -736,8 +737,8 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
 
-            if (regexec(h_handler->match,
-                        sr->uri_processed.data, 0, NULL, 0) != 0) {
+            if (re_matchp(h_handler->match,
+                          sr->uri_processed.data, NULL) == -1) {
                 continue;
             }
 
@@ -842,6 +843,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         }
     }
 
+#ifndef _WIN32
     /* Check symbolic link file */
     if (sr->file_info.is_link == MK_TRUE) {
         if (server->symlink == MK_FALSE) {
@@ -856,6 +858,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
             }
         }
     }
+#endif
 
     /* Plugin Stage 30: look for handlers for this request */
     if (sr->stage30_blocked == MK_FALSE) {
@@ -872,8 +875,7 @@ int mk_http_init(struct mk_http_session *cs, struct mk_http_request *sr,
         handlers = &sr->host_conf->handlers;
         mk_list_foreach(head, handlers) {
             h_handler = mk_list_entry(head, struct mk_vhost_handler, _head);
-            if (regexec(h_handler->match,
-                        uri, 0, NULL, 0) != 0) {
+            if (re_matchp(h_handler->match, uri, NULL) == -1) {
                 continue;
             }
 
@@ -1240,6 +1242,7 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
             if (fd == -1) {
                 break;
             }
+            /* This fd seems to be leaked, we need to verify this logic */
 
             /* Outgoing headers */
             sr->headers.content_length = finfo.size;

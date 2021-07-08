@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -429,10 +429,18 @@ static void in_tail_pause(void *data, struct flb_config *config)
 
     if (ctx->docker_mode == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->ins);
+        if (config->is_ingestion_active == FLB_FALSE) {
+            flb_plg_info(ctx->ins, "flushing pending docker mode data...");
+            flb_tail_dmode_pending_flush_all(ctx);
+        }
     }
 
     if (ctx->multiline == FLB_TRUE) {
         flb_input_collector_pause(ctx->coll_fd_mult_flush, ctx->ins);
+        if (config->is_ingestion_active == FLB_FALSE) {
+            flb_plg_info(ctx->ins, "flushing pending multiline data...");
+            flb_tail_mult_pending_flush_all(ctx);
+        }
     }
 
     /* Pause file system backend handlers */
@@ -526,6 +534,11 @@ static struct flb_config_map config_map[] = {
      "set the 'key' name where the name of monitored file will be appended."
     },
     {
+     FLB_CONFIG_MAP_STR, "offset_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, offset_key),
+     "set the 'key' name where the offset of monitored file will be appended."
+    },
+    {
      FLB_CONFIG_MAP_TIME, "ignore_older", "0",
      0, FLB_TRUE, offsetof(struct flb_tail_config, ignore_older),
      "ignore records older than 'ignore_older'. Supports m,h,d (minutes, "
@@ -560,6 +573,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
      "exit Fluent Bit when reaching EOF on a monitored file."
     },
+#ifdef FLB_HAVE_INOTIFY
+    {
+     FLB_CONFIG_MAP_BOOL, "inotify_watcher", "true",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, inotify_watcher),
+     "set to false to use file stat watcher instead of inotify."
+    },
+#endif
 #ifdef FLB_HAVE_REGEX
     {
      FLB_CONFIG_MAP_STR, "parser", NULL,
@@ -590,6 +610,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, db_locking),
      "set exclusive locking mode, increase performance but don't allow "
      "external connections to the database file."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "db.journal_mode", "WAL",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, db_journal_mode),
+     "Option to provide WAL configuration for Work Ahead Logging mechanism (WAL). Enabling WAL "
+     "provides higher performance. Note that WAL is not compatible with "
+     "shared network file systems."
     },
 #endif
 
@@ -622,6 +649,12 @@ static struct flb_config_map config_map[] = {
      "Parser_2 ab2, Parser_N abN."
     },
 
+    /* Multiline Core Engine based API */
+    {
+     FLB_CONFIG_MAP_CLIST, "multiline.parser", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_tail_config, multiline_parsers),
+     "specify one or multiple multiline parsers: docker, cri, go, java, etc."
+    },
 #endif
 
     /* EOF */

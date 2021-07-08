@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,8 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
+
 #include <msgpack.h>
 
 /* JSON types */
@@ -61,8 +62,12 @@ struct flb_pack_state {
 };
 
 int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
-int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
-                  int *root_type);
+
+
+int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size, int *root_type);
+int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
+                       int *root_type, int *out_records);
+
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 

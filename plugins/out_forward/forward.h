@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +36,10 @@
 #define MODE_MESSAGE               0
 #define MODE_FORWARD               1
 #define MODE_FORWARD_COMPAT        3
-#define MODE_FORWARD_GZIP          4
+
+/* Compression modes */
+#define COMPRESS_NONE              0
+#define COMPRESS_GZIP              1
 
 /*
  * Configuration: we put this separate from the main
@@ -49,6 +52,7 @@
  */
 struct flb_forward_config {
     int secured;              /* Using Secure Forward mode ?  */
+    int compress;             /* Using compression ? */
     int time_as_integer;      /* Use backward compatible timestamp ? */
 
     /* config */

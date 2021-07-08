@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -114,8 +114,10 @@ static int http_post(struct flb_out_http *ctx,
                         ctx->proxy, 0);
 
 
-    flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
-                  c->proxy.host, c->proxy.port);
+    if (c->proxy.host) {
+        flb_plg_debug(ctx->ins, "[http_client] proxy host: %s port: %i",
+                      c->proxy.host, c->proxy.port);
+    }
 
     /* Allow duplicated headers ? */
     flb_http_allow_duplicated_headers(c, ctx->allow_dup_headers);
@@ -187,7 +189,8 @@ static int http_post(struct flb_out_http *ctx,
          *
          */
         if (c->resp.status < 200 || c->resp.status > 205) {
-            if (c->resp.payload && c->resp.payload_size > 0) {
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                               ctx->host, ctx->port,
                               c->resp.status, c->resp.payload);
@@ -199,7 +202,8 @@ static int http_post(struct flb_out_http *ctx,
             out_ret = FLB_RETRY;
         }
         else {
-            if (c->resp.payload && c->resp.payload_size > 0) {
+            if (ctx->log_response_payload &&
+                c->resp.payload && c->resp.payload_size > 0) {
                 flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                              ctx->host, ctx->port,
                              c->resp.status, c->resp.payload);
@@ -352,6 +356,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "allow_duplicated_headers", "true",
      0, FLB_TRUE, offsetof(struct flb_out_http, allow_dup_headers),
      "Specify if duplicated headers are allowed or not"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
+     0, FLB_TRUE, offsetof(struct flb_out_http, log_response_payload),
+     "Specify if the response paylod should be logged or not"
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,

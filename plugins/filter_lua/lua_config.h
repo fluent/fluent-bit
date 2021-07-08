@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,8 +29,14 @@
 #define LUA_BUFFER_CHUNK    1024 * 8  /* 8K should be enough to get started */
 #define L2C_TYPES_NUM_MAX   16
 
+enum l2c_type_enum {
+    L2C_TYPE_INT,
+    L2C_TYPE_ARRAY
+};
+
 struct l2c_type {
     flb_sds_t key;
+    int type;
     struct mk_list _head;
 };
 

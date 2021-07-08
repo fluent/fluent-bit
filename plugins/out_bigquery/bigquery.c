@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -198,6 +198,9 @@ static int bigquery_get_oauth2_token(struct flb_bigquery *ctx)
     time_t expires;
     char payload[1024];
 
+    /* Clear any previous oauth2 payload content */
+    flb_oauth2_payload_clear(ctx->o);
+
     /* JWT encode for oauth2 */
     issued = time(NULL);
     expires = issued + FLB_BIGQUERY_TOKEN_REFRESH;
@@ -218,14 +221,6 @@ static int bigquery_get_oauth2_token(struct flb_bigquery *ctx)
     }
 
     flb_plg_debug(ctx->ins, "JWT signature:\n%s", sig_data);
-
-    /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_BIGQUERY_AUTH_URL, 3000);
-    if (!ctx->o) {
-        flb_sds_destroy(sig_data);
-        flb_plg_error(ctx->ins, "cannot create oauth2 context");
-        return -1;
-    }
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
@@ -257,28 +252,36 @@ static int bigquery_get_oauth2_token(struct flb_bigquery *ctx)
     return 0;
 }
 
-static char *get_google_token(struct flb_bigquery *ctx)
+static flb_sds_t get_google_token(struct flb_bigquery *ctx)
 {
     int ret = 0;
+    flb_sds_t output = NULL;
 
-    flb_plg_trace(ctx->ins, "getting google token");
-    if (!ctx->o) {
-        flb_plg_trace(ctx->ins, "acquiring new token");
-        ret = bigquery_get_oauth2_token(ctx);
-    }
-    else if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-        flb_plg_trace(ctx->ins, "replacing expired token");
-        flb_oauth2_destroy(ctx->o);
-        ret = bigquery_get_oauth2_token(ctx);
-    }
-
-    if (ret != 0) {
+    if (pthread_mutex_lock(&ctx->token_mutex)){
+        flb_plg_error(ctx->ins, "error locking mutex");
         return NULL;
     }
 
-    return ctx->o->access_token;
-}
+    if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
+        ret = bigquery_get_oauth2_token(ctx);
+    }
 
+    /* Copy string to prevent race conditions (get_oauth2 can free the string) */
+    if (ret == 0) {
+        output = flb_sds_create(ctx->o->token_type);
+        flb_sds_printf(&output, " %s", ctx->o->access_token);
+    }
+
+    if (pthread_mutex_unlock(&ctx->token_mutex)){
+        flb_plg_error(ctx->ins, "error unlocking mutex");
+        if (output) {
+            flb_sds_destroy(output);
+        }
+        return NULL;
+    }
+
+    return output;
+}
 
 static int cb_bigquery_init(struct flb_output_instance *ins,
                             struct flb_config *config, void *data)
@@ -301,21 +304,35 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         io_flags |= FLB_IO_IPV6;
     }
 
+    /* Create mutex for acquiring oauth tokens (they are shared across flush coroutines) */
+    pthread_mutex_init(&ctx->token_mutex, NULL);
+
     /*
      * Create upstream context for BigQuery Streaming Inserts
      * (no oauth2 service)
      */
     ctx->u = flb_upstream_create_url(config, FLB_BIGQUERY_URL_BASE,
-                                     io_flags, &ins->tls);
+                                     io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
         return -1;
     }
 
+    /* Create oauth2 context */
+    ctx->o = flb_oauth2_create(ctx->config, FLB_BIGQUERY_AUTH_URL, 3000);
+    if (!ctx->o) {
+        flb_plg_error(ctx->ins, "cannot create oauth2 context");
+        return -1;
+    }
+    flb_output_upstream_set(ctx->u, ins);
+
     /* Retrief oauth2 token */
     token = get_google_token(ctx);
     if (!token) {
         flb_plg_warn(ctx->ins, "token retrieval failed");
+    }
+    else {
+        flb_sds_destroy(token);
     }
 
     return 0;
@@ -391,11 +408,11 @@ static int bigquery_format(const void *data, size_t bytes,
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    msgpack_unpacked_destroy(&result);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
-        msgpack_unpacked_destroy(&result);
         return -1;
     }
 
@@ -403,17 +420,6 @@ static int bigquery_format(const void *data, size_t bytes,
     *out_size = flb_sds_len(out_buf);
 
     return 0;
-}
-
-static void set_authorization_header(struct flb_http_client *c,
-                                     char *token)
-{
-    int len;
-    char header[512];
-
-    len = snprintf(header, sizeof(header) - 1,
-                   "Bearer %s", token);
-    flb_http_add_header(c, "Authorization", 13, header, len);
 }
 
 static void cb_bigquery_flush(const void *data, size_t bytes,
@@ -427,7 +433,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     int ret;
     int ret_code = FLB_RETRY;
     size_t b_sent;
-    char *token;
+    flb_sds_t token;
     flb_sds_t payload_buf;
     size_t payload_size;
     struct flb_bigquery *ctx = out_context;
@@ -442,34 +448,40 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Reformat msgpack to bigquery JSON payload */
-    ret = bigquery_format(data, bytes, tag, tag_len,
-                          &payload_buf, &payload_size, ctx);
-    if (ret != 0) {
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
     /* Get or renew Token */
     token = get_google_token(ctx);
     if (!token) {
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
-        flb_sds_destroy(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    /* Reformat msgpack to bigquery JSON payload */
+    ret = bigquery_format(data, bytes, tag, tag_len,
+                          &payload_buf, &payload_size, ctx);
+    if (ret != 0) {
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
+    if (!c) {
+        flb_plg_error(ctx->ins, "cannot create HTTP client context");
+        flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(token);
+        flb_sds_destroy(payload_buf);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
 
     flb_http_buffer_size(c, 4192);
-
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
 
     /* Compose and append Authorization header */
-    set_authorization_header(c, token);
+    flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -486,14 +498,9 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
             ret_code = FLB_OK;
         }
         else {
-            if (c->resp.payload_size > 0) {
+            if (c->resp.payload && c->resp.payload_size > 0) {
                 /* we got an error */
-                flb_plg_warn(ctx->ins, "error\n%s",
-                             c->resp.payload);
-            }
-            else {
-                flb_plg_debug(ctx->ins, "response\n%s",
-                              c->resp.payload);
+                flb_plg_warn(ctx->ins, "repsponse\n%s", c->resp.payload);
             }
             ret_code = FLB_RETRY;
         }
@@ -501,6 +508,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
 
     /* Cleanup */
     flb_sds_destroy(payload_buf);
+    flb_sds_destroy(token);
     flb_http_client_destroy(c);
     flb_upstream_conn_release(u_conn);
 

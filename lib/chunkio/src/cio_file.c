@@ -305,7 +305,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     }
 
     /* Mmap */
-    if (cf->flags & CIO_OPEN) {
+    if (cf->flags & CIO_OPEN_RW) {
         oflags = PROT_READ | PROT_WRITE;
     }
     else if (cf->flags & CIO_OPEN_RD) {
@@ -318,6 +318,11 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         cf->synced = CIO_TRUE;
     }
     else if (fs_size == 0) {
+        /* We can only prepare a file if it has been opened in RW mode */
+        if ((cf->flags & CIO_OPEN_RW) == 0) {
+            return CIO_CORRUPTED;
+        }
+
         cf->synced = CIO_FALSE;
 
         /* Adjust size to make room for headers */
@@ -334,6 +339,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
                           cf->path, size);
             return CIO_ERROR;
         }
+
+        cio_log_debug(ctx, "%s:%s adjusting size OK", ch->st->name, ch->name);
     }
 
     /* Map the file */
@@ -397,7 +404,7 @@ static int file_open(struct cio_ctx *ctx, struct cio_file *cf)
     }
 
     /* Open file descriptor */
-    if (cf->flags & CIO_OPEN) {
+    if (cf->flags & CIO_OPEN_RW) {
         cf->fd = open(cf->path, O_RDWR | O_CREAT, (mode_t) 0600);
     }
     else if (cf->flags & CIO_OPEN_RD) {
@@ -504,7 +511,7 @@ static inline int open_and_up(struct cio_ctx *ctx)
  * Open or create a data file: the following behavior is expected depending
  * of the passed flags:
  *
- * CIO_OPEN:
+ * CIO_OPEN | CIO_OPEN_RW:
  *    - Open for read/write, if the file don't exist, it's created and the
  *      memory map size is assigned to the given value on 'size'.
  *
@@ -755,7 +762,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     }
 
     if (cio_chunk_is_up(ch) == CIO_FALSE) {
-        cio_log_error("[cio file] file is not mmap()ed: %s:%s",
+        cio_log_error(ch->ctx, "[cio file] file is not mmap()ed: %s:%s",
                       ch->st->name, ch->name);
         return -1;
     }
@@ -1013,6 +1020,14 @@ int cio_file_sync(struct cio_chunk *ch)
     }
 
     cf->synced = CIO_TRUE;
+
+    ret = fstat(cf->fd, &fst);
+    if (ret == -1) {
+        cio_errno();
+        return -1;
+    }
+    cf->fs_size = fst.st_size;
+
     cio_log_debug(ch->ctx, "[cio file] synced at: %s/%s",
                   ch->st->name, ch->name);
     return 0;

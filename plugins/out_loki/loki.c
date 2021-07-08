@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,6 +37,16 @@ static void flb_loki_kv_init(struct mk_list *list)
     mk_list_init(list);
 }
 
+static inline void safe_sds_cat(flb_sds_t *buf, const char *str, int len)
+{
+    flb_sds_t tmp;
+
+    tmp = flb_sds_cat(*buf, str, len);
+    if (tmp) {
+        *buf = tmp;
+    }
+}
+
 static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
 {
     int sub;
@@ -49,13 +59,12 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
     /* Iterate record accessor keys */
     key = rp->key;
     if (rp->type == FLB_RA_PARSER_STRING) {
-        flb_sds_cat(name, key->name, flb_sds_len(key->name));
+        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
     }
     else if (rp->type == FLB_RA_PARSER_KEYMAP) {
-        flb_sds_cat(name, key->name, flb_sds_len(key->name));
-
+        safe_sds_cat(&name, key->name, flb_sds_len(key->name));
         if (mk_list_size(key->subkeys) > 0) {
-            flb_sds_cat(name, "_", 1);
+            safe_sds_cat(&name, "_", 1);
         }
 
         sub = 0;
@@ -63,15 +72,15 @@ static inline void normalize_cat(struct flb_ra_parser *rp, flb_sds_t name)
             entry = mk_list_entry(s_head, struct flb_ra_subentry, _head);
 
             if (sub > 0) {
-                flb_sds_cat(name, "_", 1);
+                safe_sds_cat(&name, "_", 1);
             }
             if (entry->type == FLB_RA_PARSER_STRING) {
-                flb_sds_cat(name, entry->str, flb_sds_len(entry->str));
+                safe_sds_cat(&name, entry->str, flb_sds_len(entry->str));
             }
             else if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
                 len = snprintf(tmp, sizeof(tmp) -1, "%d",
                                entry->array_id);
-                flb_sds_cat(name, tmp, len);
+                safe_sds_cat(&name, tmp, len);
             }
             sub++;
         }
@@ -103,10 +112,33 @@ static flb_sds_t normalize_ra_key_name(struct flb_loki *ctx,
     return name;
 }
 
+void flb_loki_kv_destroy(struct flb_loki_kv *kv)
+{
+    /* destroy key and value */
+    flb_sds_destroy(kv->key);
+    if (kv->val_type == FLB_LOKI_KV_STR) {
+        flb_sds_destroy(kv->str_val);
+    }
+    else if (kv->val_type == FLB_LOKI_KV_RA) {
+        flb_ra_destroy(kv->ra_val);
+    }
+
+    if (kv->ra_key) {
+        flb_ra_destroy(kv->ra_key);
+    }
+
+    if (kv->key_normalized) {
+        flb_sds_destroy(kv->key_normalized);
+    }
+
+    flb_free(kv);
+}
+
 int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
 {
     int ra_count = 0;
     int k_len;
+    int ret;
     struct flb_loki_kv *kv;
 
     if (!key) {
@@ -128,6 +160,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
         flb_plg_error(ctx->ins,
                       "key name for record accessor cannot start with a number: %s",
                       key);
+        flb_free(kv);
         return -1;
     }
 
@@ -147,8 +180,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "invalid key record accessor pattern for key '%s'",
                           key);
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
             return -1;
         }
 
@@ -158,8 +190,12 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "could not normalize key pattern name '%s'\n",
                           kv->ra_key->pattern);
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
+            return -1;
+        }
+        ret = flb_slist_add(&ctx->remove_keys_derived, key);
+        if (ret < 0) {
+            flb_loki_kv_destroy(kv);
             return -1;
         }
         ra_count++;
@@ -172,8 +208,12 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_plg_error(ctx->ins,
                           "invalid record accessor pattern for key '%s': %s",
                           key, val);
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
+            return -1;
+        }
+        ret = flb_slist_add(&ctx->remove_keys_derived, val);
+        if (ret < 0) {
+            flb_loki_kv_destroy(kv);
             return -1;
         }
         ra_count++;
@@ -182,8 +222,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
         kv->val_type = FLB_LOKI_KV_STR;
         kv->str_val = flb_sds_create(val);
         if (!kv->str_val) {
-            flb_sds_destroy(kv->key);
-            flb_free(kv);
+            flb_loki_kv_destroy(kv);
             return -1;
         }
     }
@@ -202,31 +241,53 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
     mk_list_foreach_safe(head, tmp, &ctx->labels_list) {
         kv = mk_list_entry(head, struct flb_loki_kv, _head);
 
-        /* unlink */
+        /* unlink and destroy */
         mk_list_del(&kv->_head);
-
-        /* destroy key and value */
-        flb_sds_destroy(kv->key);
-        if (kv->val_type == FLB_LOKI_KV_STR) {
-            flb_sds_destroy(kv->str_val);
-        }
-        else if (kv->val_type == FLB_LOKI_KV_RA) {
-            flb_ra_destroy(kv->ra_val);
-        }
-
-        if (kv->ra_key) {
-            flb_ra_destroy(kv->ra_key);
-        }
-
-        if (kv->key_normalized) {
-            flb_sds_destroy(kv->key_normalized);
-        }
-
-        flb_free(kv);
+        flb_loki_kv_destroy(kv);
     }
 }
 
-static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
+/* Pack a label key, it also perform sanitization of the characters */
+static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                          char *key, int key_len)
+{
+    int i;
+    int k_len = key_len;
+    int is_digit = FLB_FALSE;
+    char *p;
+
+    /* Normalize key name using the packed value */
+    if (isdigit(*key)) {
+        is_digit = FLB_TRUE;
+        k_len++;
+    }
+
+    /* key: pack the length */
+    msgpack_pack_str(mp_pck, k_len);
+    if (is_digit) {
+        msgpack_pack_str_body(mp_pck, "_", 1);
+    }
+
+    /*
+     * 'p' will point to the next memory area where the key will be
+     * written.
+     */
+    p = (char *) (mp_sbuf->data + mp_sbuf->size);
+
+    /* Pack the key name */
+    msgpack_pack_str_body(mp_pck, key, key_len);
+
+    for (i = 0; i < key_len; i++) {
+        if (!isalnum(p[i]) && p[i] != '_') {
+            p[i] = '_';
+        }
+    }
+
+    return 0;
+}
+
+static flb_sds_t pack_labels(struct flb_loki *ctx,
+                             msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                              char *tag, int tag_len,
                              msgpack_object *map)
 {
@@ -260,10 +321,8 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
                 flb_mp_map_header_append(&mh);
 
                 /* We skip the first '$' character since it won't be valid in Loki */
-                msgpack_pack_str(mp_pck, flb_sds_len(kv->key_normalized));
-                msgpack_pack_str_body(mp_pck,
-                                      kv->key_normalized,
-                                      flb_sds_len(kv->key_normalized));
+                pack_label_key(mp_sbuf, mp_pck,
+                               kv->key_normalized, flb_sds_len(kv->key_normalized));
 
                 msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
                 msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
@@ -319,11 +378,17 @@ static flb_sds_t pack_labels(struct flb_loki *ctx, msgpack_packer *mp_pck,
 
                 /* append the key/value pair */
                 flb_mp_map_header_append(&mh);
-                msgpack_pack_str(mp_pck, k.via.str.size);
-                msgpack_pack_str_body(mp_pck, k.via.str.ptr,  k.via.str.size);
+
+                /* Pack key */
+                pack_label_key(mp_sbuf, mp_pck, (char *) k.via.str.ptr, k.via.str.size);
+
+                /* Pack the value */
                 msgpack_pack_str(mp_pck, v.via.str.size);
                 msgpack_pack_str_body(mp_pck, v.via.str.ptr,  v.via.str.size);
             }
+        }
+
+        if (rval) {
             flb_ra_key_value_destroy(rval);
         }
     }
@@ -443,6 +508,88 @@ static int parse_labels(struct flb_loki *ctx)
     return 0;
 }
 
+static int key_is_duplicated(struct mk_list *list, char *str, int len)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    mk_list_foreach(head, list) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (flb_sds_len(entry->str) == len &&
+            strncmp(entry->str, str, len) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int prepare_remove_keys(struct flb_loki *ctx)
+{
+    int ret;
+    int len;
+    int size;
+    char *tmp;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+    struct mk_list *patterns;
+
+    patterns = &ctx->remove_keys_derived;
+
+    /* Add remove keys set in the configuration */
+    if (ctx->remove_keys) {
+        mk_list_foreach(head, ctx->remove_keys) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+
+            if (entry->str[0] != '$') {
+                tmp = flb_malloc(flb_sds_len(entry->str) + 2);
+                if (!tmp) {
+                    flb_errno();
+                    continue;
+                }
+                else {
+                    tmp[0] = '$';
+                    len = flb_sds_len(entry->str);
+                    memcpy(tmp + 1, entry->str, len);
+                    tmp[len + 1] = '\0';
+                    len++;
+                }
+            }
+            else {
+                tmp = entry->str;
+                len = flb_sds_len(entry->str);
+            }
+
+            ret = key_is_duplicated(patterns, tmp, len);
+            if (ret == FLB_TRUE) {
+                if (entry->str != tmp) {
+                    flb_free(tmp);
+                }
+                continue;
+            }
+
+            ret = flb_slist_add_n(patterns, tmp, len);
+            if (entry->str != tmp) {
+                flb_free(tmp);
+            }
+            if (ret < 0) {
+                return -1;
+            }
+        }
+    }
+
+    size = mk_list_size(patterns);
+    flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
+    if (size > 0) {
+        ctx->remove_mpa = flb_mp_accessor_create(patterns);
+        if (ctx->remove_mpa == NULL) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static void loki_config_destroy(struct flb_loki *ctx)
 {
     if (ctx->u) {
@@ -452,6 +599,19 @@ static void loki_config_destroy(struct flb_loki *ctx)
     if (ctx->ra_k8s) {
         flb_ra_destroy(ctx->ra_k8s);
     }
+    if (ctx->ra_tenant_id_key) {
+        flb_ra_destroy(ctx->ra_tenant_id_key);
+        if (ctx->dynamic_tenant_id) {
+            flb_sds_destroy(ctx->dynamic_tenant_id);
+            ctx->dynamic_tenant_id = NULL;
+        }
+    }
+
+    if (ctx->remove_mpa) {
+        flb_mp_accessor_destroy(ctx->remove_mpa);
+    }
+    flb_slist_destroy(&ctx->remove_keys_derived);
+
     flb_loki_kv_exit(ctx);
     flb_free(ctx);
 }
@@ -485,9 +645,41 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* Initialize final remove_keys list */
+    flb_slist_create(&ctx->remove_keys_derived);
+
     /* Parse labels */
     ret = parse_labels(ctx);
     if (ret == -1) {
+        return NULL;
+    }
+
+    /* Load remove keys */
+    ret = prepare_remove_keys(ctx);
+    if (ret == -1) {
+        return NULL;
+    }
+
+    /* tenant_id_key */
+    if (ctx->tenant_id_key_config) {
+        ctx->ra_tenant_id_key = flb_ra_create(ctx->tenant_id_key_config, FLB_FALSE);
+        if (!ctx->ra_tenant_id_key) {
+            flb_plg_error(ctx->ins,
+                          "could not create record accessor for Tenant ID");
+        }
+        ctx->dynamic_tenant_id = NULL;
+    }
+
+    /* Line Format */
+    if (strcasecmp(ctx->line_format, "json") == 0) {
+        ctx->out_line_format = FLB_LOKI_FMT_JSON;
+    }
+    else if (strcasecmp(ctx->line_format, "key_value") == 0) {
+        ctx->out_line_format = FLB_LOKI_FMT_KV;
+    }
+    else {
+        flb_plg_error(ctx->ins, "invalid 'line_format' value: %s",
+                      ctx->line_format);
         return NULL;
     }
 
@@ -508,11 +700,12 @@ static struct flb_loki *loki_config_create(struct flb_output_instance *ins,
                                    ins->host.name,
                                    ins->host.port,
                                    io_flags,
-                                   &ins->tls);
+                                   ins->tls);
     if (!upstream) {
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
     ctx->tcp_port = ins->host.port;
     ctx->tcp_host = ins->host.name;
 
@@ -530,7 +723,7 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
     uint64_t nanosecs;
 
     /* convert to nanoseconds */
-    nanosecs = ((tms->tm.tv_sec * 1000000000L) + tms->tm.tv_nsec);
+    nanosecs = flb_time_to_nanosec(tms);
 
     /* format as a string */
     len = snprintf(buf, sizeof(buf) - 1, "%" PRIu64, nanosecs);
@@ -540,19 +733,270 @@ static void pack_timestamp(msgpack_packer *mp_pck, struct flb_time *tms)
     msgpack_pack_str_body(mp_pck, buf, len);
 }
 
-static int pack_record(msgpack_packer *mp_pck, msgpack_object *rec)
-{
-    int len;
-    char *line;
 
-    line = flb_msgpack_to_json_str(1024, rec);
-    if (!line) {
+static void pack_format_line_value(flb_sds_t buf, msgpack_object *val)
+{
+    int i;
+    int len;
+    char temp[512];
+    msgpack_object k;
+    msgpack_object v;
+
+    if (val->type == MSGPACK_OBJECT_STR) {
+        safe_sds_cat(&buf, "\"", 1);
+        safe_sds_cat(&buf, val->via.str.ptr, val->via.str.size);
+        safe_sds_cat(&buf, "\"", 1);
+    }
+    else if (val->type == MSGPACK_OBJECT_NIL) {
+        safe_sds_cat(&buf, "null", 4);
+    }
+    else if (val->type == MSGPACK_OBJECT_BOOLEAN) {
+        if (val->via.boolean) {
+            safe_sds_cat(&buf, "true", 4);
+        }
+        else {
+            safe_sds_cat(&buf, "false", 5);
+        }
+    }
+    else if (val->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        len = snprintf(temp, sizeof(temp)-1, "%"PRIu64, val->via.u64);
+        safe_sds_cat(&buf, temp, len);
+    }
+    else if (val->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        len = snprintf(temp, sizeof(temp)-1, "%"PRId64, val->via.i64);
+        safe_sds_cat(&buf, temp, len);
+    }
+    else if (val->type == MSGPACK_OBJECT_FLOAT32 ||
+             val->type == MSGPACK_OBJECT_FLOAT64) {
+        if (val->via.f64 == (double)(long long int) val->via.f64) {
+            len = snprintf(temp, sizeof(temp)-1, "%.1f", val->via.f64);
+        }
+        else {
+            len = snprintf(temp, sizeof(temp)-1, "%.16g", val->via.f64);
+        }
+    }
+    else if (val->type == MSGPACK_OBJECT_ARRAY) {
+        safe_sds_cat(&buf, "\"[", 2);
+        for (i = 0; i < val->via.array.size; i++) {
+            v = val->via.array.ptr[i];
+            if (i > 0) {
+                safe_sds_cat(&buf, " ", 1);
+            }
+            pack_format_line_value(buf, &v);
+        }
+        safe_sds_cat(&buf, "]\"", 2);
+    }
+    else if (val->type == MSGPACK_OBJECT_MAP) {
+        safe_sds_cat(&buf, "\"map[", 5);
+
+        for (i = 0; i < val->via.map.size; i++) {
+            k = val->via.map.ptr[i].key;
+            v = val->via.map.ptr[i].val;
+
+            if (k.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+
+            if (i > 0) {
+                safe_sds_cat(&buf, " ", 1);
+            }
+
+            safe_sds_cat(&buf, k.via.str.ptr, k.via.str.size);
+            safe_sds_cat(&buf, ":", 1);
+            pack_format_line_value(buf, &v);
+        }
+        safe_sds_cat(&buf, "]\"", 2);
+    }
+    else {
+
+        return;
+    }
+}
+
+// seek tenant id from map and set it to ctx->dynamic_tenant_id
+static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
+{
+    struct flb_ra_value *rval = NULL;
+    flb_sds_t tmp_str;
+    int cmp_len;
+
+    rval = flb_ra_get_value_object(ctx->ra_tenant_id_key, *map);
+
+    if (rval == NULL) {
+        flb_plg_warn(ctx->ins, "the value of %s is missing",
+                     ctx->tenant_id_key_config);
         return -1;
     }
-    len = strlen(line);
-    msgpack_pack_str(mp_pck, len);
-    msgpack_pack_str_body(mp_pck, line, len);
-    flb_free(line);
+    else if (rval->o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_warn(ctx->ins, "the value of %s is not string",
+                     ctx->tenant_id_key_config);
+        flb_ra_key_value_destroy(rval);
+        return -1;
+    }
+
+    tmp_str = flb_sds_create_len(rval->o.via.str.ptr,
+                                 rval->o.via.str.size);
+    if (tmp_str == NULL) {
+        flb_plg_warn(ctx->ins, "cannot create tenant ID string from record");
+        flb_ra_key_value_destroy(rval);
+        return -1;
+    }
+
+    // check if already dynamic_tenant_id is set.
+    if (ctx->dynamic_tenant_id) {
+        cmp_len = flb_sds_len(ctx->dynamic_tenant_id);
+        if ((rval->o.via.str.size == cmp_len) &&
+            flb_sds_cmp(tmp_str, ctx->dynamic_tenant_id, cmp_len) == 0) {
+            // tenant_id is same. nothing to do.
+            flb_ra_key_value_destroy(rval);
+            flb_sds_destroy(tmp_str);
+            return 0;
+        }
+        flb_plg_warn(ctx->ins, "Tenant ID is overwritten %s -> %s",
+                     ctx->dynamic_tenant_id, tmp_str);
+        flb_sds_destroy(ctx->dynamic_tenant_id);
+    }
+
+    // this sds will be released after setting http header.
+    ctx->dynamic_tenant_id = tmp_str;
+    flb_plg_debug(ctx->ins, "Tenant ID is %s", ctx->dynamic_tenant_id);
+
+    flb_ra_key_value_destroy(rval);
+    return 0;
+}
+
+static int pack_record(struct flb_loki *ctx,
+                       msgpack_packer *mp_pck, msgpack_object *rec)
+{
+    int i;
+    int skip = 0;
+    int len;
+    int ret;
+    int size_hint = 1024;
+    char *line;
+    flb_sds_t buf;
+    msgpack_object key;
+    msgpack_object val;
+    char *tmp_sbuf_data = NULL;
+    size_t tmp_sbuf_size;
+    msgpack_unpacked mp_buffer;
+    size_t off = 0;
+
+    /* Remove keys in remove_keys */
+    msgpack_unpacked_init(&mp_buffer);
+    if (ctx->remove_mpa) {
+        ret = flb_mp_accessor_keys_remove(ctx->remove_mpa, rec,
+                                          (void *) &tmp_sbuf_data, &tmp_sbuf_size);
+        if (ret == FLB_TRUE) {
+            ret = msgpack_unpack_next(&mp_buffer, tmp_sbuf_data, tmp_sbuf_size, &off);
+            if (ret != MSGPACK_UNPACK_SUCCESS) {
+                flb_free(tmp_sbuf_data);
+                msgpack_unpacked_destroy(&mp_buffer);
+                return -1;
+            }
+            rec = &mp_buffer.data;
+        }
+    }
+
+    // Get tenant id from record.
+    if (ctx->ra_tenant_id_key && rec->type == MSGPACK_OBJECT_MAP) {
+        get_tenant_id_from_record(ctx, rec);
+    }
+
+    /* Drop single key */
+    if (ctx->drop_single_key == FLB_TRUE && rec->type == MSGPACK_OBJECT_MAP && rec->via.map.size == 1) {
+        if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
+            rec = &rec->via.map.ptr[0].val;
+        } else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
+            val = rec->via.map.ptr[0].val;
+
+            if (val.type == MSGPACK_OBJECT_STR) {
+                msgpack_pack_str(mp_pck, val.via.str.size);
+                msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
+            } else {
+                buf = flb_sds_create_size(size_hint);
+                if (!buf) {
+                    msgpack_unpacked_destroy(&mp_buffer);
+                    if (tmp_sbuf_data) {
+                        flb_free(tmp_sbuf_data);
+                    }
+                    return -1;
+                }
+                pack_format_line_value(buf, &val);
+                msgpack_pack_str(mp_pck, flb_sds_len(buf));
+                msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
+                flb_sds_destroy(buf);
+            }
+
+            msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
+
+            return 0;
+        }
+    }
+
+    if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
+        line = flb_msgpack_to_json_str(size_hint, rec);
+        if (!line) {
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
+            msgpack_unpacked_destroy(&mp_buffer);
+            return -1;
+        }
+        len = strlen(line);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, line, len);
+        flb_free(line);
+    }
+    else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
+        if (rec->type != MSGPACK_OBJECT_MAP) {
+            msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
+            return -1;
+        }
+
+        buf = flb_sds_create_size(size_hint);
+        if (!buf) {
+            msgpack_unpacked_destroy(&mp_buffer);
+            if (tmp_sbuf_data) {
+                flb_free(tmp_sbuf_data);
+            }
+            return -1;
+        }
+
+        for (i = 0; i < rec->via.map.size; i++) {
+            key = rec->via.map.ptr[i].key;
+            val = rec->via.map.ptr[i].val;
+
+            if (key.type != MSGPACK_OBJECT_STR) {
+                skip++;
+                continue;
+            }
+
+            if (i > skip) {
+                safe_sds_cat(&buf, " ", 1);
+            }
+
+            safe_sds_cat(&buf, key.via.str.ptr, key.via.str.size);
+            safe_sds_cat(&buf, "=", 1);
+            pack_format_line_value(buf, &val);
+        }
+
+        msgpack_pack_str(mp_pck, flb_sds_len(buf));
+        msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
+        flb_sds_destroy(buf);
+    }
+
+    msgpack_unpacked_destroy(&mp_buffer);
+    if (tmp_sbuf_data) {
+        flb_free(tmp_sbuf_data);
+    }
+
     return 0;
 }
 
@@ -645,7 +1089,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          msgpack_pack_str_body(&mp_pck, "stream", 6);
 
          /* Pack stream labels */
-         pack_labels(ctx, &mp_pck, tag, tag_len, obj);
+         pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, NULL);
 
         /* streams['values'] */
          msgpack_pack_str(&mp_pck, 6);
@@ -661,7 +1105,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(&mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj);
          }
     }
     else {
@@ -685,7 +1129,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
              msgpack_pack_str_body(&mp_pck, "stream", 6);
 
              /* Pack stream labels */
-             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
+             pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, obj);
 
              /* streams['values'] */
              msgpack_pack_str(&mp_pck, 6);
@@ -696,7 +1140,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
 
              /* Append the timestamp */
              pack_timestamp(&mp_pck, &tms);
-             pack_record(&mp_pck, obj);
+             pack_record(ctx, &mp_pck, obj);
          }
     }
 
@@ -756,13 +1200,26 @@ static void cb_loki_flush(const void *data, size_t bytes,
     /* User Agent */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
+    /* Basic Auth headers */
+    if (ctx->http_user && ctx->http_passwd) {
+        flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    }
+
     /* Add Content-Type header */
     flb_http_add_header(c,
                         FLB_LOKI_CT, sizeof(FLB_LOKI_CT) - 1,
                         FLB_LOKI_CT_JSON, sizeof(FLB_LOKI_CT_JSON) - 1);
 
     /* Add X-Scope-OrgID header */
-    if (ctx->tenant_id) {
+    if (ctx->dynamic_tenant_id) {
+        flb_http_add_header(c,
+                            FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
+                            ctx->dynamic_tenant_id,
+                            flb_sds_len(ctx->dynamic_tenant_id));
+        flb_sds_destroy(ctx->dynamic_tenant_id);
+        ctx->dynamic_tenant_id = NULL; // clear for next flush
+    }
+    else if (ctx->tenant_id) {
         flb_http_add_header(c,
                             FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
                             ctx->tenant_id, flb_sds_len(ctx->tenant_id));
@@ -799,14 +1256,14 @@ static void cb_loki_flush(const void *data, size_t bytes,
         }
         else {
             if (c->resp.payload) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
-                             ctx->tcp_host, ctx->tcp_port,
-                             c->resp.status, c->resp.payload);
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                              ctx->tcp_host, ctx->tcp_port,
+                              c->resp.status, c->resp.payload);
             }
             else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
-                             ctx->tcp_host, ctx->tcp_port,
-                             c->resp.status);
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
+                              ctx->tcp_host, ctx->tcp_port,
+                              c->resp.status);
             }
         }
     }
@@ -842,6 +1299,12 @@ static struct flb_config_map config_map[] = {
      "it assumes Loki is running in single-tenant mode and no X-Scope-OrgID "
      "header is sent."
     },
+    {
+     FLB_CONFIG_MAP_STR, "tenant_id_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, tenant_id_key_config),
+     "If set, X-Scope-OrgID will be the value of the key from incoming record. "
+     "It is useful to set X-Scode-OrgID dynamically."
+    },
 
     {
      FLB_CONFIG_MAP_CLIST, "labels", NULL,
@@ -856,9 +1319,44 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "drop_single_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_loki, drop_single_key),
+     "If set to true and only a single key remains, the log line sent to Loki "
+     "will be the value of that key.",
+    },
+
+    {
      FLB_CONFIG_MAP_CLIST, "label_keys", NULL,
      0, FLB_TRUE, offsetof(struct flb_loki, label_keys),
      "Comma separated list of keys to use as stream labels."
+    },
+
+    {
+     FLB_CONFIG_MAP_CLIST, "remove_keys", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, remove_keys),
+     "Comma separated list of keys to remove."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "line_format", "json",
+     0, FLB_TRUE, offsetof(struct flb_loki, line_format),
+     "Format to use when flattening the record to a log line. Valid values are "
+     "'json' or 'key_value'. If set to 'json' the log line sent to Loki will be "
+     "the Fluent Bit record dumped as json. If set to 'key_value', the log line "
+     "will be each item in the record concatenated together (separated by a "
+     "single space) in the format '='."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_user", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, http_user),
+     "Set HTTP auth user"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "http_passwd", "",
+     0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
+     "Set HTTP auth password"
     },
 
     /* EOF */

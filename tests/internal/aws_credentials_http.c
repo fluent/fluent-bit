@@ -18,7 +18,7 @@
 
 #define HTTP_CREDENTIALS_RESPONSE "{\n\
     \"AccessKeyId\": \"http_akid\",\n\
-    \"Expiration\": \"2014-10-24T23:00:23Z\",\n\
+    \"Expiration\": \"2025-10-24T23:00:23Z\",\n\
     \"RoleArn\": \"TASK_ROLE_ARN\",\n\
     \"SecretAccessKey\": \"http_skid\",\n\
     \"Token\": \"http_token\"\n\

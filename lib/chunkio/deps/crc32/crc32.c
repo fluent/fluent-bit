@@ -31,6 +31,9 @@
 #  define htole16(x) (x)
 #  define be16toh(x) ntohs(x)
 #  define le16toh(x) (x)
+#  define __BIG_ENDIAN 1
+#  define __LITTLE_ENDIAN 2
+#  define __BYTE_ORDER __LITTLE_ENDIAN
 #elif defined(__FreeBSD__)
 #  include <sys/endian.h>
 #elif defined(__sun) || defined(sun)

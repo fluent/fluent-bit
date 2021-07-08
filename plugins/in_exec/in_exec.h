@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +39,8 @@ struct flb_exec {
     char *buf;
     size_t buf_size;
     struct flb_input_instance *ins;
+    int oneshot;
+    flb_pipefd_t ch_manager[2];
 };
 
 #endif /* FLB_IN_EXEC_H */

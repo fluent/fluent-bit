@@ -19,12 +19,15 @@ set(UNIT_TESTS_FILES
   config_map.c
   mp.c
   input_chunk.c
+  flb_time.c
+  multiline.c
   )
 
 if (NOT WIN32)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     gelf.c
+    fstore.c
     )
 endif()
 
@@ -63,6 +66,13 @@ if(FLB_SIGNV4)
     )
 endif()
 
+if(FLB_AVRO_ENCODER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    avro.c
+    )
+endif()
+
 if(FLB_AWS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
@@ -72,6 +82,19 @@ if(FLB_AWS)
     aws_credentials_sts.c
     aws_credentials_http.c
     aws_credentials_profile.c
+    )
+  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+    set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      aws_credentials_process.c
+      )
+  endif()
+endif()
+
+if(FLB_AWS_ERROR_REPORTER)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    error_reporter.c
     )
 endif()
 
@@ -123,6 +146,10 @@ foreach(source_file ${UNIT_TESTS_FILES})
     endif()
 
     target_link_libraries(${source_file_we} fluent-bit-static)
+
+    if(FLB_AVRO_ENCODER)
+      target_link_libraries(${source_file_we} avro-static jansson)
+    endif()
 
     add_test(NAME ${source_file_we}
             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}

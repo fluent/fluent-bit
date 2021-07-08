@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -136,6 +136,18 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     s[head->len] = '\0';
 
     return s;
+}
+
+int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len)
+{
+    flb_sds_t tmp;
+
+    tmp = flb_sds_cat(*buf, str, len);
+    if (!tmp) {
+        return -1;
+    }
+    *buf = tmp;
+    return 0;
 }
 
 flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
@@ -288,6 +300,9 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
                 p = (const unsigned char *) str + i + b;
+                if (p >= (unsigned char *) (str + str_len)) {
+                    break;
+                }
                 ret = flb_utf8_decode(&state, &cp, *p);
                 if (ret == 0) {
                     break;

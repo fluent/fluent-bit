@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -143,6 +143,8 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
         flb_errno();
         return NULL;
     }
+    fsf->stream = fs_stream->stream;
+
     fsf->name = flb_sds_create(name);
     if (!fsf->name) {
         flb_error("[fstore] could not create file: %s:%s",
@@ -480,7 +482,7 @@ void flb_fstore_dump(struct flb_fstore *fs)
         printf("- stream: %s\n", fs_stream->name);
         mk_list_foreach(f_head, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
-            printf("          %s/%s\n", fs_stream->name, fsf->name);
+            printf("          %s/%s\n", fsf->stream->name, fsf->name);
         }
     }
     printf("\n");

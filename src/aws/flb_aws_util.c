@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_jsmn.h>
 
-#include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -38,11 +38,7 @@
 #define TAG_DESCRIPTOR "$TAG"
 #define MAX_TAG_PARTS 10
 #define S3_KEY_SIZE 1024
-
-#define TAG_PART_DESCRIPTOR "$TAG[%d]"
-#define TAG_DESCRIPTOR "$TAG"
-#define MAX_TAG_PARTS 10
-#define S3_KEY_SIZE 1024
+#define RANDOM_STRING "$UUID"
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -171,10 +167,11 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
      * per FLB_AWS_CREDENTIAL_REFRESH_LIMIT.
      *
      */
-    if (c && (c->resp.status == 400 || c->resp.status == 403)) {
+    if (c && (c->resp.status >= 400 && c->resp.status < 500)) {
         if (aws_client->has_auth && time(NULL) > aws_client->refresh_limit) {
             if (flb_aws_is_auth_error(c->resp.payload, c->resp.payload_size)
                 == FLB_TRUE) {
+                flb_error("[aws_client] auth error, refreshing creds");
                 aws_client->refresh_limit = time(NULL)
                                             + FLB_AWS_CREDENTIAL_REFRESH_LIMIT;
                 aws_client->provider->provider_vtable->
@@ -236,15 +233,29 @@ int flb_aws_is_auth_error(char *payload, size_t payload_size)
         return FLB_TRUE;
     }
 
+    if (strcasestr(payload, "AccessDenied") != NULL) {
+        return FLB_TRUE;
+    }
+
+    if (strcasestr(payload, "Expired") != NULL) {
+        return FLB_TRUE;
+    }
+
     /* Most APIs we use return JSON */
     error = flb_aws_error(payload, payload_size);
     if (error != NULL) {
         if (strcmp(error, "ExpiredToken") == 0 ||
+            strcmp(error, "ExpiredTokenException") == 0 ||
             strcmp(error, "AccessDeniedException") == 0 ||
+            strcmp(error, "AccessDenied") == 0 ||
             strcmp(error, "IncompleteSignature") == 0 ||
+            strcmp(error, "SignatureDoesNotMatch") == 0 ||
             strcmp(error, "MissingAuthenticationToken") == 0 ||
             strcmp(error, "InvalidClientTokenId") == 0 ||
+            strcmp(error, "InvalidToken") == 0 ||
+            strcmp(error, "InvalidAccessKeyId") == 0 ||
             strcmp(error, "UnrecognizedClientException") == 0) {
+                flb_sds_destroy(error);
             return FLB_TRUE;
         }
         flb_sds_destroy(error);
@@ -267,6 +278,8 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     int normalize_uri;
     struct flb_aws_header header;
     struct flb_http_client *c = NULL;
+    flb_sds_t tmp;
+    flb_sds_t user_agent_prefix;
 
     u_conn = flb_upstream_conn_get(aws_client->upstream);
     if (!u_conn) {
@@ -296,8 +309,27 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     }
 
     /* Add AWS Fluent Bit user agent */
-    ret = flb_http_add_header(c, "User-Agent", 10,
-                              "aws-fluent-bit-plugin", 21);
+    if (aws_client->extra_user_agent == NULL) {
+        ret = flb_http_add_header(c, "User-Agent", 10,
+                                  "aws-fluent-bit-plugin", 21);
+    }
+    else {
+        user_agent_prefix = flb_sds_create_size(64);
+        tmp = flb_sds_printf(&user_agent_prefix, "aws-fluent-bit-plugin-%s",
+                             aws_client->extra_user_agent);
+        if (!tmp) {
+            flb_errno();
+            flb_sds_destroy(user_agent_prefix);
+            flb_error("[aws_client] failed to fetch user agent");
+            goto error;
+        }
+        user_agent_prefix = tmp;
+
+        ret = flb_http_add_header(c, "User-Agent", 10, user_agent_prefix,
+                                  flb_sds_len(user_agent_prefix));
+        flb_sds_destroy(user_agent_prefix);
+    }
+
     if (ret < 0) {
         if (aws_client->debug_only == FLB_TRUE) {
             flb_debug("[aws_client] failed to add header to request");
@@ -523,7 +555,7 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key)
     if (ret == JSMN_ERROR_INVAL || ret == JSMN_ERROR_PART) {
         flb_free(tokens);
         flb_debug("[aws_client] Unable to parse API response- response is not"
-                  "not valid JSON.");
+                  " valid JSON.");
         return NULL;
     }
 
@@ -657,6 +689,7 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     int ret = 0;
     char *tag_token = NULL;
     char *key;
+    char *random_alphanumeric;
     int len;
     flb_sds_t tmp = NULL;
     flb_sds_t buf = NULL;
@@ -762,6 +795,28 @@ flb_sds_t flb_get_s3_key(const char *format, time_t time, const char *tag, char 
     flb_sds_destroy(s3_key);
     s3_key = tmp_key;
     tmp_key = NULL;
+
+    /* Find all occurences of $UUID and replace with a random string. */
+    random_alphanumeric = flb_sts_session_name();
+    if (!random_alphanumeric) {
+        goto error;
+    }
+    /* only use 8 chars of the random string */
+    random_alphanumeric[8] = '\0';
+    tmp_key = replace_uri_tokens(s3_key, RANDOM_STRING, random_alphanumeric);
+    if (!tmp_key) {
+        flb_free(random_alphanumeric);
+        goto error;
+    }
+    
+    if(strlen(tmp_key) > S3_KEY_SIZE){
+        flb_warn("[s3_key] Object key length is longer than the 1024 character limit.");
+    }
+    
+    flb_sds_destroy(s3_key);
+    s3_key = tmp_key;
+    tmp_key = NULL;
+    flb_free(random_alphanumeric);
 
     gmt = gmtime(&time);
 

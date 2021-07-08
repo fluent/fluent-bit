@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,12 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_mem.h>
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
 
 FLB_TLS_DEFINE(struct flb_log, flb_log_ctx)
 
@@ -91,7 +97,7 @@ static inline int log_read(flb_pipefd_t fd, struct flb_log *log)
      */
     bytes = flb_pipe_read_all(fd, &msg, sizeof(struct log_message));
     if (bytes <= 0) {
-        perror("bytes");
+        flb_errno();
         return -1;
     }
     if (msg.size > sizeof(msg.msg)) {
@@ -138,22 +144,20 @@ static void log_worker_collector(void *data)
     pthread_exit(NULL);
 }
 
-int flb_log_worker_init(void *data)
+int flb_log_worker_init(struct flb_worker *worker)
 {
     int ret;
-    struct flb_worker *worker = data;
     struct flb_config *config = worker->config;
     struct flb_log *log = config->log;
 
     /* Pipe to communicate Thread with worker log-collector */
     ret = flb_pipe_create(worker->log);
     if (ret == -1) {
-        perror("pipe");
+        flb_errno();
         return -1;
     }
 
     /* Register the read-end of the pipe (log[0]) into the event loop */
-    MK_EVENT_ZERO(&worker->event);
     ret = mk_event_add(log->evl, worker->log[0],
                        FLB_LOG_EVENT, MK_EVENT_READ, &worker->event);
     if (ret == -1) {
@@ -179,7 +183,7 @@ int flb_log_get_level_str(char *str)
     else if (strcasecmp(str, "error") == 0) {
         return FLB_LOG_ERROR;
     }
-    else if (strcasecmp(str, "warn") == 0) {
+    else if (strcasecmp(str, "warn") == 0 || strcasecmp(str, "warning") == 0) {
         return FLB_LOG_WARN;
     }
     else if (strcasecmp(str, "info") == 0) {
@@ -211,23 +215,23 @@ int flb_log_set_file(struct flb_config *config, char *out)
     return 0;
 }
 
-struct flb_log *flb_log_init(struct flb_config *config, int type,
-                             int level, char *out)
+struct flb_log *flb_log_create(struct flb_config *config, int type,
+                               int level, char *out)
 {
     int ret;
     struct flb_log *log;
     struct flb_worker *worker;
     struct mk_event_loop *evl;
 
-    log = flb_malloc(sizeof(struct flb_log));
+    log = flb_calloc(1, sizeof(struct flb_log));
     if (!log) {
-        perror("malloc");
+        flb_errno();
         return NULL;
     }
     config->log = log;
 
     /* Create event loop to be used by the collector worker */
-    evl = mk_event_loop_create(16);
+    evl = mk_event_loop_create(32);
     if (!evl) {
         fprintf(stderr, "[log] could not create event loop\n");
         flb_free(log);
@@ -268,20 +272,16 @@ struct flb_log *flb_log_init(struct flb_config *config, int type,
      * it will need a 'worker-like' context, here we create a fake worker
      * context just for messaging purposes.
      */
-    worker = flb_malloc(sizeof(struct flb_worker));
+    worker = flb_worker_context_create(NULL, NULL, config);
     if (!worker) {
         flb_errno();
         mk_event_loop_destroy(log->evl);
         flb_free(log);
         config->log = NULL;
-        return NULL;
     }
-    worker->func    = NULL;
-    worker->data    = NULL;
-    worker->log_ctx = log;
-    worker->config  = config;
 
     /* Set the worker context global */
+    FLB_TLS_INIT(flb_worker_ctx);
     FLB_TLS_SET(flb_worker_ctx, worker);
 
     ret = flb_log_worker_init(worker);
@@ -429,6 +429,16 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     else {
         fprintf(stderr, "%s", (char *) msg.msg);
     }
+
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        if (type == FLB_LOG_ERROR) {
+            flb_aws_error_reporter_write(error_reporter, msg.msg + len);
+        }
+
+        flb_aws_error_reporter_clean(error_reporter);
+    }
+    #endif
 }
 
 int flb_errno_print(int errnum, const char *file, int line)
@@ -440,7 +450,7 @@ int flb_errno_print(int errnum, const char *file, int line)
     return 0;
 }
 
-int flb_log_stop(struct flb_log *log, struct flb_config *config)
+int flb_log_destroy(struct flb_log *log, struct flb_config *config)
 {
     uint64_t val = FLB_TRUE;
 

@@ -41,12 +41,14 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_KUBERNETES "filter_kubernetes.c")
   FLB_RT_TEST(FLB_FILTER_PARSER     "filter_parser.c")
   FLB_RT_TEST(FLB_FILTER_MODIFY     "filter_modify.c")
+  FLB_RT_TEST(FLB_FILTER_LUA        "filter_lua.c")
 endif()
 
 
 # Output Plugins
 if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_LIB              "core_engine.c")
+  FLB_RT_TEST(FLB_OUT_LIB              "config_map_opts.c")
   FLB_RT_TEST(FLB_OUT_COUNTER          "out_counter.c")
   FLB_RT_TEST(FLB_OUT_DATADOG          "out_datadog.c")
   FLB_RT_TEST(FLB_OUT_ES               "out_elasticsearch.c")
@@ -57,6 +59,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_NULL             "out_null.c")
   FLB_RT_TEST(FLB_OUT_PLOT             "out_plot.c")
   FLB_RT_TEST(FLB_OUT_RETRY            "out_retry.c")
+  FLB_RT_TEST(FLB_OUT_SPLUNK           "out_splunk.c")
   FLB_RT_TEST(FLB_OUT_STDOUT           "out_stdout.c")
 
   if (FLB_RECORD_ACCESSOR)
@@ -65,6 +68,7 @@ if(FLB_IN_LIB)
 
   FLB_RT_TEST(FLB_OUT_CLOUDWATCH_LOGS   "out_cloudwatch.c")
   FLB_RT_TEST(FLB_OUT_KINESIS_FIREHOSE  "out_firehose.c")
+  FLB_RT_TEST(FLB_OUT_KINESIS_STREAMS   "out_kinesis.c")
   FLB_RT_TEST(FLB_OUT_S3                "out_s3.c")
   FLB_RT_TEST(FLB_OUT_TD                "out_td.c")
 endif()
@@ -102,6 +106,9 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )
+      if(FLB_AVRO_ENCODER)
+        target_link_libraries(${source_file_we} avro-static jansson)
+      endif()
     add_test(NAME ${source_file_we}
             COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
             WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -107,7 +107,42 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object val;
     flb_sds_t s;
 
-    /* Init temporary buffers */
+#ifdef FLB_HAVE_AVRO_ENCODER
+    // used to flag when a buffer needs to be freed for avro
+    bool avro_fast_buffer = true;
+
+    // avro encoding uses a buffer
+    // the majority of lines are fairly small
+    // so using static buffer for these is much more efficient
+    // larger sizes will allocate
+#ifndef AVRO_DEFAULT_BUFFER_SIZE
+#define AVRO_DEFAULT_BUFFER_SIZE 2048
+#endif
+    static char avro_buff[AVRO_DEFAULT_BUFFER_SIZE];
+
+    // don't take lines that are too large
+    // these lines will log a warning
+    // this roughly a log line of 250000 chars
+#ifndef AVRO_LINE_MAX_LEN
+#define AVRO_LINE_MAX_LEN 1000000
+
+    // this is a convenience
+#define AVRO_FREE(X, Y) if (!X) { flb_free(Y); }
+#endif
+
+    // this is just to keep the code cleaner
+    // the avro encoding includes
+    // an embedded schemaid which is used
+    // the embedding is a null byte
+    // followed by a 16 byte schemaid
+#define AVRO_SCHEMA_OVERHEAD 16 + 1
+#endif
+
+    flb_debug("in produce_message\n");
+    if (flb_log_check(FLB_LOG_DEBUG))
+        msgpack_object_print(stderr, *map);
+
+    /* Init temporal buffers */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
@@ -178,7 +213,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                     /* Only if default topic is set and this topicname is not set for this message */
                     if (strncmp(topic->name, flb_kafka_topic_default(ctx)->name, val.via.str.size) == 0 &&
                         (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
-                        if (strstr(val.via.str.ptr, ",")) {
+                        if (memchr(val.via.str.ptr, ',', val.via.str.size)) {
                             /* Don't allow commas in kafkatopic name */
                             flb_warn("',' not allowed in dynamic_kafka topic names");
                             continue;
@@ -250,6 +285,58 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_buf = s;
         out_size = flb_sds_len(s);
     }
+#ifdef FLB_HAVE_AVRO_ENCODER
+    else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+
+        flb_plg_debug(ctx->ins, "avro schema ID:%s:\n", ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->avro_fields.schema_str);
+
+	// if there's no data then log it and return
+        if (mp_sbuf.size == 0) {
+            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%s:\n", ctx->avro_fields.schema_id);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_OK;
+        }
+
+	// is the line is too long log it and return
+        if (mp_sbuf.size > AVRO_LINE_MAX_LEN) {
+            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->avro_fields.schema_id);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_OK;
+        }
+
+        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->avro_fields.schema_id);
+        out_buf = avro_buff;
+        out_size = AVRO_DEFAULT_BUFFER_SIZE;
+
+	if (mp_sbuf.size + AVRO_SCHEMA_OVERHEAD >= AVRO_DEFAULT_BUFFER_SIZE) {
+            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%s:\n", (size_t)mp_sbuf.size, ctx->avro_fields.schema_id);
+            avro_fast_buffer = false;
+            // avro will always be  smaller than msgpack
+            // it contains no meta-info aside from the schemaid
+            // all the metadata is in the schema which is not part of the msg
+            // add schemaid + magic byte for safety buffer and allocate
+            // that's 16 byte schemaid and one byte magic byte
+            out_size = mp_sbuf.size + AVRO_SCHEMA_OVERHEAD;
+            out_buf = flb_malloc(out_size);
+            if (!out_buf) {
+                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return FLB_ERROR;
+            }
+	}
+
+        if(!flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &ctx->avro_fields, out_buf, &out_size)) {
+            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%s:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            if (!avro_fast_buffer) {
+                flb_free(out_buf);
+	    }
+            return FLB_ERROR;
+        }
+
+    }
+#endif
 
     if (!message_key) {
         message_key = ctx->message_key;
@@ -262,6 +349,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (!topic) {
         flb_plg_error(ctx->ins, "no default topic found");
         msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+        if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+            AVRO_FREE(avro_fast_buffer, out_buf)
+        }
+#endif
         return FLB_ERROR;
     }
 
@@ -274,13 +366,20 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
      */
     if (ctx->queue_full_retries > 0 &&
         queue_full_retries >= ctx->queue_full_retries) {
-        if (ctx->format == FLB_KAFKA_FMT_JSON) {
-            flb_free(out_buf);
-        }
-        if (ctx->format == FLB_KAFKA_FMT_GELF) {
+        if (ctx->format != FLB_KAFKA_FMT_MSGP) {
             flb_sds_destroy(s);
         }
         msgpack_sbuffer_destroy(&mp_sbuf);
+#ifdef FLB_HAVE_AVRO_ENCODER
+        if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+            AVRO_FREE(avro_fast_buffer, out_buf)
+        }
+#endif
+        /*
+         * Unblock the flush requests so that the
+         * engine could try sending data again.
+         */
+        ctx->blocked = FLB_FALSE;
         return FLB_RETRY;
     }
 
@@ -290,8 +389,9 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                            out_buf, out_size,
                            message_key, message_key_len,
                            ctx);
+
     if (ret == -1) {
-        fprintf(stderr,
+        flb_error(
                 "%% Failed to produce to topic %s: %s\n",
                 rd_kafka_topic_name(topic->tp),
                 rd_kafka_err2str(rd_kafka_last_error()));
@@ -320,7 +420,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * to enqueue this message, if we exceed 10 times, we just
              * issue a full retry of the data chunk.
              */
-            flb_time_sleep(1000, config);
+            flb_time_sleep(1000);
             rd_kafka_poll(ctx->producer, 0);
 
             /* Issue a re-try */
@@ -341,6 +441,11 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
         flb_sds_destroy(s);
     }
+#ifdef FLB_HAVE_AVRO_ENCODER
+    if (ctx->format == FLB_KAFKA_FMT_AVRO) {
+        AVRO_FREE(avro_fast_buffer, out_buf)
+    }
+#endif
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     return FLB_OK;

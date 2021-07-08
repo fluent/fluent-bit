@@ -28,8 +28,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
 
-/* Refresh creds if they will expire in 5 min or less */
-#define FLB_AWS_REFRESH_WINDOW         300
+/* Refresh creds if they will expire in 1 min or less */
+#define FLB_AWS_REFRESH_WINDOW         60
 
 /* 5 second timeout for credential related http requests */
 #define FLB_AWS_CREDENTIAL_NET_TIMEOUT 5
@@ -93,6 +93,13 @@ typedef void(flb_aws_provider_sync_fn)(struct flb_aws_provider *provider);
 typedef void(flb_aws_provider_async_fn)(struct flb_aws_provider *provider);
 
 /*
+ * Call flb_output_upstream_set() on all upstreams created 
+ * by this provider and all sub-providers. 
+ */
+typedef void(flb_aws_provider_upstream_set_fn)(struct flb_aws_provider *provider, 
+                                               struct flb_output_instance *ins);
+
+/*
  * This structure is a virtual table for the functions implemented by each
  * provider
  */
@@ -103,6 +110,7 @@ struct flb_aws_provider_vtable {
     flb_aws_provider_destroy_fn *destroy;
     flb_aws_provider_sync_fn *sync;
     flb_aws_provider_async_fn *async;
+    flb_aws_provider_upstream_set_fn *upstream_set;
 };
 
 /*
@@ -242,6 +250,39 @@ char *flb_sts_session_name();
 struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                                                        size_t response_len,
                                                        time_t *expiration);
+
+struct flb_aws_credentials *flb_parse_json_credentials(char *response,
+                                                       size_t response_len,
+                                                       char *session_token_field,
+                                                       time_t *expiration);
+
+#ifdef FLB_HAVE_AWS_CREDENTIAL_PROCESS
+
+/*
+ * Parses the input string, which is assumed to be the credential_process
+ * from the config file, into a sequence of tokens.
+ * Returns the array of tokens on success, and NULL on failure.
+ * The array of tokens will be terminated by NULL for use with `execvp`.
+ * The caller is responsible for calling `flb_free` on the return value.
+ * Note that this function modifies the input string.
+ */
+char** parse_credential_process(char* input);
+
+/*
+ * Executes the given credential_process, which is assumed to have come
+ * from the config file, and parses its result into *creds and *expiration.
+ * Returns 0 on success and < 0 on failure.
+ *
+ * If it succeeds, *creds and *expiration will be set appropriately, and the
+ * caller is responsible for calling `flb_aws_credentials_destroy(*creds)`.
+ * If the credentials do not expire, then *expiration will be 0.
+ *
+ * If it fails, then *creds will be NULL.
+ */
+int exec_credential_process(char* process, struct flb_aws_credentials** creds,
+                            time_t* expiration);
+
+#endif /* FLB_HAVE_AWS_CREDENTIAL_PROCESS */
 
 /*
  * Fluent Bit is single-threaded but asynchonous. Only one co-routine will

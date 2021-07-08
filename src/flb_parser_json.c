@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     int ret;
     int slen;
     int root_type;
+    int records;
     double tmfrac = 0;
     char *mp_buf = NULL;
     char *time_key;
@@ -57,8 +58,14 @@ int flb_parser_json_do(struct flb_parser *parser,
     struct flb_time *t;
 
     /* Convert incoming in_buf JSON message to message pack format */
-    ret = flb_pack_json(in_buf, in_size, &mp_buf, &mp_size, &root_type);
+    ret = flb_pack_json_recs(in_buf, in_size, &mp_buf, &mp_size, &root_type,
+                             &records);
     if (ret != 0) {
+        return -1;
+    }
+
+    if (records != 1) {
+        flb_free(mp_buf);
         return -1;
     }
 
@@ -104,6 +111,7 @@ int flb_parser_json_do(struct flb_parser *parser,
     *out_size = tmp_out_size;
     if (mp_buf != tmp_out_buf) {
         flb_free(mp_buf);
+        mp_buf = NULL;
     }
 
     /* Do time resolution ? */
@@ -131,6 +139,20 @@ int flb_parser_json_do(struct flb_parser *parser,
             continue;
         }
 
+        /* Ensure the pointer we are about to read is not NULL */
+        if (k->via.str.ptr == NULL) {
+            if (mp_buf == tmp_out_buf) {
+                flb_free(mp_buf);
+            }
+            else {
+                flb_free(mp_buf);
+                flb_free(tmp_out_buf);
+            }
+            *out_buf = NULL;
+            msgpack_unpacked_destroy(&result);
+            return -1;
+        }
+
         if (strncmp(k->via.str.ptr, time_key, k->via.str.size) == 0) {
             /* We found the key, break the loop and keep the index */
             if (parser->time_keep == FLB_FALSE) {
@@ -149,6 +171,12 @@ int flb_parser_json_do(struct flb_parser *parser,
 
     /* No time_key field found */
     if (i >= map_size || !k || !v) {
+        msgpack_unpacked_destroy(&result);
+        return *out_size;
+    }
+
+    /* Ensure we have an accurate type */
+    if (v->type != MSGPACK_OBJECT_STR) {
         msgpack_unpacked_destroy(&result);
         return *out_size;
     }

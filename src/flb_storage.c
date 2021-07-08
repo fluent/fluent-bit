@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -265,7 +265,7 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
         return NULL;
     }
 
-    ret = flb_sched_timer_cb_create(ctx, FLB_SCHED_TIMER_CB_PERM, 5000,
+    ret = flb_sched_timer_cb_create(ctx->sched, FLB_SCHED_TIMER_CB_PERM, 5000,
                                     cb_storage_metrics_collect,
                                     ctx->storage_metrics_ctx);
     if (ret == -1) {
@@ -384,7 +384,6 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
-    const char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
@@ -400,22 +399,22 @@ int flb_storage_input_create(struct cio_ctx *cio,
         return -1;
     }
 
+    /* Check for duplicates */
+    stream = cio_stream_get(cio, in->name);
+    if (!stream) {
+        /* create stream for input instance */
+        stream = cio_stream_create(cio, in->name, in->storage_type);
+        if (!stream) {
+            flb_error("[storage] cannot create stream for instance %s",
+                      in->name);
+            return -1;
+        }
+    }
+
     /* allocate storage context for the input instance */
     si = flb_malloc(sizeof(struct flb_storage_input));
     if (!si) {
         flb_errno();
-        return -1;
-    }
-
-    /* get stream name */
-    name = flb_input_name(in);
-
-    /* create stream for input instance */
-    stream = cio_stream_create(cio, name, in->storage_type);
-    if (!stream) {
-        flb_error("[storage] cannot create stream for instance %s",
-                  name);
-        flb_free(si);
         return -1;
     }
 

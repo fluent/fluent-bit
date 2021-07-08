@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,14 +25,11 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_time.h>
 #include "metrics.h"
 
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
-
-#define _BSD_SOURCE
-
-#include <sys/time.h>
 
 #define PROMETHEUS_HEADER "text/plain; version=0.0.4"
 
@@ -133,6 +130,12 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
     buf->data = out_data;
 
     buf->raw_data = flb_malloc(size);
+    if (!buf->raw_data) {
+        flb_errno();
+        flb_sds_destroy(out_data);
+        flb_free(buf);
+        return;
+    }
     memcpy(buf->raw_data, data, size);
     buf->raw_size = size;
 
@@ -196,7 +199,7 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
         return flb_sds_cat(*metric_helptxt, " Number of output errors.\n", 26);
     }
     else if (strstr(metric_name, "output_retries_failed")) {
-        return flb_sds_cat(*metric_helptxt, " Number of output retries failed.\n", 34);
+        return flb_sds_cat(*metric_helptxt, " Number of abandoned batches because the maximum number of re-tries was reached.\n", 81);
     }
     else if (strstr(metric_name, "output_retries")) {
         return flb_sds_cat(*metric_helptxt, " Number of output retries.\n", 27);
@@ -206,6 +209,12 @@ flb_sds_t metrics_help_txt(char *metric_name, flb_sds_t *metric_helptxt)
     }
     else if (strstr(metric_name, "output_proc_bytes")) {
         return flb_sds_cat(*metric_helptxt, " Number of processed output bytes.\n", 35);
+    }
+    else if (strstr(metric_name, "output_dropped_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of dropped records.\n", 28);
+    }
+    else if (strstr(metric_name, "output_retried_records")) {
+        return flb_sds_cat(*metric_helptxt, " Number of retried records.\n", 28);
     }
     else {
         return (flb_sds_cat(*metric_helptxt, " Fluentbit metrics.\n", 20));
@@ -221,6 +230,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     int len;
     int time_len;
     int start_time_len;
+    uint64_t uptime;
     size_t index;
     size_t num_metrics = 0;
     long now;
@@ -237,7 +247,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     char time_str[64];
     char start_time_str[64];
     char* *metrics_arr;
-    struct timeval tp;
+    struct flb_time tp;
     struct flb_hs *hs = data;
     struct flb_config *config = hs->config;
 
@@ -263,18 +273,13 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     /* length of HELP text */
     metric_helptxt = flb_sds_create_size(128);
     if (!metric_helptxt) {
+        flb_sds_destroy(sds);
         mk_http_status(request, 500);
         mk_http_done(request);
         buf->users--;
         return;
     }
     metric_helptxt_head = FLB_SDS_HEADER(metric_helptxt);
-
-    /* current time */
-    gettimeofday(&tp, NULL);
-    now = tp.tv_sec * 1000 + tp.tv_usec / 1000;
-    time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
-    start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1, "%lu", config->init_time);
 
     /*
      * fluentbit_input_records[name="cpu0", hostname="${HOSTNAME}"] NUM TIMESTAMP
@@ -297,6 +302,22 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
         }
     }
     metrics_arr = flb_malloc(num_metrics * sizeof(char*));
+    if (!metrics_arr) {
+        flb_errno();
+
+        mk_http_status(request, 500);
+        mk_http_done(request);
+        buf->users--;
+
+        flb_sds_destroy(sds);
+        flb_sds_destroy(metric_helptxt);
+        msgpack_unpacked_destroy(&result);
+        return;
+    }
+
+    flb_time_get(&tp);
+    now = flb_time_to_nanosec(&tp) / 1000000; /* in milliseconds */
+    time_len = snprintf(time_str, sizeof(time_str) - 1, "%lu", now);
 
     for (i = 0; i < map.via.map.size; i++) {
         msgpack_object k;
@@ -395,11 +416,34 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
             null_check(tmp_sds);
         }
     }
+
+    /* Attach uptime */
+    uptime = time(NULL) - config->init_time;
+    len = snprintf(time_str, sizeof(time_str) - 1, "%lu", uptime);
+
+    tmp_sds = flb_sds_cat(sds,
+                          "# HELP fluentbit_uptime Number of seconds that Fluent Bit has "
+                          "been running.\n", 76);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "# TYPE fluentbit_uptime counter\n", 32);
+    null_check(tmp_sds);
+
+    tmp_sds = flb_sds_cat(sds, "fluentbit_uptime ", 17);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, time_str, len);
+    null_check(tmp_sds);
+    tmp_sds = flb_sds_cat(sds, "\n", 1);
+    null_check(tmp_sds);
+
     /* Attach process_start_time_seconds metric. */
+    start_time_len = snprintf(start_time_str, sizeof(start_time_str) - 1,
+                              "%lu", config->init_time);
+
     tmp_sds = flb_sds_cat(sds, "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.\n", 89);
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, "# TYPE process_start_time_seconds gauge\n", 40);
     null_check(tmp_sds);
+
     tmp_sds = flb_sds_cat(sds, "process_start_time_seconds ", 27);
     null_check(tmp_sds);
     tmp_sds = flb_sds_cat(sds, start_time_str, start_time_len);

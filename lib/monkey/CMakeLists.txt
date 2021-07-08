@@ -13,8 +13,12 @@ include(ExternalProject)
 include(GNUInstallDirs)
 
 # Set default compiler options
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Wextra")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath \$<))\"'")
+else()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
+endif()
 
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
@@ -111,6 +115,10 @@ macro(MK_DEFINITION var)
   set(MK_BUILD_FLAGS "${MK_BUILD_FLAGS}#ifndef ${var}\n#define ${var}\n#endif\n")
 endmacro()
 
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  MK_DEFINITION(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 # Enable experimental (dev) HTTP/2 support
 if (MK_HTTP2)
   MK_DEFINITION(MK_HAVE_HTTP2)
@@ -190,6 +198,21 @@ if(MK_VALGRIND OR MK_HAVE_VALGRIND)
   MK_DEFINITION(MK_HAVE_VALGRIND)
 endif()
 
+# Regex support
+check_c_source_compiles("
+  #include <regex.h>
+  int main() {
+     regex_t reg;
+     const char str[] = \"[a-zA-Z0-9]*\";
+     ret = regcomp(&reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
+     return 0;
+  }" HAVE_REGEX)
+
+if(HAVE_REGEX)
+  MK_DEFINITION(MK_HAVE_REGEX)
+endif()
+
+
 # ============================================
 # =========== CONFIGURATION FILES=============
 # ============================================
@@ -247,8 +270,14 @@ configure_file(
 include_directories(./)
 include_directories(deps/rbtree)
 include_directories(deps/flb_libco)
+include_directories(deps/regex)
 include_directories(include)
 include_directories(include/monkey/)
+
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  include_directories(mk_core/deps/libevent/include)
+  include_directories("${PROJECT_BINARY_DIR}/mk_core/deps/libevent/include/")
+endif()
 
 # Instruct CMake to build the the code base
 # =========================================
@@ -259,6 +288,7 @@ include_directories(include/monkey/)
 
 add_subdirectory(man)
 add_subdirectory(deps/rbtree)
+add_subdirectory(deps/regex)
 add_subdirectory(deps/flb_libco)
 add_subdirectory(mk_core)
 add_subdirectory(plugins)

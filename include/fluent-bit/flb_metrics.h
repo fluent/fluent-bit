@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,23 +32,26 @@
 #define FLB_METRIC_N_DROPPED   2
 #define FLB_METRIC_N_ADDED     3
 
-#define FLB_METRIC_OUT_OK_RECORDS     10
-#define FLB_METRIC_OUT_OK_BYTES       11
-#define FLB_METRIC_OUT_ERROR          12
-#define FLB_METRIC_OUT_RETRY          13
-#define FLB_METRIC_OUT_RETRY_FAILED   14
+/* Genaral output plugin metrics */
+#define FLB_METRIC_OUT_OK_RECORDS      10       /* proc_records   */
+#define FLB_METRIC_OUT_OK_BYTES        11       /* proc_bytes     */
+#define FLB_METRIC_OUT_ERROR           12       /* errors         */
+#define FLB_METRIC_OUT_RETRY           13       /* retries        */
+#define FLB_METRIC_OUT_RETRY_FAILED    14       /* retries_failed */
+#define FLB_METRIC_OUT_DROPPED_RECORDS 15       /* dropped_records_total */
+#define FLB_METRIC_OUT_RETRIED_RECORDS 16       /* retried_records_total */
 
 struct flb_metric {
     int id;
     int title_len;
-    char title[32];
+    char title[64];
     size_t val;
     struct mk_list _head;
 };
 
 struct flb_metrics {
     int title_len;         /* Title string length */
-    char title[32];        /* Title or id for this metrics context */
+    char title[64];        /* Title or id for this metrics context */
     int count;             /* Total count of metrics registered */
     struct mk_list list;   /* Head of metrics list */
 };

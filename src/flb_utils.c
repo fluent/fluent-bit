@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,12 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_utf8.h>
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
 
 void flb_utils_error(int err)
 {
@@ -99,11 +105,23 @@ void flb_utils_error(int err)
         fprintf(stderr,
                 "%sError%s: undefined. Aborting",
                 ANSI_BOLD ANSI_RED, ANSI_RESET);
+        #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+        if (is_error_reporting_enabled()) {
+            flb_aws_error_reporter_write(error_reporter, "Error: undefined. Aborting\n");
+        }
+        #endif
+
     }
     else {
         fprintf(stderr,
                 "%sError%s: %s. Aborting\n\n",
                 ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
+
+        #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+        if (is_error_reporting_enabled()) {
+            flb_aws_error_reporter_write(error_reporter, msg);
+        }
+        #endif
     }
 
     if (err <= FLB_ERR_FILTER_INVALID) {
@@ -419,12 +437,25 @@ int64_t flb_utils_size_to_bytes(const char *size)
     }
 
     if (tmp[0] == 'K') {
+        /* set upper bound (2**64/KB)/2 to avoid overflows */
+        if (val >= 9223372036854775 || val <= -9223372036854774)
+        {
+            return -1;
+        }
         return (val * KB);
     }
     else if (tmp[0] == 'M') {
+        /* set upper bound (2**64/MB)/2 to avoid overflows */
+        if (val >= 9223372036854 || val <= -9223372036853) {
+            return -1;
+        }
         return (val * MB);
     }
     else if (tmp[0] == 'G') {
+        /* set upper bound (2**64/GB)/2 to avoid overflows */
+        if (val >= 9223372036 || val <= -9223372035) {
+            return -1;
+        }
         return (val * GB);
     }
     else {
@@ -434,13 +465,18 @@ int64_t flb_utils_size_to_bytes(const char *size)
     return val;
 }
 
-int flb_utils_hex2int(char *hex, int len)
+int64_t flb_utils_hex2int(char *hex, int len)
 {
     int i = 0;
-    int res = 0;
+    int64_t res = 0;
     char c;
 
     while ((c = *hex++) && i < len) {
+        /* Ensure no overflow */
+        if (res >= (int64_t)((INT64_MAX/0x10) - 0xff)) {
+            return -1;
+        }
+
         res *= 0x10;
 
         if (c >= 'a' && c <= 'f') {
@@ -700,29 +736,11 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             if (i + hex_bytes > str_len) {
                 break; /* skip truncated UTF-8 */
             }
-
-            state = FLB_UTF8_ACCEPT;
-            codepoint = 0;
             for (b = 0; b < hex_bytes; b++) {
-                s = (unsigned char *) str + i + b;
-                ret = flb_utf8_decode(&state, &codepoint, *s);
-                if (ret == 0) {
-                    break;
-                }
+                tmp[b] = str[i+b];
             }
-
-            if (state != FLB_UTF8_ACCEPT) {
-                /* Invalid UTF-8 hex, just skip utf-8 bytes */
-                flb_warn("[pack] invalid UTF-8 bytes found, skipping bytes");
-            }
-            else {
-                len = snprintf(tmp, sizeof(tmp) - 1, "\\u%04x", codepoint);
-                if ((available - written) < len) {
-                    return FLB_FALSE;
-                }
-                encoded_to_buf(p, tmp, len);
-                p += len;
-            }
+            encoded_to_buf(p, tmp, hex_bytes);
+            p += hex_bytes;
             i += (hex_bytes - 1);
         }
         else {
@@ -931,6 +949,7 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
         /* Parse username:passwrod part. */
         tmp = strchr(proto_sep, ':');
         if (!tmp) {
+            flb_free(protocol);
             return -1;
         }
         username = mk_string_copy_substr(proto_sep, 0, tmp - proto_sep);

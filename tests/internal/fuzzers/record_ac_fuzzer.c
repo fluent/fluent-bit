@@ -10,11 +10,15 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    char *outbuf;
+    /* Limit size to 32KB */
+    if (size > 32768) {
+        return 0;
+    }
+
+    char *outbuf = NULL;
     size_t outsize;
     int type;
     int len;
-    char *json;
     size_t off = 0;
     msgpack_object map;
 
@@ -25,23 +29,29 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     struct flb_record_accessor *ra = NULL;
     
     /* Sample JSON message */
-    json ="{\"key1\": \"something\", \"kubernetes\": {\"annotations\": {\"fluentbit.io/tag\": \"thetag\"}}}";
+    len = 60;
+    char *json_raw = get_null_terminated(len, &data, &size);
 
     /* Convert to msgpack */
-    len = strlen(json);
-    int ret = flb_pack_json(json, len, &outbuf, &outsize, &type);
+    int ret = flb_pack_json(json_raw, len, &outbuf, &outsize, &type);
     if (ret == -1) {
+        flb_free(json_raw);
         return 0;
     }
+    flb_free(json_raw);
 
     char *null_terminated = get_null_terminated(size, &data, &size);
 
     char *ra_str = flb_sds_create(null_terminated);
     ra = flb_ra_create(ra_str, FLB_FALSE);
     if (!ra) {
+        flb_sds_destroy(ra_str);
         flb_free(null_terminated);
+        flb_free(outbuf);
         return 0;
     }
+
+    flb_ra_is_static(ra);
 
     msgpack_unpacked result;
     msgpack_unpacked_init(&result);
@@ -55,12 +65,19 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
         /* General cleanup */
         flb_free(null_terminated);
+        flb_free(outbuf);
         return 0;
+    }
+    flb_ra_dump(ra);
+
+    if (outbuf != NULL) {
+        flb_free(outbuf);
     }
 
     flb_sds_destroy(str);
     flb_ra_destroy(ra);
     flb_sds_destroy(ra_str);
+    msgpack_unpacked_destroy(&result);
 
     /* General cleanup */
     flb_free(null_terminated);

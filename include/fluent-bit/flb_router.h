@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +22,7 @@
 #define FLB_ROUTER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 
 struct flb_router_path {
@@ -29,10 +30,23 @@ struct flb_router_path {
     struct mk_list _head;
 };
 
+static inline int flb_router_match_type(int in_event_type,
+                                        struct flb_output_instance *ins)
+{
+    if (in_event_type == FLB_INPUT_LOGS &&
+        !(ins->event_type & FLB_OUTPUT_LOGS)) {
+        return FLB_FALSE;
+    }
+    else if (in_event_type == FLB_INPUT_METRICS &&
+             !(ins->event_type & FLB_OUTPUT_METRICS)) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 int flb_router_match(const char *tag, int tag_len,
                      const char *match, void *match_regex);
 int flb_router_io_set(struct flb_config *config);
 void flb_router_exit(struct flb_config *config);
-uint64_t flb_router_get_routes_mask_by_tag(const char *tag, int tag_len,
-                                           struct flb_input_instance *in);
 #endif

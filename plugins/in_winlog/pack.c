@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +32,9 @@
 #define FMT_ISO8601 "%Y-%m-%d %H:%M:%S %z"
 #define FMT_EVTLOG L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\%S\\%s"
 #define FMT_EVTALT L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WINEVT\\Publishers\\%s"
+
+/* 127 is the max number of function params */
+#define PARAM_MAXNUM 127
 
 #define SRCNAME(evt) ((wchar_t *) ((char *) (evt) + sizeof(EVENTLOGRECORD)))
 #define BINDATA(evt) ((unsigned char *) (evt) + (evt)->DataOffset)
@@ -266,7 +269,7 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     }
 
     if (evt->NumStrings) {
-        args = flb_malloc(sizeof(DWORD_PTR) * evt->NumStrings);
+        args = flb_calloc(PARAM_MAXNUM, sizeof(DWORD_PTR));
         if (args == NULL) {
             flb_errno();
             flb_free(paths);
@@ -337,7 +340,7 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     wchar_t *source_name = SRCNAME(evt);
     wchar_t *computer_name = source_name + wcslen(source_name) + 1;
     size_t len;
-    int count = 12;
+    int count = 13;
 
     if (ctx->string_inserts) {
         count++;
@@ -372,7 +375,12 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     /* EventId */
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "EventID", 7);
-    msgpack_pack_uint32(mp_pck, evt->EventID);
+    msgpack_pack_uint16(mp_pck, evt->EventID & 0xffff);
+
+    /* Qualifiers */
+    msgpack_pack_str(mp_pck, 10);
+    msgpack_pack_str_body(mp_pck, "Qualifiers", 10);
+    msgpack_pack_uint16(mp_pck, evt->EventID >> 16);
 
     /* EventType */
     msgpack_pack_str(mp_pck, 9);
@@ -435,6 +443,6 @@ void winlog_pack_event(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
     if (ctx->string_inserts) {
         msgpack_pack_str(mp_pck, 13);
         msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_strings(mp_pck, evt, ch, ctx);
+        pack_strings(mp_pck, evt);
     }
 }

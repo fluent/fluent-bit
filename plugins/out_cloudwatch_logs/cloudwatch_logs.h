@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,9 +101,9 @@ struct flb_cloudwatch {
      * - STS Assume role provider
      * - The CloudWatch Logs client for this plugin
      */
-    struct flb_tls cred_tls;
-    struct flb_tls sts_tls;
-    struct flb_tls client_tls;
+    struct flb_tls *cred_tls;
+    struct flb_tls *sts_tls;
+    struct flb_tls *client_tls;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     struct flb_aws_client *cw_client;
@@ -117,9 +117,13 @@ struct flb_cloudwatch {
     const char *log_format;
     const char *role_arn;
     const char *log_key;
+    const char *extra_user_agent;
     int custom_endpoint;
     /* Should the plugin create the log group */
     int create_group;
+
+    /* If set to a number greater than zero, and newly create log group's retention policy is set to this many days. */
+    int log_retention_days;
 
     /* has the log group successfully been created */
     int group_created;
@@ -138,7 +142,7 @@ struct flb_cloudwatch {
     /* The namespace to use for the metric */
     flb_sds_t metric_namespace;
 
-    /* Metric dimensions is a list of lsits. If you have only one list of 
+    /* Metric dimensions is a list of lists. If you have only one list of
     dimensions, put the values as a comma seperated string. If you want to put
     list of lists, use the list as semicolon seperated strings. If your value
     is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]*/

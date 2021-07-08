@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_aws_credentials.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include <time.h>
@@ -197,6 +199,40 @@ static int es_pack_array_content(msgpack_packer *tmp_pck,
 }
 
 /*
+ * Get _id value from incoming record.
+ * If it successed, return the value as flb_sds_t.
+ * If it failed, return NULL.
+*/
+static flb_sds_t es_get_id_value(struct flb_elasticsearch *ctx,
+                                msgpack_object *map)
+{
+    struct flb_ra_value *rval = NULL;
+    flb_sds_t tmp_str;
+    rval = flb_ra_get_value_object(ctx->ra_id_key, *map);
+    if (rval == NULL) {
+        flb_plg_warn(ctx->ins, "the value of %s is missing",
+                     ctx->id_key);
+        return NULL;
+    }
+    else if(rval->o.type != MSGPACK_OBJECT_STR) {
+        flb_plg_warn(ctx->ins, "the value of %s is not string",
+                     ctx->id_key);
+        flb_ra_key_value_destroy(rval);
+        return NULL;
+    }
+
+    tmp_str = flb_sds_create_len(rval->o.via.str.ptr,
+                                 rval->o.via.str.size);
+    if (tmp_str == NULL) {
+        flb_plg_warn(ctx->ins, "cannot create ID string from record");
+        flb_ra_key_value_destroy(rval);
+        return NULL;
+    }
+    flb_ra_key_value_destroy(rval);
+    return tmp_str;
+}
+
+/*
  * Convert the internal Fluent Bit data representation to the required
  * one by Elasticsearch.
  *
@@ -223,6 +259,7 @@ static int elasticsearch_format(struct flb_config *config,
     char index_formatted[256];
     char es_uuid[37];
     flb_sds_t out_buf;
+    flb_sds_t id_key_str = NULL;
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object map;
@@ -234,11 +271,7 @@ static int elasticsearch_format(struct flb_config *config,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     uint16_t hash[8];
-    const char *es_index_custom;
     int es_index_custom_len;
-    int i;
-    msgpack_object key;
-    msgpack_object val;
     struct flb_elasticsearch *ctx = plugin_context;
 
     /* Iterate the original buffer and perform adjustments */
@@ -296,11 +329,18 @@ static int elasticsearch_format(struct flb_config *config,
         strftime(index_formatted, sizeof(index_formatted) - 1,
                  ctx->index, &tm);
         es_index = index_formatted;
-
-        index_len = snprintf(j_index,
-                             ES_BULK_HEADER,
-                             ES_BULK_INDEX_FMT,
-                             es_index, ctx->type);
+        if (ctx->suppress_type_name) {
+            index_len = snprintf(j_index,
+                                 ES_BULK_HEADER,
+                                 ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                 es_index);
+        }
+        else {
+            index_len = snprintf(j_index,
+                                 ES_BULK_HEADER,
+                                 ES_BULK_INDEX_FMT,
+                                 es_index, ctx->type);
+        }
     }
 
     /*
@@ -335,30 +375,20 @@ static int elasticsearch_format(struct flb_config *config,
 
         es_index_custom_len = 0;
         if (ctx->logstash_prefix_key) {
-            for (i = 0; i < map_size; i++) {
-                key = map.via.map.ptr[i].key;
-                if (key.type != MSGPACK_OBJECT_STR) {
-                    continue;
+            flb_sds_t v = flb_ra_translate(ctx->ra_prefix_key,
+                                           (char *) tag, tag_len,
+                                           map, NULL);
+            if (v) {
+                len = flb_sds_len(v);
+                if (len > 128) {
+                    len = 128;
+                    memcpy(logstash_index, v, 128);
                 }
-                if (key.via.str.size != flb_sds_len(ctx->logstash_prefix_key)) {
-                    continue;
+                else {
+                    memcpy(logstash_index, v, len);
                 }
-                if (strncmp(key.via.str.ptr, ctx->logstash_prefix_key,
-                            flb_sds_len(ctx->logstash_prefix_key)) != 0) {
-                    continue;
-                }
-                val = map.via.map.ptr[i].val;
-                if (val.type != MSGPACK_OBJECT_STR) {
-                    continue;
-                }
-                if (val.via.str.size >= 128) {
-                    continue;
-                }
-                es_index_custom = val.via.str.ptr;
-                es_index_custom_len = val.via.str.size;
-                memcpy(logstash_index, es_index_custom, es_index_custom_len);
-                logstash_index[es_index_custom_len] = '\0';
-                break;
+                es_index_custom_len = len;
+                flb_sds_destroy(v);
             }
         }
 
@@ -411,10 +441,18 @@ static int elasticsearch_format(struct flb_config *config,
             *p++ = '\0';
             es_index = logstash_index;
             if (ctx->generate_id == FLB_FALSE) {
-                index_len = snprintf(j_index,
-                                     ES_BULK_HEADER,
-                                     ES_BULK_INDEX_FMT,
-                                     es_index, ctx->type);
+                if (ctx->suppress_type_name) {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                         es_index);
+                }
+                else {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT,
+                                         es_index, ctx->type);
+                }
             }
         }
         else if (ctx->current_time_index == FLB_TRUE) {
@@ -453,10 +491,37 @@ static int elasticsearch_format(struct flb_config *config,
                      "%04x%04x-%04x-%04x-%04x-%04x%04x%04x",
                      hash[0], hash[1], hash[2], hash[3],
                      hash[4], hash[5], hash[6], hash[7]);
-            index_len = snprintf(j_index,
-                                 ES_BULK_HEADER,
-                                 ES_BULK_INDEX_FMT_ID,
-                                 es_index, ctx->type, es_uuid);
+            if (ctx->suppress_type_name) {
+                index_len = snprintf(j_index,
+                                     ES_BULK_HEADER,
+                                     ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                     es_index,  es_uuid);
+            }
+            else {
+                index_len = snprintf(j_index,
+                                     ES_BULK_HEADER,
+                                     ES_BULK_INDEX_FMT_ID,
+                                     es_index, ctx->type, es_uuid);
+            }
+        }
+        if (ctx->ra_id_key) {
+            id_key_str = es_get_id_value(ctx ,&map);
+            if (id_key_str) {
+                if (ctx->suppress_type_name) {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                         es_index,  id_key_str);
+                }
+                else {
+                    index_len = snprintf(j_index,
+                                         ES_BULK_HEADER,
+                                         ES_BULK_INDEX_FMT_ID,
+                                         es_index, ctx->type, id_key_str);
+                }
+                flb_sds_destroy(id_key_str);
+                id_key_str = NULL;
+            }
         }
 
         /* Convert msgpack to JSON */
@@ -529,9 +594,9 @@ static int cb_es_init(struct flb_output_instance *ins,
 static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
                                      struct flb_http_client *c)
 {
-    int i;
+    int i, j, k;
     int ret;
-    int check = FLB_TRUE;
+    int check = FLB_FALSE;
     int root_type;
     char *out_buf;
     size_t off = 0;
@@ -540,6 +605,9 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
     msgpack_object root;
     msgpack_object key;
     msgpack_object val;
+    msgpack_object item;
+    msgpack_object item_key;
+    msgpack_object item_val;
 
     /*
      * Check if our payload is complete: there is such situations where
@@ -591,11 +659,7 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
             goto done;
         }
 
-        if (key.via.str.size != 6) {
-            continue;
-        }
-
-        if (strncmp(key.via.str.ptr, "errors", 6) == 0) {
+        if (key.via.str.size == 6 && strncmp(key.via.str.ptr, "errors", 6) == 0) {
             val = root.via.map.ptr[i].val;
             if (val.type != MSGPACK_OBJECT_BOOLEAN) {
                 flb_plg_error(ctx->ins, "unexpected 'error' value type=%i",
@@ -605,15 +669,70 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
             }
 
             /* If error == false, we are OK (no errors = FLB_FALSE) */
-            if (val.via.boolean) {
-                /* there is an error */
-                check = FLB_TRUE;
-                goto done;
-            }
-            else {
+            if (!val.via.boolean) {
                 /* no errors */
                 check = FLB_FALSE;
                 goto done;
+            }
+        }
+        else if (key.via.str.size == 5 && strncmp(key.via.str.ptr, "items", 5) == 0) {
+            val = root.via.map.ptr[i].val;
+            if (val.type != MSGPACK_OBJECT_ARRAY) {
+                flb_plg_error(ctx->ins, "unexpected 'items' value type=%i",
+                              val.type);
+                check = FLB_TRUE;
+                goto done;
+            }
+
+            for (j = 0; j < val.via.array.size; j++) {
+                item = val.via.array.ptr[j];
+                if (item.type != MSGPACK_OBJECT_MAP) {
+                    flb_plg_error(ctx->ins, "unexpected 'item' outer value type=%i",
+                                  item.type);
+                    check = FLB_TRUE;
+                    goto done;
+                }
+
+                if (item.via.map.size != 1) {
+                    flb_plg_error(ctx->ins, "unexpected 'item' size=%i",
+                                  item.via.map.size);
+                    check = FLB_TRUE;
+                    goto done;
+                }
+
+                item = item.via.map.ptr[0].val;
+                if (item.type != MSGPACK_OBJECT_MAP) {
+                    flb_plg_error(ctx->ins, "unexpected 'item' inner value type=%i",
+                                  item.type);
+                    check = FLB_TRUE;
+                    goto done;
+                }
+
+                for (k = 0; k < item.via.map.size; k++) {
+                    item_key = item.via.map.ptr[k].key;
+                    if (item_key.type != MSGPACK_OBJECT_STR) {
+                        flb_plg_error(ctx->ins, "unexpected key type=%i",
+                                      item_key.type);
+                        check = FLB_TRUE;
+                        goto done;
+                    }
+
+                    if (item_key.via.str.size == 6 && strncmp(item_key.via.str.ptr, "status", 6) == 0) {
+                        item_val = item.via.map.ptr[k].val;
+
+                        if (item_val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                            flb_plg_error(ctx->ins, "unexpected 'status' value type=%i",
+                                          item_val.type);
+                            check = FLB_TRUE;
+                            goto done;
+                        }
+                        /* Check for errors other than version conflict (document already exists) */
+                        if (item_val.via.i64 != 409) {
+                            check = FLB_TRUE;
+                            goto done;
+                        }
+                    }
+                }
             }
         }
     }
@@ -675,6 +794,9 @@ static void cb_es_flush(const void *data, size_t bytes,
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
+    else if (ctx->cloud_user && ctx->cloud_passwd) {
+        flb_http_basic_auth(c, ctx->cloud_user, ctx->cloud_passwd);
+    }
 
 #ifdef FLB_HAVE_AWS
     if (ctx->has_aws_auth == FLB_TRUE) {
@@ -687,6 +809,9 @@ static void cb_es_flush(const void *data, size_t bytes,
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     }
 #endif
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
@@ -722,7 +847,7 @@ static void cb_es_flush(const void *data, size_t bytes,
                      * input/output to Elasticsearch that caused the problem.
                      */
                     flb_plg_debug(ctx->ins, "error caused by: Input\n%s\n",
-                                   pack);
+                                  pack);
                     flb_plg_error(ctx->ins, "error: Output\n%s",
                                   c->resp.payload);
                 }
@@ -768,24 +893,41 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "index", FLB_ES_DEFAULT_INDEX,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, index),
-     NULL
+     "Set an index name"
     },
     {
      FLB_CONFIG_MAP_STR, "type", FLB_ES_DEFAULT_TYPE,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, type),
-     NULL
+     "Set the document type property"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "suppress_type_name", "false",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, suppress_type_name),
+     "If true, mapping types is removed. (for v7.0.0 or later)"
     },
 
     /* HTTP Authentication */
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_user),
-     NULL
+     "Optional username credential for Elastic X-Pack access"
     },
     {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, http_passwd),
-     NULL
+     "Password for user defined in HTTP_User"
+    },
+
+    /* Cloud Authentication */
+    {
+     FLB_CONFIG_MAP_STR, "cloud_id", NULL,
+     0, FLB_FALSE, 0,
+     "Elastic cloud ID of the cluster to connect to"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "cloud_auth", NULL,
+     0, FLB_FALSE, 0,
+     "Elastic cloud authentication credentials"
     },
 
     /* AWS Authentication */
@@ -821,94 +963,120 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "logstash_format", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_format),
-     NULL
+     "Enable Logstash format compatibility"
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_prefix", FLB_ES_DEFAULT_PREFIX,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_prefix),
-     NULL
+     "When Logstash_Format is enabled, the Index name is composed using a prefix "
+     "and the date, e.g: If Logstash_Prefix is equals to 'mydata' your index will "
+     "become 'mydata-YYYY.MM.DD'. The last string appended belongs to the date "
+     "when the data is being generated"
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_prefix_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_prefix_key),
-     NULL
+     "When included: the value in the record that belongs to the key will be looked "
+     "up and over-write the Logstash_Prefix for index generation. If the key/value "
+     "is not found in the record then the Logstash_Prefix option will act as a "
+     "fallback. Nested keys are supported through record accessor pattern"
     },
     {
      FLB_CONFIG_MAP_STR, "logstash_dateformat", FLB_ES_DEFAULT_TIME_FMT,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, logstash_dateformat),
-     NULL
+     "Time format (based on strftime) to generate the second part of the Index name"
     },
 
     /* Custom Time and Tag keys */
     {
      FLB_CONFIG_MAP_STR, "time_key", FLB_ES_DEFAULT_TIME_KEY,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, time_key),
-     NULL
+     "When Logstash_Format is enabled, each record will get a new timestamp field. "
+     "The Time_Key property defines the name of that field"
     },
     {
      FLB_CONFIG_MAP_STR, "time_key_format", FLB_ES_DEFAULT_TIME_KEYF,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, time_key_format),
-     NULL
+     "When Logstash_Format is enabled, this property defines the format of the "
+     "timestamp"
     },
     {
      FLB_CONFIG_MAP_BOOL, "time_key_nanos", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, time_key_nanos),
-     NULL
+     "When Logstash_Format is enabled, enabling this property sends nanosecond "
+     "precision timestamps"
     },
     {
      FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, include_tag_key),
-     NULL
+     "When enabled, it append the Tag name to the record"
     },
     {
      FLB_CONFIG_MAP_STR, "tag_key", FLB_ES_DEFAULT_TAG_KEY,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, tag_key),
-     NULL
+     "When Include_Tag_Key is enabled, this property defines the key name for the tag"
     },
     {
      FLB_CONFIG_MAP_SIZE, "buffer_size", FLB_ES_DEFAULT_HTTP_MAX,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, buffer_size),
-     NULL
+     "Specify the buffer size used to read the response from the Elasticsearch HTTP "
+     "service. This option is useful for debugging purposes where is required to read "
+     "full responses, note that response size grows depending of the number of records "
+     "inserted. To set an unlimited amount of memory set this value to 'false', "
+     "otherwise the value must be according to the Unit Size specification"
     },
 
     /* Elasticsearch specifics */
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Elasticsearch accepts new data on HTTP query path '/_bulk'. But it is also "
+     "possible to serve Elasticsearch behind a reverse proxy on a subpath. This "
+     "option defines such path on the fluent-bit side. It simply adds a path "
+     "prefix in the indexing HTTP POST URI"
     },
     {
      FLB_CONFIG_MAP_STR, "pipeline", NULL,
      0, FLB_FALSE, 0,
-     NULL
+     "Newer versions of Elasticsearch allows to setup filters called pipelines. "
+     "This option allows to define which pipeline the database should use. For "
+     "performance reasons is strongly suggested to do parsing and filtering on "
+     "Fluent Bit side, avoid pipelines"
     },
     {
      FLB_CONFIG_MAP_BOOL, "generate_id", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, generate_id),
-     NULL
+     "When enabled, generate _id for outgoing records. This prevents duplicate "
+     "records when retrying ES"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "id_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, id_key),
+     "If set, _id will be the value of the key from incoming record."
     },
     {
      FLB_CONFIG_MAP_BOOL, "replace_dots", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, replace_dots),
-     NULL
+     "When enabled, replace field name dots with underscore, required by Elasticsearch "
+     "2.0-2.3."
     },
 
     {
      FLB_CONFIG_MAP_BOOL, "current_time_index", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, current_time_index),
-     NULL
+     "Use current time for index generation instead of message record"
     },
 
     /* Trace */
     {
      FLB_CONFIG_MAP_BOOL, "trace_output", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, trace_output),
-     NULL
+     "When enabled print the Elasticsearch API calls to stdout (for diag only)"
     },
     {
      FLB_CONFIG_MAP_BOOL, "trace_error", "false",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, trace_error),
-     NULL
+     "When enabled print the Elasticsearch exception to stderr (for diag only)"
     },
 
     /* EOF */

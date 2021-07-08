@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,16 +22,16 @@
 #define FLB_TIME_UTILS_H
 
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_scheduler.h>
 
 static void flb_time_thread_wakeup(struct flb_config *config, void *data)
 {
     (void) config;
-    struct flb_thread *th;
+    struct flb_coro *th;
 
-    th = (struct flb_thread *) data;
-    flb_thread_resume(th);
+    th = (struct flb_coro *) data;
+    flb_coro_resume(th);
 }
 
 /*
@@ -44,24 +44,29 @@ static void flb_time_thread_wakeup(struct flb_config *config, void *data)
  * A context that invokes flb_time_sleep() will resume upon an
  * internal call to flb_time_thread_wakeup().
  */
-static FLB_INLINE void flb_time_sleep(int ms, struct flb_config *config)
+static FLB_INLINE void flb_time_sleep(int ms)
 {
     int ret;
-    struct flb_thread *th;
+    struct flb_coro *coro;
+    struct flb_sched *sched;
 
-    th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-    if (!th) {
+    coro = flb_coro_get();
+    if (!coro) {
         flb_error("[thread] invalid context for thread_sleep()");
         return;
     }
 
-    ret = flb_sched_timer_cb_create(config, FLB_SCHED_TIMER_CB_ONESHOT,
-                                    ms, flb_time_thread_wakeup, th);
+    /* Get the scheduler context */
+    sched = flb_sched_ctx_get();
+    assert(sched != NULL);
+
+    ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                    ms, flb_time_thread_wakeup, coro);
     if (ret == -1) {
         return;
     }
 
-    flb_thread_yield(th, FLB_FALSE);
+    flb_coro_yield(coro, FLB_FALSE);
 }
 
 #endif

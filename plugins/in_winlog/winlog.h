@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -102,7 +102,7 @@ int winlog_sqlite_save(struct winlog_channel *ch, struct flb_sqldb *db);
 #define SQL_UPDATE_CHANNEL                                          \
     "INSERT INTO in_winlog_channels"                                \
     "  (name, record_number, time_written, created)"                \
-    "  VALUES ('%s', %u, %u, %u)"                                   \
+    "  VALUES ('%s', %u, %u, %llu)"                                   \
     "  ON CONFLICT(name) DO UPDATE"                                 \
     "  SET record_number = excluded.record_number,"                 \
     "      time_written = excluded.time_written"

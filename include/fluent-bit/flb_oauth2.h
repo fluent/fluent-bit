@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #define FLB_OAUTH2_PORT          "443"
 #define FLB_OAUTH2_HTTP_ENCODING "application/x-www-form-urlencoded"
@@ -47,7 +48,7 @@ struct flb_oauth2 {
 
     /* TLS Context */
 #ifdef FLB_HAVE_TLS
-    struct flb_tls tls;
+    struct flb_tls *tls;
 #else
     void *tls;
 #endif
@@ -60,6 +61,7 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
                                      const char *auth_url, int expire_sec);
 void flb_oauth2_destroy(struct flb_oauth2 *ctx);
 int flb_oauth2_token_len(struct flb_oauth2 *ctx);
+void flb_oauth2_payload_clear(struct flb_oauth2 *ctx);
 int flb_oauth2_payload_append(struct flb_oauth2 *ctx,
                               const char *key_str, int key_len,
                               const char *val_str, int val_len);

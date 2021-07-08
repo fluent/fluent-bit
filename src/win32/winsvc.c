@@ -19,6 +19,7 @@
  */
 
 #include <Windows.h>
+#include <Shlwapi.h>
 
 struct flb_config;
 extern struct flb_config *config;
@@ -31,11 +32,39 @@ static SERVICE_STATUS_HANDLE hstatus;
 static int win32_argc;
 static char **win32_argv;
 
+/*
+ * A Windows Service uses 'C:\Windows\System32' as working directory
+ * by default. Here we use a more intuitive default path (where
+ * fluent-bit.exe exists).
+ */
+static int update_default_workdir(void)
+{
+    char path[MAX_PATH];
+
+    if (win32_argc < 1) {
+        return -1;
+    }
+
+    if (strcpy_s(path, MAX_PATH, win32_argv[0])) {
+        return -1;
+    }
+
+    if (!PathRemoveFileSpecA(path)) {
+        return -1;
+    }
+
+    if (!SetCurrentDirectoryA(path)) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static void svc_notify(DWORD status)
 {
     SERVICE_STATUS ss;
 
-    ss.dwServiceType = SERVICE_USER_OWN_PROCESS;
+    ss.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     ss.dwCurrentState = status;
     ss.dwWin32ExitCode = NO_ERROR;
     ss.dwServiceSpecificExitCode = NO_ERROR;
@@ -73,6 +102,8 @@ static void WINAPI svc_main(DWORD svc_argc, LPTSTR *svc_argv)
     if (!hstatus) {
         return;
     }
+
+    update_default_workdir();
 
     svc_notify(SERVICE_START_PENDING);
     flb_main(win32_argc, win32_argv);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,13 +35,13 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugins.h>
 #include <fluent-bit/flb_slist.h>
-#include <fluent-bit/flb_io_tls.h>
 #include <fluent-bit/flb_kernel.h>
 #include <fluent-bit/flb_worker.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/multiline/flb_ml.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -80,6 +80,7 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HTTP_SERVER,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, http_server)},
+
     {FLB_CONF_STR_HTTP_LISTEN,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, http_listen)},
@@ -87,6 +88,23 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HTTP_PORT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, http_port)},
+
+     {FLB_CONF_STR_HEALTH_CHECK,
+      FLB_CONF_TYPE_BOOL,
+      offsetof(struct flb_config, health_check)},
+
+    {FLB_CONF_STR_HC_ERRORS_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_errors_count)},
+
+    {FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_retry_failure_count)},
+
+    {FLB_CONF_STR_HC_PERIOD,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, health_check_period)},
+
 #endif
 
     /* Storage */
@@ -155,16 +173,25 @@ struct flb_config *flb_config_init()
     config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER
-    config->http_ctx     = NULL;
-    config->http_server  = FLB_FALSE;
-    config->http_listen  = flb_strdup(FLB_CONFIG_HTTP_LISTEN);
-    config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
+    config->http_ctx                     = NULL;
+    config->http_server                  = FLB_FALSE;
+    config->http_listen                  = flb_strdup(FLB_CONFIG_HTTP_LISTEN);
+    config->http_port                    = flb_strdup(FLB_CONFIG_HTTP_PORT);
+    config->health_check                 = FLB_FALSE;
+    config->hc_errors_count              = HC_ERRORS_COUNT_DEFAULT;
+    config->hc_retry_failure_count       = HC_RETRY_FAILURE_COUNTS_DEFAULT;
+    config->health_check_period          = HEALTH_CHECK_PERIOD;
 #endif
 
     config->http_proxy = getenv("HTTP_PROXY");
-    if (config->http_proxy != NULL && strcmp(config->http_proxy, "") == 0) {
+    if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
         /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
         config->http_proxy = NULL;
+    }
+    config->no_proxy = getenv("NO_PROXY");
+    if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
+        /* NoProxy  should not be set when the `NO_PROXYY` is set to "" or there is no Proxy. */
+        config->no_proxy = NULL;
     }
 
     config->cio          = NULL;
@@ -184,7 +211,7 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_THREAD_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE;
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
@@ -204,6 +231,11 @@ struct flb_config *flb_config_init()
 
     /* Environment */
     config->env = flb_env_create();
+
+
+    /* Multiline core */
+    mk_list_init(&config->multiline_parsers);
+    flb_ml_init(config);
 
     /* Register static plugins */
     ret = flb_plugins_register(config);
@@ -244,7 +276,7 @@ void flb_config_exit(struct flb_config *config)
     }
 
     if (config->log) {
-        flb_log_stop(config->log, config);
+        flb_log_destroy(config->log, config);
     }
 
     if (config->parsers_file) {
@@ -316,6 +348,11 @@ void flb_config_exit(struct flb_config *config)
         flb_free(config->conf_path);
     }
 
+    /* Working directory */
+    if (config->workdir) {
+        flb_free(config->workdir);
+    }
+
     /* Destroy any DSO context */
     flb_plugin_destroy(config->dso_plugins);
 
@@ -329,7 +366,7 @@ void flb_config_exit(struct flb_config *config)
     mk_event_closesocket(config->flush_fd);
 
     /* Release scheduler */
-    flb_sched_exit(config);
+    flb_sched_destroy(config->sched);
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (config->http_listen) {
@@ -339,6 +376,11 @@ void flb_config_exit(struct flb_config *config)
     if (config->http_port) {
         flb_free(config->http_port);
     }
+#endif
+
+#ifdef FLB_HAVE_PARSER
+    /* parsers */
+    flb_parser_exit(config);
 #endif
 
     if (config->storage_path) {
@@ -362,7 +404,6 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
-
 
     flb_plugins_unregister(config);
     flb_free(config);
@@ -390,7 +431,8 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         if (strcasecmp(v_str, "error") == 0) {
             config->verbose = 1;
         }
-        else if (strcasecmp(v_str, "warning") == 0) {
+        else if (strcasecmp(v_str, "warn") == 0 ||
+                 strcasecmp(v_str, "warning") == 0) {
             config->verbose = 2;
         }
         else if (strcasecmp(v_str, "info") == 0) {
@@ -401,6 +443,9 @@ static int set_log_level(struct flb_config *config, const char *v_str)
         }
         else if (strcasecmp(v_str, "trace") == 0) {
             config->verbose = 5;
+        }
+        else if (strcasecmp(v_str, "off") == 0) {
+            config->verbose = FLB_LOG_OFF;
         }
         else {
             return -1;

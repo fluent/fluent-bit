@@ -27,13 +27,12 @@
 #include <monkey/mk_info.h>
 #include <monkey/mk_socket.h>
 #include <monkey/mk_kernel.h>
+#include <monkey/mk_net.h>
 #include <monkey/mk_core.h>
 #include <monkey/mk_utils.h>
 #include <monkey/mk_plugin.h>
 
 #include <time.h>
-#include <netinet/tcp.h>
-#include <sys/un.h>
 
 /*
  * Example from:
@@ -48,6 +47,8 @@ int mk_socket_set_cork_flag(int fd, int state)
 #elif defined (TCP_NOPUSH)
     return setsockopt(fd, SOL_SOCKET, TCP_NOPUSH, &state, sizeof(state));
 #endif
+
+    return 0;
 }
 
 int mk_socket_set_nonblocking(int sockfd)
@@ -55,11 +56,21 @@ int mk_socket_set_nonblocking(int sockfd)
 
     MK_TRACE("Socket, set FD %i to non-blocking", sockfd);
 
+#ifdef _WIN32
+    u_long flags;
+
+    flags = 0;
+    if (SOCKET_ERROR == ioctlsocket(sockfd, FIONBIO, &flags)) {
+        mk_err("Can't set to non-blocking mode socket %i", sockfd);
+        return -1;
+    }
+#else
     if (fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL, 0) | O_NONBLOCK) == -1) {
         mk_err("Can't set to non-blocking mode socket %i", sockfd);
         return -1;
     }
     fcntl(sockfd, F_SETFD, FD_CLOEXEC);
+#endif
 
     return 0;
 }
@@ -114,7 +125,10 @@ int mk_socket_create(int domain, int type, int protocol)
     fd = socket(domain, type | SOCK_CLOEXEC, protocol);
 #else
     fd = socket(domain, type, protocol);
+
+#ifndef _WIN32
     fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif
 #endif
 
     if (fd == -1) {
@@ -284,6 +298,8 @@ int mk_socket_server(char *port, char *listen_addr,
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
+
+    mk_net_init();
 
     ret = getaddrinfo(listen_addr, port, &hints, &res);
     if(ret != 0) {

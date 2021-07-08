@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,13 +31,12 @@
 
 #include <monkey/mk_core.h>
 
-#ifdef FLB_HAVE_TLS
-#include <fluent-bit/flb_io_tls.h>
-#endif
-
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
+#define HC_ERRORS_COUNT_DEFAULT 5
+#define HC_RETRY_FAILURE_COUNTS_DEFAULT 5
+#define HEALTH_CHECK_PERIOD 60
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
 /* Main struct to hold the configuration of the runtime service */
@@ -98,6 +97,9 @@ struct flb_config {
     /* Parsers instances */
     struct mk_list parsers;
 
+    /* Multiline core parser definitions */
+    struct mk_list multiline_parsers;
+
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
 
@@ -125,6 +127,9 @@ struct flb_config {
     /* Environment */
     void *env;
 
+    /* Working Directory */
+    char *workdir;
+
     /* Exit status code */
     int exit_status_code;
 
@@ -138,10 +143,14 @@ struct flb_config {
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
-    int http_server;          /* HTTP Server running    */
-    char *http_port;          /* HTTP Port / TCP number */
-    char *http_listen;        /* Interface Address      */
-    void *http_ctx;           /* Monkey HTTP context    */
+    int http_server;                /* HTTP Server running    */
+    char *http_port;                /* HTTP Port / TCP number */
+    char *http_listen;              /* Interface Address      */
+    void *http_ctx;                 /* Monkey HTTP context    */
+    int health_check;               /* health check enable    */
+    int hc_errors_count;               /* health check error counts as unhealthy*/
+    int hc_retry_failure_count;        /* health check retry failures count as unhealthy*/
+    int health_check_period;           /* period by second for health status check */
 #endif
 
     /*
@@ -154,6 +163,16 @@ struct flb_config {
      *    proxy shouldn't be passed when calling flb_http_client().
      */
     char *http_proxy;
+
+    /*
+     * A comma-separated list of host names that shouldn't go through
+     * any proxy is set in (only an asterisk, * matches all hosts).
+     * As a convention (https://curl.se/docs/manual.html), this value can be set
+     * and respected by `NO_PROXY` environment variable when `HTTP_PROXY` is used.
+     * Example: NO_PROXY="127.0.0.1,localhost,kubernetes.default.svc"
+     * Note: only `,` is allowed as seperator between URLs.
+     */
+    char *no_proxy;
 
     /* Chunk I/O Buffering */
     void *cio;
@@ -202,6 +221,8 @@ struct flb_config {
     void *sched;
 
     struct flb_task_map tasks_map[2048];
+
+    int dry_run;
 };
 
 #define FLB_CONFIG_LOG_LEVEL(c) (c->log->level)
@@ -243,9 +264,13 @@ enum conf_type {
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
-#define FLB_CONF_STR_HTTP_SERVER     "HTTP_Server"
-#define FLB_CONF_STR_HTTP_LISTEN     "HTTP_Listen"
-#define FLB_CONF_STR_HTTP_PORT       "HTTP_Port"
+#define FLB_CONF_STR_HTTP_SERVER                            "HTTP_Server"
+#define FLB_CONF_STR_HTTP_LISTEN                            "HTTP_Listen"
+#define FLB_CONF_STR_HTTP_PORT                              "HTTP_Port"
+#define FLB_CONF_STR_HEALTH_CHECK                           "Health_Check"
+#define FLB_CONF_STR_HC_ERRORS_COUNT                        "HC_Errors_Count"
+#define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
+#define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
 
 /* Storage / Chunk I/O */

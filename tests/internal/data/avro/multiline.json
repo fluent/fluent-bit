@@ -1,0 +1,27 @@
+[
+  {
+    "date": 1597871185.922652,
+    "log": "2020-08-19T21:06:24.337499838Z stderr F hdfsExists: invokeMethod((Lorg/apache/hadoop/fs/Path;)Z) error:\n2020-08-19T21:06:24.33754077Z stderr F org.apache.hadoop.ipc.RemoteException(org.apache.hadoop.security..SecretManager$Invalid):  (HDFS_DELEGATION_  273964959 for weeb) can't be found in cache\n2020-08-19T21:06:24.337544598Z stderr F \tat org.apache.hadoop.ipc.Client.call(Client.java:1475)\n2020-08-19T21:06:24.337547418Z stderr F \tat org.apache.hadoop.ipc.Client.call(Client.java:1412)\n2020-08-19T21:06:24.337550469Z stderr F \tat org.apache.hadoop.ipc.ProtobufRpcEngine$Invoker.invoke(ProtobufRpcEngine.java:229)\n2020-08-19T21:06:24.337553603Z stderr F \tat com.sun.proxy.$Proxy9.getFileInfo(Unknown Source)\n2020-08-19T21:06:24.337556408Z stderr F \tat org.apache.hadoop.hdfs.protocolPB.ClientNamenodeProtocolTranslatorPB.getFileInfo(ClientNamenodeProtocolTranslatorPB.java:771)\n2020-08-19T21:06:24.337559359Z stderr F \tat sun.reflect.GeneratedMethodAccessor2.invoke(Unknown Source)\n2020-08-19T21:06:24.337562715Z stderr F \tat sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)\n2020-08-19T21:06:24.337565488Z stderr F \tat java.lang.reflect.Method.invoke(Method.java:498)\n2020-08-19T21:06:24.337574315Z stderr F \tat org.apache.hadoop.io.retry.RetryInvocationHandler.invokeMethod(RetryInvocationHandler.java:191)\n2020-08-19T21:06:24.337577049Z stderr F \tat org.apache.hadoop.io.retry.RetryInvocationHandler.invoke(RetryInvocationHandler.java:102)\n2020-08-19T21:06:24.33757971Z stderr F \tat com.sun.proxy.$Proxy10.getFileInfo(Unknown Source)\n2020-08-19T21:06:24.337582469Z stderr F \tat org.apache.hadoop.hdfs.DFSClient.getFileInfo(DFSClient.java:2108)\n2020-08-19T21:06:24.337585132Z stderr F \tat org.apache.hadoop.hdfs.DistributedFileSystem$22.doCall(DistributedFileSystem.java:1305)\n2020-08-19T21:06:24.337587799Z stderr F \tat org.apache.hadoop.hdfs.DistributedFileSystem$22.doCall(DistributedFileSystem.java:1301)\n2020-08-19T21:06:24.337590342Z stderr F \tat org.apache.hadoop.fs.FileSystemLinkResolver.resolve(FileSystemLinkResolver.java:81)\n2020-08-19T21:06:24.337592897Z stderr F \tat org.apache.hadoop.hdfs.DistributedFileSystem.getFileStatus(DistributedFileSystem.java:1301)\n2020-08-19T21:06:24.337595578Z stderr F \tat org.apache.hadoop.fs.FileSystem.exists(FileSystem.java:1424)",
+    "kubernetes": {
+      "pod_name": "rrrr-bert-completion-tb1-6786c9c8-wj25m",
+      "namespace_name": "k8s-fgg",
+      "pod_id": "50bfc67d-cd3c-410d-9369-8bda8f33b1c7",
+      "labels": {
+        "app": "customized-tb1",
+        "pod-template-hash": "6786c9c8"
+      },
+      "annotations": {
+        "doAs": "weeb",
+        "iddecorator.dkdk.username": "rrrr",
+        "kubernetes.io/limit-ranger": "LimitRanger",
+        "kubernetes.io/psp": "katib-nfs-provisioner",
+        "podpreset.admission.kubernetes.io/podpreset-kube-master": "60792473"
+      },
+      "host": "wedddd.dkdk.qqqq.com",
+      "container_name": "tb1",
+      "docker_id": "50bfc67d-cd3c-410d-9369-8bda8f33b1c7",
+      "container_hash": "qqqq.corp.qqqq.com/ai/centos/tf1.15.0-py3.7-horovod@sha256:68b6885f6d1d3fd87ce425a2b2aa687440b9578740d60996912a816ae67be85e",
+      "container_image": "qqqq.corp.qqqq.com/ai/centos/tf1.15.0-py3.7-horovod:1.2"
+    }
+  }
+]

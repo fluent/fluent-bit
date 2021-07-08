@@ -11,6 +11,7 @@ set(src
   flb_env.c
   flb_uri.c
   flb_hash.c
+  flb_help.c
   flb_pack.c
   flb_pack_gelf.c
   flb_sds.c
@@ -19,10 +20,13 @@ set(src
   flb_kernel.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_metric.c
   flb_filter.c
   flb_output.c
+  flb_output_thread.c
   flb_config.c
   flb_config_map.c
+  flb_socket.c
   flb_network.c
   flb_utils.c
   flb_slist.c
@@ -38,7 +42,7 @@ set(src
   flb_upstream_node.c
   flb_router.c
   flb_worker.c
-  flb_thread.c
+  flb_coro.c
   flb_time.c
   flb_sosreport.c
   flb_sha512.c
@@ -49,13 +53,23 @@ set(src
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
+  flb_thread_pool.c
+  flb_routes_mask.c
   )
 
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+# Multiline subsystem
+add_subdirectory(multiline)
 set(src
   ${src}
-  flb_dlfcn_win32.c
+  ${src_multiline}
   )
+
+if(FLB_SYSTEM_WINDOWS)
+  set(src
+    ${src}
+    flb_dlfcn_win32.c
+    )
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 endif()
 
 if(FLB_PARSER)
@@ -70,19 +84,25 @@ if(FLB_PARSER)
     )
 endif()
 
+if(FLB_AVRO_ENCODER)
+  set(src
+    ${src}
+    flb_avro.c
+    )
+endif()
+
 # Fluent Bit have TLS support
 if(FLB_TLS)
   # Register the TLS interface and functions
   set(src
     ${src}
-    "flb_io_tls.c"
+    "tls/flb_tls.c"
     "flb_oauth2.c"
     )
 
   # Make sure our output targets links to the TLS library
   set(extra_libs
     ${extra_libs}
-    "mbedtls"
     )
 endif()
 
@@ -118,12 +138,26 @@ endif()
 if(FLB_AWS)
   set(src
     ${src}
+    "aws/flb_aws_credentials_log.h"
     "aws/flb_aws_util.c"
     "aws/flb_aws_credentials.c"
     "aws/flb_aws_credentials_sts.c"
     "aws/flb_aws_credentials_ec2.c"
     "aws/flb_aws_credentials_http.c"
     "aws/flb_aws_credentials_profile.c"
+    )
+  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+    set(src
+      ${src}
+      "aws/flb_aws_credentials_process.c"
+      )
+  endif()
+endif()
+
+if (FLB_AWS_ERROR_REPORTER)
+  set(src
+    ${src}
+    "aws/flb_aws_error_reporter.c"
     )
 endif()
 
@@ -186,11 +220,12 @@ include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 
 # Core dependencies
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+if(FLB_SYSTEM_WINDOWS)
   set(FLB_DEPS
     "ws2_32.lib"
     "crypt32.lib"
     "Bcrypt.lib"
+    "Shlwapi.lib"
     )
 else()
   set(FLB_DEPS
@@ -253,20 +288,39 @@ if(FLB_HTTP_SERVER)
     flb-http-server)
 endif()
 
+# AVRO Encoding
+if(FLB_AVRO_ENCODER)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  avro-static
+  jansson
+  )
+endif()
 
 # Set static dependencies
 set(FLB_DEPS
   ${FLB_DEPS}
   mk_core
   jsmn
-  msgpackc-static
+  msgpack-c-static
   mpack-static
   chunkio-static
   miniz
+  xxhash
+  cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
+  mbedtls
+  c-ares
   )
+
+if(OPENSSL_FOUND)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    OpenSSL::SSL
+    )
+endif()
 
 # UTF8 Encoding
 if(FLB_UTF8_ENCODER)
@@ -316,6 +370,7 @@ if(FLB_SHARED_LIB)
   # Library install routines
   install(TARGETS fluent-bit-shared
     LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
+    COMPONENT library
     RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
 endif()
 
@@ -369,7 +424,7 @@ if(FLB_BINARY)
     PROPERTIES
     OUTPUT_NAME ${FLB_OUT_NAME}
     ENABLE_EXPORTS ON)
-  install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
+  install(TARGETS fluent-bit-bin RUNTIME DESTINATION ${FLB_INSTALL_BINDIR} COMPONENT binary)
 
   # Include PDB file (if available)
   if (MSVC)
@@ -386,16 +441,16 @@ if(FLB_BINARY)
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} DESTINATION /lib/systemd/system)
-    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR})
+    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${FLB_INSTALL_SYSTEMDUNITDIR})
+    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
     configure_file(
       "${PROJECT_SOURCE_DIR}/init/upstart.in"
       ${FLB_UPSTART_SCRIPT}
       )
-    install(FILES ${FLB_UPSTART_SCRIPT} DESTINATION /etc/init)
-    install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR})
+    install(FILES ${FLB_UPSTART_SCRIPT} COMPONENT binary DESTINATION ${FLB_INSTALL_UPSTARTUNITDIR})
+    install(DIRECTORY DESTINATION COMPONENT binary ${FLB_INSTALL_CONFDIR})
   else()
     # FIXME: should we support Sysv init script ?
   endif()
@@ -403,14 +458,17 @@ if(FLB_BINARY)
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
     DESTINATION ${FLB_INSTALL_CONFDIR}
+    COMPONENT binary
     RENAME "${FLB_OUT_NAME}.conf")
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
+    COMPONENT binary
     DESTINATION ${FLB_INSTALL_CONFDIR})
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/plugins.conf"
+    COMPONENT binary
     DESTINATION ${FLB_INSTALL_CONFDIR})
 
 endif()

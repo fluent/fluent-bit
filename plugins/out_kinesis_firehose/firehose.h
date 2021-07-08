@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,9 +72,9 @@ struct flb_firehose {
      * - STS Assume role provider
      * - The CloudWatch Logs client for this plugin
      */
-    struct flb_tls cred_tls;
-    struct flb_tls sts_tls;
-    struct flb_tls client_tls;
+    struct flb_tls *cred_tls;
+    struct flb_tls *sts_tls;
+    struct flb_tls *client_tls;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     struct flb_aws_client *firehose_client;

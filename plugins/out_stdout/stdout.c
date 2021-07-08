@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,8 +25,12 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
-
 #include "stdout.h"
+
+
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_encode_text.h>
+#include <cmetrics/cmt_decode_msgpack.h>
 
 static int cb_stdout_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
@@ -94,9 +98,36 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static void print_metrics_text(struct flb_output_instance *ins,
+                               const void *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    cmt_sds_t text;
+    struct cmt *cmt = NULL;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not process metrics payload");
+        return;
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_text_create(cmt);
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    printf("%s", text);
+    fflush(stdout);
+
+    cmt_encode_text_destroy(text);
+}
+
 static void cb_stdout_flush(const void *data, size_t bytes,
                             const char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
+                            struct flb_input_instance *ins,
                             void *out_context,
                             struct flb_config *config)
 {
@@ -105,11 +136,17 @@ static void cb_stdout_flush(const void *data, size_t bytes,
     struct flb_stdout *ctx = out_context;
     flb_sds_t json;
     char *buf = NULL;
-    (void) i_ins;
     (void) config;
     struct flb_time tmp;
     msgpack_object *p;
 
+    /* Check if the event type is metrics, handle the payload differently */
+    if (flb_input_event_type_is_metric(ins)) {
+        print_metrics_text(ctx->ins, (char *) data, bytes);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    /* Assuming data is a log entry...*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {
         json = flb_pack_msgpack_to_json_format(data, bytes,
                                                ctx->out_format,
@@ -194,5 +231,6 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_flush     = cb_stdout_flush,
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .config_map   = config_map
 };

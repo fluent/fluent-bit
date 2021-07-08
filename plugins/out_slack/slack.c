@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,7 +101,7 @@ static int cb_slack_init(struct flb_output_instance *ins,
     ctx->u = flb_upstream_create(config,
                                  ctx->host,
                                  ctx->port,
-                                 FLB_IO_TLS, (void *) &ins->tls);
+                                 FLB_IO_TLS, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "error creating upstream context");
         goto error;

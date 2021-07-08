@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -112,6 +112,23 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
     }
 
+    /* Compress (gzip) */
+    tmp = (char *) flb_output_get_property("compress", ins);
+    ctx->compress_gzip = FLB_FALSE;
+    if (tmp) {
+        if (strcasecmp(tmp, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+    }
+
+    /* Compress Blob: only availabel for blockblob type */
+    if (ctx->compress_blob == FLB_TRUE && ctx->btype != AZURE_BLOB_BLOCKBLOB) {
+        flb_plg_error(ctx->ins,
+                      "the option 'compress_blob' is not compatible with 'appendblob' "
+                      "blob_type");
+        return NULL;
+    }
+
     /*
      * Setting up the real endpoint:
      *
@@ -127,12 +144,11 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
 
         ctx->u = flb_upstream_create_url(config, ctx->endpoint,
-                                         io_flags, &ins->tls);
+                                         io_flags, ins->tls);
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "invalid endpoint '%s'", ctx->endpoint);
             return NULL;
         }
-
         ctx->real_endpoint = flb_sds_create(ctx->endpoint);
     }
     else {
@@ -156,13 +172,14 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
         }
 
         ctx->u = flb_upstream_create(config, ctx->real_endpoint, port, io_flags,
-                                     &ins->tls);
+                                     ins->tls);
         if (!ctx->u) {
             flb_plg_error(ctx->ins, "cannot create upstream for endpoint '%s'",
                           ctx->real_endpoint);
             return NULL;
         }
     }
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Compose base uri */
     ctx->base_uri = flb_sds_create_size(256);

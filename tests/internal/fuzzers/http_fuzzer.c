@@ -9,6 +9,9 @@
 
 #include "flb_fuzz_header.h"
 
+extern int fuzz_process_data(struct flb_http_client *c);
+extern int fuzz_check_connection(struct flb_http_client *c);
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     struct flb_upstream *u;
@@ -17,7 +20,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     struct flb_config *config;
     char *uri = NULL;
 
-    if (size < 120) {
+    if (size < 160) {
         return 0;
     }
 
@@ -42,9 +45,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     int method = (int)data[0];
     c = flb_http_client(u_conn, method, uri, NULL, 0,
                     "127.0.0.1", 8001, proxy, 0);
-
     if (c != NULL) {
-        char *null_terminated = get_null_terminated(size-20, &data, &size);
+        char *null_terminated = get_null_terminated(30, &data, &size);
 
         /* Perform a set of operations on the http_client */
         flb_http_basic_auth(c, null_terminated, null_terminated);
@@ -60,16 +62,33 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_http_buffer_size(c, (int)data[0]);
         MOVE_INPUT(1)
         flb_http_buffer_available(c);
+
+        size_t b_sent;
+        flb_http_do(c, &b_sent);
+
         size_t out_size = 0;
         flb_http_buffer_increase(c, (*(size_t *)data) & 0xfff, &out_size);
         MOVE_INPUT(4)
 
-        size_t b_sent;
-        flb_http_do(c, &b_sent);
-        flb_http_client_destroy(c);
+        /* Now we need to simulate the reading of data */
+        c->resp.status = 200;
 
+        if (c->resp.data != NULL) {
+           flb_free(c->resp.data);
+        }
+
+        char *new_nulltm = get_null_terminated(30, &data, &size);
+        c->resp.data_len = 30;
+        c->resp.data = new_nulltm;
+        fuzz_process_data(c);
+        fuzz_check_connection(c);
+
+        flb_http_client_destroy(c);
         flb_free(null_terminated);
     }
+
+    /* Now try the http_client_proxy_connect function. */
+    flb_http_client_proxy_connect(u_conn);
 
     flb_free(u_conn);
     flb_upstream_destroy(u);

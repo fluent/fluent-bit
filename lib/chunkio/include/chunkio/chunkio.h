@@ -37,10 +37,11 @@
 #define CIO_STORE_MEM       1
 
 /* flags */
-#define CIO_OPEN            1   /* open/create file reference */
-#define CIO_OPEN_RD         2   /* open and read/mmap content if exists */
-#define CIO_CHECKSUM        4   /* enable checksum verification (crc32) */
-#define CIO_FULL_SYNC       8   /* force sync to fs through MAP_SYNC */
+#define CIO_OPEN            1         /* open/create file reference */
+#define CIO_OPEN_RW         CIO_OPEN  /* new name for read/write mode */
+#define CIO_OPEN_RD         2         /* open and read/mmap content if exists */
+#define CIO_CHECKSUM        4         /* enable checksum verification (crc32) */
+#define CIO_FULL_SYNC       8         /* force sync to fs through MAP_SYNC */
 
 /* Return status */
 #define CIO_CORRUPTED      -3  /* Indicate that a chunk is corrupted */
@@ -95,7 +96,5 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size);
 int cio_meta_cmp(struct cio_chunk *ch, char *meta_buf, int meta_len);
 int cio_meta_read(struct cio_chunk *ch, char **meta_buf, int *meta_len);
 int cio_meta_size(struct cio_chunk *ch);
-
-ssize_t cio_chunk_get_real_size(struct cio_chunk *ch);
 
 #endif

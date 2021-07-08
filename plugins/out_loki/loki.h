@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +36,10 @@
 #define FLB_LOKI_KV_RA     1     /* record accessor */
 #define FLB_LOKI_KV_K8S    2     /* kubernetes label */
 
+/* Output line format */
+#define FLB_LOKI_FMT_JSON  0
+#define FLB_LOKI_FMT_KV    1
+
 struct flb_loki_kv {
     int val_type;                       /* FLB_LOKI_KV_STR or FLB_LOKI_KV_RA */
     flb_sds_t key;                      /* string key */
@@ -49,16 +53,31 @@ struct flb_loki_kv {
 struct flb_loki {
     /* Public configuration properties */
     int auto_kubernetes_labels;
+    int drop_single_key;
+    flb_sds_t line_format;
     flb_sds_t tenant_id;
+    flb_sds_t tenant_id_key_config;
+
+    /* HTTP Auth */
+    flb_sds_t http_user;
+    flb_sds_t http_passwd;
+
+    /* Labels */
     struct mk_list *labels;
     struct mk_list *label_keys;
+    struct mk_list *remove_keys;
 
     /* Private */
     int tcp_port;
     char *tcp_host;
+    int out_line_format;
     int ra_used;                        /* number of record accessor label keys */
     struct flb_record_accessor *ra_k8s; /* kubernetes record accessor */
     struct mk_list labels_list;         /* list of flb_loki_kv nodes */
+    struct mk_list remove_keys_derived; /* remove_keys with label RAs */
+    struct flb_mp_accessor *remove_mpa; /* remove_keys multi-pattern accessor */
+    struct flb_record_accessor *ra_tenant_id_key; /* dynamic tenant id key */
+    flb_sds_t dynamic_tenant_id; /* temporary buffer for tenant id */
 
     /* Upstream Context */
     struct flb_upstream *u;

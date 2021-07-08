@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,8 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 
 #include <stdlib.h>
 #include <fcntl.h>
@@ -34,6 +36,43 @@
 #ifdef FLB_HAVE_PARSER
 #include "tail_multiline.h"
 #endif
+
+static int multiline_load_parsers(struct flb_tail_config *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *head_p;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *val = NULL;
+    struct flb_ml_parser_ins *parser_i;
+
+    if (!ctx->multiline_parsers) {
+        return 0;
+    }
+
+    /* Create Multiline context using the plugin instance name */
+    ctx->ml_ctx = flb_ml_create(ctx->config, ctx->ins->name);
+    if (!ctx->ml_ctx) {
+        return -1;
+    }
+
+    /*
+     * Iterate all 'multiline.parser' entries. Every entry is considered
+     * a group which can have multiple multiline parser instances.
+     */
+    flb_config_map_foreach(head, mv, ctx->multiline_parsers) {
+        mk_list_foreach(head_p, mv->val.list) {
+            val = mk_list_entry(head_p, struct flb_slist_entry, _head);
+
+            /* Create an instance of the defined parser */
+            parser_i = flb_ml_parser_instance_create(ctx->ml_ctx, val->str);
+            if (!parser_i) {
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
 
 struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                struct flb_config *config)
@@ -50,6 +89,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->config = config;
     ctx->ins = ins;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
@@ -63,7 +103,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         flb_free(ctx);
         return NULL;
     }
-
 
     /* Create the channel manager */
     ret = flb_pipe_create(ctx->ch_manager);
@@ -234,6 +273,24 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         ctx->db = flb_tail_db_open(tmp, ins, ctx, config);
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    /* Journal mode check */
+    tmp = flb_input_get_property("db.journal_mode", ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "DELETE") != 0 &&
+            strcasecmp(tmp, "TRUNCATE") != 0 &&
+            strcasecmp(tmp, "PERSIST") != 0 &&
+            strcasecmp(tmp, "MEMORY") != 0 &&
+            strcasecmp(tmp, "WAL") != 0 &&
+            strcasecmp(tmp, "OFF") != 0) {
+
+            flb_plg_error(ctx->ins, "invalid db.journal_mode=%s", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
         }
     }
 
@@ -302,6 +359,27 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     }
 #endif
 
+#ifdef FLB_HAVE_PARSER
+    /* Multiline core API */
+    if (ctx->multiline_parsers && mk_list_size(ctx->multiline_parsers) > 0) {
+        ret = multiline_load_parsers(ctx);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "could not load multiline parsers");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* Enable auto-flush routine */
+        ret = flb_ml_auto_flush_init(ctx->ml_ctx);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not start multiline auto-flush");
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+        flb_plg_info(ctx->ins, "multiline core started");
+    }
+#endif
+
 #ifdef FLB_HAVE_METRICS
     flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
                     "files_opened", ctx->ins->metrics);
@@ -319,6 +397,10 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
 
 #ifdef FLB_HAVE_PARSER
     flb_tail_mult_destroy(config);
+
+    if (config->ml_ctx) {
+        flb_ml_destroy(config->ml_ctx);
+    }
 #endif
 
     /* Close pipe ends */

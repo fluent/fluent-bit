@@ -270,6 +270,8 @@ static void test_fs_up_down()
     char *f_hash;
     size_t in_size;
     uint32_t val;
+    char path[1024];
+    struct stat st;
     struct cio_ctx *ctx;
     struct cio_stream *stream;
     struct cio_chunk *chunk;
@@ -329,6 +331,7 @@ static void test_fs_up_down()
     /* file down/up */
     TEST_CHECK(cio_chunk_is_up(chunk) == CIO_TRUE);
     ret = cio_chunk_down(chunk);
+
     TEST_CHECK(ret == 0);
     TEST_CHECK(cio_chunk_is_up(chunk) == CIO_FALSE);
     ret = cio_chunk_up(chunk);
@@ -357,7 +360,18 @@ static void test_fs_up_down()
      * sha1 context so it skip old data to perform the verification.
      */
     cio_chunk_write(chunk, in_data, in_size);
+
     cio_chunk_sync(chunk);
+
+    /*
+     * Bug https://github.com/fluent/fluent-bit/pull/3054#issuecomment-778831815
+     *
+     * the fs_size cache value is not being updated after a sync, let's validate.
+     */
+    snprintf(path, sizeof(path) - 1, "%s%s", CIO_ENV, "test-crc32/test1.out");
+    ret = stat(path, &st);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(st.st_size == cio_chunk_get_real_size(chunk));
 
     /* file down/up */
     TEST_CHECK(cio_chunk_is_up(chunk) == CIO_TRUE);
@@ -452,10 +466,107 @@ static void test_issue_flb_2025()
     cio_destroy(ctx);
 }
 
+void test_fs_size_chunks_up()
+{
+    int i;
+    int ret;
+    int len;
+    int err;
+    int flags;
+    char line[] = "this is a test line\n";
+    char name[32];
+    size_t expected;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_chunk *chunk_tmp;
+    struct cio_stream *stream;
+
+    /* cleanup environment */
+    cio_utils_recursive_delete(CIO_ENV);
+
+    flags = CIO_CHECKSUM;
+    ctx = cio_create(CIO_ENV, log_cb, CIO_LOG_INFO, flags);
+    TEST_CHECK(ctx != NULL);
+
+    /* Set default number of chunks up */
+    cio_set_max_chunks_up(ctx, 50);
+
+    stream = cio_stream_create(ctx, "test_size_chunks_up", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+
+    len = strlen(line);
+    for (i = 0; i < 100; i++) {
+        /* Create the chunk */
+        snprintf(name, sizeof(name) - 1, "test-%i", i);
+
+        chunk = cio_chunk_open(ctx, stream, name, CIO_OPEN, 1000, &err);
+        TEST_CHECK(chunk != NULL);
+        if (!chunk) {
+            exit(1);
+        }
+
+        if (i < 50) {
+            /* First 50 chunks (0-49) will be in an 'up' state */
+            ret = cio_chunk_is_up(chunk);
+            TEST_CHECK(ret == CIO_TRUE);
+            if (ret == CIO_FALSE) {
+                exit(1);
+            }
+            ret = cio_chunk_write(chunk, line, len);
+            TEST_CHECK(ret == CIO_OK);
+
+            /* Check this chunk is in the 'chunks_up' list */
+            chunk_tmp = mk_list_entry_last(&stream->chunks_up,
+                                           struct cio_chunk,
+                                           _state_head);
+            TEST_CHECK(chunk_tmp == chunk);
+
+            /* Put the chunk down and now recheck 'chunks_down' list */
+            ret = cio_chunk_down(chunk);
+            TEST_CHECK(ret == CIO_OK);
+
+            /* Down list */
+            chunk_tmp = mk_list_entry_last(&stream->chunks_down,
+                                           struct cio_chunk,
+                                           _state_head);
+            TEST_CHECK(chunk_tmp == chunk);
+
+            /* Put the chunk UP again */
+            ret = cio_chunk_up(chunk);
+            TEST_CHECK(ret == CIO_OK);
+
+            /* Check this chunk is in the 'chunks_up' list */
+            chunk_tmp = mk_list_entry_last(&stream->chunks_up,
+                                           struct cio_chunk,
+                                           _state_head);
+            TEST_CHECK(chunk_tmp == chunk);
+        }
+        else {
+            /*
+             * Remaining created chunks are in a down state, after creation
+             * this chunks must be linked in the struct cio_stream->chunks_down
+             * list.
+             */
+            chunk_tmp = mk_list_entry_last(&stream->chunks_down,
+                                           struct cio_chunk,
+                                           _state_head);
+            TEST_CHECK(chunk_tmp == chunk);
+        }
+    }
+
+    /* 50 chunks are up, each chunk contains 'len' bytes */
+    expected = 50 * len;
+    TEST_CHECK(cio_stream_size_chunks_up(stream) == expected);
+
+    /* Cleanup */
+    cio_destroy(ctx);
+}
+
 TEST_LIST = {
     {"fs_write",   test_fs_write},
     {"fs_checksum",  test_fs_checksum},
     {"fs_up_down", test_fs_up_down},
+    {"fs_size_chunks_up", test_fs_size_chunks_up},
     {"issue_51",   test_issue_51},
     {"issue_flb_2025", test_issue_flb_2025},
     { 0 }

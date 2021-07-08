@@ -11,21 +11,28 @@ set(src
   chunkio.c
   )
 
-if(CIO_BACKEND_FILESYSTEM)
+set(libs cio-crc32)
+
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(src
     ${src}
-    cio_file.c
+    cio_file_win32.c
+    win32/dirent.c
     )
+  set(libs
+    ${libs}
+    Shell32.lib
+    Shlwapi.lib)
 else()
   set(src
     ${src}
-    cio_file_compat.c
+    cio_file.c
     )
 endif()
 
 if(CIO_LIB_STATIC)
   add_library(chunkio-static STATIC ${src})
-  target_link_libraries(chunkio-static cio-crc32)
+  target_link_libraries(chunkio-static ${libs})
   if(CIO_SANITIZE_ADDRESS)
     add_sanitizers(chunkio-static)
   endif()
@@ -33,7 +40,7 @@ endif()
 
 if (CIO_LIB_SHARED)
   add_library(chunkio-shared SHARED ${src})
-  target_link_libraries(chunkio-static cio-crc32)
+  target_link_libraries(chunkio-static ${libs})
   if(CIO_SANITIZE_ADDRESS)
     add_sanitizers(chunkio-shared)
   endif()

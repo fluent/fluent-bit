@@ -110,7 +110,7 @@ endmacro()
 macro(FLB_PLUGIN name src deps)
   add_library(flb-plugin-${name} STATIC ${src})
   add_sanitizers(flb-plugin-${name})
-  target_link_libraries(flb-plugin-${name} fluent-bit-static msgpackc-static ${deps})
+  target_link_libraries(flb-plugin-${name} fluent-bit-static msgpack-c-static ${deps})
 endmacro()
 
 
@@ -130,6 +130,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_netif")
   REGISTER_IN_PLUGIN("in_docker")
   REGISTER_IN_PLUGIN("in_docker_events")
+  REGISTER_IN_PLUGIN("in_node_exporter_metrics")
 endif()
 
 REGISTER_IN_PLUGIN("in_emitter")
@@ -148,6 +149,8 @@ endif()
 
 if (FLB_SYSTEM_WINDOWS)
   REGISTER_IN_PLUGIN("in_winlog")
+  REGISTER_IN_PLUGIN("in_winstat")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 else()
   REGISTER_IN_PLUGIN("in_serial")
 endif()
@@ -199,8 +202,11 @@ REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
 REGISTER_OUT_PLUGIN("out_gelf")
+REGISTER_OUT_PLUGIN("out_websocket")
 REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
 REGISTER_OUT_PLUGIN("out_kinesis_firehose")
+REGISTER_OUT_PLUGIN("out_kinesis_streams")
+REGISTER_OUT_PLUGIN("out_prometheus_exporter")
 REGISTER_OUT_PLUGIN("out_s3")
 
 # FILTERS
@@ -231,6 +237,7 @@ endif()
 
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
+REGISTER_FILTER_PLUGIN("filter_geoip2")
 
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)

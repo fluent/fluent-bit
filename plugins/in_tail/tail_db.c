@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,17 +67,21 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         }
     }
 
-    ret = flb_sqldb_query(db, SQL_PRAGMA_JOURNAL_MODE, NULL, NULL);
-    if (ret != FLB_OK) {
-        flb_plg_error(ctx->ins, "db: could not set pragma 'journal_mode'");
-        flb_sqldb_close(db);
-        return NULL;
-    }
-
     if (ctx->db_locking == FLB_TRUE) {
         ret = flb_sqldb_query(db, SQL_PRAGMA_LOCKING_MODE, NULL, NULL);
         if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "db: could not set pragma 'locking_mode'");
+            flb_sqldb_close(db);
+            return NULL;
+        }
+    }
+
+    if (ctx->db_journal_mode) {
+        snprintf(tmp, sizeof(tmp) - 1, SQL_PRAGMA_JOURNAL_MODE,
+                 ctx->db_journal_mode);
+        ret = flb_sqldb_query(db, tmp, NULL, NULL);
+        if (ret != FLB_OK) {
+            flb_plg_error(ctx->ins, "db could not set pragma 'journal_mode'");
             flb_sqldb_close(db);
             return NULL;
         }

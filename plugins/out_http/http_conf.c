@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -104,13 +104,13 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         upstream = flb_upstream_create(config,
                                        ctx->proxy_host,
                                        ctx->proxy_port,
-                                       io_flags, (void *)&ins->tls);
+                                       io_flags, ins->tls);
     }
     else {
         upstream = flb_upstream_create(config,
                                        ins->host.name,
                                        ins->host.port,
-                                       io_flags, (void *)&ins->tls);
+                                       io_flags, ins->tls);
     }
 
     if (!upstream) {

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,9 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include "modify.h"
@@ -37,7 +40,7 @@
 
 static void condition_free(struct modify_condition *condition)
 {
-    flb_free(condition->a);
+    flb_sds_destroy(condition->a);
     flb_free(condition->b);
     flb_free(condition->raw_k);
     flb_free(condition->raw_v);
@@ -47,6 +50,10 @@ static void condition_free(struct modify_condition *condition)
     }
     if (condition->b_is_regex) {
         flb_regex_destroy(condition->b_regex);
+    }
+    if (condition->ra_a) {
+        flb_ra_destroy(condition->ra_a);
+        condition->ra_a = NULL;
     }
     flb_free(condition);
 }
@@ -147,6 +154,7 @@ static int setup(struct filter_modify_ctx *ctx,
 
             condition->a_is_regex = false;
             condition->b_is_regex = false;
+            condition->ra_a = NULL;
             condition->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
             condition->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
 
@@ -210,9 +218,9 @@ static int setup(struct filter_modify_ctx *ctx,
             sentry =
                 mk_list_entry_next(&sentry->_head, struct flb_split_entry,
                                    _head, split);
-            condition->a = flb_strndup(sentry->value, sentry->len);
+            condition->a = flb_sds_create_len(sentry->value, sentry->len);
             condition->a_len = sentry->len;
-
+            condition->ra_a = flb_ra_create(condition->a, FLB_FALSE);
             if (list_size == 3) {
                 sentry =
                     mk_list_entry_last(split, struct flb_split_entry, _head);
@@ -608,8 +616,15 @@ static inline bool evaluate_condition_KEY_EXISTS(msgpack_object * map,
                                                  struct modify_condition
                                                  *condition)
 {
-    return (map_count_keys_matching_str(map, condition->a, condition->a_len) >
-            0);
+    msgpack_object *skey = NULL;
+    msgpack_object *okey = NULL;
+    msgpack_object *oval = NULL;
+
+    flb_ra_get_kv_pair(condition->ra_a, *map, &skey, &okey, &oval);
+    if (skey == NULL || okey == NULL || oval == NULL) {
+        return false;
+    }
+    return true;
 }
 
 static inline bool evaluate_condition_KEY_DOES_NOT_EXIST(msgpack_object * map,
@@ -641,22 +656,21 @@ static inline bool evaluate_condition_KEY_VALUE_EQUALS(struct filter_modify_ctx 
                                                        modify_condition
                                                        *condition)
 {
-    int i;
-    bool match = false;
-    msgpack_object_kv *kv;
+    msgpack_object *skey = NULL;
+    msgpack_object *okey = NULL;
+    msgpack_object *oval = NULL;
+    bool ret = false;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        kv = &map->via.map.ptr[i];
-        if (kv_key_matches_str(kv, condition->a, condition->a_len)) {
-            if (kv_val_matches_str(kv, condition->b, condition->b_len)) {
-                flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_EQUALS %s",
-                              condition->b);
-                match = true;
-                break;
-            }
-        }
+    flb_ra_get_kv_pair(condition->ra_a, *map, &skey, &okey, &oval);
+    if (skey == NULL || okey == NULL || oval == NULL) {
+        return false;
     }
-    return match;
+    ret = helper_msgpack_object_matches_str(oval, condition->b, condition->b_len);
+    if (ret) {
+        flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_EQUALS %s",
+                      condition->b);
+    }
+    return ret;
 }
 
 static inline
@@ -676,22 +690,21 @@ static inline bool evaluate_condition_KEY_VALUE_MATCHES(struct filter_modify_ctx
                                                         modify_condition
                                                         *condition)
 {
-    int i;
-    bool match = false;
-    msgpack_object_kv *kv;
+    msgpack_object *skey = NULL;
+    msgpack_object *okey = NULL;
+    msgpack_object *oval = NULL;
+    bool ret = false;
 
-    for (i = 0; i < map->via.map.size; i++) {
-        kv = &map->via.map.ptr[i];
-        if (kv_key_matches_str(kv, condition->a, condition->a_len)) {
-            if (kv_val_matches_regex(kv, condition->b_regex)) {
-                flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_MATCHES "
-                              "%s", condition->b);
-                match = true;
-                break;
-            }
-        }
+    flb_ra_get_kv_pair(condition->ra_a, *map, &skey, &okey, &oval);
+    if (skey == NULL || okey == NULL || oval == NULL) {
+        return false;
     }
-    return match;
+    ret = helper_msgpack_object_matches_regex(oval, condition->b_regex);
+    if (ret) {
+        flb_plg_debug(ctx->ins, "Match for condition KEY_VALUE_MATCHES "
+                      "%s", condition->b);
+    }
+    return ret;
 }
 
 static inline

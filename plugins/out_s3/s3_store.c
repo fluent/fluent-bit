@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,6 +78,7 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
                                   int tag_len)
 {
     struct mk_list *head;
+    struct mk_list *tmp;
     struct flb_fstore_file *fsf = NULL;
     struct s3_file *s3_file;
 
@@ -85,17 +86,23 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
      * Based in the current ctx->stream_name, locate a candidate file to
      * store the incoming data using as a lookup pattern the content Tag.
      */
-    mk_list_foreach(head, &ctx->stream_active->files) {
+    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
 
-        /* skip locked chunks */
-        s3_file = fsf->data;
-        if (s3_file->locked == FLB_TRUE) {
+        /* skip and warn on partially initialized chunks */
+        if (fsf->data == NULL) {
+            flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
+            flb_fstore_file_delete(ctx->fs, fsf);
+        }
+
+        if (fsf->meta_size != tag_len) {
             fsf = NULL;
             continue;
         }
 
-        if (fsf->meta_size != tag_len) {
+        /* skip locked chunks */
+        s3_file = fsf->data;
+        if (s3_file->locked == FLB_TRUE) {
             fsf = NULL;
             continue;
         }
@@ -147,6 +154,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         ret = flb_fstore_file_meta_set(ctx->fs, fsf, (char *) tag, tag_len);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "error writing tag metadata");
+            flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
+            flb_fstore_file_delete(ctx->fs, fsf);
             return -1;
         }
 
@@ -155,6 +164,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         if (!s3_file) {
             flb_errno();
             flb_plg_error(ctx->ins, "cannot allocate s3 file context");
+            flb_plg_warn(ctx->ins, "Deleting buffer file because S3 context creation failed");
+            flb_fstore_file_delete(ctx->fs, fsf);
             return -1;
         }
         s3_file->fsf = fsf;
@@ -261,7 +272,13 @@ int s3_store_init(struct flb_s3 *ctx)
      */
     now = time(NULL);
     tm = localtime(&now);
+
+#ifdef FLB_SYSTEM_WINDOWS
+    /* Windows does not allow ':' in directory names */
+    strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H-%M-%S", tm);
+#else
     strftime(tmp, sizeof(tmp) - 1, "%Y-%m-%dT%H:%M:%S", tm);
+#endif
 
     /* Create the stream */
     fs_stream = flb_fstore_stream_create(ctx->fs, tmp);
@@ -459,14 +476,16 @@ int s3_store_file_upload_put(struct flb_s3 *ctx,
             return -1;
         }
         flb_sds_destroy(name);
-    }
 
-    /* Write key as metadata */
-    ret = flb_fstore_file_meta_set(ctx->fs, fsf,
-                                   key, flb_sds_len(key));
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "error writing tag metadata");
-        return -1;
+        /* Write key as metadata */
+        ret = flb_fstore_file_meta_set(ctx->fs, fsf,
+                                    key, flb_sds_len(key));
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "error writing upload metadata");
+            flb_plg_warn(ctx->ins, "Deleting s3 upload cache file because metadata could not be written");
+            flb_fstore_file_delete(ctx->fs, fsf);
+            return -1;
+        }
     }
 
     /* Append data to the target file */

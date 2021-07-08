@@ -36,7 +36,10 @@
 #include <monkey/mk_http_thread.h>
 
 #include <signal.h>
+
+#ifndef _WIN32
 #include <sys/syscall.h>
+#endif
 
 extern struct mk_sched_handler mk_http_handler;
 extern struct mk_sched_handler mk_http2_handler;
@@ -302,12 +305,14 @@ static int mk_sched_register_thread(struct mk_server *server)
 
 static void mk_signal_thread_sigpipe_safe()
 {
+#ifndef _WIN32
     sigset_t old;
     sigset_t set;
 
     sigemptyset(&set);
     sigaddset(&set, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &set, &old);
+#endif
 }
 
 /* created thread, all these calls are in the thread context */
@@ -346,7 +351,8 @@ void *mk_sched_launch_worker_loop(void *data)
         mk_err("Error creating Scheduler loop");
         exit(EXIT_FAILURE);
     }
-    sched->mem_pagesize = sysconf(_SC_PAGESIZE);
+
+    sched->mem_pagesize = mk_utils_get_system_page_size();
 
     /*
      * Create the notification instance and link it to the worker
@@ -564,7 +570,7 @@ int mk_sched_drop_connection(struct mk_sched_conn *conn,
                              struct mk_sched_worker *sched,
                              struct mk_server *server)
 {
-    mk_sched_threads_destroy_all(sched);
+    mk_sched_threads_destroy_conn(sched, conn);
     return mk_sched_remove_client(conn, sched, server);
 }
 
@@ -633,6 +639,31 @@ int mk_sched_threads_destroy_all(struct mk_sched_worker *sched)
     c = sched_thread_cleanup(sched, &sched->threads_purge);
     c += sched_thread_cleanup(sched, &sched->threads);
 
+    return c;
+}
+
+/*
+ * Destroy the thread contexts associated to the particular
+ * connection.
+ *
+ * Return the number of contexts destroyed.
+ */
+int mk_sched_threads_destroy_conn(struct mk_sched_worker *sched,
+                                  struct mk_sched_conn *conn)
+{
+    int c = 0;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_http_thread *mth;
+    (void) sched;
+
+    mk_list_foreach_safe(head, tmp, &sched->threads) {
+        mth = mk_list_entry(head, struct mk_http_thread, _head);
+        if (mth->session->conn == conn) {
+            mk_http_thread_destroy(mth);
+            c++;
+        }
+    }
     return c;
 }
 
@@ -770,24 +801,42 @@ void mk_sched_worker_cb_free(struct mk_server *server)
     }
 }
 
-int mk_sched_send_signal(struct mk_server *server, uint64_t val)
+int mk_sched_send_signal(struct mk_sched_worker *worker, uint64_t val)
+{
+    ssize_t n;
+
+    /* When using libevent _mk_event_channel_create creates a unix socket
+     * instead of a pipe and windows doesn't us calling read / write on a
+     * socket instead of recv / send
+     */
+
+#ifdef _WIN32
+    n = send(worker->signal_channel_w, &val, sizeof(uint64_t), 0);
+#else
+    n = write(worker->signal_channel_w, &val, sizeof(uint64_t));
+#endif
+
+    if (n < 0) {
+        mk_libc_error("write");
+
+        return 0;
+    }
+
+    return 1;
+}
+
+int mk_sched_broadcast_signal(struct mk_server *server, uint64_t val)
 {
     int i;
     int count = 0;
-    ssize_t n;
     struct mk_sched_ctx *ctx;
     struct mk_sched_worker *worker;
 
     ctx = server->sched_ctx;
     for (i = 0; i < server->workers; i++) {
         worker = &ctx->workers[i];
-        n = write(worker->signal_channel_w, &val, sizeof(uint64_t));
-        if (n < 0) {
-            mk_libc_error("write");
-        }
-        else {
-            count++;
-        }
+
+        count += mk_sched_send_signal(worker, val);
     }
 
     return count;
