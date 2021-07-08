@@ -25,6 +25,8 @@
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_compat.h>
 
+#include <ctype.h>
+
 /*
  * Influx wire protocol
  * --------------------
@@ -51,6 +53,47 @@ static void append_metric_value(struct cmt_map *map,
     cmt_sds_cat_safe(buf, opts->name, cmt_sds_len(opts->name));
     cmt_sds_cat_safe(buf, tmp, len);
 
+}
+
+static int line_protocol_escape(const char *str_in, int size_in,
+                                char *str_out, int quote)
+{
+    int i;
+    int size_out = 0;
+    char ch;
+
+    for (i = 0; i < size_in; ++i) {
+        ch = str_in[i];
+        if (quote ? (ch == '"' || ch == '\\') : (isspace(ch) || ch == ',' || ch == '=')) {
+            str_out[size_out++] = '\\';
+        }
+        else if (ch == '\\') {
+            str_out[size_out++] = '\\';
+        }
+        str_out[size_out++] = ch;
+    }
+
+    return size_out;
+}
+
+static int append_string(cmt_sds_t *buf, cmt_sds_t str)
+{
+    int len;
+    int size;
+    char *esc_buf;
+
+    len = cmt_sds_len(str);
+    esc_buf = malloc(len * 2);
+    if (!esc_buf) {
+        cmt_errno();
+        return -1;
+    }
+
+    size = line_protocol_escape(str, len, esc_buf, 0);
+    cmt_sds_cat_safe(buf, esc_buf, size);
+
+    free(esc_buf);
+    return 0;
 }
 
 static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
@@ -83,9 +126,15 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
         mk_list_foreach(head, &cmt->static_labels->list) {
             count++;
             slabel = mk_list_entry(head, struct cmt_label, _head);
-            cmt_sds_cat_safe(buf, slabel->key, cmt_sds_len(slabel->key));
+
+            /* key */
+            append_string(buf, slabel->key);
+
+            /* = */
             cmt_sds_cat_safe(buf, "=", 1);
-            cmt_sds_cat_safe(buf, slabel->val, cmt_sds_len(slabel->val));
+
+            /* val */
+            append_string(buf, slabel->val);
 
             if (count < static_labels) {
                 cmt_sds_cat_safe(buf, ",", 1);
@@ -104,9 +153,10 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
         mk_list_foreach(head, &metric->labels) {
             label_v = mk_list_entry(head, struct cmt_map_label, _head);
 
-            cmt_sds_cat_safe(buf, label_k->name, cmt_sds_len(label_k->name));
+            /* key */
+            append_string(buf, label_k->name);
             cmt_sds_cat_safe(buf, "=", 1);
-            cmt_sds_cat_safe(buf, label_v->name, cmt_sds_len(label_v->name));
+            append_string(buf, label_v->name);
 
             if (i < n) {
                 cmt_sds_cat_safe(buf, ",", 1);
