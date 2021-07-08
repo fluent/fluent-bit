@@ -784,13 +784,6 @@ else()
   set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
   set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   set(FLB_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
-  if(${CMAKE_INSTALL_PREFIX} MATCHES "/usr/local")
-    set(FLB_INSTALL_SYSTEMDUNITDIR "/lib/systemd/system/")
-    set(FLB_INSTALL_UPSTARTUNITDIR "/etc/init")
-  else()
-    set(FLB_INSTALL_SYSTEMDUNITDIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/")
-    set(FLB_INSTALL_UPSTARTUNITDIR "${CMAKE_INSTALL_PREFIX}/etc/init")
-  endif()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
