@@ -621,12 +621,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
                          "Provider");
             return -1;
         }
-
-    }
-
-    tmp = flb_output_get_property("log_key", ins);
-    if (tmp) {
-        ctx->log_key = tmp;
     }
 
     /* Initialize local storage */
@@ -1356,7 +1350,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     int map_size;
     int check = FLB_FALSE;
     int found = FLB_FALSE;
-    int log_key_missing = FLB_FALSE;
+    int log_key_missing = 0;
     int ret;
     int alloc_error = 0;
     struct flb_s3 *ctx = out_context;
@@ -1445,7 +1439,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset, msgpack_size, &val);
+                        ret = flb_msgpack_to_json(val_buf + val_offset, 
+                                                  msgpack_size - val_offset, &val);
                         if (ret < 0) {
                             break;
                         }
@@ -1453,20 +1448,22 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_buf[val_offset] = '\n';
                         val_offset++;
                     }
+                    /* Exit early once log_key has been found for current record */
+                    break;
                 }
             }
         }
 
         /* If log_key was not found in the current record, mark log key as missing */
         if (found == FLB_FALSE) {
-            log_key_missing = FLB_TRUE;
+            log_key_missing++;
         }
     }
 
     /* Throw error once per chunk if at least one log key was not found */
     if (log_key_missing == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in at "
-                      "least one record of the chunk", ctx->log_key);
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records", 
+                      ctx->log_key, log_key_missing);
     }
 
     /* Release the unpacker */
@@ -1804,7 +1801,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_STR, "log_key", NULL,
-     0, FLB_FALSE, 0,
+     0, FLB_TRUE, offsetof(struct flb_s3, log_key),
      "By default, the whole log record will be sent to S3. "
      "If you specify a key name with this option, then only the value of "
      "that key will be sent to S3."
