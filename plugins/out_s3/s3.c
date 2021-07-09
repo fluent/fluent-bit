@@ -1469,7 +1469,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                       "least one record of the chunk", ctx->log_key);
     }
 
-    /* Release the unpacker and buffer */
+    /* Release the unpacker */
     msgpack_unpacked_destroy(&result);
 
     /* If nothing was read, destroy buffer */
@@ -1484,7 +1484,6 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     if (out_buf == NULL) {
         flb_plg_error(ctx->ins, "Error creating buffer to store log_key contents.");
         flb_errno();
-        return NULL;
     }
     flb_free(val_buf);
 
