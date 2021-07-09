@@ -361,7 +361,8 @@ static int init_seq_index(void *context) {
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
             return -1;
         }
-    } else {
+    } 
+    else {
         ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to read from sequential index "
@@ -1820,7 +1821,9 @@ static struct flb_config_map config_map[] = {
     "log tag; add $TAG[0] to insert the first part of the tag in the s3 key. "
     "The tag is split into “parts” using the characters specified with the "
     "s3_key_format_tag_delimiters option. Add $INDEX to enable sequential indexing "
-    "for file names. See the in depth examples and tutorial in the documentation."
+    "for file names. Adding $INDEX will prevent random string being added to end of key"
+    "when $UUID is not provided. See the in depth examples and tutorial in the "
+    "documentation."
     },
 
     {
