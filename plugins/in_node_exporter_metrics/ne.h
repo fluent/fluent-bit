@@ -33,6 +33,7 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 
@@ -86,6 +87,13 @@ struct flb_ne {
     struct cmt_counter *st_forks;
     struct cmt_gauge   *st_procs_running;
     struct cmt_gauge   *st_procs_blocked;
+
+    /* vmstat_linux */
+    struct flb_hash *vml_ht;
+    struct flb_regex *vml_regex_fields;
+
+    /* netdev */
+    struct flb_hash *netdev_ht;
 
     /* time */
     struct cmt_gauge *time;
