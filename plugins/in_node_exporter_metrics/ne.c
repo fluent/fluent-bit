@@ -36,6 +36,8 @@
 #include "ne_stat_linux.h"
 #include "ne_time.h"
 #include "ne_loadavg.h"
+#include "ne_vmstat_linux.h"
+#include "ne_netdev.h"
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
@@ -50,6 +52,8 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
     ne_stat_update(ctx);
     ne_time_update(ctx);
     ne_loadavg_update(ctx);
+    ne_vmstat_update(ctx);
+    ne_netdev_update(ctx);
 
     /* Append the updated metrics */
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
@@ -108,6 +112,8 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_stat_init(ctx);
     ne_time_init(ctx);
     ne_loadavg_init(ctx);
+    ne_vmstat_init(ctx);
+    ne_netdev_init(ctx);
 
     update_metrics(in, ctx);
     return 0;
@@ -123,6 +129,8 @@ static int in_ne_exit(void *data, struct flb_config *config)
 
     ne_diskstats_exit(ctx);
     ne_meminfo_exit(ctx);
+    ne_vmstat_exit(ctx);
+    ne_netdev_exit(ctx);
 
     flb_ne_config_destroy(ctx);
     return 0;
