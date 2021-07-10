@@ -99,7 +99,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
-                                 void *ic,
+                                 struct flb_input_chunk *ic,
                                  const char *tag_buf, int tag_len,
                                  struct flb_config *config,
                                  int *err);

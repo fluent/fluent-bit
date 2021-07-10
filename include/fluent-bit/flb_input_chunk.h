@@ -27,6 +27,9 @@
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
+#define FLB_INPUT_CHUNK_LOG            0
+#define FLB_INPUT_CHUNK_METRIC         1
+
 /*
  * This variable defines a 'hint' size for new Chunks created, this
  * value is passed to Chunk I/O.
@@ -40,6 +43,7 @@
 #define FLB_INPUT_CHUNK_FS_MAX_SIZE   2048000  /* 2MB */
 
 struct flb_input_chunk {
+    int event_type;                 /* chunk type: logs or metrics */
     int busy;                       /* buffer is being flushed  */
     int fs_backlog;                 /* chunk originated from fs backlog */
     int sp_done;                    /* sp already processed this chunk */

@@ -266,10 +266,7 @@ void flb_test_file_format_ltsv(void)
 
 void flb_test_file_format_invalid(void)
 {
-    int i;
     int ret;
-    int bytes;
-    char *p = (char *) JSON_SMALL;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -278,7 +275,7 @@ void flb_test_file_format_invalid(void)
     remove(TEST_LOGFILE);
 
     ctx = flb_create();
-    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "off", NULL);
 
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
     TEST_CHECK(in_ffd >= 0);
@@ -293,22 +290,19 @@ void flb_test_file_format_invalid(void)
     flb_output_set(ctx, out_ffd, "label_delimiter", "zzz", NULL);
 
     ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("invalid format should be error");
 
-    for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
-        bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
-        TEST_CHECK(bytes == 1);
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        fp = fopen(TEST_LOGFILE, "r");
+        TEST_CHECK(fp != NULL);
+        if (fp != NULL) {
+            fclose(fp);
+            remove(TEST_LOGFILE);
+        }
     }
-
-    sleep(1); /* waiting flush */
-
-    flb_stop(ctx);
-    flb_destroy(ctx);
-
-    fp = fopen(TEST_LOGFILE, "r");
-    TEST_CHECK(fp != NULL);
-    if (fp != NULL) {
-        fclose(fp);
-        remove(TEST_LOGFILE);
+    else {
+        flb_destroy(ctx);
     }
 }

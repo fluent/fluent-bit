@@ -260,11 +260,11 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
     flb_sds_destroy(uri);
-    flb_upstream_conn_release(u_conn);
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending append_blob");
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
@@ -281,10 +281,12 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
                           c->resp.status);
         }
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
     return FLB_OK;
 }
 
@@ -334,8 +336,8 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     /* Validate http response */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error requesting container creation");
-        flb_upstream_conn_release(u_conn);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
 

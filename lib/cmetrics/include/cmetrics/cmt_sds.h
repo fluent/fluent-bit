@@ -181,4 +181,23 @@ static inline cmt_sds_t cmt_sds_create_size(size_t size)
     return sds_alloc(size);
 }
 
+static inline void cmt_sds_set_len(cmt_sds_t s, size_t len)
+{
+    struct cmt_sds *head;
+
+    head = CMT_SDS_HEADER(s);
+    head->len = len;
+}
+
+static inline void cmt_sds_cat_safe(cmt_sds_t *buf, const char *str, int len)
+{
+    cmt_sds_t tmp;
+
+    tmp = cmt_sds_cat(*buf, str, len);
+    if (!tmp) {
+        return;
+    }
+    *buf = tmp;
+}
+
 #endif
