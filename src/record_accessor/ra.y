@@ -1,5 +1,5 @@
 %define api.pure full
-%name-prefix="flb_ra_"
+%name-prefix "flb_ra_"
 
 %parse-param { struct flb_ra_parser *rp };
 %parse-param { const char *str };
@@ -33,8 +33,7 @@ void flb_ra_error(struct flb_ra_parser *rp, const char *query, void *scanner,
 /* Known Tokens (refer to sql.l) */
 
 /* Keywords */
-%token IDENTIFIER QUOTE QUOTED
-%token STRING INTEGER
+%token IDENTIFIER STRING INTEGER
 
 %define parse.error verbose
 
@@ -85,7 +84,8 @@ record_accessor: record_key
                     }
                     flb_free($2);
                   }
-      record_subkey:
+      record_subkey: record_subkey record_subkey_index | record_subkey_index
+      record_subkey_index:
                   '[' STRING ']'
                   {
                     flb_ra_parser_subentry_add_string(rp, $2);
@@ -96,6 +96,4 @@ record_accessor: record_key
                   {
                     flb_ra_parser_subentry_add_array_id(rp, $2);
                   }
-                  |
-                  record_subkey record_subkey
                   ;
