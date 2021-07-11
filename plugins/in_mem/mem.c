@@ -34,6 +34,7 @@
 
 #include "mem.h"
 #include "proc.h"
+#include "bbfree.h"
 
 struct flb_input_plugin in_mem_plugin;
 
@@ -90,6 +91,7 @@ static uint64_t calc_kb(unsigned long amount, unsigned int unit)
 static int mem_calc(struct flb_in_mem_info *m_info)
 {
     int ret;
+    struct globals G;
     struct sysinfo info;
 
     ret = sysinfo(&info);
@@ -98,16 +100,24 @@ static int mem_calc(struct flb_in_mem_info *m_info)
         return -1;
     }
 
+    // code from busybox - https://github.com/mirror/busybox/blob/2cd37d65e221f7267e97360d21f55a2318b25355/procps/free.c#L121
+    ret = parse_meminfo(&G);
+
     /* set values in KBs */
     m_info->mem_total     = calc_kb(info.totalram, info.mem_unit);
-
-    /*
-     * This value seems to be MemAvailable if it is supported
-     * or MemFree on legacy Linux.
-     */
     m_info->mem_free      = calc_kb(info.freeram, info.mem_unit);
-
     m_info->mem_used      = m_info->mem_total - m_info->mem_free;
+    m_info->mem_buffer    = calc_kb(info.bufferram, info.mem_unit);
+    m_info->mem_cache     = G.cached_kb + G.reclaimable_kb;
+    if (ret) {
+        m_info->mem_available = G.available_kb;
+    }
+    else {
+        /* On kernels < 3.14, MemAvailable is not provided.
+         * Show alternate, more meaningful busy/free numbers by counting
+         * the whole buffer cache as available memory. */
+        m_info->mem_available = m_info->mem_cache + info.freeram;
+    };
 
     m_info->swap_total    = calc_kb(info.totalswap, info.mem_unit);
     m_info->swap_free     = calc_kb(info.freeswap, info.mem_unit);
@@ -220,6 +230,18 @@ static int in_mem_collect(struct flb_input_instance *i_ins,
     msgpack_pack_str(&mp_pck, 8);
     msgpack_pack_str_body(&mp_pck, "Mem.free", 8);
     msgpack_pack_uint64(&mp_pck, info.mem_free);
+
+    msgpack_pack_str(&mp_pck, 13);
+    msgpack_pack_str_body(&mp_pck, "Mem.available", 13);
+    msgpack_pack_uint64(&mp_pck, info.mem_available);
+
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "Mem.buffer", 10);
+    msgpack_pack_uint64(&mp_pck, info.mem_buffer);
+
+    msgpack_pack_str(&mp_pck, 9);
+    msgpack_pack_str_body(&mp_pck, "Mem.cache", 9);
+    msgpack_pack_uint64(&mp_pck, info.mem_cache);
 
     msgpack_pack_str(&mp_pck, 10);
     msgpack_pack_str_body(&mp_pck, "Swap.total", 10);
