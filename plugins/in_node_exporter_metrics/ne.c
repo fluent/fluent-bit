@@ -26,6 +26,7 @@
 
 #include "ne.h"
 #include "ne_config.h"
+#include "ne_filefd_linux.h"
 
 /* collectors */
 #include "ne_cpu.h"
