@@ -165,9 +165,6 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
             if (rule->type == GREP_EXCLUDE) {
                 return GREP_RET_EXCLUDE;
             }
-            else {
-                return GREP_RET_KEEP;
-            }
         }
     }
 
