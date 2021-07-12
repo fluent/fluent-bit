@@ -103,6 +103,10 @@ struct flb_ne {
     struct cmt_gauge *lavg_5;
     struct cmt_gauge *lavg_15;
 
+    /* filefd_linux */
+    struct cmt_gauge *filefd_allocated;
+    struct cmt_gauge *filefd_maximum;
+
     /* filesystem: abbreviation 'fs' */
     struct flb_regex *fs_regex_skip_mount;
     struct flb_regex *fs_regex_skip_fs_types;
