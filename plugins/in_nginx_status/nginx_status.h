@@ -24,6 +24,7 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_network.h>
 
 #define DEFAULT_BUF_SIZE            8192
 #define MIN_BUF_SIZE                2048
@@ -36,6 +37,7 @@ struct flb_in_ns_config
     int port;
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
+    struct flb_upstream *upstream;
 };
 
 struct flb_in_ns_status

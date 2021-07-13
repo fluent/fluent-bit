@@ -77,6 +77,7 @@ static int in_ns_parse_stub_status(flb_sds_t buf, struct flb_in_ns_status *statu
         goto error;
     }
 
+    flb_utils_split_free(mk_lines);
     return 0;
 error:
     flb_utils_split_free(mk_lines);
@@ -101,7 +102,6 @@ static int in_ns_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     struct flb_in_ns_config *ctx = (struct flb_in_ns_config *)in_context;
-    struct flb_upstream *upstream;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *client;
     struct flb_in_ns_status status;
@@ -114,13 +114,7 @@ static int in_ns_collect(struct flb_input_instance *ins,
     msgpack_packer pack;
 
 
-    upstream = flb_upstream_create(config, ctx->host, ctx->port, FLB_IO_TCP, NULL);
-    if (!upstream) {
-        flb_error("[nginx_status] upstream initialization error");
-        goto upstream_error;
-    }
-
-    u_conn = flb_upstream_conn_get(upstream);
+    u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
         flb_error("[nginx_status] upstream connection initialization error");
         goto conn_error;
@@ -208,8 +202,6 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    flb_upstream_destroy(upstream);
-upstream_error:
     return ret;
 }
 

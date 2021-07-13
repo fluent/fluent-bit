@@ -39,6 +39,8 @@ struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
     int ret;
     const char *tmp;
     struct flb_in_ns_config *ctx;
+    struct flb_upstream *upstream;
+
 
     ctx = flb_calloc(1, sizeof(struct flb_in_ns_config));
     if (!ctx) {
@@ -54,6 +56,13 @@ struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
         return NULL;
     }
 
+    upstream = flb_upstream_create(config, ctx->host, ctx->port, FLB_IO_TCP, NULL);
+    if (!upstream) {
+        flb_error("[nginx_status] upstream initialization error");
+        return -1;
+    }
+    ctx->upstream = upstream;
+
     return ctx;
 }
 
@@ -66,6 +75,9 @@ struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
  */
 int ns_config_destroy(struct flb_in_ns_config *ctx)
 {
+    if (ctx->upstream) {
+        flb_upstream_destroy(ctx->upstream);
+    }
     flb_free(ctx);
     return 0;
 }
