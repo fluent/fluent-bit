@@ -40,13 +40,13 @@ struct flb_in_ns_config
 
 struct flb_in_ns_status
 {
-    int active;
-    int reading;
-    int writing;
-    int waiting;
-    int accepts;
-    int handled;
-    int requests;
+    uint32_t active;
+    uint32_t reading;
+    uint32_t writing;
+    uint32_t waiting;
+    uint32_t accepts;
+    uint32_t handled;
+    uint32_t requests;
 };
 
 #endif

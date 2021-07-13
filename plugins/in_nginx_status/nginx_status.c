@@ -144,6 +144,10 @@ static int in_ns_collect(struct flb_input_instance *ins,
     size_t b_sent;
     int ret = -1;
 
+    msgpack_sbuffer sbuf;
+    msgpack_packer pack;
+
+
     upstream = flb_upstream_create(config, ctx->host, ctx->port, FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_error("[nginx_status] upstream initialization error");
@@ -182,6 +186,53 @@ static int in_ns_collect(struct flb_input_instance *ins,
         goto status_error;
     }
 
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pack, &sbuf, msgpack_sbuffer_write);
+    
+    /* add the prerequisite time header */
+    msgpack_pack_array(&pack, 2);
+    flb_pack_time_now(&pack);
+
+    /* start our map with our stats */
+    msgpack_pack_map(&pack, 7);
+    /* active connections */
+    msgpack_pack_str(&pack, strlen("active"));
+    msgpack_pack_str_body(&pack, "active", strlen("active"));
+    msgpack_pack_int32(&pack, status.active);
+
+    /* reading connections */
+    msgpack_pack_str(&pack, strlen("reading"));
+    msgpack_pack_str_body(&pack, "reading", strlen("reading"));
+    msgpack_pack_int32(&pack, status.reading);
+    
+    /* writing connections */
+    msgpack_pack_str(&pack, strlen("writing"));
+    msgpack_pack_str_body(&pack, "writing", strlen("writing"));
+    msgpack_pack_int32(&pack, status.writing);
+    
+    /* waiting connections */
+    msgpack_pack_str(&pack, strlen("waiting"));
+    msgpack_pack_str_body(&pack, "waiting", strlen("waiting"));
+    msgpack_pack_int32(&pack, status.waiting);
+    
+    /* accepts total */
+    msgpack_pack_str(&pack, strlen("accepts"));
+    msgpack_pack_str_body(&pack, "accepts", strlen("accepts"));
+    msgpack_pack_int32(&pack, status.accepts);
+    
+    /* handled total */
+    msgpack_pack_str(&pack, strlen("handled"));
+    msgpack_pack_str_body(&pack, "handled", strlen("handled"));
+    msgpack_pack_int32(&pack, status.handled);
+    
+    /* requests total */
+    msgpack_pack_str(&pack, strlen("requests"));
+    msgpack_pack_str_body(&pack, "requests", strlen("requests"));
+    msgpack_pack_int32(&pack, status.requests);
+
+    flb_input_chunk_append_raw(ins, NULL, 0, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+    
     ret = 0;
 
 status_error:
