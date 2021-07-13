@@ -45,8 +45,8 @@ static int in_ns_parse_stub_status(flb_sds_t buf, struct flb_in_ns_status *statu
     struct mk_list *mk_head = NULL;
     char *lines[4];
     int line = 0;
+    int rc;
     struct flb_split_entry *cur = NULL;
-    char *ccur, *cnext;
 
     mk_lines = flb_utils_split(buf, '\n', 4);
     if (mk_lines == NULL) {
@@ -59,62 +59,28 @@ static int in_ns_parse_stub_status(flb_sds_t buf, struct flb_in_ns_status *statu
         line++;
     }
     if (line < 4) {
-        return -1;
+        goto error;
     }
 
-    ccur = strchr(lines[0], ':');
-    if (ccur == NULL) {
-        return -1;
+    rc = sscanf(lines[0], "Active connections: %u \n", &status->active);
+    if (rc != 1) {
+        goto error;
     }
-    ccur++;
-    status->active = strtol(ccur, NULL, 10);
-
-    ccur = lines[2];
-    status->accepts = strtol(ccur, &cnext, 10);
-    if (ccur == cnext) {
-        return -1;
+    rc = sscanf(lines[2], " %u %u %u \n", 
+           &status->accepts, &status->handled, &status->requests);
+    if (rc != 3) {
+        goto error;
     }
-    ccur = cnext+1;
-    status->handled = strtol(ccur, &cnext, 10);
-    if (ccur == cnext) {
-        return -1;
+    rc = sscanf(lines[3], "Reading: %u Writing: %u Waiting: %u \n",
+            &status->reading, &status->writing, &status->waiting);
+    if (rc != 3) {
+        goto error;
     }
-    ccur = cnext+1;
-    status->requests = strtol(ccur, NULL, 10);
-
-    /******/
-    ccur = lines[3];
-    /******/
-    cnext = strchr(ccur, ':');
-    if (cnext == NULL) {
-        return -1;
-    }
-    ccur = cnext+1;
-    status->reading = strtol(ccur, &cnext, 10);
-    if (ccur == cnext) {
-        return -1;
-    }
-    ccur = cnext;
-    /******/
-    cnext = strchr(ccur, ':');
-    if (cnext == NULL) {
-        return -1;
-    }
-    ccur = cnext+1;
-    status->writing = strtol(ccur, &cnext, 10);
-    if (ccur == cnext) {
-        return -1;
-    }
-    ccur = cnext;
-    /******/
-    cnext = strchr(ccur, ':');
-    if (cnext == NULL) {
-        return -1;
-    }
-    ccur = cnext+1;
-    status->waiting = strtol(ccur, NULL, 10);
 
     return 0;
+error:
+    flb_utils_split_free(mk_lines);
+    return -1;
 }
 
 static int in_ns_collect(struct flb_input_instance *ins,
