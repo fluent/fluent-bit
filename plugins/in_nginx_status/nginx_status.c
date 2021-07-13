@@ -43,7 +43,7 @@ static int in_ns_parse_stub_status(flb_sds_t buf, struct flb_in_ns_status *statu
 {
     struct mk_list *mk_lines;
     struct mk_list *mk_head = NULL;
-    const char *lines[4];
+    char *lines[4];
     int line = 0;
     struct flb_split_entry *cur = NULL;
     char *ccur, *cnext;
