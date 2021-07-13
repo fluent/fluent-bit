@@ -1,0 +1,71 @@
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_utils.h>
+
+#include "nginx_status.h"
+#include "nginx_status_config.h"
+
+/**
+ * Function to initialize nginx_status plugin.
+ *
+ * @param ins     Pointer to flb_input_instance
+ * @param config  Pointer to flb_config
+ *
+ * @return struct flb_in_ns_config* Pointer to the plugin's
+ *         structure on success, NULL on failure.
+ */
+struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
+                                        struct flb_config *config)
+{
+    int ret;
+    const char *tmp;
+    struct flb_in_ns_config *ctx;
+
+    ctx = flb_calloc(1, sizeof(struct flb_in_ns_config));
+    if (!ctx) {
+        flb_errno();
+        return NULL;
+    }
+    ctx->ins = ins;
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+    return ctx;
+}
+
+/**
+ * Function to destroy nginx_status plugin.
+ *
+ * @param ctx  Pointer to flb_in_ns_config
+ *
+ * @return int 0
+ */
+int ns_config_destroy(struct flb_in_ns_config *ctx)
+{
+    flb_free(ctx);
+    return 0;
+}
