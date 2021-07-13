@@ -194,7 +194,7 @@ option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
 # Run ldconfig on package post-install
-option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" Yes)
+option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
 # Enable all features
 if(FLB_ALL)
@@ -781,16 +781,9 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(FLB_INSTALL_INCLUDEDIR "include")
 else()
   set(FLB_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
-  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${FLB_OUT_NAME}")
   set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   set(FLB_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
-  if(${CMAKE_INSTALL_PREFIX} MATCHES "/usr/local")
-    set(FLB_INSTALL_SYSTEMDUNITDIR "/lib/systemd/system/")
-    set(FLB_INSTALL_UPSTARTUNITDIR "/etc/init")
-  else()
-    set(FLB_INSTALL_SYSTEMDUNITDIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/")
-    set(FLB_INSTALL_UPSTARTUNITDIR "${CMAKE_INSTALL_PREFIX}/etc/init")
-  endif()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
@@ -891,7 +884,7 @@ set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
 set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-set(CPACK_RPM_USER_FILELIST
+set(CPACK_RPM_RUNTIME_USER_FILELIST
   "%config(noreplace) /etc/${FLB_OUT_NAME}/${FLB_OUT_NAME}.conf"
   "%config(noreplace) /etc/${FLB_OUT_NAME}/parsers.conf"
   "%config(noreplace) /etc/${FLB_OUT_NAME}/plugins.conf"

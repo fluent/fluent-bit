@@ -7,6 +7,8 @@ on:
   pull_request:
     paths-ignore:
       - '.github/**'
+      - 'dockerfiles/**'
+      - 'docker_compose/**'
     branches:
       - master
       - 1.7

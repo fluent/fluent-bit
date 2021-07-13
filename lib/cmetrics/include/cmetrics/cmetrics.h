@@ -26,6 +26,7 @@
 #define CMT_COUNTER   0
 #define CMT_GAUGE     1
 #define CMT_HISTOGRAM 2
+#define CMT_UNTYPED   3
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,7 @@ struct cmt {
     /* Metrics list */
     struct mk_list counters;
     struct mk_list gauges;
+    struct mk_list untypeds;
     struct mk_list histograms;
 };
 

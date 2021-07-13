@@ -23,6 +23,7 @@
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 
@@ -354,6 +355,7 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     struct mk_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
+    struct cmt_untyped *untyped;
     size_t metric_count;
 
     /*
@@ -384,7 +386,7 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
      *                 }
      *               ]
      * }
-]     
+]
      */
 
     mpack_writer_init_growable(&writer, &data, &size);
@@ -392,8 +394,9 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     metric_count  = 0;
     metric_count += mk_list_size(&cmt->counters);
     metric_count += mk_list_size(&cmt->gauges);
+    metric_count += mk_list_size(&cmt->untypeds);
 
-    /* We want an array to group all these metrics in a context */    
+    /* We want an array to group all these metrics in a context */
     mpack_start_array(&writer, metric_count);
 
     /* Counters */
@@ -406,6 +409,12 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     mk_list_foreach(head, &cmt->gauges) {
         gauge = mk_list_entry(head, struct cmt_gauge, _head);
         pack_basic_type(&writer, cmt, gauge->map);
+    }
+
+    /* Untyped */
+    mk_list_foreach(head, &cmt->untypeds) {
+        untyped = mk_list_entry(head, struct cmt_untyped, _head);
+        pack_basic_type(&writer, cmt, untyped->map);
     }
 
     if (mpack_writer_destroy(&writer) != mpack_ok) {

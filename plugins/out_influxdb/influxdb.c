@@ -349,6 +349,12 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     /* Register context with plugin instance */
     flb_output_set_context(ins, ctx);
 
+    /*
+     * This plugin instance uses the HTTP client interface, let's register
+     * it debugging callbacks.
+     */
+    flb_output_set_http_debug_callbacks(ins);
+
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
@@ -536,6 +542,9 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
                             key->str, flb_sds_len(key->str),
                             val->str, flb_sds_len(val->str));
     }
+
+    /* Map debug callbacks */
+    flb_http_client_debug(c, ctx->ins->callback);
 
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {

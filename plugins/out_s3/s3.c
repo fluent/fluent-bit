@@ -307,12 +307,12 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_tls_destroy(ctx->sts_provider_tls);
     }
 
-    if (ctx->client_tls) {
-        flb_tls_destroy(ctx->client_tls);
-    }
-
     if (ctx->s3_client) {
         flb_aws_client_destroy(ctx->s3_client);
+    }
+
+    if (ctx->client_tls) {
+        flb_tls_destroy(ctx->client_tls);
     }
 
     if (ctx->free_endpoint == FLB_TRUE) {

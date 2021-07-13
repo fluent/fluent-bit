@@ -23,6 +23,7 @@
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_compat.h>
 
@@ -157,6 +158,7 @@ cmt_sds_t cmt_encode_text_create(struct cmt *cmt)
     struct mk_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
+    struct cmt_untyped *untyped;
 
     /* Allocate a 1KB of buffer */
     buf = cmt_sds_create_size(1024);
@@ -174,6 +176,12 @@ cmt_sds_t cmt_encode_text_create(struct cmt *cmt)
     mk_list_foreach(head, &cmt->gauges) {
         gauge = mk_list_entry(head, struct cmt_gauge, _head);
         format_metrics(cmt, &buf, gauge->map);
+    }
+
+    /* Untyped */
+    mk_list_foreach(head, &cmt->untypeds) {
+        untyped = mk_list_entry(head, struct cmt_untyped, _head);
+        format_metrics(cmt, &buf, untyped->map);
     }
 
     return buf;

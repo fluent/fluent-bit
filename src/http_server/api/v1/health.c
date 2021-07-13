@@ -116,7 +116,6 @@ static void read_metrics(void *data, size_t size, int* error_count,
     size_t off = 0;
     int errors = 0;
     int retry_failure = 0;
-    char *raw_data;
 
     msgpack_unpacked_init(&result);
     msgpack_unpack_next(&result, data, size, &off);
@@ -136,11 +135,9 @@ static void read_metrics(void *data, size_t size, int* error_count,
         }
         /* Iterate sub-map */
         for (j = 0; j < v.via.map.size; j++) {
-            msgpack_object sk;
             msgpack_object sv;
 
             /* Keys: plugin name , values: metrics */
-            sk = v.via.map.ptr[j].key;
             sv = v.via.map.ptr[j].val;
 
             for (m = 0; m < sv.via.map.size; m++) {
@@ -179,7 +176,6 @@ static int cleanup_metrics()
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *metrics_list;
-    struct flb_hs_hc_buf *last;
     struct flb_hs_hc_buf *entry;
 
     metrics_list = pthread_getspecific(hs_health_key);
@@ -191,7 +187,7 @@ static int cleanup_metrics()
         return 0;
     }
 
-    /* remove the oldest metrics if it's out of period*/
+    /* remove the oldest metrics if it's out of period */
     mk_list_foreach_safe(head, tmp, metrics_list) {
         entry = mk_list_entry(head, struct flb_hs_hc_buf, _head);
         if (metrics_counter->period_counter > metrics_counter->period_limit &&
