@@ -238,8 +238,10 @@ static int in_ns_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
-    ctx->coll_id = flb_input_set_collector_time(ins, in_ns_collect,
-                                                 1, 0, config);
+    ctx->coll_id = flb_input_set_collector_time(ins, 
+                                                in_ns_collect,
+                                                1, 
+                                                0, config);
     return 0;
 }
 
@@ -270,12 +272,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "host", "172.17.0.2",
      0, FLB_TRUE, offsetof(struct flb_in_ns_config, host),
-     "Define Docker unix socket path to read events"
+     "Define Host name of the NGINX Server"
     },
     {
      FLB_CONFIG_MAP_INT, "port", "80",
      0, FLB_TRUE, offsetof(struct flb_in_ns_config, port),
-     "Maximum number to retry to connect docker socket"
+     "Define the Port of the NGINX Server"
     },
     /* EOF */
     {0}
