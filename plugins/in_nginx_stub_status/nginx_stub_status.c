@@ -121,7 +121,7 @@ static int in_nss_collect(struct flb_input_instance *ins,
     }
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, "/status", 
-                             NULL, 0, "localhost", 80, NULL, 0);
+                             NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
         flb_error("[nginx_stub_status] unable to create http client");
         goto client_error;
@@ -259,22 +259,6 @@ static int in_nss_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-/* Configuration properties map */
-static struct flb_config_map config_map[] = {
-    {
-     FLB_CONFIG_MAP_STR, "host", "172.17.0.2",
-     0, FLB_TRUE, offsetof(struct flb_in_nss_config, host),
-     "Define Host name of the NGINX Server"
-    },
-    {
-     FLB_CONFIG_MAP_INT, "port", "80",
-     0, FLB_TRUE, offsetof(struct flb_in_nss_config, port),
-     "Define the Port of the NGINX Server"
-    },
-    /* EOF */
-    {0}
-};
-
 /* Plugin reference */
 struct flb_input_plugin in_nginx_stub_status_plugin = {
     .name         = "nginx_stub_status",
@@ -284,6 +268,5 @@ struct flb_input_plugin in_nginx_stub_status_plugin = {
     .cb_collect   = in_nss_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_nss_exit,
-    .config_map   = config_map,
     .flags        = FLB_INPUT_NET
 };

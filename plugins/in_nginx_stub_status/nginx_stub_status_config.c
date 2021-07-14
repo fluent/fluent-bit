@@ -36,10 +36,15 @@
 struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
-    int ret;
     struct flb_in_nss_config *ctx;
     struct flb_upstream *upstream;
-
+ 
+    if (ins->host.name == NULL) {
+        ins->host.name = flb_sds_create("localhost");
+    }
+    if (ins->host.port == 0) {
+        ins->host.port = 80;
+    }
 
     ctx = flb_calloc(1, sizeof(struct flb_in_nss_config));
     if (!ctx) {
@@ -48,14 +53,8 @@ struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
     }
     ctx->ins = ins;
 
-    /* Load the config map */
-    ret = flb_input_config_map_set(ins, (void *) ctx);
-    if (ret == -1) {
-        flb_free(ctx);
-        return NULL;
-    }
-
-    upstream = flb_upstream_create(config, ctx->host, ctx->port, FLB_IO_TCP, NULL);
+    upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
+                                 FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_error("[nginx_stub_status] upstream initialization error");
         return NULL;

@@ -33,8 +33,6 @@
 struct flb_in_nss_config
 {
     int coll_id;                    /* collector id */
-    char *host;
-    int port;
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
     struct flb_upstream *upstream;
