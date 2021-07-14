@@ -142,7 +142,7 @@ REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
 REGISTER_IN_PLUGIN("in_storage_backlog")
-REGISTER_IN_PLUGIN("in_nginx_status")
+REGISTER_IN_PLUGIN("in_nginx_stub_status")
 
 if (FLB_STREAM_PROCESSOR)
   REGISTER_IN_PLUGIN("in_stream_processor")

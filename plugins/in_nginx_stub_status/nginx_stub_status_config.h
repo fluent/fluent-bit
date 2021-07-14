@@ -18,37 +18,13 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_NS_H
-#define FLB_IN_NS_H
+#ifndef FLB_IN_NS_CONFIG_H
+#define FLB_IN_NS_CONFIG_H
 
-#include <msgpack.h>
-#include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_network.h>
+#include "nginx_stub_status.h"
 
-#define DEFAULT_BUF_SIZE            8192
-#define MIN_BUF_SIZE                2048
-#define DEFAULT_FIELD_NAME          "message"
-
-struct flb_in_ns_config
-{
-    int coll_id;                    /* collector id */
-    char *host;
-    int port;
-    struct flb_parser *parser;
-    struct flb_input_instance *ins; /* Input plugin instace */
-    struct flb_upstream *upstream;
-};
-
-struct flb_in_ns_status
-{
-    uint32_t active;
-    uint32_t reading;
-    uint32_t writing;
-    uint32_t waiting;
-    uint32_t accepts;
-    uint32_t handled;
-    uint32_t requests;
-};
+struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
+                                        struct flb_config *config);
+int nss_config_destroy(struct flb_in_nss_config *config);
 
 #endif

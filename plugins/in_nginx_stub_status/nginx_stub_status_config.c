@@ -21,28 +21,27 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
-#include "nginx_status.h"
-#include "nginx_status_config.h"
+#include "nginx_stub_status.h"
+#include "nginx_stub_status_config.h"
 
 /**
- * Function to initialize nginx_status plugin.
+ * Function to initialize nginx_stub_status plugin.
  *
  * @param ins     Pointer to flb_input_instance
  * @param config  Pointer to flb_config
  *
- * @return struct flb_in_ns_config* Pointer to the plugin's
+ * @return struct flb_in_nss_config* Pointer to the plugin's
  *         structure on success, NULL on failure.
  */
-struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
+struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
     int ret;
-    const char *tmp;
-    struct flb_in_ns_config *ctx;
+    struct flb_in_nss_config *ctx;
     struct flb_upstream *upstream;
 
 
-    ctx = flb_calloc(1, sizeof(struct flb_in_ns_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_nss_config));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -58,8 +57,8 @@ struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
 
     upstream = flb_upstream_create(config, ctx->host, ctx->port, FLB_IO_TCP, NULL);
     if (!upstream) {
-        flb_error("[nginx_status] upstream initialization error");
-        return -1;
+        flb_error("[nginx_stub_status] upstream initialization error");
+        return NULL;
     }
     ctx->upstream = upstream;
 
@@ -67,13 +66,13 @@ struct flb_in_ns_config *ns_config_init(struct flb_input_instance *ins,
 }
 
 /**
- * Function to destroy nginx_status plugin.
+ * Function to destroy nginx_stub_status plugin.
  *
- * @param ctx  Pointer to flb_in_ns_config
+ * @param ctx  Pointer to flb_in_nss_config
  *
  * @return int 0
  */
-int ns_config_destroy(struct flb_in_ns_config *ctx)
+int nss_config_destroy(struct flb_in_nss_config *ctx)
 {
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
