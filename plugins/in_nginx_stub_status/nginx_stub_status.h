@@ -36,6 +36,9 @@ struct flb_in_nss_config
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
     struct flb_upstream *upstream;
+    struct cmt *cmt;
+    struct cmt_counter *connections;
+    struct cmt_counter *connection_totals;
 };
 
 struct flb_in_nss_status

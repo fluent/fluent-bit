@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <cmetrics/cmt_counter.h>
 #include <msgpack.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -110,10 +111,8 @@ static int in_nss_collect(struct flb_input_instance *ins,
     size_t b_sent;
     int ret = -1;
 
-    msgpack_sbuffer sbuf;
-    msgpack_packer pack;
 
-
+    uint64_t ts = cmt_time_now();
     u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
         flb_error("[nginx_stub_status] upstream connection initialization error");
@@ -146,54 +145,26 @@ static int in_nss_collect(struct flb_input_instance *ins,
         goto status_error;
     }
 
-    msgpack_sbuffer_init(&sbuf);
-    msgpack_packer_init(&pack, &sbuf, msgpack_sbuffer_write);
+    cmt_counter_set(ctx->connections, ts, status.active, 
+                    1, (char *[]) {"active"});
+    cmt_counter_set(ctx->connections, ts, status.reading, 
+                    1, (char *[]) {"reading"});
+    cmt_counter_set(ctx->connections, ts, status.writing, 
+                    1, (char *[]) {"writing"});
+    cmt_counter_set(ctx->connections, ts, status.waiting, 
+                    1, (char *[]) {"waiting"});
     
-    /* add the prerequisite time header */
-    msgpack_pack_array(&pack, 2);
-    flb_pack_time_now(&pack);
+    cmt_counter_set(ctx->connection_totals, ts, status.accepts, 
+                    1, (char *[]) {"accepts"});
+    cmt_counter_set(ctx->connection_totals, ts, status.handled, 
+                    1, (char *[]) {"handled"});
+    cmt_counter_set(ctx->connection_totals, ts, status.requests, 
+                    1, (char *[]) {"requests"});
 
-    /* start our map with our stats */
-    msgpack_pack_map(&pack, 7);
-    /* active connections */
-    msgpack_pack_str(&pack, strlen("active"));
-    msgpack_pack_str_body(&pack, "active", strlen("active"));
-    msgpack_pack_int32(&pack, status.active);
-
-    /* reading connections */
-    msgpack_pack_str(&pack, strlen("reading"));
-    msgpack_pack_str_body(&pack, "reading", strlen("reading"));
-    msgpack_pack_int32(&pack, status.reading);
-    
-    /* writing connections */
-    msgpack_pack_str(&pack, strlen("writing"));
-    msgpack_pack_str_body(&pack, "writing", strlen("writing"));
-    msgpack_pack_int32(&pack, status.writing);
-    
-    /* waiting connections */
-    msgpack_pack_str(&pack, strlen("waiting"));
-    msgpack_pack_str_body(&pack, "waiting", strlen("waiting"));
-    msgpack_pack_int32(&pack, status.waiting);
-    
-    /* accepts total */
-    msgpack_pack_str(&pack, strlen("accepts"));
-    msgpack_pack_str_body(&pack, "accepts", strlen("accepts"));
-    msgpack_pack_int32(&pack, status.accepts);
-    
-    /* handled total */
-    msgpack_pack_str(&pack, strlen("handled"));
-    msgpack_pack_str_body(&pack, "handled", strlen("handled"));
-    msgpack_pack_int32(&pack, status.handled);
-    
-    /* requests total */
-    msgpack_pack_str(&pack, strlen("requests"));
-    msgpack_pack_str_body(&pack, "requests", strlen("requests"));
-    msgpack_pack_int32(&pack, status.requests);
-
-    flb_input_chunk_append_raw(ins, NULL, 0, sbuf.data, sbuf.size);
-    msgpack_sbuffer_destroy(&sbuf);
-    
-    ret = 0;
+    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
+    }
 
 status_error:
     flb_sds_destroy(data);
@@ -218,15 +189,31 @@ static int in_nss_init(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
     struct flb_in_nss_config *ctx = NULL;
-    (void) data;
+    struct cmt_counter *c;
+
 
     /* Allocate space for the configuration */
     ctx = nss_config_init(ins, config);
     if (!ctx) {
         return -1;
     }
-    ctx->ins = ins;
     
+    c = cmt_counter_create(ctx->cmt, "node", "nginx", "connections", 
+                                "Connections to Nginx",
+                                1, (char *[]) {"status"});
+    if (!c) {
+        return -1;
+    }
+    ctx->connections = c;
+
+    c = cmt_counter_create(ctx->cmt, "node", "nginx", "connection_totals", 
+                                "Connection Totals for Nginx",
+                                1, (char *[]) {"label"});
+    if (!c) {
+        return -1;
+    }
+    ctx->connection_totals = c;
+
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
@@ -247,8 +234,7 @@ static int in_nss_init(struct flb_input_instance *ins,
  */
 static int in_nss_exit(void *data, struct flb_config *config)
 {
-    (void) config;
-    struct flb_in_nss_config *ctx = data;
+    struct flb_in_nss_config *ctx = (struct flb_in_nss_config *)data;
 
     if (!ctx) {
         return 0;
@@ -268,5 +254,6 @@ struct flb_input_plugin in_nginx_stub_status_plugin = {
     .cb_collect   = in_nss_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_nss_exit,
-    .flags        = FLB_INPUT_NET
+    .flags        = FLB_INPUT_NET,
+    .event_type   = FLB_INPUT_METRICS
 };

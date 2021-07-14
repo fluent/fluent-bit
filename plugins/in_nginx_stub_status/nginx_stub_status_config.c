@@ -53,6 +53,13 @@ struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
     }
     ctx->ins = ins;
 
+    ctx->cmt = cmt_create();
+    if (!ctx->cmt) {
+        flb_plg_error(ins, "could not initialize CMetrics");
+        flb_free(ctx);
+        return NULL;
+    }
+    
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
                                  FLB_IO_TCP, NULL);
     if (!upstream) {
