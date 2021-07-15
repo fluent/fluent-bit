@@ -71,15 +71,16 @@ int cmt_gauge_destroy(struct cmt_gauge *gauge)
         cmt_map_destroy(gauge->map);
     }
     free(gauge);
+    return 0;
 }
 
 int cmt_gauge_set(struct cmt_gauge *gauge, uint64_t timestamp, double val,
                   int labels_count, char **label_vals)
 {
-    uint64_t tmp;
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -93,7 +94,8 @@ int cmt_gauge_inc(struct cmt_gauge *gauge, uint64_t timestamp,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -106,7 +108,8 @@ int cmt_gauge_dec(struct cmt_gauge *gauge, uint64_t timestamp,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -119,7 +122,8 @@ int cmt_gauge_add(struct cmt_gauge *gauge, uint64_t timestamp, double val,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -132,7 +136,8 @@ int cmt_gauge_sub(struct cmt_gauge *gauge, uint64_t timestamp, double val,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
         return -1;
     }
@@ -145,7 +150,6 @@ int cmt_gauge_get_val(struct cmt_gauge *gauge,
 {
     int ret;
     double val = 0;
-    struct cmt_metric *metric;
 
     ret = cmt_map_metric_get_val(&gauge->opts,
                                  gauge->map, labels_count, label_vals,

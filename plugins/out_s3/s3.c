@@ -307,12 +307,12 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_tls_destroy(ctx->sts_provider_tls);
     }
 
-    if (ctx->client_tls) {
-        flb_tls_destroy(ctx->client_tls);
-    }
-
     if (ctx->s3_client) {
         flb_aws_client_destroy(ctx->s3_client);
+    }
+
+    if (ctx->client_tls) {
+        flb_tls_destroy(ctx->client_tls);
     }
 
     if (ctx->free_endpoint == FLB_TRUE) {
@@ -1545,7 +1545,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "total_file_size", "100000000",
      0, FLB_TRUE, offsetof(struct flb_s3, file_size),
-     "Specifies the size of files in S3. Maximum size is 50GB, minimim is 1MB"
+     "Specifies the size of files in S3. Maximum size is 50GB, minimum is 1MB"
     },
     {
      FLB_CONFIG_MAP_SIZE, "upload_chunk_size", "5242880",

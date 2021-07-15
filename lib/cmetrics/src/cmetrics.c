@@ -19,10 +19,20 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_log.h>
-#include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
+#include <cmetrics/cmt_atomic.h>
+#include <cmetrics/cmt_compat.h>
+#include <cmetrics/cmt_label.h>
+#include <cmetrics/cmt_version.h>
 
 #include <stdlib.h>
+
+void cmt_initialize()
+{
+    cmt_atomic_initialize();
+}
 
 struct cmt *cmt_create()
 {
@@ -33,9 +43,17 @@ struct cmt *cmt_create()
         cmt_errno();
         return NULL;
     }
+
+    cmt->static_labels = cmt_labels_create();
+    if (!cmt->static_labels) {
+        free(cmt);
+        return NULL;
+    }
+
     mk_list_init(&cmt->counters);
     mk_list_init(&cmt->gauges);
     mk_list_init(&cmt->histograms);
+    mk_list_init(&cmt->untypeds);
 
     return cmt;
 }
@@ -46,16 +64,36 @@ void cmt_destroy(struct cmt *cmt)
     struct mk_list *head;
     struct cmt_gauge *g;
     struct cmt_counter *c;
-
-    mk_list_foreach_safe(head, tmp, &cmt->gauges) {
-        g = mk_list_entry(head, struct cmt_gauge, _head);
-        cmt_gauge_destroy(g);
-    }
+    struct cmt_untyped *u;
 
     mk_list_foreach_safe(head, tmp, &cmt->counters) {
         c = mk_list_entry(head, struct cmt_counter, _head);
         cmt_counter_destroy(c);
     }
 
+    mk_list_foreach_safe(head, tmp, &cmt->gauges) {
+        g = mk_list_entry(head, struct cmt_gauge, _head);
+        cmt_gauge_destroy(g);
+    }
+
+    mk_list_foreach_safe(head, tmp, &cmt->untypeds) {
+        u = mk_list_entry(head, struct cmt_untyped, _head);
+        cmt_untyped_destroy(u);
+    }
+
+    if (cmt->static_labels) {
+        cmt_labels_destroy(cmt->static_labels);
+    }
+
     free(cmt);
+}
+
+int cmt_label_add(struct cmt *cmt, char *key, char *val)
+{
+    return cmt_labels_add_kv(cmt->static_labels, key, val);
+}
+
+char *cmt_version()
+{
+    return CMT_VERSION_STR;
 }

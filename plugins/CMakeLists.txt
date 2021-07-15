@@ -130,6 +130,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_netif")
   REGISTER_IN_PLUGIN("in_docker")
   REGISTER_IN_PLUGIN("in_docker_events")
+  REGISTER_IN_PLUGIN("in_node_exporter_metrics")
 endif()
 
 REGISTER_IN_PLUGIN("in_emitter")
