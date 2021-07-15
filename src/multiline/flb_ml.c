@@ -153,6 +153,25 @@ int flb_ml_register_context(struct flb_ml_stream_group *group,
     return 0;
 }
 
+static inline void breakline_prepare(struct flb_ml_parser *mlp,
+                                     struct flb_ml_stream_group *stream_group)
+{
+    int len;
+
+    if (mlp->key_content) {
+        return;
+    }
+
+    len = flb_sds_len(stream_group->buf);
+    if (len <= 0) {
+        return;
+    }
+
+    if (stream_group->buf[len - 1] != '\n') {
+        flb_sds_cat_safe(&stream_group->buf, "\n", 1);
+    }
+}
+
 /*
  * package content into a multiline stream:
  *
@@ -173,6 +192,8 @@ static int package_content(struct flb_ml_stream *mst,
     int processed = FLB_FALSE;
     int type;
     size_t offset = 0;
+    size_t buf_size;
+    char *buf_data;
     msgpack_object *val = val_content;
     struct flb_ml_parser *parser;
     struct flb_ml_parser_ins *parser_i;
@@ -200,6 +221,16 @@ static int package_content(struct flb_ml_stream *mst,
         val = val_pattern;
     }
 
+
+    if (val) {
+        buf_data = (char *) val->via.str.ptr;
+        buf_size = val->via.str.size;
+    }
+    else {
+        buf_data = buf;
+        buf_size = size;
+
+    }
     if (type == FLB_ML_REGEX) {
         ret = flb_ml_rule_process(parser, mst,
                                   stream_group, full_map, buf, size, tm,
@@ -213,10 +244,10 @@ static int package_content(struct flb_ml_stream *mst,
     }
     else if (type == FLB_ML_ENDSWITH) {
         len = flb_sds_len(parser->match_str);
-        if (val && len <= val->via.str.size) {
+        if (buf_data && len <= buf_size) {
             /* Validate if content ends with expected string */
-            offset = val->via.str.size - len;
-            ret = memcmp(val->via.str.ptr + offset, parser->match_str, len);
+            offset = buf_size - len;
+            ret = memcmp(buf_data + offset, parser->match_str, len);
             if (ret == 0) {
                 rule_match = match_negate(parser, FLB_TRUE);
             }
@@ -228,10 +259,18 @@ static int package_content(struct flb_ml_stream *mst,
                 flb_ml_register_context(stream_group, tm, full_map);
             }
 
+            /* Prepare concatenation */
+            breakline_prepare(parser, stream_group);
+
             /* Concatenate value */
-            flb_sds_cat_safe(&stream_group->buf,
-                             val_content->via.str.ptr,
-                             val_content->via.str.size);
+            if (val_content) {
+                flb_sds_cat_safe(&stream_group->buf,
+                                 val_content->via.str.ptr,
+                                 val_content->via.str.size);
+            }
+            else {
+                flb_sds_cat_safe(&stream_group->buf, buf_data, buf_size);
+            }
 
             /* on ENDSWITH mode, a rule match means flush the content */
             if (rule_match) {
@@ -241,8 +280,8 @@ static int package_content(struct flb_ml_stream *mst,
         }
     }
     else if (type == FLB_ML_EQ) {
-        if (val->via.str.size == flb_sds_len(parser->match_str) &&
-            memcmp(val->via.str.ptr, parser->match_str, val->via.str.size) == 0) {
+        if (buf_size == flb_sds_len(parser->match_str) &&
+            memcmp(buf_data, parser->match_str, buf_size) == 0) {
             /* EQ match */
             rule_match = match_negate(parser, FLB_TRUE);
         }
@@ -254,10 +293,18 @@ static int package_content(struct flb_ml_stream *mst,
             flb_ml_register_context(stream_group, tm, full_map);
         }
 
+        /* Prepare concatenation */
+        breakline_prepare(parser, stream_group);
+
         /* Concatenate value */
-        flb_sds_cat_safe(&stream_group->buf,
-                         val_content->via.str.ptr,
-                         val_content->via.str.size);
+        if (val_content) {
+            flb_sds_cat_safe(&stream_group->buf,
+                             val_content->via.str.ptr,
+                             val_content->via.str.size);
+        }
+        else {
+            flb_sds_cat_safe(&stream_group->buf, buf_data, buf_size);
+        }
 
         /* on ENDSWITH mode, a rule match means flush the content */
         if (rule_match) {
@@ -278,6 +325,7 @@ static int package_content(struct flb_ml_stream *mst,
 
         /* Concatenate value */
         flb_sds_cat_safe(&stream_group->buf, buf, size);
+        breakline_prepare(parser, stream_group);
         flb_ml_flush_stream_group(parser, mst, stream_group);
     }
     else {
@@ -772,6 +820,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_packer mp_pck;
     msgpack_unpacked result;
 
+    breakline_prepare(ml_parser, group);
     len = flb_sds_len(group->buf);
 
     /* init msgpack buffer */
