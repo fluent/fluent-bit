@@ -18,16 +18,37 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_PROMETHEUS_EXPORTER_H
-#define FLB_PROMETHEUS_EXPORTER_H
+#ifndef FLB_PROMETHEUS_REMOTE_WRITE_H
+#define FLB_PROMETHEUS_REMOTE_WRITE_H
 
 #include <fluent-bit/flb_output_plugin.h>
 
+#define FLB_PROMETHEUS_REMOTE_WRITE_CONTENT_TYPE_HEADER_NAME "Content-Type"
+#define FLB_PROMETHEUS_REMOTE_WRITE_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
+#define FLB_PROMETHEUS_REMOTE_WRITE_VERSION_HEADER_NAME      "X-Prometheus-Remote-Write-Version"
+#define FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL          "0.1.0"
+
 /* Plugin context */
-struct prom_remote_write_exporter {
-    /* networking */
-    flb_sds_t remote_host;
-    int       remote_port;
+struct prometheus_remote_write {
+    /* HTTP Auth */
+    char *http_user;
+    char *http_passwd;
+
+    /* Proxy */
+    const char *proxy;
+    char *proxy_host;
+    int proxy_port;
+
+    /* HTTP URI */
+    char *uri;
+    char *host;
+    int port;
+
+    /* Log the response paylod */
+    int log_response_payload;
+
+    /* Upstream connection to the backend server */
+    struct flb_upstream *u;
 
     /* instance context */
     struct flb_output_instance *ins;

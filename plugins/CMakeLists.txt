@@ -206,6 +206,7 @@ REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
 REGISTER_OUT_PLUGIN("out_kinesis_firehose")
 REGISTER_OUT_PLUGIN("out_kinesis_streams")
 REGISTER_OUT_PLUGIN("out_prometheus_exporter")
+REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 
 # FILTERS
