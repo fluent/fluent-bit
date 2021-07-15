@@ -20,6 +20,7 @@ struct expected_result {
     struct record_check *out_records;
 };
 
+/* Docker */
 struct record_check docker_input[] = {
   {"{\"log\": \"aa\\n\", \"stream\": \"stdout\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
   {"{\"log\": \"aa\\n\", \"stream\": \"stderr\", \"time\": \"2021-02-01T16:45:03.01231z\"}"},
@@ -39,6 +40,7 @@ struct record_check docker_output[] = {
   {"ee\n"},
 };
 
+/* CRI */
 struct record_check cri_input[] = {
   {"2019-05-07T18:57:50.904275087+00:00 stdout P 1a. some "},
   {"2019-05-07T18:57:51.904275088+00:00 stdout P multiline "},
@@ -67,6 +69,23 @@ struct record_check cri_output[] = {
   {"4a. non multiline 2"},
   {"3b. non multiline 1"},
   {"4b. non multiline 2"}
+};
+
+/* ENDSWITH */
+struct record_check endswith_input[] = {
+  {"1a. some multiline log \\"},
+  {"1b. some multiline log"},
+  {"2a. another multiline log\\"},
+  {"2b. another multiline log"},
+  {"3a. non multiline 1"},
+  {"4a. non multiline 2"}
+};
+
+struct record_check endswith_output[] = {
+  {"1a. some multiline log \\\n1b. some multiline log\n"},
+  {"2a. another multiline log\\\n2b. another multiline log\n"},
+  {"3a. non multiline 1\n"},
+  {"4a. non multiline 2\n"}
 };
 
 /* Mixed lines of Docker and CRI logs in different streams (stdout/stderr) */
@@ -100,6 +119,7 @@ struct record_check container_mix_output[] = {
   {"dd-err\n"},
 };
 
+/* Java stacktrace detection */
 struct record_check java_input[] = {
   {"Exception in thread \"main\" java.lang.IllegalStateException: ..null property\n"},
   {"     at com.example.myproject.Author.getBookIds(xx.java:38)\n"},
@@ -107,7 +127,7 @@ struct record_check java_input[] = {
   {"Caused by: java.lang.NullPointerException\n"},
   {"     at com.example.myproject.Book.getId(Book.java:22)\n"},
   {"     at com.example.myproject.Author.getBookIds(Author.java:35)\n"},
-  {"     ... 1 more"},
+  {"     ... 1 more\n"},
   {"single line\n"}
 };
 
@@ -119,13 +139,14 @@ struct record_check java_output[] = {
     "Caused by: java.lang.NullPointerException\n"
     "     at com.example.myproject.Book.getId(Book.java:22)\n"
     "     at com.example.myproject.Author.getBookIds(Author.java:35)\n"
-    "     ... 1 more"
+    "     ... 1 more\n"
   },
   {
     "single line\n"
   }
 };
 
+/* Python stacktrace detection */
 struct record_check python_input[] = {
   {"Traceback (most recent call last):\n"},
   {"  File \"/base/data/home/runtimes/python27/python27_lib/versions/third_party/webapp2-2.5.2/webapp2.py\", line 1535, in __call__\n"},
@@ -152,6 +173,7 @@ struct record_check python_output[] = {
   {"hello world, not multiline\n"}
 };
 
+/* Custom example for Elasticsearch stacktrace */
 struct record_check elastic_input[] = {
   {"[some weird test] IndexNotFoundException[no such index]\n"},
   {"    at org.elasticsearch.cluster.metadata.IndexNameExpressionResolver....\n"},
@@ -172,6 +194,7 @@ struct record_check elastic_output[] = {
   }
 };
 
+/* Go */
 struct record_check go_input[] = {
     {"panic: my panic\n"},
     {"\n"},
@@ -281,7 +304,7 @@ struct record_check go_output[] = {
         "created by runtime.gcenable\n"
         "	/usr/local/go/src/runtime/mgc.go:216 +0x58\n"
     },
-    {"one more line, no multiline"}
+    {"one more line, no multiline\n"}
 };
 
 /*
@@ -315,7 +338,6 @@ static int flush_callback(struct flb_ml_parser *parser,
 
     /* Validate content */
     msgpack_unpacked_init(&result);
-
     off = 0;
     ret = msgpack_unpack_next(&result, buf_data, buf_size, &off);
     TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
@@ -343,6 +365,10 @@ static int flush_callback(struct flb_ml_parser *parser,
     TEST_CHECK(val.via.str.size == len);
     if (val.via.str.size != len) {
         printf("expected length: %i, received: %i\n", len, val.via.str.size);
+        printf("== received ==\n");
+        msgpack_object_print(stdout, val);
+        printf("\n\n");
+        printf("== expected ==\n%s\n", exp->buf);
         exit(1);
     }
     TEST_CHECK(memcmp(val.via.str.ptr, exp->buf, len) == 0);
@@ -737,6 +763,69 @@ static void test_parser_elastic()
     flb_config_exit(config);
 }
 
+static void test_endswith()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id = 0;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = endswith_output;
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "raw-endswith");
+    TEST_CHECK(ml != NULL);
+
+    mlp = flb_ml_parser_create(config,
+                               "endswith",           /* name      */
+                               FLB_ML_ENDSWITH,      /* type      */
+                               "\\",                 /* match_str */
+                               FLB_TRUE,             /* negate    */
+                               1000,                 /* flush_ms  */
+                               NULL,                 /* key_content */
+                               NULL,                 /* key_pattern */
+                               NULL,                 /* key_group */
+                               NULL,                 /* parser ctx */
+                               NULL);                /* parser name */
+    TEST_CHECK(mlp != NULL);
+
+    /* Generate an instance of 'endswith' custom parser parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "endswith");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback, (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(endswith_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &endswith_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
 static void test_parser_go()
 {
     int i;
@@ -794,5 +883,6 @@ TEST_LIST = {
     { "parser_elastic", test_parser_elastic},
     { "parser_go",      test_parser_go},
     { "container_mix",  test_container_mix},
+    { "endswith",       test_endswith},
     { 0 }
 };
