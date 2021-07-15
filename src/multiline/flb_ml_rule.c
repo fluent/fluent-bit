@@ -373,7 +373,6 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                                   (unsigned char *) buf_data, buf_size);
             if (ret) {
                 /* Regex matched */
-
                 len = flb_sds_len(group->buf);
                 if (len >= 1 && group->buf[len - 1] != '\n') {
                     flb_sds_cat_safe(&group->buf, "\n", 1);
