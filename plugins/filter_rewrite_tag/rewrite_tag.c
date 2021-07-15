@@ -186,6 +186,20 @@ static int process_config(struct flb_rewrite_tag *ctx)
     return 0;
 }
 
+static int is_wildcard(char* match)
+{
+    size_t len = strlen(match);
+    size_t i;
+
+    /* '***' should be ignored. So we check every char. */
+    for (i=0; i<len; i++) {
+        if (match[i] != '*') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
                                struct flb_config *config,
                                void *data)
@@ -200,6 +214,11 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     ctx = flb_calloc(1, sizeof(struct flb_rewrite_tag));
     if (!ctx) {
         flb_errno();
+        return -1;
+    }
+    if (is_wildcard(ins->match)) {
+        flb_plg_error(ins, "'Match' causes infinite loop. abort.");
+        flb_free(ctx);
         return -1;
     }
     ctx->ins = ins;
