@@ -36,6 +36,7 @@
 struct flb_exec {
     const char  *cmd;
     struct flb_parser  *parser;
+    int  multiline;
     char *buf;
     size_t buf_size;
     struct flb_input_instance *ins;
