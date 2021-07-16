@@ -1401,6 +1401,10 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
         }
         map_size = map.via.map.size;
 
+        /* Reset variables for found log_key and correct type */
+        found = FLB_FALSE;
+        check = FLB_FALSE;
+
         /* Extract log_key from record and append to output buffer */
         for (i = 0; i < map_size; i++) {
             key = map.via.map.ptr[i].key;
