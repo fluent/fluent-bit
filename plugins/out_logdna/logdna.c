@@ -129,6 +129,36 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
     return c;
 }
 
+/**
+ *  If configuration supplied log_key it will look for it in the message and
+ *  return true, otherwise returns false
+ */
+static bool extract_log_key(struct flb_logdna *ctx,
+                           msgpack_object *map,
+                           msgpack_packer *mp_sbuf)
+{
+    if (!ctx->log_key) {
+        return false;
+    }
+
+    int i;
+
+    msgpack_object k;
+    msgpack_object v;
+
+    for (i = 0; i < map->via.array.size; i++) {
+        k = map->via.map.ptr[i].key;
+        v = map->via.map.ptr[i].val;
+
+        if (primary_key_check(k, ctx->log_key, flb_sds_len(ctx->log_key)) == FLB_TRUE) {
+            msgpack_pack_object(mp_sbuf, v);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
                                         const void *data, size_t bytes,
                                         const char *tag, int tag_len)
@@ -186,12 +216,13 @@ static flb_sds_t logdna_compose_payload(struct flb_logdna *ctx,
         /* Line */
         msgpack_pack_str(&mp_pck, 4);
         msgpack_pack_str_body(&mp_pck, "line", 4);
-
-        line_json = flb_msgpack_to_json_str(1024, obj);
-        len = strlen(line_json);
-        msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, line_json, len);
-        flb_free(line_json);
+        if (!extract_log_key(ctx, obj, &mp_pck)) {
+            line_json = flb_msgpack_to_json_str(1024, obj);
+            len = strlen(line_json);
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, line_json, len);
+            flb_free(line_json);
+        }
 
         /* Adjust map header size */
         flb_mp_set_map_header_size(mp_sbuf.data + map_off, array_size);
@@ -562,6 +593,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_logdna, app),
      "Name of the application generating the data (optional)"
     },
+
+    {
+      FLB_CONFIG_MAP_STR, "log_key", NULL,
+      0, FLB_TRUE, offsetof(struct flb_logdna, log_key),
+      "By default, the whole log record will be sent to LogDNA. "
+      "If you specify a key name with this option, then only the value of "
+      "that key will be sent to LogDNA. For example, if you are using "
+      "the Fluentd Docker log driver, you can specify log_key log and only "
+      "the log message will be sent to LogDNA."
+     },
 
     /* EOF */
     {0}
