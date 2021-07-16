@@ -708,7 +708,7 @@ static int append_unpacked_gauge_to_metrics_context(struct cmt *context,
 
     map->opts = &gauge->opts;
 
-    mk_list_add(&gauge->_head, &context->counters);
+    mk_list_add(&gauge->_head, &context->gauges);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
