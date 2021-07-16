@@ -44,6 +44,7 @@ struct flb_parser {
     int type;             /* parser type */
     char *name;           /* format name */
     char *p_regex;        /* pattern for main regular expression */
+    int skip_empty;       /* skip empty regex matches */
     char *time_fmt;       /* time format */
     char *time_fmt_full;  /* original given time format */
     char *time_key;       /* field name that contains the time */
@@ -90,6 +91,7 @@ static inline time_t flb_parser_tm2time(const struct tm *src)
 
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
+                                     int skip_empty,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
                                      int time_keep,
