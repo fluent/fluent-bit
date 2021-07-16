@@ -29,7 +29,7 @@ RUN apt-get update && \
     postgresql-server-dev-all \
     flex \
     bison \
-    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
+    && curl --fail -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
     && cd tmp/ && mkdir fluent-bit \
     && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
     && cd fluent-bit/build/ \
