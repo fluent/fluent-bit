@@ -1,3 +1,7 @@
+#if (defined(_WIN32) || defined(_WIN64)) && !defined(__WIN32__)
+	#define __WIN32__
+#endif
+
 #ifdef __FreeBSD__
 #  include <sys/endian.h>
 #elif defined(__APPLE_CC_) || defined(__MACH__)  /* MacOS/X support */
@@ -39,26 +43,73 @@ struct iovec {
 };
 #endif
 
-#define get_unaligned_memcpy(x) ({ \
-		typeof(*(x)) _ret; \
-		memcpy(&_ret, (x), sizeof(*(x))); \
-		_ret; })
-#define put_unaligned_memcpy(v,x) ({ \
-		typeof((v)) _v = (v); \
-		memcpy((x), &_v, sizeof(*(x))); })
-
-#define get_unaligned get_unaligned_memcpy
-#define put_unaligned put_unaligned_memcpy
-#define get_unaligned64 get_unaligned_memcpy
-#define put_unaligned64 put_unaligned_memcpy
-
-#define get_unaligned_le32(x) (le32toh(get_unaligned((u32 *)(x))))
-#define put_unaligned_le16(v,x) (put_unaligned(htole16(v), (u16 *)(x)))
-
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned u32;
 typedef unsigned long long u64;
+
+#if defined(_WIN64)
+typedef long long ssize_t;
+#elif defined(_WIN32)
+typedef long ssize_t;
+#endif
+
+inline void put_unaligned_memcpy_u16(u16 v, u16 *x)
+{
+	memcpy(x, &v, sizeof(u16));
+}
+
+inline u16 get_unaligned_memcpy_u16(u16 *x)
+{
+	u16 _ret;
+	memcpy(&_ret, x, sizeof(u16));
+	return _ret;
+}
+
+inline void put_unaligned_memcpy_u32(u32 v, u32 *x)
+{
+	memcpy(x, &v, sizeof(u32));
+}
+
+inline u32 get_unaligned_memcpy_u32(u32 *x)
+{
+	u32 _ret;
+	memcpy(&_ret, x, sizeof(u32));
+	return _ret;
+}
+
+inline void put_unaligned_memcpy_u64(u64 v, u64 *x)
+{
+	memcpy(x, &v, sizeof(u64));
+}
+
+inline u64 get_unaligned_memcpy_u64(u64 *x)
+{
+	u64 _ret;
+	memcpy(&_ret, x, sizeof(u64));
+	return _ret;
+}
+
+/*
+ #define get_unaligned_memcpy(x) ({ \
+ 		typeof(*(x)) _ret; \
+ 		memcpy(&_ret, (x), sizeof(*(x))); \
+ 		_ret; })
+
+ #define put_unaligned_memcpy(v,x) ({ \
+ 		typeof((v)) _v = (v); \
+ 		memcpy((x), &_v, sizeof(*(x))); })
+*/
+
+#define get_unaligned16 get_unaligned_memcpy_u16
+#define put_unaligned16 put_unaligned_memcpy_u16
+#define get_unaligned32 get_unaligned_memcpy_u32
+#define put_unaligned32 put_unaligned_memcpy_u32
+#define get_unaligned64 get_unaligned_memcpy_u64
+#define put_unaligned64 put_unaligned_memcpy_u64
+
+#define get_unaligned_le32(x) (le32toh(get_unaligned32((u32 *)(x))))
+#define put_unaligned_le16(v,x) (put_unaligned16(htole16(v), (u16 *)(x)))
 
 #define BUG_ON(x) assert(!(x))
 
@@ -69,8 +120,13 @@ typedef unsigned long long u64;
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
-#define likely(x) __builtin_expect((x), 1)
-#define unlikely(x) __builtin_expect((x), 0)
+#if defined(__WIN32__)
+#	define likely(x) (x)
+#	define unlikely(x) (x)
+#else
+#	define likely(x) __builtin_expect((x), 1)
+#	define unlikely(x) __builtin_expect((x), 0)
+#endif
 
 #define min_t(t,x,y) ((x) < (y) ? (x) : (y))
 #define max_t(t,x,y) ((x) > (y) ? (x) : (y))
