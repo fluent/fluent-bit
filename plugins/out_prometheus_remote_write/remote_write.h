@@ -29,7 +29,7 @@
 #define FLB_PROMETHEUS_REMOTE_WRITE_VERSION_LITERAL          "0.1.0"
 
 /* Plugin context */
-struct prometheus_remote_write {
+struct prometheus_remote_write_context {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;

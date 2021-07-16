@@ -18,54 +18,17 @@
  *  limitations under the License.
  */
 
-#include <snappy.h>
-
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_snappy.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 
 #include "remote_write.h"
+#include "remote_write_conf.h"
 
-static int flb_snappy_compress(void *in_data, size_t in_len,
-                               void **out_data, size_t *out_len)
-{
-    struct snappy_env snappy_env;
-    char             *tmp_data;
-    size_t            tmp_len;
-    int               result;
-
-    tmp_len = snappy_max_compressed_length(in_len);
-
-    tmp_data = flb_malloc(tmp_len);
-
-    if (tmp_data == NULL) {
-        return -1;
-    }
-
-    result = snappy_init_env(&snappy_env);
-
-    if (result != 0) {
-        cmt_sds_destroy(tmp_data);
-
-        return -2;
-    }
-
-    result = snappy_compress(&snappy_env, in_data, in_len, tmp_data, &tmp_len);
-
-    if (result != 0) {
-        cmt_sds_destroy(tmp_data);
-
-        return -3;
-    }
-
-    snappy_free_env(&snappy_env);
-
-    return 0;
-}
-
-static int http_post(struct prometheus_remote_write *ctx,
+static int http_post(struct prometheus_remote_write_context *ctx,
                      const void *body, size_t body_len,
                      const char *tag, int tag_len)
 {
@@ -206,23 +169,14 @@ static int cb_prom_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
-    struct prometheus_remote_write *ctx;
-    int                             ret;
+    struct prometheus_remote_write_context *ctx;
 
-    ctx = flb_calloc(1, sizeof(struct prometheus_remote_write));
+    ctx = flb_prometheus_remote_write_context_create(ins, config);
     if (!ctx) {
-        flb_errno();
         return -1;
     }
 
-    ctx->ins = ins;
     flb_output_set_context(ins, ctx);
-
-    /* Load config map */
-    ret = flb_output_config_map_set(ins, (void *) ctx);
-    if (ret == -1) {
-        return -1;
-    }
 
     return 0;
 }
@@ -232,46 +186,61 @@ static void cb_prom_flush(const void *data, size_t bytes,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
-    cmt_sds_t                       encoded_chunk;
-    int                             result;
-    size_t                          off;
-    struct cmt                     *cmt;
-    struct prometheus_remote_write *ctx;
+    cmt_sds_t                               encoded_chunk;
+    int                                     result;
+    size_t                                  off;
+    struct cmt                             *cmt;
+    struct prometheus_remote_write_context *ctx;
 
     off = 0;
     ctx = out_context;
+    result = FLB_OK;
 
-    /* get cmetrics context */
-    result = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    while (result == FLB_OK) {
+        result = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
 
-    if (result != CMT_DECODE_MSGPACK_SUCCESS) {
-        flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+        if (result == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA) {
+            result = FLB_OK;
 
-        FLB_OUTPUT_RETURN(FLB_ERROR);
+            /* We can't handle this case afterwards because there is an overlap in the
+             * constant values for the FLB_* and CMT_DECODE_MSGPACK_* groups.
+             */
+            break;
+        }
+        else if (result != CMT_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+
+            result = FLB_ERROR;
+        }
+        else {
+            encoded_chunk = cmt_encode_prometheus_remote_write_create(cmt);
+
+            if (encoded_chunk == NULL) {
+                flb_plg_error(ctx->ins, "Error encoding context as prometheus remote write");
+
+                result = FLB_ERROR;
+            }
+            else {
+                result = http_post(ctx, encoded_chunk, flb_sds_len(encoded_chunk), tag, tag_len);
+
+                cmt_encode_text_destroy(encoded_chunk);
+            }
+
+            cmt_destroy(cmt);
+        }
     }
-
-    encoded_chunk = cmt_encode_prometheus_remote_write_create(cmt);
-
-    if (encoded_chunk == NULL) {
-        cmt_destroy(cmt);
-
-        flb_plg_error(ctx->ins, "Error encoding context as prometheus remote write");
-
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-
-    result = http_post(ctx, encoded_chunk, flb_sds_len(encoded_chunk), tag, tag_len);
-
-    /* destroy cmt context */
-    cmt_destroy(cmt);
-
-    cmt_encode_text_destroy(encoded_chunk);
 
     FLB_OUTPUT_RETURN(result);
 }
 
 static int cb_prom_exit(void *data, struct flb_config *config)
 {
+    struct prometheus_remote_write_context *ctx;
+
+    ctx = (struct prometheus_remote_write_context *) data;
+
+    flb_prometheus_remote_write_context_destroy(ctx);
+
     return 0;
 }
 
@@ -284,22 +253,22 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "http_user", NULL,
-     0, FLB_TRUE, offsetof(struct prometheus_remote_write, http_user),
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, http_user),
      "Set HTTP auth user"
     },
     {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
-     0, FLB_TRUE, offsetof(struct prometheus_remote_write, http_passwd),
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, http_passwd),
      "Set HTTP auth password"
     },
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
-     0, FLB_TRUE, offsetof(struct prometheus_remote_write, uri),
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, uri),
      "Specify an optional HTTP URI for the target web server, e.g: /something"
     },
     {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
-     0, FLB_TRUE, offsetof(struct prometheus_remote_write, log_response_payload),
+     0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, log_response_payload),
      "Specify if the response paylod should be logged or not"
     },
     /* EOF */
