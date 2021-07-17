@@ -437,7 +437,7 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         event = &buf->events[buf->event_index];
         event->json = tmp_buf_ptr;
         event->len = written;
-        event->timestamp = (unsigned long long) (tms->tm.tv_sec * 1000 +
+        event->timestamp = (unsigned long long) (tms->tm.tv_sec * 1000ull +
                                                  tms->tm.tv_nsec/1000000);
 
     }
