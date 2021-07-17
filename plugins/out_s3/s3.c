@@ -1165,12 +1165,13 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     size_t olen;
     int ret;
 
-    ret = mbedtls_md5_ret(buf, buf_size, md5_bin);
+    ret = mbedtls_md5_ret((unsigned char*) buf, buf_size, md5_bin);
     if (ret != 0) {
         return ret;
     }
 
-    ret = mbedtls_base64_encode(md5_str, md5_str_size, &olen, md5_bin, sizeof(md5_bin));
+    ret = mbedtls_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
+                                sizeof(md5_bin));
     if (ret != 0) {
         return ret;
     }
