@@ -52,6 +52,45 @@
 #include "compat.h"
 #endif
 
+static inline void put_unaligned16(u16 v, u16 *x)
+{
+	memcpy(x, &v, sizeof(u16));
+}
+
+static inline u16 get_unaligned16(u16 *x)
+{
+	u16 _ret;
+	memcpy(&_ret, x, sizeof(u16));
+	return _ret;
+}
+
+static inline void put_unaligned32(u32 v, u32 *x)
+{
+	memcpy(x, &v, sizeof(u32));
+}
+
+static inline u32 get_unaligned32(u32 *x)
+{
+	u32 _ret;
+	memcpy(&_ret, x, sizeof(u32));
+	return _ret;
+}
+
+static inline void put_unaligned64(u64 v, u64 *x)
+{
+	memcpy(x, &v, sizeof(u64));
+}
+
+static inline u64 get_unaligned64(u64 *x)
+{
+	u64 _ret;
+	memcpy(&_ret, x, sizeof(u64));
+	return _ret;
+}
+
+#define get_unaligned_le32(x) (le32toh(get_unaligned32((u32 *)(x))))
+#define put_unaligned_le16(v,x) (put_unaligned16(htole16(v), (u16 *)(x)))
+
 #define CRASH_UNLESS(x) BUG_ON(!(x))
 #define CHECK(cond) CRASH_UNLESS(cond)
 #define CHECK_LE(a, b) CRASH_UNLESS((a) <= (b))
@@ -169,7 +208,7 @@ static inline int find_lsb_set_non_zero(u32 n)
 
 static inline int find_lsb_set_non_zero64(u64 n)
 {
-	return snappy_ctzll(n);
+	return snappy_ctz64(n);
 }
 
 #define kmax32 5
