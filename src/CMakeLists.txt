@@ -49,6 +49,7 @@ set(src
   flb_random.c
   flb_plugin.c
   flb_gzip.c
+  flb_snappy.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
@@ -313,6 +314,7 @@ set(FLB_DEPS
   ${extra_libs}
   mbedtls
   c-ares
+  snappy-c
   )
 
 if(OPENSSL_FOUND)
