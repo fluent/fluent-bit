@@ -52,6 +52,45 @@
 #include "compat.h"
 #endif
 
+static inline void put_unaligned16(u16 v, u16 *x)
+{
+	memcpy(x, &v, sizeof(u16));
+}
+
+static inline u16 get_unaligned16(u16 *x)
+{
+	u16 _ret;
+	memcpy(&_ret, x, sizeof(u16));
+	return _ret;
+}
+
+static inline void put_unaligned32(u32 v, u32 *x)
+{
+	memcpy(x, &v, sizeof(u32));
+}
+
+static inline u32 get_unaligned32(u32 *x)
+{
+	u32 _ret;
+	memcpy(&_ret, x, sizeof(u32));
+	return _ret;
+}
+
+static inline void put_unaligned64(u64 v, u64 *x)
+{
+	memcpy(x, &v, sizeof(u64));
+}
+
+static inline u64 get_unaligned64(u64 *x)
+{
+	u64 _ret;
+	memcpy(&_ret, x, sizeof(u64));
+	return _ret;
+}
+
+#define get_unaligned_le32(x) (le32toh(get_unaligned32((u32 *)(x))))
+#define put_unaligned_le16(v,x) (put_unaligned16(htole16(v), (u16 *)(x)))
+
 #define CRASH_UNLESS(x) BUG_ON(!(x))
 #define CHECK(cond) CRASH_UNLESS(cond)
 #define CHECK_LE(a, b) CRASH_UNLESS((a) <= (b))
@@ -61,12 +100,12 @@
 #define CHECK_LT(a, b) CRASH_UNLESS((a) < (b))
 #define CHECK_GT(a, b) CRASH_UNLESS((a) > (b))
 
-#define UNALIGNED_LOAD16(_p) get_unaligned((u16 *)(_p))
-#define UNALIGNED_LOAD32(_p) get_unaligned((u32 *)(_p))
+#define UNALIGNED_LOAD16(_p) get_unaligned16((u16 *)(_p))
+#define UNALIGNED_LOAD32(_p) get_unaligned32((u32 *)(_p))
 #define UNALIGNED_LOAD64(_p) get_unaligned64((u64 *)(_p))
 
-#define UNALIGNED_STORE16(_p, _val) put_unaligned(_val, (u16 *)(_p))
-#define UNALIGNED_STORE32(_p, _val) put_unaligned(_val, (u32 *)(_p))
+#define UNALIGNED_STORE16(_p, _val) put_unaligned16(_val, (u16 *)(_p))
+#define UNALIGNED_STORE32(_p, _val) put_unaligned32(_val, (u32 *)(_p))
 #define UNALIGNED_STORE64(_p, _val) put_unaligned64(_val, (u64 *)(_p))
 
 /*
@@ -108,6 +147,47 @@ static inline void unaligned_copy64(const void *src, void *dst)
 
 #endif
 
+/* This snipped is based on the following file
+ * https://github.com/edenhill/librdkafka/blob/7230a1aa327b55ace54579d019e9484af96886c6/src/snappy.c
+ */
+#if !defined(__WIN32__)
+#	define snappy_clz(n)   __builtin_clz(n)
+#	define snappy_ctz(n)   __builtin_ctz(n)
+#	define snappy_ctz64(n) __builtin_ctzll(n)
+#else
+#include <intrin.h>
+static int inline snappy_clz(u32 x) {
+	int r = 0;
+	if (_BitScanForward(&r, x))
+		return 31 - r;
+	else
+		return 32;
+}
+
+static int inline snappy_ctz(u32 x) {
+	int r = 0;
+	if (_BitScanForward(&r, x))
+		return r;
+	else
+		return 32;
+}
+
+static int inline snappy_ctz64(u64 x) {
+#ifdef _M_X64
+	int r = 0;
+	if (_BitScanReverse64(&r, x))
+		return r;
+	else
+		return 64;
+#else
+	int r;
+	if ((r = snappy_ctz(x & 0xffffffff)) < 32)
+		return r;
+	return 32 + snappy_ctz(x >> 32);
+#endif
+}
+#endif
+
 static inline bool is_little_endian(void)
 {
 #ifdef __LITTLE_ENDIAN__
@@ -118,17 +198,17 @@ static inline bool is_little_endian(void)
 
 static inline int log2_floor(u32 n)
 {
-	return n == 0 ? -1 : 31 ^ __builtin_clz(n);
+	return n == 0 ? -1 : 31 ^ snappy_clz(n);
 }
 
 static inline int find_lsb_set_non_zero(u32 n)
 {
-	return __builtin_ctz(n);
+	return snappy_ctz(n);
 }
 
 static inline int find_lsb_set_non_zero64(u64 n)
 {
-	return __builtin_ctzll(n);
+	return snappy_ctz64(n);
 }
 
 #define kmax32 5
