@@ -1242,7 +1242,17 @@ static void cb_loki_flush(const void *data, size_t bytes,
          * - 205: Reset content
          *
          */
-        if (c->resp.status < 200 || c->resp.status > 205) {
+        if (c->resp.status == 400) {
+            /*
+             * Loki will return 400 if incoming data is out of order.
+             * We should not retry such data.
+             */
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i Not retrying.\n%s",
+                          ctx->tcp_host, ctx->tcp_port, c->resp.status,
+                          c->resp.payload);
+            out_ret = FLB_ERROR;
+        }
+        else if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                               ctx->tcp_host, ctx->tcp_port, c->resp.status,
