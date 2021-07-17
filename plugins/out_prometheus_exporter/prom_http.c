@@ -80,7 +80,6 @@ static int cleanup_metrics()
 /* destructor callback */
 static void destruct_metrics(void *data)
 {
-    int c = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *metrics_list = (struct mk_list*)data;
