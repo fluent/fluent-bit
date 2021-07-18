@@ -252,6 +252,7 @@ static int elasticsearch_format(struct flb_config *config,
     int index_len = 0;
     size_t s = 0;
     size_t off = 0;
+    size_t off_prev = 0;
     char *p;
     char *es_index;
     char logstash_index[256];
@@ -300,7 +301,7 @@ static int elasticsearch_format(struct flb_config *config,
     }
 
     /* Create the bulk composer */
-    bulk = es_bulk_create();
+    bulk = es_bulk_create(bytes);
     if (!bulk) {
         return -1;
     }
@@ -534,8 +535,10 @@ static int elasticsearch_format(struct flb_config *config,
         }
 
         ret = es_bulk_append(bulk, j_index, index_len,
-                             out_buf, flb_sds_len(out_buf));
+                             out_buf, flb_sds_len(out_buf),
+                             bytes, off_prev);
         flb_sds_destroy(out_buf);
+        off_prev = off;
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
             msgpack_unpacked_destroy(&result);
