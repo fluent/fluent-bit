@@ -97,6 +97,7 @@ struct flb_s3 {
     char *canned_acl;
     char *compression;
     char *content_type;
+    char *log_key;
     int free_endpoint;
     int use_put_object;
     int send_content_md5;
