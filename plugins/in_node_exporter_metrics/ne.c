@@ -26,6 +26,7 @@
 
 #include "ne.h"
 #include "ne_config.h"
+#include "ne_filefd_linux.h"
 
 /* collectors */
 #include "ne_cpu.h"
@@ -54,6 +55,7 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
     ne_loadavg_update(ctx);
     ne_vmstat_update(ctx);
     ne_netdev_update(ctx);
+    ne_filefd_update(ctx);
 
     /* Append the updated metrics */
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
@@ -114,6 +116,7 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_loadavg_init(ctx);
     ne_vmstat_init(ctx);
     ne_netdev_init(ctx);
+    ne_filefd_init(ctx);
 
     update_metrics(in, ctx);
     return 0;

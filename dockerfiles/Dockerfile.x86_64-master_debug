@@ -1,16 +1,8 @@
 FROM debian:buster-slim as builder
-
-# Fluent Bit version
-ENV FLB_MAJOR 1
-ENV FLB_MINOR 9
-ENV FLB_PATCH 0
-ENV FLB_VERSION 1.9.0
-
-ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
-ENV FLB_SOURCE $FLB_TARBALL
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-master/
-
 ENV DEBIAN_FRONTEND noninteractive
+
+ADD . /source
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -28,14 +20,10 @@ RUN apt-get update && \
     libpq-dev \
     postgresql-server-dev-all \
     flex \
-    bison \
-    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && cd tmp/ && mkdir fluent-bit \
-    && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
-    && cd fluent-bit/build/ \
-    && rm -rf /tmp/fluent-bit/build/*
+    bison
 
-WORKDIR /tmp/fluent-bit/build/
+WORKDIR /source/build/
+
 RUN cmake -DFLB_DEBUG=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \

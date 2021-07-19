@@ -32,7 +32,6 @@ static int netdev_hash_set(struct flb_ne *ctx, struct cmt_counter *c,
 {
     int ret;
     int len;
-    flb_sds_t name;
 
     len = strlen(metric_name);
     ret = flb_hash_add(ctx->netdev_ht,
@@ -51,7 +50,6 @@ static struct cmt_counter *netdev_hash_get(struct flb_ne *ctx,
     int ret;
     int len;
     size_t out_size;
-    flb_sds_t name;
     struct cmt_counter *c;
 
     len = strlen(metric_name);
@@ -213,10 +211,8 @@ static int netdev_update(struct flb_ne *ctx)
     int len;
     int pos;
     int rx_len;
-    int tx_len;
     uint64_t ts;
     double val;
-    char tmp[256];
     char metric_name[256];
     char *type;
     struct mk_list *head;
@@ -266,7 +262,6 @@ static int netdev_update(struct flb_ne *ctx)
 
     /* split tx properties */
     flb_slist_split_string(&tx_list, tx_header->str, ' ', -1);
-    tx_len = mk_list_size(&tx_list);
 
     n = 0;
     ts = cmt_time_now();
@@ -319,7 +314,6 @@ static int netdev_update(struct flb_ne *ctx)
                 pos = (n - 1) - rx_len;
                 prop_name = flb_slist_entry_get(&tx_list, pos);
                 type = "transmit";
-
             }
 
             /* metric name */

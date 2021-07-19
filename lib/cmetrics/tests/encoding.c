@@ -21,6 +21,7 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_influx.h>
@@ -397,6 +398,60 @@ void test_cmt_to_msgpack_labels()
     cmt_encode_msgpack_destroy(mp2_buf);
 }
 
+void test_prometheus_remote_write()
+{
+    int ret;
+    uint64_t ts;
+    cmt_sds_t payload;
+    struct cmt *cmt;
+    struct cmt_counter *c;
+    FILE *sample_file;
+
+    cmt_initialize();
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    c = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+                           2, (char *[]) {"host", "app"});
+
+    ts = 0;
+    ret = cmt_counter_inc(c, ts, 0, NULL);
+    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics2"});
+
+    /* append static labels */
+    cmt_label_add(cmt, "dev", "Calyptia");
+    cmt_label_add(cmt, "lang", "C");
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    TEST_CHECK(NULL != payload);
+
+    if (payload == NULL) {
+        cmt_destroy(cmt);
+
+        return;
+    }
+
+    printf("\n\nDumping remote write payload to payload.bin, in order to test it \
+we need to compress it using snappys scmd :\n\
+scmd -c payload.bin payload.snp\n\n\
+and then send it using curl :\n\
+curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf' \
+-H 'X-Prometheus-Remote-Write-Version: 0.1.0' -H 'User-Agent: metrics-worker' \
+--data-binary '@payload.snp'\n\n");
+
+    sample_file = fopen("payload.bin", "wb+");
+
+    fwrite(payload, 1, cmt_sds_len(payload), sample_file);
+
+    fclose(sample_file);
+
+    cmt_encode_prometheus_remote_write_destroy(payload);
+
+    cmt_destroy(cmt);
+}
+
 void test_prometheus()
 {
     uint64_t ts;
@@ -545,6 +600,7 @@ void test_influx()
 
 TEST_LIST = {
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
+    {"prometheus_remote_write",        test_prometheus_remote_write},
     {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
     {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},
