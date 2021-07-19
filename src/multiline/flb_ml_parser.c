@@ -202,6 +202,17 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     ins->ml_parser = parser;
     mk_list_init(&ins->streams);
 
+    /* Copy parent configuration */
+    if (parser->key_content) {
+        ins->key_content = flb_sds_create(parser->key_content);
+    }
+    if (parser->key_pattern) {
+        ins->key_pattern = flb_sds_create(parser->key_pattern);
+    }
+    if (parser->key_group) {
+        ins->key_group = flb_sds_create(parser->key_group);
+    }
+
     /* Append this multiline parser instance to the active multiline group */
     ret = flb_ml_group_add_parser(ml, ins);
     if (ret != 0) {
@@ -220,6 +231,34 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     }
 
     return ins;
+}
+
+/* Override a fixed parser property for the instance only*/
+int flb_ml_parser_instance_set(struct flb_ml_parser_ins *p, char *prop, char *val)
+{
+    if (strcasecmp(prop, "key_content") == 0) {
+        if (p->key_content) {
+            flb_sds_destroy(p->key_content);
+        }
+        p->key_content = flb_sds_create(val);
+    }
+    else if (strcasecmp(prop, "key_pattern") == 0) {
+        if (p->key_pattern) {
+            flb_sds_destroy(p->key_pattern);
+        }
+        p->key_pattern = flb_sds_create(val);
+    }
+    else if (strcasecmp(prop, "key_group") == 0) {
+        if (p->key_group) {
+            flb_sds_destroy(p->key_group);
+        }
+        p->key_group = flb_sds_create(val);
+    }
+    else {
+        return -1;
+    }
+
+    return 0;
 }
 
 int flb_ml_parser_destroy(struct flb_ml_parser *ml_parser)
@@ -269,6 +308,16 @@ int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins)
     mk_list_foreach_safe(head, tmp, &ins->streams) {
         stream = mk_list_entry(head, struct flb_ml_stream, _head);
         flb_ml_stream_destroy(stream);
+    }
+
+    if (ins->key_content) {
+        flb_sds_destroy(ins->key_content);
+    }
+    if (ins->key_pattern) {
+        flb_sds_destroy(ins->key_pattern);
+    }
+    if (ins->key_group) {
+        flb_sds_destroy(ins->key_group);
     }
 
     flb_free(ins);
