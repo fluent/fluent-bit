@@ -249,10 +249,20 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         }
 
         /*
-         * Empty line (just \n): we skip empty lines only if we are NOT using
-         * multiline core mode.
+         * Empty line (just breakline)
+         * ---------------------------
+         * [NOTE] with the new Multiline core feature and Multiline Filter on
+         * Fluent Bit v1.8.2, there are a couple of cases where stack traces
+         * or multi line patterns expects an empty line (meaning only the
+         * breakline), skipping empty lines on this plugin will break that
+         * functionality.
+         *
+         * We are introducing 'skip_empty_lines=off' configuration
+         * property to revert this behavior if some user is affected by
+         * this change.
          */
-        if (len == 0 && !ctx->ml_ctx) {
+
+        if (len == 0 && ctx->skip_empty_lines) {
             data++;
             processed_bytes++;
             continue;
