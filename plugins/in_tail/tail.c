@@ -573,6 +573,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
      "exit Fluent Bit when reaching EOF on a monitored file."
     },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "skip_empty_lines", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, skip_empty_lines),
+     "Allows to skip empty lines."
+    },
+
 #ifdef FLB_HAVE_INOTIFY
     {
      FLB_CONFIG_MAP_BOOL, "inotify_watcher", "true",

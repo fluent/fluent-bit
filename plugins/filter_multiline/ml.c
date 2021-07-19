@@ -174,6 +174,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         ret = flb_ml_append_object(ctx->m, ctx->stream_id, &tm, obj);
+
         if (ret != 0) {
             flb_plg_debug(ctx->ins, "could not append object");
         }
