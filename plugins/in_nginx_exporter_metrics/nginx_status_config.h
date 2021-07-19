@@ -21,10 +21,10 @@
 #ifndef FLB_IN_NS_CONFIG_H
 #define FLB_IN_NS_CONFIG_H
 
-#include "nginx_stub_status.h"
+#include "nginx_status.h"
 
 struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
                                         struct flb_config *config);
-int nss_config_destroy(struct flb_in_nss_config *config);
+int nss_config_destroy(struct nginx_ctx *config);
 
 #endif

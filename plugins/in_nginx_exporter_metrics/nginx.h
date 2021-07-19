@@ -30,26 +30,34 @@
 #define MIN_BUF_SIZE                2048
 #define DEFAULT_FIELD_NAME          "message"
 
-struct flb_in_nss_config
+struct nginx_ctx
 {
     int coll_id;                    /* collector id */
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
     struct flb_upstream *upstream;
     struct cmt *cmt;
-    struct cmt_counter *connections;
-    struct cmt_counter *connection_totals;
+    struct cmt_counter
+        *connections_accepted, 
+        *connections_handled,
+        *connections_total;
+    struct cmt_gauge
+        *connection_active,
+        *connections_active,
+        *connections_reading,
+        *connections_writing,
+        *connections_waiting;
 };
 
-struct flb_in_nss_status
+struct nginx_status
 {
-    uint32_t active;
-    uint32_t reading;
-    uint32_t writing;
-    uint32_t waiting;
-    uint32_t accepts;
-    uint32_t handled;
-    uint32_t requests;
+    uint64_t active;
+    uint64_t reading;
+    uint64_t writing;
+    uint64_t waiting;
+    uint64_t accepts;
+    uint64_t handled;
+    uint64_t requests;
 };
 
 #endif
