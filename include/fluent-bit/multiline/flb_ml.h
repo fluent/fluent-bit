@@ -200,6 +200,16 @@ struct flb_ml_parser_ins {
 
     void *cb_data;                             /* opaque data */
 
+
+    /*
+     * Duplicate original parser definition properties for this instance. There
+     * are cases where the caller wants an instance of a certain multiline
+     * parser but with a custom value for key_content, key_pattern or key_group.
+     */
+    flb_sds_t key_content;
+    flb_sds_t key_pattern;
+    flb_sds_t key_group;
+
     /*
      * last stream_id and last_stream_group: keeping a reference of the last
      * insertion path is important to determinate when should we flush our
