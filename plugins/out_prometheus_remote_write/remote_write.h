@@ -50,6 +50,9 @@ struct prometheus_remote_write_context {
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
+    /* Arbitrary HTTP headers */
+    struct mk_list *headers;
+
     /* instance context */
     struct flb_output_instance *ins;
 };

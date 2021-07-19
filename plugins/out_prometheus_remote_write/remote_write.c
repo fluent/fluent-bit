@@ -40,6 +40,10 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *key = NULL;
+    struct flb_slist_entry *val = NULL;
 
     /* Get upstream context and connection */
     u = ctx->u;
@@ -101,6 +105,15 @@ static int http_post(struct prometheus_remote_write_context *ctx,
     }
 
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+
+    flb_config_map_foreach(head, mv, ctx->headers) {
+        key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        val = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        flb_http_add_header(c,
+                            key->str, flb_sds_len(key->str),
+                            val->str, flb_sds_len(val->str));
+    }
 
     ret = flb_http_do(c, &b_sent);
     if (ret == 0) {
@@ -260,6 +273,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct prometheus_remote_write_context, http_passwd),
      "Set HTTP auth password"
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_1, "header", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prometheus_remote_write_context, headers),
+     "Add a HTTP header key/value pair. Multiple headers can be set"
     },
     {
      FLB_CONFIG_MAP_STR, "uri", NULL,
