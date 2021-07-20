@@ -60,7 +60,7 @@ static int nginx_parse_stub_status(flb_sds_t buf, struct nginx_status *status)
 
 
     llines = flb_utils_split(buf, '\n', 4);
-    if (lines == NULL) {
+    if (llines == NULL) {
         return -1;
     }
 
@@ -144,6 +144,11 @@ static int nginx_collect(struct flb_input_instance *ins,
 
     if (client->resp.status != 200) {
         flb_plg_error(ins, "http status code error: %d", client->resp.status);
+        goto http_error;
+    }
+
+    if (client->resp.payload_size <= 0) {
+        flb_plg_error(ins, "empty response");
         goto http_error;
     }
 
