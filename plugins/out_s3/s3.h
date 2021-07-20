@@ -121,6 +121,7 @@ struct flb_s3 {
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
+    struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
 
     /*
      * used to track that unset buffers were found on startup that have not
@@ -139,6 +140,11 @@ struct flb_s3 {
     int timer_created;
     int timer_ms;
     int key_fmt_has_uuid;
+
+    uint64_t seq_index;
+    int key_fmt_has_seq_index;
+    flb_sds_t metadata_dir;
+    flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
 };
