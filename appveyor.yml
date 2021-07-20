@@ -9,20 +9,7 @@ platform:
 environment:
   vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community'
   winflexbison: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
-
-for:
--
-  platform:
-    only:
-      - Win32
-  environment:
-    PATH: '%PATH%;C:\WinFlexBison;C:\Program Files (x86)\PostgreSQL\9.6\bin'
--
-  platform:
-    only:
-      - x64
-  environment:
-    PATH: '%PATH%;C:\WinFlexBison;C:\Program Files\PostgreSQL\9.6\bin'
+  PATH: '%PATH%;C:\WinFlexBison;C:\Program Files (x86)\PostgreSQL\9.6\bin;C:\Program Files\PostgreSQL\9.6\bin'
 
 configuration:
   - Release
@@ -33,14 +20,18 @@ skip_commits:
     - '.github/**'
 
 install:
-  - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
-  - ps: Expand-Archive winflexbison.zip -Destination /WinFlexBison
-  - ps: Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
-  - ps: Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
-  - ps: Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-9.6.22-1-windows-binaries.zip" -Outfile /pgsql.zip
-  - ps: Expand-Archive -Path /pgsql.zip -DestinationPath /
-  - ps: New-Item -ItemType directory -Path "C:\Program Files (x86)\PostgreSQL"
-  - ps: Move-Item -Path /pgsql -Destination "C:\Program Files (x86)\PostgreSQL\9.6"
+  - ps: |
+      Invoke-WebRequest -O winflexbison.zip $env:winflexbison
+      Expand-Archive winflexbison.zip -Destination /WinFlexBison
+      Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
+      Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
+  - ps: |
+      if (![Environment]::Is64BitOperatingSystem) {
+        Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-9.6.22-1-windows-binaries.zip" -Outfile /pgsql.zip
+        Expand-Archive -Path /pgsql.zip -DestinationPath /
+        New-Item -ItemType directory -Path "C:\Program Files (x86)\PostgreSQL"
+        Move-Item -Path /pgsql -Destination "C:\Program Files (x86)\PostgreSQL\9.6"
+      }
 
 before_build:
   - git clone --depth=1 https://github.com/calyptia/fluent-bit-ci.git ci
