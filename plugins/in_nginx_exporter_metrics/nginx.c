@@ -262,8 +262,8 @@ static int nginx_init(struct flb_input_instance *ins,
         return -1;
     }
     
-    ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http_requests", 
-                                                "total", "Total http requests", 0, NULL);
+    ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http", 
+                                                "requests_total", "Total http requests", 0, NULL);
     if (ctx->connections_total == NULL) {
         return -1;
     }
