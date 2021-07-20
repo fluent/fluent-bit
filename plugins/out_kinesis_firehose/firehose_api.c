@@ -135,6 +135,47 @@ static int end_put_payload(struct flb_firehose *ctx, struct flush *buf,
     return 0;
 }
 
+inline static size_t format_timestamp(struct flb_firehose *ctx,
+                                      char *time_key_ptr,
+                                      size_t tmp_size,
+                                      struct tm *time_stamp,
+                                      struct flb_time *tms) {
+    size_t total_len = tmp_size;
+    size_t len;
+    int sn_len;
+
+    if (ctx->time_key_format_with_nanos) {
+        if (strlen(ctx->time_key_format_before_nanos) > 0) {
+            len = strftime(time_key_ptr, tmp_size,
+                           ctx->time_key_format_before_nanos, time_stamp);
+            if (len <= 0) {
+                return 0;
+            }
+            tmp_size -= len;
+            time_key_ptr += len;
+        }
+
+        sn_len = snprintf(time_key_ptr, tmp_size, "%09li", tms->tm.tv_nsec);
+        if (sn_len < 0 || sn_len >= tmp_size) {
+            return 0;
+        }
+        tmp_size -= sn_len;
+        time_key_ptr += sn_len;
+
+        if (strlen(ctx->time_key_format_after_nanos) > 0) {
+            len = strftime(time_key_ptr, tmp_size,
+                           ctx->time_key_format_after_nanos, time_stamp);
+            if (len <= 0) {
+                return 0;
+            }
+            tmp_size -= len;
+        }
+
+        return total_len - tmp_size;
+    }
+
+    return strftime(time_key_ptr, tmp_size, ctx->time_key_format, time_stamp);
+}
 
 /*
  * Processes the msgpack object
@@ -163,8 +204,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
     ret = flb_msgpack_to_json(tmp_buf_ptr,
-                                  buf->tmp_buf_size - buf->tmp_buf_offset,
-                                  obj);
+                              buf->tmp_buf_size - buf->tmp_buf_offset, obj);
     if (ret <= 0) {
         /*
          * negative value means failure to write to buffer,
@@ -230,7 +270,8 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
         time_key_ptr += 3;
         tmp_size = buf->tmp_buf_size - buf->tmp_buf_offset;
         tmp_size -= (time_key_ptr - tmp_buf_ptr);
-        len = strftime(time_key_ptr, tmp_size, ctx->time_key_format, &time_stamp);
+
+        len = format_timestamp(ctx, time_key_ptr, tmp_size, &time_stamp, tms);
         if (len <= 0) {
             /* ran out of space - should not happen because of check above */
             return 1;

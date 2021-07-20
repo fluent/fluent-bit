@@ -50,6 +50,31 @@ static struct flb_aws_header content_type_header = {
     .val_len = 26,
 };
 
+inline static void init_time_key_format(struct flb_firehose *ctx, const char *fmt)
+{
+    char *fmt_tmp = strdup(fmt);
+    char *fmt_nanos = strstr(fmt_tmp, "%L");
+
+    if (fmt_nanos) {
+        /*
+         * replace %L with a null terminator so we can strdup the format before
+         * %L, then advance the pointer to strdup the format that comes after
+         */
+        fmt_nanos[0] = '\0';
+        fmt_nanos += 2;
+        ctx->time_key_format_before_nanos = strdup(fmt_tmp);
+        ctx->time_key_format_after_nanos = strdup(fmt_nanos);
+        ctx->time_key_format_with_nanos = FLB_TRUE;
+    } else {
+        ctx->time_key_format_with_nanos = FLB_FALSE;
+    }
+
+    flb_free(fmt_tmp);
+
+    /* preserve the original format string given in configuration */
+    ctx->time_key_format = fmt;
+}
+
 static int cb_firehose_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
 {
@@ -90,8 +115,9 @@ static int cb_firehose_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("time_key_format", ins);
     if (tmp) {
-        ctx->time_key_format = tmp;
-    } else {
+        init_time_key_format(ctx, tmp);
+    }
+    else {
         ctx->time_key_format = DEFAULT_TIME_KEY_FORMAT;
     }
 
