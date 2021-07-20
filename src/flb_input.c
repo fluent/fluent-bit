@@ -350,7 +350,7 @@ int flb_input_set_property(struct flb_input_instance *ins,
     }
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
         /* If the input generate metrics, always use memory storage (for now) */
-        if (ins->event_type == FLB_INPUT_LOGS) {
+        if (flb_input_event_type_is_metric(ins)) {
             ins->storage_type = CIO_STORE_MEM;
         }
         else {
