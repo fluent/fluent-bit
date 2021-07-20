@@ -42,8 +42,6 @@
 
 static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 {
-    int ret;
-
     /* Update our metrics */
     ne_cpu_update(ctx);
     ne_cpufreq_update(ctx);
@@ -56,12 +54,6 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
     ne_vmstat_update(ctx);
     ne_netdev_update(ctx);
     ne_filefd_update(ctx);
-
-    /* Append the updated metrics */
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
 }
 
 /*
@@ -71,9 +63,17 @@ static void update_metrics(struct flb_input_instance *ins, struct flb_ne *ctx)
 static int cb_ne_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
+    int ret;
     struct flb_ne *ctx = in_context;
 
     update_metrics(ins, ctx);
+
+    /* Append the updated metrics */
+    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
+    }
+
     return 0;
 }
 
@@ -118,7 +118,6 @@ static int in_ne_init(struct flb_input_instance *in,
     ne_netdev_init(ctx);
     ne_filefd_init(ctx);
 
-    update_metrics(in, ctx);
     return 0;
 }
 
