@@ -114,25 +114,25 @@ static int nginx_collect(struct flb_input_instance *ins,
 
     u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
-        flb_error("[nginx_stub_status] upstream connection initialization error");
+        flb_plg_error("upstream connection initialization error");
         goto conn_error;
     }
 
     client = flb_http_client(u_conn, FLB_HTTP_GET, "/status", 
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
-        flb_error("[nginx_stub_status] unable to create http client");
+        flb_plg_error("unable to create http client");
         goto client_error;
     }
 
     ret = flb_http_do(client, &b_sent);
     if (ret != 0) {
-        flb_error("[nginx_stub_status] http do error");
+        flb_plg_error("http do error");
         goto http_error;
     }
 
     if (client->resp.status != 200) {
-        flb_error("[nginx_stub_status] http status code error: %d", client->resp.status);
+        flb_plg_error("http status code error: %d", client->resp.status);
         goto http_error;
     }
 
@@ -141,7 +141,7 @@ static int nginx_collect(struct flb_input_instance *ins,
                               client->resp.payload_size);
     /* work directly on the data here ... */
     if (nginx_parse_stub_status(data, &status) == -1) {
-        flb_error("[nginx_stub_status] unable to parse stub status response");
+        flb_plg_error("unable to parse stub status response");
         goto status_error;
     }
 
@@ -217,7 +217,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
                                  FLB_IO_TCP, NULL);
     if (!upstream) {
-        flb_error("[nginx_stub_status] upstream initialization error");
+        flb_plg_error("upstream initialization error");
         return NULL;
     }
     ctx->upstream = upstream;
