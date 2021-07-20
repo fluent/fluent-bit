@@ -109,6 +109,7 @@ static int nginx_collect(struct flb_input_instance *ins,
 
     size_t b_sent;
     int ret = -1;
+    int rc = -1;
     uint64_t ts = cmt_time_now();
     
 
@@ -144,6 +145,8 @@ static int nginx_collect(struct flb_input_instance *ins,
         flb_plg_error(ins, "unable to parse stub status response");
         goto status_error;
     }
+    
+    rc = 0;
 
     cmt_counter_set(ctx->connections_accepted, ts, (double)status.accepts, 0, NULL);
     cmt_counter_set(ctx->connections_handled, ts, (double)status.handled, 0, NULL);
@@ -161,11 +164,11 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    if (ret == 0 && ctx->is_up == FLB_FALSE) {
+    if (rc == 0 && ctx->is_up == FLB_FALSE) {
         cmt_gauge_set(ctx->connection_up, ts, 1.0, 0, NULL);
         ctx->is_up = FLB_TRUE;
     }
-    else if (ret != 0 && ctx->is_up == FLB_TRUE) {
+    else if (rc != 0 && ctx->is_up == FLB_TRUE) {
         cmt_gauge_set(ctx->connection_up, ts, 0.0, 0, NULL);
         ctx->is_up = FLB_FALSE;
     }
@@ -173,7 +176,7 @@ conn_error:
     if (ret != 0) {
         flb_plg_error(ins, "could not append metrics");
     }
-    return ret;
+    return rc;
 }
 
 /**
