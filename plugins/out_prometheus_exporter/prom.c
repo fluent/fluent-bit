@@ -95,7 +95,13 @@ static int cb_prom_init(struct flb_output_instance *ins,
                                         ctx->listen, ctx->tcp_port, config);
     if (!ctx->http) {
         flb_plg_error(ctx->ins, "could not initialize HTTP server, aborting");
-        flb_free(ctx);
+        return -1;
+    }
+
+    /* Hash table for metrics */
+    ctx->ht_metrics = flb_hash_create(FLB_HASH_EVICT_NONE, 32, 0);
+    if (!ctx->ht_metrics) {
+        flb_plg_error(ctx->ins, "could not initialize hash table for metrics");
         return -1;
     }
 
@@ -121,6 +127,47 @@ static void append_labels(struct prom_exporter *ctx, struct cmt *cmt)
     }
 }
 
+static int hash_store(struct prom_exporter *ctx, struct flb_input_instance *ins,
+                      cmt_sds_t buf)
+{
+    int ret;
+    int len;
+
+    len = strlen(ins->name);
+
+    /* store/override the content into the hash table */
+    ret = flb_hash_add(ctx->ht_metrics, ins->name, len,
+                       buf, cmt_sds_len(buf));
+    if (ret < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static flb_sds_t hash_format_metrics(struct prom_exporter *ctx)
+{
+    int size = 2048;
+    flb_sds_t buf;
+
+    struct mk_list *head;
+    struct flb_hash_entry *entry;
+
+
+    buf = flb_sds_create_size(size);
+    if (!buf) {
+        return NULL;
+    }
+
+    /* Take every hash entry and compose one buffer with the whole content */
+    mk_list_foreach(head, &ctx->ht_metrics->entries) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head_parent);
+        flb_sds_cat_safe(&buf, entry->val, entry->val_size);
+    }
+
+    return buf;
+}
+
 static void cb_prom_flush(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           struct flb_input_instance *ins, void *out_context,
@@ -128,10 +175,16 @@ static void cb_prom_flush(const void *data, size_t bytes,
 {
     int ret;
     size_t off = 0;
+    flb_sds_t metrics;
     cmt_sds_t text;
     struct cmt *cmt;
     struct prom_exporter *ctx = out_context;
 
+    /*
+     * A new set of metrics has arrived, perform decoding, apply labels,
+     * convert to Prometheus text format and store the output in the
+     * hash table for metrics.
+     */
     ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -148,10 +201,29 @@ static void cb_prom_flush(const void *data, size_t bytes,
     }
     cmt_destroy(cmt);
 
-    ret = prom_http_server_mq_push_metrics(ctx->http,
-                                           (char *) text,
-                                           flb_sds_len(text));
+    /* register payload of metrics / override previous one */
+    ret = hash_store(ctx, ins, text);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not store metrics coming from: %s",
+                      flb_input_name(ins));
+        cmt_encode_prometheus_destroy(text);
+        cmt_destroy(cmt);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
     cmt_encode_prometheus_destroy(text);
+
+    /* retrieve a full copy of all metrics */
+    metrics = hash_format_metrics(ctx);
+    if (!metrics) {
+        flb_plg_error(ctx->ins, "could not retrieve metrics");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    /* push new (full) metrics payload */
+    ret = prom_http_server_mq_push_metrics(ctx->http,
+                                           (char *) metrics,
+                                           flb_sds_len(metrics));
+    flb_sds_destroy(metrics);
 
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -164,8 +236,15 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 {
     struct prom_exporter *ctx = data;
 
-    flb_kv_release(&ctx->kv_labels);
+    if (!ctx) {
+        return 0;
+    }
 
+    if (ctx->ht_metrics) {
+        flb_hash_destroy(ctx->ht_metrics);
+    }
+
+    flb_kv_release(&ctx->kv_labels);
     prom_http_server_stop(ctx->http);
     prom_http_server_destroy(ctx->http);
     flb_free(ctx);
