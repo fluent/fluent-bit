@@ -49,7 +49,7 @@ static int nginx_parse_stub_status(flb_sds_t buf, struct nginx_status *status)
 
 
     llines = flb_utils_split(buf, '\n', 4);
-    if (lines == NULL) {
+    if (llines == NULL) {
         return -1;
     }
 
