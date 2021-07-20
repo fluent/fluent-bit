@@ -145,9 +145,9 @@ static int nginx_collect(struct flb_input_instance *ins,
         goto status_error;
     }
 
-    cmt_counter_set(ctx->connections_accepted, ts, status.accepts, 0, NULL);
-    cmt_counter_set(ctx->connections_handled, ts, status.handled, 0, NULL);
-    cmt_counter_set(ctx->connections_total, ts, status.requests, 0, NULL);
+    cmt_counter_set(ctx->connections_accepted, ts, (double)status.accepts, 0, NULL);
+    cmt_counter_set(ctx->connections_handled, ts, (double)status.handled, 0, NULL);
+    cmt_counter_set(ctx->connections_total, ts, (double)status.requests, 0, NULL);
     
     cmt_gauge_set(ctx->connections_active, ts, (double)status.active, 0, NULL);
     cmt_gauge_set(ctx->connections_reading, ts, (double)status.reading, 0, NULL);
