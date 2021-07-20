@@ -215,7 +215,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
     }
     
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                 FLB_IO_TCP, NULL);
+                                    FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_plg_error("upstream initialization error");
         return NULL;
@@ -247,43 +247,45 @@ static int nginx_init(struct flb_input_instance *ins,
 
     // https://github.com/nginxinc/nginx-prometheus-exporter#metrics-for-nginx-oss
     ctx->connections_accepted = cmt_counter_create(ctx->cmt, "nginx", "connections", 
-        "accepted", "Accepted client connections", 0, NULL);
+                                                    "accepted",
+                                                    "Accepted client connections", 0, NULL);
     if (ctx->connections_accepted == NULL) {
         return -1;
     }
     
     ctx->connections_handled = cmt_counter_create(ctx->cmt, "nginx", "connections", 
-        "handled", "Handled client connections", 0, NULL);
+                                                    "handled", 
+                                                    "Handled client connections", 0, NULL);
     if (ctx->connections_handled == NULL) {
         return -1;
     }
     
     ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http_requests", 
-        "total", "Total http requests", 0, NULL);
+                                                "total", "Total http requests", 0, NULL);
     if (ctx->connections_total == NULL) {
         return -1;
     }
     
     ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-        "active", "active client connections", 0, NULL);
+                                                "active", "active client connections", 0, NULL);
     if (ctx->connections_active == NULL) {
         return -1;
     }
     
     ctx->connections_reading = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-        "reading", "reading client connections", 0, NULL);
+                                                "reading", "reading client connections", 0, NULL);
     if (ctx->connections_reading == NULL) {
         return -1;
     }
     
     ctx->connections_writing = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-        "writing", "writing client connections", 0, NULL);
+                                                "writing", "writing client connections", 0, NULL);
     if (ctx->connections_writing == NULL) {
         return -1;
     }
     
     ctx->connections_waiting = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-        "waiting", "waiting client connections", 0, NULL);
+                                                "waiting", "waiting client connections", 0, NULL);
     if (ctx->connections_waiting == NULL) {
         return -1;
     }
@@ -291,8 +293,8 @@ static int nginx_init(struct flb_input_instance *ins,
     // when it fails keep the other values... but set JUST this value...
     // if they depend on the gauges and dont check active... MEH...
     ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "connections", "up", 
-        "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one", 
-        0, NULL);
+                                            "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one", 
+                                            0, NULL);
     
     /* Set the context */
     flb_input_set_context(ins, ctx);
