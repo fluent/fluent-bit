@@ -22,11 +22,10 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_compat.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
 #include <msgpack.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
 #include "nginx.h"
 
