@@ -152,9 +152,11 @@ static int nginx_collect(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    // look at using it directly...
-    data = flb_sds_create_len(client->resp.payload,
-                              client->resp.payload_size);
+    // copy and NULL terminate the payload
+    data = flb_sds_create_size(client->resp.payload_size+1);
+    data[client->resp.payload_size] = NULL;
+    memcpy(data, client->resp.payload, client->resp.payload_size);
+    
     /* work directly on the data here ... */
     if (nginx_parse_stub_status(data, &status) == -1) {
         flb_plg_error(ins, "unable to parse stub status response");
