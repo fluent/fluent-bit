@@ -36,7 +36,18 @@
  *     Active connections: 1 
  *     server accepts handled requests
  *      10 10 10 
- *     Reading: 0 Writing: 1 Waiting: 0 
+ *     Reading: 0 Writing: 1 Waiting: 0
+ *
+ * Would result in:
+ *    struct nginx_status = {
+ *        active = 1,
+ *        reading = 0,
+ *        writing = 1,
+ *        waiting = 0
+ *        accepts = 10,
+ *        handled = 10,
+ *        requests = 10
+ *}
  */
 static int nginx_parse_stub_status(flb_sds_t buf, struct nginx_status *status)
 {
@@ -93,8 +104,7 @@ static int nginx_collect(struct flb_input_instance *ins,
  *
  * @param ins           Pointer to flb_input_instance
  * @param config        Pointer to flb_config
- * @param in_context    void Pointer used to cast to
- *                      flb_in_de_config
+ * @param in_context    void Pointer used to cast to nginx_ctx
  *
  * @return int Always returns success
  */
