@@ -9,7 +9,20 @@ platform:
 environment:
   vspath: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community'
   winflexbison: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
-  PATH: '%PATH%;C:\WinFlexBison'
+
+for:
+-
+  platform:
+    only:
+      - Win32
+  environment:
+    PATH: '%PATH%;C:\WinFlexBison;C:\Program Files (x86)\PostgreSQL\9.6\bin'
+-
+  platform:
+    only:
+      - x64
+  environment:
+    PATH: '%PATH%;C:\WinFlexBison;C:\Program Files\PostgreSQL\9.6\bin'
 
 configuration:
   - Release
