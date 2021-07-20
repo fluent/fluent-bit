@@ -23,6 +23,7 @@
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
@@ -707,7 +708,35 @@ static int append_unpacked_gauge_to_metrics_context(struct cmt *context,
 
     map->opts = &gauge->opts;
 
-    mk_list_add(&gauge->_head, &context->counters);
+    mk_list_add(&gauge->_head, &context->gauges);
+
+    return CMT_DECODE_MSGPACK_SUCCESS;
+}
+
+static int append_unpacked_untyped_to_metrics_context(struct cmt *context,
+                                                      struct cmt_map *map)
+{
+    struct cmt_untyped *untyped;
+
+    if (NULL == context ||
+        NULL == map     ) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    untyped = calloc(1, sizeof(struct cmt_untyped));
+    if (NULL == untyped) {
+        return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+    }
+
+    untyped->map = map;
+
+    memcpy(&untyped->opts, map->opts, sizeof(struct cmt_opts));
+
+    free(map->opts);
+
+    map->opts = &untyped->opts;
+
+    mk_list_add(&untyped->_head, &context->untypeds);
 
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
@@ -736,6 +765,9 @@ static int unpack_basic_type_entry(mpack_reader_t *reader, size_t index, void *c
         }
         else if (CMT_HISTOGRAM == map->type) {
             // result = append_unpacked_histogram_to_metrics_context(cmt, map);
+        }
+        else if (CMT_UNTYPED == map->type) {
+            result = append_unpacked_untyped_to_metrics_context(cmt, map);
         }
     }
 

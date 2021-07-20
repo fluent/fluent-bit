@@ -1242,7 +1242,17 @@ static void cb_loki_flush(const void *data, size_t bytes,
          * - 205: Reset content
          *
          */
-        if (c->resp.status < 200 || c->resp.status > 205) {
+        if (c->resp.status == 400) {
+            /*
+             * Loki will return 400 if incoming data is out of order.
+             * We should not retry such data.
+             */
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i Not retrying.\n%s",
+                          ctx->tcp_host, ctx->tcp_port, c->resp.status,
+                          c->resp.payload);
+            out_ret = FLB_ERROR;
+        }
+        else if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                               ctx->tcp_host, ctx->tcp_port, c->resp.status,
@@ -1363,6 +1373,29 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+/* for testing */
+static int cb_loki_format_test(struct flb_config *config,
+                               struct flb_input_instance *ins,
+                               void *plugin_context,
+                               void *flush_ctx,
+                               const char *tag, int tag_len,
+                               const void *data, size_t bytes,
+                               void **out_data, size_t *out_size)
+{
+    flb_sds_t payload = NULL;
+    struct flb_loki *ctx = plugin_context;
+
+    payload = loki_compose_payload(ctx, (char *) tag, tag_len, data, bytes);
+    if (payload == NULL) {
+        return -1;
+    }
+
+    *out_data = payload;
+    *out_size = flb_sds_len(payload);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_output_plugin out_loki_plugin = {
     .name        = "loki",
@@ -1371,5 +1404,9 @@ struct flb_output_plugin out_loki_plugin = {
     .cb_flush    = cb_loki_flush,
     .cb_exit     = cb_loki_exit,
     .config_map  = config_map,
+
+    /* for testing */
+    .test_formatter.callback = cb_loki_format_test,
+
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_OUTPUT_NO_MULTIPLEX,
 };
