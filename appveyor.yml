@@ -44,9 +44,6 @@ build_script:
   - cd build
   - cpack
 
-on_finish:
-  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
-
 artifacts:
   - path: build/td-agent-bit-*.exe
     name: td-agent-bit
