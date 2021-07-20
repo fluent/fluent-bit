@@ -245,7 +245,9 @@ static int nginx_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    // https://github.com/nginxinc/nginx-prometheus-exporter#metrics-for-nginx-oss
+    /* These metrics follow the same format as those define here:
+     * https://github.com/nginxinc/nginx-prometheus-exporter#metrics-for-nginx-oss 
+     */
     ctx->connections_accepted = cmt_counter_create(ctx->cmt, "nginx", "connections", 
                                                     "accepted",
                                                     "Accepted client connections", 0, NULL);
@@ -290,13 +292,10 @@ static int nginx_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    // when it fails keep the other values... but set JUST this value...
-    // if they depend on the gauges and dont check active... MEH...
     ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "connections", "up", 
                                             "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one", 
                                             0, NULL);
     
-    /* Set the context */
     flb_input_set_context(ins, ctx);
 
     ctx->coll_id = flb_input_set_collector_time(ins, 
