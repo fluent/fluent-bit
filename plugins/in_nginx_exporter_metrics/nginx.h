@@ -18,8 +18,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_NS_H
-#define FLB_IN_NS_H
+#ifndef FLB_IN_NGINX_H
+#define FLB_IN_NGINX_H
 
 #include <msgpack.h>
 #include <fluent-bit/flb_input.h>

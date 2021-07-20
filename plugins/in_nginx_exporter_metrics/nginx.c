@@ -182,7 +182,7 @@ conn_error:
  * @param ins     Pointer to flb_input_instance
  * @param config  Pointer to flb_config
  *
- * @return struct flb_in_nss_config* Pointer to the plugin's
+ * @return struct nginx_ctx_init* Pointer to the plugin's
  *         structure on success, NULL on failure.
  */
 struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
@@ -308,7 +308,7 @@ static int nginx_init(struct flb_input_instance *ins,
 /**
  * Function to destroy nginx_stub_status plugin.
  *
- * @param ctx  Pointer to flb_in_nss_config
+ * @param ctx  Pointer to nginx_ctx
  *
  * @return int 0
  */
