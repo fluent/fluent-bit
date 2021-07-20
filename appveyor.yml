@@ -26,7 +26,7 @@ install:
       Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
       Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
   - ps: |
-      if (![Environment]::Is64BitOperatingSystem) {
+      if ($env:PLATFORM -eq "Win32") {
         Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-9.6.22-1-windows-binaries.zip" -Outfile /pgsql.zip
         Expand-Archive -Path /pgsql.zip -DestinationPath /
         New-Item -ItemType directory -Path "C:\Program Files (x86)\PostgreSQL"
