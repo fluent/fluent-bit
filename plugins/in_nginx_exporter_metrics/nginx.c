@@ -155,11 +155,6 @@ static int nginx_collect(struct flb_input_instance *ins,
     cmt_gauge_set(ctx->connections_writing, ts, (double)status.writing, 0, NULL);
     cmt_gauge_set(ctx->connections_waiting, ts, (double)status.waiting, 0, NULL);
 
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-
 status_error:
     flb_sds_destroy(data);
 http_error:
@@ -167,6 +162,17 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
+    if (ret == 0 && ctx->is_up == false) {
+        cmt_gauge_set(ctx->connection_up, ts, 1.0, 0, NULL);
+        ctx->is_up = true;
+    } else if (ret != 0 && ctx->is_up == true) {
+        cmt_gauge_set(ctx->connection_up, ts, 0.0, 0, NULL);
+        ctx->is_up = false;
+    }
+    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
+    }
     return ret;
 }
 
@@ -197,6 +203,8 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
         flb_errno();
         return NULL;
     }
+    ctx->is_up = true;
+    
     ctx->ins = ins;
 
     ctx->cmt = cmt_create();
@@ -282,7 +290,7 @@ static int nginx_init(struct flb_input_instance *ins,
 
     // when it fails keep the other values... but set JUST this value...
     // if they depend on the gauges and dont check active... MEH...
-    ctx->connection_active = cmt_gauge_create(ctx->cmt, "nginx", "connections", "active", 
+    ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "connections", "up", 
         "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one", 
         0, NULL);
     

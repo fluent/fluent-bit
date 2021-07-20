@@ -47,6 +47,9 @@ struct nginx_ctx
         *connections_reading,
         *connections_writing,
         *connections_waiting;
+    struct cmt_gauge
+        *connection_up;
+    bool is_up;
 };
 
 struct nginx_status
