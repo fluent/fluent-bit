@@ -24,6 +24,10 @@ install:
   - ps: Expand-Archive winflexbison.zip -Destination /WinFlexBison
   - ps: Copy-Item -Path /WinFlexBison/win_bison.exe /WinFlexBison/bison.exe
   - ps: Copy-Item -Path /WinFlexBison/win_flex.exe /WinFlexBison/flex.exe
+  - ps: Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-9.6.22-1-windows-binaries.zip" -Outfile /pgsql.zip
+  - ps: Expand-Archive -Path /pgsql.zip -DestinationPath /
+  - ps: New-Item -ItemType directory -Path "C:\Program Files (x86)\PostgreSQL"
+  - ps: Move-Item -Path /pgsql -Destination "C:\Program Files (x86)\PostgreSQL\9.6"
 
 before_build:
   - git clone --depth=1 https://github.com/calyptia/fluent-bit-ci.git ci
