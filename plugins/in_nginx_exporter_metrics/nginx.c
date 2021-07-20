@@ -136,6 +136,11 @@ static int nginx_collect(struct flb_input_instance *ins,
         goto http_error;
     }
 
+    if (client->resp.payload_size <= 0) {
+        flb_plg_error(ins, "empty response");
+        goto http_error;
+    }
+
     // look at using it directly...
     data = flb_sds_create_len(client->resp.payload,
                               client->resp.payload_size);
