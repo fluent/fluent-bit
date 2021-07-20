@@ -37,18 +37,15 @@ struct nginx_ctx
     struct flb_input_instance *ins; /* Input plugin instace */
     struct flb_upstream *upstream;
     struct cmt *cmt;
-    struct cmt_counter
-        *connections_accepted, 
-        *connections_handled,
-        *connections_total;
-    struct cmt_gauge
-        *connection_active,
-        *connections_active,
-        *connections_reading,
-        *connections_writing,
-        *connections_waiting;
-    struct cmt_gauge
-        *connection_up;
+    struct cmt_counter *connections_accepted;
+    struct cmt_counter *connections_handled;
+    struct cmt_counter *connections_total;
+    struct cmt_gauge *connection_active;
+    struct cmt_gauge *connections_active;
+    struct cmt_gauge *connections_reading;
+    struct cmt_gauge *connections_writing;
+    struct cmt_gauge *connections_waiting;
+    struct cmt_gauge *connection_up;
     bool is_up;
 };
 
