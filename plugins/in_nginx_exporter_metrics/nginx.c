@@ -308,6 +308,9 @@ static int nginx_ctx_destroy(struct nginx_ctx *ctx)
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
     }
+    if (ctx->cmt) {
+        cmt_destroy(ctx->cmt);
+    }
     flb_free(ctx);
     return 0;
 }
