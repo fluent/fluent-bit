@@ -164,7 +164,8 @@ conn_error:
     if (ret == 0 && ctx->is_up == false) {
         cmt_gauge_set(ctx->connection_up, ts, 1.0, 0, NULL);
         ctx->is_up = true;
-    } else if (ret != 0 && ctx->is_up == true) {
+    }
+    else if (ret != 0 && ctx->is_up == true) {
         cmt_gauge_set(ctx->connection_up, ts, 0.0, 0, NULL);
         ctx->is_up = false;
     }
