@@ -161,13 +161,13 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    if (ret == 0 && ctx->is_up == false) {
+    if (ret == 0 && ctx->is_up == FLB_FALSE) {
         cmt_gauge_set(ctx->connection_up, ts, 1.0, 0, NULL);
-        ctx->is_up = true;
+        ctx->is_up = FLB_TRUE;
     }
-    else if (ret != 0 && ctx->is_up == true) {
+    else if (ret != 0 && ctx->is_up == FLB_TRUE) {
         cmt_gauge_set(ctx->connection_up, ts, 0.0, 0, NULL);
-        ctx->is_up = false;
+        ctx->is_up = FLB_FALSE;
     }
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
     if (ret != 0) {
@@ -203,7 +203,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
         flb_errno();
         return NULL;
     }
-    ctx->is_up = true;
+    ctx->is_up = FLB_TRUE;
     
     ctx->ins = ins;
 
