@@ -26,13 +26,12 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_network.h>
 
-#define DEFAULT_BUF_SIZE            8192
-#define MIN_BUF_SIZE                2048
-#define DEFAULT_FIELD_NAME          "message"
+#define DEFAULT_STATUS_URL          "/status"
 
 struct nginx_ctx
 {
     int coll_id;                    /* collector id */
+    flb_sds_t status_url;
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
     struct flb_upstream *upstream;

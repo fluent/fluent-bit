@@ -119,7 +119,7 @@ static int nginx_collect(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    client = flb_http_client(u_conn, FLB_HTTP_GET, "/status", 
+    client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->status_url, 
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
         flb_plg_error(ins, "unable to create http client");
@@ -191,6 +191,7 @@ conn_error:
 struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
+    int ret;
     struct nginx_ctx *ctx;
     struct flb_upstream *upstream;
  
@@ -206,9 +207,16 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
         flb_errno();
         return NULL;
     }
-    ctx->is_up = FLB_TRUE;
+    ctx->is_up = FLB_FALSE;
     
     ctx->ins = ins;
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
 
     ctx->cmt = cmt_create();
     if (!ctx->cmt) {
@@ -348,6 +356,17 @@ static int nginx_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "status_url", DEFAULT_STATUS_URL,
+     0, FLB_TRUE, offsetof(struct nginx_ctx, status_url),
+     "Define URL of stub status handler"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
     .name         = "nginx_stub_status",
@@ -357,6 +376,7 @@ struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
     .cb_collect   = nginx_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = nginx_exit,
+    .config_map   = config_map,
     .flags        = FLB_INPUT_NET,
     .event_type   = FLB_INPUT_METRICS
 };
