@@ -524,20 +524,20 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
     context = (struct flb_dns_lookup_context *) arg;
 
     if (ARES_SUCCESS == status) {
-        context->result = flb_net_translate_ares_addrinfo(res);
+        *(context->result) = flb_net_translate_ares_addrinfo(res);
 
-        if (NULL == context->result) {
+        if (NULL == *(context->result)) {
             /* Currently, translation fails when malloc error occured. */
-            context->result_code = EAI_MEMORY;
+            *(context->result_code) = EAI_MEMORY;
         }
         else {
-            context->result_code = ARES_SUCCESS;
+            *(context->result_code) = ARES_SUCCESS;
         }
 
         ares_freeaddrinfo(res);
     }
     else {
-        context->result_code = status;
+        *(context->result_code) = status;
     }
 
     context->finished = 1;
@@ -553,8 +553,13 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
                     context->response_event.fd,
                     context->response_event.fd);
 
-    if (1 == context->finished) {
-        flb_coro_resume(context->coroutine);
+    /* We count on having this opportunity to remove the socket from the event loop
+     * even if the event that triggered this callback was a timeout or premature
+     * close but we will need to figure this out if there is a chance for c-ares
+     * to open multiple simultaneous connections as suspected.
+     */
+    if (context->finished == 1) {
+        mk_event_del(context->event_loop, &context->response_event);
     }
 
     return 0;
@@ -569,6 +574,14 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
     int event_mask;
 
     context = (struct flb_dns_lookup_context *) userdata;
+
+    if (context->ares_socket_created == 1) {
+        /* This context already had a connection established and the code is not ready
+         * to handle multiple connections so we abort the process.
+         */
+
+        return -1;
+    }
 
     context->ares_socket_created = 1;
 
@@ -599,12 +612,15 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
         return -1;
     }
 
+    context->response_event.type = FLB_ENGINE_EV_DNS;
+
     return ARES_SUCCESS;
 }
 
-struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *evl,
-                                                                 struct flb_coro *coroutine,
-                                                                 char dns_mode)
+static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
+                                                                struct mk_event_loop *evl,
+                                                                struct flb_coro *coroutine,
+                                                                char dns_mode)
 {
     int result;
     int optmask = 0;
@@ -647,18 +663,40 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
     return context;
 }
 
-void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
+static void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
 {
-    mk_event_del(context->event_loop, &context->response_event);
+    /* We had to move the mk_event_del call to the immediate event loop callback
+     * because for some reason calling it here would break the system.
+     * I still don't understand why but that was the only way to fix it.
+     */
+
     ares_destroy(context->ares_channel);
     flb_free(context);
 }
 
+void flb_net_dns_lookup_context_cleanup(struct mk_list *cleanup_queue)
+{
+    struct flb_dns_lookup_context *lookup_context;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    mk_list_foreach_safe(head, tmp, cleanup_queue) {
+        lookup_context = mk_list_entry(head, struct flb_dns_lookup_context, _head);
+
+        mk_list_del(&lookup_context->_head);
+
+        flb_coro_resume(lookup_context->coroutine);
+
+        flb_net_dns_lookup_context_destroy(lookup_context);
+    }
+}
 
 int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
                         struct addrinfo **res, char *dns_mode_textual)
 {
     struct flb_dns_lookup_context *lookup_context;
+    int                            result_code;
+    struct addrinfo               *result_data;
     struct ares_addrinfo_hints     ares_hints;
     struct mk_event_loop          *event_loop;
     struct flb_coro               *coroutine;
@@ -681,6 +719,12 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
         return EAI_AGAIN;
     }
 
+    lookup_context->result_code = &result_code;
+    lookup_context->result = &result_data;
+
+    result_code = 0;
+    result_data = NULL;
+
     ares_hints.ai_flags = hints->ai_flags;
     ares_hints.ai_family = hints->ai_family;
     ares_hints.ai_socktype = hints->ai_socktype;
@@ -693,13 +737,11 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
         flb_coro_yield(coroutine, FLB_FALSE);
     }
 
-    if (0 == lookup_context->result_code) {
-        *res = lookup_context->result;
+    if (0 == result_code) {
+        *res = result_data;
     }
 
-    result = lookup_context->result_code;
-
-    flb_net_dns_lookup_context_destroy(lookup_context);
+    result = result_code;
 
     return result;
 }

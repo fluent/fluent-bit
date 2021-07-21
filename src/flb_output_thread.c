@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
@@ -179,6 +180,7 @@ static void output_thread(void *data)
     struct flb_output_coro *out_coro;
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_coro_params *params;
+    struct mk_list lookup_context_cleanup_queue;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -234,6 +236,8 @@ static void output_thread(void *data)
         return;
     }
     event_local.type = FLB_ENGINE_EV_OUTPUT;
+
+    mk_list_init(&lookup_context_cleanup_queue);
 
     flb_plg_info(th_ins->ins, "worker #%i started", thread_id);
 
@@ -293,6 +297,18 @@ static void output_thread(void *data)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
+            else if (event->type == FLB_ENGINE_EV_DNS) {
+                struct flb_dns_lookup_context *lookup_context;
+                lookup_context = (struct flb_dns_lookup_context *) event;
+
+                if (0 == lookup_context->finished) {
+                    event->handler(event);
+
+                    if (1 == lookup_context->finished) {
+                        mk_list_add(&lookup_context->_head, &lookup_context_cleanup_queue);
+                    }
+                }
+            }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 /*
                  * Check if we have some co-routine associated to this event,
@@ -321,6 +337,7 @@ static void output_thread(void *data)
 
         /* Destroy upstream connections from the 'pending destroy list' */
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+        flb_net_dns_lookup_context_cleanup(&lookup_context_cleanup_queue);
 
         /* Check if we should stop the event loop */
         if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
