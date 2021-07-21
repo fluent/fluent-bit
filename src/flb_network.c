@@ -67,6 +67,7 @@ void flb_net_init()
 
 void flb_net_setup_init(struct flb_net_setup *net)
 {
+    net->dns_mode = NULL;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -602,7 +603,8 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 }
 
 struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *evl,
-                                                                 struct flb_coro *coroutine)
+                                                                 struct flb_coro *coroutine,
+                                                                 char dns_mode)
 {
     int result;
     int optmask = 0;
@@ -620,8 +622,11 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
 
     /* c-ares options: make sure it uses TCP and limit number of tries to 2 */
     optmask = ARES_OPT_FLAGS;
-    opts.flags = ARES_FLAG_USEVC;
     opts.tries = 2;
+
+    if (dns_mode == FLB_DNS_USE_TCP) {
+        opts.flags = ARES_FLAG_USEVC;
+    }
 
     result = ares_init_options((ares_channel *) &context->ares_channel,
                                &opts, optmask);
@@ -651,18 +656,26 @@ void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
 
 
 int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
-                        struct addrinfo **res)
+                        struct addrinfo **res, char *dns_mode_textual)
 {
     struct flb_dns_lookup_context *lookup_context;
     struct ares_addrinfo_hints     ares_hints;
     struct mk_event_loop          *event_loop;
     struct flb_coro               *coroutine;
+    char                           dns_mode;
     int                            result;
+
+    dns_mode = FLB_DNS_USE_UDP;
+
+    if (dns_mode_textual != NULL &&
+        strncasecmp(dns_mode_textual, "TCP", 3) == 0) {
+        dns_mode = FLB_DNS_USE_TCP;
+    }
 
     event_loop = flb_engine_evl_get();
     coroutine = flb_coro_get();
 
-    lookup_context = flb_net_dns_lookup_context_create(event_loop, coroutine);
+    lookup_context = flb_net_dns_lookup_context_create(event_loop, coroutine, dns_mode);
 
     if (!lookup_context) {
         return EAI_AGAIN;
@@ -774,7 +787,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 
     /* retrieve DNS info */
     if (is_async) {
-        ret = flb_net_getaddrinfo(host, _port, &hints, &res);
+        ret = flb_net_getaddrinfo(host, _port, &hints, &res, u_conn->u->net.dns_mode);
     }
     else {
         ret = getaddrinfo(host, _port, &hints, &res);
