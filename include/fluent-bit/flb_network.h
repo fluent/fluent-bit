@@ -43,6 +43,9 @@ struct flb_net_setup {
 
     /* maximum of times a keepalive connection can be used */
     int keepalive_max_recycle;
+
+    /* dns mode : FLB_DNS_USE_TCP, FLB_DNS_USE_UDP */
+    char *dns_mode;
 };
 
 /* Defines a host service and it properties */
@@ -75,6 +78,9 @@ struct flb_dns_lookup_context {
     struct addrinfo *result;
     /* result is a synthetized result, don't call freeaddrinfo on it */
 };
+
+#define FLB_DNS_USE_TCP 'T'
+#define FLB_DNS_USE_UDP 'U'
 
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23
