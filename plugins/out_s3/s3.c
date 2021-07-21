@@ -1397,7 +1397,7 @@ static void cb_s3_flush(const void *data, size_t bytes,
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
                                         ctx->timer_ms,
                                         cb_s3_upload,
-                                        ctx);
+                                        ctx, NULL);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
             FLB_OUTPUT_RETURN(FLB_RETRY);
