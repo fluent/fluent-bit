@@ -307,12 +307,12 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         flb_tls_destroy(ctx->sts_provider_tls);
     }
 
-    if (ctx->client_tls) {
-        flb_tls_destroy(ctx->client_tls);
-    }
-
     if (ctx->s3_client) {
         flb_aws_client_destroy(ctx->s3_client);
+    }
+
+    if (ctx->client_tls) {
+        flb_tls_destroy(ctx->client_tls);
     }
 
     if (ctx->free_endpoint == FLB_TRUE) {
@@ -1165,12 +1165,13 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
     size_t olen;
     int ret;
 
-    ret = mbedtls_md5_ret(buf, buf_size, md5_bin);
+    ret = mbedtls_md5_ret((unsigned char*) buf, buf_size, md5_bin);
     if (ret != 0) {
         return ret;
     }
 
-    ret = mbedtls_base64_encode(md5_str, md5_str_size, &olen, md5_bin, sizeof(md5_bin));
+    ret = mbedtls_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
+                                sizeof(md5_bin));
     if (ret != 0) {
         return ret;
     }
@@ -1396,7 +1397,7 @@ static void cb_s3_flush(const void *data, size_t bytes,
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
                                         ctx->timer_ms,
                                         cb_s3_upload,
-                                        ctx);
+                                        ctx, NULL);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1545,7 +1546,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "total_file_size", "100000000",
      0, FLB_TRUE, offsetof(struct flb_s3, file_size),
-     "Specifies the size of files in S3. Maximum size is 50GB, minimim is 1MB"
+     "Specifies the size of files in S3. Maximum size is 50GB, minimum is 1MB"
     },
     {
      FLB_CONFIG_MAP_SIZE, "upload_chunk_size", "5242880",

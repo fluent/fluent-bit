@@ -53,8 +53,10 @@ struct flb_loki_kv {
 struct flb_loki {
     /* Public configuration properties */
     int auto_kubernetes_labels;
+    int drop_single_key;
     flb_sds_t line_format;
     flb_sds_t tenant_id;
+    flb_sds_t tenant_id_key_config;
 
     /* HTTP Auth */
     flb_sds_t http_user;
@@ -74,6 +76,8 @@ struct flb_loki {
     struct mk_list labels_list;         /* list of flb_loki_kv nodes */
     struct mk_list remove_keys_derived; /* remove_keys with label RAs */
     struct flb_mp_accessor *remove_mpa; /* remove_keys multi-pattern accessor */
+    struct flb_record_accessor *ra_tenant_id_key; /* dynamic tenant id key */
+    flb_sds_t dynamic_tenant_id; /* temporary buffer for tenant id */
 
     /* Upstream Context */
     struct flb_upstream *u;

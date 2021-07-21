@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #include <msgpack.h>
+#include <limits.h>
 
 /* Map msgpack object into flb_ra_value representation */
 static int msgpack_object_to_ra_value(msgpack_object o,
@@ -144,8 +145,9 @@ static int subkey_to_object(msgpack_object *map, struct mk_list *subkeys,
                 return -1;
             }
 
-            /* Index limit */
-            if (cur.via.array.size < entry->array_id + 1) {
+            /* Index limit and ensure no overflow */
+            if (entry->array_id == INT_MAX ||
+                cur.via.array.size < entry->array_id + 1) {
                 return -1;
             }
 

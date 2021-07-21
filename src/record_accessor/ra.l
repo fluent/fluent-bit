@@ -65,6 +65,6 @@ static inline char *remove_dup_quotes(const char *s, size_t n)
 \n
 [ \t]+			/* ignore whitespace */;
 
-.	flb_error("[sp] bad input character '%s' at line %d", yytext, yylineno);
+.	flb_error("[record accessor] bad input character '%s' at line %d", yytext, yylineno);
 
 %%

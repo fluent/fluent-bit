@@ -212,7 +212,7 @@ void mk_exit_all(struct mk_server *server)
 
     /* Distribute worker signals to stop working */
     val = MK_SCHED_SIGNAL_FREE_ALL;
-    mk_sched_send_signal(server, val);
+    mk_sched_broadcast_signal(server, val);
 
     /* Wait for all workers to finish */
     mk_sched_workers_join(server);

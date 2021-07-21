@@ -7,3 +7,8 @@ set(src
   )
 
 FLB_PLUGIN(filter_kubernetes "${src}" "")
+
+# K8s token command is currently Linux-only.
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  FLB_DEFINITION(FLB_HAVE_KUBE_TOKEN_COMMAND)
+endif()

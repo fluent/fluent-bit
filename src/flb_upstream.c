@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
@@ -68,6 +69,9 @@ struct flb_config_map upstream_net[] = {
     /* EOF */
     {0}
 };
+
+int flb_upstream_needs_proxy(const char *host, const char *proxy,
+                             const char *no_proxy);
 
 /* Enable thread-safe mode for upstream connection */
 void flb_upstream_thread_safe(struct flb_upstream *u)
@@ -185,7 +189,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     flb_net_setup_init(&u->net);
 
     /* Set upstream to the http_proxy if it is specified. */
-    if (config->http_proxy) {
+    if (flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
         ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
                                         &proxy_username, &proxy_password,
@@ -236,6 +240,57 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     mk_list_add(&u->_head, &config->upstreams);
     return u;
 }
+
+/*
+ * Checks whehter a destinate URL should be proxied.
+ */
+int flb_upstream_needs_proxy(const char *host, const char *proxy,
+                             const char *no_proxy)
+{
+    int ret;
+    struct mk_list no_proxy_list;
+    struct mk_list *head;
+    struct flb_slist_entry *e = NULL;
+
+    /* No HTTP_PROXY, should not set up proxy for the upstream `host`. */
+    if (proxy == NULL) {
+        return FLB_FALSE;
+    }
+
+    /* No NO_PROXY with HTTP_PROXY set, should set up proxy for the upstream `host`. */
+    if (no_proxy == NULL) {
+        return FLB_TRUE;
+    }
+
+    /* NO_PROXY=`*`, it matches all hosts. */
+    if (strcmp(no_proxy, "*") == 0) {
+        return FLB_FALSE;
+    }
+
+    /* check the URL list in the NO_PROXY  */
+    ret = flb_slist_create(&no_proxy_list);
+    if (ret != 0) {
+        return FLB_TRUE;
+    }
+    ret = flb_slist_split_string(&no_proxy_list, no_proxy, ',', -1);
+    if (ret <= 0) {
+        return FLB_TRUE;
+    }
+    ret = FLB_TRUE;
+    mk_list_foreach(head, &no_proxy_list) {
+        e = mk_list_entry(head, struct flb_slist_entry, _head);
+         if (strcmp(host, e->str) == 0) {
+            ret = FLB_FALSE;
+            break;
+        }
+    }
+
+    /* clean up the resources. */
+    flb_slist_destroy(&no_proxy_list);
+
+    return ret;
+}
+
 
 
 /* Create an upstream context using a valid URL (protocol, host and port) */

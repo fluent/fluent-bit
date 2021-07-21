@@ -101,6 +101,24 @@ void flb_input_net_default_listener(const char *listen, int port,
     }
 }
 
+int flb_input_event_type_is_metric(struct flb_input_instance *ins)
+{
+    if (ins->event_type == FLB_INPUT_METRICS) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+int flb_input_event_type_is_log(struct flb_input_instance *ins)
+{
+    if (ins->event_type == FLB_INPUT_LOGS) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          const char *input, void *data,
@@ -142,9 +160,17 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Get an ID */
         id =  instance_id(plugin, config);
 
-        /* Index for Chunks (hash table) */
-        instance->ht_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
-        if (!instance->ht_chunks) {
+        /* Index for log Chunks (hash table) */
+        instance->ht_log_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        if (!instance->ht_log_chunks) {
+            flb_free(instance);
+            return NULL;
+        }
+
+        /* Index for metric Chunks (hash table) */
+        instance->ht_metric_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        if (!instance->ht_metric_chunks) {
+            flb_hash_destroy(instance->ht_log_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -153,6 +179,23 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
 
+        /* set plugin type based on flags: logs or metrics ? */
+        if (plugin->event_type == FLB_INPUT_LOGS) {
+            instance->event_type = FLB_INPUT_LOGS;
+        }
+        else if (plugin->event_type == FLB_INPUT_METRICS) {
+            instance->event_type = FLB_INPUT_METRICS;
+        }
+        else {
+            flb_error("[input] invalid plugin event type %i on '%s'",
+                      plugin->event_type, instance->name);
+            flb_hash_destroy(instance->ht_log_chunks);
+            flb_hash_destroy(instance->ht_metric_chunks);
+            flb_free(instance);
+            return NULL;
+        }
+
+        /* initialize remaining vars */
         instance->alias    = NULL;
         instance->id       = id;
         instance->flags    = plugin->flags;
@@ -202,7 +245,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
-
         mk_list_add(&instance->_head, &config->inputs);
     }
 
@@ -307,16 +349,22 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
-        /* Set the storage type */
-        if (strcasecmp(tmp, "filesystem") == 0) {
-            ins->storage_type = CIO_STORE_FS;
-        }
-        else if (strcasecmp(tmp, "memory") == 0) {
+        /* If the input generate metrics, always use memory storage (for now) */
+        if (flb_input_event_type_is_metric(ins)) {
             ins->storage_type = CIO_STORE_MEM;
         }
         else {
-            flb_sds_destroy(tmp);
-            return -1;
+            /* Set the storage type */
+            if (strcasecmp(tmp, "filesystem") == 0) {
+                ins->storage_type = CIO_STORE_FS;
+            }
+            else if (strcasecmp(tmp, "memory") == 0) {
+                ins->storage_type = CIO_STORE_MEM;
+            }
+            else {
+                flb_sds_destroy(tmp);
+                return -1;
+            }
         }
         flb_sds_destroy(tmp);
     }
@@ -401,8 +449,12 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     }
 
     /* hash table for chunks */
-    if (ins->ht_chunks) {
-        flb_hash_destroy(ins->ht_chunks);
+    if (ins->ht_log_chunks) {
+        flb_hash_destroy(ins->ht_log_chunks);
+    }
+
+    if (ins->ht_metric_chunks) {
+        flb_hash_destroy(ins->ht_metric_chunks);
     }
 
     /* Unlink and release */
@@ -454,8 +506,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
          */
         config_map = flb_config_map_create(config, p->config_map);
         if (!config_map) {
-            flb_error("[filter] error loading config map for '%s' plugin",
+            flb_error("[input] error loading config map for '%s' plugin",
                       p->name);
+            flb_input_instance_destroy(ins);
             return -1;
         }
         ins->config_map = config_map;
@@ -873,6 +926,24 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 
     coll->running = FLB_FALSE;
 
+    return 0;
+}
+
+int flb_input_collector_delete(int coll_id, struct flb_input_instance *in)
+{
+    struct flb_input_collector *coll;
+
+    coll = get_collector(coll_id, in);
+    if (!coll) {
+        return -1;
+    }
+    if (flb_input_collector_pause(coll_id, in) < 0) {
+        return -1;
+    }
+
+    mk_list_del(&coll->_head);
+    mk_list_del(&coll->_head_ins);
+    flb_free(coll);
     return 0;
 }
 

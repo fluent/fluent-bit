@@ -36,8 +36,16 @@
 #include <signal.h>
 #include <stdarg.h>
 
+#include <cmetrics/cmetrics.h>
+
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
+#endif
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+struct flb_aws_error_reporter *error_reporter;
 #endif
 
 /* thread initializator */
@@ -112,6 +120,9 @@ void flb_init_env()
     flb_coro_init();
     flb_upstream_init();
     flb_output_prepare();
+
+    /* libraries */
+    cmt_initialize();
 }
 
 flb_ctx_t *flb_create()
@@ -189,6 +200,12 @@ flb_ctx_t *flb_create()
         return NULL;
     }
 
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        error_reporter = flb_aws_error_reporter_create();
+    }
+    #endif
+
     return ctx;
 }
 
@@ -214,6 +231,12 @@ void flb_destroy(flb_ctx_t *ctx)
         }
         flb_config_exit(ctx->config);
     }
+
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        flb_aws_error_reporter_destroy(error_reporter);
+    }
+    #endif
 
     flb_free(ctx);
     ctx = NULL;

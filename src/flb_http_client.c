@@ -392,6 +392,9 @@ static int process_data(struct flb_http_client *c)
         memcpy(code, c->resp.data + 9, 3);
         code[3] = '\0';
         c->resp.status = atoi(code);
+        if (c->resp.status < 100 || c->resp.status > 599) {
+            return FLB_HTTP_ERROR;
+        }
     }
 
     /* Try to lookup content length */

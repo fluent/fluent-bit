@@ -420,6 +420,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     else {
         if (ctx->is_k8s_resource_type == FLB_TRUE) {
             ctx->tag_prefix = flb_sds_create(ctx->resource);
+            ctx->tag_prefix = flb_sds_cat(ctx->tag_prefix, ".", 1);
         }
     }
 
@@ -427,6 +428,20 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (tmp) {
         ctx->stackdriver_agent = flb_sds_create(tmp);
     }
+
+    /* Custom Regex */
+    tmp = flb_output_get_property("custom_k8s_regex", ins);
+    if (tmp) {
+        ctx->custom_k8s_regex = flb_sds_create(tmp);
+    }
+
+    /* Register metrics */
+#ifdef FLB_HAVE_METRICS
+    flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
+                    "stackdriver_successful_requests", ctx->ins->metrics);
+    flb_metrics_add(FLB_STACKDRIVER_FAILED_REQUESTS,
+                    "stackdriver_failed_requests", ctx->ins->metrics);
+#endif
 
     return ctx;
 }
@@ -476,6 +491,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->log_name_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
+    flb_sds_destroy(ctx->custom_k8s_regex);
 
     if (ctx->stackdriver_agent) {
         flb_sds_destroy(ctx->stackdriver_agent);
@@ -496,6 +512,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     if (ctx->o) {
         flb_oauth2_destroy(ctx->o);
+    }
+
+    if (ctx->regex) {
+        flb_regex_destroy(ctx->regex);
     }
 
     flb_free(ctx);

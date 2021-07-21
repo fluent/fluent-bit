@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_regex.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
@@ -67,14 +68,16 @@
 #define K8S_NODE      "k8s_node"
 #define K8S_POD       "k8s_pod"
 
-#define STREAM_STDOUT 1
-#define STREAM_STDERR 2
-#define STREAM_UNKNOWN 3
-
 #define STDOUT "stdout"
 #define STDERR "stderr"
 
 #define DEFAULT_TAG_REGEX "(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
+
+/* Metrics */
+#ifdef FLB_HAVE_METRICS
+#define FLB_STACKDRIVER_SUCCESSFUL_REQUESTS  1000   /* successful requests */
+#define FLB_STACKDRIVER_FAILED_REQUESTS      1001   /* failed requests */
+#endif
 
 struct flb_stackdriver {
     /* credentials */
@@ -122,7 +125,6 @@ struct flb_stackdriver {
     flb_sds_t job;
     flb_sds_t task_id;
 
-
     /* other */
     flb_sds_t export_to_project_id;
     flb_sds_t resource;
@@ -132,6 +134,10 @@ struct flb_stackdriver {
     bool autoformat_stackdriver_trace;
 
     flb_sds_t stackdriver_agent;
+
+    /* Regex context to parse tags */
+    flb_sds_t custom_k8s_regex;
+    struct flb_regex *regex;
 
     /* oauth2 context */
     struct flb_oauth2 *o;

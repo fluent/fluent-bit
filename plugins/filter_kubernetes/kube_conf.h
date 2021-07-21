@@ -143,6 +143,9 @@ struct flb_kube {
     char *token_file;
     char *token;
     size_t token_len;
+    /* Command to get Kubernetes Authorization Token */
+    const char *kube_token_command; 
+    int kube_token_create;
 
     /* Pre-formatted HTTP Authorization header value */
     char *auth;
@@ -153,6 +156,8 @@ struct flb_kube {
 
     int use_kubelet;
     int kubelet_port;
+
+    int kube_meta_cache_ttl;
 
     struct flb_tls *tls;
 

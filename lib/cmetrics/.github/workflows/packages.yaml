@@ -1,0 +1,28 @@
+on:
+  push:
+    branches:
+      - master
+
+name: Build packages for master
+jobs:
+  build-distro-packages:
+    name: build packages
+    strategy:
+      fail-fast: true
+      matrix:
+        format: [ rpm, deb ]
+
+    runs-on: [ ubuntu-latest ]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build the ${{matrix.format}} packages
+        run:  |
+          cmake .
+          echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
+
+      - name: Store the master package artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.format }}
+          path: |
+            ./*.${{matrix.format}}

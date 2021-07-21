@@ -6,6 +6,12 @@ on:
       - completed
 jobs:
   publish-docker-images:
+    strategy:
+      max-parallel: 3
+      fail-fast: false
+      matrix:
+        tag: [ 'master', 'master_debug' ]
+
     name: publish the docker images for master
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -21,7 +27,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: integration-build-docker-master.yaml
           run_id: ${{ github.event.workflow_run.id }}
-          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master
+          name: action_image_artifact_${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-${{ matrix.tag }}
           path: images
         env:
           arch: x86_64
@@ -29,7 +35,7 @@ jobs:
 
       - name: Import docker image
         run: |
-          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-master
+          docker load --input ./images/${{ env.dockerhub_organization }}_fluent-bit_${{ env.arch }}-${{ matrix.tag }}
         env:
           arch: x86_64
           dockerhub_organization: fluentbitdev
@@ -42,13 +48,14 @@ jobs:
 
       - name: Push image to Docker Hub
         run: |
-          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ matrix.tag }}
         env:
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
       - run: |
           ./scripts/grafana-add-tag.sh
+        if: matrix.tag == 'master'
         env:
           GRAFANA_CLOUD_TOKEN: ${{ secrets.GRAFANA_CLOUD_TOKEN }}
           COMMIT_ID: ${{ github.event.workflow_run.head_sha }}
@@ -61,7 +68,7 @@ jobs:
       max-parallel: 3
       fail-fast: false
       matrix:
-        k8s-release: [ '1.19', '1.20' ] #, 1.19/stable, 1.18/stable ]
+        k8s-release: [ '1.19' ]#, '1.20' ] #, 1.19/stable, 1.18/stable ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -138,9 +145,20 @@ jobs:
         run: terraform output -no-color -raw gcp-project-id
         working-directory: ci/terraform/gcp/
 
+      - name: Get the bigquery dataset id from terraform output
+        id: get-gcp-bigquery-dataset-id
+        run: terraform output -no-color -raw gcp-bigquery-dataset-id
+        working-directory: ci/terraform/gcp/
+
+      - name: Get the bigquery table id from terraform output
+        id: get-gcp-bigquery-table-id
+        run: terraform output -no-color -raw gcp-bigquery-table-id
+        working-directory: ci/terraform/gcp/
+
       - uses: google-github-actions/setup-gcloud@master
         with:
           service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
 
       - uses: google-github-actions/get-gke-credentials@main
         with:
@@ -150,7 +168,7 @@ jobs:
 
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.15' # The Go version to download (if necessary) and use.
+          go-version: '1.16' # The Go version to download (if necessary) and use.
 
       - uses: azure/setup-helm@v1
         id: install
@@ -160,6 +178,10 @@ jobs:
 
       - run: make integration
         env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_BQ_DATASET_ID: ${{ steps.get-gcp-bigquery-dataset-id.outputs.stdout }}
+          GCP_BQ_TABLE_ID: ${{ steps.get-gcp-bigquery-table-id.outputs.stdout }}
+          GCP_PROJECT_ID: fluent-bit-ci
           IMAGE_REPOSITORY: fluentbitdev/fluent-bit
           IMAGE_TAG: x86_64-master
           GRAFANA_USERNAME: ${{ secrets.GRAFANA_USERNAME }}

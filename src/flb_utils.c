@@ -37,6 +37,12 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_utf8.h>
 
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;
@@ -99,11 +105,23 @@ void flb_utils_error(int err)
         fprintf(stderr,
                 "%sError%s: undefined. Aborting",
                 ANSI_BOLD ANSI_RED, ANSI_RESET);
+        #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+        if (is_error_reporting_enabled()) {
+            flb_aws_error_reporter_write(error_reporter, "Error: undefined. Aborting\n");
+        }
+        #endif
+
     }
     else {
         fprintf(stderr,
                 "%sError%s: %s. Aborting\n\n",
                 ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
+
+        #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+        if (is_error_reporting_enabled()) {
+            flb_aws_error_reporter_write(error_reporter, msg);
+        }
+        #endif
     }
 
     if (err <= FLB_ERR_FILTER_INVALID) {
@@ -420,21 +438,22 @@ int64_t flb_utils_size_to_bytes(const char *size)
 
     if (tmp[0] == 'K') {
         /* set upper bound (2**64/KB)/2 to avoid overflows */
-        if (val >= 0x20c49ba5e353f8) {
+        if (val >= 9223372036854775 || val <= -9223372036854774)
+        {
             return -1;
         }
         return (val * KB);
     }
     else if (tmp[0] == 'M') {
         /* set upper bound (2**64/MB)/2 to avoid overflows */
-        if (val >= 0x8637bd05af6) {
+        if (val >= 9223372036854 || val <= -9223372036853) {
             return -1;
         }
         return (val * MB);
     }
     else if (tmp[0] == 'G') {
         /* set upper bound (2**64/GB)/2 to avoid overflows */
-        if (val >= 0x225c17d04) {
+        if (val >= 9223372036 || val <= -9223372035) {
             return -1;
         }
         return (val * GB);
@@ -454,9 +473,10 @@ int64_t flb_utils_hex2int(char *hex, int len)
 
     while ((c = *hex++) && i < len) {
         /* Ensure no overflow */
-        if (res >= 0xccccccccccccd00) {
+        if (res >= (int64_t)((INT64_MAX/0x10) - 0xff)) {
             return -1;
         }
+
         res *= 0x10;
 
         if (c >= 'a' && c <= 'f') {

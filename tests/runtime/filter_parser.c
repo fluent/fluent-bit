@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 #include "flb_tests_runtime.h"
 
@@ -97,7 +98,7 @@ void flb_test_filter_parser_extract_fields()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
@@ -182,7 +183,7 @@ void flb_test_filter_parser_reserve_data_off()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
@@ -259,7 +260,7 @@ void flb_test_filter_parser_handle_time_key()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
@@ -336,7 +337,7 @@ void flb_test_filter_parser_handle_time_key_with_fractional_timestamp()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
@@ -418,7 +419,7 @@ void flb_test_filter_parser_ignore_malformed_time()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
@@ -495,7 +496,7 @@ void flb_test_filter_parser_preserve_original_field()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {
@@ -586,7 +587,7 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
 
-    sleep(1); /* waiting flush */
+    flb_time_msleep(1500); /* waiting flush */
     output = get_output(); /* 1sec passed, data should be flushed */
     TEST_CHECK_(output != NULL, "Expected output to not be NULL");
     if (output != NULL) {

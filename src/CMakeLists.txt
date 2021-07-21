@@ -20,6 +20,7 @@ set(src
   flb_kernel.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_metric.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -48,12 +49,20 @@ set(src
   flb_random.c
   flb_plugin.c
   flb_gzip.c
+  flb_snappy.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
   flb_thread_pool.c
   flb_routes_mask.c
+  )
+
+# Multiline subsystem
+add_subdirectory(multiline)
+set(src
+  ${src}
+  ${src_multiline}
   )
 
 if(FLB_SYSTEM_WINDOWS)
@@ -130,12 +139,26 @@ endif()
 if(FLB_AWS)
   set(src
     ${src}
+    "aws/flb_aws_credentials_log.h"
     "aws/flb_aws_util.c"
     "aws/flb_aws_credentials.c"
     "aws/flb_aws_credentials_sts.c"
     "aws/flb_aws_credentials_ec2.c"
     "aws/flb_aws_credentials_http.c"
     "aws/flb_aws_credentials_profile.c"
+    )
+  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+    set(src
+      ${src}
+      "aws/flb_aws_credentials_process.c"
+      )
+  endif()
+endif()
+
+if (FLB_AWS_ERROR_REPORTER)
+  set(src
+    ${src}
+    "aws/flb_aws_error_reporter.c"
     )
 endif()
 
@@ -285,10 +308,13 @@ set(FLB_DEPS
   chunkio-static
   miniz
   xxhash
+  cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   mbedtls
+  c-ares
+  snappy-c
   )
 
 if(OPENSSL_FOUND)

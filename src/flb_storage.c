@@ -267,7 +267,7 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
 
     ret = flb_sched_timer_cb_create(ctx->sched, FLB_SCHED_TIMER_CB_PERM, 5000,
                                     cb_storage_metrics_collect,
-                                    ctx->storage_metrics_ctx);
+                                    ctx->storage_metrics_ctx, NULL);
     if (ret == -1) {
         flb_error("[storage metrics] cannot create timer to collect metrics");
         flb_free(sm);
@@ -384,7 +384,6 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
 int flb_storage_input_create(struct cio_ctx *cio,
                              struct flb_input_instance *in)
 {
-    const char *name;
     struct flb_storage_input *si;
     struct cio_stream *stream;
 
@@ -400,17 +399,14 @@ int flb_storage_input_create(struct cio_ctx *cio,
         return -1;
     }
 
-    /* get stream name */
-    name = flb_input_name(in);
-
     /* Check for duplicates */
-    stream = cio_stream_get(cio, name);
+    stream = cio_stream_get(cio, in->name);
     if (!stream) {
         /* create stream for input instance */
-        stream = cio_stream_create(cio, name, in->storage_type);
+        stream = cio_stream_create(cio, in->name, in->storage_type);
         if (!stream) {
             flb_error("[storage] cannot create stream for instance %s",
-                      name);
+                      in->name);
             return -1;
         }
     }

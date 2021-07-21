@@ -47,18 +47,41 @@ struct flb_net_setup {
 
 /* Defines a host service and it properties */
 struct flb_net_host {
-    int  ipv6;             /* IPv6 required ?      */
+    int ipv6;              /* IPv6 required ?      */
     flb_sds_t address;     /* Original address     */
-    int   port;            /* TCP port             */
+    int port;              /* TCP port             */
     flb_sds_t name;        /* Hostname             */
     flb_sds_t listen;      /* Listen interface     */
     struct flb_uri *uri;   /* Extra URI parameters */
+};
+
+/* Defines an async DNS lookup context and its result event */
+struct flb_dns_lookup_context;
+
+struct flb_dns_lookup_result_event {
+    struct mk_event event;
+    flb_pipefd_t ch_events[2];
+    struct flb_dns_lookup_context *parent;
+};
+
+struct flb_dns_lookup_context {
+    struct mk_event response_event;                  /* c-ares socket event */
+    int ares_socket_created;
+    void *ares_channel;
+    int result_code;
+    int finished;
+    struct mk_event_loop *event_loop;
+    struct flb_coro *coroutine;
+    struct addrinfo *result;
+    /* result is a synthetized result, don't call freeaddrinfo on it */
 };
 
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23
 #endif
 
+/* General initialization of the networking layer */
+void flb_net_init();
 /* Generic functions */
 void flb_net_setup_init(struct flb_net_setup *net);
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);

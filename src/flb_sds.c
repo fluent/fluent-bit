@@ -138,6 +138,18 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     return s;
 }
 
+int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len)
+{
+    flb_sds_t tmp;
+
+    tmp = flb_sds_cat(*buf, str, len);
+    if (!tmp) {
+        return -1;
+    }
+    *buf = tmp;
+    return 0;
+}
+
 flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
                                        char *esc, size_t esc_size)
 {
@@ -288,7 +300,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
                 p = (const unsigned char *) str + i + b;
-                if (p >= (str + str_len)) {
+                if (p >= (unsigned char *) (str + str_len)) {
                     break;
                 }
                 ret = flb_utf8_decode(&state, &cp, *p);

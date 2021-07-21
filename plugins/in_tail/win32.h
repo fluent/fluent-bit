@@ -32,6 +32,7 @@
 #undef stat
 #undef lstat
 #undef fstat
+#undef lseek
 
 #undef S_IFDIR
 #undef S_IFCHR
@@ -49,6 +50,8 @@
 #define stat win32_stat
 #define lstat win32_lstat
 #define fstat win32_fstat
+
+#define lseek _lseeki64
 
 #define S_IFDIR WIN32_S_IFDIR
 #define S_IFCHR WIN32_S_IFCHR

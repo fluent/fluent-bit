@@ -67,13 +67,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_http_do(c, &b_sent);
 
         size_t out_size = 0;
-        if (flb_http_buffer_increase(c, (*(size_t *)data) & 0xfff, &out_size) == 0) {
-            flb_free(c->resp.data);
-        }
+        flb_http_buffer_increase(c, (*(size_t *)data) & 0xfff, &out_size);
         MOVE_INPUT(4)
 
         /* Now we need to simulate the reading of data */
         c->resp.status = 200;
+
+        if (c->resp.data != NULL) {
+           flb_free(c->resp.data);
+        }
 
         char *new_nulltm = get_null_terminated(30, &data, &size);
         c->resp.data_len = 30;

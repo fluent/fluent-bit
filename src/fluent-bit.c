@@ -64,6 +64,7 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
+volatile sig_atomic_t exit_signal = 0;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -76,9 +77,13 @@ struct flb_stacktrace flb_st;
 #define PLUGIN_OUTPUT   1
 #define PLUGIN_FILTER   2
 
-#define get_key(a, b, c)   mk_rconf_section_get_key(a, b, c)
-#define n_get_key(a, b, c) (intptr_t) get_key(a, b, c)
-#define s_get_key(a, b, c) (char *) get_key(a, b, c)
+#define print_opt(a, b)      printf("  %-24s%s\n", a, b)
+#define print_opt_i(a, b, c) printf("  %-24s%s (default: %i)\n", a, b, c)
+#define print_opt_s(a, b, c) printf("  %-24s%s (default: %s)\n", a, b, c)
+
+#define get_key(a, b, c)     mk_rconf_section_get_key(a, b, c)
+#define n_get_key(a, b, c)   (intptr_t) get_key(a, b, c)
+#define s_get_key(a, b, c)   (char *) get_key(a, b, c)
 
 static void flb_version()
 {
@@ -108,46 +113,46 @@ static void flb_help(int rc, struct flb_config *config)
 
     printf("Usage: fluent-bit [OPTION]\n\n");
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
-    printf("  -b  --storage_path=PATH\tspecify a storage buffering path\n");
-    printf("  -c  --config=FILE\tspecify an optional configuration file\n");
-    printf("  -D, --dry-run\tdry run\n");
+    print_opt("-b  --storage_path=PATH", "specify a storage buffering path");
+    print_opt("-c  --config=FILE", "specify an optional configuration file");
 #ifdef FLB_HAVE_FORK
-    printf("  -d, --daemon\t\trun Fluent Bit in background mode\n");
+    print_opt("-d, --daemon", "run Fluent Bit in background mode");
 #endif
-    printf("  -f, --flush=SECONDS\tflush timeout in seconds (default: %i)\n",
-           FLB_CONFIG_FLUSH_SECS);
-    printf("  -F  --filter=FILTER\t set a filter\n");
-    printf("  -i, --input=INPUT\tset an input\n");
-    printf("  -m, --match=MATCH\tset plugin match, same as '-p match=abc'\n");
-    printf("  -o, --output=OUTPUT\tset an output\n");
-    printf("  -p, --prop=\"A=B\"\tset plugin configuration property\n");
+    print_opt("-D, --dry-run", "dry run");
+    print_opt_i("-f, --flush=SECONDS", "flush timeout in seconds",
+                FLB_CONFIG_FLUSH_SECS);
+    print_opt("-F  --filter=FILTER", "set a filter");
+    print_opt("-i, --input=INPUT", "set an input");
+    print_opt("-m, --match=MATCH", "set plugin match, same as '-p match=abc'");
+    print_opt("-o, --output=OUTPUT", "set an output");
+    print_opt("-p, --prop=\"A=B\"", "set plugin configuration property");
 #ifdef FLB_HAVE_PARSER
-    printf("  -R, --parser=FILE\tspecify a parser configuration file\n");
+    print_opt("-R, --parser=FILE", "specify a parser configuration file");
 #endif
-    printf("  -e, --plugin=FILE\tload an external plugin (shared lib)\n");
-    printf("  -l, --log_file=FILE\twrite log info to a file\n");
-    printf("  -t, --tag=TAG\t\tset plugin tag, same as '-p tag=abc'\n");
+    print_opt("-e, --plugin=FILE", "load an external plugin (shared lib)");
+    print_opt("-l, --log_file=FILE", "write log info to a file");
+    print_opt("-t, --tag=TAG", "set plugin tag, same as '-p tag=abc'");
 #ifdef FLB_HAVE_STREAM_PROCESSOR
-    printf("  -T, --sp-task=SQL\tdefine a stream processor task\n");
+    print_opt("-T, --sp-task=SQL", "define a stream processor task");
 #endif
-    printf("  -v, --verbose\t\tincrease logging verbosity (default: info)\n");
+    print_opt("-v, --verbose", "increase logging verbosity (default: info)");
 #ifdef FLB_HAVE_TRACE
-    printf("  -vv\t\t\ttrace mode (available)\n");
+    print_opt("-vv", "trace mode (available)");
 #endif
-    printf("  -w, --workdir\t\tset the working directory\n");
+    print_opt("-w, --workdir", "set the working directory");
 #ifdef FLB_HAVE_HTTP_SERVER
-    printf("  -H, --http\t\tenable monitoring HTTP server\n");
-    printf("  -P, --port\t\tset HTTP server TCP port (default: %s)\n",
-           FLB_CONFIG_HTTP_PORT);
+    print_opt("-H, --http", "enable monitoring HTTP server");
+    print_opt_s("-P, --port", "set HTTP server TCP port",
+                FLB_CONFIG_HTTP_PORT);
 #endif
-    printf("  -s, --coro_stack_size\tSet coroutines stack size in bytes "
-           "(default: %i)\n", config->coro_stack_size);
-    printf("  -q, --quiet\t\tquiet mode\n");
-    printf("  -S, --sosreport\tsupport report for Enterprise customers\n");
-    printf("  -V, --version\t\tshow version number\n");
-    printf("  -h, --help\t\tprint this help\n\n");
+    print_opt_i("-s, --coro_stack_size", "set coroutines stack size in bytes",
+                config->coro_stack_size);
+    print_opt("-q, --quiet", "quiet mode");
+    print_opt("-S, --sosreport", "support report for Enterprise customers");
+    print_opt("-V, --version", "show version number");
+    print_opt("-h, --help", "print this help");
 
-    printf("%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("\n%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
 
     /* Iterate each supported input */
     mk_list_foreach(head, &config->in_plugins) {
@@ -156,13 +161,13 @@ static void flb_help(int rc, struct flb_config *config)
             /* useless..., just skip it. */
             continue;
         }
-        printf("  %-22s%s\n", in->name, in->description);
+        print_opt(in->name, in->description);
     }
 
     printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
     mk_list_foreach(head, &config->filter_plugins) {
         filter = mk_list_entry(head, struct flb_filter_plugin, _head);
-        printf("  %-22s%s\n", filter->name, filter->description);
+        print_opt(filter->name, filter->description);
     }
 
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
@@ -172,12 +177,12 @@ static void flb_help(int rc, struct flb_config *config)
             /* useless..., just skip it. */
             continue;
         }
-        printf("  %-22s%s\n", out->name, out->description);
+        print_opt(out->name, out->description);
     }
 
     printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);
     printf(" Event Loop  = %s\n", mk_event_backend());
-    printf(" Build Flags = %s\n", FLB_INFO_FLAGS);
+    printf(" Build Flags =%s\n", FLB_INFO_FLAGS);
     exit(rc);
 }
 
@@ -457,7 +462,12 @@ static void flb_help_plugin(int rc, int format,
     write (STDERR_FILENO, #X ")\n", sizeof(#X ")\n")-1); \
     break;
 
-static void flb_signal_handler(int signal)
+static void flb_signal_handler_break_loop(int signal)
+{
+    exit_signal = signal;
+}
+
+static void flb_signal_exit(int signal)
 {
     int len;
     char ts[32];
@@ -490,8 +500,10 @@ static void flb_signal_handler(int signal)
     };
 
     /* Signal handlers */
+    /* SIGSEGV is not handled here to preserve stacktrace */
     switch (signal) {
     case SIGINT:
+    case SIGTERM:
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGQUIT:
     case SIGHUP:
@@ -499,34 +511,66 @@ static void flb_signal_handler(int signal)
         flb_stop(ctx);
         flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
-    case SIGTERM:
-        flb_stop(ctx);
-        flb_destroy(ctx);
-        _exit(EXIT_SUCCESS);
-     case SIGSEGV:
+    default:
+        break;
+    }
+}
+
+static void flb_signal_handler(int signal)
+{
+    int len;
+    char ts[32];
+    char s[] = "[engine] caught signal (";
+    time_t now;
+    struct tm *cur;
+
+    now = time(NULL);
+    cur = localtime(&now);
+    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+                   cur->tm_year + 1900,
+                   cur->tm_mon + 1,
+                   cur->tm_mday,
+                   cur->tm_hour,
+                   cur->tm_min,
+                   cur->tm_sec);
+
+    /* write signal number */
+    write(STDERR_FILENO, ts, len);
+    write(STDERR_FILENO, s, sizeof(s) - 1);
+    switch (signal) {
+        flb_print_signal(SIGINT);
+#ifndef FLB_SYSTEM_WINDOWS
+        flb_print_signal(SIGQUIT);
+        flb_print_signal(SIGHUP);
+        flb_print_signal(SIGCONT);
+#endif
+        flb_print_signal(SIGTERM);
+        flb_print_signal(SIGSEGV);
+    };
+
+    switch(signal) {
+    case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
+        /* To preserve stacktrace */
         flb_stacktrace_print(&flb_st);
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
         flb_dump(ctx->config);
-        break;
 #endif
-    default:
-        break;
     }
 }
 
 static void flb_signal_init()
 {
-    signal(SIGINT,  &flb_signal_handler);
+    signal(SIGINT,  &flb_signal_handler_break_loop);
 #ifndef FLB_SYSTEM_WINDOWS
-    signal(SIGQUIT, &flb_signal_handler);
-    signal(SIGHUP,  &flb_signal_handler);
+    signal(SIGQUIT, &flb_signal_handler_break_loop);
+    signal(SIGHUP,  &flb_signal_handler_break_loop);
     signal(SIGCONT, &flb_signal_handler);
 #endif
-    signal(SIGTERM, &flb_signal_handler);
+    signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
 }
 
@@ -690,11 +734,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
 
         /* Extra sanity checks */
-        if (strcasecmp(section->name, "PARSER") == 0) {
+        if (strcasecmp(section->name, "PARSER") == 0 ||
+            strcasecmp(section->name, "MULTILINE_PARSER") == 0) {
             fprintf(stderr,
-                    "Section [PARSER] is not valid in the main "
-                    "configuration file. It belongs to \n"
-                    "the Parsers_File configuration files.\n");
+                    "Sections [MULTILINE_PARSER] and [PARSER] are not valid in "
+                    "the main configuration file. It belongs to \n"
+                    "the 'parsers_file' configuration files.\n");
         }
         else {
             fprintf(stderr,
@@ -1156,8 +1201,14 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
-    flb_loop(ctx);
+    while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
+        sleep(1);
+    }
+    if (exit_signal) {
+        flb_signal_exit(exit_signal);
+    }
     flb_destroy(ctx);
+
 
     return ret;
 }
