@@ -534,7 +534,7 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
         }
     }
 
-    if (1 == failure_detected) {
+    if (failure_detected) {
         if (NULL != output) {
             flb_net_free_translated_addrinfo(output);
             output = NULL;
@@ -586,7 +586,7 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
      * close but we will need to figure this out if there is a chance for c-ares
      * to open multiple simultaneous connections as suspected.
      */
-    if (context->finished == 1) {
+    if (context->finished) {
         mk_event_del(context->event_loop, &context->response_event);
     }
 
@@ -604,7 +604,7 @@ static void flb_net_getaddrinfo_timeout_handler(struct flb_config *config, void 
 
     ares_cancel(lookup_context->ares_channel);
 
-    if (lookup_context->ares_socket_created == 1) {
+    if (lookup_context->ares_socket_created) {
         mk_event_del(lookup_context->event_loop, &lookup_context->response_event);
     }
 
@@ -623,7 +623,7 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     context = (struct flb_dns_lookup_context *) userdata;
 
-    if (context->ares_socket_created == 1) {
+    if (context->ares_socket_created) {
         /* This context already had a connection established and the code is not ready
          * to handle multiple connections so we abort the process.
          */
@@ -657,7 +657,7 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     ret = mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM,
                        event_mask, &context->response_event);
-    if (ret != 0) {
+    if (ret) {
         return -1;
     }
 
@@ -781,7 +781,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
                      flb_net_getaddrinfo_callback, lookup_context);
 
 
-    if (1 == lookup_context->ares_socket_created) {
+    if (lookup_context->ares_socket_created) {
         if (lookup_context->ares_socket_type == FLB_ARES_SOCKET_TYPE_UDP) {
             /* If the socket type created by c-ares is UDP then we need to create our
              * own timeout mechanism before yielding and cancel it if things go as
@@ -812,7 +812,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
         }
     }
 
-    if (0 == result_code) {
+    if (!result_code) {
         *res = result_data;
     }
 
@@ -911,7 +911,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         ret = getaddrinfo(host, _port, &hints, &res);
     }
 
-    if (ret != 0) {
+    if (ret) {
         if (is_async) {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, ares_strerror(ret));
         }

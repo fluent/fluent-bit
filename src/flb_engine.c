@@ -695,10 +695,10 @@ int flb_engine_start(struct flb_config *config)
                 struct flb_dns_lookup_context *lookup_context;
                 lookup_context = (struct flb_dns_lookup_context *) event;
 
-                if (0 == lookup_context->finished) {
+                if (!lookup_context->finished) {
                     event->handler(event);
 
-                    if (1 == lookup_context->finished) {
+                    if (lookup_context->finished) {
                         mk_list_add(&lookup_context->_head, &lookup_context_cleanup_queue);
                     }
                 }
