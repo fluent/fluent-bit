@@ -68,20 +68,25 @@ struct flb_dns_lookup_result_event {
 };
 
 struct flb_dns_lookup_context {
-    struct mk_event response_event;                  /* c-ares socket event */
-    int ares_socket_created;
-    void *ares_channel;
-    int *result_code;
-    int finished;
+    int                  *udp_timeout_detected;
+    int                   ares_socket_created;
+    int                   ares_socket_type;
+    struct mk_event       response_event;                  /* c-ares socket event */
+    void                 *ares_channel;
+    int                  *result_code;
     struct mk_event_loop *event_loop;
-    struct flb_coro *coroutine;
-    struct addrinfo **result;
+    struct flb_coro      *coroutine;
+    int                   finished;
+    struct addrinfo     **result;
     /* result is a synthetized result, don't call freeaddrinfo on it */
     struct mk_list _head;
 };
 
 #define FLB_DNS_USE_TCP 'T'
 #define FLB_DNS_USE_UDP 'U'
+
+#define FLB_ARES_SOCKET_TYPE_TCP 1
+#define FLB_ARES_SOCKET_TYPE_UDP 2
 
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23
