@@ -625,7 +625,7 @@ int flb_engine_start(struct flb_config *config)
      */
     ret = flb_sched_timer_cb_create(config->sched,
                                     FLB_SCHED_TIMER_CB_PERM,
-                                    1500, cb_engine_sched_timer, config);
+                                    1500, cb_engine_sched_timer, config, NULL);
     if (ret == -1) {
         flb_error("[engine] could not schedule permanent callback");
         return -1;

@@ -267,7 +267,7 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
 
     ret = flb_sched_timer_cb_create(ctx->sched, FLB_SCHED_TIMER_CB_PERM, 5000,
                                     cb_storage_metrics_collect,
-                                    ctx->storage_metrics_ctx);
+                                    ctx->storage_metrics_ctx, NULL);
     if (ret == -1) {
         flb_error("[storage metrics] cannot create timer to collect metrics");
         flb_free(sm);

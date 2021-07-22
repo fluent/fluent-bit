@@ -216,7 +216,7 @@ static void output_thread(void *data)
      */
     ret = flb_sched_timer_cb_create(sched,
                                     FLB_SCHED_TIMER_CB_PERM,
-                                    1500, cb_thread_sched_timer, ins);
+                                    1500, cb_thread_sched_timer, ins, NULL);
     if (ret == -1) {
         flb_plg_error(ins, "could not schedule permanent callback");
         return;

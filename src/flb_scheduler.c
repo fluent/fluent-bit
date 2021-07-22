@@ -434,7 +434,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
  */
 int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
-                              void *data)
+                              void *data, struct flb_sched_timer **out_timer)
 {
     int fd;
     time_t sec;
@@ -480,6 +480,10 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
      */
     event->type = FLB_ENGINE_EV_SCHED;
     timer->timer_fd = fd;
+
+    if (out_timer != NULL) {
+        *out_timer = timer;
+    }
 
     return 0;
 }
