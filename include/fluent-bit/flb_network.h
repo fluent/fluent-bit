@@ -44,7 +44,7 @@ struct flb_net_setup {
     /* maximum of times a keepalive connection can be used */
     int keepalive_max_recycle;
 
-    /* dns mode : FLB_DNS_USE_TCP, FLB_DNS_USE_UDP */
+    /* dns mode : TCP or UDP */
     char *dns_mode;
 };
 
@@ -60,10 +60,10 @@ struct flb_net_host {
 
 /* Defines an async DNS lookup context */
 struct flb_dns_lookup_context {
+    struct mk_event       response_event;                  /* c-ares socket event */
     int                  *udp_timeout_detected;
     int                   ares_socket_created;
     int                   ares_socket_type;
-    struct mk_event       response_event;                  /* c-ares socket event */
     void                 *ares_channel;
     int                  *result_code;
     struct mk_event_loop *event_loop;
