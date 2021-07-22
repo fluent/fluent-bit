@@ -693,7 +693,7 @@ int flb_engine_start(struct flb_config *config)
             }
             else if (event->type == FLB_ENGINE_EV_DNS) {
                 struct flb_dns_lookup_context *lookup_context;
-                lookup_context = (struct flb_dns_lookup_context *) event;
+                lookup_context = FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event);
 
                 if (!lookup_context->finished) {
                     event->handler(event);
