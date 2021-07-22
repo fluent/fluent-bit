@@ -460,6 +460,10 @@ static int cb_gelf_exit(void *data, struct flb_config *config)
 {
     struct flb_out_gelf_config *ctx = data;
 
+    if (ctx == NULL) {
+        return 0;
+    }
+
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
