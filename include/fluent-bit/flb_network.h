@@ -58,15 +58,7 @@ struct flb_net_host {
     struct flb_uri *uri;   /* Extra URI parameters */
 };
 
-/* Defines an async DNS lookup context and its result event */
-struct flb_dns_lookup_context;
-
-struct flb_dns_lookup_result_event {
-    struct mk_event event;
-    flb_pipefd_t ch_events[2];
-    struct flb_dns_lookup_context *parent;
-};
-
+/* Defines an async DNS lookup context */
 struct flb_dns_lookup_context {
     int                  *udp_timeout_detected;
     int                   ares_socket_created;
@@ -79,8 +71,12 @@ struct flb_dns_lookup_context {
     int                   finished;
     struct addrinfo     **result;
     /* result is a synthetized result, don't call freeaddrinfo on it */
-    struct mk_list _head;
+    struct mk_list        _head;
 };
+
+#define FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event) \
+    ((struct flb_dns_lookup_context *) \
+        &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
 
 #define FLB_DNS_USE_TCP 'T'
 #define FLB_DNS_USE_UDP 'U'

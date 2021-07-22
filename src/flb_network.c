@@ -575,7 +575,7 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
 {
     struct flb_dns_lookup_context *context;
 
-    context = (struct flb_dns_lookup_context *) arg;
+    context = FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(arg);
 
     ares_process_fd(context->ares_channel,
                     context->response_event.fd,
