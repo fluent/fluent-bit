@@ -744,9 +744,8 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
 
     dns_mode = FLB_DNS_USE_UDP;
 
-    if (dns_mode_textual != NULL &&
-        strncasecmp(dns_mode_textual, "TCP", 3) == 0) {
-        dns_mode = FLB_DNS_USE_TCP;
+    if (dns_mode_textual != NULL) {
+        dns_mode = toupper(dns_mode_textual[0]);
     }
 
     event_loop = flb_engine_evl_get();
