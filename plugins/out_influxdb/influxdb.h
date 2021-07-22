@@ -63,6 +63,12 @@ struct flb_influxdb {
     /* tag_keys: space separated list of key */
     struct mk_list *tag_keys;
 
+    /* tags_list_enabled: on/off */
+    int tags_list_enabled;
+
+    /* tags_list_key: key of the string array within the record containing the tag keys */
+    char *tags_list_key;
+
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
 

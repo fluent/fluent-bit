@@ -34,11 +34,15 @@
 #include "influxdb_bulk.h"
 
 /*
- * Returns FLB_TRUE when the specified key is in Tag_Keys list,
+ * Returns FLB_TRUE when the specified key is in Tag_Keys or tags_list list,
  * otherwise FLB_FALSE
  */
-static int is_tagged_key(struct flb_influxdb *ctx,
-                         const char *key, int kl, int type);
+static int is_tagged_key(struct flb_influxdb *ctx, const char *key,
+                         int kl, int type, msgpack_object_array *tags_list);
+
+/* Get Tags List from Tags_List_Key */
+static int get_tags_list(struct flb_influxdb *ctx, int n_size,
+                         msgpack_object *map, msgpack_object_array **tags_list);
 
 /*
  * Increments the timestamp when it is duplicated
@@ -81,6 +85,7 @@ static char *influxdb_format(const char *tag, int tag_len,
     struct influxdb_bulk *bulk = NULL;
     struct influxdb_bulk *bulk_head = NULL;
     struct influxdb_bulk *bulk_body = NULL;
+    msgpack_object_array *tags_list = NULL;
 
 
     /* Iterate the original buffer and perform adjustments */
@@ -155,6 +160,17 @@ static char *influxdb_format(const char *tag, int tag_len,
                                           ctx->seq_name, ctx->seq_len);
         if (ret == -1) {
             goto error;
+        }
+
+        if (ctx->tags_list_enabled) {
+            ret = get_tags_list(ctx,
+                                n_size,
+                                &map,
+                                &tags_list);
+
+            if (ret == -1) {
+                tags_list = NULL;
+            }
         }
 
         for (i = 0; i < n_size - 1; i++) {
@@ -241,7 +257,7 @@ static char *influxdb_format(const char *tag, int tag_len,
                 val_len = str_size;
             }
 
-            if (is_tagged_key(ctx, key, key_len, v->type)) {
+            if (is_tagged_key(ctx, key, key_len, v->type, tags_list)) {
                 /* Append key/value data into the bulk_head */
                 ret = influxdb_bulk_append_kv(bulk_head,
                                               key, key_len,
@@ -597,7 +613,7 @@ static int cb_influxdb_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-int is_tagged_key(struct flb_influxdb *ctx, const char *key, int kl, int type)
+int is_tagged_key(struct flb_influxdb *ctx, const char *key, int kl, int type, msgpack_object_array *tags_list)
 {
     if (type == MSGPACK_OBJECT_STR) {
         if (ctx->auto_tags) {
@@ -617,7 +633,45 @@ int is_tagged_key(struct flb_influxdb *ctx, const char *key, int kl, int type)
         }
     }
 
+    if (tags_list) {
+       for (int i=0; i<tags_list->size; i++) {
+           if (tags_list->ptr[i].type != MSGPACK_OBJECT_STR) {
+               continue;
+           }
+           if (kl == tags_list->ptr[i].via.str.size && strncmp(key, tags_list->ptr[i].via.str.ptr, kl) == 0) {
+               return FLB_TRUE;
+           }
+       }
+    }
+
     return FLB_FALSE;
+}
+
+/* Get Tags List from Tags_List_Key */
+int get_tags_list(struct flb_influxdb *ctx, int n_size, msgpack_object *map, msgpack_object_array **tags_list)
+{
+    for (int i = 0; i < n_size - 1; i++) {
+        msgpack_object *k = &map->via.map.ptr[i].key;
+        msgpack_object *v = &map->via.map.ptr[i].val;
+
+        if (k->type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        if (v->type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        /* key */
+        const char *key = k->via.str.ptr;
+        int key_len = k->via.str.size;
+
+        if (strncmp(key, ctx->tags_list_key, key_len) == 0) {
+            *tags_list = &v->via.array;
+            return 0;
+        }
+    }
+    return -1;
 }
 
 /* Configuration properties map */
@@ -687,6 +741,18 @@ static struct flb_config_map config_map[] = {
      "Space separated list of keys that needs to be tagged."
     },
 
+    {
+    FLB_CONFIG_MAP_BOOL, "tags_list_enabled", FLB_FALSE,
+    0, FLB_TRUE, offsetof(struct flb_influxdb, tags_list_enabled),
+    "Enable dynamic tags list feature."
+    },
+
+    {
+    FLB_CONFIG_MAP_STR, "tags_list_key", NULL,
+    0, FLB_TRUE, offsetof(struct flb_influxdb, tags_list_key),
+    "Key of the string array within the record containing the tag keys."
+    },
+
     /* EOF */
     {0}
 };
@@ -695,7 +761,7 @@ struct flb_output_plugin out_influxdb_plugin = {
     .name         = "influxdb",
     .description  = "InfluxDB Time Series",
     .cb_init      = cb_influxdb_init,
-    .cb_pre_run     = NULL,
+    .cb_pre_run   = NULL,
     .cb_flush     = cb_influxdb_flush,
     .cb_exit      = cb_influxdb_exit,
     .config_map   = config_map,
