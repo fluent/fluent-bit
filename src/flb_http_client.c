@@ -1128,6 +1128,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         new_size = c->header_size + 2;
         tmp = flb_realloc(c->header_buf, new_size);
         if (!tmp) {
+            flb_errno();
             return -1;
         }
         c->header_buf  = tmp;
