@@ -607,6 +607,10 @@ static int cb_influxdb_exit(void *data, struct flb_config *config)
         flb_utils_split_free(ctx->tag_keys);
     }
 
+    if (ctx->seq_name) {
+        flb_free(ctx->seq_name);
+    }
+
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
