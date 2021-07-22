@@ -35,7 +35,7 @@ FLB_TLS_DEFINE(struct mk_list, flb_upstream_list_key);
 /* Config map for Upstream networking setup */
 struct flb_config_map upstream_net[] = {
     {
-     FLB_CONFIG_MAP_STR, "net.dns_mode", NULL,
+     FLB_CONFIG_MAP_STR, "net.dns.mode", NULL,
      0, FLB_TRUE, offsetof(struct flb_net_setup, dns_mode),
      "Select the primary DNS connection type (TCP or UDP)"
     },
@@ -109,7 +109,7 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
     if (config->dns_mode != NULL) {
 
         for (config_index = 0 ; upstream_net[config_index].name != NULL ; config_index++) {
-            if(strcmp(upstream_net[config_index].name, "net.dns_mode") == 0)
+            if(strcmp(upstream_net[config_index].name, "net.dns.mode") == 0)
             {
                 upstream_net[config_index].def_value = config->dns_mode;
             }
