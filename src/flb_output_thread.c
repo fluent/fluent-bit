@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
 
+static pthread_once_t local_thread_instance_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
 
 void flb_output_thread_instance_init()
@@ -409,7 +410,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
      * Initialize thread-local-storage, every worker thread has it owns
      * context with relevant info populated inside the thread.
      */
-    flb_output_thread_instance_init();
+    pthread_once(&local_thread_instance_init, flb_output_thread_instance_init);
 
     /* Create workers */
     for (i = 0; i < ins->tp_workers; i++) {
