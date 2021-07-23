@@ -255,6 +255,7 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     int k_len = key_len;
     int is_digit = FLB_FALSE;
     char *p;
+    size_t prev_size;
 
     /* Normalize key name using the packed value */
     if (isdigit(*key)) {
@@ -268,15 +269,22 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         msgpack_pack_str_body(mp_pck, "_", 1);
     }
 
-    /*
-     * 'p' will point to the next memory area where the key will be
-     * written.
+
+    /* save the current size/offset only as
+     * msgpack_pack_str_body will return with a new mp_sbuf->data
+     * if mp_sbuf->data was resized with realloc()
      */
-    p = (char *) (mp_sbuf->data + mp_sbuf->size);
+    prev_size = mp_sbuf->size;
 
     /* Pack the key name */
     msgpack_pack_str_body(mp_pck, key, key_len);
 
+    /*
+     * 'p' will point to where the key was written.
+     */
+    p = (char *) (mp_sbuf->data + prev_size);
+
+    /* and sanitize the key characters */
     for (i = 0; i < key_len; i++) {
         if (!isalnum(p[i]) && p[i] != '_') {
             p[i] = '_';
