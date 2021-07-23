@@ -431,6 +431,12 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
 
+    if (!m_upload->upload_id) {
+        flb_plg_error(ctx->ins, "Cannot complete multipart upload for key %s: "
+                      "upload ID is unset ", m_upload->s3_key);
+        return -1;
+    }
+
     uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 11 +
                               flb_sds_len(m_upload->upload_id));
     if (!uri) {
