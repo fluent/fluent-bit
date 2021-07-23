@@ -35,6 +35,7 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
     p = flb_parser_create("_ml_cri",               /* parser name */
                           "regex",                 /* backend type */
                           FLB_ML_CRI_REGEX,        /* regex */
+                          FLB_TRUE,                /* skip_empty */
                           FLB_ML_CRI_TIME,         /* time format */
                           "time",                  /* time key */
                           NULL,                    /* time offset */
