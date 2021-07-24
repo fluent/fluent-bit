@@ -27,11 +27,12 @@
 #include <fcntl.h>
 
 #include <monkey/mk_core.h>
-#include <fluent-bit/flb_log.h>
-#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_worker.h>
+#include <fluent-bit/flb_fcntl.h>
+#include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_worker.h>
 
 #ifdef FLB_HAVE_AWS_ERROR_REPORTER
 #include <fluent-bit/aws/flb_aws_error_reporter.h>
@@ -71,7 +72,7 @@ static inline int log_push(struct log_message *msg, struct flb_log *log)
         return write(STDERR_FILENO, msg->msg, msg->size);
     }
     else if (log->type == FLB_LOG_FILE) {
-        fd = open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0666);
+        fd = flb_open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0666);
         if (fd == -1) {
             fprintf(stderr, "[log] error opening log file %s. Using stderr.\n",
                     log->out);
