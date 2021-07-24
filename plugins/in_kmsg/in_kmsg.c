@@ -17,10 +17,11 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_time.h>
 
 #include <msgpack.h>
@@ -57,7 +58,7 @@ static int boot_time(struct timeval *boot_time)
     char buf[256];
     struct timeval curr_time;
 
-    fd = open("/proc/uptime", O_RDONLY);
+    fd = flb_open("/proc/uptime", O_RDONLY, 0);
     if (fd == -1) {
         return -1;
     }
@@ -292,7 +293,7 @@ static int in_kmsg_init(struct flb_input_instance *ins,
     flb_input_set_context(ins, ctx);
 
     /* open device */
-    fd = open(FLB_KMSG_DEV, O_RDONLY);
+    fd = flb_open(FLB_KMSG_DEV, O_RDONLY, 0);
     if (fd == -1) {
         flb_errno();
         flb_free(ctx);
