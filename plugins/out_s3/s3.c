@@ -1637,6 +1637,7 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
                 s3_store_file_inactive(ctx, upload_contents->upload_file);
                 multipart_upload_destroy(upload_contents->m_upload_file);
                 remove_from_queue(upload_contents);
+                continue;
             }
 
             /* Retry in N seconds */
