@@ -17,9 +17,10 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_output_plugin.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -90,7 +91,7 @@ static void cb_plot_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Open output file with default name as the Tag */
-    fd = open(out_file, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    fd = flb_open(out_file, O_WRONLY | O_CREAT | O_APPEND, 0666);
     if (fd == -1) {
         flb_errno();
         flb_plg_warn(ctx->ins, "could not open %s, switching to STDOUT",
