@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fcntl.h>
 
 #ifdef FLB_HAVE_GETENTROPY
@@ -77,7 +78,7 @@ int flb_random_bytes(unsigned char *buf, int len)
 
 try_urandom:
 #endif /* FLB_HAVE_GETENTROPY || FLB_HAVE_GETENTROPY_SYS_RANDOM */
-    fd = open("/dev/urandom", O_RDONLY);
+    fd = flb_open("/dev/urandom", O_RDONLY, 0);
     if (fd == -1) {
         return -1;
     }
