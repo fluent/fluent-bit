@@ -33,18 +33,18 @@
 #include <sys/poll.h>
 #endif
 
-#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_socket.h>
-#include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_str.h>
-#include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_network.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_macros.h>
-#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <monkey/mk_core.h>
 #include <ares.h>
@@ -259,40 +259,45 @@ int flb_net_socket_tcp_fastopen(flb_sockfd_t fd)
     return setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
 }
 
-flb_sockfd_t flb_net_socket_create(int family, int nonblock)
+static flb_sockfd_t flb_socket(int family, int type, int nonblock)
 {
     flb_sockfd_t fd;
 
-    /* create the socket and set the nonblocking flag status */
-    fd = socket(family, SOCK_STREAM, 0);
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
+    type |= SOCK_CLOEXEC;
+    if (nonblock) {
+        type |= SOCK_NONBLOCK;
+    }
+
+    fd = socket(family, type, 0);
     if (fd == -1) {
         flb_errno();
         return -1;
     }
-
-    if (nonblock) {
-        flb_net_socket_nonblocking(fd);
-    }
-
-    return fd;
-}
-
-flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock)
-{
-    flb_sockfd_t fd;
-
-    /* create the socket and set the nonblocking flag status */
+#else
     fd = socket(family, SOCK_DGRAM, 0);
     if (fd == -1) {
         flb_errno();
         return -1;
     }
 
+    flb_fcntl_cloexec(fd);
     if (nonblock) {
         flb_net_socket_nonblocking(fd);
     }
+#endif
 
     return fd;
+}
+
+flb_sockfd_t flb_net_socket_create(int family, int nonblock)
+{
+    return flb_socket(family, SOCK_STREAM, nonblock);
+}
+
+flb_sockfd_t flb_net_socket_create_udp(int family, int nonblock)
+{
+    return flb_socket(family, SOCK_DGRAM, nonblock);
 }
 
 /*
@@ -1604,14 +1609,19 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
 #ifdef FLB_HAVE_ACCEPT4
     remote_fd = accept4(server_fd, &sock_addr, &socket_size,
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (remote_fd == -1) {
+        flb_errno();
+        return -1;
+    }
 #else
     remote_fd = accept(server_fd, &sock_addr, &socket_size);
+    if (remote_fd == -1) {
+        flb_errno();
+        return -1;
+    }
+    flb_fcntl_cloexec(remote_fd);
     flb_net_socket_nonblocking(remote_fd);
 #endif
-
-    if (remote_fd == -1) {
-        perror("accept4");
-    }
 
     return remote_fd;
 }
