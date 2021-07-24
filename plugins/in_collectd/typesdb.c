@@ -17,8 +17,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_fcntl.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -36,7 +37,7 @@
 static int typesdb_load(struct flb_in_collectd_config *ctx,
                         struct mk_list *tdb, const char *path)
 {
-    int fd = open(path, O_RDONLY);
+    int fd = flb_open(path, O_RDONLY, 0);
     if (fd < 0) {
         flb_errno();
         flb_plg_error(ctx->ins, "failed to open '%s'", path);
