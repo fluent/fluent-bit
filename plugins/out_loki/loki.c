@@ -254,6 +254,7 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     int i;
     int k_len = key_len;
     int is_digit = FLB_FALSE;
+    size_t sbuf_size;
     char *p;
 
     /* Normalize key name using the packed value */
@@ -268,14 +269,13 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         msgpack_pack_str_body(mp_pck, "_", 1);
     }
 
-    /*
-     * 'p' will point to the next memory area where the key will be
-     * written.
-     */
-    p = (char *) (mp_sbuf->data + mp_sbuf->size);
+    sbuf_size = mp_sbuf->size;
 
     /* Pack the key name */
     msgpack_pack_str_body(mp_pck, key, key_len);
+
+    /* 'p' will point to the beginning memory area where the key written. */
+    p = (char *) (mp_sbuf->data + sbuf_size);
 
     for (i = 0; i < key_len; i++) {
         if (!isalnum(p[i]) && p[i] != '_') {
