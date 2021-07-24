@@ -18,12 +18,13 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_utils.h>
-#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_pack.h>
-#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
 
@@ -285,7 +286,7 @@ static int cb_serial_init(struct flb_input_instance *in,
     flb_input_set_context(in, ctx);
 
     /* open device */
-    fd = open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    fd = flb_open(ctx->file, O_RDWR | O_NOCTTY | O_NONBLOCK, 0);
     if (fd == -1) {
         perror("open");
         flb_error("[in_serial] Could not open serial port device");
