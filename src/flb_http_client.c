@@ -1217,6 +1217,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
+                flb_warn("[http_client] malformed HTTP response from %s:%i on "
+                         "connection #%i", c->u_conn->u->tcp_host,
+                         c->u_conn->u->tcp_port, c->u_conn->fd);
                 return -1;
             }
             else if (ret == FLB_HTTP_OK) {

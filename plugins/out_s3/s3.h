@@ -57,6 +57,18 @@
  */
 #define MAX_UPLOAD_ERRORS 5
 
+struct upload_queue {
+    struct s3_file *upload_file;
+    struct multipart_upload *m_upload_file;
+    char *tag;
+    int tag_len;
+
+    int retry_counter;
+    time_t upload_time;
+
+    struct mk_list _head;
+};
+
 struct multipart_upload {
     flb_sds_t s3_key;
     flb_sds_t tag;
@@ -97,6 +109,7 @@ struct flb_s3 {
     char *canned_acl;
     char *compression;
     char *content_type;
+    char *log_key;
     int free_endpoint;
     int use_put_object;
     int send_content_md5;
@@ -131,9 +144,14 @@ struct flb_s3 {
 
     struct mk_list uploads;
 
+    int preserve_data_ordering;
+    int upload_queue_success;
+    struct mk_list upload_queue;
+
     size_t file_size;
     size_t upload_chunk_size;
     time_t upload_timeout;
+    time_t retry_time;
 
     int timer_created;
     int timer_ms;
