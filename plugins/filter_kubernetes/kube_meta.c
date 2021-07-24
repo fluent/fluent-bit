@@ -17,16 +17,17 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_hash.h>
-#include <fluent-bit/flb_regex.h>
-#include <fluent-bit/flb_io.h>
-#include <fluent-bit/flb_upstream.h>
-#include <fluent-bit/flb_http_client.h>
-#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_fcntl.h>
+#include <fluent-bit/flb_filter_plugin.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_io.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <sys/types.h>
@@ -316,7 +317,7 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
         ret = snprintf(uri, sizeof(uri) - 1, "%s/%s_%s.meta",
                        ctx->meta_preload_cache_dir, namespace, podname);
         if (ret > 0) {
-            fd = open(uri, O_RDONLY, 0);
+            fd = flb_open(uri, O_RDONLY, 0);
             if (fd != -1) {
                 if (fstat(fd, &sb) == 0) {
                     payload = flb_malloc(sb.st_size);
