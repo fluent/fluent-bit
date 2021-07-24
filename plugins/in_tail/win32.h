@@ -45,7 +45,7 @@
 #undef S_ISREG
 #undef S_ISLNK
 
-#define open win32_open
+#define flb_open win32_open
 #define stat win32_stat
 #define lstat win32_lstat
 #define fstat win32_fstat

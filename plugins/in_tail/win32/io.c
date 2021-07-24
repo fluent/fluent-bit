@@ -30,7 +30,7 @@
  * open(2) that does not acquire an exclusive lock.
  */
 
-int win32_open(const char *path, int flags)
+int win32_open(const char *path, int flags, int mode)
 {
     HANDLE h;
     h = CreateFileA(path,

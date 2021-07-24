@@ -32,7 +32,7 @@ int win32_stat(const char *path, struct win32_stat *wst);
 int win32_lstat(const char *path, struct win32_stat *wst);
 int win32_fstat(int fd, struct win32_stat *wst);
 
-int win32_open(const char *path, int flags);
+int win32_open(const char *path, int flags, int mode);
 
 #define WIN32_S_IFDIR 0x1000
 #define WIN32_S_IFCHR 0x2000

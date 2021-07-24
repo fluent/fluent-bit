@@ -23,6 +23,7 @@
 #include <time.h>
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
@@ -883,7 +884,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
-    fd = open(path, O_RDONLY);
+    fd = flb_open(path, O_RDONLY, 0);
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
