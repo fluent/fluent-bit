@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_filter_plugin.h>
 
 struct ml_ctx {
+    int debug_flush;
     flb_sds_t key_content;
 
     /* packaging buffers */
