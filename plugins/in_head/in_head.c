@@ -17,13 +17,14 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_error.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -88,7 +89,7 @@ static int read_bytes(struct flb_in_head_config *ctx)
 {
     int fd = -1;
     /* open at every collect callback */
-    fd = open(ctx->filepath, O_RDONLY);
+    fd = flb_open(ctx->filepath, O_RDONLY, 0);
     if (fd < 0) {
         flb_errno();
         return -1;
