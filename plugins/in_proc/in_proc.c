@@ -17,8 +17,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_fcntl.h>
+#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
@@ -131,7 +132,7 @@ static pid_t get_pid_from_procname_linux(struct flb_in_proc_config *ctx,
     }
 
     for (i = 0; i < glb.gl_pathc; i++) {
-        fd = open(glb.gl_pathv[i], O_RDONLY);
+        fd = flb_open(glb.gl_pathv[i], O_RDONLY, 0);
         if (fd < 0) {
             continue;
         }
