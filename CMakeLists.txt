@@ -846,6 +846,19 @@ if(FLB_INOTIFY)
   endif()
 endif()
 
+# pipe2
+check_c_source_compiles("
+    #define _GNU_SOURCE
+    #include <unistd.h>
+    int main() {
+        int pipefd[2];
+        pipe2(pipefd, 0);
+        return 0;
+    }" FLB_HAVE_PIPE2)
+if(FLB_HAVE_PIPE2)
+  FLB_DEFINITION(FLB_HAVE_PIPE2)
+endif()
+
 include(CheckSymbolExists)
 
 # Check for getentropy(3)

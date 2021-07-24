@@ -38,8 +38,9 @@
  */
 
 #include <fluent-bit/flb_compat.h>
-#include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_time.h>
 
 #ifdef _WIN32
@@ -85,7 +86,16 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 
 int flb_pipe_create(flb_pipefd_t pipefd[2])
 {
-    return pipe(pipefd);
+#ifdef FLB_HAVE_PIPE2
+    return pipe2(pipefd, O_CLOEXEC);
+#else
+    if (pipe(pipefd) == -1) {
+        return -1;
+    }
+    flb_fcntl_cloexec(pipefd[0]);
+    flb_fcntl_cloexec(pipefd[1]);
+    return 0;
+#endif
 }
 
 void flb_pipe_destroy(flb_pipefd_t pipefd[2])
