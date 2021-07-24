@@ -17,14 +17,15 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_sds.h>
-#include <fluent-bit/flb_http_client.h>
-#include <fluent-bit/flb_signv4.h>
-#include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_aws_credentials.h>
-#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_fcntl.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_signv4.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -103,7 +104,7 @@ int flb_read_file(const char *path, char **out_buf, size_t *out_size)
     struct stat st;
     int fd;
 
-    fd = open(path, O_RDONLY);
+    fd = flb_open(path, O_RDONLY, 0);
     if (fd < 0) {
         return -1;
     }

@@ -22,6 +22,7 @@
 #include "flb_aws_credentials_log.h"
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_time.h>
@@ -439,7 +440,7 @@ static int new_process(struct process* p, char** args)
         .pid = -1,
     };
 
-    while ((p->stdin_stream = open(DEV_NULL, O_RDONLY|O_CLOEXEC)) < 0) {
+    while ((p->stdin_stream = flb_open(DEV_NULL, O_RDONLY, 0)) < 0) {
         if (errno != EINTR) {
             flb_errno();
             return -1;
@@ -451,17 +452,7 @@ static int new_process(struct process* p, char** args)
         return -1;
     }
 
-    if (fcntl(p->stdout_stream[0], F_SETFL, O_CLOEXEC) < 0) {
-        flb_errno();
-        return -1;
-    }
-
-    if (fcntl(p->stdout_stream[1], F_SETFL, O_CLOEXEC) < 0) {
-        flb_errno();
-        return -1;
-    }
-
-    while ((p->stderr_stream = open(DEV_NULL, O_WRONLY|O_CLOEXEC)) < 0) {
+    while ((p->stderr_stream = flb_open(DEV_NULL, O_WRONLY, 0)) < 0) {
         if (errno != EINTR) {
             flb_errno();
             return -1;
@@ -479,17 +470,17 @@ static int new_process(struct process* p, char** args)
  */
 static void exec_process_child(struct process* p)
 {
-    while ((dup2(p->stdin_stream, STDIN_FILENO) < 0)) {
+    while (dup2(p->stdin_stream, STDIN_FILENO) < 0) {
         if (errno != EINTR) {
             return; 
         }
     }
-    while ((dup2(p->stdout_stream[1], STDOUT_FILENO) < 0)) {
+    while (dup2(p->stdout_stream[1], STDOUT_FILENO) < 0) {
         if (errno != EINTR) {
             return;
         }
     }
-    while ((dup2(p->stderr_stream, STDERR_FILENO) < 0)) {
+    while (dup2(p->stderr_stream, STDERR_FILENO) < 0) {
         if (errno != EINTR) {
             return; 
         }
