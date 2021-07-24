@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
 
@@ -75,6 +76,10 @@ static int flush_callback(struct flb_ml_parser *parser,
 {
     struct ml_ctx *ctx = data;
 
+    if (ctx->debug_flush) {
+        flb_ml_flush_stdout(parser, mst, data, buf_data, buf_size);
+    }
+
     /* Append incoming record to our msgpack context buffer */
     msgpack_sbuffer_write(&ctx->mp_sbuf, buf_data, buf_size);
 
@@ -98,6 +103,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+    ctx->debug_flush = FLB_FALSE;
 
     /* Init buffers */
     msgpack_sbuffer_init(&ctx->mp_sbuf);
@@ -174,12 +180,15 @@ static int cb_ml_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         ret = flb_ml_append_object(ctx->m, ctx->stream_id, &tm, obj);
-
         if (ret != 0) {
-            flb_plg_debug(ctx->ins, "could not append object");
+            flb_plg_debug(ctx->ins,
+                          "could not append object from tag: %s", tag);
         }
     }
     msgpack_unpacked_destroy(&result);
+
+    /* flush all pending buffered data (there is no auto-flush in filters) */
+    flb_ml_flush_pending_now(ctx->m);
 
     if (ctx->mp_sbuf.size > 0) {
         /*
@@ -203,6 +212,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
         return FLB_FILTER_MODIFIED;
     }
 
+    /* unlikely to happen.. but just in case */
     return FLB_FILTER_NOTOUCH;
 }
 
@@ -226,6 +236,12 @@ static int cb_ml_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "debug_flush", "false",
+     0, FLB_TRUE, offsetof(struct ml_ctx, debug_flush),
+     "enable debugging for concatenation flush to stdout"
+    },
+
     /* Multiline Core Engine based API */
     {
      FLB_CONFIG_MAP_CLIST, "multiline.parser", NULL,
