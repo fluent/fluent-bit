@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_fcntl.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_sds.h>
@@ -99,7 +100,7 @@ int ne_utils_file_read_uint64(const char *mount,
         flb_sds_cat_safe(&p, join_b, len);
     }
 
-    fd = open(p, O_RDONLY);
+    fd = flb_open(p, O_RDONLY, 0);
     if (fd == -1) {
         flb_sds_destroy(p);
         return -1;
