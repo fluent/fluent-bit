@@ -248,8 +248,7 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
 }
 
 /* Pack a label key, it also perform sanitization of the characters */
-static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                          char *key, int key_len)
+static int pack_label_key(msgpack_packer *mp_pck, char *key, int key_len)
 {
     int i;
     int k_len = key_len;
@@ -269,19 +268,14 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         msgpack_pack_str_body(mp_pck, "_", 1);
     }
 
-
-    /*
-     * save the current size/offset only as
-     * msgpack_pack_str_body will return with a new mp_sbuf->data
-     * if mp_sbuf->data was resized with realloc()
-     */
-    prev_size = mp_sbuf->size;
+    /* save the current offset */
+    prev_size = ((msgpack_sbuffer *) mp_pck->data)->size;
 
     /* Pack the key name */
     msgpack_pack_str_body(mp_pck, key, key_len);
 
     /* 'p' will point to where the key was written */
-    p = (char *) (mp_sbuf->data + prev_size);
+    p = (char *) (((msgpack_sbuffer*) mp_pck->data)->data + prev_size);
 
     /* and sanitize the key characters */
     for (i = 0; i < key_len; i++) {
@@ -294,7 +288,7 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 }
 
 static flb_sds_t pack_labels(struct flb_loki *ctx,
-                             msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                             msgpack_packer *mp_pck,
                              char *tag, int tag_len,
                              msgpack_object *map)
 {
@@ -328,8 +322,8 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
                 flb_mp_map_header_append(&mh);
 
                 /* We skip the first '$' character since it won't be valid in Loki */
-                pack_label_key(mp_sbuf, mp_pck,
-                               kv->key_normalized, flb_sds_len(kv->key_normalized));
+                pack_label_key(mp_pck, kv->key_normalized,
+                               flb_sds_len(kv->key_normalized));
 
                 msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
                 msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
@@ -387,7 +381,7 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
                 flb_mp_map_header_append(&mh);
 
                 /* Pack key */
-                pack_label_key(mp_sbuf, mp_pck, (char *) k.via.str.ptr, k.via.str.size);
+                pack_label_key(mp_pck, (char *) k.via.str.ptr, k.via.str.size);
 
                 /* Pack the value */
                 msgpack_pack_str(mp_pck, v.via.str.size);
@@ -1096,7 +1090,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          msgpack_pack_str_body(&mp_pck, "stream", 6);
 
          /* Pack stream labels */
-         pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, NULL);
+         pack_labels(ctx, &mp_pck, tag, tag_len, NULL);
 
         /* streams['values'] */
          msgpack_pack_str(&mp_pck, 6);
@@ -1136,7 +1130,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
              msgpack_pack_str_body(&mp_pck, "stream", 6);
 
              /* Pack stream labels */
-             pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, obj);
+             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
 
              /* streams['values'] */
              msgpack_pack_str(&mp_pck, 6);
