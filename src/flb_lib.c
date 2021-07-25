@@ -668,6 +668,8 @@ int flb_start(flb_ctx_t *ctx)
         fd = event->fd;
         bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
+            pthread_cancel(tid);
+            pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }
@@ -679,6 +681,7 @@ int flb_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_error("[lib] backend failed");
+            pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }
