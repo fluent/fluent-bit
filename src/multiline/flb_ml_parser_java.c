@@ -53,7 +53,7 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key)
                                NULL);                /* parser name */
 
     if (!mlp) {
-        flb_error("[multiline] could not create 'python mode'");
+        flb_error("[multiline] could not create 'java mode'");
         return NULL;
     }
 
@@ -86,7 +86,7 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key)
 
     ret = rule(mlp,
                "java_after_exception, java",
-               "/^[\t ]+(?:eval )?at /",
+               "/^[\\t ]+(?:eval )?at /",
                "java", NULL);
     if (ret != 0) {
         rule_error(mlp);
@@ -116,7 +116,7 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key)
 
     ret = rule(mlp,
                "java_after_exception, java",
-               "/^[\t ]*(?:Caused by|Suppressed):/",
+               "/^[\\t ]*(?:Caused by|Suppressed):/",
                "java_after_exception", NULL);
     if (ret != 0) {
         rule_error(mlp);
@@ -125,7 +125,7 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key)
 
     ret = rule(mlp,
                "java_after_exception, java",
-               "/^[\t ]*... \\d+ (?:more|common frames omitted)/",
+               "/^[\\t ]*... \\d+ (?:more|common frames omitted)/",
                "java", NULL);
     if (ret != 0) {
         rule_error(mlp);

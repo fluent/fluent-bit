@@ -270,7 +270,8 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     }
 
 
-    /* save the current size/offset only as
+    /*
+     * save the current size/offset only as
      * msgpack_pack_str_body will return with a new mp_sbuf->data
      * if mp_sbuf->data was resized with realloc()
      */
@@ -279,9 +280,7 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     /* Pack the key name */
     msgpack_pack_str_body(mp_pck, key, key_len);
 
-    /*
-     * 'p' will point to where the key was written.
-     */
+    /* 'p' will point to where the key was written */
     p = (char *) (mp_sbuf->data + prev_size);
 
     /* and sanitize the key characters */
