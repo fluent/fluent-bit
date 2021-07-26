@@ -263,11 +263,13 @@ static int read_seq_index(char *seq_index_file, uint64_t *seq_index)
 
     fp = fopen(seq_index_file, "r");
     if (fp == NULL) {
+        flb_errno();
         return -1;
     }
 
     ret = fscanf(fp, "%"PRIu64, seq_index);
     if (ret != 1) {
+        flb_errno();
         return -1;
     }
 
@@ -283,11 +285,13 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
 
     fp = fopen(seq_index_file, "w+");
     if (fp == NULL) {
+        flb_errno();
         return -1;
     }
 
     ret = fprintf(fp, "%"PRIu64, seq_index);
     if (ret < 0) {
+        flb_errno();
         return -1;
     }
 
@@ -349,7 +353,7 @@ static int init_seq_index(void *context) {
     }
 
     /* Create directory path if it doesn't exist */
-    ret = mkdir(ctx->metadata_dir, 0755);
+    ret = mkdir(ctx->metadata_dir, 0600);
     if (ret < 0 && errno != EEXIST) {
         flb_plg_error(ctx->ins, "Failed to create metadata directory");
         return -1;
