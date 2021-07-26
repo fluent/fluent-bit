@@ -29,6 +29,7 @@
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/md5.h>
 #include <msgpack.h>
@@ -254,6 +255,132 @@ static flb_sds_t concat_path(char *p1, char *p2)
     return dir;
 }
 
+/* Reads in index value from metadata file and sets seq_index to value */
+static int read_seq_index(char *seq_index_file, uint64_t *seq_index)
+{
+    FILE *fp;
+    int ret;
+
+    fp = fopen(seq_index_file, "r");
+    if (fp == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = fscanf(fp, "%"PRIu64, seq_index);
+    if (ret != 1) {
+        flb_errno();
+        return -1;
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+/* Writes index value to metadata file */
+static int write_seq_index(char *seq_index_file, uint64_t seq_index)
+{
+    FILE *fp;
+    int ret;
+
+    fp = fopen(seq_index_file, "w+");
+    if (fp == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = fprintf(fp, "%"PRIu64, seq_index);
+    if (ret < 0) {
+        flb_errno();
+        return -1;
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+static int init_seq_index(void *context) {
+    int ret;
+    const char *tmp;
+    char tmp_buf[1024];
+    struct flb_s3 *ctx = context;
+
+    ctx->key_fmt_has_seq_index = FLB_TRUE;
+
+    ctx->stream_metadata = flb_fstore_stream_create(ctx->fs, "sequence");
+    if (!ctx->stream_metadata) {
+        flb_plg_error(ctx->ins, "could not initialize metadata stream");
+        flb_fstore_destroy(ctx->fs);
+        ctx->fs = NULL;
+        return -1;
+    }
+
+    /* Construct directories and file path names */
+    ctx->metadata_dir = flb_sds_create(ctx->stream_metadata->path);
+    if (ctx->metadata_dir == NULL) {
+        flb_plg_error(ctx->ins, "Failed to create metadata path");
+        flb_errno();
+        return -1;
+    }
+    tmp = "/index_metadata";
+    ret = flb_sds_cat_safe(&ctx->metadata_dir, tmp, strlen(tmp));
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Failed to create metadata path");
+        flb_errno();
+        return -1;
+    }
+
+    ctx->seq_index_file = flb_sds_create(ctx->metadata_dir);
+    if (ctx->seq_index_file == NULL) {
+        flb_plg_error(ctx->ins, "Failed to create sequential index file path");
+        flb_errno();
+        return -1;
+    }
+    tmp = "/seq_index_";
+    ret = flb_sds_cat_safe(&ctx->seq_index_file, tmp, strlen(tmp));
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Failed to create sequential index file path");
+        flb_errno();
+        return -1;
+    }
+
+    sprintf(tmp_buf, "%d", ctx->ins->id);
+    ret = flb_sds_cat_safe(&ctx->seq_index_file, tmp_buf, strlen(tmp_buf));
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Failed to create sequential index file path");
+        flb_errno();
+        return -1;
+    }
+
+    /* Create directory path if it doesn't exist */
+    ret = mkdir(ctx->metadata_dir, 0600);
+    if (ret < 0 && errno != EEXIST) {
+        flb_plg_error(ctx->ins, "Failed to create metadata directory");
+        return -1;
+    }
+
+    /* Check if index file doesn't exist and set index value */
+    if (access(ctx->seq_index_file, F_OK) != 0) {
+        ctx->seq_index = 0;
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
+            return -1;
+        }
+    } 
+    else {
+        ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to read from sequential index "
+                          "metadata file");
+            return -1;
+        }
+        flb_plg_info(ctx->ins, "Successfully recovered index. "
+                     "Continuing at index=%d", ctx->seq_index);
+    }
+    return 0;
+}
+
 void multipart_upload_destroy(struct multipart_upload *m_upload)
 {
     int i;
@@ -324,6 +451,14 @@ static void s3_context_destroy(struct flb_s3 *ctx)
 
     if (ctx->buffer_dir) {
         flb_sds_destroy(ctx->buffer_dir);
+    }
+
+    if (ctx->metadata_dir) {
+        flb_sds_destroy(ctx->metadata_dir);
+    }
+
+    if (ctx->seq_index_file) {
+        flb_sds_destroy(ctx->seq_index_file);
     }
 
     /* Remove uploads */
@@ -431,11 +566,25 @@ static int cb_s3_init(struct flb_output_instance *ins,
     }
     ctx->buffer_dir = tmp_sds;
 
+    /* Initialize local storage */
+    ret = s3_store_init(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
+                      ctx->store_dir);
+        return -1;
+    }
+
     tmp = flb_output_get_property("s3_key_format", ins);
     if (tmp) {
         if (tmp[0] != '/') {
             flb_plg_error(ctx->ins, "'s3_key_format' must start with a '/'");
             return -1;
+        }
+        if (strstr((char *) tmp, "$INDEX")) {
+            ret = init_seq_index(ctx);
+            if (ret < 0) {
+                return -1;
+            }
         }
         if (strstr((char *) tmp, "$UUID")) {
             ctx->key_fmt_has_uuid = FLB_TRUE;
@@ -635,14 +784,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
                          "Provider");
             return -1;
         }
-    }
-
-    /* Initialize local storage */
-    ret = s3_store_init(ctx);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
-                      ctx->store_dir);
-        return -1;
     }
 
     /* read any remaining buffers from previous (failed) executions */
@@ -871,6 +1012,15 @@ multipart:
             s3_store_file_unlock(chunk);
             chunk->failures += 1;
         }
+        if (ctx->key_fmt_has_seq_index) {
+            ctx->seq_index--;
+
+            ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to decrement index after request error");
+                return -1;
+            }
+        }
         return FLB_RETRY;
     }
     m_upload->part_number += 1;
@@ -931,6 +1081,10 @@ static int put_all_chunks(struct flb_s3 *ctx)
         /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
+            continue;
+        }
+        /* skip metadata stream */
+        if (fs_stream == ctx->stream_metadata) {
             continue;
         }
 
@@ -1063,14 +1217,16 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     size_t final_body_size;
     char final_body_md5[25];
 
-    s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, create_time, tag, ctx->tag_delimiters,
+                            ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         return -1;
     }
 
     len = strlen(s3_key);
-    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid) {
+    if ((len + 16) <= 1024 && !ctx->key_fmt_has_uuid &&
+        !ctx->key_fmt_has_seq_index) {
         append_random = FLB_TRUE;
         len += 16;
     }
@@ -1128,6 +1284,19 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
     }
+
+    /* Update file and increment index value right before request */
+    if (ctx->key_fmt_has_seq_index) {
+        ctx->seq_index++;
+
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        if (ret < 0 && access(ctx->seq_index_file, F_OK) == 0) {
+            ctx->seq_index--;
+            flb_sds_destroy(s3_key);
+            flb_plg_error(ctx->ins, "Failed to update sequential index metadata file");
+            return -1;
+        }
+    }
     
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
@@ -1138,7 +1307,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create headers");
             flb_sds_destroy(uri);
-            return -1;
+            goto decrement_index;
         }
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, final_body, final_body_size,
@@ -1159,6 +1328,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
             flb_sds_destroy(uri);
             flb_http_client_destroy(c);
+
             return 0;
         }
         flb_aws_print_xml_error(c->resp.payload, c->resp.payload_size,
@@ -1171,6 +1341,18 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
 
     flb_plg_error(ctx->ins, "PutObject request failed");
     flb_sds_destroy(uri);
+    goto decrement_index;
+
+decrement_index:
+    if (ctx->key_fmt_has_seq_index) {
+        ctx->seq_index--;
+
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to decrement index after request error");
+            return -1;
+        }
+    }
     return -1;
 }
 
@@ -1226,6 +1408,7 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
 static struct multipart_upload *create_upload(struct flb_s3 *ctx,
                                               const char *tag, int tag_len)
 {
+    int ret;
     struct multipart_upload *m_upload = NULL;
     flb_sds_t s3_key = NULL;
     flb_sds_t tmp_sds = NULL;
@@ -1236,7 +1419,8 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
         flb_errno();
         return NULL;
     }
-    s3_key = flb_get_s3_key(ctx->s3_key_format, time(NULL), tag, ctx->tag_delimiters);
+    s3_key = flb_get_s3_key(ctx->s3_key_format, time(NULL), tag, ctx->tag_delimiters,
+                            ctx->seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
         flb_free(m_upload);
@@ -1254,6 +1438,19 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx,
     m_upload->part_number = 1;
     m_upload->init_time = time(NULL);
     mk_list_add(&m_upload->_head, &ctx->uploads);
+
+    /* Update file and increment index value right before request */
+    if (ctx->key_fmt_has_seq_index) {
+        ctx->seq_index++;
+
+        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        if (ret < 0) {
+            ctx->seq_index--;
+            flb_sds_destroy(s3_key);
+            flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
+            return NULL;
+        }
+    }
 
     return m_upload;
 }
@@ -2043,8 +2240,10 @@ static struct flb_config_map config_map[] = {
     "by the rewrite_tag filter. Add $TAG in the format string to insert the full "
     "log tag; add $TAG[0] to insert the first part of the tag in the s3 key. "
     "The tag is split into “parts” using the characters specified with the "
-    "s3_key_format_tag_delimiters option. See the in depth examples and tutorial"
-    " in the documentation."
+    "s3_key_format_tag_delimiters option. Add $INDEX to enable sequential indexing "
+    "for file names. Adding $INDEX will prevent random string being added to end of key"
+    "when $UUID is not provided. See the in depth examples and tutorial in the "
+    "documentation."
     },
 
     {
