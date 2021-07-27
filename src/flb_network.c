@@ -602,11 +602,11 @@ static void flb_net_getaddrinfo_timeout_handler(struct flb_config *config, void 
 
     *(lookup_context->udp_timeout_detected) = 1;
 
-    ares_cancel(lookup_context->ares_channel);
-
     if (lookup_context->ares_socket_created) {
         mk_event_del(lookup_context->event_loop, &lookup_context->response_event);
     }
+
+    ares_cancel(lookup_context->ares_channel);
 
     flb_coro_resume(lookup_context->coroutine);
 
@@ -770,6 +770,15 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
      * milliseconds
      */
     timeout *= 1000;
+
+    /* We need to ensure that our timer won't overlap with the upstream timeout handler.
+     */
+    if (timeout > 500) {
+        timeout -= 500;
+    }
+    else {
+        timeout /= 2;
+    }
 
     ares_hints.ai_flags = hints->ai_flags;
     ares_hints.ai_family = hints->ai_family;
