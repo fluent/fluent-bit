@@ -912,6 +912,15 @@ int flb_output_init_all(struct flb_config *config)
                 flb_output_instance_destroy(ins);
                 return -1;
             }
+
+            /* Multi-threading enabled if configured */
+            ret = flb_output_enable_multi_threading(ins, config);
+            if (ret == -1) {
+                flb_error("[output] could not start thread pool for '%s' plugin",
+                          p->name);
+                return -1;
+            }
+
             continue;
         }
 #endif
@@ -1017,18 +1026,28 @@ int flb_output_init_all(struct flb_config *config)
             return -1;
         }
 
-        /* Multi-threading enabled ? (through 'workers' property) */
-        if (ins->tp_workers > 0) {
-            ret = flb_output_thread_pool_create(config, ins);
-            if (ret == -1) {
-                flb_error("[output] could not start thread pool for '%s' plugin",
-                          p->name);
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-
-            flb_output_thread_pool_start(ins);
+        /* Multi-threading enabled if configured */
+        ret = flb_output_enable_multi_threading(ins, config);
+        if (ret == -1) {
+            flb_error("[output] could not start thread pool for '%s' plugin",
+                      p->name);
+            return -1;
         }
+    }
+
+    return 0;
+}
+
+/* Add thread pool for output plugin if configured with workers */
+int flb_output_enable_multi_threading(struct flb_output_instance *ins, struct flb_config *config)
+{
+    /* Multi-threading enabled ? (through 'workers' property) */
+    if (ins->tp_workers > 0) {
+        if(flb_output_thread_pool_create(config, ins) != 0) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        flb_output_thread_pool_start(ins);
     }
 
     return 0;
