@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 
+#define LINE_SIZE   2048
+
 /* plugin context */
 struct checklist {
     /* config options */
@@ -44,8 +46,8 @@ static int load_file_patterns(struct checklist *ctx)
     int len;
     int ret;
     int line = 0;
-    int size = 1024;
-    char buf[size];
+    int size = LINE_SIZE;
+    char buf[LINE_SIZE];
     FILE *f;
 
     /* open file */
