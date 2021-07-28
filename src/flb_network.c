@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <ctype.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define poll WSAPoll
