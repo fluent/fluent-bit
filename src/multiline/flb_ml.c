@@ -524,7 +524,6 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
         /* Parse incoming content */
         ret = flb_parser_do(parser->ml_parser->parser, (char *) buf, size,
                             &out_buf, &out_size, &out_time);
-
         if (flb_time_to_double(&out_time) == 0.0) {
             flb_time_copy(&out_time, tm);
         }
@@ -623,7 +622,8 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
 
     mk_list_foreach(head_group, &group->parsers) {
             parser_i = mk_list_entry(head_group, struct flb_ml_parser_ins, _head);
-            if (lru_parser && parser_i == lru_parser) {
+            if (lru_parser && lru_parser == parser_i &&
+                lru_parser->last_stream_id == stream_id) {
                 continue;
             }
 
@@ -639,7 +639,6 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
             else {
                 parser_i = NULL;
             }
-
     }
 
     if (!processed) {
