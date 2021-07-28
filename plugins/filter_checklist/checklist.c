@@ -309,7 +309,7 @@ static int cb_checklist_filter(const void *data, size_t bytes,
         else {
             if (mp_sbuf.size > 0) {
                 /* append current record to new buffer */
-                msgpack_sbuffer_write(&mp_sbuf, data + pre, off - pre);
+                msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
             }
         }
         pre = off;
