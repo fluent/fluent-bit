@@ -67,6 +67,7 @@ void flb_net_init()
 
 void flb_net_setup_init(struct flb_net_setup *net)
 {
+    net->dns_mode = NULL;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -424,6 +425,34 @@ static int net_connect_async(int fd,
     return 0;
 }
 
+static void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
+{
+    /* We had to move the mk_event_del call to the immediate event loop callback
+     * because for some reason calling it here would break the system.
+     * I still don't understand why but that was the only way to fix it.
+     */
+
+    ares_destroy(context->ares_channel);
+    flb_free(context);
+}
+
+void flb_net_dns_lookup_context_cleanup(struct mk_list *cleanup_queue)
+{
+    struct flb_dns_lookup_context *lookup_context;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    mk_list_foreach_safe(head, tmp, cleanup_queue) {
+        lookup_context = mk_list_entry(head, struct flb_dns_lookup_context, _head);
+
+        mk_list_del(&lookup_context->_head);
+
+        flb_coro_resume(lookup_context->coroutine);
+
+        flb_net_dns_lookup_context_destroy(lookup_context);
+    }
+}
+
 static void flb_net_free_translated_addrinfo(struct addrinfo *input)
 {
     struct addrinfo *current_record;
@@ -505,7 +534,7 @@ static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *in
         }
     }
 
-    if (1 == failure_detected) {
+    if (failure_detected) {
         if (NULL != output) {
             flb_net_free_translated_addrinfo(output);
             output = NULL;
@@ -523,20 +552,20 @@ static void flb_net_getaddrinfo_callback(void *arg, int status, int timeouts,
     context = (struct flb_dns_lookup_context *) arg;
 
     if (ARES_SUCCESS == status) {
-        context->result = flb_net_translate_ares_addrinfo(res);
+        *(context->result) = flb_net_translate_ares_addrinfo(res);
 
-        if (NULL == context->result) {
+        if (NULL == *(context->result)) {
             /* Currently, translation fails when malloc error occured. */
-            context->result_code = EAI_MEMORY;
+            *(context->result_code) = ARES_ENOMEM;
         }
         else {
-            context->result_code = ARES_SUCCESS;
+            *(context->result_code) = ARES_SUCCESS;
         }
 
         ares_freeaddrinfo(res);
     }
     else {
-        context->result_code = status;
+        *(context->result_code) = status;
     }
 
     context->finished = 1;
@@ -546,17 +575,42 @@ static int flb_net_getaddrinfo_event_handler(void *arg)
 {
     struct flb_dns_lookup_context *context;
 
-    context = (struct flb_dns_lookup_context *) arg;
+    context = FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(arg);
 
     ares_process_fd(context->ares_channel,
                     context->response_event.fd,
                     context->response_event.fd);
 
-    if (1 == context->finished) {
-        flb_coro_resume(context->coroutine);
+    /* We count on having this opportunity to remove the socket from the event loop
+     * even if the event that triggered this callback was a timeout or premature
+     * close but we will need to figure this out if there is a chance for c-ares
+     * to open multiple simultaneous connections as suspected.
+     */
+    if (context->finished) {
+        mk_event_del(context->event_loop, &context->response_event);
     }
 
     return 0;
+}
+
+static void flb_net_getaddrinfo_timeout_handler(struct flb_config *config, void *data)
+{
+    (void) config;
+    struct flb_dns_lookup_context *lookup_context;
+
+    lookup_context = (struct flb_dns_lookup_context *) data;
+
+    *(lookup_context->udp_timeout_detected) = 1;
+
+    if (lookup_context->ares_socket_created) {
+        mk_event_del(lookup_context->event_loop, &lookup_context->response_event);
+    }
+
+    ares_cancel(lookup_context->ares_channel);
+
+    flb_coro_resume(lookup_context->coroutine);
+
+    flb_net_dns_lookup_context_destroy(lookup_context);
 }
 
 static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
@@ -569,6 +623,15 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
 
     context = (struct flb_dns_lookup_context *) userdata;
 
+    if (context->ares_socket_created) {
+        /* This context already had a connection established and the code is not ready
+         * to handle multiple connections so we abort the process.
+         */
+
+        return -1;
+    }
+
+    context->ares_socket_type    = type;
     context->ares_socket_created = 1;
 
     context->response_event.mask    = MK_EVENT_EMPTY;
@@ -588,26 +651,38 @@ static int flb_net_ares_sock_create_callback(ares_socket_t socket_fd,
      * ares_process_fd in order to issue the query unlike UDP sockets which automatically
      * send the query after creating the socket.
      */
-    if (1 == type) {
+    if (FLB_ARES_SOCKET_TYPE_TCP == type) {
         event_mask |= MK_EVENT_WRITE;
     }
 
     ret = mk_event_add(context->event_loop, socket_fd, FLB_ENGINE_EV_CUSTOM,
                        event_mask, &context->response_event);
-    if (ret != 0) {
+    if (ret) {
         return -1;
     }
+
+    context->response_event.type = FLB_ENGINE_EV_DNS;
 
     return ARES_SUCCESS;
 }
 
-struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event_loop *evl,
-                                                                 struct flb_coro *coroutine)
+static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
+                                                                struct mk_event_loop *evl,
+                                                                struct flb_coro *coroutine,
+                                                                char dns_mode,
+                                                                int *result)
 {
-    int result;
-    int optmask = 0;
-    struct ares_options opts = {0};
+    int                            local_result;
     struct flb_dns_lookup_context *context;
+    int                            optmask;
+    struct ares_options            opts = {0};
+
+    local_result = 0;
+    optmask = 0;
+
+    if (result == NULL) {
+        result = &local_result;
+    }
 
     /* The initialization order here is important since it makes it easier to handle
      * failures
@@ -615,19 +690,26 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
     context = flb_calloc(1, sizeof(struct flb_dns_lookup_context));
     if (!context) {
         flb_errno();
+
+        *result = ARES_ENOMEM;
+
         return NULL;
     }
 
     /* c-ares options: make sure it uses TCP and limit number of tries to 2 */
     optmask = ARES_OPT_FLAGS;
-    opts.flags = ARES_FLAG_USEVC;
     opts.tries = 2;
 
-    result = ares_init_options((ares_channel *) &context->ares_channel,
-                               &opts, optmask);
+    if (dns_mode == FLB_DNS_USE_TCP) {
+        opts.flags = ARES_FLAG_USEVC;
+    }
 
-    if (ARES_SUCCESS != result) {
+    *result = ares_init_options((ares_channel *) &context->ares_channel,
+                                &opts, optmask);
+
+    if (ARES_SUCCESS != *result) {
         flb_free(context);
+
         return NULL;
     }
 
@@ -639,33 +721,63 @@ struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(struct mk_event
     ares_set_socket_callback(context->ares_channel,
                              flb_net_ares_sock_create_callback,
                              context);
+
+    *result = ARES_SUCCESS;
+
     return context;
 }
 
-void flb_net_dns_lookup_context_destroy(struct flb_dns_lookup_context *context)
-{
-    mk_event_del(context->event_loop, &context->response_event);
-    ares_destroy(context->ares_channel);
-    flb_free(context);
-}
-
-
 int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
-                        struct addrinfo **res)
+                        struct addrinfo **res, char *dns_mode_textual, int timeout)
 {
+    int                            udp_timeout_detected;
     struct flb_dns_lookup_context *lookup_context;
+    int                            result_code;
+    struct addrinfo               *result_data;
     struct ares_addrinfo_hints     ares_hints;
     struct mk_event_loop          *event_loop;
     struct flb_coro               *coroutine;
+    char                           dns_mode;
     int                            result;
+    struct flb_sched_timer        *timer;
+    struct flb_sched              *sched;
+
+    dns_mode = FLB_DNS_USE_UDP;
+
+    if (dns_mode_textual != NULL) {
+        dns_mode = toupper(dns_mode_textual[0]);
+    }
 
     event_loop = flb_engine_evl_get();
     coroutine = flb_coro_get();
 
-    lookup_context = flb_net_dns_lookup_context_create(event_loop, coroutine);
+    lookup_context = flb_net_dns_lookup_context_create(event_loop, coroutine, dns_mode,
+                                                       &result);
 
-    if (!lookup_context) {
-        return EAI_AGAIN;
+    if (result != ARES_SUCCESS) {
+        return result;
+    }
+
+    lookup_context->udp_timeout_detected = &udp_timeout_detected;
+    lookup_context->result_code = &result_code;
+    lookup_context->result = &result_data;
+
+    result_code = 0;
+    result_data = NULL;
+    udp_timeout_detected = 0;
+
+    /* The timeout we get is expressed in seconds so we need to convert it to
+     * milliseconds
+     */
+    timeout *= 1000;
+
+    /* We need to ensure that our timer won't overlap with the upstream timeout handler.
+     */
+    if (timeout > 500) {
+        timeout -= 500;
+    }
+    else {
+        timeout /= 2;
     }
 
     ares_hints.ai_flags = hints->ai_flags;
@@ -676,17 +788,43 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints,
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    if (1 == lookup_context->ares_socket_created) {
-        flb_coro_yield(coroutine, FLB_FALSE);
+
+    if (lookup_context->ares_socket_created) {
+        if (lookup_context->ares_socket_type == FLB_ARES_SOCKET_TYPE_UDP) {
+            /* If the socket type created by c-ares is UDP then we need to create our
+             * own timeout mechanism before yielding and cancel it if things go as
+             * expected.
+             */
+
+            sched = flb_sched_ctx_get();
+            assert(sched != NULL);
+
+            result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                               timeout,
+                                               flb_net_getaddrinfo_timeout_handler,
+                                               lookup_context, &timer);
+            if (-1 == result) {
+                result_code = ARES_ENOMEM;
+            }
+            else {
+                flb_coro_yield(coroutine, FLB_FALSE);
+
+                if (1 != udp_timeout_detected) {
+                    flb_sched_timer_cb_disable(timer);
+                    flb_sched_timer_cb_destroy(timer);
+                }
+            }
+        }
+        else {
+            flb_coro_yield(coroutine, FLB_FALSE);
+        }
     }
 
-    if (0 == lookup_context->result_code) {
-        *res = lookup_context->result;
+    if (!result_code) {
+        *res = result_data;
     }
 
-    result = lookup_context->result_code;
-
-    flb_net_dns_lookup_context_destroy(lookup_context);
+    result = result_code;
 
     return result;
 }
@@ -774,13 +912,14 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 
     /* retrieve DNS info */
     if (is_async) {
-        ret = flb_net_getaddrinfo(host, _port, &hints, &res);
+        ret = flb_net_getaddrinfo(host, _port, &hints, &res,
+                                  u_conn->u->net.dns_mode, connect_timeout);
     }
     else {
         ret = getaddrinfo(host, _port, &hints, &res);
     }
 
-    if (ret != 0) {
+    if (ret) {
         if (is_async) {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, ares_strerror(ret));
         }

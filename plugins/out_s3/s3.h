@@ -46,6 +46,10 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
+#define COMPRESS_NONE  0
+#define COMPRESS_GZIP  1
+#define COMPRESS_ARROW 2
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -107,12 +111,13 @@ struct flb_s3 {
     char *endpoint;
     char *sts_endpoint;
     char *canned_acl;
-    char *compression;
     char *content_type;
     char *log_key;
     int free_endpoint;
     int use_put_object;
     int send_content_md5;
+    int static_file_path;
+    int compression;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
@@ -133,6 +138,7 @@ struct flb_s3 {
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
+    struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
 
     /*
      * used to track that unset buffers were found on startup that have not
@@ -156,6 +162,11 @@ struct flb_s3 {
     int timer_created;
     int timer_ms;
     int key_fmt_has_uuid;
+
+    uint64_t seq_index;
+    int key_fmt_has_seq_index;
+    flb_sds_t metadata_dir;
+    flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
 };
