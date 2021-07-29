@@ -70,21 +70,10 @@ static int flb_proxy_cb_exit(void *data, struct flb_config *config)
 {
     struct flb_output_plugin *instance = data;
     struct flb_plugin_proxy *proxy = (instance->proxy);
-    struct flbgo_output_plugin *plugin;
-    void *inst;
 
-    inst = proxy->data;
-
-    plugin = (struct flbgo_output_plugin *) inst;
-    flb_debug("[GO] running exit callback");
-
-    if (plugin->cb_exit_ctx) {
-        return plugin->cb_exit_ctx(plugin->context->remote_context);
+    if (proxy->def->proxy == FLB_PROXY_GOLANG) {
+        proxy_go_destroy(proxy->data);
     }
-    else if (plugin->cb_exit) {
-        return plugin->cb_exit();
-    }
-
     return 0;
 }
 
