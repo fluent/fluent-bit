@@ -253,6 +253,7 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
 void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
 {
     /* cleanup */
+    flb_api_destroy(proxy->api);
     dlclose(proxy->dso_handler);
     mk_list_del(&proxy->_head);
     flb_free(proxy);
