@@ -65,7 +65,7 @@ static void flb_proxy_cb_flush(const void *data, size_t bytes,
     FLB_OUTPUT_RETURN(ret);
 }
 
-
+static void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy);
 static int flb_proxy_cb_exit(void *data, struct flb_config *config)
 {
     struct flb_output_plugin *instance = data;
@@ -74,6 +74,7 @@ static int flb_proxy_cb_exit(void *data, struct flb_config *config)
     if (proxy->def->proxy == FLB_PROXY_GOLANG) {
         proxy_go_destroy(proxy->data);
     }
+    flb_plugin_proxy_destroy(proxy);
     return 0;
 }
 
@@ -243,9 +244,15 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     return proxy;
 }
 
-void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
+static void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
 {
     /* cleanup */
+    void (*cb_unregister)(struct flb_plugin_proxy_def *def);
+
+    cb_unregister = flb_plugin_proxy_symbol(proxy, "FLBPluginUnregister");
+    if (cb_unregister != NULL) {
+        cb_unregister(proxy->def);
+    }
     flb_free(proxy->def);
     flb_api_destroy(proxy->api);
     dlclose(proxy->dso_handler);
