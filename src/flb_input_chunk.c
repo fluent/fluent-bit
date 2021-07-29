@@ -573,10 +573,10 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         cio_chunk_down(chunk);
     }
 
-    if (in->event_type == FLB_INPUT_LOGS) {
+    if (flb_input_event_type_is_log(in)) {
         flb_hash_add(in->ht_log_chunks, tag, tag_len, ic, 0);
     }
-    else if (in->event_type == FLB_INPUT_METRICS) {
+    else if (flb_input_event_type_is_metric(in)) {
         flb_hash_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
     }
 

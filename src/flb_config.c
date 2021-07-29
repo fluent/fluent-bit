@@ -106,6 +106,10 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, health_check_period)},
 
 #endif
+    /* DNS*/
+    {FLB_CONF_DNS_MODE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_mode)},
 
     /* Storage */
     {FLB_CONF_STORAGE_PATH,

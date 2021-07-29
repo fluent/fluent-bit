@@ -1,6 +1,7 @@
 set(src
   cmt_gauge.c
   cmt_counter.c
+  cmt_untyped.c
   cmt_metric.c
   cmt_map.c
   cmt_log.c
@@ -9,11 +10,15 @@ set(src
   cmt_label.c
   cmetrics.c
   cmt_encode_prometheus.c
+  cmt_encode_prometheus_remote_write.c
   cmt_encode_text.c
   cmt_encode_influx.c
   cmt_encode_msgpack.c
   cmt_decode_msgpack.c
   cmt_mpack_utils.c
+  external/protobuf-c.c
+  external/remote.pb-c.c
+  external/types.pb-c.c
   )
 
 if (${CMAKE_C_COMPILER_ID} STREQUAL "Clang")

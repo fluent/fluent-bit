@@ -23,7 +23,7 @@
 
 #include <cmetrics/cmetrics.h>
 
-#define MSGPACK_ENCODER_VERSION 1
+#define MSGPACK_ENCODER_VERSION 2
 
 int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size);
 void cmt_encode_msgpack_destroy(char *out_buf);

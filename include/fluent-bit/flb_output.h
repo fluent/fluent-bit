@@ -680,8 +680,12 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     if (ins->net_config_map) {
         ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
     }
-    return ret;
+
+    return 0;
 }
 
 int flb_output_help(struct flb_output_instance *ins, void **out_buf, size_t *out_size);

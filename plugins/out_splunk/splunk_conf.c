@@ -244,6 +244,11 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /* channel */
+    if (ctx->channel != NULL) {
+        ctx->channel_len = flb_sds_len(ctx->channel);
+    }
+
     /* Set instance flags into upstream */
     flb_output_upstream_set(ctx->u, ins);
 

@@ -22,6 +22,7 @@
 #define FLB_PROMETHEUS_EXPORTER_H
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_hash.h>
 
 /* Plugin context */
 struct prom_exporter {
@@ -30,6 +31,9 @@ struct prom_exporter {
     /* networking */
     flb_sds_t listen;
     flb_sds_t tcp_port;
+
+    /* hash table for metrics reported */
+    struct flb_hash *ht_metrics;
 
     /* config reader for 'add_label' */
     struct mk_list *add_labels;

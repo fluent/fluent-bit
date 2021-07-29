@@ -43,6 +43,8 @@ void flb_ml_parser_destroy_all(struct mk_list *list);
 
 struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
                                                         char *name);
+int flb_ml_parser_instance_set(struct flb_ml_parser_ins *p, char *prop, char *val);
+
 int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins);
 int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins);
 
