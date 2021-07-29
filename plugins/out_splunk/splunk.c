@@ -373,6 +373,9 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
             if (err) {
                 /* Print error and continue processing other records */
                 flb_plg_warn(ctx->ins, "could not process record: %s", err);
+                printf("====calyptia====\n");
+                msgpack_object_print(stdout, *obj);
+                printf("==== end of test ===\n");
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(err);
             }
