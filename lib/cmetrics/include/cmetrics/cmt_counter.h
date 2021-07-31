@@ -27,12 +27,15 @@ struct cmt_counter {
     struct cmt_opts opts;
     struct cmt_map *map;
     struct mk_list _head;
+    struct cmt *cmt;
+    int    allow_reset;
 };
 
 struct cmt_counter *cmt_counter_create(struct cmt *cmt,
                                        char *namespace, char *subsystem,
                                        char *name, char *help,
                                        int label_count, char **label_keys);
+void cmt_counter_allow_reset(struct cmt_counter *counter);
 int cmt_counter_destroy(struct cmt_counter *counter);
 int cmt_counter_inc(struct cmt_counter *counter, uint64_t timestamp,
                     int labels_count, char **label_vals);

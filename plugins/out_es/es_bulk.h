@@ -36,9 +36,10 @@ struct es_bulk {
     uint32_t size;
 };
 
-struct es_bulk *es_bulk_create();
+struct es_bulk *es_bulk_create(size_t estimated_size);
 int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
-                   char *json, size_t j_len);
+                   char *json, size_t j_len,
+                   size_t whole_size, size_t curr_size);
 void es_bulk_destroy(struct es_bulk *bulk);
 
 #endif

@@ -31,11 +31,23 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
     int ret;
     struct cmt_gauge *gauge;
 
-    if (!name || !help) {
+    if (!namespace) {
+        cmt_log_error(cmt, "null namespace not allowed");
         return NULL;
     }
 
-    if (strlen(name) == 0 || strlen(help) == 0) {
+    if (!subsystem) {
+        cmt_log_error(cmt, "null subsystem not allowed");
+        return NULL;
+    }
+
+    if (!name || strlen(name) == 0) {
+        cmt_log_error(cmt, "undefined name");
+        return NULL;
+    }
+
+    if (!help || strlen(help) == 0) {
+        cmt_log_error(cmt, "undefined help");
         return NULL;
     }
 
@@ -49,6 +61,7 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
     /* Initialize options */
     ret = cmt_opts_init(&gauge->opts, namespace, subsystem, name, help);
     if (ret == -1) {
+        cmt_log_error(cmt, "unable to initialize options for gauge");
         cmt_gauge_destroy(gauge);
         return NULL;
     }
@@ -56,9 +69,12 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
     /* Create the map */
     gauge->map = cmt_map_create(CMT_GAUGE, &gauge->opts, label_count, label_keys);
     if (!gauge->map) {
+        cmt_log_error(cmt, "unable to allocate map for gauge");
         cmt_gauge_destroy(gauge);
         return NULL;
     }
+
+    gauge->cmt = cmt;
 
     return gauge;
 }
@@ -71,16 +87,20 @@ int cmt_gauge_destroy(struct cmt_gauge *gauge)
         cmt_map_destroy(gauge->map);
     }
     free(gauge);
+    return 0;
 }
 
 int cmt_gauge_set(struct cmt_gauge *gauge, uint64_t timestamp, double val,
                   int labels_count, char **label_vals)
 {
-    uint64_t tmp;
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
+        cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
+                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->opts.name);
         return -1;
     }
     cmt_metric_set(metric, timestamp, val);
@@ -93,8 +113,12 @@ int cmt_gauge_inc(struct cmt_gauge *gauge, uint64_t timestamp,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
+        cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
+                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->opts.name);
         return -1;
     }
     cmt_metric_inc(metric, timestamp);
@@ -106,8 +130,12 @@ int cmt_gauge_dec(struct cmt_gauge *gauge, uint64_t timestamp,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
+        cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
+                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->opts.name);
         return -1;
     }
     cmt_metric_dec(metric, timestamp);
@@ -119,8 +147,12 @@ int cmt_gauge_add(struct cmt_gauge *gauge, uint64_t timestamp, double val,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
+        cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
+                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->opts.name);
         return -1;
     }
     cmt_metric_add(metric, timestamp, val);
@@ -132,8 +164,12 @@ int cmt_gauge_sub(struct cmt_gauge *gauge, uint64_t timestamp, double val,
 {
     struct cmt_metric *metric;
 
-    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals);
+    metric = cmt_map_metric_get(&gauge->opts, gauge->map, labels_count, label_vals,
+                                CMT_TRUE);
     if (!metric) {
+        cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
+                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->opts.name);
         return -1;
     }
     cmt_metric_sub(metric, timestamp, val);
@@ -145,12 +181,15 @@ int cmt_gauge_get_val(struct cmt_gauge *gauge,
 {
     int ret;
     double val = 0;
-    struct cmt_metric *metric;
 
     ret = cmt_map_metric_get_val(&gauge->opts,
                                  gauge->map, labels_count, label_vals,
                                  &val);
     if (ret == -1) {
+        cmt_log_error(gauge->cmt,
+                      "unable to retrieve metric value: %s for gauge %s_%s_%s",
+                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->opts.name);
         return -1;
     }
     *out_val = val;

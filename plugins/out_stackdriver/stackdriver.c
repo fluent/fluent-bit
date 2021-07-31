@@ -812,9 +812,13 @@ static int is_tag_match_regex(struct flb_stackdriver *ctx,
     const char *tag_str_to_be_matcheds;
 
     tag_prefix_len = flb_sds_len(ctx->tag_prefix);
+    if (tag_len > tag_prefix_len &&
+        flb_sds_cmp(ctx->tag_prefix, tag, tag_prefix_len) != 0) {
+        return 0;
+    }
+
     tag_str_to_be_matcheds = tag + tag_prefix_len;
     len_to_be_matched = tag_len - tag_prefix_len;
-
     ret = flb_regex_match(ctx->regex,
                           (unsigned char *) tag_str_to_be_matcheds,
                           len_to_be_matched);
@@ -2091,6 +2095,9 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+#endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -2101,6 +2108,9 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
                              data, bytes,
                              &out_buf, &out_size);
     if (ret != 0) {
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+#endif
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2114,6 +2124,9 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(payload_buf);
+#ifdef FLB_HAVE_METRICS
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+#endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -2165,6 +2178,16 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
             ret_code = FLB_RETRY;
         }
     }
+
+    /* Update specific stackdriver metrics */
+#ifdef FLB_HAVE_METRICS
+    if (ret_code == FLB_OK) {
+        flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
+    }
+    else {
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+    }
+#endif
 
     /* Cleanup */
     flb_sds_destroy(payload_buf);

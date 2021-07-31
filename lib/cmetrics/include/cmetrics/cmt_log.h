@@ -22,6 +22,15 @@
 
 #include <errno.h>
 
+/* Message types */
+#define CMT_LOG_OFF     0
+#define CMT_LOG_ERROR   1
+#define CMT_LOG_WARN    2
+#define CMT_LOG_INFO    3  /* default */
+#define CMT_LOG_DEBUG   4
+#define CMT_LOG_TRACE   5
+
+
 #define CMT_LOG_BUF_SIZE  256
 
 void cmt_log_print(void *ctx, int level, const char *file, int line,
@@ -51,7 +60,7 @@ int cmt_errno_print(int errnum, const char *file, int line);
 #ifdef __FILENAME__
 #define cmt_errno() cmt_errno_print(errno, __FILENAME__, __LINE__)
 #else
-#define cmt_errno() cmt_errno_print(errno, __FILE__, __LINE__)
+#define cmt_errno() cmt_errno_print(errno, __FILENAME__, __LINE__)
 #endif
 
 #ifdef _WIN32

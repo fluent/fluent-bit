@@ -14,7 +14,7 @@ jobs:
       - name: Check commit subject complies with https://github.com/fluent/fluent-bit/blob/master/CONTRIBUTING.md#commit-changes
         uses: gsactions/commit-message-checker@v1
         with:
-          pattern: '^[a-z0-9A-Z\-_\s\,\.\/]+\:[ ]{0,1}[a-zA-Z]+[a-zA-Z0-9 \-\.\:_\#\(\)=\/\"\,><\+\[\]\!\*\\]+$'
+          pattern: '^[a-z0-9A-Z\-_\s\,\.\/]+\:[ ]{0,1}[a-zA-Z]+[a-zA-Z0-9 \-\.\:_\#\(\)=\/''\"\,><\+\[\]\!\*\\]+$'
           error: 'Invalid commit subject. Please refer to: https://github.com/fluent/fluent-bit/blob/master/CONTRIBUTING.md#commit-changes'
           checkAllCommitMessages: 'false'
           excludeDescription: 'true'

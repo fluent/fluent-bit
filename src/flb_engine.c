@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
@@ -43,6 +44,7 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
+#include <cmetrics/cmetrics.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -50,6 +52,12 @@
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
 #include <fluent-bit/stream_processor/flb_sp.h>
+#endif
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
 #endif
 
 FLB_TLS_DEFINE(struct mk_event_loop, flb_engine_evl);
@@ -216,6 +224,9 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     }
     else if (ret == FLB_RETRY) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+#ifdef FLB_HAVE_METRICS
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
+#endif
             flb_info("[engine] chunk '%s' is not retried (no retry config): "
                      "task_id=%i, input=%s > output=%s (out_id=%i)",
                      flb_input_chunk_get_name(task->ic),
@@ -237,6 +248,7 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
              */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
             /* Notify about this failed retry */
             flb_warn("[engine] chunk '%s' cannot be retried: "
@@ -249,10 +261,6 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
             flb_task_users_dec(task, FLB_TRUE);
             return 0;
         }
-
-#ifdef FLB_HAVE_METRICS
-        flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
-#endif
 
         /* Always destroy the old coroutine */
         flb_task_users_dec(task, FLB_FALSE);
@@ -285,11 +293,18 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
                      task->id,
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
+
+            /* Update the metrics since a new retry is coming */
+#ifdef FLB_HAVE_METRICS
+            flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_RETRIED_RECORDS, task->records, ins->metrics);
+#endif
         }
     }
     else if (ret == FLB_ERROR) {
 #ifdef FLB_HAVE_METRICS
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
+        flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
         flb_task_users_dec(task, FLB_TRUE);
     }
@@ -455,6 +470,7 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_sched *sched;
+    struct mk_list lookup_context_cleanup_queue;
 
     /* Initialize the networking layer */
     flb_net_init();
@@ -503,6 +519,10 @@ int flb_engine_start(struct flb_config *config)
     if (ret == -1) {
         return -1;
     }
+
+    /* Init Metrics engine */
+    cmt_initialize();
+    flb_info("[cmetrics] version=%s", cmt_version());
 
     /* Initialize the scheduler */
     sched = flb_sched_create(config, config->evl);
@@ -605,11 +625,13 @@ int flb_engine_start(struct flb_config *config)
      */
     ret = flb_sched_timer_cb_create(config->sched,
                                     FLB_SCHED_TIMER_CB_PERM,
-                                    1500, cb_engine_sched_timer, config);
+                                    1500, cb_engine_sched_timer, config, NULL);
     if (ret == -1) {
         flb_error("[engine] could not schedule permanent callback");
         return -1;
     }
+
+    mk_list_init(&lookup_context_cleanup_queue);
 
     /* Signal that we have started */
     flb_engine_started(config);
@@ -669,6 +691,18 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
+            else if (event->type == FLB_ENGINE_EV_DNS) {
+                struct flb_dns_lookup_context *lookup_context;
+                lookup_context = FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event);
+
+                if (!lookup_context->finished) {
+                    event->handler(event);
+
+                    if (lookup_context->finished) {
+                        mk_list_add(&lookup_context->_head, &lookup_context_cleanup_queue);
+                    }
+                }
+            }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_coro *co;
@@ -697,6 +731,17 @@ int flb_engine_start(struct flb_config *config)
         if (config->is_running == FLB_TRUE) {
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
+            flb_net_dns_lookup_context_cleanup(&lookup_context_cleanup_queue);
+
+            /*
+            * depend on main thread to clean up expired message
+            * in aws error reporting message queue
+            */
+            #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+            if (is_error_reporting_enabled()) {
+                flb_aws_error_reporter_clean(error_reporter);
+            }
+            #endif
         }
     }
 }

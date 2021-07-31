@@ -64,6 +64,7 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
+volatile sig_atomic_t exit_signal = 0;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -461,7 +462,12 @@ static void flb_help_plugin(int rc, int format,
     write (STDERR_FILENO, #X ")\n", sizeof(#X ")\n")-1); \
     break;
 
-static void flb_signal_handler(int signal)
+static void flb_signal_handler_break_loop(int signal)
+{
+    exit_signal = signal;
+}
+
+static void flb_signal_exit(int signal)
 {
     int len;
     char ts[32];
@@ -494,8 +500,10 @@ static void flb_signal_handler(int signal)
     };
 
     /* Signal handlers */
+    /* SIGSEGV is not handled here to preserve stacktrace */
     switch (signal) {
     case SIGINT:
+    case SIGTERM:
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGQUIT:
     case SIGHUP:
@@ -503,34 +511,66 @@ static void flb_signal_handler(int signal)
         flb_stop(ctx);
         flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
-    case SIGTERM:
-        flb_stop(ctx);
-        flb_destroy(ctx);
-        _exit(EXIT_SUCCESS);
-     case SIGSEGV:
+    default:
+        break;
+    }
+}
+
+static void flb_signal_handler(int signal)
+{
+    int len;
+    char ts[32];
+    char s[] = "[engine] caught signal (";
+    time_t now;
+    struct tm *cur;
+
+    now = time(NULL);
+    cur = localtime(&now);
+    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+                   cur->tm_year + 1900,
+                   cur->tm_mon + 1,
+                   cur->tm_mday,
+                   cur->tm_hour,
+                   cur->tm_min,
+                   cur->tm_sec);
+
+    /* write signal number */
+    write(STDERR_FILENO, ts, len);
+    write(STDERR_FILENO, s, sizeof(s) - 1);
+    switch (signal) {
+        flb_print_signal(SIGINT);
+#ifndef FLB_SYSTEM_WINDOWS
+        flb_print_signal(SIGQUIT);
+        flb_print_signal(SIGHUP);
+        flb_print_signal(SIGCONT);
+#endif
+        flb_print_signal(SIGTERM);
+        flb_print_signal(SIGSEGV);
+    };
+
+    switch(signal) {
+    case SIGSEGV:
 #ifdef FLB_HAVE_LIBBACKTRACE
+        /* To preserve stacktrace */
         flb_stacktrace_print(&flb_st);
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
         flb_dump(ctx->config);
-        break;
 #endif
-    default:
-        break;
     }
 }
 
 static void flb_signal_init()
 {
-    signal(SIGINT,  &flb_signal_handler);
+    signal(SIGINT,  &flb_signal_handler_break_loop);
 #ifndef FLB_SYSTEM_WINDOWS
-    signal(SIGQUIT, &flb_signal_handler);
-    signal(SIGHUP,  &flb_signal_handler);
+    signal(SIGQUIT, &flb_signal_handler_break_loop);
+    signal(SIGHUP,  &flb_signal_handler_break_loop);
     signal(SIGCONT, &flb_signal_handler);
 #endif
-    signal(SIGTERM, &flb_signal_handler);
+    signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
 }
 
@@ -1161,8 +1201,14 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
-    flb_loop(ctx);
+    while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
+        sleep(1);
+    }
+    if (exit_signal) {
+        flb_signal_exit(exit_signal);
+    }
     flb_destroy(ctx);
+
 
     return ret;
 }

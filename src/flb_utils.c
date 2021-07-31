@@ -37,6 +37,12 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_utf8.h>
 
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+extern struct flb_aws_error_reporter *error_reporter;
+#endif
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;
@@ -99,11 +105,23 @@ void flb_utils_error(int err)
         fprintf(stderr,
                 "%sError%s: undefined. Aborting",
                 ANSI_BOLD ANSI_RED, ANSI_RESET);
+        #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+        if (is_error_reporting_enabled()) {
+            flb_aws_error_reporter_write(error_reporter, "Error: undefined. Aborting\n");
+        }
+        #endif
+
     }
     else {
         fprintf(stderr,
                 "%sError%s: %s. Aborting\n\n",
                 ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
+
+        #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+        if (is_error_reporting_enabled()) {
+            flb_aws_error_reporter_write(error_reporter, msg);
+        }
+        #endif
     }
 
     if (err <= FLB_ERR_FILTER_INVALID) {
@@ -455,7 +473,7 @@ int64_t flb_utils_hex2int(char *hex, int len)
 
     while ((c = *hex++) && i < len) {
         /* Ensure no overflow */
-        if (res >= (int)((INT64_MAX/0x10) - 0xff)) {
+        if (res >= (int64_t)((INT64_MAX/0x10) - 0xff)) {
             return -1;
         }
 

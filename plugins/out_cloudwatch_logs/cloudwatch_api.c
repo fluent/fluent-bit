@@ -52,6 +52,8 @@
 #define ERR_CODE_ALREADY_EXISTS         "ResourceAlreadyExistsException"
 #define ERR_CODE_INVALID_SEQUENCE_TOKEN "InvalidSequenceTokenException"
 
+#define AMZN_REQUEST_ID_HEADER          "x-amzn-RequestId"
+
 #define ONE_DAY_IN_MILLISECONDS          86400000
 #define FOUR_HOURS_IN_SECONDS            14400
 
@@ -376,9 +378,9 @@ int process_event(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     ret = flb_msgpack_to_json(tmp_buf_ptr,
                                   buf->tmp_buf_size - buf->tmp_buf_offset,
                                   obj);
-    if (ret < 0) {
+    if (ret <= 0) {
         /*
-         * negative value means failure to write to buffer,
+         * failure to write to buffer,
          * which means we ran out of space, and must send the logs
          */
         return 1;
@@ -1334,8 +1336,8 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 
         if (c->resp.status == 200) {
             /* success */
-            flb_plg_debug(ctx->ins, "Sent events to %s", stream->name);
             if (c->resp.payload_size > 0) {
+                flb_plg_debug(ctx->ins, "Sent events to %s", stream->name);
                 tmp = flb_json_get_val(c->resp.payload, c->resp.payload_size,
                                        "nextSequenceToken");
                 if (tmp) {
@@ -1343,16 +1345,28 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                         flb_sds_destroy(stream->sequence_token);
                     }
                     stream->sequence_token = tmp;
+
+                    flb_http_client_destroy(c);
+                    return 0;
                 }
                 else {
                     flb_plg_error(ctx->ins, "Could not find sequence token in "
                                   "response: %s", c->resp.payload);
                 }
             }
-            else {
-                flb_plg_error(ctx->ins, "Could not find sequence token in "
-                              "response: response body is empty");
+        
+            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
+                /* code was 200, but response is invalid, treat as failure */
+                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
+                              AMZN_REQUEST_ID_HEADER);
+                if (c->resp.data != NULL) {
+                    flb_plg_debug(ctx->ins, "Could not find sequence token in "
+                                  "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
+                }
+                flb_http_client_destroy(c);
+                return -1;
             }
+            
             flb_http_client_destroy(c);
             return 0;
         }

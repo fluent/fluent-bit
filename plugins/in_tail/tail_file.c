@@ -50,6 +50,91 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+static int record_append_custom_keys(struct flb_tail_file *file,
+                                     size_t processed_bytes,
+                                     char *in_data, size_t in_size,
+                                     char **out_data, size_t *out_size)
+{
+    int i;
+    int ok = MSGPACK_UNPACK_SUCCESS;
+    int len;
+    size_t off = 0;
+    size_t total;
+    msgpack_unpacked result;
+    msgpack_object time;
+    msgpack_object map;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    struct flb_mp_map_header mh;
+
+    /* init new buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Some extra content will be added... */
+    msgpack_unpacked_init(&result);
+    while ((msgpack_unpack_next(&result, in_data, in_size, &off) == ok)) {
+        time = result.data.via.array.ptr[0];
+        map = result.data.via.array.ptr[1];
+
+        msgpack_pack_array(&mp_pck, 2);
+        msgpack_pack_object(&mp_pck, time);
+
+        /* pack map */
+        flb_mp_map_header_init(&mh, &mp_pck);
+
+        /* append previous map keys */
+        for (i = 0; i < map.via.map.size; i++) {
+            k = map.via.map.ptr[i].key;
+            v = map.via.map.ptr[i].val;
+
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_object(&mp_pck, k);
+            msgpack_pack_object(&mp_pck, v);
+        }
+
+        /* path_key */
+        if (file->config->path_key) {
+            len = flb_sds_len(file->config->path_key);
+
+            flb_mp_map_header_append(&mh);
+
+            /* key */
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, file->config->path_key, len);
+
+            /* val */
+            msgpack_pack_str(&mp_pck, file->name_len);
+            msgpack_pack_str_body(&mp_pck, file->name, file->name_len);
+        }
+
+        /* offset_key */
+        if (file->config->offset_key) {
+            len = flb_sds_len(file->config->offset_key);
+
+            flb_mp_map_header_append(&mh);
+
+            /* key */
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, file->config->offset_key, len);
+
+            /* val */
+            total = file->offset + processed_bytes;
+            msgpack_pack_uint64(&mp_pck, total);
+        }
+
+        /* finalize map */
+        flb_mp_map_header_end(&mh);
+    }
+
+    *out_data = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            const char *key, size_t key_len,
                            const char *val, size_t val_len, size_t val_uint64)
@@ -146,7 +231,7 @@ int flb_tail_pack_line_map(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     }
     if (file->config->offset_key != NULL) {
         append_record_to_map(data, data_size,
-                             file->config->path_key,
+                             file->config->offset_key,
                              flb_sds_len(file->config->offset_key),
                              NULL, 0, file->offset + processed_bytes);
     }
@@ -248,19 +333,34 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             continue;
         }
 
-        /* Empty line (just \n) */
-        if (len == 0) {
+        /*
+         * Empty line (just breakline)
+         * ---------------------------
+         * [NOTE] with the new Multiline core feature and Multiline Filter on
+         * Fluent Bit v1.8.2, there are a couple of cases where stack traces
+         * or multi line patterns expects an empty line (meaning only the
+         * breakline), skipping empty lines on this plugin will break that
+         * functionality.
+         *
+         * We are introducing 'skip_empty_lines=off' configuration
+         * property to revert this behavior if some user is affected by
+         * this change.
+         */
+
+        if (len == 0 && ctx->skip_empty_lines) {
             data++;
             processed_bytes++;
             continue;
         }
 
         /* Process '\r\n' */
-        crlf = (data[len-1] == '\r');
-        if (len == 1 && crlf) {
-            data += 2;
-            processed_bytes += 2;
-            continue;
+        if (len >= 2) {
+            crlf = (data[len-1] == '\r');
+            if (len == 1 && crlf) {
+                data += 2;
+                processed_bytes += 2;
+                continue;
+            }
         }
 
         /* Reset time for each line */
@@ -269,7 +369,14 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         line = data;
         line_len = len - crlf;
         repl_line = NULL;
-        if (ctx->docker_mode) {
+
+        if (ctx->ml_ctx) {
+            ret = flb_ml_append(ctx->ml_ctx, file->ml_stream_id,
+                                FLB_ML_TYPE_TEXT,
+                                &out_time, line, line_len);
+            goto go_next;
+        }
+        else if (ctx->docker_mode) {
             ret = flb_tail_dmode_process_content(now, line, line_len,
                                                  &repl_line, &repl_line_len,
                                                  file, ctx, out_sbuf, out_pck);
@@ -363,11 +470,45 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     if (lines > 0) {
         /* Append buffer content to a chunk */
         *bytes = processed_bytes;
-        flb_input_chunk_append_raw(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   out_sbuf->data,
-                                   out_sbuf->size);
+
+        if (out_sbuf->size > 0) {
+            flb_input_chunk_append_raw(ctx->ins,
+                                       file->tag_buf,
+                                       file->tag_len,
+                                       out_sbuf->data,
+                                       out_sbuf->size);
+        }
+        else if (ctx->ml_ctx && file->mult_sbuf.size > 0) {
+            /* If no extra keys are needed, just enqueue the buffer */
+            if (file->config->path_key == NULL &&
+                file->config->offset_key == NULL) {
+                flb_input_chunk_append_raw(ctx->ins,
+                                           file->tag_buf,
+                                           file->tag_len,
+                                           file->mult_sbuf.data,
+                                           file->mult_sbuf.size);
+
+            }
+            else {
+                char *mult_buf = NULL;
+                size_t mult_size = 0;
+
+                /* adjust the records in a new buffer */
+                record_append_custom_keys(file,
+                                          processed_bytes,
+                                          file->mult_sbuf.data,
+                                          file->mult_sbuf.size,
+                                          &mult_buf, &mult_size);
+
+                flb_input_chunk_append_raw(ctx->ins,
+                                           file->tag_buf,
+                                           file->tag_len,
+                                           mult_buf,
+                                           mult_size);
+                flb_free(mult_buf);
+            }
+            file->mult_sbuf.size = 0;
+        }
     }
     else if (file->skip_next) {
         *bytes = file->buf_len;
@@ -627,11 +768,25 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
+
+/* Multiline flush callback: invoked every time some content is complete */
+static int ml_flush_callback(struct flb_ml_parser *parser,
+                             struct flb_ml_stream *mst,
+                             void *data, char *buf_data, size_t buf_size)
+{
+    struct flb_tail_file *file = data;
+
+    /* Enqueue the records in our file->multiline buffer */
+    msgpack_sbuffer_write(&file->mult_sbuf, buf_data, buf_size);
+    return 0;
+}
+
 int flb_tail_file_append(char *path, struct stat *st, int mode,
                          struct flb_tail_config *ctx)
 {
     int fd;
     int ret;
+    uint64_t stream_id;
     size_t len;
     char *tag;
     size_t tag_len;
@@ -704,7 +859,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
+
+    /* multiline msgpack buffers */
     msgpack_sbuffer_init(&file->mult_sbuf);
+    msgpack_packer_init(&file->mult_pck, &file->mult_sbuf,
+                        msgpack_sbuffer_write);
+
+    /* docker mode */
     file->dmode_flush_timeout = 0;
     file->dmode_complete = true;
     file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
@@ -715,6 +876,22 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 #endif
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
+
+    /* Multiline core mode */
+    if (ctx->ml_ctx) {
+        /* Create a stream for this file */
+        ret = flb_ml_stream_create(ctx->ml_ctx,
+                                   file->name, file->name_len,
+                                   ml_flush_callback, file,
+                                   &stream_id);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "could not create multiline stream for file: %s",
+                          file->name);
+            goto error;
+        }
+        file->ml_stream_id = stream_id;
+    }
 
     /* Local buffer */
     file->buf_size = ctx->buf_chunk_size;
@@ -816,6 +993,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    /* remove the multiline.core stream */
+    if (ctx->ml_ctx && file->ml_stream_id > 0) {
+        flb_ml_stream_id_destroy_all(ctx->ml_ctx, file->ml_stream_id);
+    }
+
     if (file->rotated > 0) {
 #ifdef FLB_HAVE_SQLDB
         /*
@@ -829,10 +1011,13 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         mk_list_del(&file->_rotate_head);
     }
 
+    msgpack_sbuffer_destroy(&file->mult_sbuf);
+
     flb_sds_destroy(file->dmode_buf);
     flb_sds_destroy(file->dmode_lastline);
     mk_list_del(&file->_head);
     flb_tail_fs_remove(ctx, file);
+
     /* avoid deleting file with -1 fd */
     if (file->fd != -1) {
         close(file->fd);
