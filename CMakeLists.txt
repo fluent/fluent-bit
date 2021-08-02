@@ -829,10 +829,16 @@ endif()
 # ============================
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-set(CPACK_PACKAGE_NAME "td-agent-bit")
+
+if(FLB_TD)
+  set(CPACK_PACKAGE_NAME "td-agent-bit")
+else()
+  set(CPACK_PACKAGE_NAME "fluent-bit")
+endif()
+
 set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
-set(CPACK_PACKAGE_VENDOR "Treasure Data")
+set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
+set(CPACK_PACKAGE_VENDOR "Calyptia Inc.")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
@@ -925,7 +931,11 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
-  set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+  if(FLB_TD)
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+  else()
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
+  endif()
 endif()
 
 include(CPack)
