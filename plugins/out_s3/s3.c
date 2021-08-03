@@ -357,7 +357,7 @@ static int init_seq_index(void *context) {
     }
 
     /* Create directory path if it doesn't exist */
-    ret = mkdir(ctx->metadata_dir, 0600);
+    ret = mkdir(ctx->metadata_dir, 0700);
     if (ret < 0 && errno != EEXIST) {
         flb_plg_error(ctx->ins, "Failed to create metadata directory");
         return -1;
