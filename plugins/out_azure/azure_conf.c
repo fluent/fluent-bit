@@ -43,6 +43,15 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
 
+    /* Set context */
+    flb_output_set_context(ins, ctx);
+
+    /* Load config map */
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        return NULL;
+    }
+
     /* config: 'customer_id' */
     cid = flb_output_get_property("customer_id", ins);
     if (cid) {
