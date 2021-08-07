@@ -577,14 +577,13 @@ static int prepare_remove_keys(struct flb_loki *ctx)
                 return -1;
             }
         }
-    }
-
-    size = mk_list_size(patterns);
-    flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
-    if (size > 0) {
-        ctx->remove_mpa = flb_mp_accessor_create(patterns);
-        if (ctx->remove_mpa == NULL) {
-            return -1;
+        size = mk_list_size(patterns);
+        flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
+        if (size > 0) {
+            ctx->remove_mpa = flb_mp_accessor_create(patterns);
+            if (ctx->remove_mpa == NULL) {
+                return -1;
+            }
         }
     }
 
