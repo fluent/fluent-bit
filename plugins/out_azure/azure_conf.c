@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_utils.h>
 #include <mbedtls/base64.h>
 
 #include "azure.h"
