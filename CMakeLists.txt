@@ -101,10 +101,8 @@ option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support" No)
 option(FLB_ARROW               "Build with Apache Arrow support"  No)
 
-# Metrics: Experimental Feature, disabled by default on 0.12 series
-# but enabled in the upcoming 0.13 release. Note that development
-# mode enable this feature.
-option(FLB_METRICS            "Enable metrics support"       No)
+# Native Metrics Support (cmetrics)
+option(FLB_METRICS            "Enable metrics support"       Yes)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
@@ -116,6 +114,7 @@ option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
 option(FLB_IN_DOCKER          "Enable Docker input plugin"          Yes)
 option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
 option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
+option(FLB_IN_FLUENTBIT_METRICS "Enable Fluent Bit metrics  plugin" Yes)
 option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
 option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
