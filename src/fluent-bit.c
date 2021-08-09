@@ -546,10 +546,12 @@ static void flb_signal_handler(int signal)
 #endif
         flb_print_signal(SIGTERM);
         flb_print_signal(SIGSEGV);
+        flb_print_signal(SIGFPE);
     };
 
     switch(signal) {
     case SIGSEGV:
+    case SIGFPE:
 #ifdef FLB_HAVE_LIBBACKTRACE
         /* To preserve stacktrace */
         flb_stacktrace_print(&flb_st);
@@ -572,6 +574,7 @@ static void flb_signal_init()
 #endif
     signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
+    signal(SIGFPE,  &flb_signal_handler);
 }
 
 static int input_set_property(struct flb_input_instance *in, char *kv)
