@@ -324,7 +324,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         processed_bytes++;
     }
 
-    while (data < end && (p = memchr(data, '\n', end - data))) {
+    /*
+     * continue looping until
+     * empty or partial line read at end of buffer or
+     * downstream input has become paused
+     */
+    while (data < end && (p = memchr(data, '\n', end - data)) && flb_input_buf_paused(ctx->ins) == FLB_FALSE) {
         len = (p - data);
         if (file->skip_next == FLB_TRUE) {
             data += len + 1;
