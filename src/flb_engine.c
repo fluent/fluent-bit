@@ -44,7 +44,7 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
-#include <cmetrics/cmetrics.h>
+#include <fluent-bit/flb_metrics.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -126,7 +126,8 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
     flb_upstream_conn_timeouts(&ctx->upstreams);
 }
 
-static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config)
+static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
+                                      struct flb_config *config)
 {
     int ret;
     int bytes;
@@ -137,6 +138,7 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     uint32_t type;
     uint32_t key;
     uint64_t val;
+    char *name;
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
@@ -188,11 +190,18 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     if (flb_output_is_threaded(ins) == FLB_FALSE) {
         flb_output_flush_finished(config, out_id);
     }
+    name = (char *) flb_output_name(ins);
 
-    /* A thread has finished, delete it */
+    /* A task has finished, delete it */
     if (ret == FLB_OK) {
+        /* cmetrics */
+        cmt_counter_add(ins->cmt_proc_records, ts, task->records,
+                        1, (char *[]) {name});
 
-        /* Update metrics */
+        cmt_counter_add(ins->cmt_proc_bytes, ts, task->size,
+                        1, (char *[]) {name});
+
+        /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
             flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, task->records, ins->metrics);
@@ -224,6 +233,11 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     }
     else if (ret == FLB_RETRY) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+            /* cmetrics: output_dropped_records_total */
+            cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+                            1, (char *[]) {name});
+
+            /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
@@ -246,6 +260,13 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
              * - No enough memory (unlikely)
              * - It reached the maximum number of re-tries
              */
+
+            /* cmetrics */
+            cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
+            cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+                            1, (char *[]) {name});
+
+            /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
@@ -294,7 +315,12 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
 
-            /* Update the metrics since a new retry is coming */
+            /* cmetrics */
+            cmt_counter_inc(ins->cmt_retries, ts, 1, (char *[]) {name});
+            cmt_counter_add(ins->cmt_retried_records, ts, task->records,
+                            1, (char *[]) {name});
+
+            /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_RETRIED_RECORDS, task->records, ins->metrics);
@@ -302,6 +328,12 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         }
     }
     else if (ret == FLB_ERROR) {
+        /* cmetrics */
+        cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
+        cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+                        1, (char *[]) {name});
+
+        /* OLD API */
 #ifdef FLB_HAVE_METRICS
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
         flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
@@ -465,6 +497,7 @@ static int flb_engine_log_start(struct flb_config *config)
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
+    uint64_t ts;
     char tmp[16];
     struct flb_time t_flush;
     struct mk_event *event;
@@ -719,11 +752,13 @@ int flb_engine_start(struct flb_config *config)
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
+                ts = cmt_time_now();
+
                 /*
                  * Event originated by an output plugin. likely a Task return
                  * status.
                  */
-                handle_output_event(event->fd, config);
+                handle_output_event(event->fd, ts, config);
             }
         }
 
