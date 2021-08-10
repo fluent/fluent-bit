@@ -434,6 +434,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
     }
@@ -482,12 +486,30 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         return 0;
     }
 
-    /* Metrics */
+    /* CMetrics */
+    ins->cmt = cmt_create();
+    if (!ins->cmt) {
+        flb_error("[input] could not create cmetrics context: %s",
+                  flb_input_name(ins));
+        return -1;
+    }
+
+    /* Register generic input plugin metrics */
+    ins->cmt_bytes = cmt_counter_create(ins->cmt,
+                                        "fluentbit", "input", "bytes_total",
+                                        "Number of input bytes.",
+                                        1, (char *[]) {"name"});
+    ins->cmt_records = cmt_counter_create(ins->cmt,
+                                        "fluentbit", "input", "records_total",
+                                        "Number of input records.",
+                                        1, (char *[]) {"name"});
+
+    /* OLD Metrics */
 #ifdef FLB_HAVE_METRICS
     /* Get name or alias for the instance */
     name = flb_input_name(ins);
 
-    /* Create the metrics context */
+    /* [OLD METRICS] Create the metrics context */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
