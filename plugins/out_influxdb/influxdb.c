@@ -22,16 +22,14 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_metrics.h>
+
 #include <msgpack.h>
-
-#include <stdio.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_decode_msgpack.h>
-#include <cmetrics/cmt_encode_influx.h>
 
 #include "influxdb.h"
 #include "influxdb_bulk.h"
+
+#include <stdio.h>
 
 /*
  * Returns FLB_TRUE when the specified key is in Tag_Keys list,
