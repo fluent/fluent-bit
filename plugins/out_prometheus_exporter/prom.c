@@ -20,10 +20,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_kv.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_encode_text.h>
-#include <cmetrics/cmt_decode_msgpack.h>
+#include <fluent-bit/flb_metrics.h>
 
 #include "prom.h"
 #include "prom_http.h"
@@ -200,6 +197,12 @@ static void cb_prom_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
     cmt_destroy(cmt);
+
+    if (cmt_sds_len(text) == 0) {
+        flb_plg_debug(ctx->ins, "context without metrics (empty)");
+        cmt_encode_text_destroy(text);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /* register payload of metrics / override previous one */
     ret = hash_store(ctx, ins, text);
