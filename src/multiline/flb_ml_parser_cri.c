@@ -25,7 +25,7 @@
 #define FLB_ML_CRI_REGEX                                                \
   "^(?<time>.+) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
 #define FLB_ML_CRI_TIME                         \
-  "%Y-%m-%dT%H:%M:%S.%L%:z"
+  "%Y-%m-%dT%H:%M:%S.%L%z"
 
 /* Creates a parser for Docker */
 static struct flb_parser *cri_parser_create(struct flb_config *config)
