@@ -230,12 +230,12 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->cmetrics);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
     /* Environment */
     config->env = flb_env_create();
-
 
     /* Multiline core */
     mk_list_init(&config->multiline_parsers);
