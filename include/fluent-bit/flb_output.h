@@ -48,6 +48,9 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
@@ -307,6 +310,20 @@ struct flb_output_instance {
 
     struct mk_list _head;                /* link to config->inputs       */
 
+    /*
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                         /* parent context            */
+    struct cmt_counter *cmt_proc_records;    /* m: output_proc_records    */
+    struct cmt_counter *cmt_proc_bytes;      /* m: output_proc_bytes      */
+    struct cmt_counter *cmt_errors;          /* m: output_errors          */
+    struct cmt_counter *cmt_retries;         /* m: output_retries         */
+    struct cmt_counter *cmt_retries_failed;  /* m: output_retries_failed  */
+    struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
+    struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
+
+    /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
 #endif

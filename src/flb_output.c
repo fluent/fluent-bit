@@ -250,6 +250,10 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
     }
@@ -786,7 +790,7 @@ int flb_output_init_all(struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
-    const char *name;
+    char *name;
 #endif
     struct mk_list *tmp;
     struct mk_list *head;
@@ -827,8 +831,54 @@ int flb_output_init_all(struct flb_config *config)
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
         /* Get name or alias for the instance */
-        name = flb_output_name(ins);
+        name = (char *) flb_output_name(ins);
 
+        /* CMetrics */
+        ins->cmt = cmt_create();
+        if (!ins->cmt) {
+            flb_error("[output] could not create cmetrics context");
+            return -1;
+        }
+
+        /* Register generic output plugin metrics */
+        ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                                   "output", "proc_records_total",
+                                                   "Number of processed output records.",
+                                                   1, (char *[]) {"name"});
+
+        ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
+                                                 "output", "proc_bytes_total",
+                                                 "Number of processed output bytes.",
+                                                 1, (char *[]) {"name"});
+
+        ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "errors_total",
+                                             "Number of output errors.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retries_total",
+                                             "Number of output retries.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retries_failed_total",
+                                             "Number of abandoned batches because "
+                                             "the maximum number of re-tries was "
+                                             "reached.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "dropped_records_total",
+                                             "Number of dropped records.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retried_records_total",
+                                             "Number of retried records.",
+                                             1, (char *[]) {"name"});
+
+        /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
             flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
@@ -952,7 +1002,7 @@ int flb_output_init_all(struct flb_config *config)
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
         if (ret == -1) {
-            flb_error("[output] Failed to initialize '%s' plugin",
+            flb_error("[output] failed to initialize '%s' plugin",
                       p->name);
             flb_output_instance_destroy(ins);
             return -1;
