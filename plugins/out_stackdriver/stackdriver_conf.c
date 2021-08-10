@@ -168,7 +168,7 @@ static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
 }
 
 struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *ins,
-                                              struct flb_config *config)
+                                                    struct flb_config *config)
 {
     int ret;
     const char *tmp;
@@ -437,6 +437,23 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 
     /* Register metrics */
 #ifdef FLB_HAVE_METRICS
+    ctx->cmt_successful_requests = cmt_counter_create(ins->cmt,
+                                                      "fluentbit",
+                                                      "stackdriver",
+                                                      "successful_requests",
+                                                      "Total number of successful "
+                                                      "requests.",
+                                                      1, (char *[]) {"name"});
+
+    ctx->cmt_failed_requests = cmt_counter_create(ins->cmt,
+                                                  "fluentbit",
+                                                  "stackdriver",
+                                                  "failed_requests",
+                                                  "Total number of failed "
+                                                  "requests.",
+                                                  1, (char *[]) {"name"});
+
+    /* OLD api */
     flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
                     "stackdriver_successful_requests", ctx->ins->metrics);
     flb_metrics_add(FLB_STACKDRIVER_FAILED_REQUESTS,
