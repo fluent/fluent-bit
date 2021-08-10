@@ -141,6 +141,12 @@ struct flb_config {
     void *metrics;
 #endif
 
+    /*
+     * CMetric lists: a linked list to keep a reference of every
+     * cmetric context created.
+     */
+    struct mk_list cmetrics;
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
     int http_server;                /* HTTP Server running    */
