@@ -31,12 +31,11 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
 #include <stdarg.h>
-
-#include <cmetrics/cmetrics.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
