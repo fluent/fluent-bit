@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_metrics.h>
 #endif
 
+#include <cmetrics/cmetrics.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -242,8 +243,18 @@ struct flb_input_instance {
     struct mk_list coros;                /* list of input coros         */
 
 #ifdef FLB_HAVE_METRICS
+
+    /* old metrics API */
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
+
+    /*
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                     /* parent context              */
+    struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
+    struct cmt_counter *cmt_records;     /* metric: input_records_total */
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
