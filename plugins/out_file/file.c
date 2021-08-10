@@ -23,11 +23,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_metrics.h>
 #include <msgpack.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_encode_text.h>
-#include <cmetrics/cmt_decode_msgpack.h>
 
 #include <stdio.h>
 #include <sys/types.h>
