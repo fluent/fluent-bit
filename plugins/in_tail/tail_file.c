@@ -787,8 +787,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     int fd;
     int ret;
     uint64_t stream_id;
+    uint64_t ts;
     size_t len;
     char *tag;
+    char *name;
     size_t tag_len;
     struct flb_tail_file *file;
     struct stat lst;
@@ -961,6 +963,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->pending_bytes = file->size - file->offset;
 
 #ifdef FLB_HAVE_METRICS
+    name = (char *) flb_input_name(ctx->ins);
+    ts = cmt_time_now();
+    cmt_counter_inc(ctx->cmt_files_opened, ts, 1, (char *[]) {name});
+
+    /* Old api */
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->ins->metrics);
 #endif
 
@@ -986,6 +993,8 @@ error:
 
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
+    uint64_t ts;
+    char *name;
     struct flb_tail_config *ctx;
 
     ctx = file->config;
@@ -1031,6 +1040,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_free(file->real_name);
 
 #ifdef FLB_HAVE_METRICS
+    name = (char *) flb_input_name(ctx->ins);
+    ts = cmt_time_now();
+    cmt_counter_inc(ctx->cmt_files_closed, ts, 1, (char *[]) {name});
+
+    /* old api */
     flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1, ctx->ins->metrics);
 #endif
 
@@ -1453,7 +1467,9 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
 int flb_tail_file_rotated(struct flb_tail_file *file)
 {
     int ret;
+    uint64_t ts;
     char *name;
+    char *i_name;
     char *tmp;
     struct stat st;
     struct flb_tail_config *ctx = file->config;
@@ -1488,6 +1504,11 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 #endif
 
 #ifdef FLB_HAVE_METRICS
+        i_name = (char *) flb_input_name(ctx->ins);
+        ts = cmt_time_now();
+        cmt_counter_inc(ctx->cmt_files_rotated, ts, 1, (char *[]) {i_name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_TAIL_METRIC_F_ROTATED,
                         1, file->config->ins->metrics);
 #endif
