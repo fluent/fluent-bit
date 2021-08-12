@@ -22,7 +22,7 @@
 #define CMT_DECODE_MSGPACK_H
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_mpack_utils.h>
+#include <cmetrics/cmt_mpack_utils_defs.h>
 
 #define CMT_DECODE_MSGPACK_SUCCESS                    CMT_MPACK_SUCCESS
 #define CMT_DECODE_MSGPACK_INSUFFICIENT_DATA          CMT_MPACK_INSUFFICIENT_DATA

@@ -31,7 +31,7 @@ struct cmt_gauge {
 };
 
 struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
-                                   char *namespace, char *subsystem, char *name,
+                                   char *ns, char *subsystem, char *name,
                                    char *help, int label_count, char **label_keys);
 int cmt_gauge_destroy(struct cmt_gauge *gauge);
 
