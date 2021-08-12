@@ -24,15 +24,15 @@
 #include <cmetrics/cmt_counter.h>
 
 struct cmt_counter *cmt_counter_create(struct cmt *cmt,
-                                       char *namespace, char *subsystem,
+                                       char *ns, char *subsystem,
                                        char *name, char *help,
                                        int label_count, char **label_keys)
 {
     int ret;
     struct cmt_counter *counter;
 
-    if (!namespace) {
-        cmt_log_error(cmt, "null namespace not allowed");
+    if (!ns) {
+        cmt_log_error(cmt, "null ns not allowed");
         return NULL;
     }
 
@@ -58,7 +58,7 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
     }
     mk_list_add(&counter->_head, &cmt->counters);
 
-    ret = cmt_opts_init(&counter->opts, namespace, subsystem, name, help);
+    ret = cmt_opts_init(&counter->opts, ns, subsystem, name, help);
     if (ret == -1) {
         cmt_log_error(cmt, "unable to initialize options for counter");
         cmt_counter_destroy(counter);
@@ -74,9 +74,6 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
     }
 
     counter->cmt = cmt;
-
-    counter->cmt = cmt;
-
     return counter;
 }
 
@@ -108,7 +105,7 @@ int cmt_counter_inc(struct cmt_counter *counter,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.namespace, counter->opts.subsystem,
+                      counter->map, counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
@@ -126,7 +123,7 @@ int cmt_counter_add(struct cmt_counter *counter, uint64_t timestamp, double val,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.namespace, counter->opts.subsystem,
+                      counter->map, counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
@@ -145,14 +142,14 @@ int cmt_counter_set(struct cmt_counter *counter, uint64_t timestamp, double val,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.namespace, counter->opts.subsystem,
+                      counter->map, counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
 
     if (cmt_metric_get_value(metric) > val && counter->allow_reset == 0) {
         cmt_log_error(counter->cmt, "attempting to reset unresetable counter: %s_%s_%s",
-                      counter->opts.namespace, counter->opts.subsystem,
+                      counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }
@@ -171,7 +168,7 @@ int cmt_counter_get_val(struct cmt_counter *counter,
                                  &val);
     if (ret == -1) {
         cmt_log_error(counter->cmt, "unable to retrieve metric: %s for counter %s_%s_%s",
-                      counter->map, counter->opts.namespace, counter->opts.subsystem,
+                      counter->map, counter->opts.ns, counter->opts.subsystem,
                       counter->opts.name);
         return -1;
     }

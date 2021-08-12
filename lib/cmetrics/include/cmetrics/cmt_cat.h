@@ -17,10 +17,11 @@
  *  limitations under the License.
  */
 
-#ifndef CMT_HASH_H
-#define CMT_HASH_H
+#ifndef CMT_CAT_H
+#define CMT_CAT_H
 
-/* Just a simple wrapper header to simplify xxhash inclusion */
-#define XXH_STATIC_LINKING_ONLY
-#include <xxh3.h>
+#include <cmetrics/cmetrics.h>
+
+int cmt_cat(struct cmt *dst, struct cmt *src);
+
 #endif
