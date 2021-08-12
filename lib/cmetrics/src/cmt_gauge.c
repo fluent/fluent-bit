@@ -25,14 +25,14 @@
 #include <cmetrics/cmt_gauge.h>
 
 struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
-                                   char *namespace, char *subsystem, char *name,
+                                   char *ns, char *subsystem, char *name,
                                    char *help, int label_count, char **label_keys)
 {
     int ret;
     struct cmt_gauge *gauge;
 
-    if (!namespace) {
-        cmt_log_error(cmt, "null namespace not allowed");
+    if (!ns) {
+        cmt_log_error(cmt, "null ns not allowed");
         return NULL;
     }
 
@@ -59,7 +59,7 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
     mk_list_add(&gauge->_head, &cmt->gauges);
 
     /* Initialize options */
-    ret = cmt_opts_init(&gauge->opts, namespace, subsystem, name, help);
+    ret = cmt_opts_init(&gauge->opts, ns, subsystem, name, help);
     if (ret == -1) {
         cmt_log_error(cmt, "unable to initialize options for gauge");
         cmt_gauge_destroy(gauge);
@@ -99,7 +99,7 @@ int cmt_gauge_set(struct cmt_gauge *gauge, uint64_t timestamp, double val,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
-                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->map, gauge->opts.ns, gauge->opts.subsystem,
                       gauge->opts.name);
         return -1;
     }
@@ -117,7 +117,7 @@ int cmt_gauge_inc(struct cmt_gauge *gauge, uint64_t timestamp,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
-                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->map, gauge->opts.ns, gauge->opts.subsystem,
                       gauge->opts.name);
         return -1;
     }
@@ -134,7 +134,7 @@ int cmt_gauge_dec(struct cmt_gauge *gauge, uint64_t timestamp,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
-                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->map, gauge->opts.ns, gauge->opts.subsystem,
                       gauge->opts.name);
         return -1;
     }
@@ -151,7 +151,7 @@ int cmt_gauge_add(struct cmt_gauge *gauge, uint64_t timestamp, double val,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
-                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->map, gauge->opts.ns, gauge->opts.subsystem,
                       gauge->opts.name);
         return -1;
     }
@@ -168,7 +168,7 @@ int cmt_gauge_sub(struct cmt_gauge *gauge, uint64_t timestamp, double val,
                                 CMT_TRUE);
     if (!metric) {
         cmt_log_error(gauge->cmt, "unable to retrieve metric: %s for gauge %s_%s_%s",
-                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->map, gauge->opts.ns, gauge->opts.subsystem,
                       gauge->opts.name);
         return -1;
     }
@@ -188,7 +188,7 @@ int cmt_gauge_get_val(struct cmt_gauge *gauge,
     if (ret == -1) {
         cmt_log_error(gauge->cmt,
                       "unable to retrieve metric value: %s for gauge %s_%s_%s",
-                      gauge->map, gauge->opts.namespace, gauge->opts.subsystem,
+                      gauge->map, gauge->opts.ns, gauge->opts.subsystem,
                       gauge->opts.name);
         return -1;
     }

@@ -189,9 +189,9 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     mpack_write_cstr(writer, "opts");
     mpack_start_map(writer, 4);
 
-    /* opts['namespace'] */
+    /* opts['ns'] */
     mpack_write_cstr(writer, "ns");
-    mpack_write_cstr(writer, opts->namespace);
+    mpack_write_cstr(writer, opts->ns);
 
     /* opts['subsystem'] */
     mpack_write_cstr(writer, "ss");
@@ -369,7 +369,7 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
      *                           '1' = gauge
      *                           '2' = histogram (WIP)
      *                 'opts' => {
-     *                            'namespace'   => namespace
+     *                            'ns'   => ns
      *                            'subsystem'   => subsystem
      *                            'name'        => name
      *                            'description' => description

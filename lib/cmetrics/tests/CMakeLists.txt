@@ -5,6 +5,7 @@ set(UNIT_TESTS_FILES
   untyped.c
   atomic_operations.c
   encoding.c
+  cat.c
   )
 
 # Prepare list of unit tests
