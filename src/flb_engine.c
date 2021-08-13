@@ -28,6 +28,7 @@
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
@@ -547,6 +548,12 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Initialize custom plugins */
+    ret = flb_custom_init_all(config);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Start the Storage engine */
     ret = flb_storage_create(config);
     if (ret == -1) {
@@ -568,6 +575,7 @@ int flb_engine_start(struct flb_config *config)
     /* Register the scheduler context */
     flb_sched_ctx_init();
     flb_sched_ctx_set(sched);
+
 
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
@@ -801,6 +809,7 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_filter_exit(config);
     flb_input_exit_all(config);
     flb_output_exit(config);
+    flb_custom_exit(config);
 
     /* Destroy the storage context */
     flb_storage_destroy(config);
