@@ -56,10 +56,12 @@
 #endif
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET           32  /* output address may set host and port */
-#define FLB_OUTPUT_PLUGIN_CORE    0
-#define FLB_OUTPUT_PLUGIN_PROXY   1
-#define FLB_OUTPUT_NO_MULTIPLEX 512
+#define FLB_OUTPUT_NET            32  /* output address may set host and port */
+#define FLB_OUTPUT_PLUGIN_CORE     0
+#define FLB_OUTPUT_PLUGIN_PROXY    1
+#define FLB_OUTPUT_NO_MULTIPLEX  512
+#define FLB_OUTPUT_PRIVATE      1024
+
 
 /* Event type handlers */
 #define FLB_OUTPUT_LOGS        1
@@ -712,7 +714,8 @@ struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
 int flb_output_flush_finished(struct flb_config *config, int out_id);
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           const char *output, void *data);
+                                           const char *output, void *data,
+                                           int public_only);
 const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);
