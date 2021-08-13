@@ -401,7 +401,8 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
  * proper type and if valid, populate the global config.
  */
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           const char *output, void *data)
+                                           const char *output, void *data,
+                                           int public_only)
 {
     int ret = -1;
     int flags = 0;
@@ -415,10 +416,15 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (check_protocol(plugin->name, output)) {
-            break;
+        if (!check_protocol(plugin->name, output)) {
+            plugin = NULL;
+            continue;
         }
-        plugin = NULL;
+
+        if (public_only && plugin->flags & FLB_OUTPUT_PRIVATE) {
+            return NULL;
+        }
+        break;
     }
 
     if (!plugin) {
