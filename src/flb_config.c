@@ -219,10 +219,13 @@ struct flb_config *flb_config_init()
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
+    mk_list_init(&config->custom_plugins);
+    mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);
     mk_list_init(&config->filter_plugins);
     mk_list_init(&config->out_plugins);
+    mk_list_init(&config->customs);
     mk_list_init(&config->inputs);
     mk_list_init(&config->parsers);
     mk_list_init(&config->filters);
