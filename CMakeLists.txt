@@ -107,7 +107,10 @@ option(FLB_METRICS            "Enable metrics support"       Yes)
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
-# Build-in Plugins
+# Built-in Custom Plugins
+option(FLB_CUSTOM_CALYPTIA    "Enable Calyptia Support"      Yes)
+
+# Built-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
 option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
@@ -143,6 +146,7 @@ option(FLB_IN_NODE_EXPORTER_METRICS "Enable node exporter metrics input plugin" 
 option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
 option(FLB_OUT_AZURE_BLOB     "Enable Azure output plugin"          Yes)
 option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
+option(FLB_OUT_CALYPTIA       "Enable Calyptia monitoring plugin"   Yes)
 option(FLB_OUT_COUNTER        "Enable Counter output plugin"        Yes)
 option(FLB_OUT_DATADOG        "Enable DataDog output plugin"        Yes)
 option(FLB_OUT_ES             "Enable Elasticsearch output plugin"  Yes)
