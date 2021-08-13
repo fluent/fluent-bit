@@ -18,6 +18,7 @@ set(src
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
+  flb_custom.c
   flb_input.c
   flb_input_chunk.c
   flb_input_metric.c
