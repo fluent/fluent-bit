@@ -27,7 +27,7 @@
 #include <mbedtls/sha256.h>
 
 /* End point */
-#define CALYPTIA_HOST            "cloud-api-dev.calyptia.com"
+#define CALYPTIA_HOST            "cloud-api.calyptia.com"
 #define CALYPTIA_PORT            "443"
 
 /* HTTP action types */
