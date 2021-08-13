@@ -264,7 +264,7 @@ int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, cb);
+    o_ins = flb_output_new(ctx->config, output, cb, FLB_TRUE);
     if (!o_ins) {
         return -1;
     }
