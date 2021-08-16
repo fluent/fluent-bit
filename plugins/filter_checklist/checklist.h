@@ -35,6 +35,7 @@
 struct checklist {
     /* config options */
     int mode;
+    int ignore_case;
     int print_query_time;
     flb_sds_t file;
     flb_sds_t lookup_key;
@@ -55,6 +56,9 @@ struct checklist {
     "CREATE TABLE list ("                                               \
     "  pattern text PRIMARY KEY"                                        \
     ");"
+
+#define SQL_CASE_SENSITIVE                                              \
+    "PRAGMA case_sensitive_like = true;"
 
 /* insert pattern into list table */
 #define SQL_INSERT   "INSERT INTO list (pattern) VALUES (@val);"

@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_sqldb.h>
 
 #include "checklist.h"
+#include <ctype.h>
 
 static int db_init(struct checklist *ctx)
 {
@@ -41,6 +42,13 @@ static int db_init(struct checklist *ctx)
     ret = flb_sqldb_query(ctx->db, SQL_CREATE_TABLE, NULL, NULL);
     if (ret != FLB_OK) {
         flb_plg_error(ctx->ins, "db: could not create table");
+        return -1;
+    }
+
+    /* create table */
+    ret = flb_sqldb_query(ctx->db, SQL_CASE_SENSITIVE, NULL, NULL);
+    if (ret != FLB_OK) {
+        flb_plg_error(ctx->ins, "db: could not set CASE SENSITIVE");
         return -1;
     }
 
@@ -118,6 +126,7 @@ static int db_check(struct checklist *ctx, char *buf, size_t size)
 
 static int load_file_patterns(struct checklist *ctx)
 {
+    int i;
     int len;
     int ret;
     int line = 0;
@@ -152,6 +161,13 @@ static int load_file_patterns(struct checklist *ctx)
         if (!buf[0] || buf[0] == '#') {
             line++;
             continue;
+        }
+
+        /* convert to lowercase if needed */
+        if (ctx->ignore_case) {
+            for (i = 0; i < len; i++) {
+                buf[i] = tolower(buf[i]);
+            }
         }
 
         /* add the entry as a hash table key, no value reference is needed */
@@ -362,11 +378,14 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                                void *filter_context,
                                struct flb_config *config)
 {
+    int i;
     int id;
     int found;
     int matches = 0;
     size_t pre = 0;
     size_t off = 0;
+    size_t cmp_size;
+    char *cmp_buf;
     char *tmp_buf;
     size_t tmp_size;
     struct flb_time tm;
@@ -397,23 +416,41 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                 flb_time_get(&t0);
             }
 
+            cmp_buf = NULL;
             if (rval->type == FLB_RA_STRING) {
+                /* convert to lowercase */
+                if (ctx->ignore_case) {
+                    cmp_buf = flb_calloc(1, rval->o.via.str.size + 1);
+                    if (!cmp_buf) {
+                        flb_errno();
+                        flb_ra_key_value_destroy(rval);
+                        continue;
+                    }
+                    memcpy(cmp_buf, rval->o.via.str.ptr, rval->o.via.str.size);
+                    for (i = 0; i < rval->o.via.str.size; i++) {
+                        cmp_buf[i] = tolower(cmp_buf[i]);
+                    }
+                }
+                else {
+                    cmp_buf = (char *) rval->o.via.str.ptr;
+                }
+                cmp_size = rval->o.via.str.size;
+
                 if (ctx->mode == CHECK_EXACT_MATCH) {
-                    id = flb_hash_get(ctx->ht,
-                                      rval->o.via.str.ptr,
-                                      rval->o.via.str.size,
+                    id = flb_hash_get(ctx->ht, cmp_buf, cmp_size,
                                       (void *) &tmp_buf, &tmp_size);
                     if (id >= 0) {
                         found = FLB_TRUE;
                     }
                 }
                 else if (ctx->mode == CHECK_PARTIAL_MATCH) {
-                    found = db_check(ctx,
-                                     (char *) rval->o.via.str.ptr,
-                                     rval->o.via.str.size);
+                    found = db_check(ctx, cmp_buf, cmp_size);
+                }
+
+                if (cmp_buf && cmp_buf != (char *) rval->o.via.str.ptr) {
+                    flb_free(cmp_buf);
                 }
             }
-            flb_ra_key_value_destroy(rval);
 
             /* print elapsed time */
             if (ctx->print_query_time && found) {
@@ -430,6 +467,7 @@ static int cb_checklist_filter(const void *data, size_t bytes,
                 flb_free(tmp_buf);
             }
 
+            flb_ra_key_value_destroy(rval);
         }
 
         if (found) {
@@ -504,6 +542,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "print_query_time", "false",
      0, FLB_TRUE, offsetof(struct checklist, print_query_time),
      "Print to stdout the elapseed query time for every matched record"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "ignore_case", "false",
+     0, FLB_TRUE, offsetof(struct checklist, ignore_case),
+     "Compare strings by ignoring case."
     },
 
     {
