@@ -659,6 +659,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     case FLB_HTTP_CONNECT:
         str_method = "CONNECT";
         break;
+    case FLB_HTTP_PATCH:
+        str_method = "PATCH";
+        break;
     };
 
     buf = flb_calloc(1, FLB_HTTP_BUF_SIZE);
