@@ -94,7 +94,7 @@ static int db_insert(struct checklist *ctx, char *buf, int len)
     if (ret != SQLITE_DONE) {
         sqlite3_clear_bindings(ctx->stmt_insert);
         sqlite3_reset(ctx->stmt_insert);
-        flb_plg_error(ctx->ins, "cannot execute insert: %s", buf);
+        flb_plg_warn(ctx->ins, "cannot execute insert for value: %s", buf);
         return -1;
     }
 
@@ -176,13 +176,6 @@ static int load_file_patterns(struct checklist *ctx)
         }
         else if (ctx->mode == CHECK_PARTIAL_MATCH) {
             ret = db_insert(ctx, buf, len);
-        }
-
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "error registering value '%s' on %s:%i",
-                          buf, ctx->file, line);
-            fclose(f);
-            return -1;
         }
 
         flb_plg_debug(ctx->ins, "file list: line=%i adds value='%s'", line, buf);
