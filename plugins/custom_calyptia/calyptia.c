@@ -32,6 +32,7 @@
 struct calyptia {
     /* config map options */
     flb_sds_t api_key;
+    flb_sds_t store_path;
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
     int cloud_tls;
@@ -243,6 +244,9 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     }
     flb_output_set_property(ctx->o, "match", "_calyptia_cloud");
     flb_output_set_property(ctx->o, "api_key", ctx->api_key);
+    if (ctx->store_path) {
+        flb_output_set_property(ctx->o, "store_path", ctx->store_path);
+    }
 
     /* Override network details: development purposes only */
     if (ctx->cloud_host) {
@@ -290,6 +294,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "api_key", NULL,
      0, FLB_TRUE, offsetof(struct calyptia, api_key),
      "Calyptia Cloud API Key."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "store_path", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, store_path)
     },
 
     {
