@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/flb_fstore.h>
 #include <mbedtls/sha256.h>
 
 /* End point */
@@ -32,11 +33,16 @@
 
 /* HTTP action types */
 #define CALYPTIA_ACTION_REGISTER  0
-#define CALYPTIA_ACTION_METRICS   1
+#define CALYPTIA_ACTION_PATCH     1
+#define CALYPTIA_ACTION_METRICS   2
 
 /* Endpoints */
 #define CALYPTIA_ENDPOINT_CREATE  "/v1/agents"
+#define CALYPTIA_ENDPOINT_PATCH   "/v1/agents/%s"
 #define CALYPTIA_ENDPOINT_METRICS "/v1/agents/%s/metrics"
+
+/* Storage */
+#define CALYPTIA_SESSION_FILE     "session.CALYPTIA"
 
 /* Headers */
 #define CALYPTIA_H_PROJECT       "X-Project-Token"
@@ -48,20 +54,24 @@
 struct flb_calyptia {
     /* config map */
     int cloud_port;
-    flb_sds_t cloud_host;
     flb_sds_t api_key;
+    flb_sds_t cloud_host;
+    flb_sds_t store_path;
     struct mk_list *add_labels;
 
     /* internal */
     flb_sds_t agent_id;
     flb_sds_t agent_token;
-    flb_sds_t machine_id;              /* machine-id  */
-    flb_sds_t metrics_endpoint;        /* metrics endpoint */
-    struct flb_env *env;               /* environment */
-    struct flb_upstream *u;            /* upstream connection */
-    struct mk_list kv_labels;          /* parsed add_labels */
-    struct flb_output_instance *ins;   /* plugin instance */
-    struct flb_config *config;         /* Fluent Bit context */
+    flb_sds_t machine_id;                 /* machine-id  */
+    flb_sds_t metrics_endpoint;           /* metrics endpoint */
+    struct flb_fstore *fs;                /* fstore ctx */
+    struct flb_fstore_stream *fs_stream;  /* fstore stream */
+    struct flb_fstore_file *fs_file;      /* fstore session file */
+    struct flb_env *env;                  /* environment */
+    struct flb_upstream *u;               /* upstream connection */
+    struct mk_list kv_labels;             /* parsed add_labels */
+    struct flb_output_instance *ins;      /* plugin instance */
+    struct flb_config *config;            /* Fluent Bit context */
 };
 
 #endif
