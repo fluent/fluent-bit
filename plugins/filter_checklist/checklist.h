@@ -53,8 +53,8 @@ struct checklist {
 
 /* create table */
 #define SQL_CREATE_TABLE                                                \
-    "CREATE TABLE list ("                                               \
-    "  pattern text PRIMARY KEY"                                        \
+    "CREATE TABLE IF NOT EXISTS list ("                                               \
+    "  pattern text "                                        \
     ");"
 
 #define SQL_CASE_SENSITIVE                                              \

@@ -127,8 +127,8 @@ static int db_check(struct checklist *ctx, char *buf, size_t size)
 static int load_file_patterns(struct checklist *ctx)
 {
     int i;
-    int len;
     int ret;
+    int len;
     int line = 0;
     int size = LINE_SIZE;
     char buf[LINE_SIZE];
@@ -178,7 +178,9 @@ static int load_file_patterns(struct checklist *ctx)
             ret = db_insert(ctx, buf, len);
         }
 
-        flb_plg_debug(ctx->ins, "file list: line=%i adds value='%s'", line, buf);
+        if (ret >= 0) {
+            flb_plg_debug(ctx->ins, "file list: line=%i adds value='%s'", line, buf);
+        }
         line++;
     }
 
