@@ -20,26 +20,101 @@
 
 #include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_mem.h>
-#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_sqldb.h>
 
-#define LINE_SIZE   2048
+#include "checklist.h"
 
-/* plugin context */
-struct checklist {
-    /* config options */
-    flb_sds_t file;
-    flb_sds_t lookup_key;
-    struct mk_list *records;
+static int db_init(struct checklist *ctx)
+{
+    int ret;
 
-    /* internal */
-    struct flb_hash *ht;
-    struct flb_record_accessor *ra_lookup_key;
-    struct flb_filter_instance *ins;
-    struct flb_config *config;
-};
+    /* initialize databse */
+    ctx->db = flb_sqldb_open(":memory:", "filter_check", ctx->config);
+    if (!ctx->db) {
+        flb_plg_error(ctx->ins, "could not create in-memory database");
+        return -1;
+    }
+
+    /* create table */
+    ret = flb_sqldb_query(ctx->db, SQL_CREATE_TABLE, NULL, NULL);
+    if (ret != FLB_OK) {
+        flb_plg_error(ctx->ins, "db: could not create table");
+        return -1;
+    }
+
+    /*
+     * Prepare SQL statements
+     * -----------------------
+     */
+
+    /* SQL_INSERT */
+    ret = sqlite3_prepare_v2(ctx->db->handler,
+                             SQL_INSERT,
+                             -1,
+                             &ctx->stmt_insert,
+                             0);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "error preparing database SQL statement: insert");
+        return -1;
+    }
+
+    /* SQL_CHECK */
+    ret = sqlite3_prepare_v2(ctx->db->handler,
+                             SQL_CHECK,
+                             -1,
+                             &ctx->stmt_check,
+                             0);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "error preparing database SQL statement: check");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int db_insert(struct checklist *ctx, char *buf, int len)
+{
+    int ret;
+
+    /* Bind parameter */
+    sqlite3_bind_text(ctx->stmt_insert, 1, buf, len, 0);
+
+    /* Run the insert */
+    ret = sqlite3_step(ctx->stmt_insert);
+    if (ret != SQLITE_DONE) {
+        sqlite3_clear_bindings(ctx->stmt_insert);
+        sqlite3_reset(ctx->stmt_insert);
+        flb_plg_error(ctx->ins, "cannot execute insert: %s", buf);
+        return -1;
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_insert);
+    sqlite3_reset(ctx->stmt_insert);
+
+    return flb_sqldb_last_id(ctx->db);
+}
+
+static int db_check(struct checklist *ctx, char *buf, size_t size)
+{
+    int ret;
+    int match = FLB_FALSE;
+
+    /* Bind parameter */
+    sqlite3_bind_text(ctx->stmt_check, 1, buf, size, 0);
+
+    /* Run the check */
+    ret = sqlite3_step(ctx->stmt_check);
+    if (ret == SQLITE_ROW) {
+        match = FLB_TRUE;
+    }
+
+    sqlite3_clear_bindings(ctx->stmt_check);
+    sqlite3_reset(ctx->stmt_check);
+
+    return match;
+}
 
 static int load_file_patterns(struct checklist *ctx)
 {
@@ -80,13 +155,20 @@ static int load_file_patterns(struct checklist *ctx)
         }
 
         /* add the entry as a hash table key, no value reference is needed */
-        ret = flb_hash_add(ctx->ht, buf, len, "", 0);
+        if (ctx->mode == CHECK_EXACT_MATCH) {
+            ret = flb_hash_add(ctx->ht, buf, len, "", 0);
+        }
+        else if (ctx->mode == CHECK_PARTIAL_MATCH) {
+            ret = db_insert(ctx, buf, len);
+        }
+
         if (ret < 0) {
             flb_plg_error(ctx->ins, "error registering value '%s' on %s:%i",
                           buf, ctx->file, line);
             fclose(f);
             return -1;
         }
+
         flb_plg_debug(ctx->ins, "file list: line=%i adds value='%s'", line, buf);
         line++;
     }
@@ -98,17 +180,38 @@ static int load_file_patterns(struct checklist *ctx)
 static int init_config(struct checklist *ctx)
 {
     int ret;
+    char *tmp;
 
     /* check if we have 'records' to add */
     if (mk_list_size(ctx->records) == 0) {
         flb_plg_warn(ctx->ins, "no 'record' options has been specified");
     }
 
-    /* create hash table */
-    ctx->ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1024, -1);
-    if (!ctx->ht) {
-        flb_plg_error(ctx->ins, "could not create hash table");
-        return -1;
+    /* lookup mode */
+    ctx->mode = CHECK_EXACT_MATCH;
+    tmp = (char *) flb_filter_get_property("mode", ctx->ins);
+    if (tmp) {
+        if (strcasecmp(tmp, "exact") == 0) {
+            ctx->mode = CHECK_EXACT_MATCH;
+        }
+        else if (strcasecmp(tmp, "partial") == 0) {
+            ctx->mode = CHECK_PARTIAL_MATCH;
+        }
+    }
+
+    if (ctx->mode == CHECK_EXACT_MATCH) {
+        /* create hash table */
+        ctx->ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1024, -1);
+        if (!ctx->ht) {
+            flb_plg_error(ctx->ins, "could not create hash table");
+            return -1;
+        }
+    }
+    else if (ctx->mode == CHECK_PARTIAL_MATCH) {
+        ret = db_init(ctx);
+        if (ret < 0) {
+            return -1;
+        }
     }
 
     /* record accessor pattern / key name */
@@ -273,6 +376,10 @@ static int cb_checklist_filter(const void *data, size_t bytes,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     struct flb_ra_value *rval;
+    struct flb_time t0;
+    struct flb_time t1;
+    struct flb_time t_diff;
+
     (void) ins;
     (void) config;
 
@@ -286,16 +393,43 @@ static int cb_checklist_filter(const void *data, size_t bytes,
         flb_time_pop_from_msgpack(&tm, &result, &map);
         rval = flb_ra_get_value_object(ctx->ra_lookup_key, *map);
         if (rval) {
+            if (ctx->print_query_time) {
+                flb_time_get(&t0);
+            }
+
             if (rval->type == FLB_RA_STRING) {
-                id = flb_hash_get(ctx->ht,
-                                  rval->o.via.str.ptr,
-                                  rval->o.via.str.size,
-                                  (void *) &tmp_buf, &tmp_size);
-                if (id >= 0) {
-                    found = FLB_TRUE;
+                if (ctx->mode == CHECK_EXACT_MATCH) {
+                    id = flb_hash_get(ctx->ht,
+                                      rval->o.via.str.ptr,
+                                      rval->o.via.str.size,
+                                      (void *) &tmp_buf, &tmp_size);
+                    if (id >= 0) {
+                        found = FLB_TRUE;
+                    }
+                }
+                else if (ctx->mode == CHECK_PARTIAL_MATCH) {
+                    found = db_check(ctx,
+                                     (char *) rval->o.via.str.ptr,
+                                     rval->o.via.str.size);
                 }
             }
             flb_ra_key_value_destroy(rval);
+
+            /* print elapsed time */
+            if (ctx->print_query_time && found) {
+                flb_time_get(&t1);
+                flb_time_diff(&t1, &t0, &t_diff);
+
+                tmp_buf = flb_calloc(1, rval->o.via.str.size + 1);
+                if (!tmp_buf) {
+                    flb_errno();
+                }
+                memcpy(tmp_buf, rval->o.via.str.ptr, rval->o.via.str.size);
+                flb_plg_info(ctx->ins, "query time (sec.ns): %lu.%lu : '%s'",
+                             t_diff.tm.tv_sec, t_diff.tm.tv_nsec, tmp_buf);
+                flb_free(tmp_buf);
+            }
+
         }
 
         if (found) {
@@ -341,6 +475,13 @@ static int cb_exit(void *data, struct flb_config *config)
     if (ctx->ht) {
         flb_hash_destroy(ctx->ht);
     }
+
+    if (ctx->db) {
+        sqlite3_finalize(ctx->stmt_insert);
+        sqlite3_finalize(ctx->stmt_check);
+        flb_sqldb_close(ctx->db);
+    }
+
     flb_free(ctx);
     return 0;
 }
@@ -351,6 +492,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct checklist, file),
      "Specify the file that contains the patterns to lookup."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "mode", "exact",
+     0, FLB_FALSE, 0,
+     "Set the check mode: 'exact' or 'partial'."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "print_query_time", "false",
+     0, FLB_TRUE, offsetof(struct checklist, print_query_time),
+     "Print to stdout the elapseed query time for every matched record"
     },
 
     {
