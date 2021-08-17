@@ -192,6 +192,9 @@ static int init_config(struct checklist *ctx)
 {
     int ret;
     char *tmp;
+    struct flb_time t0;
+    struct flb_time t1;
+    struct flb_time t_diff;
 
     /* check if we have 'records' to add */
     if (mk_list_size(ctx->records) == 0) {
@@ -239,8 +242,16 @@ static int init_config(struct checklist *ctx)
         return -1;
     }
 
+
     /* load file content */
+    flb_time_get(&t0);
     ret = load_file_patterns(ctx);
+    flb_time_get(&t1);
+
+    /* load time */
+    flb_time_diff(&t1, &t0, &t_diff);
+    flb_plg_info(ctx->ins, "load file elapsed time (sec.ns): %lu.%lu",
+                 t_diff.tm.tv_sec, t_diff.tm.tv_nsec);
 
     return ret;
 }
