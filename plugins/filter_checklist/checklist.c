@@ -212,7 +212,7 @@ static int init_config(struct checklist *ctx)
 
     if (ctx->mode == CHECK_EXACT_MATCH) {
         /* create hash table */
-        ctx->ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1024, -1);
+        ctx->ht = flb_hash_create(FLB_HASH_EVICT_NONE, CHECK_HASH_TABLE_SIZE, -1);
         if (!ctx->ht) {
             flb_plg_error(ctx->ins, "could not create hash table");
             return -1;

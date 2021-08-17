@@ -27,7 +27,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 
 #define LINE_SIZE   2048
-
+#define CHECK_HASH_TABLE_SIZE 100000
 #define CHECK_EXACT_MATCH     0  /* exact string match */
 #define CHECK_PARTIAL_MATCH   1  /* partial match */
 
@@ -53,8 +53,8 @@ struct checklist {
 
 /* create table */
 #define SQL_CREATE_TABLE                                                \
-    "CREATE TABLE IF NOT EXISTS list ("                                               \
-    "  pattern text "                                        \
+    "CREATE TABLE IF NOT EXISTS list ("                                 \
+    "  pattern text "                                                   \
     ");"
 
 #define SQL_CASE_SENSITIVE                                              \
