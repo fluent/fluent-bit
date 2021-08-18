@@ -1344,4 +1344,7 @@ struct flb_output_plugin out_forward_plugin = {
 
     /* Flags */
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+
+    /* Event types */
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS
 };
