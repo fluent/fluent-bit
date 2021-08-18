@@ -1128,7 +1128,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * for I/O operations.
      */
     si = (struct flb_storage_input *) in->storage;
-    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE &&
         si->type == CIO_STORE_FS) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             /*
