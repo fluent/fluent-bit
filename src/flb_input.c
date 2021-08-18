@@ -505,15 +505,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                                           1, (char *[]) {"name"});
     /* Register chunk metrics */
     ins->cmt_chunks_live = cmt_gauge_create(ins->cmt,
-                                            "fluentbit", "chunks", "live",
+                                            "fluentbit", "input", "chunks_active",
                                             "Number of live chunks.",
                                             1, (char *[]) {"name"});
     ins->cmt_chunks_up = cmt_gauge_create(ins->cmt,
-                                          "fluentbit", "chunks", "up",
+                                          "fluentbit", "input", "chunks_up",
                                           "Number of up chunks.",
                                           1, (char *[]) {"name"});
     ins->cmt_chunks_total = cmt_counter_create(ins->cmt,
-                                               "fluentbit", "chunks", "total",
+                                               "fluentbit", "input", "chunks_total",
                                                "Number of total chunks.",
                                                1, (char *[]) {"name"});
 
