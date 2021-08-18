@@ -865,7 +865,10 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
 
     if (flb_input_chunk_is_overlimit(in) == FLB_TRUE) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
-            cio_chunk_down(ic->chunk);
+            if (cio_chunk_down(ic->chunk) != -1) {
+                cmt_gauge_dec(ic->in->cmt_chunks_up, cmt_time_now(),
+                              1, (char *[]) {(char *)flb_input_name(ic->in)});
+            }
 
             /* Adjust new counters */
             total = flb_input_chunk_total_size(ic->in);
@@ -886,8 +889,15 @@ int flb_input_chunk_is_up(struct flb_input_chunk *ic)
 
 int flb_input_chunk_down(struct flb_input_chunk *ic)
 {
+    int ret;
+
     if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
-        return cio_chunk_down(ic->chunk);
+        ret = cio_chunk_down(ic->chunk);
+        if (ret != -1) {
+            cmt_gauge_dec(ic->in->cmt_chunks_up, cmt_time_now(),
+                          1, (char *[]) {(char *)flb_input_name(ic->in)});
+        }
+        return ret;
     }
 
     return 0;
@@ -895,8 +905,15 @@ int flb_input_chunk_down(struct flb_input_chunk *ic)
 
 int flb_input_chunk_set_up(struct flb_input_chunk *ic)
 {
+    int ret;
+
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
-        return cio_chunk_up(ic->chunk);
+        ret =  cio_chunk_up(ic->chunk);
+        if (ret != -1) {
+            cmt_gauge_inc(ic->in->cmt_chunks_up, cmt_time_now(),
+                          1, (char *[]) {(char *)flb_input_name(ic->in)});
+        }
+        return ret;
     }
 
     return 0;
@@ -1120,7 +1137,10 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
             /* Do we have less than 1% available ? */
             min = (FLB_INPUT_CHUNK_FS_MAX_SIZE * 0.01);
             if (FLB_INPUT_CHUNK_FS_MAX_SIZE - size < min) {
-                cio_chunk_down(ic->chunk);
+                if (cio_chunk_down(ic->chunk) != -1) {
+                    cmt_gauge_dec(in->cmt_chunks_up, cmt_time_now(),
+                                  1, (char *[]) {(char *)flb_input_name(in)});
+                }
             }
         }
         return 0;
@@ -1141,6 +1161,8 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
         if (ret == -1) {
             return NULL;
         }
+        cmt_gauge_inc(ic->in->cmt_chunks_up, cmt_time_now(),
+                      1, (char *[]) {(char *)flb_input_name(ic->in)});
     }
 
     /*
