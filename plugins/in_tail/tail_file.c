@@ -326,6 +326,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
     while (data < end && (p = memchr(data, '\n', end - data))) {
         len = (p - data);
+        crlf = 0;
         if (file->skip_next == FLB_TRUE) {
             data += len + 1;
             processed_bytes += len + 1;
