@@ -255,6 +255,9 @@ struct flb_input_instance {
     struct cmt *cmt;                     /* parent context              */
     struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
     struct cmt_counter *cmt_records;     /* metric: input_records_total */
+    struct cmt_gauge   *cmt_chunks_live; /* metric: current chunks      */
+    struct cmt_gauge   *cmt_chunks_up;   /* metric: current up chunks   */
+    struct cmt_counter *cmt_chunks_total;/* metric: total chunks        */
 
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest

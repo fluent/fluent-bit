@@ -500,9 +500,22 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                                         "Number of input bytes.",
                                         1, (char *[]) {"name"});
     ins->cmt_records = cmt_counter_create(ins->cmt,
-                                        "fluentbit", "input", "records_total",
-                                        "Number of input records.",
-                                        1, (char *[]) {"name"});
+                                          "fluentbit", "input", "records_total",
+                                          "Number of input records.",
+                                          1, (char *[]) {"name"});
+    /* Register chunk metrics */
+    ins->cmt_chunks_live = cmt_gauge_create(ins->cmt,
+                                            "fluentbit", "chunks", "live",
+                                            "Number of live chunks.",
+                                            1, (char *[]) {"name"});
+    ins->cmt_chunks_up = cmt_gauge_create(ins->cmt,
+                                          "fluentbit", "chunks", "up",
+                                          "Number of up chunks.",
+                                          1, (char *[]) {"name"});
+    ins->cmt_chunks_total = cmt_counter_create(ins->cmt,
+                                               "fluentbit", "chunks", "total",
+                                               "Number of total chunks.",
+                                               1, (char *[]) {"name"});
 
     /* OLD Metrics */
 #ifdef FLB_HAVE_METRICS

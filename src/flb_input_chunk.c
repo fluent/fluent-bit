@@ -210,6 +210,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     struct mk_list *head_chunk;
     struct flb_output_instance *o_ins;
     struct flb_input_chunk *old_ic;
+    uint64_t ts = cmt_time_now();
+
 
     /*
      * For each output instances that will be over the limit after adding the new chunk,
@@ -295,6 +297,12 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                 else {
                     flb_debug("[input chunk] drop chunk %s with no output route from input plugin %s",
                               flb_input_chunk_get_name(old_ic), ic->in->name);
+                    cmt_gauge_dec(ic->in->cmt_chunks_live, ts, 1,
+                                  (char *[]) {(char *) flb_input_name(ic->in)});
+                    if (cio_chunk_is_up(ic->chunk) == FLB_TRUE) {
+                        cmt_gauge_dec(ic->in->cmt_chunks_up, ts, 1,
+                                      (char *[]) {(char *) flb_input_name(ic->in)});
+                    }
                     flb_input_chunk_destroy(old_ic, FLB_TRUE);
                 }
             }
@@ -507,6 +515,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
     struct flb_input_chunk *ic;
+    uint64_t ts = cmt_time_now();
 
     storage = in->storage;
 
@@ -572,6 +581,15 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
 #ifdef FLB_HAVE_METRICS
     ic->total_records = 0;
 #endif
+
+    cmt_gauge_inc(in->cmt_chunks_live, ts, 1,
+                  (char *[]) {(char *) flb_input_name(in)});
+    cmt_counter_inc(in->cmt_chunks_total, ts, 1,
+                    (char *[]) {(char *) flb_input_name(in)});
+    if (set_down == FLB_FALSE) {
+        cmt_gauge_inc(in->cmt_chunks_up, ts, 1,
+                      (char *[]) {(char *) flb_input_name(in)});
+    }
 
     /* Calculate the routes_mask for the input chunk */
     has_routes = flb_routes_mask_set_by_tag(ic->routes_mask, tag, tag_len, in);
@@ -686,6 +704,8 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     int new_chunk = FLB_FALSE;
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
+    uint64_t ts = cmt_time_now();
+
 
     if (in->event_type == FLB_INPUT_LOGS) {
         id = flb_hash_get(in->ht_log_chunks, tag, tag_len,
@@ -732,6 +752,12 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
          * the chunk.
          */
         if (new_chunk || flb_routes_mask_is_empty(ic->routes_mask) == FLB_TRUE) {
+            cmt_gauge_dec(in->cmt_chunks_live, ts, 1,
+                          (char *[]) {(char *) flb_input_name(in)});
+            if (cio_chunk_is_up(ic->chunk) == FLB_TRUE) {
+                cmt_gauge_dec(in->cmt_chunks_up, ts, 1,
+                              (char *[]) {(char *) flb_input_name(in)});
+            }
             flb_input_chunk_destroy(ic, FLB_TRUE);
         }
 
@@ -1037,6 +1063,12 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Make sure the data was not filtered out and the buffer size is zero */
     if (size == 0) {
+        cmt_gauge_dec(in->cmt_chunks_live, ts, 1,
+                      (char *[]) {(char *) flb_input_name(in)});
+        if (cio_chunk_is_up(ic->chunk) == FLB_TRUE) {
+            cmt_gauge_dec(in->cmt_chunks_up, ts, 1,
+                          (char *[]) {(char *) flb_input_name(in)});
+        }
         flb_input_chunk_destroy(ic, FLB_TRUE);
         flb_input_chunk_set_limits(in);
         return 0;
@@ -1068,6 +1100,12 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * content in the storage engine, just get rid of it.
      */
     if (in->routable == FLB_FALSE) {
+        cmt_gauge_dec(in->cmt_chunks_live, ts, 1,
+                      (char *[]) {(char *) flb_input_name(in)});
+        if (cio_chunk_is_up(ic->chunk) == FLB_TRUE) {
+            cmt_gauge_dec(in->cmt_chunks_up, ts, 1,
+                          (char *[]) {(char *) flb_input_name(in)});
+        }
         flb_input_chunk_destroy(ic, FLB_TRUE);
         return 0;
     }
