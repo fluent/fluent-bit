@@ -815,7 +815,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
                      in->name);
         }
         if (in->storage_buf_status == FLB_INPUT_PAUSED &&
-            flb_input_check_is_storage_overlimit(in) == FLB_FALSE) {
+            flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE) {
             in->storage_buf_status = FLB_INPUT_RUNNING;
             flb_info("[input] %s resume (storage buf overlimit %d/%d)",
                       in->name,
