@@ -804,28 +804,28 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
      * After the adjustments, validate if the plugin is overlimit or paused
      * and perform further adjustments.
      */
-    if (flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE &&
+    if (flb_input_buf_paused(in) == FLB_TRUE &&
         in->config->is_running == FLB_TRUE &&
-        in->config->is_ingestion_active == FLB_TRUE &&
-        in->mem_buf_status == FLB_INPUT_PAUSED) {
-        in->mem_buf_status = FLB_INPUT_RUNNING;
-        if (in->p->cb_resume) {
-            in->p->cb_resume(in->context, in->config);
-            flb_warn("[input] %s resume (mem buf overlimit)",
-                      in->name);
+        in->config->is_ingestion_active == FLB_TRUE) {
+
+        if (in->mem_buf_status == FLB_INPUT_PAUSED &&
+            flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE) {
+            in->mem_buf_status = FLB_INPUT_RUNNING;
+            flb_info("[input] %s resume (mem buf overlimit)",
+                     in->name);
         }
-    }
-    if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
-        in->config->is_running == FLB_TRUE &&
-        in->config->is_ingestion_active == FLB_TRUE &&
-        in->storage_buf_status == FLB_INPUT_PAUSED) {
-        in->storage_buf_status = FLB_INPUT_RUNNING;
-        if (in->p->cb_resume) {
-            in->p->cb_resume(in->context, in->config);
-            flb_warn("[input] %s resume (storage buf overlimit %d/%d)",
+        if (in->storage_buf_status == FLB_INPUT_PAUSED &&
+            flb_input_check_is_storage_overlimit(in) == FLB_FALSE) {
+            in->storage_buf_status = FLB_INPUT_RUNNING;
+            flb_info("[input] %s resume (storage buf overlimit %d/%d)",
                       in->name,
                       ((struct flb_storage_input *)in->storage)->cio->total_chunks,
                       ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
+        }
+        if (flb_input_buf_paused(in) == FLB_FALSE) {
+            if (in->p->cb_resume) {
+                in->p->cb_resume(in->context, in->config);
+            }
         }
     }
 
