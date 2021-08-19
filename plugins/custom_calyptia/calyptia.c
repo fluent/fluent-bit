@@ -75,15 +75,6 @@ static int is_sensitive_property(char *key)
     return FLB_FALSE;
 }
 
-static char *get_str(char *p)
-{
-    if (p) {
-        return p;
-    }
-
-    return "(not set)";
-}
-
 static void pipeline_config_add_properties(flb_sds_t *buf, struct mk_list *props)
 {
     struct mk_list *head;
@@ -169,14 +160,25 @@ flb_sds_t custom_calyptia_pipeline_config_get(struct flb_config *ctx)
             flb_sds_printf(&buf, "    tls   %s\n", o_ins->use_tls ? "on" : "off");
             flb_sds_printf(&buf, "    tls.verify     %s\n",
                              o_ins->tls_verify ? "on": "off");
-            flb_sds_printf(&buf, "    tls.ca_file    %s\n",
-                             get_str(o_ins->tls_ca_file));
-            flb_sds_printf(&buf, "    tls.crt_file   %s\n",
-                             get_str(o_ins->tls_crt_file));
-            flb_sds_printf(&buf, "    tls.key_file   %s\n",
-                             get_str(o_ins->tls_key_file));
-            flb_sds_printf(&buf, "    tls.key_passwd %s\n",
-                              o_ins->tls_key_passwd ? "--redacted--" : "(not set)");
+
+            if (o_ins->tls_ca_file) {
+                flb_sds_printf(&buf, "    tls.ca_file    %s\n",
+                               o_ins->tls_ca_file);
+            }
+
+            if (o_ins->tls_crt_file) {
+                flb_sds_printf(&buf, "    tls.crt_file   %s\n",
+                               o_ins->tls_crt_file);
+            }
+
+            if (o_ins->tls_key_file) {
+                flb_sds_printf(&buf, "    tls.key_file   %s\n",
+                               o_ins->tls_key_file);
+            }
+
+            if (o_ins->tls_key_passwd) {
+                flb_sds_printf(&buf, "    tls.key_passwd --redacted--\n");
+            }
         }
 #endif
         if (o_ins->retry_limit == FLB_OUT_RETRY_UNLIMITED) {
