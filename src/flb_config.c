@@ -130,9 +130,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STORAGE_MAX_CHUNKS_UP,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, storage_max_chunks_up)},
-    {FLB_CONF_STORAGE_MAX_CHUNKS_PAUSE,
+    {FLB_CONF_STORAGE_PAUSE_ON_CHUNKS_OVERLIMIT,
      FLB_CONF_TYPE_BOOL,
-     offsetof(struct flb_config, storage_max_chunks_pause)},
+     offsetof(struct flb_config, storage_pause_on_chunks_overlimit)},
 
 
     /* Coroutines */
