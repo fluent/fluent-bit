@@ -95,15 +95,15 @@ static void flb_version()
 
 static void flb_banner()
 {
-    fprintf(stderr, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
+    fprintf(stdout, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
             ANSI_RESET);
-    fprintf(stderr, "* %sCopyright (C) 2019-2021 The Fluent Bit Authors%s\n",
+    fprintf(stdout, "* %sCopyright (C) 2019-2021 The Fluent Bit Authors%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
-    fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
+    fprintf(stdout, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
-    fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
+    fprintf(stdout, "* Fluent Bit is a CNCF sub-project under the "
             "umbrella of Fluentd\n");
-    fprintf(stderr, "* https://fluentbit.io\n\n");
+    fprintf(stdout, "* https://fluentbit.io\n\n");
 }
 
 static void flb_help(int rc, struct flb_config *config)
@@ -1272,7 +1272,7 @@ int flb_main(int argc, char **argv)
 #endif
 
     if (config->dry_run == FLB_TRUE) {
-        fprintf(stderr, "configuration test is successful\n");
+        fprintf(stdout, "configuration test is successful\n");
         exit(EXIT_SUCCESS);
     }
 
