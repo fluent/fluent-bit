@@ -249,6 +249,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
+#define BOOL_MAP_LIMIT 65535
 static int cb_modifier_filter(const void *data, size_t bytes,
                               const char *tag, int tag_len,
                               void **out_buf, size_t *out_size,
@@ -298,6 +299,11 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         /* grep keys */
         if (obj->type == MSGPACK_OBJECT_MAP) {
             map_num = obj->via.map.size;
+            if (map_num > BOOL_MAP_LIMIT) {
+                flb_plg_error(ctx->ins, "The number of elements exceeds limit %d",
+                              BOOL_MAP_LIMIT);
+                return -1;
+            }
             /* allocate map_num + guard byte */
             bool_map = flb_calloc(map_num+1, sizeof(bool_map_t));
             if (bool_map == NULL) {
