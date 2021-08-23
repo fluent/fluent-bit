@@ -743,7 +743,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     struct flb_sched_timer        *timer;
     struct flb_sched              *sched;
 
-    dns_mode = FLB_DNS_USE_UDP;
+    dns_mode = FLB_DNS_USE_TCP;
 
     if (dns_mode_textual != NULL) {
         dns_mode = toupper(dns_mode_textual[0]);
