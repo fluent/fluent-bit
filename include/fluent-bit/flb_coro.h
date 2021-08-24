@@ -84,7 +84,10 @@ static FLB_INLINE void flb_coro_destroy(struct flb_coro *coro)
     VALGRIND_STACK_DEREGISTER(coro->valgrind_stack_id);
 #endif
 
-    co_delete(coro->callee);
+    if (coro->callee != NULL) {
+        co_delete(coro->callee);
+    }
+
     flb_free(coro);
 }
 
