@@ -137,6 +137,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     int ret;
     struct kevent ke = {0, 0, 0, 0, 0, 0};
 
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
+
     if (event->mask & MK_EVENT_READ) {
         EV_SET(&ke, event->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
         ret = kevent(ctx->kfd, &ke, 1, NULL, 0, NULL);
@@ -154,6 +158,8 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
             return ret;
         }
     }
+
+    MK_EVENT_NEW(event);
 
     return 0;
 }
