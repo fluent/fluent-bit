@@ -388,19 +388,19 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                "fluentbit", "input",
                                                "files_opened_total",
                                                "Total number of opened files",
-                                               1, (char *[]) {name});
+                                               1, (char *[]) {"name"});
 
     ctx->cmt_files_closed = cmt_counter_create(ins->cmt,
                                                "fluentbit", "input",
                                                "files_closed_total",
                                                "Total number of closed files",
-                                               1, (char *[]) {name});
+                                               1, (char *[]) {"name"});
 
     ctx->cmt_files_rotated = cmt_counter_create(ins->cmt,
                                                 "fluentbit", "input",
                                                 "files_rotated_total",
                                                 "Total number of rotated files",
-                                                1, (char *[]) {name});
+                                                1, (char *[]) {"name"});
 
     /* OLD metrics */
     flb_metrics_add(FLB_TAIL_METRIC_F_OPENED,
