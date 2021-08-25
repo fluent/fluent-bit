@@ -59,26 +59,39 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
 static int in_dummy_collect(struct flb_input_instance *ins,
                             struct flb_config *config, void *in_context)
 {
-    size_t off = 0;
-    size_t start = 0;
-    char *pack;
-    int pack_size;
-    msgpack_unpacked result;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
     struct flb_dummy *ctx = in_context;
 
     if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
         return -1;
     }
 
+    flb_input_chunk_append_raw(ins, NULL, 0, ctx->mp_sbuf.data,
+                               ctx->mp_sbuf.size);
+
+    if (ctx->samples > 0) {
+        ctx->samples_count++;
+    }
+    return 0;
+}
+
+/* cb_collect callback */
+static int gen_msg(struct flb_input_instance *ins, void *in_context)
+{
+    size_t off = 0;
+    size_t start = 0;
+    char *pack;
+    int pack_size;
+    msgpack_unpacked result;
+    msgpack_packer mp_pck;
+    struct flb_dummy *ctx = in_context;
+
     pack = ctx->ref_msgpack;
     pack_size = ctx->ref_msgpack_size;
     msgpack_unpacked_init(&result);
 
     /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_sbuffer_init(&ctx->mp_sbuf);
+    msgpack_packer_init(&mp_pck, &ctx->mp_sbuf, msgpack_sbuffer_write);
 
     while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
@@ -95,12 +108,6 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     }
     msgpack_unpacked_destroy(&result);
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    if (ctx->samples > 0) {
-        ctx->samples_count++;
-    }
     return 0;
 }
 
@@ -109,6 +116,7 @@ static int config_destroy(struct flb_dummy *ctx)
     flb_free(ctx->dummy_timestamp);
     flb_free(ctx->base_timestamp);
     flb_free(ctx->dummy_message);
+    msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     flb_free(ctx->ref_msgpack);
     flb_free(ctx);
     return 0;
@@ -193,6 +201,8 @@ static int configure(struct flb_dummy *ctx,
             return -1;
         }
     }
+
+    gen_msg(in, ctx);
 
     return 0;
 }
