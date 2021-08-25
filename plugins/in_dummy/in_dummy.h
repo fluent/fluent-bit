@@ -38,6 +38,8 @@ struct flb_dummy {
     struct flb_time *dummy_timestamp;
     struct flb_time *base_timestamp;
     struct flb_input_instance *ins;
+
+    msgpack_sbuffer mp_sbuf;
 };
 
 #endif
