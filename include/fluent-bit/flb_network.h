@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_upstream_conn.h>
+#include <fluent-bit/flb_net_dns.h>
+#include <ares.h>
 
 /* Network connection setup */
 struct flb_net_setup {
@@ -60,18 +62,23 @@ struct flb_net_host {
 
 /* Defines an async DNS lookup context */
 struct flb_dns_lookup_context {
-    struct mk_event       response_event;                  /* c-ares socket event */
-    int                  *udp_timeout_detected;
-    int                   ares_socket_created;
-    int                   ares_socket_type;
-    void                 *ares_channel;
-    int                  *result_code;
-    struct mk_event_loop *event_loop;
-    struct flb_coro      *coroutine;
-    int                   finished;
-    struct addrinfo     **result;
+    struct mk_event              response_event;                  /* c-ares socket event */
+    int                          ares_socket_registered;
+    struct ares_socket_functions ares_socket_functions;
+    int                         *udp_timeout_detected;
+    int                          ares_socket_created;
+    int                          ares_socket_type;
+    void                        *ares_channel;
+    int                         *result_code;
+    struct mk_event_loop        *event_loop;
+    struct flb_coro             *coroutine;
+    struct flb_sched_timer      *udp_timer;
+    int                          finished;
+    int                          dropped;
+    struct flb_net_dns          *dns_ctx;
+    struct addrinfo            **result;
     /* result is a synthetized result, don't call freeaddrinfo on it */
-    struct mk_list        _head;
+    struct mk_list               _head;
 };
 
 #define FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event) \
@@ -89,13 +96,19 @@ struct flb_dns_lookup_context {
 #endif
 
 /* General initialization of the networking layer */
-void flb_net_init();
+void flb_net_lib_init();
+void flb_net_ctx_init(struct flb_net_dns *dns_ctx);
+
+void flb_net_dns_ctx_init();
+struct flb_net_dns *flb_net_dns_ctx_get();
+void flb_net_dns_ctx_set(struct flb_net_dns *dns_ctx);
+
 /* Generic functions */
 void flb_net_setup_init(struct flb_net_setup *net);
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* DNS handling */
-void flb_net_dns_lookup_context_cleanup(struct mk_list *cleanup_queue);
+void flb_net_dns_lookup_context_cleanup(struct flb_net_dns *dns_ctx);
 
 /* TCP options */
 int flb_net_socket_reset(flb_sockfd_t fd);
