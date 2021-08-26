@@ -58,8 +58,9 @@ FLB_TLS_DEFINE(struct flb_net_dns, flb_net_dns_ctx);
 
 void flb_net_dns_ctx_init()
 {
-    FLB_TLS_INIT(flb_sched_ctx);
+    FLB_TLS_INIT(flb_net_dns_ctx);
 }
+
 struct flb_net_dns *flb_net_dns_ctx_get()
 {
     return FLB_TLS_GET(flb_net_dns_ctx);
