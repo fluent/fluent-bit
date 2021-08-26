@@ -192,7 +192,6 @@ static void output_thread(void *data)
     flb_coro_thread_init();
 
     flb_net_ctx_init(&dns_ctx);
-    flb_net_dns_ctx_init();
     flb_net_dns_ctx_set(&dns_ctx);
 
     /*
