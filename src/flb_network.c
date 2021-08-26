@@ -54,11 +54,22 @@
 #define SOL_TCP IPPROTO_TCP
 #endif
 
+static pthread_once_t local_thread_net_dns_ctx_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_net_dns, flb_net_dns_ctx);
+
+/*
+ * Initialize thread-local-storage, every worker thread has it owns
+ * dns context with relevant info populated inside the thread.
+ */
+
+static void flb_net_dns_ctx_init_private()
+{
+    FLB_TLS_INIT(flb_net_dns_ctx);
+}
 
 void flb_net_dns_ctx_init()
 {
-    FLB_TLS_INIT(flb_net_dns_ctx);
+    pthread_once(&local_thread_net_dns_ctx_init, flb_net_dns_ctx_init_private);
 }
 
 struct flb_net_dns *flb_net_dns_ctx_get()
