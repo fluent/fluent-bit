@@ -554,6 +554,13 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
     coro->callee = co_create(config->coro_stack_size,
                              output_pre_cb_flush, &stack_size);
 
+    if(coro->callee == NULL) {
+        flb_coro_destroy(coro);
+        flb_free(out_coro);
+
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_VALGRIND
     coro->valgrind_stack_id = \
         VALGRIND_STACK_REGISTER(coro->callee, ((char *) coro->callee) + stack_size);
