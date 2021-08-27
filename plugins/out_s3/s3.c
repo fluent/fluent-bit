@@ -1967,11 +1967,11 @@ static void flush_init(void *out_context)
 
         if (ctx->preserve_data_ordering) {
             ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                            ctx->timer_ms, s3_upload_queue, ctx);
+                                            ctx->timer_ms, s3_upload_queue, ctx, NULL);
         }
         else {
             ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                            ctx->timer_ms, cb_s3_upload, ctx);
+                                            ctx->timer_ms, cb_s3_upload, ctx, NULL);
         }
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
