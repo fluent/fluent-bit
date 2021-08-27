@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
@@ -180,6 +181,7 @@ static void output_thread(void *data)
     struct flb_output_coro *out_coro;
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_coro_params *params;
+    struct flb_net_dns dns_ctx;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -188,6 +190,9 @@ static void output_thread(void *data)
     thread_id = th_ins->th->id;
 
     flb_coro_thread_init();
+
+    flb_net_ctx_init(&dns_ctx);
+    flb_net_dns_ctx_set(&dns_ctx);
 
     /*
      * Expose the event loop to the I/O interfaces: since we are in a separate
@@ -320,8 +325,11 @@ static void output_thread(void *data)
             }
         }
 
+        flb_net_dns_lookup_context_cleanup(&dns_ctx);
+
         /* Destroy upstream connections from the 'pending destroy list' */
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+        flb_sched_timer_cleanup(sched);
 
         /* Check if we should stop the event loop */
         if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
