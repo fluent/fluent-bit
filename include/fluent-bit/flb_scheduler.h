@@ -134,7 +134,7 @@ int flb_sched_request_invalidate(struct flb_config *config, void *data);
 
 int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
-                              void *data);
+                              void *data, struct flb_sched_timer **out_timer);
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer);
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer);
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer);
