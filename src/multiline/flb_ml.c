@@ -872,7 +872,8 @@ int flb_ml_auto_flush_init(struct flb_ml *ml)
                                     FLB_SCHED_TIMER_CB_PERM,
                                     ml->flush_ms,
                                     cb_ml_flush_timer,
-                                    ml);
+                                    ml,
+                                    NULL);
     return ret;
 }
 
