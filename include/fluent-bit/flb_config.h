@@ -184,6 +184,9 @@ struct flb_config {
      */
     char *no_proxy;
 
+    /* DNS */
+    char *dns_mode;
+
     /* Chunk I/O Buffering */
     void *cio;
     char *storage_path;
@@ -282,6 +285,9 @@ enum conf_type {
 #define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
 #define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
+
+/* DNS */
+#define FLB_CONF_DNS_MODE              "dns.mode"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
