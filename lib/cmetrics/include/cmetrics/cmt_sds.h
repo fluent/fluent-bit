@@ -45,159 +45,17 @@ struct cmt_sds {
 
 #define CMT_SDS_HEADER(s)  ((struct cmt_sds *) (s - CMT_SDS_HEADER_SIZE))
 
-static inline size_t cmt_sds_avail(cmt_sds_t s)
-{
-    struct cmt_sds *h;
-
-    h = CMT_SDS_HEADER(s);
-    return (size_t) (h->alloc - h->len);
-}
-
-static cmt_sds_t sds_alloc(size_t size)
-{
-    void *buf;
-    cmt_sds_t s;
-    struct cmt_sds *head;
-
-    buf = malloc(CMT_SDS_HEADER_SIZE + size + 1);
-    if (!buf) {
-        cmt_errno();
-        return NULL;
-    }
-
-    head = buf;
-    head->len = 0;
-    head->alloc = size;
-
-    s = head->buf;
-    *s = '\0';
-
-    return s;
-}
-
-static inline size_t cmt_sds_alloc(cmt_sds_t s)
-{
-    return (size_t) CMT_SDS_HEADER(s)->alloc;
-}
-
-static inline cmt_sds_t cmt_sds_increase(cmt_sds_t s, size_t len)
-{
-    size_t new_size;
-    struct cmt_sds *head;
-    cmt_sds_t out;
-    void *tmp;
-
-    out = s;
-    new_size = (CMT_SDS_HEADER_SIZE + cmt_sds_alloc(s) + len + 1);
-    head = CMT_SDS_HEADER(s);
-    tmp = realloc(head, new_size);
-    if (!tmp) {
-        cmt_errno();
-        return NULL;
-    }
-    head = (struct cmt_sds *) tmp;
-    head->alloc += len;
-    out = head->buf;
-
-    return out;
-}
-
-static inline size_t cmt_sds_len(cmt_sds_t s)
-{
-    return (size_t) CMT_SDS_HEADER(s)->len;
-}
-
-static inline cmt_sds_t cmt_sds_create_len(const char *str, int len)
-{
-    cmt_sds_t s;
-    struct cmt_sds *head;
-
-    s = sds_alloc(len);
-    if (!s) {
-        return NULL;
-    }
-
-    if (str) {
-        memcpy(s, str, len);
-        s[len] = '\0';
-
-        head = CMT_SDS_HEADER(s);
-        head->len = len;
-    }
-    return s;
-}
-
-static inline cmt_sds_t cmt_sds_create(const char *str)
-{
-    size_t len;
-
-    if (!str) {
-        len = 0;
-    }
-    else {
-        len = strlen(str);
-    }
-
-    return cmt_sds_create_len(str, len);
-}
-
-static inline void cmt_sds_destroy(cmt_sds_t s)
-{
-    struct cmt_sds *head;
-
-    if (!s) {
-        return;
-    }
-
-    head = CMT_SDS_HEADER(s);
-    free(head);
-}
-
-static inline cmt_sds_t cmt_sds_cat(cmt_sds_t s, const char *str, int len)
-{
-    size_t avail;
-    struct cmt_sds *head;
-    cmt_sds_t tmp = NULL;
-
-    avail = cmt_sds_avail(s);
-    if (avail < len) {
-        tmp = cmt_sds_increase(s, len);
-        if (!tmp) {
-            return NULL;
-        }
-        s = tmp;
-    }
-    memcpy((char *) (s + cmt_sds_len(s)), str, len);
-
-    head = CMT_SDS_HEADER(s);
-    head->len += len;
-    s[head->len] = '\0';
-
-    return s;
-}
-
-static inline cmt_sds_t cmt_sds_create_size(size_t size)
-{
-    return sds_alloc(size);
-}
-
-static inline void cmt_sds_set_len(cmt_sds_t s, size_t len)
-{
-    struct cmt_sds *head;
-
-    head = CMT_SDS_HEADER(s);
-    head->len = len;
-}
-
-static inline void cmt_sds_cat_safe(cmt_sds_t *buf, const char *str, int len)
-{
-    cmt_sds_t tmp;
-
-    tmp = cmt_sds_cat(*buf, str, len);
-    if (!tmp) {
-        return;
-    }
-    *buf = tmp;
-}
+size_t cmt_sds_avail(cmt_sds_t s);
+cmt_sds_t sds_alloc(size_t size);
+size_t cmt_sds_alloc(cmt_sds_t s);
+cmt_sds_t cmt_sds_increase(cmt_sds_t s, size_t len);
+size_t cmt_sds_len(cmt_sds_t s);
+cmt_sds_t cmt_sds_create_len(const char *str, int len);
+cmt_sds_t cmt_sds_create(const char *str);
+void cmt_sds_destroy(cmt_sds_t s);
+cmt_sds_t cmt_sds_cat(cmt_sds_t s, const char *str, int len);
+cmt_sds_t cmt_sds_create_size(size_t size);
+void cmt_sds_set_len(cmt_sds_t s, size_t len);
+void cmt_sds_cat_safe(cmt_sds_t *buf, const char *str, int len);
 
 #endif

@@ -107,7 +107,7 @@ static struct cmt *generate_encoder_test_data()
     /* a counter without subsystem */
     c3 = cmt_counter_create(cmt, "kubernetes", "", "cpu", "CPU load",
                             2, (char *[]) {"hostname", "app"});
-    cmt_counter_set(c2, ts, 10, 0, NULL);
+    cmt_counter_set(c3, ts, 10, 0, NULL);
 
     return cmt;
 }
@@ -400,7 +400,6 @@ void test_cmt_to_msgpack_labels()
 
 void test_prometheus_remote_write()
 {
-    int ret;
     uint64_t ts;
     cmt_sds_t payload;
     struct cmt *cmt;
@@ -416,9 +415,9 @@ void test_prometheus_remote_write()
                            2, (char *[]) {"host", "app"});
 
     ts = 0;
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics2"});
+    cmt_counter_inc(c, ts, 0, NULL);
+    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics2"});
 
     /* append static labels */
     cmt_label_add(cmt, "dev", "Calyptia");

@@ -20,10 +20,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_snappy.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_decode_msgpack.h>
-#include <cmetrics/cmt_encode_prometheus_remote_write.h>
+#include <fluent-bit/flb_metrics.h>
 
 #include "remote_write.h"
 #include "remote_write_conf.h"

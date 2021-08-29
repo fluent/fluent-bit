@@ -86,10 +86,14 @@ struct flb_config {
     void *dso_plugins;
 
     /* Plugins references */
+    struct mk_list custom_plugins;
     struct mk_list in_plugins;
     struct mk_list parser_plugins;      /* not yet implemented */
     struct mk_list filter_plugins;
     struct mk_list out_plugins;
+
+    /* Custom instances */
+    struct mk_list customs;
 
     /* Inputs instances */
     struct mk_list inputs;
@@ -140,6 +144,12 @@ struct flb_config {
 #ifdef FLB_HAVE_METRICS
     void *metrics;
 #endif
+
+    /*
+     * CMetric lists: a linked list to keep a reference of every
+     * cmetric context created.
+     */
+    struct mk_list cmetrics;
 
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER

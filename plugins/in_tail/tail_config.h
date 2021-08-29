@@ -26,12 +26,14 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_sqldb.h>
+#include <fluent-bit/flb_metrics.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
 #ifdef FLB_HAVE_PARSER
 #include <fluent-bit/multiline/flb_ml.h>
 #endif
+
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -132,6 +134,11 @@ struct flb_tail_config {
 
     /* Plugin input instance */
     struct flb_input_instance *ins;
+
+    /* Metrics */
+    struct cmt_counter *cmt_files_opened;
+    struct cmt_counter *cmt_files_closed;
+    struct cmt_counter *cmt_files_rotated;
 
     struct flb_config *config;
 };

@@ -31,12 +31,11 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
 #include <stdarg.h>
-
-#include <cmetrics/cmetrics.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -265,7 +264,7 @@ int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, cb);
+    o_ins = flb_output_new(ctx->config, output, cb, FLB_TRUE);
     if (!o_ins) {
         return -1;
     }
@@ -630,6 +629,7 @@ static void flb_lib_worker(void *data)
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    config->exit_status_code = ret;
     ctx->status = FLB_LIB_NONE;
 }
 

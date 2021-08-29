@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define FIVE_MINUTES   600
+#define FIVE_MINUTES   300
 #define TWELVE_HOURS   43200
 
 /* Credentials Environment Variables */

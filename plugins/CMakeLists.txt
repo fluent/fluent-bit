@@ -1,5 +1,41 @@
 set(flb_plugins "" CACHE INTERNAL "flb_plugins")
 
+# REGISTER_CUSTOM_PLUGIN
+macro(REGISTER_CUSTOM_PLUGIN name)
+  string(FIND ${name} "=" pos)
+  if(pos GREATER -1)
+    string(REPLACE "=" ";" list ${name})
+    list(GET list 0 p_name)
+    list(GET list 1 p_path)
+    message(STATUS "EXTERNAL CUSTOM PLUGIN name='${p_name}' path='${p_path}'")
+  else()
+    set(p_name ${name})
+  endif()
+
+  string(TOUPPER ${p_name} NAME)
+  if(FLB_${NAME} OR p_path)
+    set(FLB_IN_PLUGINS_DECL "${FLB_CUSTOM_PLUGINS_DECL}extern struct flb_custom_plugin ${p_name}_plugin;\n")
+
+    # C code
+    set(C_CODE          "    custom = flb_malloc(sizeof(struct flb_custom_plugin));\n")
+    set(C_CODE "${C_CODE}    if (!custom) {\n")
+    set(C_CODE "${C_CODE}        flb_errno();\n")
+    set(C_CODE "${C_CODE}        return -1;\n")
+    set(C_CODE "${C_CODE}    }\n")
+    set(C_CODE "${C_CODE}    memcpy(custom, &${p_name}_plugin, sizeof(struct flb_custom_plugin));\n")
+    set(C_CODE "${C_CODE}    mk_list_add(&custom->_head, &config->custom_plugins);\n\n")
+
+    set(FLB_IN_PLUGINS_ADD "${FLB_CUSTOM_PLUGINS_ADD}${C_CODE}")
+
+    if (p_path)
+      add_subdirectory(${p_path} ${p_path})
+    else()
+      add_subdirectory(${p_name})
+    endif()
+    set(flb_plugins "${flb_plugins}flb-plugin-${p_name};")
+  endif()
+endmacro()
+
 # REGISTER_IN_PLUGIN
 macro(REGISTER_IN_PLUGIN name)
   string(FIND ${name} "=" pos)
@@ -118,6 +154,9 @@ endmacro()
 #  Plugins Registration
 # ======================
 
+# Custom Plugins
+REGISTER_CUSTOM_PLUGIN("custom_calyptia")
+
 # These plugins works only on Linux
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_cpu")
@@ -133,6 +172,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   REGISTER_IN_PLUGIN("in_node_exporter_metrics")
 endif()
 
+REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_emitter")
 REGISTER_IN_PLUGIN("in_tail")
 REGISTER_IN_PLUGIN("in_dummy")
@@ -172,6 +212,7 @@ REGISTER_IN_PLUGIN("in_random")
 REGISTER_OUT_PLUGIN("out_azure")
 REGISTER_OUT_PLUGIN("out_azure_blob")
 REGISTER_OUT_PLUGIN("out_bigquery")
+REGISTER_OUT_PLUGIN("out_calyptia")
 REGISTER_OUT_PLUGIN("out_counter")
 REGISTER_OUT_PLUGIN("out_datadog")
 REGISTER_OUT_PLUGIN("out_es")
@@ -214,6 +255,7 @@ REGISTER_OUT_PLUGIN("out_s3")
 # =======
 REGISTER_FILTER_PLUGIN("filter_alter_size")
 REGISTER_FILTER_PLUGIN("filter_aws")
+REGISTER_FILTER_PLUGIN("filter_checklist")
 REGISTER_FILTER_PLUGIN("filter_record_modifier")
 REGISTER_FILTER_PLUGIN("filter_throttle")
 REGISTER_FILTER_PLUGIN("filter_throttle_size")
