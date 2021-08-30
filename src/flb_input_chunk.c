@@ -1146,7 +1146,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                 cio_chunk_down(ic->chunk);
             }
         }
-        return 0;
     }
 
     flb_input_chunk_protect(in);
