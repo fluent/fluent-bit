@@ -89,6 +89,9 @@ struct flb_aws_client {
      struct flb_aws_header *static_headers;
      size_t static_headers_len;
 
+    /* Are requests to AWS services retried? */
+    int retry_requests;
+
     /*
      * If an API responds with auth error, we refresh creds and retry.
      * For safety, credential refresh can only happen once per
