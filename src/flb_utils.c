@@ -1047,7 +1047,11 @@ int flb_utils_uuid_v4_gen(char *buf)
             uuid.node[0], uuid.node[1], uuid.node[2],
             uuid.node[3], uuid.node[4], uuid.node[5]);
 
-    return ret;
+    if (ret == 1) {
+        return 0;
+    }
+
+    return -1;
 }
 #else
 int flb_utils_uuid_v4_gen(char *buf)

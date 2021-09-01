@@ -1749,6 +1749,10 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             continue;
         }
 
+        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+            continue;
+        }
+
         if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             complete = FLB_TRUE;
         }
@@ -2143,6 +2147,10 @@ static int cb_s3_exit(void *data, struct flb_config *config)
     if (s3_store_has_uploads(ctx) == FLB_TRUE) {
         mk_list_foreach_safe(head, tmp, &ctx->uploads) {
             m_upload = mk_list_entry(head, struct multipart_upload, _head);
+
+            if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+                continue;
+            }
 
             if (m_upload->bytes > 0) {
                 m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
