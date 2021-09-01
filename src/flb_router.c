@@ -126,8 +126,8 @@ int flb_router_match(const char *tag, int tag_len, const char *match,
 }
 
 /* Associate and input and output instances due to a previous match */
-static int flb_router_connect(struct flb_input_instance *in,
-                              struct flb_output_instance *out)
+int flb_router_connect(struct flb_input_instance *in,
+                       struct flb_output_instance *out)
 {
     struct flb_router_path *p;
 

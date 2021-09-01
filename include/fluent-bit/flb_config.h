@@ -86,10 +86,14 @@ struct flb_config {
     void *dso_plugins;
 
     /* Plugins references */
+    struct mk_list custom_plugins;
     struct mk_list in_plugins;
     struct mk_list parser_plugins;      /* not yet implemented */
     struct mk_list filter_plugins;
     struct mk_list out_plugins;
+
+    /* Custom instances */
+    struct mk_list customs;
 
     /* Inputs instances */
     struct mk_list inputs;
@@ -141,6 +145,12 @@ struct flb_config {
     void *metrics;
 #endif
 
+    /*
+     * CMetric lists: a linked list to keep a reference of every
+     * cmetric context created.
+     */
+    struct mk_list cmetrics;
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
     int http_server;                /* HTTP Server running    */
@@ -173,6 +183,9 @@ struct flb_config {
      * Note: only `,` is allowed as seperator between URLs.
      */
     char *no_proxy;
+
+    /* DNS */
+    char *dns_mode;
 
     /* Chunk I/O Buffering */
     void *cio;
@@ -272,6 +285,9 @@ enum conf_type {
 #define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
 #define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
+
+/* DNS */
+#define FLB_CONF_DNS_MODE              "dns.mode"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"

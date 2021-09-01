@@ -161,7 +161,7 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     int len;
     char *ptr;
     uint64_t hash;
-    XXH64_state_t state;
+    XXH3_state_t state;
     struct cmt_metric *metric = NULL;
 
     /* Enforce zero or exact labels */
@@ -193,18 +193,18 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     }
 
     /* Lookup the metric */
-    XXH64_reset(&state, 0);
-    XXH64_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
+    XXH3_64bits_reset(&state);
+    XXH3_64bits_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
     for (i = 0; i < labels_count; i++) {
         ptr = labels_val[i];
         if (!ptr) {
             return NULL;
         }
         len = strlen(ptr);
-        XXH64_update(&state, ptr, len);
+        XXH3_64bits_update(&state, ptr, len);
     }
 
-    hash = XXH64_digest(&state);
+    hash = XXH3_64bits_digest(&state);
     metric = metric_hash_lookup(map, hash);
 
     if (metric) {

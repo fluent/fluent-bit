@@ -24,18 +24,35 @@
 #include <cmetrics/cmt_untyped.h>
 
 struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,
-                                       char *namespace, char *subsystem,
+                                       char *ns, char *subsystem,
                                        char *name, char *help,
                                        int label_count, char **label_keys)
 {
     int ret;
     struct cmt_untyped *untyped;
 
-    if (!name || !help) {
+    if (!ns) {
+        cmt_log_error(cmt, "null ns not allowed");
         return NULL;
     }
 
-    if (strlen(name) == 0 || strlen(help) == 0) {
+    if (!subsystem) {
+        cmt_log_error(cmt, "null subsystem not allowed");
+        return NULL;
+    }
+
+    if (!help || strlen(help) == 0) {
+        cmt_log_error(cmt, "undefined help");
+        return NULL;
+    }
+
+    if (!name || strlen(name) == 0) {
+        cmt_log_error(cmt, "undefined name");
+        return NULL;
+    }
+
+    if (!help || strlen(help) == 0) {
+        cmt_log_error(cmt, "undefined help");
         return NULL;
     }
 
@@ -46,8 +63,9 @@ struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,
     }
     mk_list_add(&untyped->_head, &cmt->untypeds);
 
-    ret = cmt_opts_init(&untyped->opts, namespace, subsystem, name, help);
+    ret = cmt_opts_init(&untyped->opts, ns, subsystem, name, help);
     if (ret == -1) {
+        cmt_log_error(cmt, "unable to initialize options for untyped");
         cmt_untyped_destroy(untyped);
         return NULL;
     }
@@ -55,9 +73,12 @@ struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,
     /* Create the map */
     untyped->map = cmt_map_create(CMT_UNTYPED, &untyped->opts, label_count, label_keys);
     if (!untyped->map) {
+        cmt_log_error(cmt, "unable to allocate map for untyped");
         cmt_untyped_destroy(untyped);
         return NULL;
     }
+
+    untyped->cmt = cmt;
 
     return untyped;
 }
@@ -84,6 +105,9 @@ int cmt_untyped_set(struct cmt_untyped *untyped, uint64_t timestamp, double val,
                                 labels_count, label_vals,
                                 CMT_TRUE);
     if (!metric) {
+        cmt_log_error(untyped->cmt, "unable to retrieve metric: %s for untyped %s_%s_%s",
+                      untyped->map, untyped->opts.ns, untyped->opts.subsystem,
+                      untyped->opts.name);
         return -1;
     }
 
@@ -104,6 +128,10 @@ int cmt_untyped_get_val(struct cmt_untyped *untyped,
                                  untyped->map, labels_count, label_vals,
                                  &val);
     if (ret == -1) {
+        cmt_log_error(untyped->cmt,
+                      "unable to retrieve metric value: %s for untyped %s_%s_%s",
+                      untyped->map, untyped->opts.ns, untyped->opts.subsystem,
+                      untyped->opts.name);
         return -1;
     }
     *out_val = val;

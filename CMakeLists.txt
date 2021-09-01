@@ -45,6 +45,11 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
 
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7l")
+  set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -latomic")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -latomic")
+endif()
+
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
@@ -94,23 +99,25 @@ option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support" No)
+option(FLB_ARROW               "Build with Apache Arrow support"  No)
 
-
-# Metrics: Experimental Feature, disabled by default on 0.12 series
-# but enabled in the upcoming 0.13 release. Note that development
-# mode enable this feature.
-option(FLB_METRICS            "Enable metrics support"       No)
+# Native Metrics Support (cmetrics)
+option(FLB_METRICS            "Enable metrics support"       Yes)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
-# Build-in Plugins
+# Built-in Custom Plugins
+option(FLB_CUSTOM_CALYPTIA    "Enable Calyptia Support"      Yes)
+
+# Built-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
 option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
 option(FLB_IN_DOCKER          "Enable Docker input plugin"          Yes)
 option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
 option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
+option(FLB_IN_FLUENTBIT_METRICS "Enable Fluent Bit metrics  plugin" Yes)
 option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
 option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
@@ -140,6 +147,7 @@ option(FLB_IN_NODE_EXPORTER_METRICS "Enable node exporter metrics input plugin" 
 option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
 option(FLB_OUT_AZURE_BLOB     "Enable Azure output plugin"          Yes)
 option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
+option(FLB_OUT_CALYPTIA       "Enable Calyptia monitoring plugin"   Yes)
 option(FLB_OUT_COUNTER        "Enable Counter output plugin"        Yes)
 option(FLB_OUT_DATADOG        "Enable DataDog output plugin"        Yes)
 option(FLB_OUT_ES             "Enable Elasticsearch output plugin"  Yes)
@@ -177,6 +185,7 @@ option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
 option(FLB_OUT_WEBSOCKET      "Enable Websocket output plugin"      Yes)
 option(FLB_FILTER_ALTER_SIZE  "Enable alter_size filter"            Yes)
 option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
+option(FLB_FILTER_CHECKLIST   "Enable checklist filter"             Yes)
 option(FLB_FILTER_EXPECT      "Enable expect filter"                Yes)
 option(FLB_FILTER_GREP        "Enable grep filter"                  Yes)
 option(FLB_FILTER_MODIFY      "Enable modify filter"                Yes)
@@ -310,7 +319,9 @@ if(FLB_COVERAGE)
 endif()
 
 # Enable Debug symbols if specified
-if(FLB_DEBUG)
+if(MSVC)
+  set(CMAKE_BUILD_TYPE None)  # Avoid flag conflicts (See CMakeList.txt:L18)
+elseif(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -726,6 +737,16 @@ if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
    FLB_OPTION(FLB_OUT_PGSQL OFF)
 endif()
 
+# Arrow GLib
+# ==========
+find_package(PkgConfig)
+pkg_check_modules(ARROW_GLIB QUIET arrow-glib)
+if(FLB_ARROW AND ARROW_GLIB_FOUND)
+  FLB_DEFINITION(FLB_HAVE_ARROW)
+else()
+  set(FLB_ARROW OFF)
+endif()
+
 # Pthread Local Storage
 # =====================
 # By default we expect the compiler already support thread local storage
@@ -821,10 +842,16 @@ endif()
 # ============================
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-set(CPACK_PACKAGE_NAME "td-agent-bit")
+
+if(FLB_TD)
+  set(CPACK_PACKAGE_NAME "td-agent-bit")
+else()
+  set(CPACK_PACKAGE_NAME "fluent-bit")
+endif()
+
 set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
-set(CPACK_PACKAGE_VENDOR "Treasure Data")
+set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
+set(CPACK_PACKAGE_VENDOR "Calyptia Inc.")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
@@ -917,7 +944,11 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
-  set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+  if(FLB_TD)
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+  else()
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
+  endif()
 endif()
 
 include(CPack)

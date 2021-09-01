@@ -27,8 +27,7 @@
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
-
-#include <mpack/mpack.h>
+#include <cmetrics/cmt_mpack_utils.h>
 
 static struct cmt_map_label *find_label_by_index(struct mk_list *label_list, size_t desired_index)
 {
@@ -54,7 +53,7 @@ static int unpack_opts_ns(mpack_reader_t *reader, size_t index, void *context)
 
     opts = (struct cmt_opts *) context;
 
-    return cmt_mpack_consume_string_tag(reader, &opts->namespace);
+    return cmt_mpack_consume_string_tag(reader, &opts->ns);
 }
 
 static int unpack_opts_ss(mpack_reader_t *reader, size_t index, void *context)
@@ -110,7 +109,7 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
          * later on.
          */
 
-        opts->fqname = cmt_sds_create_size(cmt_sds_len(opts->namespace) + \
+        opts->fqname = cmt_sds_create_size(cmt_sds_len(opts->ns) + \
                                            cmt_sds_len(opts->subsystem) + \
                                            cmt_sds_len(opts->name) + \
                                            4);
@@ -119,7 +118,7 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
 
-        cmt_sds_cat(opts->fqname, opts->namespace, cmt_sds_len(opts->namespace));
+        cmt_sds_cat(opts->fqname, opts->ns, cmt_sds_len(opts->ns));
         cmt_sds_cat(opts->fqname, "_", 1);
 
         if (cmt_sds_len(opts->subsystem) > 0) {

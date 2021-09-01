@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_routes_mask.h>
+#include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 
 static void generate_chunk_name(struct flb_input_instance *in,
@@ -366,6 +367,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     int tag_len;
     int has_routes;
     int ret;
+    uint64_t ts;
     char *buf_data;
     size_t buf_size;
     size_t offset;
@@ -450,6 +452,18 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
 #ifdef FLB_HAVE_METRICS
     ic->total_records = records;
     if (ic->total_records > 0) {
+        /* timestamp */
+        ts = cmt_time_now();
+
+        /* fluentbit_input_records_total */
+        cmt_counter_add(in->cmt_records, ts, ic->total_records,
+                        1, (char *[]) {(char *) flb_input_name(in)});
+
+        /* fluentbit_input_bytes_total */
+        cmt_counter_add(in->cmt_bytes, ts, buf_size,
+                        1, (char *[]) {(char *) flb_input_name(in)});
+
+        /* OLD metrics */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->total_records, in->metrics);
         flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
     }
@@ -573,10 +587,10 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         cio_chunk_down(chunk);
     }
 
-    if (in->event_type == FLB_INPUT_LOGS) {
+    if (flb_input_event_type_is_log(in)) {
         flb_hash_add(in->ht_log_chunks, tag, tag_len, ic, 0);
     }
-    else if (in->event_type == FLB_INPUT_METRICS) {
+    else if (flb_input_event_type_is_metric(in)) {
         flb_hash_add(in->ht_metric_chunks, tag, tag_len, ic, 0);
     }
 
@@ -878,6 +892,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     int min;
     int meta_size;
     int new_chunk = FLB_FALSE;
+    uint64_t ts;
     size_t diff;
     size_t size;
     size_t pre_size;
@@ -955,6 +970,18 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
     if (ic->total_records > 0) {
+        /* timestamp */
+        ts = cmt_time_now();
+
+        /* fluentbit_input_records_total */
+        cmt_counter_add(in->cmt_records, ts, ic->added_records,
+                        1, (char *[]) {(char *) flb_input_name(in)});
+
+        /* fluentbit_input_bytes_total */
+        cmt_counter_add(in->cmt_bytes, ts, buf_size,
+                        1, (char *[]) {(char *) flb_input_name(in)});
+
+        /* OLD api */
         flb_metrics_sum(FLB_METRIC_N_RECORDS, ic->added_records, in->metrics);
         flb_metrics_sum(FLB_METRIC_N_BYTES, buf_size, in->metrics);
     }

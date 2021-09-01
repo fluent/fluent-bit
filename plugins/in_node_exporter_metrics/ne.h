@@ -29,13 +29,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_hash.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_counter.h>
-#include <cmetrics/cmt_gauge.h>
-#include <cmetrics/cmt_untyped.h>
-#include <cmetrics/cmt_encode_prometheus.h>
-#include <cmetrics/cmt_encode_msgpack.h>
+#include <fluent-bit/flb_metrics.h>
 
 struct flb_ne {
     /* configuration */

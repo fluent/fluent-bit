@@ -106,6 +106,10 @@ struct flb_service_config service_configs[] = {
      offsetof(struct flb_config, health_check_period)},
 
 #endif
+    /* DNS*/
+    {FLB_CONF_DNS_MODE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_mode)},
 
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
@@ -215,10 +219,13 @@ struct flb_config *flb_config_init()
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
+    mk_list_init(&config->custom_plugins);
+    mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);
     mk_list_init(&config->filter_plugins);
     mk_list_init(&config->out_plugins);
+    mk_list_init(&config->customs);
     mk_list_init(&config->inputs);
     mk_list_init(&config->parsers);
     mk_list_init(&config->filters);
@@ -226,12 +233,12 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->cmetrics);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
     /* Environment */
     config->env = flb_env_create();
-
 
     /* Multiline core */
     mk_list_init(&config->multiline_parsers);

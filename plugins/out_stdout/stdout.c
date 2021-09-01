@@ -24,13 +24,11 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_metrics.h>
+
 #include <msgpack.h>
 #include "stdout.h"
 
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_encode_text.h>
-#include <cmetrics/cmt_decode_msgpack.h>
 
 static int cb_stdout_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
@@ -98,6 +96,7 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     return 0;
 }
 
+#ifdef FLB_HAVE_METRICS
 static void print_metrics_text(struct flb_output_instance *ins,
                                const void *data, size_t bytes)
 {
@@ -124,6 +123,7 @@ static void print_metrics_text(struct flb_output_instance *ins,
 
     cmt_encode_text_destroy(text);
 }
+#endif
 
 static void cb_stdout_flush(const void *data, size_t bytes,
                             const char *tag, int tag_len,
@@ -140,11 +140,13 @@ static void cb_stdout_flush(const void *data, size_t bytes,
     struct flb_time tmp;
     msgpack_object *p;
 
+#ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
     if (flb_input_event_type_is_metric(ins)) {
         print_metrics_text(ctx->ins, (char *) data, bytes);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
+#endif
 
     /* Assuming data is a log entry...*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {

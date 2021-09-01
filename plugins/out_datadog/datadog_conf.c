@@ -87,7 +87,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
-    flb_plg_debug(ctx->ins, "api_key: %s", ctx->api_key);
 
     /* Include Tag key */
     tmp = flb_output_get_property("include_tag_key", ins);

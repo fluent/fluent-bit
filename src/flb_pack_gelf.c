@@ -762,7 +762,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         }
         *s = tmp;
 
-        tmp = flb_sds_printf(s, "%" PRIu32".%lu",
+        /* gelf supports milliseconds */
+        tmp = flb_sds_printf(s, "%" PRIu32".%03lu",
                              tm->tm.tv_sec, tm->tm.tv_nsec / 1000000);
         if (tmp == NULL) {
             return NULL;
@@ -801,6 +802,7 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, buf_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
         return NULL;
     }
 

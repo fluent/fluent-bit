@@ -299,6 +299,32 @@ int flb_ml_rule_init(struct flb_ml_parser *ml_parser)
     return 0;
 }
 
+/* Search any 'start_state' matching the incoming 'buf_data' */
+static struct flb_ml_rule *try_start_state(struct flb_ml_parser *ml_parser,
+                                           char *buf_data, size_t buf_size)
+{
+    int ret = -1;
+    struct mk_list *head;
+    struct flb_ml_rule *rule = NULL;
+
+    mk_list_foreach(head, &ml_parser->regex_rules) {
+        rule = mk_list_entry(head, struct flb_ml_rule, _head);
+
+        /* Is this rule matching a start_state ? */
+        if (!rule->start_state) {
+            rule = NULL;
+            continue;
+        }
+
+        /* Matched a start_state. Check if we have a regex match */
+        ret = flb_regex_match(rule->regex, (unsigned char *) buf_data, buf_size);
+        if (ret) {
+            return rule;
+        }
+    }
+
+    return NULL;
+}
 
 int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                         struct flb_ml_stream *mst,
@@ -326,47 +352,19 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
         buf_size = size;
     }
 
-    if (group->first_line) {
-        group->rule_to_state = NULL;
-
-        /* If a previous content exists, just flush it */
-        if (flb_sds_len(group->buf) > 0) {
-            flb_ml_flush_stream_group(ml_parser, mst, group);
-        }
-
-        /* If this is a first line, check for any rule that matches a start state */
-        mk_list_foreach(head, &ml_parser->regex_rules) {
-            rule = mk_list_entry(head, struct flb_ml_rule, _head);
-
-            /* Is this rule matching a start_state ? */
-            if (!rule->start_state) {
-                rule = NULL;
-                continue;
-            }
-
-            /* Matched a start_state. Check if we have a regex match */
-            ret = flb_regex_match(rule->regex,
-                                  (unsigned char *) buf_data,
-                                  buf_size);
-            if (ret) {
-                /* Regex matched */
-                flb_sds_cat_safe(&group->buf, buf_data, buf_size);
-                group->first_line = FLB_FALSE;
-
-                /* Copy full map content in stream buffer */
-                flb_ml_register_context(group, tm, full_map);
-                break;
-            }
-            rule = NULL;
-        }
-    }
-    else if (group->rule_to_state) {
+    if (group->rule_to_state) {
+        /* are we in a continuation ? */
         tmp_rule = group->rule_to_state;
-        rule = NULL;
 
         /* Lookup all possible next rules by state reference */
+        rule = NULL;
         mk_list_foreach(head, &tmp_rule->to_state_map) {
             st = mk_list_entry(head, struct to_state, _head);
+
+            /* skip start states */
+            if (st->rule->start_state) {
+                continue;
+            }
 
             /* Try regex match */
             ret = flb_regex_match(st->rule->regex,
@@ -389,32 +387,36 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
             }
             rule = NULL;
         }
+
     }
 
-    /*
-     * If 'rule' is set means we got a rule regex  match. This rule might have a
-     * to_state defined.
-     */
+    if (!rule) {
+        /* Check if we are in a 'start_state' */
+        rule = try_start_state(ml_parser, buf_data, buf_size);
+        if (rule) {
+            /* if the group buffer has any previous data just flush it */
+            if (flb_sds_len(group->buf) > 0) {
+                flb_ml_flush_stream_group(ml_parser, mst, group);
+            }
+
+            /* set the rule state */
+            group->rule_to_state = rule;
+
+            /* concatenate the data */
+            flb_sds_cat_safe(&group->buf, buf_data, buf_size);
+
+            /* Copy full map content in stream buffer */
+            flb_ml_register_context(group, tm, full_map);
+
+            return 0;
+        }
+    }
+
     if (rule) {
-        /*
-         * reference the rule that recently matched the pattern. So on the
-         * next iteration we can query the possible 'to_states' in the list.
-         */
         group->rule_to_state = rule;
         try_flushing_buffer(ml_parser, mst, group);
-    }
-    else {
-        return -1;
-
-        /* Flush any previous content */
-        group->rule_to_state = NULL;
-        try_flushing_buffer(ml_parser, mst, group);
-
-        /* Append un-matched content to buffer and flush */
-        flb_ml_register_context(group, tm, full_map);
-        flb_sds_cat_safe(&group->buf, buf_data, buf_size);
-        try_flushing_buffer(ml_parser, mst, group);
+        return 0;
     }
 
-    return 0;
+    return -1;
 }

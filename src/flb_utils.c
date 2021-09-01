@@ -43,6 +43,10 @@
 extern struct flb_aws_error_reporter *error_reporter;
 #endif
 
+#ifdef FLB_HAVE_OPENSSL
+#include <openssl/rand.h>
+#endif
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;
@@ -994,4 +998,193 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     }
 
     return 0;
+}
+
+
+char *flb_utils_get_os_name()
+{
+#ifdef _WIN64
+    return "win64";
+#elif _WIN32
+    return "win32";
+#elif __APPLE__ || __MACH__
+    return "macos";
+#elif __linux__
+    return "linux";
+#elif __FreeBSD__
+    return "freebsd";
+#elif __unix || __unix__
+    return "unix";
+#else
+    return "other";
+#endif
+}
+
+#ifdef FLB_HAVE_OPENSSL
+int flb_utils_uuid_v4_gen(char *buf)
+{
+    int ret;
+    union {
+        struct {
+            uint32_t time_low;
+            uint16_t time_mid;
+            uint16_t time_hi_and_version;
+            uint8_t  clk_seq_hi_res;
+            uint8_t  clk_seq_low;
+            uint8_t  node[6];
+        };
+        uint8_t __rnd[16];
+    } uuid;
+
+    ret = RAND_bytes(uuid.__rnd, sizeof(uuid));
+
+    uuid.clk_seq_hi_res = (uint8_t) ((uuid.clk_seq_hi_res & 0x3F) | 0x80);
+    uuid.time_hi_and_version = (uint16_t) ((uuid.time_hi_and_version & 0x0FFF) | 0x4000);
+
+    snprintf(buf, 38, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+            uuid.time_low, uuid.time_mid, uuid.time_hi_and_version,
+            uuid.clk_seq_hi_res, uuid.clk_seq_low,
+            uuid.node[0], uuid.node[1], uuid.node[2],
+            uuid.node[3], uuid.node[4], uuid.node[5]);
+
+    if (ret == 1) {
+        return 0;
+    }
+
+    return -1;
+}
+#else
+int flb_utils_uuid_v4_gen(char *buf)
+{
+    snprintf(buf, 38, "ddad00f1-3806-46ab-88d1-277a8c863cd6");
+    return 0;
+}
+#endif
+
+int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
+{
+    int fd;
+    int ret;
+    size_t bytes;
+    struct stat st;
+    flb_sds_t buf;
+    FILE *fp;
+
+    fp = fopen(path, "rb");
+    if (!fp) {
+        return -1;
+    }
+    fd = fileno(fp);
+
+    ret = fstat(fd, &st);
+    if (ret == -1) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    buf = flb_calloc(1, st.st_size + 1);
+    if (!buf) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    bytes = fread(buf, st.st_size, 1, fp);
+    if (bytes < 1) {
+        flb_errno();
+        flb_free(buf);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    *out_buf = buf;
+    *out_size = st.st_size;
+    return 0;
+}
+
+static int machine_id_read_and_sanitize(char *path,
+                                        char **out_buf, size_t *out_size)
+{
+    int ret;
+    size_t s;
+    char *p;
+    char *buf;
+    size_t bytes;
+
+    ret = flb_utils_read_file(path, &buf, &bytes);
+    if (ret != 0) {
+        return -1;
+    }
+
+    p = buf + bytes - 1;
+    while (*p == ' ' || *p == '\n') {
+        p--;
+    }
+
+    /* set new size */
+    s = p - buf + 1;
+
+    buf[s] = '\0';
+    *out_size = s;
+    *out_buf = buf;
+
+    return 0;
+}
+
+int flb_utils_get_machine_id(char **out_id, size_t *out_size)
+{
+    int ret;
+    char *id;
+    size_t bytes;
+    char *uuid;
+
+#ifdef __linux__
+    char *dbus_var = "/var/lib/dbus/machine-id";
+    char *dbus_etc = "/etc/machine-id";
+
+    /* dbus */
+    ret = machine_id_read_and_sanitize(dbus_var, &id, &bytes);
+    if (ret == 0) {
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+
+    /* etc */
+    ret = machine_id_read_and_sanitize(dbus_etc, &id, &bytes);
+    if (ret == 0) {
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || \
+      defined(__OpenBSD__) || defined(__DragonFly__)
+
+    char *hostid = "/etc/hostid";
+
+    /* hostid */
+    ret = machine_id_read_and_sanitize(hostid, &id, &bytes);
+    if (ret == 0) {
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+#endif
+
+    /* generate a random uuid */
+    uuid = flb_malloc(38);
+    if (!uuid) {
+        flb_errno();
+        return -1;
+    }
+    ret = flb_utils_uuid_v4_gen(uuid);
+    if (ret == 0) {
+        *out_id = uuid;
+        *out_size = strlen(uuid);
+        return 0;
+    }
+
+    return -1;
 }

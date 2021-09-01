@@ -20,11 +20,13 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
 
+static pthread_once_t local_thread_instance_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
 
 void flb_output_thread_instance_init()
@@ -179,6 +181,7 @@ static void output_thread(void *data)
     struct flb_output_coro *out_coro;
     struct flb_out_thread_instance *th_ins = data;
     struct flb_out_coro_params *params;
+    struct flb_net_dns dns_ctx;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -187,6 +190,9 @@ static void output_thread(void *data)
     thread_id = th_ins->th->id;
 
     flb_coro_thread_init();
+
+    flb_net_ctx_init(&dns_ctx);
+    flb_net_dns_ctx_set(&dns_ctx);
 
     /*
      * Expose the event loop to the I/O interfaces: since we are in a separate
@@ -214,7 +220,7 @@ static void output_thread(void *data)
      */
     ret = flb_sched_timer_cb_create(sched,
                                     FLB_SCHED_TIMER_CB_PERM,
-                                    1500, cb_thread_sched_timer, ins);
+                                    1500, cb_thread_sched_timer, ins, NULL);
     if (ret == -1) {
         flb_plg_error(ins, "could not schedule permanent callback");
         return;
@@ -319,8 +325,11 @@ static void output_thread(void *data)
             }
         }
 
+        flb_net_dns_lookup_context_cleanup(&dns_ctx);
+
         /* Destroy upstream connections from the 'pending destroy list' */
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+        flb_sched_timer_cleanup(sched);
 
         /* Check if we should stop the event loop */
         if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
@@ -409,7 +418,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
      * Initialize thread-local-storage, every worker thread has it owns
      * context with relevant info populated inside the thread.
      */
-    flb_output_thread_instance_init();
+    pthread_once(&local_thread_instance_init, flb_output_thread_instance_init);
 
     /* Create workers */
     for (i = 0; i < ins->tp_workers; i++) {

@@ -212,6 +212,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     int ret;
     struct ev_map *ev_map;
 
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
+
     ev_map = event->data;
     if (ev_map->pipe[0] > 0) {
         evutil_closesocket(ev_map->pipe[0]);
@@ -223,6 +227,8 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     ret = event_del(ev_map->event);
     event_free(ev_map->event);
     mk_mem_free(ev_map);
+
+    MK_EVENT_NEW(event);
 
     return ret;
 }
