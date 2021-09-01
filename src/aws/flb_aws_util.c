@@ -157,10 +157,15 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
 {
     struct flb_http_client *c = NULL;
 
-    //TODO: Need to think more about the retry strategy.
-
     c = request_do(aws_client, method, uri, body, body_len,
                    dynamic_headers, dynamic_headers_len);
+
+    // Auto retry if request fails
+    if (c == NULL && aws_client->retry_requests) {
+        flb_debug("[aws_client] auto-retrying");
+        c = request_do(aws_client, method, uri, body, body_len,
+                       dynamic_headers, dynamic_headers_len);
+    }
 
     /*
      * 400 or 403 could indicate an issue with credentials- so we check for auth
@@ -197,6 +202,7 @@ struct flb_aws_client *flb_aws_client_create()
         return NULL;
     }
     client->client_vtable = &client_vtable;
+    client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
     return client;
 }
