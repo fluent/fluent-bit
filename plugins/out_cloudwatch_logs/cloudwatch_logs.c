@@ -162,6 +162,13 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
+    ctx->retry_requests = FLB_FALSE;
+    tmp = flb_output_get_property("auto_retry_requests", ins);
+    /* native plugins use On/Off as bool, the old Go plugin used true/false */
+    if (tmp && (strcasecmp(tmp, "On") == 0 || strcasecmp(tmp, "true") == 0)) {
+        ctx->retry_requests = FLB_TRUE;
+    }
+
     ctx->log_retention_days = 0;
     tmp = flb_output_get_property("log_retention_days", ins);
     if (tmp) {
@@ -302,6 +309,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
     ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
+    ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
@@ -550,6 +558,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Automatically create the log group (log streams will always automatically"
      " be created)"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     0, FLB_FALSE, 0,
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     {
