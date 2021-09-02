@@ -25,9 +25,10 @@
 #include <fluent-bit/flb_upstream.h>
 
 /* Buffer size */
-#define FLB_HTTP_BUF_SIZE        2048
-#define FLB_HTTP_DATA_SIZE_MAX   4096
-#define FLB_HTTP_DATA_CHUNK     32768
+#define FLB_HTTP_BUF_SIZE           2048
+#define FLB_HTTP_DATA_SIZE_INITIAL  4096
+#define FLB_HTTP_DATA_SIZE_MAX      36864
+#define FLB_HTTP_DATA_CHUNK         32768
 
 /* HTTP Methods */
 #define FLB_HTTP_GET         0

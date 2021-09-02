@@ -762,7 +762,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     }
 
     /* 'Read' buffer size */
-    c->resp.data = flb_malloc(FLB_HTTP_DATA_SIZE_MAX);
+    c->resp.data = flb_malloc(FLB_HTTP_DATA_SIZE_INITIAL);
     if (!c->resp.data) {
         flb_errno();
         flb_http_client_destroy(c);
@@ -770,7 +770,7 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     }
     c->resp.data[0] = '\0';
     c->resp.data_len  = 0;
-    c->resp.data_size = FLB_HTTP_DATA_SIZE_MAX;
+    c->resp.data_size = FLB_HTTP_DATA_SIZE_INITIAL;
     c->resp.data_size_max = FLB_HTTP_DATA_SIZE_MAX;
 
     return c;
