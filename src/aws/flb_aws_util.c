@@ -311,7 +311,8 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     }
 
     /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
-    if (flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE)) {
+    ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
+    if (ret != 0) {
         flb_warn("[aws_http_client] failed to increase max response buffer size");
     } 
 
