@@ -40,6 +40,7 @@
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
 #define INDEX_STRING "$INDEX"
+#define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -309,6 +310,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         goto error;
     }
 
+    /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
+    ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
+    if (ret != 0) {
+        flb_warn("[aws_http_client] failed to increase max response buffer size");
+    } 
+    
     /* Add AWS Fluent Bit user agent */
     if (aws_client->extra_user_agent == NULL) {
         ret = flb_http_add_header(c, "User-Agent", 10,
