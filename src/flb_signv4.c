@@ -357,7 +357,7 @@ static flb_sds_t url_params_format(char *params)
          * results in issues since kv->val will be equal to NULL.
          * Thus, check here whether key length is satisfied
          */
-        if (flb_sds_len(key) == 0) {
+        if (flb_sds_len(key) == 0 || flb_sds_len(val) == 0) {
             flb_sds_destroy(key);
             flb_sds_destroy(val);
             flb_slist_destroy(&split);
