@@ -142,7 +142,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         for(int i = 0; i < 20; i++) {
             char *hash_out_buf;
             size_t hash_out_size;
-            flb_hash_get_by_id(ht, (int)data[i], (char*)&data[i+1],
+            flb_hash_get_by_id(ht, (int)data[i], null_terminated,
                                (const char **)&hash_out_buf, &hash_out_size);
         }
 
