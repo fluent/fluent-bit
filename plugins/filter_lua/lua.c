@@ -116,11 +116,58 @@ static void lua_pushmsgpack(lua_State *l, msgpack_object *o)
 
 }
 
+/*
+ * This function is to call lua function table.maxn.
+ * CAUTION: table.maxn is removed from Lua 5.2.
+ * If we update luajit which is based Lua 5.2+,
+ * this function should be removed.
+*/
+static int lua_isinteger(lua_State *L, int index);
+static int lua_table_maxn(lua_State *l)
+{
+#if defined(LUA_VERSION_NUM) && LUA_VERSION_NUM < 520
+    int ret = -1;
+    if (lua_type(l, -1) != LUA_TTABLE) {
+        return -1;
+    }
+
+    lua_getglobal(l, "table");
+    lua_getfield(l, -1, "maxn");
+    lua_remove(l, -2);    /* remove table (lua_getglobal(L, "table")) */
+    lua_pushvalue(l, -2); /* copy record to top of stack */
+    ret = lua_pcall(l, 1, 1, 0);
+    if (ret < 0) {
+        flb_error("[filter_lua] failed to exec table.maxn ret=%d", ret);
+        return -1;
+    }
+    if (lua_type(l, -1) != LUA_TNUMBER) {
+        flb_error("[filter_lua] not LUA_TNUMBER");
+        lua_pop(l, 1);
+        return -1;
+    }
+
+    if (lua_isinteger(l, -1)) {
+        ret = lua_tointeger(l, -1);
+    }
+    lua_pop(l, 1);
+
+    return ret;
+#else
+    return (int)lua_rawlen(l, 1);
+#endif
+}
+
 static int lua_arraylength(lua_State *l)
 {
     lua_Integer n;
     int count = 0;
     int max = 0;
+    int ret = 0;
+
+    ret = lua_table_maxn(l);
+    if (ret > 0) {
+        return ret;
+    }
 
     lua_pushnil(l);
     while (lua_next(l, -2) != 0) {
