@@ -842,7 +842,7 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
     }
 
     if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
+        pthread_mutex_unlock(&u->mutex_lists);
     }
 
     return 0;
