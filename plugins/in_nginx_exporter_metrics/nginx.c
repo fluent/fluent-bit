@@ -197,7 +197,7 @@ conn_error:
 }
 
 /**
- * Function to initialize nginx_stub_status plugin.
+ * Function to initialize nginx metrics plugin.
  *
  * @param ins     Pointer to flb_input_instance
  * @param config  Pointer to flb_config
@@ -254,7 +254,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
 }
 
 /**
- * Callback function to initialize docker events plugin
+ * Callback function to initialize nginx metrics plugin
  *
  * @param ins     Pointer to flb_input_instance
  * @param config  Pointer to flb_config
@@ -334,7 +334,7 @@ static int nginx_init(struct flb_input_instance *ins,
 }
 
 /**
- * Function to destroy nginx_stub_status plugin.
+ * Function to destroy nginx metrics plugin.
  *
  * @param ctx  Pointer to nginx_ctx
  *
