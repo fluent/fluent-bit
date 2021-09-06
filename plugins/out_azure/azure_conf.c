@@ -129,6 +129,12 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         ctx->time_generated = FLB_FALSE;
     }
 
+    /* config: 'resource_id' */
+    tmp = flb_output_get_property("resource_id", ins);
+    if (tmp) {
+        ctx->resource_id = flb_sds_create(tmp);
+    }
+
     /* Validate hostname given by command line or 'Host' property */
     if (!ins->host.name && !cid) {
         flb_plg_error(ctx->ins, "property 'customer_id' is not defined");
@@ -237,6 +243,9 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
     }
     if (ctx->log_type) {
         flb_sds_destroy(ctx->log_type);
+    }
+    if (ctx->resource_id) {
+        flb_sds_destroy(ctx->resource_id);
     }
     if (ctx->time_key) {
         flb_sds_destroy(ctx->time_key);
