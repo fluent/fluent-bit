@@ -74,7 +74,6 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     return 0;
 }
 
-/* cb_collect callback */
 static int gen_msg(struct flb_input_instance *ins, void *in_context)
 {
     size_t off = 0;
