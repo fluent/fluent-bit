@@ -80,7 +80,7 @@ static int filefd_update(struct flb_ne *ctx)
             continue;
         }
         else if (parts != 3) {
-            flb_plg_warn(ctx->ins, "/sts/fs/file-nr: invalid number of fields");
+            flb_plg_warn(ctx->ins, "/sys/fs/file-nr: invalid number of fields");
             flb_slist_destroy(&split_list);
             break;
         }
