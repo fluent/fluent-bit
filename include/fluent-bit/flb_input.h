@@ -483,7 +483,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     uint64_t val;
     struct flb_input_coro *in_coro;
 
-    in_coro = (struct flb_input_coro *) FLB_CORO_DATA(coro);
+    in_coro = (struct flb_input_coro *) coro->data;
 
     /*
      * To compose the signal event the relevant info is:
