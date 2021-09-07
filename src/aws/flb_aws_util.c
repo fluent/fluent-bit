@@ -314,8 +314,8 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
     ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
     if (ret != 0) {
         flb_warn("[aws_http_client] failed to increase max response buffer size");
-    } 
-    
+    }
+
     /* Add AWS Fluent Bit user agent */
     if (aws_client->extra_user_agent == NULL) {
         ret = flb_http_add_header(c, "User-Agent", 10,
