@@ -389,7 +389,7 @@ struct flb_coro *flb_input_coro_create(struct flb_input_instance *ins,
     }
 
     /* Setup thread specific data */
-    in_coro = (struct flb_input_coro *) flb_malloc(sizeof(struct flb_input_coro));
+    in_coro = (struct flb_input_coro *) flb_calloc(1, sizeof(struct flb_input_coro));
     if (!in_coro) {
         flb_errno();
         return NULL;
