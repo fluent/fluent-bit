@@ -501,6 +501,17 @@ static inline void flb_input_return(struct flb_coro *coro) {
     }
 }
 
+static inline void flb_input_return_do(int ret) {
+    struct flb_coro *coro = flb_coro_get();
+
+    flb_input_return(coro);
+    flb_coro_yield(coro, FLB_TRUE);
+}
+
+#define FLB_INPUT_RETURN(x) \
+    flb_input_return_do(x); \
+    return
+
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {
     if (i->mem_buf_status == FLB_INPUT_PAUSED) {
