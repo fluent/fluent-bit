@@ -52,7 +52,7 @@ static flb_sds_t add_aws_auth(struct flb_http_client *c,
 
     flb_plg_debug(ctx->ins, "Signing request with AWS Sigv4");
 
-    /* Amazon ES Sigv4 does not allow the host header to include the port */
+    /* Amazon OpenSearch Sigv4 does not allow the host header to include the port */
     ret = flb_http_strip_port_from_host(c);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "could not strip port from host for sigv4");
@@ -943,7 +943,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "aws_region", NULL,
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_region),
-     "AWS Region of your Amazon ElasticSearch Service cluster"
+     "AWS Region of your Amazon OpenSearch Service cluster"
     },
     {
      FLB_CONFIG_MAP_STR, "aws_sts_endpoint", NULL,
@@ -953,7 +953,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "aws_role_arn", NULL,
      0, FLB_FALSE, 0,
-     "AWS IAM Role to assume to put records to your Amazon ES cluster"
+     "AWS IAM Role to assume to put records to your Amazon OpenSearch cluster"
     },
     {
      FLB_CONFIG_MAP_STR, "aws_external_id", NULL,
