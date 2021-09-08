@@ -341,7 +341,7 @@ static void cb_kinesis_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_info(ctx->ins, "Processed %d records, sent %d to %s",
+    flb_plg_debug(ctx->ins, "Processed %d records, sent %d to %s",
                  buf->records_processed, buf->records_sent, ctx->stream_name);
     kinesis_flush_destroy(buf);
 
