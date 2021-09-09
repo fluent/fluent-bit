@@ -15,6 +15,7 @@ set(FLB_METRICS               Yes)
 
 # INPUT plugins
 # =============
+set(FLB_IN_APPSCOPE            No)
 set(FLB_IN_CPU                 No)
 set(FLB_IN_DISK                No)
 set(FLB_IN_EXEC                No)

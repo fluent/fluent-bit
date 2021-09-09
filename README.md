@@ -99,6 +99,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 | name | title | description |
 | :--- | :--- | :--- |
+| [appscope](https://docs.fluentbit.io/manual/pipeline/inputs/appscope) | AppScope | Listen for event from AppScope. |
 | [collectd](https://docs.fluentbit.io/manual/pipeline/inputs/collectd) | Collectd | Listen for UDP packets from Collectd. |
 | [cpu](https://docs.fluentbit.io/manual/pipeline/inputs/cpu-metrics) | CPU Usage | measure total CPU usage of the system. |
 | [disk](https://docs.fluentbit.io/manual/pipeline/inputs/disk-io-metrics) | Disk Usage | measure Disk I/Os. |
