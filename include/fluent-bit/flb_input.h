@@ -211,6 +211,14 @@ struct flb_input_instance {
     int mem_buf_status;
 
     /*
+     * Define the buffer status:
+     *
+     * - FLB_INPUT_RUNNING -> can append more data
+     * - FLB_INPUT_PAUSED  -> cannot append data
+     */
+    int storage_buf_status;
+
+    /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
      * some specific data from it caller.
@@ -493,6 +501,9 @@ static inline void flb_input_return(struct flb_coro *coro) {
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {
     if (i->mem_buf_status == FLB_INPUT_PAUSED) {
+        return FLB_TRUE;
+    }
+    if (i->storage_buf_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
 

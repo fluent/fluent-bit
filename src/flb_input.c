@@ -245,6 +245,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
+        instance->storage_buf_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
     }
 

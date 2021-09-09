@@ -741,7 +741,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     return ic;
 }
 
-static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
+static inline int flb_input_chunk_is_mem_overlimit(struct flb_input_instance *i)
 {
     if (i->mem_buf_limit <= 0) {
         return FLB_FALSE;
@@ -749,6 +749,22 @@ static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
 
     if (i->mem_chunks_size >= i->mem_buf_limit) {
         return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance *i)
+{
+    struct flb_storage_input *storage = (struct flb_storage_input *)i->storage;
+
+
+    if (storage->type == CIO_STORE_FS) {
+        if (i->config->storage_max_chunks_pause == FLB_TRUE) {
+            if (storage->cio->total_chunks >= storage->cio->max_chunks_up) {
+                return FLB_TRUE;
+            }
+        }
     }
 
     return FLB_FALSE;
@@ -788,14 +804,28 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
      * After the adjustments, validate if the plugin is overlimit or paused
      * and perform further adjustments.
      */
-    if (flb_input_chunk_is_overlimit(in) == FLB_FALSE &&
-        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE &&
-        in->config->is_ingestion_active == FLB_TRUE) {
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE &&
+        in->config->is_running == FLB_TRUE &&
+        in->config->is_ingestion_active == FLB_TRUE &&
+        in->mem_buf_status == FLB_INPUT_PAUSED) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             in->p->cb_resume(in->context, in->config);
-            flb_info("[input] %s resume (mem buf overlimit)",
+            flb_warn("[input] %s resume (mem buf overlimit)",
                       in->name);
+        }
+    }
+    if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
+        in->config->is_running == FLB_TRUE &&
+        in->config->is_ingestion_active == FLB_TRUE &&
+        in->storage_buf_status == FLB_INPUT_PAUSED) {
+        in->storage_buf_status = FLB_INPUT_RUNNING;
+        if (in->p->cb_resume) {
+            in->p->cb_resume(in->context, in->config);
+            flb_warn("[input] %s resume (storage buf overlimit %d/%d)",
+                      in->name,
+                      ((struct flb_storage_input *)in->storage)->cio->total_chunks,
+                      ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
         }
     }
 
@@ -808,7 +838,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
  */
 static inline int flb_input_chunk_protect(struct flb_input_instance *i)
 {
-    if (flb_input_chunk_is_overlimit(i) == FLB_TRUE) {
+    if (flb_input_chunk_is_mem_overlimit(i) == FLB_TRUE) {
         flb_warn("[input] %s paused (mem buf overlimit)",
                  i->name);
         if (!flb_input_buf_paused(i)) {
@@ -817,6 +847,19 @@ static inline int flb_input_chunk_protect(struct flb_input_instance *i)
             }
         }
         i->mem_buf_status = FLB_INPUT_PAUSED;
+        return FLB_TRUE;
+    }
+    if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
+        flb_warn("[input] %s paused (storage buf overlimit %d/%d)",
+                 i->name,
+                 ((struct flb_storage_input *)i->storage)->cio->total_chunks,
+                 ((struct flb_storage_input *)i->storage)->cio->max_chunks_up);
+        if (!flb_input_buf_paused(i)) {
+            if (i->p->cb_pause) {
+                i->p->cb_pause(i->context, i->config);
+            }
+        }
+        i->storage_buf_status = FLB_INPUT_PAUSED;
         return FLB_TRUE;
     }
 
@@ -843,7 +886,7 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
-    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE) {
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             cio_chunk_down(ic->chunk);
 
@@ -1085,7 +1128,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * for I/O operations.
      */
     si = (struct flb_storage_input *) in->storage;
-    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE &&
         si->type == CIO_STORE_FS) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             /*
@@ -1103,7 +1146,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                 cio_chunk_down(ic->chunk);
             }
         }
-        return 0;
     }
 
     flb_input_chunk_protect(in);
