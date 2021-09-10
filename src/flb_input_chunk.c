@@ -760,8 +760,7 @@ static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance
 
 
     if (storage->type == CIO_STORE_FS) {
-        if (i->config->storage_max_chunks_pause == FLB_TRUE ||
-            i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
+        if (i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
             if (storage->cio->total_chunks >= storage->cio->max_chunks_up) {
                 return FLB_TRUE;
             }
