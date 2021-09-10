@@ -504,10 +504,14 @@ int flb_engine_start(struct flb_config *config)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_sched *sched;
-    struct mk_list lookup_context_cleanup_queue;
+    struct flb_net_dns dns_ctx;
 
     /* Initialize the networking layer */
-    flb_net_init();
+    flb_net_lib_init();
+
+    flb_net_ctx_init(&dns_ctx);
+    flb_net_dns_ctx_init();
+    flb_net_dns_ctx_set(&dns_ctx);
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
@@ -672,8 +676,6 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    mk_list_init(&lookup_context_cleanup_queue);
-
     /* Signal that we have started */
     flb_engine_started(config);
 
@@ -732,18 +734,6 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
-            else if (event->type == FLB_ENGINE_EV_DNS) {
-                struct flb_dns_lookup_context *lookup_context;
-                lookup_context = FLB_DNS_LOOKUP_CONTEXT_FOR_EVENT(event);
-
-                if (!lookup_context->finished) {
-                    event->handler(event);
-
-                    if (lookup_context->finished) {
-                        mk_list_add(&lookup_context->_head, &lookup_context_cleanup_queue);
-                    }
-                }
-            }
             else if (event->type == FLB_ENGINE_EV_THREAD) {
                 struct flb_upstream_conn *u_conn;
                 struct flb_coro *co;
@@ -772,9 +762,9 @@ int flb_engine_start(struct flb_config *config)
 
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
+            flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
-            flb_net_dns_lookup_context_cleanup(&lookup_context_cleanup_queue);
 
             /*
             * depend on main thread to clean up expired message

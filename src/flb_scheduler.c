@@ -625,6 +625,7 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 
     timer->timer_fd = -1;
     timer->config = sched->config;
+    timer->sched = sched;
     timer->data = NULL;
 
     /* Active timer (not invalidated) */
@@ -636,25 +637,26 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
 {
-    struct flb_sched *sched;
-
-    sched  = timer->config->sched;
+    mk_event_timeout_disable(timer->sched->evl, &timer->event);
 
     timer->active = FLB_FALSE;
+
     mk_list_del(&timer->_head);
-    mk_list_add(&timer->_head, &sched->timers_drop);
+    mk_list_add(&timer->_head, &timer->sched->timers_drop);
 }
 
 /* Destroy a timer context */
 int flb_sched_timer_destroy(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_destroy(timer->config->evl, &timer->event);
+    mk_event_timeout_destroy(timer->sched->evl, &timer->event);
+
     if (timer->timer_fd > 0) {
         flb_sched_timer_cb_disable(timer);
     }
 
     mk_list_del(&timer->_head);
     flb_free(timer);
+
     return 0;
 }
 

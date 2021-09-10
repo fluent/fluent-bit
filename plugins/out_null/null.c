@@ -55,5 +55,6 @@ struct flb_output_plugin out_null_plugin = {
     .description  = "Throws away events",
     .cb_init      = cb_null_init,
     .cb_flush     = cb_null_flush,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .flags        = 0,
 };
