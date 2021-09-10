@@ -30,6 +30,7 @@ struct proc_metrics_ctx
 {
     int coll_id;                    /* collector id */
     pid_t pid;                      /* process id to monitor */
+    char *proc_name;                /* process name used for querying each tick */
     char *process;                  /* process name or id to monitor */
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
