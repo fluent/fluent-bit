@@ -232,6 +232,27 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
         snprintf(ctx->uri, sizeof(ctx->uri) - 1, "%s/_bulk", path);
     }
 
+    if (ctx->write_operation) {
+        if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_INDEX) == 0) {
+            memcpy(ctx->write_operation, FLB_ES_WRITE_OP_INDEX,
+                   sizeof(FLB_ES_WRITE_OP_INDEX));
+        }
+        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_CREATE) == 0) {
+            memcpy(ctx->write_operation, FLB_ES_WRITE_OP_CREATE,
+                   sizeof(FLB_ES_WRITE_OP_CREATE));
+        }
+        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0) {
+            memcpy(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE,
+                   sizeof(FLB_ES_WRITE_OP_UPDATE));
+        }
+        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
+            memcpy(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT,
+                   sizeof(FLB_ES_WRITE_OP_UPSERT));
+        }
+        else {
+            flb_plg_error(ins, "wrong Write_Operation (should be one of index, create, update, upsert)");
+        }
+    }
 
     if (ctx->id_key) {
         ctx->ra_id_key = flb_ra_create(ctx->id_key, FLB_FALSE);

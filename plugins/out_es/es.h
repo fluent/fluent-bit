@@ -31,6 +31,11 @@
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 #define FLB_ES_DEFAULT_HTTP_MAX   "512k"
+#define FLB_ES_WRITE_OP_INDEX     "index"
+#define FLB_ES_WRITE_OP_CREATE    "create"
+#define FLB_ES_WRITE_OP_UPDATE    "update"
+#define FLB_ES_WRITE_OP_UPSERT    "upsert"
+#define FLB_ES_DEFAULT_WRITE_OP   FLB_ES_WRITE_OP_INDEX
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -101,10 +106,13 @@ struct flb_elasticsearch {
     int time_key_nanos;
 
 
+    /* write operation */
+    flb_sds_t write_operation;
+
     /* id_key */
     flb_sds_t id_key;
     struct flb_record_accessor *ra_id_key;
-    
+
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;
