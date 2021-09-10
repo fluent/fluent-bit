@@ -369,6 +369,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
+        if (ins->storage_type == CIO_STORE_FS) {
+            ret = flb_utils_bool(tmp);
+            if (ret == -1) {
+                return -1;
+            }
+            ins->storage_pause_on_chunks_overlimit = ret;
+        }
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will

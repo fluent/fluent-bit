@@ -158,6 +158,9 @@ struct flb_input_instance {
     /* By default all input instances are 'routable' */
     int routable;
 
+    /* flag to pause input when storage is full */
+    int storage_pause_on_chunks_overlimit;
+
     /*
      * Input network info:
      *
