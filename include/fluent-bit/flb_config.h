@@ -290,12 +290,12 @@ enum conf_type {
 #define FLB_CONF_DNS_MODE              "dns.mode"
 
 /* Storage / Chunk I/O */
-#define FLB_CONF_STORAGE_PATH             "storage.path"
-#define FLB_CONF_STORAGE_SYNC             "storage.sync"
-#define FLB_CONF_STORAGE_METRICS          "storage.metrics"
-#define FLB_CONF_STORAGE_CHECKSUM         "storage.checksum"
-#define FLB_CONF_STORAGE_BL_MEM_LIMIT     "storage.backlog.mem_limit"
-#define FLB_CONF_STORAGE_MAX_CHUNKS_UP    "storage.max_chunks_up"
+#define FLB_CONF_STORAGE_PATH          "storage.path"
+#define FLB_CONF_STORAGE_SYNC          "storage.sync"
+#define FLB_CONF_STORAGE_METRICS       "storage.metrics"
+#define FLB_CONF_STORAGE_CHECKSUM      "storage.checksum"
+#define FLB_CONF_STORAGE_BL_MEM_LIMIT  "storage.backlog.mem_limit"
+#define FLB_CONF_STORAGE_MAX_CHUNKS_UP "storage.max_chunks_up"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
