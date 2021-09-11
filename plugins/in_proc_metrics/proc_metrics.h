@@ -34,6 +34,11 @@ struct proc_metrics_ctx
     char *process;                  /* process name or id to monitor */
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
+    struct mk_list procs;
+};
+
+struct proc_metrics_pid_cmt {
+    pid_t pid;
     struct cmt *cmt;
     /* rchar: 260189
      * wchar: 413454
@@ -58,6 +63,8 @@ struct proc_metrics_ctx
     struct cmt_gauge *lrs;
     struct cmt_gauge *drs;
     struct cmt_gauge *dt;
+
+    struct mk_list _head;
 };
 
 struct proc_metrics_io_status

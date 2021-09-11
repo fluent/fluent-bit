@@ -42,8 +42,7 @@
  * write_bytes: 0
  * cancelled_write_bytes: 0
  */
-static int parse_proc_io(struct proc_metrics_ctx *ctx, const char *buf,
-                         struct proc_metrics_io_status *status)
+static int parse_proc_io(const char *buf, struct proc_metrics_io_status *status)
 {
     struct mk_list *llines;
     struct mk_list *head;
@@ -86,7 +85,7 @@ static int parse_proc_io(struct proc_metrics_ctx *ctx, const char *buf,
 /* size res trs lrs drs dt (implied)
  * 1793 516 482 4 0 180 0
  */
-static int parse_proc_mem(struct proc_metrics_ctx *ctx, const char *buf, struct proc_metrics_mem_status *status)
+static int parse_proc_mem(const char *buf, struct proc_metrics_mem_status *status)
 {
     struct mk_list *lfields;
     struct mk_list *head;
@@ -149,19 +148,17 @@ static int read_file_lines(const char *path, char *buf, size_t maxlen, int lines
     return 0;
 }
 
-static int read_stat_file(struct proc_metrics_ctx *ctx, const char *file,
+static int read_stat_file(pid_t pid, const char *file,
                           char *buf, size_t maxlen, int lines)
 {
     char pathname[PATH_MAX];
-    if (ctx->pid > 0) {
-        snprintf(pathname, sizeof(pathname)-1, "/proc/%d/%s", ctx->pid, file);
+    if (pid > 0) {
+        snprintf(pathname, sizeof(pathname)-1, "/proc/%d/%s", pid, file);
     } else {
         snprintf(pathname, sizeof(pathname)-1, "/proc/%d/%s", getpid(), file);
     }
-    flb_plg_debug(ctx->ins, "open proc file: %s", pathname);
     if (read_file_lines(pathname, buf, maxlen, lines) == -1) {
         flb_errno();
-        flb_plg_error(ctx->ins, "unable to open file: %s", pathname);
         return -1;
     }
     return 0;
@@ -224,126 +221,16 @@ static pid_t get_pid_from_procname_linux(struct proc_metrics_ctx *ctx,
     return ret;
 }
 
-
-/**
- * Callback function to gather statistics from /proc/$PID.
- *
- *
- * @param ins           Pointer to flb_input_instance
- * @param config        Pointer to flb_config
- * @param in_context    void Pointer used to cast to
- *                      flb_in_de_config
- *
- * @return int 0 for success -1 for failure.
- */
-static int proc_metrics_collect(struct flb_input_instance *ins,
-                              struct flb_config *config, void *in_context)
+static struct proc_metrics_pid_cmt *create_pid_cmt(struct flb_input_instance *ins, pid_t pid)
 {
-    char buf[1024];
-    struct proc_metrics_ctx *ctx = (struct proc_metrics_ctx *)in_context;
-    uint64_t ts = cmt_time_now();
-    struct proc_metrics_status status;
-    char pid[64];
-    int ret;
+    struct proc_metrics_pid_cmt *ctx;
 
-    if (ctx->proc_name != NULL) {
-        ret = get_pid_from_procname_linux(ctx, ctx->proc_name);
-        if (ret == -1) {
-            return -1;
-        }
-        ctx->pid = ret;
+    ctx = flb_calloc(1, sizeof(struct proc_metrics_pid_cmt));
+    if (ctx == NULL) {
+        return NULL;
     }
 
-    if (read_stat_file(ctx, "io", buf, sizeof(buf)-1, 7) == -1) {
-        return -1;
-    }
-    if (parse_proc_io(ctx, buf, &status.io) != 0) {
-        flb_free(buf);
-        return -1;
-    }
-
-    if (read_stat_file(ctx, "statm", buf, sizeof(buf)-1, 1) == -1) {
-        return -1;
-    }
-    if (parse_proc_mem(ctx, buf, &status.mem) != 0) {
-        return -1;
-    }
-
-    if (ctx->pid == 0) {
-       snprintf(pid, sizeof(pid)-1, "%d", getpid());
-    } else {
-        snprintf(pid, sizeof(pid)-1, "%d", ctx->pid);
-    }
-
-    cmt_counter_set(ctx->rchar, ts, (double)status.io.rchar, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(ctx->wchar, ts, (double)status.io.wchar, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(ctx->syscr, ts, (double)status.io.syscr, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(ctx->syscw, ts, (double)status.io.syscw, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(ctx->read_bytes, ts, (double)status.io.read_bytes,
-                    1, (char *[]) {(char *) pid});
-    cmt_counter_set(ctx->write_bytes, ts, (double)status.io.write_bytes,
-                    1, (char *[]) {(char *) pid});
-    cmt_counter_set(ctx->cancelled_write_bytes, ts,
-                    (double)status.io.cancelled_write_bytes, 1, (char *[]) {(char *) pid});
-
-    cmt_gauge_set(ctx->size, ts, (double)status.mem.size, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(ctx->resident, ts, (double)status.mem.resident,
-                  1, (char *[]) {(char *) pid});
-    cmt_gauge_set(ctx->shared, ts, (double)status.mem.shared, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(ctx->trs, ts, (double)status.mem.trs, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(ctx->lrs, ts, (double)status.mem.lrs, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(ctx->drs, ts, (double)status.mem.drs, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(ctx->dt, ts, (double)status.mem.dt, 1, (char *[]) {(char *) pid});
-
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-    return ret;
-}
-
-int str_isnumeric(const char *str)
-{
-    int i;
-
-    if (str == NULL) {
-        return FLB_FALSE;
-    }
-    for (i = 0; i < strlen(str); i++) {
-        if (isdigit(str[i]) == 0) {
-            return FLB_FALSE;
-        }
-    }
-    return FLB_TRUE;
-}
-
-/**
- * Function to initialize the proc stats plugin.
- *
- * @param ins     Pointer to flb_input_instance
- * @param config  Pointer to flb_config
- * @param data    Unused
- *
- * @return int 0 on success, -1 on failure
- */
-static int proc_metrics_init(struct flb_input_instance *ins,
-                           struct flb_config *config, void *data)
-{
-    struct proc_metrics_ctx *ctx;
-    int ret;
-
-    ctx = flb_calloc(1, sizeof(struct proc_metrics_ctx));
-    if (!ctx) {
-        flb_errno();
-        return -1;
-    }
-    ctx->ins = ins;
-
-    ret = flb_input_config_map_set(ins, (void *)ctx);
-    if (ret == -1) {
-        flb_free(ctx);
-        return -1;
-    }
+    ctx->pid = pid;
 
     ctx->cmt = cmt_create();
     if (!ctx->cmt) {
@@ -465,24 +352,7 @@ static int proc_metrics_init(struct flb_input_instance *ins,
         goto cmt_gauge_error;
     }
 
-    /* save the PID just once if the process is numeric */
-    if (str_isnumeric(ctx->process) == FLB_TRUE) {
-        ret = strtol(ctx->process, (char **)NULL, 10);
-        if (ret == -1) {
-            goto cmt_gauge_error;
-        }
-        ctx->pid = ret;
-    } else {
-        ctx->proc_name = ctx->process;
-    }
-
-
-    flb_input_set_context(ins, ctx);
-    ctx->coll_id = flb_input_set_collector_time(ins,
-                                                proc_metrics_collect,
-                                                1, 0, config);
-    return 0;
-
+    return ctx;
 cmt_gauge_error:
     if (ctx->size != NULL) {
         cmt_gauge_destroy(ctx->size);
@@ -512,6 +382,182 @@ cmt_counter_error:
     cmt_destroy(ctx->cmt);
 cmt_error:
     flb_free(ctx);
+    return NULL;
+}
+
+struct proc_metrics_pid_cmt *get_proc_metrics(struct proc_metrics_ctx *ctx, pid_t pid)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct proc_metrics_pid_cmt *proc;
+
+    if (mk_list_is_empty(&ctx->procs)) {
+        proc = create_pid_cmt(ctx->ins, pid);
+        mk_list_add(&proc->_head, &ctx->procs);
+        return proc;
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->procs) {
+        proc = mk_list_entry(head, struct proc_metrics_pid_cmt, _head);
+        if (proc->pid == pid) {
+            return proc;
+        }
+    }
+
+    proc = create_pid_cmt(ctx->ins, pid);
+    mk_list_add(&proc->_head, &ctx->procs);
+    return proc;
+}
+
+/**
+ * Callback function to gather statistics from /proc/$PID.
+ *
+ *
+ * @param ins           Pointer to flb_input_instance
+ * @param config        Pointer to flb_config
+ * @param in_context    void Pointer used to cast to
+ *                      flb_in_de_config
+ *
+ * @return int 0 for success -1 for failure.
+ */
+static int proc_metrics_collect(struct flb_input_instance *ins,
+                              struct flb_config *config, void *in_context)
+{
+    char buf[1024];
+    struct proc_metrics_ctx *ctx = (struct proc_metrics_ctx *)in_context;
+    uint64_t ts = cmt_time_now();
+    struct proc_metrics_status status;
+    char pid[64];
+    int ret;
+    struct proc_metrics_pid_cmt *metrics;
+
+    if (ctx->proc_name != NULL) {
+        ret = get_pid_from_procname_linux(ctx, ctx->proc_name);
+        if (ret == -1) {
+            return -1;
+        }
+        ctx->pid = ret;
+    }
+
+    if (ctx->pid > 0) {
+        metrics = get_proc_metrics(ctx, ctx->pid);
+    } else {
+        metrics = get_proc_metrics(ctx, getpid());
+    }
+
+    if (read_stat_file(metrics->pid, "io", buf, sizeof(buf)-1, 7) == -1) {
+        return -1;
+    }
+
+    if (parse_proc_io(buf, &status.io) != 0) {
+        flb_free(buf);
+        return -1;
+    }
+
+    if (read_stat_file(metrics->pid, "statm", buf, sizeof(buf)-1, 1) == -1) {
+        return -1;
+    }
+
+    if (parse_proc_mem(buf, &status.mem) != 0) {
+        return -1;
+    }
+
+    if (metrics->pid == 0) {
+       snprintf(pid, sizeof(pid)-1, "%d", getpid());
+    } else {
+        snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
+    }
+
+    cmt_counter_set(metrics->rchar, ts, (double)status.io.rchar, 1, (char *[]) {(char *) pid});
+    cmt_counter_set(metrics->wchar, ts, (double)status.io.wchar, 1, (char *[]) {(char *) pid});
+    cmt_counter_set(metrics->syscr, ts, (double)status.io.syscr, 1, (char *[]) {(char *) pid});
+    cmt_counter_set(metrics->syscw, ts, (double)status.io.syscw, 1, (char *[]) {(char *) pid});
+    cmt_counter_set(metrics->read_bytes, ts, (double)status.io.read_bytes,
+                    1, (char *[]) {(char *) pid});
+    cmt_counter_set(metrics->write_bytes, ts, (double)status.io.write_bytes,
+                    1, (char *[]) {(char *) pid});
+    cmt_counter_set(metrics->cancelled_write_bytes, ts,
+                    (double)status.io.cancelled_write_bytes, 1, (char *[]) {(char *) pid});
+
+    cmt_gauge_set(metrics->size, ts, (double)status.mem.size, 1, (char *[]) {(char *) pid});
+    cmt_gauge_set(metrics->resident, ts, (double)status.mem.resident,
+                  1, (char *[]) {(char *) pid});
+    cmt_gauge_set(metrics->shared, ts, (double)status.mem.shared, 1, (char *[]) {(char *) pid});
+    cmt_gauge_set(metrics->trs, ts, (double)status.mem.trs, 1, (char *[]) {(char *) pid});
+    cmt_gauge_set(metrics->lrs, ts, (double)status.mem.lrs, 1, (char *[]) {(char *) pid});
+    cmt_gauge_set(metrics->drs, ts, (double)status.mem.drs, 1, (char *[]) {(char *) pid});
+    cmt_gauge_set(metrics->dt, ts, (double)status.mem.dt, 1, (char *[]) {(char *) pid});
+
+    ret = flb_input_metrics_append(ins, NULL, 0, metrics->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
+    }
+    return ret;
+}
+
+int str_isnumeric(const char *str)
+{
+    int i;
+
+    if (str == NULL) {
+        return FLB_FALSE;
+    }
+    for (i = 0; i < strlen(str); i++) {
+        if (isdigit(str[i]) == 0) {
+            return FLB_FALSE;
+        }
+    }
+    return FLB_TRUE;
+}
+
+/**
+ * Function to initialize the proc stats plugin.
+ *
+ * @param ins     Pointer to flb_input_instance
+ * @param config  Pointer to flb_config
+ * @param data    Unused
+ *
+ * @return int 0 on success, -1 on failure
+ */
+static int proc_metrics_init(struct flb_input_instance *ins,
+                           struct flb_config *config, void *data)
+{
+    struct proc_metrics_ctx *ctx;
+    int ret;
+
+    ctx = flb_calloc(1, sizeof(struct proc_metrics_ctx));
+    if (!ctx) {
+        flb_errno();
+        return -1;
+    }
+    ctx->ins = ins;
+
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
+
+    /* save the PID just once if the process is numeric */
+    if (str_isnumeric(ctx->process) == FLB_TRUE) {
+        ret = strtol(ctx->process, (char **)NULL, 10);
+        if (ret == -1) {
+            goto cmt_error;
+        }
+        ctx->pid = ret;
+    } else {
+        ctx->proc_name = ctx->process;
+    }
+
+    mk_list_init(&ctx->procs);
+
+    flb_input_set_context(ins, ctx);
+    ctx->coll_id = flb_input_set_collector_time(ins,
+                                                proc_metrics_collect,
+                                                1, 0, config);
+    return 0;
+cmt_error:
+    flb_free(ctx);
     return -1;
 }
 
@@ -524,30 +570,6 @@ cmt_error:
  */
 static int proc_metrics_ctx_destroy(struct proc_metrics_ctx *ctx)
 {
-    if (ctx->cmt) {
-        if (ctx->rchar != NULL) {
-            cmt_counter_destroy(ctx->rchar);
-        }
-        if (ctx->wchar != NULL) {
-            cmt_counter_destroy(ctx->wchar);
-        }
-        if (ctx->syscr != NULL) {
-            cmt_counter_destroy(ctx->syscr);
-        }
-        if (ctx->syscw != NULL) {
-            cmt_counter_destroy(ctx->syscw);
-        }
-        if (ctx->read_bytes != NULL) {
-            cmt_counter_destroy(ctx->read_bytes);
-        }
-        if (ctx->write_bytes != NULL) {
-            cmt_counter_destroy(ctx->write_bytes);
-        }
-        if (ctx->cancelled_write_bytes != NULL) {
-            cmt_counter_destroy(ctx->cancelled_write_bytes);
-        }
-        cmt_destroy(ctx->cmt);
-    }
     flb_free(ctx);
     return 0;
 }
