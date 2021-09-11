@@ -436,10 +436,8 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
         if (ret == -1) {
             return -1;
         }
-        ctx->pid = ret;
-    }
-
-    if (ctx->pid > 0) {
+        metrics = get_proc_metrics(ctx, ret);
+    } else if (ctx->pid > 0) {
         metrics = get_proc_metrics(ctx, ctx->pid);
     } else {
         metrics = get_proc_metrics(ctx, getpid());
