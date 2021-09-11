@@ -223,165 +223,165 @@ static pid_t get_pid_from_procname_linux(struct proc_metrics_ctx *ctx,
 
 static struct proc_metrics_pid_cmt *create_pid_cmt(struct flb_input_instance *ins, pid_t pid)
 {
-    struct proc_metrics_pid_cmt *ctx;
+    struct proc_metrics_pid_cmt *proc;
 
-    ctx = flb_calloc(1, sizeof(struct proc_metrics_pid_cmt));
-    if (ctx == NULL) {
+    proc = flb_calloc(1, sizeof(struct proc_metrics_pid_cmt));
+    if (proc == NULL) {
         return NULL;
     }
 
-    ctx->pid = pid;
+    proc->pid = pid;
 
-    ctx->cmt = cmt_create();
-    if (!ctx->cmt) {
+    proc->cmt = cmt_create();
+    if (!proc->cmt) {
         flb_plg_error(ins, "could not initialize CMetrics");
         goto cmt_error;
     }
 
-    ctx->rchar = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "rchar",
+    proc->rchar = cmt_counter_create(proc->cmt, "proc_metrics", "io", "rchar",
                                     "The number of bytes which this task has "
                                     "caused to be read from storage.", 1, (char *[]) {"pid"});
-    if (ctx->rchar == NULL) {
+    if (proc->rchar == NULL) {
         flb_plg_error(ins, "could not initialize rchar counter");
         goto cmt_counter_error;
     }
 
-    ctx->wchar = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "wchar",
+    proc->wchar = cmt_counter_create(proc->cmt, "proc_metrics", "io", "wchar",
                                     "The number of bytes which this task has "
                                     "caused, or shall cause to be written to "
                                     "disk.", 1, (char *[]) {"pid"});
-    if (ctx->wchar == NULL) {
+    if (proc->wchar == NULL) {
         flb_plg_error(ins, "could not initialize wchar counter");
         goto cmt_counter_error;
     }
 
-    ctx->syscr = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "syscr",
+    proc->syscr = cmt_counter_create(proc->cmt, "proc_metrics", "io", "syscr",
                                     "Attempt to count the number of read I/O "
                                     "operations, i.e. syscalls like read() and "
                                     "pread().", 1, (char *[]) {"pid"});
-    if (ctx->syscr == NULL) {
+    if (proc->syscr == NULL) {
         flb_plg_error(ins, "could not initialize syscr counter");
         goto cmt_counter_error;
     }
 
-    ctx->syscw = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "syscw",
+    proc->syscw = cmt_counter_create(proc->cmt, "proc_metrics", "io", "syscw",
                                     "Attempt to count the number of write I/O "
                                     "operations, i.e. syscalls like write() and "
                                     "pwrite().", 1, (char *[]) {"pid"});
-    if (ctx->syscw == NULL) {
+    if (proc->syscw == NULL) {
         flb_plg_error(ins, "could not initialize syscw counter");
         goto cmt_counter_error;
     }
 
-    ctx->read_bytes = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "read_bytes",
+    proc->read_bytes = cmt_counter_create(proc->cmt, "proc_metrics", "io", "read_bytes",
                                          "Attempt to count the number of bytes "
                                          "which this process really did cause to"
                                          " be fetched from the storage layer.",
                                          1, (char *[]) {"pid"});
-    if (ctx->read_bytes == NULL) {
+    if (proc->read_bytes == NULL) {
         flb_plg_error(ins, "could not initialize read_bytes counter");
         goto cmt_counter_error;
     }
 
-    ctx->write_bytes = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "write_bytes",
+    proc->write_bytes = cmt_counter_create(proc->cmt, "proc_metrics", "io", "write_bytes",
                                          "Attempt to count the number of bytes "
                                          "which this process caused to be sent "
                                          "to the storage layer.", 1, (char *[]) {"pid"});
-    if (ctx->write_bytes == NULL) {
+    if (proc->write_bytes == NULL) {
         flb_plg_error(ins, "could not initialize write_bytes counter");
         goto cmt_counter_error;
     }
 
-    ctx->cancelled_write_bytes = cmt_counter_create(ctx->cmt, "proc_metrics", "io",
+    proc->cancelled_write_bytes = cmt_counter_create(proc->cmt, "proc_metrics", "io",
                                                     "cancelled_write_bytes",
                                                     "The number of bytes which "
                                                     "this process caused to not "
                                                     "happen, by truncating "
                                                     "pagecache.", 1, (char *[]) {"pid"});
-    if (ctx->cancelled_write_bytes == NULL) {
+    if (proc->cancelled_write_bytes == NULL) {
         flb_plg_error(ins, "could not initialize cancelled_write_bytes counter");
         goto cmt_counter_error;
     }
 
-    ctx->size = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "size",
+    proc->size = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "size",
                                  "total program size (pages).", 1, (char *[]) {"pid"});
-    if (ctx->size == NULL) {
+    if (proc->size == NULL) {
         flb_plg_error(ins, "could not initialize size gauge");
         goto cmt_gauge_error;
     }
 
-    ctx->resident = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "resident",
+    proc->resident = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "resident",
                                      "size of memory portions (pages).", 1, (char *[]) {"pid"});
-    if (ctx->resident == NULL) {
+    if (proc->resident == NULL) {
         flb_plg_error(ins, "could not initialize resident gauge");
         goto cmt_gauge_error;
     }
 
-    ctx->shared = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "shared",
+    proc->shared = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "shared",
                                    "number of pages that are shared.", 1, (char *[]) {"pid"});
-    if (ctx->shared == NULL) {
+    if (proc->shared == NULL) {
         flb_plg_error(ins, "could not initialize shared gauge");
         goto cmt_gauge_error;
     }
 
-    ctx->trs = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "trs",
+    proc->trs = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "trs",
                                 "number of pages that are ‘code’.", 1, (char *[]) {"pid"});
-    if (ctx->trs == NULL) {
+    if (proc->trs == NULL) {
         flb_plg_error(ins, "could not initialize trs gauge");
         goto cmt_gauge_error;
     }
 
-    ctx->lrs = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "lrs",
+    proc->lrs = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "lrs",
                                  "number of pages of library.", 1, (char *[]) {"pid"});
-    if (ctx->lrs == NULL) {
+    if (proc->lrs == NULL) {
         flb_plg_error(ins, "could not initialize lrs gauge");
         goto cmt_gauge_error;
     }
 
-    ctx->drs = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "drs",
+    proc->drs = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "drs",
                                  "number of pages of data/stack.", 1, (char *[]) {"pid"});
-    if (ctx->drs == NULL) {
+    if (proc->drs == NULL) {
         flb_plg_error(ins, "could not initialize drs gauge");
         goto cmt_gauge_error;
     }
 
-    ctx->dt = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "dt",
+    proc->dt = cmt_gauge_create(proc->cmt, "proc_metrics", "mem", "dt",
                                  "number of dirty pages.", 1, (char *[]) {"pid"});
-    if (ctx->dt == NULL) {
+    if (proc->dt == NULL) {
         flb_plg_error(ins, "could not initialize dt gauge");
         goto cmt_gauge_error;
     }
 
-    return ctx;
+    return proc;
 cmt_gauge_error:
-    if (ctx->size != NULL) {
-        cmt_gauge_destroy(ctx->size);
+    if (proc->size != NULL) {
+        cmt_gauge_destroy(proc->size);
     }
 cmt_counter_error:
-    if (ctx->rchar != NULL) {
-        cmt_counter_destroy(ctx->rchar);
+    if (proc->rchar != NULL) {
+        cmt_counter_destroy(proc->rchar);
     }
-    if (ctx->wchar != NULL) {
-        cmt_counter_destroy(ctx->wchar);
+    if (proc->wchar != NULL) {
+        cmt_counter_destroy(proc->wchar);
     }
-    if (ctx->syscr != NULL) {
-        cmt_counter_destroy(ctx->syscr);
+    if (proc->syscr != NULL) {
+        cmt_counter_destroy(proc->syscr);
     }
-    if (ctx->syscw != NULL) {
-        cmt_counter_destroy(ctx->syscw);
+    if (proc->syscw != NULL) {
+        cmt_counter_destroy(proc->syscw);
     }
-    if (ctx->read_bytes != NULL) {
-        cmt_counter_destroy(ctx->read_bytes);
+    if (proc->read_bytes != NULL) {
+        cmt_counter_destroy(proc->read_bytes);
     }
-    if (ctx->write_bytes != NULL) {
-        cmt_counter_destroy(ctx->write_bytes);
+    if (proc->write_bytes != NULL) {
+        cmt_counter_destroy(proc->write_bytes);
     }
-    if (ctx->cancelled_write_bytes != NULL) {
-        cmt_counter_destroy(ctx->cancelled_write_bytes);
+    if (proc->cancelled_write_bytes != NULL) {
+        cmt_counter_destroy(proc->cancelled_write_bytes);
     }
-    cmt_destroy(ctx->cmt);
+    cmt_destroy(proc->cmt);
 cmt_error:
-    flb_free(ctx);
+    flb_free(proc);
     return NULL;
 }
 
