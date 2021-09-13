@@ -37,6 +37,11 @@ struct proc_metrics_ctx
     struct mk_list procs;
 };
 
+struct proc_entry {
+    pid_t pid;
+    struct mk_list _head;
+};
+
 struct proc_metrics_pid_cmt {
     pid_t pid;
     struct cmt *cmt;

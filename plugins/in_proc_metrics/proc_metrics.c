@@ -221,6 +221,92 @@ static pid_t get_pid_from_procname_linux(struct proc_metrics_ctx *ctx,
     return ret;
 }
 
+static struct mk_list *get_proc_entries_from_procname_linux(struct proc_metrics_ctx *ctx,
+                                         const char* proc)
+{
+    struct mk_list *pids;
+    struct proc_entry *entry;
+    glob_t glb;
+    int i;
+    int fd = -1;
+    long ret_scan = -1;
+    int ret_glb = -1;
+    ssize_t count;
+
+    char  cmdname[FLB_CMD_LEN];
+    char* bname = NULL;
+
+    pids = flb_calloc(1, sizeof(struct mk_list));
+    if (pids == NULL) {
+        return NULL;
+    }
+    mk_list_init(pids);
+
+    ret_glb = glob("/proc/*/cmdline", 0 ,NULL, &glb);
+    if (ret_glb != 0) {
+        switch(ret_glb){
+        case GLOB_NOSPACE:
+            flb_plg_warn(ctx->ins, "glob: no space");
+            break;
+        case GLOB_NOMATCH:
+            flb_plg_warn(ctx->ins, "glob: no match");
+            break;
+        case GLOB_ABORTED:
+            flb_plg_warn(ctx->ins, "glob: aborted");
+            break;
+        default:
+            flb_plg_warn(ctx->ins, "glob: other error");
+        }
+        goto glob_error;
+    }
+
+    for (i = 0; i < glb.gl_pathc; i++) {
+        fd = open(glb.gl_pathv[i], O_RDONLY);
+        if (fd < 0) {
+            continue;
+        }
+        count = read(fd, &cmdname, FLB_CMD_LEN);
+        if (count <= 0){
+            close(fd);
+            continue;
+        }
+        cmdname[FLB_CMD_LEN-1] = '\0';
+        bname = basename(cmdname);
+
+        if (strncmp(proc, bname, FLB_CMD_LEN) == 0) {
+            sscanf(glb.gl_pathv[i],"/proc/%ld/cmdline",&ret_scan);
+            entry = flb_calloc(1, sizeof(struct proc_entry));
+            if (entry == NULL) {
+                goto proc_entry_error;
+            }
+            entry->pid = (pid_t)ret_scan;
+            mk_list_add(&entry->_head, pids);
+        }
+        close(fd);
+    }
+    globfree(&glb);
+    return pids;
+proc_entry_error:
+    globfree(&glb);
+glob_error:
+    flb_free(pids);
+    return NULL;
+}
+
+static void proc_entries_free(struct mk_list *procs)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct proc_entry *entry;
+
+    mk_list_foreach_safe(head, tmp, procs) {
+        entry = mk_list_entry(head, struct proc_entry, _head);
+        flb_free(entry);
+    }
+
+    flb_free(procs);
+}
+
 static struct proc_metrics_pid_cmt *create_pid_cmt(struct flb_input_instance *ins, pid_t pid)
 {
     struct proc_metrics_pid_cmt *proc;
@@ -430,6 +516,8 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
     char pid[64];
     int ret;
     struct proc_metrics_pid_cmt *metrics;
+    struct mk_list *head;
+    struct mk_list *tmp;
 
     if (ctx->proc_name != NULL) {
         ret = get_pid_from_procname_linux(ctx, ctx->proc_name);
@@ -443,52 +531,66 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
         metrics = get_proc_metrics(ctx, getpid());
     }
 
-    if (read_stat_file(metrics->pid, "io", buf, sizeof(buf)-1, 7) == -1) {
-        return -1;
-    }
+    mk_list_foreach_safe(head, tmp, &ctx->procs) {
+        metrics = mk_list_entry(head, struct proc_metrics_pid_cmt, _head);
+        if (read_stat_file(metrics->pid, "io", buf, sizeof(buf)-1, 7) == -1) {
+            if (errno == ENOENT) {
+                mk_list_del(&metrics->_head);
+            } else {
+                flb_errno();
+            }
+            flb_free(metrics);
+            continue;
+        }
 
-    if (parse_proc_io(buf, &status.io) != 0) {
-        flb_free(buf);
-        return -1;
-    }
+        if (parse_proc_io(buf, &status.io) != 0) {
+            continue;
+        }
 
-    if (read_stat_file(metrics->pid, "statm", buf, sizeof(buf)-1, 1) == -1) {
-        return -1;
-    }
+        if (read_stat_file(metrics->pid, "statm", buf, sizeof(buf)-1, 1) == -1) {
+            if (errno == ENOENT) {
+                mk_list_del(&metrics->_head);
+            } else {
+                flb_errno();
+            }
+            flb_free(metrics);
+            continue;
+        }
 
-    if (parse_proc_mem(buf, &status.mem) != 0) {
-        return -1;
-    }
+        if (parse_proc_mem(buf, &status.mem) != 0) {
+            continue;
+        }
 
-    if (metrics->pid == 0) {
-       snprintf(pid, sizeof(pid)-1, "%d", getpid());
-    } else {
-        snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
-    }
+        if (metrics->pid == 0) {
+           snprintf(pid, sizeof(pid)-1, "%d", getpid());
+        } else {
+            snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
+        }
 
-    cmt_counter_set(metrics->rchar, ts, (double)status.io.rchar, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(metrics->wchar, ts, (double)status.io.wchar, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(metrics->syscr, ts, (double)status.io.syscr, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(metrics->syscw, ts, (double)status.io.syscw, 1, (char *[]) {(char *) pid});
-    cmt_counter_set(metrics->read_bytes, ts, (double)status.io.read_bytes,
-                    1, (char *[]) {(char *) pid});
-    cmt_counter_set(metrics->write_bytes, ts, (double)status.io.write_bytes,
-                    1, (char *[]) {(char *) pid});
-    cmt_counter_set(metrics->cancelled_write_bytes, ts,
-                    (double)status.io.cancelled_write_bytes, 1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->rchar, ts, (double)status.io.rchar, 1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->wchar, ts, (double)status.io.wchar, 1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->syscr, ts, (double)status.io.syscr, 1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->syscw, ts, (double)status.io.syscw, 1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->read_bytes, ts, (double)status.io.read_bytes,
+                        1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->write_bytes, ts, (double)status.io.write_bytes,
+                        1, (char *[]) {(char *) pid});
+        cmt_counter_set(metrics->cancelled_write_bytes, ts,
+                        (double)status.io.cancelled_write_bytes, 1, (char *[]) {(char *) pid});
 
-    cmt_gauge_set(metrics->size, ts, (double)status.mem.size, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(metrics->resident, ts, (double)status.mem.resident,
-                  1, (char *[]) {(char *) pid});
-    cmt_gauge_set(metrics->shared, ts, (double)status.mem.shared, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(metrics->trs, ts, (double)status.mem.trs, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(metrics->lrs, ts, (double)status.mem.lrs, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(metrics->drs, ts, (double)status.mem.drs, 1, (char *[]) {(char *) pid});
-    cmt_gauge_set(metrics->dt, ts, (double)status.mem.dt, 1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->size, ts, (double)status.mem.size, 1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->resident, ts, (double)status.mem.resident,
+                      1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->shared, ts, (double)status.mem.shared, 1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->trs, ts, (double)status.mem.trs, 1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->lrs, ts, (double)status.mem.lrs, 1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->drs, ts, (double)status.mem.drs, 1, (char *[]) {(char *) pid});
+        cmt_gauge_set(metrics->dt, ts, (double)status.mem.dt, 1, (char *[]) {(char *) pid});
 
-    ret = flb_input_metrics_append(ins, NULL, 0, metrics->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
+        ret = flb_input_metrics_append(ins, NULL, 0, metrics->cmt);
+        if (ret != 0) {
+            flb_plg_error(ins, "could not append metrics");
+        }
     }
     return ret;
 }
