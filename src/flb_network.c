@@ -922,6 +922,11 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     result_data = NULL;
     udp_timeout_detected = 0;
 
+    /* If there is no timeout configured then let the lookup take at most 1 minute */
+    if (timeout <= 0) {
+        timeout = 60;
+    }
+
     /* The timeout we get is expressed in seconds so we need to convert it to
      * milliseconds
      */
