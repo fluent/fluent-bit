@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_metrics.h>
 #include <chunkio/chunkio.h>
 
 static inline int instance_id(struct flb_config *config)
@@ -64,6 +65,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
     int out_records = 0;
     int diff = 0;
     int pre_records = 0;
+    uint64_t ts;
+    char *name;
 #endif
     char *ntag;
     const char *work_data;
@@ -90,6 +93,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
     work_size = bytes;
 
 #ifdef FLB_HAVE_METRICS
+    /* timestamp */
+    ts = cmt_time_now();
+
     /* Count number of incoming records */
     in_records = ic->added_records;
     pre_records = ic->total_records - in_records;
@@ -124,6 +130,10 @@ void flb_filter_do(struct flb_input_chunk *ic,
                                       f_ins->context, /* filter priv data */
                                       config);
 
+#ifdef FLB_HAVE_METRICS
+            name = (char *) flb_filter_name(f_ins);
+#endif
+
             /* Override buffer just if it was modified */
             if (ret == FLB_FILTER_MODIFIED) {
                 /* all records removed, no data to continue processing */
@@ -134,7 +144,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
 #ifdef FLB_HAVE_METRICS
                     ic->total_records = pre_records;
 
-                    /* Summarize all records removed */
+                    /* cmetrics */
+                    cmt_counter_add(f_ins->cmt_drop_records, ts, in_records,
+                                    1, (char *[]) {name});
+
+                    /* [OLD] Summarize all records removed */
                     flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                     in_records, f_ins->metrics);
 #endif
@@ -145,13 +159,23 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     out_records = flb_mp_count(out_buf, out_size);
                     if (out_records > in_records) {
                         diff = (out_records - in_records);
-                        /* Summarize new records */
+
+                        /* cmetrics */
+                        cmt_counter_add(f_ins->cmt_add_records, ts, diff,
+                                    1, (char *[]) {name});
+
+                        /* [OLD] Summarize new records */
                         flb_metrics_sum(FLB_METRIC_N_ADDED,
                                         diff, f_ins->metrics);
                     }
                     else if (out_records < in_records) {
                         diff = (in_records - out_records);
-                        /* Summarize dropped records */
+
+                        /* cmetrics */
+                        cmt_counter_add(f_ins->cmt_drop_records, ts, diff,
+                                    1, (char *[]) {name});
+
+                        /* [OLD] Summarize dropped records */
                         flb_metrics_sum(FLB_METRIC_N_DROPPED,
                                         diff, f_ins->metrics);
                     }
@@ -346,9 +370,7 @@ const char *flb_filter_name(struct flb_filter_instance *ins)
 int flb_filter_init_all(struct flb_config *config)
 {
     int ret;
-#ifdef FLB_HAVE_METRICS
-    const char *name;
-#endif
+    char *name;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *config_map;
@@ -375,10 +397,32 @@ int flb_filter_init_all(struct flb_config *config)
 
         p = ins->p;
 
-        /* Metrics */
-#ifdef FLB_HAVE_METRICS
         /* Get name or alias for the instance */
-        name = flb_filter_name(ins);
+        name = (char *) flb_filter_name(ins);
+
+        /* CMetrics */
+        ins->cmt = cmt_create();
+        if (!ins->cmt) {
+            flb_error("[filter] could not create cmetrics context: %s",
+                      flb_filter_name(ins));
+            return -1;
+        }
+
+        /* Register generic filter plugin metrics */
+        ins->cmt_add_records = cmt_counter_create(ins->cmt,
+                                                  "fluentbit", "filter",
+                                                  "add_records_total",
+                                                  "Total number of new added records.",
+                                                  1, (char *[]) {"name"});
+
+        /* Register generic filter plugin metrics */
+        ins->cmt_drop_records = cmt_counter_create(ins->cmt,
+                                                  "fluentbit", "filter",
+                                                  "drop_records_total",
+                                                  "Total number of dropped records.",
+                                                  1, (char *[]) {"name"});
+        /* OLD Metrics API */
+#ifdef FLB_HAVE_METRICS
 
         /* Create the metrics context */
         ins->metrics = flb_metrics_create(name);
@@ -465,6 +509,10 @@ void flb_filter_instance_destroy(struct flb_filter_instance *ins)
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
     }

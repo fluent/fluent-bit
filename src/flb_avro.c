@@ -42,21 +42,21 @@ avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t jso
 
     flb_debug("in flb_avro_init:before error:%s:json len:%zu:\n", avro_strerror(), json_len);
 
-	if (avro_schema_from_json_length(json, json_len, aschema)) {
-		flb_error("Unable to parse aobject schema:%s:error:%s:\n", json, avro_strerror());
-		return NULL;
-	}
+    if (avro_schema_from_json_length(json, json_len, aschema)) {
+        flb_error("Unable to parse aobject schema:%s:error:%s:\n", json, avro_strerror());
+        return NULL;
+    }
 
-   avro_value_iface_t  *aclass = avro_generic_class_from_schema(*aschema);
+    avro_value_iface_t  *aclass = avro_generic_class_from_schema(*aschema);
 
     if(aclass == NULL) {
         flb_error("Unable to instantiate class from schema:%s:\n", avro_strerror());
-		return NULL;
+        return NULL;
     }
 
     if(avro_generic_value_new(aclass, aobject) != 0) {
- 		flb_error("Unable to allocate new avro value:%s:\n", avro_strerror());
-		return NULL;
+        flb_error("Unable to allocate new avro value:%s:\n", avro_strerror());
+        return NULL;
     }
 
     return aclass;
@@ -262,17 +262,10 @@ int flb_msgpack_to_avro(avro_value_t *val, msgpack_object *o)
     return ret;
 }
 
-flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_avro_fields *ctx)
+bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_avro_fields *ctx, char *out_buff, size_t *out_size)
 {
     msgpack_unpacked result;
     msgpack_object *root;
-
-    size_t avro_buffer_size = in_size * 3;
-    char *out_buff = flb_malloc(avro_buffer_size);
-    if (!out_buff) {
-        flb_errno();
-        return NULL;
-    }
 
     avro_writer_t awriter;
     flb_debug("in flb_msgpack_raw_to_avro_sds\n");
@@ -292,8 +285,7 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
 
     if (!aclass) {
         flb_error("Failed init avro:%s:n", avro_strerror());
-        flb_free(out_buff);
-        return NULL;
+        return false;
     }
 
     msgpack_unpacked_init(&result);
@@ -302,8 +294,7 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
         avro_value_decref(&aobject);
         avro_value_iface_decref(aclass);
         avro_schema_decref(aschema);
-        flb_free(out_buff);
-        return NULL;
+        return false;
     }
 
     root = &result.data;
@@ -319,20 +310,18 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
         avro_value_decref(&aobject);
         avro_value_iface_decref(aclass);
         avro_schema_decref(aschema);
-        flb_free(out_buff);
-        return NULL;
+        return false;
     }
 
     flb_debug("before avro_writer_memory\n");
-    awriter = avro_writer_memory(out_buff, avro_buffer_size);
+    awriter = avro_writer_memory(out_buff, *out_size);
     if (awriter == NULL) {
         flb_error("Unable to init avro writer\n");
         msgpack_unpacked_destroy(&result);
         avro_value_decref(&aobject);
         avro_value_iface_decref(aclass);
         avro_schema_decref(aschema);
-        flb_free(out_buff);
-        return NULL;
+        return false;
     }
 
     // write the magic byte stuff
@@ -349,8 +338,7 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
         avro_value_iface_decref(aclass);
         avro_schema_decref(aschema);
         msgpack_unpacked_destroy(&result);
-        flb_free(out_buff);
-        return NULL;
+        return false;
     }
 
     // write the schemaid
@@ -373,20 +361,21 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
         avro_value_iface_decref(aclass);
         avro_schema_decref(aschema);
         msgpack_unpacked_destroy(&result);
-        flb_free(out_buff);
-        return NULL;
+        return false;
     }
 
-	if (avro_value_write(awriter, &aobject)) {
-		flb_error("Unable to write avro value to memory buffer\nMessage: %s\n", avro_strerror());
+    if (avro_value_write(awriter, &aobject)) {
+        flb_error("Unable to write avro value to memory buffer\nMessage: %s\n", avro_strerror());
         avro_writer_free(awriter);
         avro_value_decref(&aobject);
         avro_value_iface_decref(aclass);
         avro_schema_decref(aschema);
         msgpack_unpacked_destroy(&result);
-        flb_free(out_buff);
-		return NULL;
-	}
+        return false;
+    }
+
+    // null terminate it
+    avro_write(awriter, "\0", 1);
 
     flb_debug("before avro_writer_flush\n");
 
@@ -397,21 +386,13 @@ flb_sds_t flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct
     // by here the entire object should be fully serialized into the sds buffer
     avro_writer_free(awriter);
     avro_value_decref(&aobject);
-	avro_value_iface_decref(aclass);
+    avro_value_iface_decref(aclass);
     avro_schema_decref(aschema);
     msgpack_unpacked_destroy(&result);
  
     flb_debug("after memory free:bytes written:%zu:\n", bytes_written);
+    *out_size = bytes_written;
 
-    flb_sds_t ret =  flb_sds_create_len(out_buff, bytes_written);
-
-    flb_free(out_buff);
-
-    flb_debug("shrunk flb sds:\n");
-    flb_debug("sds len:%zu:\n", flb_sds_len(ret));
-    flb_debug("sds alloc:%zu:\n", flb_sds_alloc(ret));
-    flb_debug("sds avail:%zu:\n", flb_sds_avail(ret));
-
-    return ret;
+    return true;
 
 }

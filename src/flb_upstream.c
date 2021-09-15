@@ -35,6 +35,12 @@ FLB_TLS_DEFINE(struct mk_list, flb_upstream_list_key);
 /* Config map for Upstream networking setup */
 struct flb_config_map upstream_net[] = {
     {
+     FLB_CONFIG_MAP_STR, "net.dns.mode", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_mode),
+     "Select the primary DNS connection type (TCP or UDP)"
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "net.keepalive", "true",
      0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive),
      "Enable or disable Keepalive support"
@@ -90,9 +96,28 @@ void flb_upstream_thread_safe(struct flb_upstream *u)
 
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
 {
+    size_t          config_index;
     struct mk_list *config_map;
 
+    /* If a global dns mode was provided in the SERVICE category then we set it as
+     * the default value for net.dns_mode, that way the user can set a global value and
+     * override it on a per plugin basis, however, it's not because of this flexibility
+     * that it was done but because in order to be able to save the value in the
+     * flb_net_setup structure (and not lose it when flb_output_upstream_set overwrites
+     * the structure) we need to do it this way (or at least that's what I think)
+     */
+    if (config->dns_mode != NULL) {
+
+        for (config_index = 0 ; upstream_net[config_index].name != NULL ; config_index++) {
+            if(strcmp(upstream_net[config_index].name, "net.dns.mode") == 0)
+            {
+                upstream_net[config_index].def_value = config->dns_mode;
+            }
+        }
+    }
+
     config_map = flb_config_map_create(config, upstream_net);
+
     return config_map;
 }
 
@@ -238,6 +263,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 #endif
 
     mk_list_add(&u->_head, &config->upstreams);
+
     return u;
 }
 
@@ -816,7 +842,7 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
     }
 
     if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
+        pthread_mutex_unlock(&u->mutex_lists);
     }
 
     return 0;

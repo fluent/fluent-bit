@@ -61,7 +61,7 @@ static FLB_INLINE void flb_time_sleep(int ms)
     assert(sched != NULL);
 
     ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
-                                    ms, flb_time_thread_wakeup, coro);
+                                    ms, flb_time_thread_wakeup, coro, NULL);
     if (ret == -1) {
         return;
     }

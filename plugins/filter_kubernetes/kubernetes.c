@@ -729,6 +729,13 @@ static struct flb_config_map config_map[] = {
      "Kubernetes authorization token file"
     },
 
+    /* Kubernetes Token command */
+    {
+     FLB_CONFIG_MAP_STR, "kube_token_command", NULL,
+     0, FLB_FALSE, 0,
+     "command to get Kubernetes authorization token"
+    },
+
     /* Include Kubernetes Labels in the final record ? */
     {
      FLB_CONFIG_MAP_BOOL, "labels", "true",
@@ -816,6 +823,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, cache_use_docker_id),
      "fetch K8s meta when docker_id is changed"
     },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "use_tag_for_meta", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_tag_for_meta),
+     "use tag associated to retrieve metadata instead of kube-server"
+    },
+
     /*
      * Enable the feature for using kubelet to get pods information
      */
@@ -832,6 +846,19 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_INT, "kubelet_port", "10250",
      0, FLB_TRUE, offsetof(struct flb_kube, kubelet_port),
      "kubelet port to connect with when using kubelet"
+    },
+    /*
+     * Set TTL for K8s cached metadata 
+     */
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_cache_ttl", "0",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_cache_ttl),
+     "configurable TTL for K8s cached metadata. " 
+     "By default, it is set to 0 which means TTL for cache entries is disabled and " 
+     "cache entries are evicted at random when capacity is reached. " 
+     "In order to enable this option, you should set the number to a time interval. " 
+     "For example, set this value to 60 or 60s and cache entries " 
+     "which have been created more than 60s will be evicted"
     },
     /* EOF */
     {0}

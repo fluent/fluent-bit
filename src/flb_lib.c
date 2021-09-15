@@ -31,6 +31,7 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
@@ -38,6 +39,12 @@
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
+#endif
+
+#ifdef FLB_HAVE_AWS_ERROR_REPORTER
+#include <fluent-bit/aws/flb_aws_error_reporter.h>
+
+struct flb_aws_error_reporter *error_reporter;
 #endif
 
 /* thread initializator */
@@ -112,6 +119,9 @@ void flb_init_env()
     flb_coro_init();
     flb_upstream_init();
     flb_output_prepare();
+
+    /* libraries */
+    cmt_initialize();
 }
 
 flb_ctx_t *flb_create()
@@ -189,6 +199,12 @@ flb_ctx_t *flb_create()
         return NULL;
     }
 
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        error_reporter = flb_aws_error_reporter_create();
+    }
+    #endif
+
     return ctx;
 }
 
@@ -214,6 +230,12 @@ void flb_destroy(flb_ctx_t *ctx)
         }
         flb_config_exit(ctx->config);
     }
+
+    #ifdef FLB_HAVE_AWS_ERROR_REPORTER
+    if (is_error_reporting_enabled()) {
+        flb_aws_error_reporter_destroy(error_reporter);
+    }
+    #endif
 
     flb_free(ctx);
     ctx = NULL;
@@ -242,7 +264,7 @@ int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, cb);
+    o_ins = flb_output_new(ctx->config, output, cb, FLB_TRUE);
     if (!o_ins) {
         return -1;
     }
@@ -607,6 +629,7 @@ static void flb_lib_worker(void *data)
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    config->exit_status_code = ret;
     ctx->status = FLB_LIB_NONE;
 }
 
@@ -645,6 +668,8 @@ int flb_start(flb_ctx_t *ctx)
         fd = event->fd;
         bytes = flb_pipe_r(fd, &val, sizeof(uint64_t));
         if (bytes <= 0) {
+            pthread_cancel(tid);
+            pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }
@@ -656,6 +681,7 @@ int flb_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_error("[lib] backend failed");
+            pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
         }

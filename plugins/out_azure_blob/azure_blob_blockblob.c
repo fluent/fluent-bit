@@ -211,11 +211,13 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
     if (c->resp.status == 201) {
         flb_plg_info(ctx->ins, "blob id %s committed successfully", blockid);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_OK;
     }
     else if (c->resp.status == 404) {
         flb_plg_info(ctx->ins, "blob not found: %s", c->uri);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
     else if (c->resp.payload_size > 0) {
@@ -223,6 +225,7 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
                       blockid, c->resp.payload);
         if (strstr(c->resp.payload, "must be 0 for Create Append")) {
             flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
             return FLB_RETRY;
         }
     }
@@ -230,6 +233,7 @@ int azb_block_blob_commit(struct flb_azure_blob *ctx, char *blockid, char *tag,
         flb_plg_error(ctx->ins, "cannot append content to blob");
     }
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
 
     return FLB_OK;
 }

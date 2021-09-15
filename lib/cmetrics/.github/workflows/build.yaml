@@ -15,7 +15,7 @@ jobs:
       max-parallel: 48
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [windows-latest, windows-2019]
     steps:
       - uses: actions/checkout@v2
       - name: Build on ${{ matrix.os }} with vs-2019

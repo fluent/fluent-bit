@@ -48,15 +48,24 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET           32  /* output address may set host and port */
-#define FLB_OUTPUT_PLUGIN_CORE    0
-#define FLB_OUTPUT_PLUGIN_PROXY   1
-#define FLB_OUTPUT_NO_MULTIPLEX 512
+#define FLB_OUTPUT_NET            32  /* output address may set host and port */
+#define FLB_OUTPUT_PLUGIN_CORE     0
+#define FLB_OUTPUT_PLUGIN_PROXY    1
+#define FLB_OUTPUT_NO_MULTIPLEX  512
+#define FLB_OUTPUT_PRIVATE      1024
+
+
+/* Event type handlers */
+#define FLB_OUTPUT_LOGS        1
+#define FLB_OUTPUT_METRICS     2
 
 /*
  * Tests callbacks
@@ -128,6 +137,14 @@ struct flb_test_out_formatter {
 
 struct flb_output_plugin {
     /*
+     * a 'mask' to define what kind of data the plugin can manage:
+     *
+     *  - FLB_OUTPUT_LOGS
+     *  - FLB_OUTPUT_METRICS
+     */
+    int event_type;
+
+    /*
      * The type defines if this is a core-based plugin or it's handled by
      * some specific proxy.
      */
@@ -197,6 +214,14 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     struct mk_event event;               /* events handler               */
+
+    /*
+     * a 'mask' to define what kind of data the plugin can manage:
+     *
+     *  - FLB_OUTPUT_LOGS
+     *  - FLB_OUTPUT_METRICS
+     */
+    int event_type;
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
@@ -287,6 +312,20 @@ struct flb_output_instance {
 
     struct mk_list _head;                /* link to config->inputs       */
 
+    /*
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                         /* parent context            */
+    struct cmt_counter *cmt_proc_records;    /* m: output_proc_records    */
+    struct cmt_counter *cmt_proc_bytes;      /* m: output_proc_bytes      */
+    struct cmt_counter *cmt_errors;          /* m: output_errors          */
+    struct cmt_counter *cmt_retries;         /* m: output_retries         */
+    struct cmt_counter *cmt_retries_failed;  /* m: output_retries_failed  */
+    struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
+    struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
+
+    /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
 #endif
@@ -515,6 +554,13 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
     coro->callee = co_create(config->coro_stack_size,
                              output_pre_cb_flush, &stack_size);
 
+    if(coro->callee == NULL) {
+        flb_coro_destroy(coro);
+        flb_free(out_coro);
+
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_VALGRIND
     coro->valgrind_stack_id = \
         VALGRIND_STACK_REGISTER(coro->callee, ((char *) coro->callee) + stack_size);
@@ -660,8 +706,12 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     if (ins->net_config_map) {
         ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
     }
-    return ret;
+
+    return 0;
 }
 
 int flb_output_help(struct flb_output_instance *ins, void **out_buf, size_t *out_size);
@@ -671,7 +721,8 @@ struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
 int flb_output_flush_finished(struct flb_config *config, int out_id);
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           const char *output, void *data);
+                                           const char *output, void *data,
+                                           int public_only);
 const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);

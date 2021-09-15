@@ -23,6 +23,8 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_sds.h>
 
 enum FLB_FILTER_MODIFY_RULETYPE {
   RENAME,
@@ -79,12 +81,13 @@ struct modify_condition
     enum FLB_FILTER_MODIFY_CONDITIONTYPE conditiontype;
     int a_len;
     int b_len;
-    char *a;
+    flb_sds_t a;
     char *b;
     bool a_is_regex;
     bool b_is_regex;
     struct flb_regex *a_regex;
     struct flb_regex *b_regex;
+    struct flb_record_accessor *ra_a;
     char *raw_k;
     char *raw_v;
     struct mk_list _head;

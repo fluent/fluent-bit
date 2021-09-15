@@ -250,6 +250,10 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
     }
@@ -397,7 +401,8 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
  * proper type and if valid, populate the global config.
  */
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           const char *output, void *data)
+                                           const char *output, void *data,
+                                           int public_only)
 {
     int ret = -1;
     int flags = 0;
@@ -411,10 +416,15 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (check_protocol(plugin->name, output)) {
-            break;
+        if (!check_protocol(plugin->name, output)) {
+            plugin = NULL;
+            continue;
         }
-        plugin = NULL;
+
+        if (public_only && plugin->flags & FLB_OUTPUT_PRIVATE) {
+            return NULL;
+        }
+        break;
     }
 
     if (!plugin) {
@@ -426,6 +436,14 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     if (!instance) {
         flb_errno();
         return NULL;
+    }
+
+    /* Initialize event type, if not set, default to FLB_OUTPUT_LOGS */
+    if (plugin->event_type == 0) {
+        instance->event_type = FLB_OUTPUT_LOGS;
+    }
+    else {
+        instance->event_type = plugin->event_type;
     }
     instance->config = config;
     instance->log_level = -1;
@@ -758,6 +776,21 @@ void flb_output_net_default(const char *host, const int port,
     }
 }
 
+/* Add thread pool for output plugin if configured with workers */
+int flb_output_enable_multi_threading(struct flb_output_instance *ins, struct flb_config *config)
+{
+    /* Multi-threading enabled ? (through 'workers' property) */
+    if (ins->tp_workers > 0) {
+        if(flb_output_thread_pool_create(config, ins) != 0) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        flb_output_thread_pool_start(ins);
+    }
+
+    return 0;
+}
+
 /* Return an instance name or alias */
 const char *flb_output_name(struct flb_output_instance *ins)
 {
@@ -778,7 +811,7 @@ int flb_output_init_all(struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
-    const char *name;
+    char *name;
 #endif
     struct mk_list *tmp;
     struct mk_list *head;
@@ -819,8 +852,54 @@ int flb_output_init_all(struct flb_config *config)
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
         /* Get name or alias for the instance */
-        name = flb_output_name(ins);
+        name = (char *) flb_output_name(ins);
 
+        /* CMetrics */
+        ins->cmt = cmt_create();
+        if (!ins->cmt) {
+            flb_error("[output] could not create cmetrics context");
+            return -1;
+        }
+
+        /* Register generic output plugin metrics */
+        ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                                   "output", "proc_records_total",
+                                                   "Number of processed output records.",
+                                                   1, (char *[]) {"name"});
+
+        ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
+                                                 "output", "proc_bytes_total",
+                                                 "Number of processed output bytes.",
+                                                 1, (char *[]) {"name"});
+
+        ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "errors_total",
+                                             "Number of output errors.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retries_total",
+                                             "Number of output retries.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retries_failed_total",
+                                             "Number of abandoned batches because "
+                                             "the maximum number of re-tries was "
+                                             "reached.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "dropped_records_total",
+                                             "Number of dropped records.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retried_records_total",
+                                             "Number of retried records.",
+                                             1, (char *[]) {"name"});
+
+        /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
             flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
@@ -833,6 +912,10 @@ int flb_output_init_all(struct flb_config *config)
                             "retries", ins->metrics);
             flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
                         "retries_failed", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_DROPPED_RECORDS,
+                        "dropped_records", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
+                        "retried_records", ins->metrics);
         }
 #endif
 
@@ -844,6 +927,15 @@ int flb_output_init_all(struct flb_config *config)
                 flb_output_instance_destroy(ins);
                 return -1;
             }
+
+            /* Multi-threading enabled if configured */
+            ret = flb_output_enable_multi_threading(ins, config);
+            if (ret == -1) {
+                flb_error("[output] could not start thread pool for '%s' plugin",
+                          p->name);
+                return -1;
+            }
+
             continue;
         }
 #endif
@@ -940,23 +1032,18 @@ int flb_output_init_all(struct flb_config *config)
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
         if (ret == -1) {
-            flb_error("[output] Failed to initialize '%s' plugin",
+            flb_error("[output] failed to initialize '%s' plugin",
                       p->name);
             flb_output_instance_destroy(ins);
             return -1;
         }
 
-        /* Multi-threading enabled ? (through 'workers' property) */
-        if (ins->tp_workers > 0) {
-            ret = flb_output_thread_pool_create(config, ins);
-            if (ret == -1) {
-                flb_error("[output] could not start thread pool for '%s' plugin",
-                          p->name);
-                flb_output_instance_destroy(ins);
-                return -1;
-            }
-
-            flb_output_thread_pool_start(ins);
+        /* Multi-threading enabled if configured */
+        ret = flb_output_enable_multi_threading(ins, config);
+        if (ret == -1) {
+            flb_error("[output] could not start thread pool for '%s' plugin",
+                      flb_output_name(ins));
+            return -1;
         }
     }
 

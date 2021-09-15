@@ -316,7 +316,7 @@ void flb_test_replace_dots()
 void flb_test_id_key()
 {
     int ret;
-    int size = sizeof(JSON_DOTS) - 1;
+    int size = sizeof(JSON_ES) - 1;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -357,8 +357,74 @@ void flb_test_id_key()
     flb_destroy(ctx);
 }
 
+/* no check */
+static void cb_check_nothing(void *ctx, int ffd,
+                            int res_ret, void *res_data, size_t res_size,
+                            void *data)
+{
+    char *p;
+    char *out_js = res_data;
+    flb_free(res_data);
+}
+
+/* https://github.com/fluent/fluent-bit/issues/3905 */
+void flb_test_div0()
+{
+    int ret;
+    char record[8000];
+    char record_header[] = "[1448403340,{\"key\":\"";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int i;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_nothing,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* create json */
+    strncpy(&record[0], &record_header[0], strlen(record_header));
+    for(i=strlen(record_header); i<sizeof(record)-4; i++) {
+        record[i] = 'a';
+    }
+    record[sizeof(record)-4] = '"';
+    record[sizeof(record)-3] = '}';
+    record[sizeof(record)-2] = ']';
+    record[sizeof(record)-1] = '\0';
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) &record[0], strlen(record));
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"div0_error"           , flb_test_div0 },
     {"index_type"           , flb_test_index_type },
     {"logstash_format"      , flb_test_logstash_format },
     {"logstash_format_nanos", flb_test_logstash_format_nanos },

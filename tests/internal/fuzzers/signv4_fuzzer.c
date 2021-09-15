@@ -28,8 +28,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     char *null_terminated = get_null_terminated(size, &data, &size);
 
     /* Now begin the core work of the fuzzer */
-	struct flb_config *config;
-	struct mk_list *tests;
+    struct flb_config *config;
+    struct mk_list *tests;
     struct flb_aws_provider *provider;
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -51,19 +51,22 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_aws_provider_destroy(provider);
         flb_free(uri);
         flb_free(null_terminated);
+        flb_free(config);
         return 0;
     }
 
     http_u = flb_upstream_create(http_config, "127.0.0.1", 8001, 0, NULL);
     http_u_conn = flb_malloc(sizeof(struct flb_upstream_conn));
-    if (http_u_conn == NULL)
+    if (http_u_conn == NULL) {
+        flb_free(config);
         return 0;
+    }
     http_u_conn->u = http_u;
 
     http_c = flb_http_client(http_u_conn, method, uri, 
                  null_terminated, size, "127.0.0.1", 8001, NULL, 0);
 
-	/* Call into the main target flb_signv4_do*/
+    /* Call into the main target flb_signv4_do*/
     time_t t = 1440938160;
     char *region = "us-east-1";
     char *access_key = "AKIDEXAMPLE";
@@ -73,18 +76,23 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (ret >= 0) {
         ret = setenv(AWS_SECRET_ACCESS_KEY, secret_key, 1);
         if (ret >= 0) {
-            flb_signv4_do(http_c, FLB_TRUE, FLB_FALSE, t,
+            flb_sds_t signature = flb_signv4_do(http_c, FLB_TRUE, FLB_FALSE, t,
                         region, service, s3_mode, provider);
+            if (signature) {
+              flb_sds_destroy(signature);
+            }
         }
     }
 
-	/* Cleanup */
-	flb_http_client_destroy(http_c);
+    /* Cleanup */
+    flb_http_client_destroy(http_c);
     flb_upstream_destroy(http_u);
     flb_config_exit(http_config);
     flb_aws_provider_destroy(provider);
+    flb_free(config);
 
-	flb_free(null_terminated);
+    flb_free(null_terminated);
+    flb_free(http_u_conn);
     flb_free(uri);
 
     return 0;

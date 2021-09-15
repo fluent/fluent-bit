@@ -28,17 +28,17 @@ struct mk_event_ctx {
     struct epoll_event *events;
 };
 
-#define mk_event_foreach(event, evl)                                    \
-    int __i;                                                            \
-    struct mk_event_ctx *__ctx = evl->data;                             \
-                                                                        \
-    if (evl->n_events > 0) {                                            \
-        event = __ctx->events[0].data.ptr;                              \
-    }                                                                   \
-                                                                        \
-    for (__i = 0;                                                       \
-         __i < evl->n_events;                                           \
-         __i++,                                                         \
-             event = __ctx->events[__i].data.ptr                        \
+#define mk_event_foreach(event, evl)                                              \
+    int __i;                                                                      \
+    struct mk_event_ctx *__ctx = evl->data;                                       \
+                                                                                  \
+    if (evl->n_events > 0) {                                                      \
+        event = __ctx->events[0].data.ptr;                                        \
+    }                                                                             \
+                                                                                  \
+    for (__i = 0;                                                                 \
+         __i < evl->n_events;                                                     \
+         __i++,                                                                   \
+             event = ((__i < evl->n_events) ? __ctx->events[__i].data.ptr : NULL) \
          )
 #endif

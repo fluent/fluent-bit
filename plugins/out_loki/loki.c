@@ -248,13 +248,13 @@ static void flb_loki_kv_exit(struct flb_loki *ctx)
 }
 
 /* Pack a label key, it also perform sanitization of the characters */
-static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
-                          char *key, int key_len)
+static int pack_label_key(msgpack_packer *mp_pck, char *key, int key_len)
 {
     int i;
     int k_len = key_len;
     int is_digit = FLB_FALSE;
     char *p;
+    size_t prev_size;
 
     /* Normalize key name using the packed value */
     if (isdigit(*key)) {
@@ -268,15 +268,16 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
         msgpack_pack_str_body(mp_pck, "_", 1);
     }
 
-    /*
-     * 'p' will point to the next memory area where the key will be
-     * written.
-     */
-    p = (char *) (mp_sbuf->data + mp_sbuf->size);
+    /* save the current offset */
+    prev_size = ((msgpack_sbuffer *) mp_pck->data)->size;
 
     /* Pack the key name */
     msgpack_pack_str_body(mp_pck, key, key_len);
 
+    /* 'p' will point to where the key was written */
+    p = (char *) (((msgpack_sbuffer*) mp_pck->data)->data + prev_size);
+
+    /* and sanitize the key characters */
     for (i = 0; i < key_len; i++) {
         if (!isalnum(p[i]) && p[i] != '_') {
             p[i] = '_';
@@ -287,7 +288,7 @@ static int pack_label_key(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
 }
 
 static flb_sds_t pack_labels(struct flb_loki *ctx,
-                             msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
+                             msgpack_packer *mp_pck,
                              char *tag, int tag_len,
                              msgpack_object *map)
 {
@@ -321,8 +322,8 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
                 flb_mp_map_header_append(&mh);
 
                 /* We skip the first '$' character since it won't be valid in Loki */
-                pack_label_key(mp_sbuf, mp_pck,
-                               kv->key_normalized, flb_sds_len(kv->key_normalized));
+                pack_label_key(mp_pck, kv->key_normalized,
+                               flb_sds_len(kv->key_normalized));
 
                 msgpack_pack_str(mp_pck, flb_sds_len(ra_val));
                 msgpack_pack_str_body(mp_pck, ra_val, flb_sds_len(ra_val));
@@ -380,7 +381,7 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
                 flb_mp_map_header_append(&mh);
 
                 /* Pack key */
-                pack_label_key(mp_sbuf, mp_pck, (char *) k.via.str.ptr, k.via.str.size);
+                pack_label_key(mp_pck, (char *) k.via.str.ptr, k.via.str.size);
 
                 /* Pack the value */
                 msgpack_pack_str(mp_pck, v.via.str.size);
@@ -576,14 +577,13 @@ static int prepare_remove_keys(struct flb_loki *ctx)
                 return -1;
             }
         }
-    }
-
-    size = mk_list_size(patterns);
-    flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
-    if (size > 0) {
-        ctx->remove_mpa = flb_mp_accessor_create(patterns);
-        if (ctx->remove_mpa == NULL) {
-            return -1;
+        size = mk_list_size(patterns);
+        flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
+        if (size > 0) {
+            ctx->remove_mpa = flb_mp_accessor_create(patterns);
+            if (ctx->remove_mpa == NULL) {
+                return -1;
+            }
         }
     }
 
@@ -830,6 +830,7 @@ static int get_tenant_id_from_record(struct flb_loki *ctx, msgpack_object *map)
     else if (rval->o.type != MSGPACK_OBJECT_STR) {
         flb_plg_warn(ctx->ins, "the value of %s is not string",
                      ctx->tenant_id_key_config);
+        flb_ra_key_value_destroy(rval);
         return -1;
     }
 
@@ -1088,7 +1089,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
          msgpack_pack_str_body(&mp_pck, "stream", 6);
 
          /* Pack stream labels */
-         pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, NULL);
+         pack_labels(ctx, &mp_pck, tag, tag_len, NULL);
 
         /* streams['values'] */
          msgpack_pack_str(&mp_pck, 6);
@@ -1128,7 +1129,7 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
              msgpack_pack_str_body(&mp_pck, "stream", 6);
 
              /* Pack stream labels */
-             pack_labels(ctx, &mp_sbuf, &mp_pck, tag, tag_len, obj);
+             pack_labels(ctx, &mp_pck, tag, tag_len, obj);
 
              /* streams['values'] */
              msgpack_pack_str(&mp_pck, 6);
@@ -1241,7 +1242,17 @@ static void cb_loki_flush(const void *data, size_t bytes,
          * - 205: Reset content
          *
          */
-        if (c->resp.status < 200 || c->resp.status > 205) {
+        if (c->resp.status == 400) {
+            /*
+             * Loki will return 400 if incoming data is out of order.
+             * We should not retry such data.
+             */
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i Not retrying.\n%s",
+                          ctx->tcp_host, ctx->tcp_port, c->resp.status,
+                          c->resp.payload);
+            out_ret = FLB_ERROR;
+        }
+        else if (c->resp.status < 200 || c->resp.status > 205) {
             if (c->resp.payload) {
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                               ctx->tcp_host, ctx->tcp_port, c->resp.status,
@@ -1362,6 +1373,29 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+/* for testing */
+static int cb_loki_format_test(struct flb_config *config,
+                               struct flb_input_instance *ins,
+                               void *plugin_context,
+                               void *flush_ctx,
+                               const char *tag, int tag_len,
+                               const void *data, size_t bytes,
+                               void **out_data, size_t *out_size)
+{
+    flb_sds_t payload = NULL;
+    struct flb_loki *ctx = plugin_context;
+
+    payload = loki_compose_payload(ctx, (char *) tag, tag_len, data, bytes);
+    if (payload == NULL) {
+        return -1;
+    }
+
+    *out_data = payload;
+    *out_size = flb_sds_len(payload);
+
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_output_plugin out_loki_plugin = {
     .name        = "loki",
@@ -1370,5 +1404,9 @@ struct flb_output_plugin out_loki_plugin = {
     .cb_flush    = cb_loki_flush,
     .cb_exit     = cb_loki_exit,
     .config_map  = config_map,
+
+    /* for testing */
+    .test_formatter.callback = cb_loki_format_test,
+
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS | FLB_OUTPUT_NO_MULTIPLEX,
 };

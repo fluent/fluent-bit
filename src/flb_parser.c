@@ -32,6 +32,8 @@
 #include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
+#include <fluent-bit/multiline/flb_ml_rule.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -352,10 +354,14 @@ void flb_parser_exit(struct flb_config *config)
     struct mk_list *head;
     struct flb_parser *parser;
 
+    /* release 'parsers' */
     mk_list_foreach_safe(head, tmp, &config->parsers) {
         parser = mk_list_entry(head, struct flb_parser, _head);
         flb_parser_destroy(parser);
     }
+
+    /* release 'multiline parsers' */
+    flb_ml_exit(config);
 }
 
 static int proc_types_str(const char *types_str, struct flb_parser_types **types)
@@ -590,12 +596,94 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
     return -1;
 }
 
+static int multiline_load_regex_rules(struct flb_ml_parser *ml_parser,
+                                      struct mk_rconf_section *section,
+                                      struct flb_config *config)
+{
+    int ret;
+    char *to_state = NULL;
+    struct mk_list list;
+    struct mk_list *head;
+    struct mk_rconf_entry *entry;
+    struct flb_slist_entry *from_state;
+    struct flb_slist_entry *regex_pattern;
+    struct flb_slist_entry *tmp;
+
+    mk_list_foreach(head, &section->entries) {
+        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
+
+        /* only process 'rule' keys */
+        if (strcasecmp(entry->key, "rule") != 0) {
+            continue;
+        }
+
+        mk_list_init(&list);
+        ret = flb_slist_split_tokens(&list, entry->val, 3);
+        if (ret == -1) {
+            flb_error("[multiline parser: %s] invalid section on key '%s'",
+                      ml_parser->name, entry->key);
+            return -1;
+        }
+
+        /* Get entries from the line */
+        from_state    = flb_slist_entry_get(&list, 0);
+        regex_pattern = flb_slist_entry_get(&list, 1);
+        tmp = flb_slist_entry_get(&list, 2);
+        if (tmp) {
+            to_state  = tmp->str;
+        }
+        else {
+            to_state = NULL;
+        }
+
+        if (!from_state) {
+            flb_error("[multiline parser: %s] 'from_state' is mandatory",
+                      ml_parser->name);
+            flb_slist_destroy(&list);
+            return -1;
+        }
+
+        if (!regex_pattern) {
+            flb_error("[multiline parser: %s] 'regex_pattern' is mandatory",
+                      ml_parser->name);
+            flb_slist_destroy(&list);
+            return -1;
+        }
+
+        ret = flb_ml_rule_create(ml_parser,
+                                 from_state->str,
+                                 regex_pattern->str,
+                                 to_state,
+                                 NULL);
+        if (ret == -1) {
+            flb_error("[multiline parser: %s] error creating rule",
+                      ml_parser->name);
+            flb_slist_destroy(&list);
+            return -1;
+        }
+
+        flb_slist_destroy(&list);
+    }
+
+    /* Map the rules (mandatory for regex rules) */
+    ret = flb_ml_parser_init(ml_parser);
+    if (ret != 0) {
+        flb_error("[multiline parser: %s] invalid mapping rules, check the states",
+                  ml_parser->name);
+        return -1;
+    }
+
+    return 0;
+}
+
+
 /* Config file: read [MULTILINE_PARSER] definitions */
 static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
                                       struct flb_config *config)
 {
-    flb_sds_t name;
+    int ret;
     int type;
+    flb_sds_t name;
     flb_sds_t match_string;
     int negate;
     flb_sds_t key_content;
@@ -606,10 +694,11 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
     int flush_timeout;
     struct mk_list *head;
     struct mk_rconf_section *section;
-    struct flb_ml *ml;
+    struct flb_ml_parser *ml_parser;
 
     /* Read all [PARSER] sections */
     mk_list_foreach(head, &fconf->sections) {
+        ml_parser = NULL;
         name = NULL;
         type = -1;
         match_string = NULL;
@@ -619,6 +708,7 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
         key_group = NULL;
         parser = NULL;
         flush_timeout = -1;
+        tmp = NULL;
 
         section = mk_list_entry(head, struct mk_rconf_section, _head);
         if (strcasecmp(section->name, "MULTILINE_PARSER") != 0) {
@@ -676,25 +766,44 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
             flush_timeout = atoi(tmp);
         }
 
-        ml = flb_ml_create(config, name, type, match_string, negate,
-                           flush_timeout, key_content, key_group, key_pattern,
-                           NULL, parser);
+        ml_parser = flb_ml_parser_create(config, name, type, match_string,
+                                         negate, flush_timeout, key_content,
+                                         key_group, key_pattern,
+                                         NULL, parser);
+        if (!ml_parser) {
+            goto fconf_error;
+        }
+
+        /* if type is regex, process rules */
+        if (type == FLB_ML_REGEX) {
+            ret = multiline_load_regex_rules(ml_parser, section, config);
+            if (ret != 0) {
+                goto fconf_error;
+            }
+        }
 
         flb_sds_destroy(name);
         flb_sds_destroy(match_string);
         flb_sds_destroy(key_content);
         flb_sds_destroy(key_pattern);
         flb_sds_destroy(key_group);
+        flb_sds_destroy(parser);
+        flb_sds_destroy(tmp);
     }
 
     return 0;
 
  fconf_error:
+    if (ml_parser) {
+        flb_ml_parser_destroy(ml_parser);
+    }
     flb_sds_destroy(name);
     flb_sds_destroy(match_string);
     flb_sds_destroy(key_content);
     flb_sds_destroy(key_pattern);
     flb_sds_destroy(key_group);
+    flb_sds_destroy(parser);
+    flb_sds_destroy(tmp);
 
     return -1;
 }
@@ -742,6 +851,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         return -1;
     }
 
+    /* processs [MULTILINE_PARSER]'s sections */
     ret = multiline_parser_conf_file(cfg, fconf, config);
     if (ret == -1) {
         mk_rconf_free(fconf);

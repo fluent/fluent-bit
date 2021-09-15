@@ -19,16 +19,6 @@
 
 #include <cmetrics/cmt_atomic.h>
 
-#ifdef CMT_ATOMIC_HAVE_AUTO_INITIALIZE
-
-__attribute__((constructor))
-static void cmt_atomic_constructor(void)
-{
-    cmt_atomic_initialize();
-}
-
-#endif
-
 inline int cmt_atomic_initialize()
 {
     return 0;
