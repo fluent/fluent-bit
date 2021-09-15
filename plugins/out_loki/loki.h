@@ -62,6 +62,9 @@ struct flb_loki {
     flb_sds_t http_user;
     flb_sds_t http_passwd;
 
+    /* Bearer Token Auth */
+    flb_sds_t bearer_token;
+
     /* Labels */
     struct mk_list *labels;
     struct mk_list *label_keys;

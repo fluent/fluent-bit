@@ -1205,6 +1205,11 @@ static void cb_loki_flush(const void *data, size_t bytes,
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
 
+    /* Bearer token auth header */
+    if (ctx->bearer_token) {
+        flb_http_bearer_auth(c, ctx->bearer_token);
+    }
+
     /* Add Content-Type header */
     flb_http_add_header(c,
                         FLB_LOKI_CT, sizeof(FLB_LOKI_CT) - 1,
@@ -1367,6 +1372,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
      "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "bearer_token", "",
+     0, FLB_TRUE, offsetof(struct flb_loki, bearer_token),
+     "Set bearer token auth"
     },
 
     /* EOF */
