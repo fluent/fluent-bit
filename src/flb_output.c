@@ -965,6 +965,9 @@ int flb_output_init_all(struct flb_config *config)
             }
         }
 
+        /* Init network defaults */
+        flb_net_setup_init(&ins->net_setup);
+
         /* Get Upstream net_setup configmap */
         ins->net_config_map = flb_upstream_get_config_map(config);
         if (!ins->net_config_map) {
