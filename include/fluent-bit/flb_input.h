@@ -158,6 +158,9 @@ struct flb_input_instance {
     /* By default all input instances are 'routable' */
     int routable;
 
+    /* flag to pause input when storage is full */
+    int storage_pause_on_chunks_overlimit;
+
     /*
      * Input network info:
      *
@@ -209,6 +212,14 @@ struct flb_input_instance {
      * - FLB_INPUT_PAUSED  -> cannot append data
      */
     int mem_buf_status;
+
+    /*
+     * Define the buffer status:
+     *
+     * - FLB_INPUT_RUNNING -> can append more data
+     * - FLB_INPUT_PAUSED  -> cannot append data
+     */
+    int storage_buf_status;
 
     /*
      * Optional data passed to the plugin, this info is useful when
@@ -493,6 +504,9 @@ static inline void flb_input_return(struct flb_coro *coro) {
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {
     if (i->mem_buf_status == FLB_INPUT_PAUSED) {
+        return FLB_TRUE;
+    }
+    if (i->storage_buf_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
 
