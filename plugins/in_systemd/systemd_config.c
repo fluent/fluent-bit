@@ -17,11 +17,12 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -67,7 +68,7 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 
     /* Create the channel manager */
-    ret = pipe(ctx->ch_manager);
+    ret = flb_pipe_create(ctx->ch_manager);
     if (ret == -1) {
         flb_errno();
         flb_free(ctx);
@@ -258,8 +259,7 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
     }
 #endif
 
-    close(ctx->ch_manager[0]);
-    close(ctx->ch_manager[1]);
+    flb_pipe_destroy(ctx->ch_manager);
 
     flb_free(ctx);
     return 0;

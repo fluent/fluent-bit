@@ -20,9 +20,10 @@
 #ifndef FLB_SYSTEMD_CONFIG_H
 #define FLB_SYSTEMD_CONFIG_H
 
+#include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
-#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_sqldb.h>
 
 #include <systemd/sd-journal.h>
@@ -54,10 +55,10 @@ struct flb_systemd_config {
     int strip_underscores;
 
     /* Internal */
-    int ch_manager[2];         /* pipe: channel manager    */
-    int coll_fd_archive;       /* archive collector        */
-    int coll_fd_journal;       /* journal, events mode     */
-    int coll_fd_pending;       /* pending records          */
+    flb_pipefd_t ch_manager[2]; /* pipe: channel manager    */
+    int coll_fd_archive;        /* archive collector        */
+    int coll_fd_journal;        /* journal, events mode     */
+    int coll_fd_pending;        /* pending records          */
     int dynamic_tag;
     int max_fields;            /* max number of fields per record */
     int max_entries;           /* max number of records per iteration */
