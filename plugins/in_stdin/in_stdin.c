@@ -17,13 +17,14 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
-#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_fcntl.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
 
 #include <msgpack.h>
@@ -302,6 +303,9 @@ static int in_stdin_init(struct flb_input_instance *in,
         flb_plg_error(ctx->ins, "Could not open standard input!");
         goto init_error;
     }
+
+    flb_fcntl_cloexec(fd);
+
     ctx->fd = fd;
 
     /* Always initialize built-in JSON pack state */
