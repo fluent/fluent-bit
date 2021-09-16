@@ -832,6 +832,11 @@ int flb_pack_to_json_date_type(const char *str)
     else if (strcasecmp(str, "epoch") == 0) {
         return FLB_PACK_JSON_DATE_EPOCH;
     }
+    else if (strcasecmp(str, "epoch_ms") == 0 ||
+             strcasecmp(str, "epoch_millis") == 0 ||
+             strcasecmp(str, "epoch_milliseconds") == 0) {
+        return FLB_PACK_JSON_DATE_EPOCH_MS;
+    }
 
     return -1;
 }
@@ -985,6 +990,11 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 break;
             case FLB_PACK_JSON_DATE_EPOCH:
                 msgpack_pack_uint64(&tmp_pck, (long long unsigned)(tms.tm.tv_sec));
+                break;
+            case FLB_PACK_JSON_DATE_EPOCH_MS:
+                msgpack_pack_uint64(&tmp_pck,
+                                    (long long unsigned)(tms.tm.tv_sec) * 1000 +
+                                    tms.tm.tv_nsec / 1000000);
                 break;
             }
         }
