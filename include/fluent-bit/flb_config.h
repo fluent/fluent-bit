@@ -232,6 +232,8 @@ struct flb_config {
     uint16_t in_table_id[512];
 
     void *sched;
+    unsigned int sched_cap;
+    unsigned int sched_base;
 
     struct flb_task_map tasks_map[2048];
 
@@ -299,5 +301,9 @@ enum conf_type {
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
+
+/* Scheduler */
+#define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
+#define FLB_CONF_STR_SCHED_BASE       "scheduler.base"
 
 #endif
