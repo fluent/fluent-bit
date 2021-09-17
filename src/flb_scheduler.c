@@ -287,7 +287,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->event.mask = MK_EVENT_EMPTY;
 
     /* Get suggested wait_time for this request */
-    seconds = backoff_full_jitter(FLB_SCHED_BASE, FLB_SCHED_CAP, tries);
+    seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, tries);
     seconds += 1;
 
     /* Populare request */
