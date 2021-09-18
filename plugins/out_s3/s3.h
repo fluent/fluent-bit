@@ -114,6 +114,7 @@ struct flb_s3 {
     char *content_type;
     char *log_key;
     int free_endpoint;
+    int retry_requests;
     int use_put_object;
     int send_content_md5;
     int static_file_path;

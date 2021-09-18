@@ -33,9 +33,9 @@ endif()
 
 # Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
-  FLB_RT_TEST(FLB_FILTER_STDOUT     "filter_stdout.c")
-  FLB_RT_TEST(FLB_FILTER_GREP       "filter_grep.c")
-  FLB_RT_TEST(FLB_FILTER_THROTTLE   "filter_throttle.c")
+  FLB_RT_TEST(FLB_FILTER_STDOUT          "filter_stdout.c")
+  FLB_RT_TEST(FLB_FILTER_GREP            "filter_grep.c")
+  FLB_RT_TEST(FLB_FILTER_THROTTLE        "filter_throttle.c")
   FLB_RT_TEST(FLB_FILTER_THROTTLE_SIZE   "filter_throttle_size.c")
   FLB_RT_TEST(FLB_FILTER_NEST       "filter_nest.c")
   FLB_RT_TEST(FLB_FILTER_KUBERNETES "filter_kubernetes.c")
@@ -43,6 +43,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_MODIFY     "filter_modify.c")
   FLB_RT_TEST(FLB_FILTER_LUA        "filter_lua.c")
   FLB_RT_TEST(FLB_FILTER_TYPE_CONVERTER "filter_type_converter.c")
+  FLB_RT_TEST(FLB_FILTER_RECORD_MODIFIER "filter_record_modifier.c")
 endif()
 
 

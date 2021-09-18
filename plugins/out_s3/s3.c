@@ -823,6 +823,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
+    ctx->s3_client->retry_requests = ctx->retry_requests;
 
     ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
                                                    FLB_IO_TLS, ctx->client_tls);
@@ -1749,6 +1750,10 @@ static void cb_s3_upload(struct flb_config *config, void *data)
             continue;
         }
 
+        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+            continue;
+        }
+
         if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
             complete = FLB_TRUE;
         }
@@ -2144,6 +2149,10 @@ static int cb_s3_exit(void *data, struct flb_config *config)
         mk_list_foreach_safe(head, tmp, &ctx->uploads) {
             m_upload = mk_list_entry(head, struct multipart_upload, _head);
 
+            if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
+                continue;
+            }
+
             if (m_upload->bytes > 0) {
                 m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
                 mk_list_del(&m_upload->_head);
@@ -2276,6 +2285,16 @@ static struct flb_config_map config_map[] = {
     "A series of characters which will be used to split the tag into “parts” for "
     "use with the s3_key_format option. See the in depth examples and tutorial in "
     "the documentation."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, retry_requests),
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     {

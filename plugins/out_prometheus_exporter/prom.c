@@ -66,6 +66,8 @@ static int cb_prom_init(struct flb_output_instance *ins,
     int ret;
     struct prom_exporter *ctx;
 
+    flb_output_net_default("0.0.0.0", 2021 , ins);
+
     ctx = flb_calloc(1, sizeof(struct prom_exporter));
     if (!ctx) {
         flb_errno();
@@ -89,7 +91,7 @@ static int cb_prom_init(struct flb_output_instance *ins,
 
     /* HTTP Server context */
     ctx->http = prom_http_server_create(ctx,
-                                        ctx->listen, ctx->tcp_port, config);
+                                        ins->host.name, ins->host.port, config);
     if (!ctx->http) {
         flb_plg_error(ctx->ins, "could not initialize HTTP server, aborting");
         return -1;
@@ -108,8 +110,8 @@ static int cb_prom_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    flb_plg_info(ctx->ins, "listening iface=%s tcp_port=%s",
-                 ctx->listen, ctx->tcp_port, config);
+    flb_plg_info(ctx->ins, "listening iface=%s tcp_port=%d",
+                 ins->host.name, ins->host.port);
     return 0;
 }
 
@@ -257,18 +259,6 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
-    {
-     FLB_CONFIG_MAP_STR, "listen", "0.0.0.0",
-     0, FLB_TRUE, offsetof(struct prom_exporter, listen),
-     "Listener network interface."
-    },
-
-    {
-     FLB_CONFIG_MAP_STR, "port", "2021",
-     0, FLB_TRUE, offsetof(struct prom_exporter, tcp_port),
-     "TCP port for listening for HTTP connections."
-    },
-
     {
      FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prom_exporter, add_labels),

@@ -34,6 +34,42 @@ struct flb_health_check_metrics_counter *metrics_counter;
 
 pthread_key_t hs_health_key;
 
+static struct mk_list *hs_health_key_create()
+{
+    struct mk_list *metrics_list = NULL;
+
+    metrics_list = flb_malloc(sizeof(struct mk_list));
+    if (!metrics_list) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(metrics_list);
+    pthread_setspecific(hs_health_key, metrics_list);
+
+    return metrics_list;
+}
+
+static void hs_health_key_destroy(void *data)
+{
+    struct mk_list *metrics_list = (struct mk_list*)data;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hs_hc_buf *entry;
+
+    if (metrics_list == NULL) {
+        return;
+    }
+    mk_list_foreach_safe(head, tmp, metrics_list) {
+        entry = mk_list_entry(head, struct flb_hs_hc_buf, _head);
+        if (entry != NULL) {
+            mk_list_del(&entry->_head);
+            flb_free(entry);
+        }
+    }
+
+    flb_free(metrics_list);
+}
+
 /* initialize the metrics counters */
 static void counter_init(struct flb_hs *hs) {
 
@@ -69,8 +105,13 @@ static int is_healthy() {
     int period_errors;
     int period_retry_failure;
 
-
     metrics_list = pthread_getspecific(hs_health_key);
+    if (metrics_list == NULL) {
+        metrics_list = hs_health_key_create();
+        if (metrics_list == NULL) {
+            return FLB_FALSE;
+        }
+    }
 
     if (mk_list_is_empty(metrics_list) == 0) {
         return FLB_TRUE;
@@ -226,14 +267,11 @@ static void cb_mq_health(mk_mq_t *queue, void *data, size_t size)
 
     metrics_list = pthread_getspecific(hs_health_key);
 
-    if (!metrics_list) {
-        metrics_list = flb_malloc(sizeof(struct mk_list));
-        if (!metrics_list) {
-            flb_errno();
+    if (metrics_list == NULL) {
+        metrics_list = hs_health_key_create();
+        if (metrics_list == NULL) {
             return;
         }
-        mk_list_init(metrics_list);
-        pthread_setspecific(hs_health_key, metrics_list);
     }
 
     metrics_counter->period_counter++;
@@ -281,7 +319,7 @@ static void cb_health(mk_request_t *request, void *data)
 int api_v1_health(struct flb_hs *hs)
 {
 
-    pthread_key_create(&hs_health_key, NULL);
+    pthread_key_create(&hs_health_key, hs_health_key_destroy);
 
     counter_init(hs);
     /* Create a message queue */
