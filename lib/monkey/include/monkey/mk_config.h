@@ -172,6 +172,19 @@ struct mk_server
     /* FIXME: temporal map of Network Layer plugin */
     struct mk_plugin_network *network;
 
+    /* Thread initializator helpers (sched_launch_thread) */
+    int             pth_init;
+    pthread_cond_t  pth_cond;
+    pthread_mutex_t pth_mutex;
+
+    /* Used for vhost initialization synchronization */
+    pthread_mutex_t vhost_fdt_mutex;
+
+    /* worker_id as used by mk_sched_register_thread, it was moved here
+     * because it has to be local to each mk_server instance.
+     */
+    int             worker_id;
+
     /* Direct map to Stage plugins */
     struct mk_list stage10_handler;
     struct mk_list stage20_handler;

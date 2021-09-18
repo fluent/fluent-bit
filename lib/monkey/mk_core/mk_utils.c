@@ -84,7 +84,7 @@
 #include <mk_core/mk_utils.h>
 
 pthread_mutex_t mutex_trace;
-pthread_key_t mk_utils_error_key;
+pthread_key_t mk_utils_error_key; /* Initialized by MK_INIT_INITIALIZE_TLS_UNIVERSAL */
 
 #ifdef MK_HAVE_TRACE
 #ifdef _WIN32
@@ -388,6 +388,6 @@ int mk_core_init()
     mk_core_init_time = time(NULL);
     env_trace_filter = getenv("MK_TRACE_FILTER");
 #endif
-    pthread_key_create(&mk_utils_error_key, NULL);
+
     return 0;
 }
