@@ -477,6 +477,10 @@ int flb_config_map_properties_check(char *context_name,
                         break;
                     }
                 }
+                else if(m->type == FLB_CONFIG_MAP_DEPRECATED) {
+                    flb_warn("[config] %s: '%s' is deprecated",
+                             context_name, kv->key);
+                }
                 found = FLB_TRUE;
                 break;
             }
