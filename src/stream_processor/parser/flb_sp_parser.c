@@ -317,7 +317,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func, const char *key_name)
     return 0;
 }
 
-void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, const char *key_alias)
+void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, char *key_alias)
 {
     cmd->alias = (char *) key_alias;
 }

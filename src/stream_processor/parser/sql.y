@@ -1,4 +1,4 @@
-%name-prefix="flb_sp_"  // replace with %define api.prefix {flb_sp_}
+%name-prefix "flb_sp_"  // replace with %define api.prefix {flb_sp_}
 %define api.pure full
 %define parse.error verbose
 %parse-param { struct flb_sp_cmd *cmd };
@@ -31,7 +31,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner, const cha
 /* Known Tokens (refer to sql.l) */
 
 /* Keywords */
-%token IDENTIFIER QUOTE
+%token IDENTIFIER
 
 /* Basic keywords for statements */
 %token CREATE STREAM SNAPSHOT FLUSH WITH SELECT AS FROM FROM_STREAM FROM_TAG
@@ -84,7 +84,7 @@ void yyerror(struct flb_sp_cmd *cmd, const char *query, void *scanner, const cha
 %type <string>     record_key
 %type <string>     prop_key
 %type <string>     prop_val
-%type <expression> condition
+%type <expression> condition condition1 condition2
 %type <expression> comparison
 %type <expression> key
 %type <expression> record_func
@@ -230,13 +230,12 @@ select: SELECT keys FROM source window where groupby limit ';'
              {
                  flb_sp_cmd_alias_add(cmd, $2);
              }
-      record_subkey: '[' STRING ']'
+      record_subkey: record_subkey record_subkey_index | record_subkey_index
+      record_subkey_index: '[' STRING ']'
              {
                flb_slist_add(cmd->tmp_subkeys, $2);
                flb_free($2);
              }
-             |
-             record_subkey record_subkey
       source: FROM_STREAM IDENTIFIER
               {
                 flb_sp_cmd_source(cmd, FLB_SP_STREAM, $2);
@@ -276,7 +275,19 @@ select: SELECT keys FROM source window where groupby limit ';'
               {
                 flb_sp_cmd_window(cmd, FLB_SP_WINDOW_HOPPING, $3, $4, $7, $8);
               }
-      condition: comparison
+      condition: condition OR condition1
+                 {
+                   $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_OR);
+                 }
+                 |
+                 condition1
+      condition1: condition1 AND condition2
+                  {
+                    $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_AND);
+                  }
+                  |
+                  condition2
+      condition2: comparison
                  |
                  key
                  {
@@ -293,19 +304,9 @@ select: SELECT keys FROM source window where groupby limit ';'
                    $$ = flb_sp_cmd_operation(cmd, $2, NULL, FLB_EXP_PAR);
                  }
                  |
-                 NOT condition
+                 NOT condition2
                  {
                    $$ = flb_sp_cmd_operation(cmd, $2, NULL, FLB_EXP_NOT);
-                 }
-                 |
-                 condition AND condition
-                 {
-                   $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_AND);
-                 }
-                 |
-                 condition OR condition
-                 {
-                   $$ = flb_sp_cmd_operation(cmd, $1, $3, FLB_EXP_OR);
                  }
       comparison:
                   key IS null
@@ -318,14 +319,6 @@ select: SELECT keys FROM source window where groupby limit ';'
                     $$ = flb_sp_cmd_operation(cmd,
                              flb_sp_cmd_comparison(cmd, $1, $4, FLB_EXP_EQ),
                              NULL, FLB_EXP_NOT);
-                  }
-                  |
-                  record_func
-                  {
-                    $$ = flb_sp_cmd_comparison(cmd,
-                             $1,
-                             flb_sp_cmd_condition_boolean(cmd, true),
-                             FLB_EXP_EQ);
                   }
                   |
                   record_func '=' value

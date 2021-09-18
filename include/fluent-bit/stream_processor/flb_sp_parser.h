@@ -248,7 +248,7 @@ const char *flb_sp_cmd_stream_prop_get(struct flb_sp_cmd *cmd, const char *key);
 /* Selection keys */
 int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func, const char *key_name);
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key);
-void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, const char *key_alias);
+void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, char *key_alias);
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source);
 void flb_sp_cmd_dump(struct flb_sp_cmd *cmd);
 
