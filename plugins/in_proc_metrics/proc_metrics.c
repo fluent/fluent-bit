@@ -613,7 +613,7 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
         cmt_gauge_set(metrics->drs, ts, (double)status.mem.drs, 2, (char *[]) {pid, metrics->cmdline});
         cmt_gauge_set(metrics->dt, ts, (double)status.mem.dt, 2, (char *[]) {pid, metrics->cmdline});
 
-        flb_plg_info(ctx->ins, "submit metrics for pid=%d", metrics->pid);
+        flb_plg_debug(ctx->ins, "submit metrics for pid=%d", metrics->pid);
     }
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
     if (ret != 0) {
