@@ -510,7 +510,7 @@ static inline void flb_input_return_do(int ret) {
 
 #define FLB_INPUT_RETURN(x) \
     flb_input_return_do(x); \
-    return
+    return x;
 
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {
