@@ -591,11 +591,7 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
             continue;
         }
 
-        if (metrics->pid == 0) {
-           snprintf(pid, sizeof(pid)-1, "%d", getpid());
-        } else {
-            snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
-        }
+        snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
 
         cmt_counter_set(metrics->rchar, ts, (double)status.io.rchar, 2, (char *[]) {pid, metrics->cmdline});
         cmt_counter_set(metrics->wchar, ts, (double)status.io.wchar, 2, (char *[]) {pid, metrics->cmdline});
