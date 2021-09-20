@@ -35,6 +35,7 @@ struct proc_metrics_ctx
     struct flb_parser *parser;
     struct flb_input_instance *ins; /* Input plugin instace */
     struct mk_list procs;
+    struct cmt *cmt;
 };
 
 #define FLB_CMD_LEN 256
@@ -47,7 +48,6 @@ struct proc_entry {
 struct proc_metrics_pid_cmt {
     pid_t pid;
     char cmdline[FLB_CMD_LEN];
-    struct cmt *cmt;
     /* rchar: 260189
      * wchar: 413454
      * syscr: 2036
