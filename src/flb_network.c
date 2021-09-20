@@ -446,14 +446,14 @@ static int net_connect_async(int fd,
 
             /* Connection is broken, not much to do here */
             str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
-            flb_error("[net] TCP connection failed: %s:%i (%s)",
-                      u->tcp_host, u->tcp_port, str);
+            flb_error("[net] TCP connection #%i failed: %s:%i (%s)",
+                      u_conn->fd, u->tcp_host, u->tcp_port, str);
             return -1;
         }
     }
     else {
-        flb_error("[net] TCP connection, unexpected error: %s:%i",
-                  u->tcp_host, u->tcp_port);
+        flb_error("[net] TCP connection #%i, unexpected error: %s:%i",
+                  u_conn->fd, u->tcp_host, u->tcp_port);
         return -1;
     }
 
@@ -1061,6 +1061,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     char _port[6];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
+    char so_error_buf[256] = {0};
+    char *str = NULL;
 
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
@@ -1081,6 +1083,30 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     if (is_async) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res,
                                   u_conn->u->net.dns_mode, connect_timeout);
+        /* 
+         * When the output plugin is under load, DNS timers fire much later than
+         * they should and DNS lookups are slow as well. It is possible that
+         * the connection times out via the upstream handler. Since the socket
+         * has not yet been created, the upstream timeout handler doesn't have
+         * a valid fd to notify this coroutine on. A check is needed to see if
+         * the connection timed out even if the DNS lookup succeeded.
+         * FIXME: Ideally, the upstream timeout handler should be able to
+         * trigger an action that will cancel pending DNS queries. This could be
+         * implemented by storing the DNS socket in the upstream connection
+         * and having the upstream timeout handler call shutdown on it. It
+         * will need more plumbing through the code.
+         */
+        if (u_conn->net_error > 0) {
+            str = strerror_r(u_conn->net_error, so_error_buf, sizeof(so_error_buf));
+            flb_error("[net] TCP connection #%i failed because of an "
+                      "upstream event after resolving DNS: error=%i:(%s)",
+                      u_conn->fd, u_conn->net_error, str);
+            if (ret == 0 && res != NULL) {
+                flb_net_free_translated_addrinfo(res);
+            }
+            return -1;
+        }
+
     }
     else {
         ret = getaddrinfo(host, _port, &hints, &res);

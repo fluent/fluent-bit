@@ -293,6 +293,8 @@ int flb_tls_session_create(struct flb_tls *tls,
     int flag;
     struct flb_tls_session *session;
     struct flb_upstream *u = u_conn->u;
+    char so_error_buf[256] = {0};
+    char *str = NULL;
 
     /* Create TLS session */
     session = tls->api->session_create(tls, u_conn);
@@ -318,6 +320,13 @@ int flb_tls_session_create(struct flb_tls *tls,
     ret = tls->api->net_handshake(tls, session);
     if (ret != 0) {
         if (ret != FLB_TLS_WANT_READ && ret != FLB_TLS_WANT_WRITE) {
+            if (u_conn->net_error > 0) {
+                str = strerror_r(u_conn->net_error, so_error_buf, sizeof(so_error_buf));
+                flb_error("[io_tls] tls handshake for connection #%i to %s:%i "
+                          "failed because of an upstream event: error=%i:(%s)",
+                          u_conn->fd, u->tcp_host, u->tcp_port,
+                          u_conn->net_error, str);
+            }
             goto error;
         }
 

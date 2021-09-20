@@ -794,11 +794,17 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                  * Shutdown the connection, this is the safest way to indicate
                  * that the socket cannot longer work and any co-routine on
                  * waiting for I/O will receive the notification and trigger
-                 * the error to it caller.
+                 * the error to it caller. This only works if the connection
+                 * has a valid fd, which is assigned after the DNS lookup
+                 * succeeds.
+                 * Do not call prepare_destroy_conn here since the connection
+                 * is still pending. It will be handled when the function for
+                 * creating a new connection returns.
                  */
-                shutdown(u_conn->fd, SHUT_RDWR);
+                if (u_conn->fd > -1) {
+                    shutdown(u_conn->fd, SHUT_RDWR);
+                }
                 u_conn->net_error = ETIMEDOUT;
-                prepare_destroy_conn(u_conn);
             }
         }
 
