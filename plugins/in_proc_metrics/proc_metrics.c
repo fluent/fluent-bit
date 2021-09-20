@@ -507,12 +507,6 @@ static struct proc_metrics_pid_cmt *get_proc_metrics(struct proc_metrics_ctx *ct
     struct mk_list *head;
     struct proc_metrics_pid_cmt *proc;
 
-    if (mk_list_is_empty(&ctx->procs)) {
-        proc = create_pid_cmt(ctx->ins, pid);
-        mk_list_add(&proc->_head, &ctx->procs);
-        return proc;
-    }
-
     mk_list_foreach_safe(head, tmp, &ctx->procs) {
         proc = mk_list_entry(head, struct proc_metrics_pid_cmt, _head);
         if (proc->pid == pid) {
