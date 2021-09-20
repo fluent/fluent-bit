@@ -457,6 +457,24 @@ cmt_gauge_error:
     if (proc->size != NULL) {
         cmt_gauge_destroy(proc->size);
     }
+    if (proc->resident != NULL) {
+        cmt_gauge_destroy(proc->resident);
+    }
+    if (proc->shared != NULL) {
+        cmt_gauge_destroy(proc->shared);
+    }
+    if (proc->trs != NULL) {
+        cmt_gauge_destroy(proc->trs);
+    }
+    if (proc->lrs != NULL) {
+        cmt_gauge_destroy(proc->lrs);
+    }
+    if (proc->drs != NULL) {
+        cmt_gauge_destroy(proc->drs);
+    }
+    if (proc->dt != NULL) {
+        cmt_gauge_destroy(proc->dt);
+    }
 cmt_counter_error:
     if (proc->rchar != NULL) {
         cmt_counter_destroy(proc->rchar);
