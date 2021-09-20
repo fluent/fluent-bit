@@ -517,13 +517,19 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
     struct proc_metrics_pid_cmt *metrics;
     struct mk_list *head;
     struct mk_list *tmp;
+    struct mk_list *procs;
+    struct proc_entry *proc;
 
     if (ctx->proc_name != NULL) {
-        ret = get_pid_from_procname_linux(ctx, ctx->proc_name);
-        if (ret == -1) {
-            return -1;
+        procs = get_proc_entries_from_procname_linux(ctx, ctx->proc_name);
+        if (procs == NULL) {
+            return 0;
         }
-        metrics = get_proc_metrics(ctx, ret);
+        mk_list_foreach_safe(head, tmp, procs) {
+            proc = mk_list_entry(head, struct proc_entry, _head);
+            metrics = get_proc_metrics(ctx, proc->pid);
+        }
+        proc_entries_free(procs);
     } else if (ctx->pid > 0) {
         metrics = get_proc_metrics(ctx, ctx->pid);
     } else {
