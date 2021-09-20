@@ -37,6 +37,8 @@ struct proc_metrics_ctx
     struct mk_list procs;
 };
 
+#define FLB_CMD_LEN 256
+
 struct proc_entry {
     pid_t pid;
     struct mk_list _head;
@@ -44,6 +46,7 @@ struct proc_entry {
 
 struct proc_metrics_pid_cmt {
     pid_t pid;
+    char cmdline[FLB_CMD_LEN];
     struct cmt *cmt;
     /* rchar: 260189
      * wchar: 413454
