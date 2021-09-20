@@ -538,6 +538,7 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
             } else {
                 flb_errno();
             }
+            cmt_destroy(metrics->cmt);
             flb_free(metrics);
             continue;
         }
@@ -552,6 +553,7 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
             } else {
                 flb_errno();
             }
+            cmt_destroy(metrics->cmt);
             flb_free(metrics);
             continue;
         }
@@ -669,6 +671,15 @@ cmt_error:
  */
 static int proc_metrics_ctx_destroy(struct proc_metrics_ctx *ctx)
 {
+    struct proc_metrics_pid_cmt *metrics;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    mk_list_foreach_safe(head, tmp, &ctx->procs) {
+        metrics = mk_list_entry(head, struct proc_metrics_pid_cmt, _head);
+        cmt_destroy(metrics->cmt);
+        flb_free(metrics);
+    }
     flb_free(ctx);
     return 0;
 }
