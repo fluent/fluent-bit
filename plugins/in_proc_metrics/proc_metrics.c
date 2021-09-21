@@ -162,63 +162,6 @@ static int read_stat_file(pid_t pid, const char *file,
     return 0;
 }
 
-static pid_t get_pid_from_procname_linux(struct proc_metrics_ctx *ctx,
-                                         const char* proc)
-{
-    pid_t ret = -1;
-    glob_t glb;
-    int i;
-    int fd = -1;
-    long ret_scan = -1;
-    int ret_glb = -1;
-    ssize_t count;
-
-    char  cmdname[FLB_CMD_LEN];
-    char* bname = NULL;
-
-    ret_glb = glob("/proc/*/cmdline", 0 ,NULL, &glb);
-    if (ret_glb != 0) {
-        switch(ret_glb){
-        case GLOB_NOSPACE:
-            flb_plg_warn(ctx->ins, "glob: no space");
-            break;
-        case GLOB_NOMATCH:
-            flb_plg_warn(ctx->ins, "glob: no match");
-            break;
-        case GLOB_ABORTED:
-            flb_plg_warn(ctx->ins, "glob: aborted");
-            break;
-        default:
-            flb_plg_warn(ctx->ins, "glob: other error");
-        }
-        return ret;
-    }
-
-    for (i = 0; i < glb.gl_pathc; i++) {
-        fd = open(glb.gl_pathv[i], O_RDONLY);
-        if (fd < 0) {
-            continue;
-        }
-        count = read(fd, &cmdname, FLB_CMD_LEN);
-        if (count <= 0){
-            close(fd);
-            continue;
-        }
-        cmdname[FLB_CMD_LEN-1] = '\0';
-        bname = basename(cmdname);
-
-        if (strncmp(proc, bname, FLB_CMD_LEN) == 0) {
-            sscanf(glb.gl_pathv[i],"/proc/%ld/cmdline",&ret_scan);
-            ret = (pid_t)ret_scan;
-            close(fd);
-            break;
-        }
-        close(fd);
-    }
-    globfree(&glb);
-    return ret;
-}
-
 static struct mk_list *get_proc_entries_from_procname_linux(struct proc_metrics_ctx *ctx,
                                          const char* proc)
 {
@@ -281,6 +224,57 @@ static struct mk_list *get_proc_entries_from_procname_linux(struct proc_metrics_
             mk_list_add(&entry->_head, pids);
         }
         close(fd);
+    }
+    globfree(&glb);
+    return pids;
+proc_entry_error:
+    globfree(&glb);
+glob_error:
+    flb_free(pids);
+    return NULL;
+}
+
+static struct mk_list *get_all_proc_entries(struct proc_metrics_ctx *ctx)
+{
+    struct mk_list *pids;
+    struct proc_entry *entry;
+    glob_t glb;
+    int i;
+    long ret_scan = -1;
+    int ret_glb = -1;
+
+    pids = flb_calloc(1, sizeof(struct mk_list));
+    if (pids == NULL) {
+        return NULL;
+    }
+    mk_list_init(pids);
+
+    ret_glb = glob("/proc/*/cmdline", 0 ,NULL, &glb);
+    if (ret_glb != 0) {
+        switch(ret_glb){
+        case GLOB_NOSPACE:
+            flb_plg_warn(ctx->ins, "glob: no space");
+            break;
+        case GLOB_NOMATCH:
+            flb_plg_warn(ctx->ins, "glob: no match");
+            break;
+        case GLOB_ABORTED:
+            flb_plg_warn(ctx->ins, "glob: aborted");
+            break;
+        default:
+            flb_plg_warn(ctx->ins, "glob: other error");
+        }
+        goto glob_error;
+    }
+
+    for (i = 0; i < glb.gl_pathc; i++) {
+        sscanf(glb.gl_pathv[i],"/proc/%ld/cmdline",&ret_scan);
+        entry = flb_calloc(1, sizeof(struct proc_entry));
+        if (entry == NULL) {
+            goto proc_entry_error;
+        }
+        entry->pid = (pid_t)ret_scan;
+        mk_list_add(&entry->_head, pids);
     }
     globfree(&glb);
     return pids;
@@ -559,9 +553,16 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
     struct proc_entry *proc;
 
     if (ctx->proc_name != NULL) {
-        procs = get_proc_entries_from_procname_linux(ctx, ctx->proc_name);
-        if (procs == NULL) {
-            return 0;
+        if (strcmp(ctx->proc_name, "*") == 0 || strcmp(ctx->proc_name, "all") == 0) {
+            procs = get_all_proc_entries(ctx);
+            if (procs == NULL) {
+                return 0;
+            }
+        } else {
+            procs = get_proc_entries_from_procname_linux(ctx, ctx->proc_name);
+            if (procs == NULL) {
+                return 0;
+            }
         }
         mk_list_foreach_safe(head, tmp, procs) {
             proc = mk_list_entry(head, struct proc_entry, _head);
