@@ -336,7 +336,10 @@ static struct proc_metrics_pid_cmt *create_pid_cmt(struct proc_metrics_ctx *ctx,
     }
 
     proc->pid = pid;
-    read_stat_file(pid, "cmdline", proc->cmdline, FLB_CMD_LEN-1, 1);
+    if (read_stat_file(pid, "cmdline", proc->cmdline, FLB_CMD_LEN-1, 1) == -1) {
+        flb_free(proc);
+        return NULL;
+    }
 
     proc->rchar = cmt_counter_create(ctx->cmt, "proc_metrics", "io", "rchar",
                                     "The number of bytes which this task has "
@@ -566,10 +569,10 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
         if (read_stat_file(metrics->pid, "io", buf, sizeof(buf)-1, 7) == -1) {
             if (errno == ENOENT) {
                 mk_list_del(&metrics->_head);
+                proc_metrics_free(metrics);
             } else {
                 flb_errno();
             }
-            proc_metrics_free(metrics);
             continue;
         }
 
@@ -580,10 +583,10 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
         if (read_stat_file(metrics->pid, "statm", buf, sizeof(buf)-1, 1) == -1) {
             if (errno == ENOENT) {
                 mk_list_del(&metrics->_head);
+                proc_metrics_free(metrics);
             } else {
                 flb_errno();
             }
-            proc_metrics_free(metrics);
             continue;
         }
 
