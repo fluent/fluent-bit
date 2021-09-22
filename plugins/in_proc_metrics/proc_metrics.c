@@ -122,6 +122,31 @@ static int parse_proc_mem(const char *buf, struct proc_metrics_mem_status *statu
     return 0;
 }
 
+
+int parse_proc_stat(const char *buf, struct proc_metrics_cpu_status *status)
+{
+    pid_t pid;
+    pid_t parent;
+    pid_t pgroup;
+    int session;
+    int tty_nr;
+    int tty_pgrp;
+    unsigned int flags;
+    long unsigned int min_flt;
+    long unsigned int cmin_flt;
+    long unsigned int maj_flt;
+    long unsigned int cmaj_flt;
+    char exec[32];
+    char state;
+    int ret;
+
+    ret = sscanf(buf, "%d (%[^)]) %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu", &pid, exec, &state,
+           &parent, &pgroup, &session, &tty_nr, &tty_pgrp, &flags, &min_flt, &cmin_flt,
+           &maj_flt, &cmaj_flt, &status->cpu_user_time, &status->cpu_system_time);
+
+    return 0;
+}
+
 /* We specifically *CANNOT* use flb_utils_read_file because
  * /proc special files tend to report their own size as 0.
  */
@@ -403,6 +428,23 @@ static struct proc_metrics_pid_cmt *create_pid_cmt(struct proc_metrics_ctx *ctx,
         goto cmt_counter_error;
     }
 
+    proc->cpu_user_time = cmt_counter_create(ctx->cmt, "cpu", "time", "user",
+                                             "total cpu user time in jiffies",
+                                             2, (char *[]) {"pid", "cmdline"});
+    if (proc->cpu_user_time == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize cpu_user_time counter");
+        goto cmt_counter_error;
+    }
+
+    proc->cpu_system_time = cmt_counter_create(ctx->cmt, "cpu", "time", "system",
+                                             "total cpu system time in jiffies",
+                                             2, (char *[]) {"pid", "cmdline"});
+    if (proc->cpu_system_time == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize cpu_system_time counter");
+        goto cmt_counter_error;
+    }
+
+
     proc->size = cmt_gauge_create(ctx->cmt, "proc_metrics", "mem", "size",
                                   "total program size (pages).", 2,
                                   (char *[]) {"pid", "cmdline"});
@@ -459,6 +501,30 @@ static struct proc_metrics_pid_cmt *create_pid_cmt(struct proc_metrics_ctx *ctx,
         goto cmt_gauge_error;
     }
 
+    proc->cpu_user_percent = cmt_gauge_create(ctx->cmt, "cpu", "percent", "user",
+                                             "total cpu user time percent",
+                                             2, (char *[]) {"pid", "cmdline"});
+    if (proc->cpu_user_percent == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize cpu_user_percent counter");
+        goto cmt_counter_error;
+    }
+
+    proc->cpu_system_percent = cmt_gauge_create(ctx->cmt, "cpu", "percent", "system",
+                                             "total cpu system time percent",
+                                             2, (char *[]) {"pid", "cmdline"});
+    if (proc->cpu_system_percent == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize cpu_system_percent counter");
+        goto cmt_counter_error;
+    }
+
+    proc->cpu_percent = cmt_gauge_create(ctx->cmt, "cpu", "percent", "total",
+                                             "total cpu total time percent",
+                                             2, (char *[]) {"pid", "cmdline"});
+    if (proc->cpu_percent == NULL) {
+        flb_plg_error(ctx->ins, "could not initialize cpu_percent counter");
+        goto cmt_counter_error;
+    }
+
     return proc;
 cmt_gauge_error:
     if (proc->size != NULL) {
@@ -482,6 +548,15 @@ cmt_gauge_error:
     if (proc->dt != NULL) {
         cmt_gauge_destroy(proc->dt);
     }
+    if (proc->cpu_user_percent != NULL) {
+        cmt_gauge_destroy(proc->cpu_user_percent);
+    }
+    if (proc->cpu_system_percent != NULL) {
+        cmt_gauge_destroy(proc->cpu_system_percent);
+    }
+    if (proc->cpu_percent != NULL) {
+        cmt_gauge_destroy(proc->cpu_percent);
+    }
 cmt_counter_error:
     if (proc->rchar != NULL) {
         cmt_counter_destroy(proc->rchar);
@@ -503,6 +578,12 @@ cmt_counter_error:
     }
     if (proc->cancelled_write_bytes != NULL) {
         cmt_counter_destroy(proc->cancelled_write_bytes);
+    }
+    if (proc->cpu_user_time != NULL) {
+        cmt_counter_destroy(proc->cpu_user_time);
+    }
+    if (proc->cpu_system_time != NULL) {
+        cmt_counter_destroy(proc->cpu_system_time);
     }
     flb_free(proc);
     return NULL;
@@ -551,6 +632,17 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
     struct mk_list *tmp;
     struct mk_list *procs;
     struct proc_entry *proc;
+    uint64_t cpu_user_time;
+    uint64_t cpu_nice_time;
+    uint64_t cpu_system_time;
+    uint64_t cpu_idle_time;
+    double old_cpu_user_time;
+    double old_cpu_system_time;
+    double pctime;
+
+    read_file_lines("/proc/stat", buf, sizeof(buf)-1, 1);
+    sscanf(buf, "%s %ld %ld %ld %ld", pid, &cpu_user_time, &cpu_nice_time, &cpu_system_time,
+           &cpu_idle_time);
 
     if (ctx->proc_name != NULL) {
         if (strcmp(ctx->proc_name, "*") == 0 || strcmp(ctx->proc_name, "all") == 0) {
@@ -577,6 +669,9 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
 
     mk_list_foreach_safe(head, tmp, &ctx->procs) {
         metrics = mk_list_entry(head, struct proc_metrics_pid_cmt, _head);
+
+        snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
+
         if (read_stat_file(metrics->pid, "io", buf, sizeof(buf)-1, 7) == -1) {
             if (errno == ENOENT) {
                 mk_list_del(&metrics->_head);
@@ -605,7 +700,45 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
             continue;
         }
 
-        snprintf(pid, sizeof(pid)-1, "%d", metrics->pid);
+        if (read_stat_file(metrics->pid, "stat", buf, sizeof(buf)-1, 1) == -1) {
+            if (errno == ENOENT) {
+                mk_list_del(&metrics->_head);
+                proc_metrics_free(metrics);
+            } else {
+                flb_errno();
+            }
+            continue;
+        }
+
+        if (parse_proc_stat(buf, &status.cpu) != 0) {
+            continue;
+        }
+
+        if (ctx->cpu_user_time + ctx->cpu_nice_time + ctx->cpu_system_time +
+            ctx->cpu_idle_time > 0) {
+            cmt_counter_get_val(metrics->cpu_user_time, 2, (char *[]) {pid, metrics->cmdline},
+                                &old_cpu_user_time);
+            cmt_counter_get_val(metrics->cpu_system_time, 2, (char *[]) {pid, metrics->cmdline},
+                                &old_cpu_system_time);
+            pctime =
+                (double)(
+                    (status.cpu.cpu_system_time-old_cpu_system_time) +
+                    (status.cpu.cpu_user_time-old_cpu_user_time)
+                ) /
+                (double) (
+                    (cpu_system_time-ctx->cpu_system_time) +
+                    (cpu_user_time-ctx->cpu_user_time) +
+                    (cpu_nice_time-ctx->cpu_nice_time)
+                );
+
+            cmt_gauge_set(metrics->cpu_percent, ts, (double)pctime*100,
+                          2, (char *[]) {pid, metrics->cmdline});
+        }
+
+        cmt_counter_set(metrics->cpu_user_time, ts, (double)status.cpu.cpu_user_time, 2,
+                        (char *[]) {pid, metrics->cmdline});
+        cmt_counter_set(metrics->cpu_system_time, ts, (double)status.cpu.cpu_system_time, 2,
+                        (char *[]) {pid, metrics->cmdline});
 
         cmt_counter_set(metrics->rchar, ts, (double)status.io.rchar, 2,
                         (char *[]) {pid, metrics->cmdline});
@@ -640,6 +773,12 @@ static int proc_metrics_collect(struct flb_input_instance *ins,
 
         flb_plg_debug(ctx->ins, "submit metrics for pid=%d", metrics->pid);
     }
+
+    ctx->cpu_user_time = cpu_user_time;
+    ctx->cpu_nice_time = cpu_nice_time;
+    ctx->cpu_system_time = cpu_system_time;
+    ctx->cpu_idle_time = cpu_idle_time;
+
     ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
     if (ret != 0) {
         flb_plg_error(ins, "could not append metrics");

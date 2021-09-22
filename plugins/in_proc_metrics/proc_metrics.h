@@ -36,6 +36,11 @@ struct proc_metrics_ctx
     struct flb_input_instance *ins; /* Input plugin instace */
     struct mk_list procs;
     struct cmt *cmt;
+
+    uint64_t cpu_user_time;
+    uint64_t cpu_nice_time;
+    uint64_t cpu_system_time;
+    uint64_t cpu_idle_time;
 };
 
 #define FLB_CMD_LEN 256
@@ -72,6 +77,13 @@ struct proc_metrics_pid_cmt {
     struct cmt_gauge *drs;
     struct cmt_gauge *dt;
 
+    struct cmt_counter *cpu_user_time;
+    struct cmt_counter *cpu_system_time;
+
+    struct cmt_gauge *cpu_user_percent;
+    struct cmt_gauge *cpu_system_percent;
+    struct cmt_gauge *cpu_percent;
+
     struct mk_list _head;
 };
 
@@ -97,9 +109,16 @@ struct proc_metrics_mem_status
     uint64_t dt;
 };
 
+struct proc_metrics_cpu_status
+{
+    uint64_t cpu_user_time;
+    uint64_t cpu_system_time;
+};
+
 struct proc_metrics_status {
     struct proc_metrics_io_status io;
     struct proc_metrics_mem_status mem;
+    struct proc_metrics_cpu_status cpu;
 };
 
 #endif
