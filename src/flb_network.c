@@ -506,9 +506,9 @@ static int net_connect_async(int fd,
             }
 
             /* Connection is broken, not much to do here */
-            str = strerror_r(error, so_error_buf, sizeof(so_error_buf));
-            flb_error("[net] TCP connection failed: %s:%i (%s)",
-                      u->tcp_host, u->tcp_port, str);
+            strerror_r(error, so_error_buf, sizeof(so_error_buf) - 1);
+            flb_error("[net] TCP connection failed: %s:%i errno=%i (%s)",
+                      u->tcp_host, u->tcp_port, error, so_error_buf);
             return -1;
         }
     }
