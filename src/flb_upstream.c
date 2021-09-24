@@ -446,6 +446,11 @@ static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 
 static int destroy_conn(struct flb_upstream_conn *u_conn)
 {
+    /* Delay the destruction of busy connections */
+    if (u_conn->busy_flag) {
+        return 0;
+    }
+
 #ifdef FLB_HAVE_TLS
     if (u_conn->tls_session) {
         flb_tls_session_destroy(u_conn->tls, u_conn);
@@ -476,6 +481,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->u             = u;
     conn->fd            = -1;
     conn->net_error     = -1;
+    conn->busy_flag     = FLB_TRUE;
 
     /* retrieve the event loop */
     evl = flb_engine_evl_get();
@@ -525,6 +531,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
         prepare_destroy_conn_safe(conn);
+        conn->busy_flag = FLB_FALSE;
         return NULL;
     }
 
@@ -535,6 +542,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     /* Invalidate timeout for connection */
     conn->ts_connect_timeout = -1;
+    conn->busy_flag = FLB_FALSE;
 
     return conn;
 }
