@@ -1062,8 +1062,11 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     struct addrinfo hints;
     struct addrinfo *res, *rp;
 
+    u_conn->busy_flag = FLB_TRUE;
+
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
+        u_conn->busy_flag = FLB_FALSE;
         return -1;
     }
 
@@ -1093,6 +1096,23 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         else {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, gai_strerror(ret));
         }
+
+        u_conn->busy_flag = FLB_FALSE;
+
+        return -1;
+    }
+
+    if (u_conn->net_error > 0) {
+        flb_warn("[net] timeout detected between DNS lookup and connection attempt");
+
+        if (is_async) {
+            flb_net_free_translated_addrinfo(res);
+        }
+        else {
+            freeaddrinfo(res);
+        }
+
+        u_conn->busy_flag = FLB_FALSE;
 
         return -1;
     }
@@ -1166,6 +1186,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     else {
         freeaddrinfo(res);
     }
+
+    u_conn->busy_flag = FLB_FALSE;
 
     if (rp == NULL) {
         return -1;
