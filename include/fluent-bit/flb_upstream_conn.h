@@ -55,6 +55,15 @@ struct flb_upstream_conn {
      */
     int net_error;
 
+    /* If this flag is set, then destroy_conn will ignore this connection, this
+     * helps mitigate issues caused by flb_upstream_conn_timeouts marking a connection
+     * to be dropped and the event loop manager function destroying that connection
+     * at the end of the cycle while the connection coroutine is still suspended which
+     * causes the outer functions to access invalid memory when handling the error amongst
+     * other things.
+     */
+    int busy_flag;
+
     /* Timestamps */
     time_t ts_assigned;
     time_t ts_created;
