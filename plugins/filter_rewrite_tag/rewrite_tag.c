@@ -35,7 +35,6 @@
 static int emitter_create(struct flb_rewrite_tag *ctx)
 {
     int ret;
-    int coll_fd;
     struct flb_input_instance *ins;
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
@@ -80,12 +79,6 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         flb_input_instance_destroy(ins);
         return -1;
     }
-
-    /* Retrieve the collector id registered on the in_emitter initialization */
-    coll_fd = in_emitter_get_collector_id(ins);
-
-    /* Initialize plugin collector (event callback) */
-    flb_input_collector_start(coll_fd, ins);
 
 #ifdef FLB_HAVE_METRICS
     /* Override Metrics title */
