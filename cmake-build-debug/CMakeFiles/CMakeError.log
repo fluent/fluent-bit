@@ -1,0 +1,1027 @@
+Performing C SOURCE FILE Test CMT_HAVE_CLOCK_GET_TIME failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_86974/fast && /usr/bin/make  -f CMakeFiles/cmTC_86974.dir/build.make CMakeFiles/cmTC_86974.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_86974.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DCMT_HAVE_CLOCK_GET_TIME -fPIE   -o CMakeFiles/cmTC_86974.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:2:12: fatal error: 'mach/clock.h' file not found
+  #include <mach/clock.h>
+           ^~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_86974.dir/build.make:86: CMakeFiles/cmTC_86974.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_86974/fast] Error 2
+
+
+Source file was:
+
+  #include <mach/clock.h>
+  #include <mach/mach.h>
+  int main() {
+      clock_serv_t cclock;
+      mach_timespec_t mts;
+      host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+      clock_get_time(cclock, &mts);
+      return mach_port_deallocate(mach_task_self(), cclock);
+  }
+Performing C SOURCE FILE Test CMT_HAVE_MSGPACK failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_b9a84/fast && /usr/bin/make  -f CMakeFiles/cmTC_b9a84.dir/build.make CMakeFiles/cmTC_b9a84.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b9a84.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DCMT_HAVE_MSGPACK -fPIE   -o CMakeFiles/cmTC_b9a84.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+In file included from /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:2:
+In file included from /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/../../../lib/msgpack-c/include/msgpack.h:19:
+In file included from /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/../../../lib/msgpack-c/include/msgpack/pack.h:13:
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/../../../lib/msgpack-c/include/msgpack/pack_define.h:13:10: fatal error: 'msgpack/sysdep.h' file not found
+#include "msgpack/sysdep.h"
+         ^~~~~~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_b9a84.dir/build.make:86: CMakeFiles/cmTC_b9a84.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_b9a84/fast] Error 2
+
+
+Source file was:
+
+  #include "../../../lib/msgpack-c/include/msgpack.h"
+  int main() {
+     msgpack_packer pck;
+     msgpack_sbuffer sbuf;
+     return 0;
+  }
+Determining if the function res_servicename exists failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_5e083/fast && /usr/bin/make  -f CMakeFiles/cmTC_5e083.dir/build.make CMakeFiles/cmTC_5e083.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_5e083.dir/CheckFunctionExists.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"/usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c"' -DCHECK_FUNCTION_EXISTS=res_servicename -fPIE   -o CMakeFiles/cmTC_5e083.dir/CheckFunctionExists.c.o   -c /usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c
+Linking C executable cmTC_5e083
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5e083.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -DCHECK_FUNCTION_EXISTS=res_servicename    -rdynamic CMakeFiles/cmTC_5e083.dir/CheckFunctionExists.c.o  -o cmTC_5e083 
+/usr/bin/ld: CMakeFiles/cmTC_5e083.dir/CheckFunctionExists.c.o: in function `main':
+CheckFunctionExists.c:(.text+0x17): undefined reference to `res_servicename'
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_5e083.dir/build.make:107: cmTC_5e083] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_5e083/fast] Error 2
+
+
+
+Determining if the function res_servicename exists in the resolv failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_38823/fast && /usr/bin/make  -f CMakeFiles/cmTC_38823.dir/build.make CMakeFiles/cmTC_38823.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_38823.dir/CheckFunctionExists.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"/usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c"' -DCHECK_FUNCTION_EXISTS=res_servicename -fPIE   -o CMakeFiles/cmTC_38823.dir/CheckFunctionExists.c.o   -c /usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c
+Linking C executable cmTC_38823
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_38823.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -DCHECK_FUNCTION_EXISTS=res_servicename    -rdynamic CMakeFiles/cmTC_38823.dir/CheckFunctionExists.c.o  -o cmTC_38823  -lresolv 
+/usr/bin/ld: CMakeFiles/cmTC_38823.dir/CheckFunctionExists.c.o: in function `main':
+CheckFunctionExists.c:(.text+0x17): undefined reference to `res_servicename'
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_38823.dir/build.make:107: cmTC_38823] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_38823/fast] Error 2
+
+
+
+Determining if files socket.h exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_cf56c/fast && /usr/bin/make  -f CMakeFiles/cmTC_cf56c.dir/build.make CMakeFiles/cmTC_cf56c.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_cf56c.dir/HAVE_SOCKET_H.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_SOCKET_H.c"'  -fPIE   -o CMakeFiles/cmTC_cf56c.dir/HAVE_SOCKET_H.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_SOCKET_H.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_SOCKET_H.c:2:10: fatal error: 'socket.h' file not found
+#include <socket.h>
+         ^~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_cf56c.dir/build.make:86: CMakeFiles/cmTC_cf56c.dir/HAVE_SOCKET_H.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_cf56c/fast] Error 2
+
+
+Source:
+/* */
+#include <socket.h>
+
+
+int main(void){return 0;}
+
+Determining if files stropts.h exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_3566e/fast && /usr/bin/make  -f CMakeFiles/cmTC_3566e.dir/build.make CMakeFiles/cmTC_3566e.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3566e.dir/HAVE_STROPTS_H.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_STROPTS_H.c"'  -fPIE   -o CMakeFiles/cmTC_3566e.dir/HAVE_STROPTS_H.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_STROPTS_H.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_STROPTS_H.c:2:10: fatal error: 'stropts.h' file not found
+#include <stropts.h>
+         ^~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_3566e.dir/build.make:86: CMakeFiles/cmTC_3566e.dir/HAVE_STROPTS_H.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_3566e/fast] Error 2
+
+
+Source:
+/* */
+#include <stropts.h>
+
+
+int main(void){return 0;}
+
+Determining if files winsock2.h;windows.h exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_f78c8/fast && /usr/bin/make  -f CMakeFiles/cmTC_f78c8.dir/build.make CMakeFiles/cmTC_f78c8.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f78c8.dir/HAVE_WINSOCK2_H.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINSOCK2_H.c"'  -fPIE   -o CMakeFiles/cmTC_f78c8.dir/HAVE_WINSOCK2_H.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINSOCK2_H.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINSOCK2_H.c:2:10: fatal error: 'winsock2.h' file not found
+#include <winsock2.h>
+         ^~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_f78c8.dir/build.make:86: CMakeFiles/cmTC_f78c8.dir/HAVE_WINSOCK2_H.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_f78c8/fast] Error 2
+
+
+Source:
+/* */
+#include <winsock2.h>
+#include <windows.h>
+
+
+int main(void){return 0;}
+
+Determining if files winsock2.h;ws2tcpip.h;windows.h exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_8db61/fast && /usr/bin/make  -f CMakeFiles/cmTC_8db61.dir/build.make CMakeFiles/cmTC_8db61.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_8db61.dir/HAVE_WS2TCPIP_H.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WS2TCPIP_H.c"'  -fPIE   -o CMakeFiles/cmTC_8db61.dir/HAVE_WS2TCPIP_H.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WS2TCPIP_H.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WS2TCPIP_H.c:2:10: fatal error: 'winsock2.h' file not found
+#include <winsock2.h>
+         ^~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_8db61.dir/build.make:86: CMakeFiles/cmTC_8db61.dir/HAVE_WS2TCPIP_H.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_8db61/fast] Error 2
+
+
+Source:
+/* */
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+
+
+int main(void){return 0;}
+
+Determining if files winsock.h;windows.h exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_de78f/fast && /usr/bin/make  -f CMakeFiles/cmTC_de78f.dir/build.make CMakeFiles/cmTC_de78f.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_de78f.dir/HAVE_WINSOCK_H.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINSOCK_H.c"'  -fPIE   -o CMakeFiles/cmTC_de78f.dir/HAVE_WINSOCK_H.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINSOCK_H.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINSOCK_H.c:2:10: fatal error: 'winsock.h' file not found
+#include <winsock.h>
+         ^~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_de78f.dir/build.make:86: CMakeFiles/cmTC_de78f.dir/HAVE_WINSOCK_H.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_de78f/fast] Error 2
+
+
+Source:
+/* */
+#include <winsock.h>
+#include <windows.h>
+
+
+int main(void){return 0;}
+
+Determining if files windows.h exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_96941/fast && /usr/bin/make  -f CMakeFiles/cmTC_96941.dir/build.make CMakeFiles/cmTC_96941.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_96941.dir/HAVE_WINDOWS_H.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINDOWS_H.c"'  -fPIE   -o CMakeFiles/cmTC_96941.dir/HAVE_WINDOWS_H.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINDOWS_H.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CheckIncludeFiles/HAVE_WINDOWS_H.c:2:10: fatal error: 'windows.h' file not found
+#include <windows.h>
+         ^~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_96941.dir/build.make:86: CMakeFiles/cmTC_96941.dir/HAVE_WINDOWS_H.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_96941/fast] Error 2
+
+
+Source:
+/* */
+#include <windows.h>
+
+
+int main(void){return 0;}
+
+Performing C SOURCE FILE Test HAVE_TYPE_SOCKET failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_0c896/fast && /usr/bin/make  -f CMakeFiles/cmTC_0c896.dir/build.make CMakeFiles/cmTC_0c896.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0c896.dir/src.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DHAVE_TYPE_SOCKET -fPIE   -o CMakeFiles/cmTC_0c896.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:26:4: error: use of undeclared identifier 'SOCKET'
+                        SOCKET var_exists;
+                        ^
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:27:10: error: use of undeclared identifier 'var_exists'
+                        (void)var_exists;
+                              ^
+2 errors generated.
+make[1]: *** [CMakeFiles/cmTC_0c896.dir/build.make:86: CMakeFiles/cmTC_0c896.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_0c896/fast] Error 2
+
+
+Source file was:
+
+		#include <stdio.h>
+		#include <stdlib.h>
+	
+		#include <stdbool.h>
+		#include <sys/types.h>
+		#include <arpa/inet.h>
+		#include <arpa/nameser.h>
+		#include <netdb.h>
+		#include <net/if.h>
+		#include <netinet/in.h>
+		#include <netinet/tcp.h>
+		#include <signal.h>
+		#include <stdlib.h>
+		#include <string.h>
+		#include <strings.h>
+		#include <sys/ioctl.h>
+		#include <sys/select.h>
+		#include <sys/socket.h>
+		#include <sys/time.h>
+		#include <sys/uio.h>
+		#include <time.h>
+		#include <fcntl.h>
+		#include <unistd.h>
+		int main() {
+			SOCKET var_exists;
+			(void)var_exists;
+			return 0;
+		}
+	
+Determining if the SO_NONBLOCK exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_e0248/fast && /usr/bin/make  -f CMakeFiles/cmTC_e0248.dir/build.make CMakeFiles/cmTC_e0248.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_e0248.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_e0248.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'SO_NONBLOCK'
+  return ((int*)(&SO_NONBLOCK))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_e0248.dir/build.make:86: CMakeFiles/cmTC_e0248.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_e0248/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef SO_NONBLOCK
+  return ((int*)(&SO_NONBLOCK))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the bitncmp exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_0dfe5/fast && /usr/bin/make  -f CMakeFiles/cmTC_0dfe5.dir/build.make CMakeFiles/cmTC_0dfe5.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0dfe5.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_0dfe5.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'bitncmp'
+  return ((int*)(&bitncmp))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_0dfe5.dir/build.make:86: CMakeFiles/cmTC_0dfe5.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_0dfe5/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef bitncmp
+  return ((int*)(&bitncmp))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the closesocket exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_e70ee/fast && /usr/bin/make  -f CMakeFiles/cmTC_e70ee.dir/build.make CMakeFiles/cmTC_e70ee.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_e70ee.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_e70ee.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'closesocket'
+  return ((int*)(&closesocket))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_e70ee.dir/build.make:86: CMakeFiles/cmTC_e70ee.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_e70ee/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef closesocket
+  return ((int*)(&closesocket))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the CloseSocket exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_35051/fast && /usr/bin/make  -f CMakeFiles/cmTC_35051.dir/build.make CMakeFiles/cmTC_35051.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_35051.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_35051.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'CloseSocket'
+  return ((int*)(&CloseSocket))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_35051.dir/build.make:86: CMakeFiles/cmTC_35051.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_35051/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef CloseSocket
+  return ((int*)(&CloseSocket))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the inet_net_pton exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_cf10b/fast && /usr/bin/make  -f CMakeFiles/cmTC_cf10b.dir/build.make CMakeFiles/cmTC_cf10b.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_cf10b.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_cf10b.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_cf10b
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_cf10b.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"'     -rdynamic CMakeFiles/cmTC_cf10b.dir/CheckSymbolExists.c.o  -o cmTC_cf10b 
+/usr/bin/ld: CMakeFiles/cmTC_cf10b.dir/CheckSymbolExists.c.o: in function `main':
+CheckSymbolExists.c:(.text+0x19): undefined reference to `inet_net_pton'
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_cf10b.dir/build.make:107: cmTC_cf10b] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_cf10b/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef inet_net_pton
+  return ((int*)(&inet_net_pton))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the ioctlsocket exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_09c41/fast && /usr/bin/make  -f CMakeFiles/cmTC_09c41.dir/build.make CMakeFiles/cmTC_09c41.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_09c41.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_09c41.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'ioctlsocket'
+  return ((int*)(&ioctlsocket))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_09c41.dir/build.make:86: CMakeFiles/cmTC_09c41.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_09c41/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef ioctlsocket
+  return ((int*)(&ioctlsocket))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the IoctlSocket exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_ee240/fast && /usr/bin/make  -f CMakeFiles/cmTC_ee240.dir/build.make CMakeFiles/cmTC_ee240.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ee240.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_ee240.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'IoctlSocket'
+  return ((int*)(&IoctlSocket))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_ee240.dir/build.make:86: CMakeFiles/cmTC_ee240.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_ee240/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef IoctlSocket
+  return ((int*)(&IoctlSocket))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strcmpi exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_7171f/fast && /usr/bin/make  -f CMakeFiles/cmTC_7171f.dir/build.make CMakeFiles/cmTC_7171f.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7171f.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_7171f.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'strcmpi'; did you mean 'strcmp'?
+  return ((int*)(&strcmpi))[argc];
+                  ^~~~~~~
+                  strcmp
+/usr/include/string.h:137:12: note: 'strcmp' declared here
+extern int strcmp (const char *__s1, const char *__s2)
+           ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_7171f.dir/build.make:86: CMakeFiles/cmTC_7171f.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_7171f/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strcmpi
+  return ((int*)(&strcmpi))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the stricmp exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_a92d0/fast && /usr/bin/make  -f CMakeFiles/cmTC_a92d0.dir/build.make CMakeFiles/cmTC_a92d0.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a92d0.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_a92d0.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'stricmp'
+  return ((int*)(&stricmp))[argc];
+                  ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_a92d0.dir/build.make:86: CMakeFiles/cmTC_a92d0.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_a92d0/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef stricmp
+  return ((int*)(&stricmp))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strncmpi exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_c37de/fast && /usr/bin/make  -f CMakeFiles/cmTC_c37de.dir/build.make CMakeFiles/cmTC_c37de.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_c37de.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_c37de.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'strncmpi'; did you mean 'strncmp'?
+  return ((int*)(&strncmpi))[argc];
+                  ^~~~~~~~
+                  strncmp
+/usr/include/string.h:140:12: note: 'strncmp' declared here
+extern int strncmp (const char *__s1, const char *__s2, size_t __n)
+           ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_c37de.dir/build.make:86: CMakeFiles/cmTC_c37de.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_c37de/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strncmpi
+  return ((int*)(&strncmpi))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strnicmp exist failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_dc4e7/fast && /usr/bin/make  -f CMakeFiles/cmTC_dc4e7.dir/build.make CMakeFiles/cmTC_dc4e7.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_dc4e7.dir/CheckSymbolExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c"'  -fPIE   -o CMakeFiles/cmTC_dc4e7.dir/CheckSymbolExists.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:27:19: error: use of undeclared identifier 'strnicmp'; did you mean 'strncmp'?
+  return ((int*)(&strnicmp))[argc];
+                  ^~~~~~~~
+                  strncmp
+/usr/include/string.h:140:12: note: 'strncmp' declared here
+extern int strncmp (const char *__s1, const char *__s2, size_t __n)
+           ^
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_dc4e7.dir/build.make:86: CMakeFiles/cmTC_dc4e7.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_dc4e7/fast] Error 2
+
+
+File /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdbool.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <arpa/nameser.h>
+#include <netdb.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strnicmp
+  return ((int*)(&strnicmp))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the function __system_property_get exists failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_dce2c/fast && /usr/bin/make  -f CMakeFiles/cmTC_dce2c.dir/build.make CMakeFiles/cmTC_dce2c.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_dce2c.dir/CheckFunctionExists.c.o
+/opt/llvm/bin/clang -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600  -Wall -D__FILENAME__='"/usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c"' -DCHECK_FUNCTION_EXISTS=__system_property_get -fPIE   -o CMakeFiles/cmTC_dce2c.dir/CheckFunctionExists.c.o   -c /usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c
+Linking C executable cmTC_dce2c
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_dce2c.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -DCHECK_FUNCTION_EXISTS=__system_property_get    -rdynamic CMakeFiles/cmTC_dce2c.dir/CheckFunctionExists.c.o  -o cmTC_dce2c 
+/usr/bin/ld: CMakeFiles/cmTC_dce2c.dir/CheckFunctionExists.c.o: in function `main':
+CheckFunctionExists.c:(.text+0x17): undefined reference to `__system_property_get'
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_dce2c.dir/build.make:107: cmTC_dce2c] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_dce2c/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_563c7/fast && /usr/bin/make  -f CMakeFiles/cmTC_563c7.dir/build.make CMakeFiles/cmTC_563c7.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_563c7.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DCMAKE_HAVE_LIBC_PTHREAD -fPIE   -o CMakeFiles/cmTC_563c7.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_563c7
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_563c7.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -DCMAKE_HAVE_LIBC_PTHREAD    -rdynamic CMakeFiles/cmTC_563c7.dir/src.c.o  -o cmTC_563c7 
+/usr/bin/ld: CMakeFiles/cmTC_563c7.dir/src.c.o: in function `main':
+src.c:(.text+0x32): undefined reference to `pthread_create'
+/usr/bin/ld: src.c:(.text+0x3b): undefined reference to `pthread_detach'
+/usr/bin/ld: src.c:(.text+0x44): undefined reference to `pthread_cancel'
+/usr/bin/ld: src.c:(.text+0x51): undefined reference to `pthread_join'
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_563c7.dir/build.make:107: cmTC_563c7] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_563c7/fast] Error 2
+
+
+Source file was:
+#include <pthread.h>
+
+void* test_func(void* data)
+{
+  return data;
+}
+
+int main(void)
+{
+  pthread_t thread;
+  pthread_create(&thread, NULL, test_func, NULL);
+  pthread_detach(thread);
+  pthread_cancel(thread);
+  pthread_join(thread, NULL);
+  pthread_atfork(NULL, NULL, NULL);
+  pthread_exit(NULL);
+
+  return 0;
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_6c268/fast && /usr/bin/make  -f CMakeFiles/cmTC_6c268.dir/build.make CMakeFiles/cmTC_6c268.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6c268.dir/CheckFunctionExists.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"/usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"/usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c"' -DCHECK_FUNCTION_EXISTS=pthread_create -fPIE   -o CMakeFiles/cmTC_6c268.dir/CheckFunctionExists.c.o   -c /usr/local/share/cmake-3.17/Modules/CheckFunctionExists.c
+Linking C executable cmTC_6c268
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6c268.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_6c268.dir/CheckFunctionExists.c.o  -o cmTC_6c268  -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_6c268.dir/build.make:107: cmTC_6c268] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_6c268/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test HAVE_REGEX failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_bd8cb/fast && /usr/bin/make  -f CMakeFiles/cmTC_bd8cb.dir/build.make CMakeFiles/cmTC_bd8cb.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bd8cb.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DHAVE_REGEX -fPIE   -o CMakeFiles/cmTC_bd8cb.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:6:6: error: use of undeclared identifier 'ret'; did you mean 'reg'?
+     ret = regcomp(&reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
+     ^~~
+     reg
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:4:14: note: 'reg' declared here
+     regex_t reg;
+             ^
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:6:10: error: assigning to 'regex_t' (aka 'struct re_pattern_buffer') from incompatible type 'int'
+     ret = regcomp(&reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
+         ^ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2 errors generated.
+make[1]: *** [CMakeFiles/cmTC_bd8cb.dir/build.make:86: CMakeFiles/cmTC_bd8cb.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_bd8cb/fast] Error 2
+
+
+Source file was:
+
+  #include <regex.h>
+  int main() {
+     regex_t reg;
+     const char str[] = "[a-zA-Z0-9]*";
+     ret = regcomp(&reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
+     return 0;
+  }
+Performing C SOURCE FILE Test HAVE_KQUEUE failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_51781/fast && /usr/bin/make  -f CMakeFiles/cmTC_51781.dir/build.make CMakeFiles/cmTC_51781.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_51781.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DHAVE_KQUEUE -fPIE   -o CMakeFiles/cmTC_51781.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:2:12: fatal error: 'sys/event.h' file not found
+  #include <sys/event.h>
+           ^~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_51781.dir/build.make:86: CMakeFiles/cmTC_51781.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_51781/fast] Error 2
+
+
+Source file was:
+
+  #include <sys/event.h>
+  int main() {
+     return kqueue();
+  }
+Performing C SOURCE FILE Test FLB_HAVE_CLOCK_GET_TIME failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_a5957/fast && /usr/bin/make  -f CMakeFiles/cmTC_a5957.dir/build.make CMakeFiles/cmTC_a5957.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a5957.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DFLB_HAVE_CLOCK_GET_TIME -fPIE   -o CMakeFiles/cmTC_a5957.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:2:12: fatal error: 'mach/clock.h' file not found
+  #include <mach/clock.h>
+           ^~~~~~~~~~~~~~
+1 error generated.
+make[1]: *** [CMakeFiles/cmTC_a5957.dir/build.make:86: CMakeFiles/cmTC_a5957.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_a5957/fast] Error 2
+
+
+Source file was:
+
+  #include <mach/clock.h>
+  #include <mach/mach.h>
+  int main() {
+      clock_serv_t cclock;
+      mach_timespec_t mts;
+      host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+      clock_get_time(cclock, &mts);
+      return mach_port_deallocate(mach_task_self(), cclock);
+  }
+Performing C SOURCE FILE Test CMT_HAVE_GMTIME_S failed with the following output:
+Change Dir: /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_d2952/fast && /usr/bin/make  -f CMakeFiles/cmTC_d2952.dir/build.make CMakeFiles/cmTC_d2952.dir/build
+make[1]: Entering directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_d2952.dir/src.c.o
+/opt/llvm/bin/clang   -Wall -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -D__FILENAME__='"cmake-build-debug/CMakeFiles/CMakeTmp/src.c"' -DCMT_HAVE_GMTIME_S -fPIE   -o CMakeFiles/cmTC_d2952.dir/src.c.o   -c /home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c
+/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp/src.c:6:13: warning: implicit declaration of function 'gmtime_s' is invalid in C99 [-Wimplicit-function-declaration]
+     return gmtime_s(&tm, &tms.tv_sec);
+            ^
+1 warning generated.
+Linking C executable cmTC_d2952
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d2952.dir/link.txt --verbose=1
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -DCMT_HAVE_GMTIME_S    -rdynamic CMakeFiles/cmTC_d2952.dir/src.c.o  -o cmTC_d2952 
+/usr/bin/ld: CMakeFiles/cmTC_d2952.dir/src.c.o: in function `main':
+src.c:(.text+0x1a): undefined reference to `gmtime_s'
+clang-12: error: linker command failed with exit code 1 (use -v to see invocation)
+make[1]: *** [CMakeFiles/cmTC_d2952.dir/build.make:107: cmTC_d2952] Error 1
+make[1]: Leaving directory '/home/shikugawa/dev/fluent-bit/cmake-build-debug/CMakeFiles/CMakeTmp'
+make: *** [Makefile:141: cmTC_d2952/fast] Error 2
+
+
+Source file was:
+
+  #include <time.h>
+  int main() {
+     struct tm tm;
+     struct timespec tms;
+     return gmtime_s(&tm, &tms.tv_sec);
+  }

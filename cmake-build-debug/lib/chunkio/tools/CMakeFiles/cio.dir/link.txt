@@ -1,0 +1,1 @@
+/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -Wall  -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -g  -rdynamic CMakeFiles/cio.dir/cio.c.o  -o ../../../bin/cio  ../../../library/libchunkio-static.a ../../../library/libcio-crc32.a 

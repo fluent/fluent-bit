@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../../library/libapi-v1.a  CMakeFiles/api-v1.dir/uptime.c.o CMakeFiles/api-v1.dir/metrics.c.o CMakeFiles/api-v1.dir/storage.c.o CMakeFiles/api-v1.dir/plugins.c.o CMakeFiles/api-v1.dir/register.c.o CMakeFiles/api-v1.dir/health.c.o
+/usr/bin/ranlib ../../../../library/libapi-v1.a

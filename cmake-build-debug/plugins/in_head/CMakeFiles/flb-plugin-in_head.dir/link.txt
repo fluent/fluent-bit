@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_head.a  CMakeFiles/flb-plugin-in_head.dir/in_head.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_head.a

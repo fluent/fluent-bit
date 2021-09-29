@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_docker.a  CMakeFiles/flb-plugin-in_docker.dir/docker.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_docker.a

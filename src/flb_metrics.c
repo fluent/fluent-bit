@@ -25,6 +25,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_metrics.h>
 #include <msgpack.h>
@@ -227,6 +228,110 @@ int flb_metrics_dump_values(char **out_buf, size_t *out_size,
 
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
+static int attach_uptime(struct flb_config *ctx, struct cmt *cmt,
+                         uint64_t ts, char *hostname)
+{
+    double uptime;
+    struct cmt_counter *c;
+
+    /* uptime */
+    c = cmt_counter_create(cmt, "fluentbit", "", "uptime",
+                           "Number of seconds that Fluent Bit has been running.",
+                           1, (char *[]) {"hostname"});
+    if (!c) {
+        return -1;
+    }
+
+    uptime = time(NULL) - ctx->init_time;
+
+    cmt_counter_set(c, ts, uptime, 1, (char *[]) {hostname});
+    return 0;
+}
+
+static int attach_process_start_time_seconds(struct flb_config *ctx,
+                                             struct cmt *cmt,
+                                             uint64_t ts, char *hostname)
+{
+    double val;
+    struct cmt_gauge *g;
+
+    g = cmt_gauge_create(cmt, "fluentbit", "", "process_start_time_seconds",
+                         "Start time of the process since unix epoch in seconds.",
+                         1, (char *[]) {"hostname"});
+    if (!g) {
+        return -1;
+    }
+
+    val = (double) ctx->init_time;
+    cmt_gauge_set(g, ts, val, 1, (char *[]) {hostname});
+    return 0;
+}
+
+static char *get_os_name()
+{
+#ifdef _WIN64
+    return "win64";
+#elif _WIN32
+    return "win32";
+#elif __APPLE__ || __MACH__
+    return "macos";
+#elif __linux__
+    return "linux";
+#elif __FreeBSD__
+    return "freebsd";
+#elif __unix || __unix__
+    return "unix";
+#else
+    return "other";
+#endif
+}
+
+static int attach_build_info(struct flb_config *ctx, struct cmt *cmt, uint64_t ts,
+                             char *hostname)
+{
+    double val;
+    char *os;
+    struct cmt_gauge *g;
+
+    g = cmt_gauge_create(cmt, "fluentbit", "build", "info",
+                         "Build version information.",
+                         3, (char *[]) {"hostname", "version", "os"});
+    if (!g) {
+        return -1;
+    }
+
+    val = (double) ctx->init_time;
+    os = get_os_name();
+
+    cmt_gauge_set(g, ts, val, 3, (char *[]) {hostname, FLB_VERSION_STR, os});
+    return 0;
+}
+
+/* Append internal Fluent Bit metrics to context */
+int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
+{
+    int ret;
+    size_t ts;
+    char hostname[128];
+
+    /* current timestamp */
+    ts = cmt_time_now();
+
+    /* get hostname */
+    ret = gethostname(hostname, sizeof(hostname) - 1);
+    if (ret == -1) {
+        strncpy(hostname, "unknown", 7);
+        hostname[7] = '\0';
+    }
+
+    /* Attach metrics to cmetrics context */
+    attach_uptime(ctx, cmt, ts, hostname);
+    attach_process_start_time_seconds(ctx, cmt, ts, hostname);
+    attach_build_info(ctx, cmt, ts, hostname);
 
     return 0;
 }

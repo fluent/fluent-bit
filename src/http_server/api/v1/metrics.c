@@ -37,6 +37,50 @@
 
 pthread_key_t hs_metrics_key;
 
+static struct mk_list *hs_metrics_key_create()
+{
+    struct mk_list *metrics_list = NULL;
+
+    metrics_list = flb_malloc(sizeof(struct mk_list));
+    if (metrics_list == NULL) {
+        flb_errno();
+        return NULL;
+    }
+    mk_list_init(metrics_list);
+    pthread_setspecific(hs_metrics_key, metrics_list);
+
+    return metrics_list;
+}
+
+static void hs_metrics_key_destroy(void *data)
+{
+    struct mk_list *metrics_list = (struct mk_list*)data;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hs_buf *entry;
+
+    if (metrics_list == NULL) {
+        return;
+    }
+    mk_list_foreach_safe(head, tmp, metrics_list) {
+        entry = mk_list_entry(head, struct flb_hs_buf, _head);
+        if (entry != NULL) {
+            if (entry->raw_data != NULL) {
+                flb_free(entry->raw_data);
+                entry->raw_data = NULL;
+            }
+            if (entry->data) {
+                flb_sds_destroy(entry->data);
+                entry->data = NULL;
+            }
+            mk_list_del(&entry->_head);
+            flb_free(entry);
+        }
+    }
+
+    flb_free(metrics_list);
+}
+
 /* Return the newest metrics buffer */
 static struct flb_hs_buf *metrics_get_latest()
 {
@@ -105,13 +149,10 @@ static void cb_mq_metrics(mk_mq_t *queue, void *data, size_t size)
 
     metrics_list = pthread_getspecific(hs_metrics_key);
     if (!metrics_list) {
-        metrics_list = flb_malloc(sizeof(struct mk_list));
-        if (!metrics_list) {
-            flb_errno();
+        metrics_list = hs_metrics_key_create();
+        if (metrics_list == NULL) {
             return;
         }
-        mk_list_init(metrics_list);
-        pthread_setspecific(hs_metrics_key, metrics_list);
     }
 
     /* Convert msgpack to JSON */
@@ -527,7 +568,7 @@ static void cb_metrics(mk_request_t *request, void *data)
 int api_v1_metrics(struct flb_hs *hs)
 {
 
-    pthread_key_create(&hs_metrics_key, NULL);
+    pthread_key_create(&hs_metrics_key, hs_metrics_key_destroy);
 
     /* Create a message queue */
     hs->qid_metrics = mk_mq_create(hs->ctx, "/metrics",

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_lua.a  CMakeFiles/flb-plugin-filter_lua.dir/lua_config.c.o CMakeFiles/flb-plugin-filter_lua.dir/lua.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_lua.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_statsd.a  CMakeFiles/flb-plugin-in_statsd.dir/statsd.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_statsd.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_kmsg.a  CMakeFiles/flb-plugin-in_kmsg.dir/in_kmsg.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_kmsg.a

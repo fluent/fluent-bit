@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_prometheus_remote_write.a  CMakeFiles/flb-plugin-out_prometheus_remote_write.dir/remote_write.c.o CMakeFiles/flb-plugin-out_prometheus_remote_write.dir/remote_write_conf.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_prometheus_remote_write.a

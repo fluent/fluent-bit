@@ -1,0 +1,1 @@
+/opt/llvm/bin/clang -Wundef -Wstrict-prototypes -Wdeclaration-after-statement -Wswitch-enum -Wstrict-aliasing=1 -Wshadow -Wcast-align -Wcast-qual -Wextra -Wall  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -g  -rdynamic CMakeFiles/xxhsum.dir/__/xxhsum.c.o  -o ../../../bin/xxhsum  ../../../library/libxxhash.a 

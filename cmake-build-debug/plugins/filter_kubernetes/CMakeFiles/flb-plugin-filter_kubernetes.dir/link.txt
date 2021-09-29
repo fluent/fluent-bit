@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_kubernetes.a  CMakeFiles/flb-plugin-filter_kubernetes.dir/kube_conf.c.o CMakeFiles/flb-plugin-filter_kubernetes.dir/kube_meta.c.o CMakeFiles/flb-plugin-filter_kubernetes.dir/kube_regex.c.o CMakeFiles/flb-plugin-filter_kubernetes.dir/kube_property.c.o CMakeFiles/flb-plugin-filter_kubernetes.dir/kubernetes.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_kubernetes.a

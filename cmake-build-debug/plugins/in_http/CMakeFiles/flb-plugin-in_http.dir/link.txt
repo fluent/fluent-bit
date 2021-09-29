@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_http.a  CMakeFiles/flb-plugin-in_http.dir/http.c.o CMakeFiles/flb-plugin-in_http.dir/http_conn.c.o CMakeFiles/flb-plugin-in_http.dir/http_prot.c.o CMakeFiles/flb-plugin-in_http.dir/http_config.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_http.a

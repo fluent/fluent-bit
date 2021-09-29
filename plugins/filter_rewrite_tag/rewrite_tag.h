@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_metrics.h>
 
 #define FLB_RTAG_METRIC_EMITTED    200
 #define FLB_RTAG_MEM_BUF_LIMIT_DEFAULT  "10M"
@@ -48,6 +49,10 @@ struct flb_rewrite_tag {
     struct flb_input_instance *ins_emitter; /* emitter input plugin instance */
     struct flb_filter_instance *ins;        /* self-filter instance */
     struct flb_config *config;              /* Fluent Bit context */
+
+#ifdef FLB_HAVE_METRICS
+    struct cmt_counter *cmt_emitted;
+#endif
 };
 
 /* Register external function to emit records, check 'plugins/in_emitter' */

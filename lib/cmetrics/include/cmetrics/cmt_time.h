@@ -21,7 +21,9 @@
 #define CMT_TIME_H
 
 #include <inttypes.h>
+#include <time.h>
 
 uint64_t cmt_time_now();
+void cmt_time_from_ns(struct timespec *tm, uint64_t ns);
 
 #endif

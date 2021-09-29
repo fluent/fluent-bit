@@ -1,0 +1,22 @@
+file(REMOVE_RECURSE
+  "../../library/libflb-plugin-in_node_exporter_metrics.a"
+  "../../library/libflb-plugin-in_node_exporter_metrics.pdb"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_config.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_cpu.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_diskstats.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_filefd_linux.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_loadavg.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_meminfo.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_netdev.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_stat_linux.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_time.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_uname.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_utils.c.o"
+  "CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/ne_vmstat_linux.c.o"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/flb-plugin-in_node_exporter_metrics.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

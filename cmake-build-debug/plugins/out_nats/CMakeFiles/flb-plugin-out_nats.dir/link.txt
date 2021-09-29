@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_nats.a  CMakeFiles/flb-plugin-out_nats.dir/nats.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_nats.a

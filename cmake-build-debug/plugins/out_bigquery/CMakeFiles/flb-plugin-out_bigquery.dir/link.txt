@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_bigquery.a  CMakeFiles/flb-plugin-out_bigquery.dir/bigquery_conf.c.o CMakeFiles/flb-plugin-out_bigquery.dir/bigquery.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_bigquery.a

@@ -415,8 +415,90 @@ void flb_test_in_tail_skip_long_lines()
     unlink(path);
 }
 
+/* 
+ * test case for https://github.com/fluent/fluent-bit/issues/3943
+ * 
+ * test to read the lines "CRLF + empty_line + LF"
+ */
+void flb_test_in_tail_issue_3943()
+{
+    int64_t ret;
+    flb_ctx_t    *ctx    = NULL;
+    int in_ffd;
+    int out_ffd;
+    char path[PATH_MAX];
+    struct tail_test_result result = {0};
+
+    char *target = "3943";
+    int nExpected = 2;
+    int nExpectedNotMatched = 0;
+    int nExpectedLines = 2;
+
+    result.nMatched = 0;
+    result.target = target;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = cb_check_result;
+    cb.data = &result;
+
+    /* initialize */
+    set_result(0);
+
+    ctx = flb_create();
+
+    ret = flb_service_set(ctx,
+                          "Log_Level", "error",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path"          , path,
+                             "read_from_head", "true",
+                             NULL) == 0);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              "format", "json",
+                              NULL) == 0);
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    /* Start test */
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    sleep(2);
+
+    TEST_CHECK(result.nMatched == nExpected);
+    TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
+    TEST_CHECK(result.nNotMatched == nExpectedNotMatched);
+    TEST_MSG("result.nNotMatched: %i\nnExpectedNotMatched: %i", result.nNotMatched, nExpectedNotMatched);
+    TEST_CHECK(result.nLines == nExpectedLines);
+    TEST_MSG("result.nLines: %i\nnExpectedLines: %i", result.nLines, nExpectedLines);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+}
+
 /* Test list */
 TEST_LIST = {
+    {"issue_3943", flb_test_in_tail_issue_3943},
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
 #ifdef in_tail
     {"in_tail_dockermode",                          flb_test_in_tail_dockermode},

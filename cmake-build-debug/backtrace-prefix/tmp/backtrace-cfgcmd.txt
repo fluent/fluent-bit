@@ -1,0 +1,1 @@
+cmd='/home/shikugawa/dev/fluent-bit/lib/libbacktrace-ca0de05/configure;--host=;--prefix=<INSTALL_DIR>;--enable-shared=no;--enable-static=yes'

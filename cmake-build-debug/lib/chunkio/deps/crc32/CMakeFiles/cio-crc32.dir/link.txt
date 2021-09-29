@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../../library/libcio-crc32.a  CMakeFiles/cio-crc32.dir/crc32.c.o
+/usr/bin/ranlib ../../../../library/libcio-crc32.a

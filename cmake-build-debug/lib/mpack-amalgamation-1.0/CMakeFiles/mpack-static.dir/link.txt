@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libmpack-static.a  CMakeFiles/mpack-static.dir/src/mpack/mpack.c.o
+/usr/bin/ranlib ../../library/libmpack-static.a

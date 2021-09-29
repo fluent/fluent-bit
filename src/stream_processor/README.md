@@ -14,8 +14,7 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <record_keys> := <record_key> | <record_key>, <record_keys>
 <record_key>  := <exp> | <exp> AS <id>
 <exp>         := <key> | <fun>
-<fun>         := AVG(<key>) | SUM(<key>) | COUNT(<key>) | COUNT(*) | MIN(<key>) | MAX(<key>) | <timeseries>
-<timeseries>  := FORECAST(<key>, <key>, <value>) | FORECAST_R(<key>, <key>, <value>, <value>)
+<fun>         := AVG(<key>) | SUM(<key>) | COUNT(<key>) | COUNT(*) | MIN(<key>) | MAX(<key>) | TIMESERIES_FORECAST(<key>, <integer>)
 <source>      := STREAM:<id> | TAG:<id>
 <condition>   := <key> | <value> | <key> <relation> <value> | (<condition>)
                | NOT <condition> | <condition> AND <condition> | <condition> OR <condition>
@@ -28,20 +27,19 @@ The following is the SQL statement syntax supported by Fluent Bit stream process
 <value>       := true | false | <integer> | <float> | '<string>'
 ```
 
-In addition to the aggregation functions, Stream Processor provides the following timeseries functions. `FORECAST` and `FORECAST_R` functions use simple linear regression algorithm as the forecasting method.
+In addition to the common aggregation functions, Stream Processor provides the timeseries function `TIMESERIES_FORECAST`, which uses [simple linear regression algorithm](<https://en.wikipedia.org/wiki/Simple_linear_regression) to predict the value of a (dependent) variable in future.
 
 ### Timeseries Functions
 
-| name                     | description                                                                         |
-| ------------------------ | ----------------------------------------------------------------------------------- |
-| FORECAST(x, y, n)        | forecasts the value of y at x + n (use RECORD_TAG() for x for time-based forecast). |
-| FORECAST_R(x, y, n, cap) | forecasts the value of x (max = cap) in which y will become n.                      |
+| name                      | description                                            |
+| ------------------------- | ------------------------------------------------------ |
+| TIMESERIES_FORECAST(x, t) | forecasts the value of x at current time + t seconds   |
 
 ### Time Functions
 
 | name             | description                                       | example             |
 | ---------------- | ------------------------------------------------- | ------------------- |
-| NOW()            | adds system time using format: %Y-%m-%d %H:%M:%S. | 2019-03-09 21:36:05 |
+| NOW()            | adds system time using format: %Y-%m-%d %H:%M:%S  | 2019-03-09 21:36:05 |
 | UNIX_TIMESTAMP() | add current Unix timestamp                        | 1552196165          |
 
 ### Record Functions
@@ -50,3 +48,37 @@ In addition to the aggregation functions, Stream Processor provides the followin
 | ------------- | ------------------------------------------------------------ | ----------------- |
 | RECORD_TAG()  | append Tag string associated to the record                   | samples           |
 | RECORD_TIME() | append record Timestamp in _double_ format: seconds.nanoseconds | 1552196165.705683 |
+
+## Type of windows
+
+FluentBit stream processor has implemented two time-based windows: hopping window and tumbling window.
+
+### Hopping window
+
+In hopping window (also known as sliding window), records are stored in a time window of the interval in seconds defined as the parameter. The `ADVANCE BY` parameter determines the time the window slides forward. Aggregation functions are computed over the records inside a window, and reported right before window moves.
+
+For example. the hopping window `WINDOW HOPPING (10 SECOND, ADVANCE BY 2 SECOND)` behaves like this:
+
+```
+[ x x x x x ... x x x x x ]
+<--------- 10 sec -------->
+           [ x x x x x ... x x x x x ]
+<- 2 sec -><--------- 10 sec -------->
+                      [ x x x x x ... x x x x x ]
+           <- 2 sec -><--------- 10 sec -------->
+```
+
+### Tumbling window
+
+A tumbling window is similar to a hopping window where `ADVANCE BY` value is the same as the window size. That means the new window doesn't include any record from the previous one.
+
+For example. the tumbling window `WINDOW TUMBLING (10 SECOND)` works like this:
+
+```
+[ x x x x x ... x x x x x ]
+<--------- 10 sec -------->
+                          [ x x x x x ... x x x x x ]
+                          <--------- 10 sec -------->
+                                                     [ x x x x x ... x x x x x ]
+                                                     <--------- 10 sec -------->
+```

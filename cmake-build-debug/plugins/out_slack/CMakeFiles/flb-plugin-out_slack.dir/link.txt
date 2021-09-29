@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_slack.a  CMakeFiles/flb-plugin-out_slack.dir/slack.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_slack.a

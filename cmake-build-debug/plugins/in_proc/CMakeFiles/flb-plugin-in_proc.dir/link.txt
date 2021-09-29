@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_proc.a  CMakeFiles/flb-plugin-in_proc.dir/in_proc.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_proc.a

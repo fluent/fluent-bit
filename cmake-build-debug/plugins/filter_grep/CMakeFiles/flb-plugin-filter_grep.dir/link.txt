@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_grep.a  CMakeFiles/flb-plugin-filter_grep.dir/grep.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_grep.a

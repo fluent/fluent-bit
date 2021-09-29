@@ -43,6 +43,7 @@ struct flb_hs {
     int vid;                   /* Virtual Host ID     */
     int qid_metrics;           /* Metrics Message Queue ID    */
     int qid_storage;           /* Storage Message Queue ID    */
+    int qid_health;            /* health Message Queue ID    */
 
     pthread_t tid;             /* Server Thread */
     struct flb_config *config; /* Fluent Bit context */

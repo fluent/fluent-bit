@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_nest.a  CMakeFiles/flb-plugin-filter_nest.dir/nest.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_nest.a

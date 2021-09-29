@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_kinesis_firehose.a  CMakeFiles/flb-plugin-out_kinesis_firehose.dir/firehose.c.o CMakeFiles/flb-plugin-out_kinesis_firehose.dir/firehose_api.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_kinesis_firehose.a

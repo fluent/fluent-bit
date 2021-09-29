@@ -1,0 +1,1 @@
+/opt/llvm/bin/clang -fPIC  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -g  -shared -Wl,-soname,monkey-mandril.so -o ../../lib/monkey-mandril.so CMakeFiles/monkey-mandril-shared.dir/mandril.c.o 

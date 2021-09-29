@@ -25,24 +25,27 @@
 #include <fluent-bit.h>
 #include "es_bulk.h"
 
-struct es_bulk *es_bulk_create()
+struct es_bulk *es_bulk_create(size_t estimated_size)
 {
     struct es_bulk *b;
+
+    if (estimated_size < ES_BULK_CHUNK) {
+        estimated_size = ES_BULK_CHUNK;
+    }
 
     b = flb_malloc(sizeof(struct es_bulk));
     if (!b) {
         perror("calloc");
         return NULL;
     }
-
-    b->ptr = flb_malloc(ES_BULK_CHUNK);
-    if (!b->ptr) {
+    b->ptr = flb_malloc(estimated_size);
+    if (b->ptr == NULL) {
         perror("malloc");
         flb_free(b);
         return NULL;
     }
 
-    b->size = ES_BULK_CHUNK;
+    b->size = estimated_size;
     b->len  = 0;
 
     return b;
@@ -57,10 +60,11 @@ void es_bulk_destroy(struct es_bulk *bulk)
 }
 
 int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
-                   char *json, size_t j_len)
+                   char *json, size_t j_len,
+                   size_t whole_size, size_t converted_size)
 {
     int available;
-    int new_size;
+    int append_size;
     int required;
     char *ptr;
 
@@ -68,14 +72,31 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
     available = (bulk->size - bulk->len);
 
     if (available < required) {
-        new_size = bulk->size + available + required + ES_BULK_CHUNK;
-        ptr = flb_realloc(bulk->ptr, new_size);
+        /*
+         *  estimate a converted size of json
+         *  calculate
+         *    1. rest of msgpack data size
+         *    2. ratio from bulk json size and processed msgpack size.
+         */
+        if (converted_size == 0) {
+            /* converted_size = 0 causes div/0 */
+            flb_debug("[out_es] converted_size is 0");
+            append_size = ES_BULK_CHUNK;
+        } else {
+            append_size = (whole_size - converted_size) /* rest of size to convert */
+                        * (bulk->size / converted_size); /* = json size / msgpack size */
+            if (append_size < ES_BULK_CHUNK) {
+                /* append at least ES_BULK_CHUNK size */
+                append_size = ES_BULK_CHUNK;
+            }
+        }
+        ptr = flb_realloc(bulk->ptr, bulk->size + append_size);
         if (!ptr) {
             flb_errno();
             return -1;
         }
         bulk->ptr  = ptr;
-        bulk->size = new_size;
+        bulk->size += append_size;
     }
 
     memcpy(bulk->ptr + bulk->len, index, i_len);

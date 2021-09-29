@@ -1,0 +1,1 @@
+/opt/llvm/bin/clang -fPIC  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -std=gnu99 -Wall -Wextra -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -g  -shared -Wl,-soname,monkey-dirlisting.so -o ../../lib/monkey-dirlisting.so CMakeFiles/monkey-dirlisting-shared.dir/dirlisting.c.o 

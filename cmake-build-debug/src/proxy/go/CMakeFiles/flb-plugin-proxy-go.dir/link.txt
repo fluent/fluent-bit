@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../../library/libflb-plugin-proxy-go.a  CMakeFiles/flb-plugin-proxy-go.dir/go.c.o
+/usr/bin/ranlib ../../../library/libflb-plugin-proxy-go.a

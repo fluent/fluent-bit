@@ -48,7 +48,7 @@ MK_EXPORT mk_ctx_t *mk_create();
 MK_EXPORT int mk_destroy(mk_ctx_t *ctx);
 
 MK_EXPORT int mk_config_set(mk_ctx_t *ctx, ...);
-
+MK_EXPORT struct mk_vhost *mk_vhost_lookup(mk_ctx_t *ctx, int id);
 MK_EXPORT int mk_vhost_create(mk_ctx_t *ctx, char *name);
 
 MK_EXPORT int mk_vhost_set(mk_ctx_t *ctx, int vid, ...);

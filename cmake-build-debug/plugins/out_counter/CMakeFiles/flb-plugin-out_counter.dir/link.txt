@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_counter.a  CMakeFiles/flb-plugin-out_counter.dir/counter.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_counter.a

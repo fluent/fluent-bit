@@ -1,0 +1,1 @@
+cmd='./configure;--host=;--with-pic;--disable-shared;--enable-static;--prefix=/home/shikugawa/dev/fluent-bit/cmake-build-debug;CFLAGS=-std=gnu99 -Wall -pipe -g3 -O3 -funroll-loops'

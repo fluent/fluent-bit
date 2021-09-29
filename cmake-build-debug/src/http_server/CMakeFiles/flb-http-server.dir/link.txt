@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-http-server.a  CMakeFiles/flb-http-server.dir/flb_hs.c.o CMakeFiles/flb-http-server.dir/flb_hs_endpoints.c.o
+/usr/bin/ranlib ../../library/libflb-http-server.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_td.a  CMakeFiles/flb-plugin-out_td.dir/td_http.c.o CMakeFiles/flb-plugin-out_td.dir/td_config.c.o CMakeFiles/flb-plugin-out_td.dir/td.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_td.a

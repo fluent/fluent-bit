@@ -39,6 +39,7 @@
 #include <fluent-bit/flb_metrics.h>
 #endif
 
+#include <cmetrics/cmetrics.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 
@@ -48,20 +49,25 @@
 #define FLB_COLLECT_FD_EVENT    2
 #define FLB_COLLECT_FD_SERVER   4
 
-/* Input plugin masks */
-#define FLB_INPUT_NET          4  /* input address may set host and port   */
-#define FLB_INPUT_CORO       128  /* plugin requires a thread on callbacks */
-#define FLB_INPUT_PRIVATE    256  /* plugin is not published/exposed       */
-#define FLB_INPUT_NOTAG      512  /* plugin might don't have tags          */
+/* Input plugin flag masks */
+#define FLB_INPUT_NET          4   /* input address may set host and port   */
+#define FLB_INPUT_CORO       128   /* plugin requires a thread on callbacks */
+#define FLB_INPUT_PRIVATE    256   /* plugin is not published/exposed       */
+#define FLB_INPUT_NOTAG      512   /* plugin might don't have tags          */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
 #define FLB_INPUT_PAUSED      0
 
+/* Input plugin event type */
+#define FLB_INPUT_LOGS        0
+#define FLB_INPUT_METRICS     1
+
 struct flb_input_instance;
 
 struct flb_input_plugin {
-    int flags;
+    int flags;                /* plugin flags */
+    int event_type;           /* event type to be genarated: logs ?, metrics ? */
 
     /* The Input name */
     char *name;
@@ -123,6 +129,8 @@ struct flb_input_plugin {
  * and the variable one that is generated when the plugin is invoked.
  */
 struct flb_input_instance {
+    int event_type;                  /* FLB_INPUT_LOGS, FLB_INPUT_METRICS */
+
     /*
      * The instance flags are derivated from the fixed plugin flags. This
      * is done to offer some flexibility where a plugin instance per
@@ -149,6 +157,9 @@ struct flb_input_instance {
 
     /* By default all input instances are 'routable' */
     int routable;
+
+    /* flag to pause input when storage is full */
+    int storage_pause_on_chunks_overlimit;
 
     /*
      * Input network info:
@@ -203,6 +214,14 @@ struct flb_input_instance {
     int mem_buf_status;
 
     /*
+     * Define the buffer status:
+     *
+     * - FLB_INPUT_RUNNING -> can append more data
+     * - FLB_INPUT_PAUSED  -> cannot append data
+     */
+    int storage_buf_status;
+
+    /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
      * some specific data from it caller.
@@ -235,15 +254,28 @@ struct flb_input_instance {
     struct mk_list coros;                /* list of input coros         */
 
 #ifdef FLB_HAVE_METRICS
+
+    /* old metrics API */
     struct flb_metrics *metrics;         /* metrics                    */
 #endif
 
     /*
-     * Index for generated chunks: simple hash table that keeps the latest
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                     /* parent context              */
+    struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
+    struct cmt_counter *cmt_records;     /* metric: input_records_total */
+
+    /*
+     * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimize the
      * lookup for candidates chunks to write data.
+     *
+     * Starting from v1.8 we have separate hash tables for logs and metrics.
      */
-    struct flb_hash *ht_chunks;
+    struct flb_hash *ht_log_chunks;
+    struct flb_hash *ht_metric_chunks;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
@@ -474,6 +506,9 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
     if (i->mem_buf_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
+    if (i->storage_buf_status == FLB_INPUT_PAUSED) {
+        return FLB_TRUE;
+    }
 
     return FLB_FALSE;
 }
@@ -538,5 +573,8 @@ int flb_input_name_exists(const char *name, struct flb_config *config);
 
 void flb_input_net_default_listener(const char *listen, int port,
                                     struct flb_input_instance *ins);
+
+int flb_input_event_type_is_metric(struct flb_input_instance *ins);
+int flb_input_event_type_is_log(struct flb_input_instance *ins);
 
 #endif

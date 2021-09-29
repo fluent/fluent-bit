@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/librbtree.a  CMakeFiles/rbtree.dir/rbtree.c.o
+/usr/bin/ranlib ../../library/librbtree.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_kinesis_streams.a  CMakeFiles/flb-plugin-out_kinesis_streams.dir/kinesis.c.o CMakeFiles/flb-plugin-out_kinesis_streams.dir/kinesis_api.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_kinesis_streams.a

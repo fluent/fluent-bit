@@ -1,0 +1,887 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6"/>
+	<Project>
+		<Option title="c-ares"/>
+		<Option makefile_is_custom="1"/>
+		<Option compiler="clang"/>
+		<Option virtualFolders="CMake Files\;CMake Files\lib\;CMake Files\lib\c-ares-809d5e84\;CMake Files\lib\c-ares-809d5e84\include\;CMake Files\lib\c-ares-809d5e84\src\;CMake Files\lib\c-ares-809d5e84\src\lib\;CMake Files\lib\c-ares-809d5e84\src\tools\;CMake Files\lib\chunkio\;CMake Files\lib\chunkio\include\;CMake Files\lib\chunkio\include\chunkio\;CMake Files\lib\chunkio\deps\;CMake Files\lib\chunkio\deps\crc32\;CMake Files\lib\chunkio\src\;CMake Files\lib\chunkio\tools\;CMake Files\lib\cmetrics\;CMake Files\lib\cmetrics\cmake\;CMake Files\lib\cmetrics\include\;CMake Files\lib\cmetrics\include\cmetrics\;CMake Files\lib\cmetrics\src\;CMake Files\lib\cmetrics\lib\;CMake Files\lib\cmetrics\lib\monkey\;CMake Files\lib\cmetrics\lib\monkey\include\;CMake Files\lib\msgpack-c\;CMake Files\lib\msgpack-c\cmake\;CMake Files\lib\mpack-amalgamation-1.0\;CMake Files\lib\miniz\;CMake Files\lib\tutf8e\;CMake Files\lib\xxHash-0.8.0\;CMake Files\lib\xxHash-0.8.0\cmake_unofficial\;CMake Files\lib\snappy-fef67ac\;CMake Files\lib\jsmn\;CMake Files\lib\monkey\;CMake Files\lib\monkey\include\;CMake Files\lib\monkey\include\monkey\;CMake Files\lib\monkey\include\monkey\mk_core\;CMake Files\lib\monkey\man\;CMake Files\lib\monkey\deps\;CMake Files\lib\monkey\deps\rbtree\;CMake Files\lib\monkey\deps\regex\;CMake Files\lib\monkey\deps\flb_libco\;CMake Files\lib\monkey\mk_core\;CMake Files\lib\monkey\plugins\;CMake Files\lib\monkey\plugins\dirlisting\;CMake Files\lib\monkey\plugins\dirlisting\conf\;CMake Files\lib\monkey\plugins\liana\;CMake Files\lib\monkey\plugins\mandril\;CMake Files\lib\monkey\plugins\mandril\conf\;CMake Files\lib\monkey\conf\;CMake Files\lib\monkey\conf\sites\;CMake Files\lib\monkey\mk_server\;CMake Files\lib\monkey\mk_bin\;CMake Files\lib\monkey\htdocs\;CMake Files\lib\monkey\api\;CMake Files\lib\mbedtls-2.27.0\;CMake Files\lib\mbedtls-2.27.0\include\;CMake Files\lib\mbedtls-2.27.0\library\;CMake Files\lib\sqlite-amalgamation-3330000\;CMake Files\cmake-build-debug\;CMake Files\cmake-build-debug\lib\;CMake Files\cmake-build-debug\lib\c-ares-809d5e84\;CMake Files\cmake-build-debug\lib\c-ares-809d5e84\src\;CMake Files\cmake-build-debug\lib\c-ares-809d5e84\src\lib\;CMake Files\cmake-build-debug\backtrace-prefix\;CMake Files\cmake-build-debug\backtrace-prefix\tmp\;CMake Files\cmake-build-debug\onigmo-prefix\;CMake Files\cmake-build-debug\onigmo-prefix\tmp\;CMake Files\cmake-build-debug\luajit-prefix\;CMake Files\cmake-build-debug\luajit-prefix\tmp\;CMake Files\cmake\;CMake Files\cmake\sanitizers-cmake\;CMake Files\cmake\sanitizers-cmake\cmake\;CMake Files\include\;CMake Files\include\fluent-bit\;CMake Files\tools\;CMake Files\tools\xxd-c\;CMake Files\plugins\;CMake Files\plugins\custom_calyptia\;CMake Files\plugins\in_cpu\;CMake Files\plugins\in_mem\;CMake Files\plugins\in_thermal\;CMake Files\plugins\in_kmsg\;CMake Files\plugins\in_proc\;CMake Files\plugins\in_disk\;CMake Files\plugins\in_netif\;CMake Files\plugins\in_docker\;CMake Files\plugins\in_docker_events\;CMake Files\plugins\in_node_exporter_metrics\;CMake Files\plugins\in_fluentbit_metrics\;CMake Files\plugins\in_emitter\;CMake Files\plugins\in_tail\;CMake Files\plugins\in_dummy\;CMake Files\plugins\in_head\;CMake Files\plugins\in_health\;CMake Files\plugins\in_http\;CMake Files\plugins\in_collectd\;CMake Files\plugins\in_statsd\;CMake Files\plugins\in_storage_backlog\;CMake Files\plugins\in_stream_processor\;CMake Files\plugins\in_serial\;CMake Files\plugins\in_stdin\;CMake Files\plugins\in_syslog\;CMake Files\plugins\in_exec\;CMake Files\plugins\in_tcp\;CMake Files\plugins\in_mqtt\;CMake Files\plugins\in_lib\;CMake Files\plugins\in_forward\;CMake Files\plugins\in_random\;CMake Files\plugins\out_azure\;CMake Files\plugins\out_azure_blob\;CMake Files\plugins\out_bigquery\;CMake Files\plugins\out_calyptia\;CMake Files\plugins\out_counter\;CMake Files\plugins\out_datadog\;CMake Files\plugins\out_es\;CMake Files\plugins\out_exit\;CMake Files\plugins\out_file\;CMake Files\plugins\out_forward\;CMake Files\plugins\out_http\;CMake Files\plugins\out_influxdb\;CMake Files\plugins\out_logdna\;CMake Files\plugins\out_loki\;CMake Files\plugins\out_kafka_rest\;CMake Files\plugins\out_nats\;CMake Files\plugins\out_nrlogs\;CMake Files\plugins\out_null\;CMake Files\plugins\out_plot\;CMake Files\plugins\out_skywalking\;CMake Files\plugins\out_slack\;CMake Files\plugins\out_splunk\;CMake Files\plugins\out_stackdriver\;CMake Files\plugins\out_stdout\;CMake Files\plugins\out_syslog\;CMake Files\plugins\out_tcp\;CMake Files\plugins\out_td\;CMake Files\plugins\out_lib\;CMake Files\plugins\out_flowcounter\;CMake Files\plugins\out_gelf\;CMake Files\plugins\out_websocket\;CMake Files\plugins\out_cloudwatch_logs\;CMake Files\plugins\out_kinesis_firehose\;CMake Files\plugins\out_kinesis_streams\;CMake Files\plugins\out_prometheus_exporter\;CMake Files\plugins\out_prometheus_remote_write\;CMake Files\plugins\out_s3\;CMake Files\plugins\filter_alter_size\;CMake Files\plugins\filter_aws\;CMake Files\plugins\filter_checklist\;CMake Files\plugins\filter_record_modifier\;CMake Files\plugins\filter_throttle\;CMake Files\plugins\filter_kubernetes\;CMake Files\plugins\filter_modify\;CMake Files\plugins\filter_multiline\;CMake Files\plugins\filter_nest\;CMake Files\plugins\filter_parser\;CMake Files\plugins\filter_expect\;CMake Files\plugins\filter_grep\;CMake Files\plugins\filter_rewrite_tag\;CMake Files\plugins\filter_lua\;CMake Files\plugins\filter_stdout\;CMake Files\plugins\filter_geoip2\;CMake Files\plugins\filter_geoip2\libmaxminddb\;CMake Files\plugins\filter_geoip2\libmaxminddb\include\;CMake Files\plugins\filter_geoip2\libmaxminddb\bin\;CMake Files\src\;CMake Files\src\multiline\;CMake Files\src\record_accessor\;CMake Files\src\stream_processor\;CMake Files\src\stream_processor\parser\;CMake Files\src\http_server\;CMake Files\src\http_server\api\;CMake Files\src\http_server\api\v1\;CMake Files\src\proxy\;CMake Files\src\proxy\go\;CMake Files\init\;CMake Files\examples\;CMake Files\examples\hello_world\;CMake Files\examples\hello_world_cpp\;CMake Files\examples\td_cpp\;CMake Files\examples\out_lib\;"/>
+		<Build>
+			<Target title="all">
+				<Option working_dir="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/Makefile&quot;  VERBOSE=1 all"/>
+					<CompileFile command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="c-ares">
+				<Option output="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/lib/libcares.a" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib"/>
+				<Option object_output="./"/>
+				<Option type="2"/>
+				<Option compiler="clang"/>
+				<Compiler>
+					<Add option="-DCARES_STATICLIB"/>
+					<Add option="-DHAVE_CONFIG_H=1"/>
+					<Add option="-DFLB_HAVE_PARSER"/>
+					<Add option="-DFLB_HAVE_RECORD_ACCESSOR"/>
+					<Add option="-DFLB_HAVE_STREAM_PROCESSOR"/>
+					<Add option="-D_GNU_SOURCE"/>
+					<Add option="-D_POSIX_C_SOURCE=199309L"/>
+					<Add option="-D_XOPEN_SOURCE=600"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/flb_libco"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/rbtree"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/msgpack-c/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/chunkio/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/luajit-2.1.0-1e66d0f/src"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/monkey/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/mbedtls-2.27.0/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/sqlite-amalgamation-3330000"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/mpack-amalgamation-1.0/src"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/miniz"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/onigmo"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/xxHash-0.8.0"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/snappy-fef67ac"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/cmetrics/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/jansson-fd3e9e3/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/cmake-build-debug/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/tutf8e/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/../../../../include/c++/10"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/../../../../include/x86_64-linux-gnu/c++/10"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/../../../../include/c++/10/backward"/>
+					<Add directory="/usr/local/include"/>
+					<Add directory="/opt/llvm/lib/clang/12.0.0/include"/>
+					<Add directory="/usr/include/x86_64-linux-gnu"/>
+					<Add directory="/usr/include"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 c-ares"/>
+					<CompileFile command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="c-ares/fast">
+				<Option output="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/lib/libcares.a" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib"/>
+				<Option object_output="./"/>
+				<Option type="2"/>
+				<Option compiler="clang"/>
+				<Compiler>
+					<Add option="-DCARES_STATICLIB"/>
+					<Add option="-DHAVE_CONFIG_H=1"/>
+					<Add option="-DFLB_HAVE_PARSER"/>
+					<Add option="-DFLB_HAVE_RECORD_ACCESSOR"/>
+					<Add option="-DFLB_HAVE_STREAM_PROCESSOR"/>
+					<Add option="-D_GNU_SOURCE"/>
+					<Add option="-D_POSIX_C_SOURCE=199309L"/>
+					<Add option="-D_XOPEN_SOURCE=600"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/flb_libco"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/rbtree"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/msgpack-c/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/chunkio/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/luajit-2.1.0-1e66d0f/src"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/monkey/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/mbedtls-2.27.0/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/sqlite-amalgamation-3330000"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/mpack-amalgamation-1.0/src"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/miniz"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/onigmo"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/xxHash-0.8.0"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/snappy-fef67ac"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/cmetrics/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/jansson-fd3e9e3/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/cmake-build-debug/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/tutf8e/include"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84"/>
+					<Add directory="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/../../../../include/c++/10"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/../../../../include/x86_64-linux-gnu/c++/10"/>
+					<Add directory="/usr/lib/gcc/x86_64-linux-gnu/10/../../../../include/c++/10/backward"/>
+					<Add directory="/usr/local/include"/>
+					<Add directory="/opt/llvm/lib/clang/12.0.0/include"/>
+					<Add directory="/usr/include/x86_64-linux-gnu"/>
+					<Add directory="/usr/include"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 c-ares/fast"/>
+					<CompileFile command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j32 -f &quot;/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+		</Build>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__close_sockets.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__get_hostent.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__parse_into_addrinfo.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__read_line.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__readaddrinfo.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__sortaddrinfo.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares__timeval.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_android.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_android.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_cancel.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_create_query.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_data.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_data.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_destroy.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_expand_name.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_expand_string.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_fds.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_free_hostent.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_free_string.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_freeaddrinfo.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_getaddrinfo.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_getenv.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_getenv.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_gethostbyaddr.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_gethostbyname.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_getnameinfo.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_getsock.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_init.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_library_init.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_library_init.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_llist.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_llist.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_mkquery.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_nowarn.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_nowarn.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_options.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_a_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_aaaa_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_caa_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_mx_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_naptr_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_ns_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_ptr_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_soa_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_srv_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_parse_txt_reply.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_platform.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_platform.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_process.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_query.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_search.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_send.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strcasecmp.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strcasecmp.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strdup.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strdup.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strerror.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strsplit.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_strsplit.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_timeout.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_version.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_writev.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_writev.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/bitncmp.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/bitncmp.h">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/inet_net_pton.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/inet_ntop.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/windows_port.c">
+			<Option target="c-ares"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/include/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/include/ares_build.h.cmake">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\src\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\src\lib\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/lib/ares_config.h.cmake">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\src\lib\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/c-ares-809d5e84/src/tools/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\c-ares-809d5e84\src\tools\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/chunkio/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\chunkio\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/chunkio/include/chunkio/cio_version.h.in">
+			<Option virtualFolder="CMake Files\lib\chunkio\include\chunkio\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/chunkio/deps/crc32/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\chunkio\deps\crc32\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/chunkio/src/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\chunkio\src\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/chunkio/tools/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\chunkio\tools\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\cmetrics\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/cmake/macros.cmake">
+			<Option virtualFolder="CMake Files\lib\cmetrics\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/include/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\cmetrics\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/include/cmetrics/cmt_info.h.in">
+			<Option virtualFolder="CMake Files\lib\cmetrics\include\cmetrics\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/include/cmetrics/cmt_version.h.in">
+			<Option virtualFolder="CMake Files\lib\cmetrics\include\cmetrics\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/src/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\cmetrics\src\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/cmetrics/lib/monkey/include/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\cmetrics\lib\monkey\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/msgpack-c/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\msgpack-c\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/msgpack-c/cmake/pack_template.h.in">
+			<Option virtualFolder="CMake Files\lib\msgpack-c\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/msgpack-c/cmake/sysdep.h.in">
+			<Option virtualFolder="CMake Files\lib\msgpack-c\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/mpack-amalgamation-1.0/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\mpack-amalgamation-1.0\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/miniz/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\miniz\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/tutf8e/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\tutf8e\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/xxHash-0.8.0/cmake_unofficial/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\xxHash-0.8.0\cmake_unofficial\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/snappy-fef67ac/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\snappy-fef67ac\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/jsmn/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\jsmn\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/include/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/include/monkey/mk_env.h.in">
+			<Option virtualFolder="CMake Files\lib\monkey\include\monkey\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/include/monkey/mk_info.h.in">
+			<Option virtualFolder="CMake Files\lib\monkey\include\monkey\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/include/monkey/mk_static_plugins.h.in">
+			<Option virtualFolder="CMake Files\lib\monkey\include\monkey\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/include/monkey/mk_core/mk_core_info.h.in">
+			<Option virtualFolder="CMake Files\lib\monkey\include\monkey\mk_core\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/man/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\man\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/deps/rbtree/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\deps\rbtree\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/deps/regex/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\deps\regex\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/deps/flb_libco/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\deps\flb_libco\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/mk_core/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\mk_core\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/plugins/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\plugins\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/plugins/dirlisting/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\plugins\dirlisting\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/plugins/dirlisting/conf/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\plugins\dirlisting\conf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/plugins/liana/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\plugins\liana\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/plugins/mandril/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\plugins\mandril\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/plugins/mandril/conf/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\plugins\mandril\conf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/conf/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\conf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/conf/monkey.conf.in">
+			<Option virtualFolder="CMake Files\lib\monkey\conf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/conf/monkey.mime.in">
+			<Option virtualFolder="CMake Files\lib\monkey\conf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/conf/plugins.load.in">
+			<Option virtualFolder="CMake Files\lib\monkey\conf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/conf/sites/default.in">
+			<Option virtualFolder="CMake Files\lib\monkey\conf\sites\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/mk_server/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\mk_server\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/mk_bin/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\mk_bin\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/mk_bin/systemd.in">
+			<Option virtualFolder="CMake Files\lib\monkey\mk_bin\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/htdocs/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\htdocs\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/monkey/api/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\monkey\api\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/mbedtls-2.27.0/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\mbedtls-2.27.0\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/mbedtls-2.27.0/include/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\mbedtls-2.27.0\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/mbedtls-2.27.0/library/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\mbedtls-2.27.0\library\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/lib/sqlite-amalgamation-3330000/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\lib\sqlite-amalgamation-3330000\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake-build-debug/lib/c-ares-809d5e84/src/lib/Makefile.inc.cmake">
+			<Option virtualFolder="CMake Files\cmake-build-debug\lib\c-ares-809d5e84\src\lib\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake-build-debug/backtrace-prefix/tmp/backtrace-cfgcmd.txt.in">
+			<Option virtualFolder="CMake Files\cmake-build-debug\backtrace-prefix\tmp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake-build-debug/onigmo-prefix/tmp/onigmo-cfgcmd.txt.in">
+			<Option virtualFolder="CMake Files\cmake-build-debug\onigmo-prefix\tmp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake-build-debug/luajit-prefix/tmp/luajit-cfgcmd.txt.in">
+			<Option virtualFolder="CMake Files\cmake-build-debug\luajit-prefix\tmp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/FindJournald.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/FindMonkey.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/headers.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/libraries.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/luajit.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/macros.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/onigmo.cmake">
+			<Option virtualFolder="CMake Files\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/sanitizers-cmake/cmake/FindASan.cmake">
+			<Option virtualFolder="CMake Files\cmake\sanitizers-cmake\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/sanitizers-cmake/cmake/FindMSan.cmake">
+			<Option virtualFolder="CMake Files\cmake\sanitizers-cmake\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/sanitizers-cmake/cmake/FindSanitizers.cmake">
+			<Option virtualFolder="CMake Files\cmake\sanitizers-cmake\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/sanitizers-cmake/cmake/FindTSan.cmake">
+			<Option virtualFolder="CMake Files\cmake\sanitizers-cmake\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/sanitizers-cmake/cmake/FindUBSan.cmake">
+			<Option virtualFolder="CMake Files\cmake\sanitizers-cmake\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/cmake/sanitizers-cmake/cmake/sanitize-helpers.cmake">
+			<Option virtualFolder="CMake Files\cmake\sanitizers-cmake\cmake\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/include/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/include/fluent-bit/flb_info.h.in">
+			<Option virtualFolder="CMake Files\include\fluent-bit\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/include/fluent-bit/flb_plugins.h.in">
+			<Option virtualFolder="CMake Files\include\fluent-bit\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/include/fluent-bit/flb_version.h.in">
+			<Option virtualFolder="CMake Files\include\fluent-bit\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/tools/xxd-c/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\tools\xxd-c\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/custom_calyptia/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\custom_calyptia\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_cpu/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_cpu\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_mem/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_mem\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_thermal/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_thermal\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_kmsg/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_kmsg\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_proc/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_proc\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_disk/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_disk\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_netif/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_netif\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_docker/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_docker\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_docker_events/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_docker_events\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_node_exporter_metrics/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_node_exporter_metrics\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_fluentbit_metrics/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_fluentbit_metrics\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_emitter/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_emitter\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_tail/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_tail\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_dummy/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_dummy\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_head/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_head\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_health/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_health\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_http/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_http\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_collectd/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_collectd\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_statsd/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_statsd\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_storage_backlog/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_storage_backlog\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_stream_processor/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_stream_processor\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_serial/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_serial\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_stdin/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_stdin\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_syslog/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_syslog\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_exec/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_exec\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_tcp/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_tcp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_mqtt/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_mqtt\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_lib/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_lib\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_forward/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_forward\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/in_random/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\in_random\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_azure/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_azure\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_azure_blob/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_azure_blob\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_bigquery/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_bigquery\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_calyptia/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_calyptia\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_counter/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_counter\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_datadog/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_datadog\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_es/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_es\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_exit/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_exit\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_file/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_file\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_forward/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_forward\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_http/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_http\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_influxdb/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_influxdb\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_logdna/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_logdna\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_loki/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_loki\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_kafka_rest/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_kafka_rest\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_nats/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_nats\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_nrlogs/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_nrlogs\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_null/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_null\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_plot/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_plot\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_skywalking/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_skywalking\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_slack/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_slack\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_splunk/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_splunk\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_stackdriver/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_stackdriver\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_stdout/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_stdout\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_syslog/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_syslog\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_tcp/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_tcp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_td/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_td\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_lib/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_lib\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_flowcounter/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_flowcounter\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_gelf/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_gelf\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_websocket/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_websocket\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_cloudwatch_logs/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_cloudwatch_logs\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_kinesis_firehose/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_kinesis_firehose\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_kinesis_streams/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_kinesis_streams\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_prometheus_exporter/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_prometheus_exporter\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_prometheus_remote_write/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_prometheus_remote_write\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/out_s3/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\out_s3\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_alter_size/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_alter_size\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_aws/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_aws\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_checklist/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_checklist\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_record_modifier/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_record_modifier\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_throttle/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_throttle\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_kubernetes/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_kubernetes\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_modify/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_modify\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_multiline/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_multiline\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_nest/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_nest\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_parser/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_parser\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_expect/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_expect\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_grep/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_grep\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_rewrite_tag/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_rewrite_tag\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_lua/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_lua\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_stdout/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_stdout\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_geoip2/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_geoip2\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_geoip2/libmaxminddb/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_geoip2\libmaxminddb\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_geoip2/libmaxminddb/include/maxminddb_config.h.cmake.in">
+			<Option virtualFolder="CMake Files\plugins\filter_geoip2\libmaxminddb\include\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/plugins/filter_geoip2/libmaxminddb/bin/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\plugins\filter_geoip2\libmaxminddb\bin\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/multiline/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\multiline\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/record_accessor/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\record_accessor\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/stream_processor/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\stream_processor\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/stream_processor/parser/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\stream_processor\parser\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/http_server/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\http_server\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/http_server/api/v1/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\http_server\api\v1\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/proxy/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\proxy\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/src/proxy/go/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\src\proxy\go\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/init/systemd.in">
+			<Option virtualFolder="CMake Files\init\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/examples/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\examples\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/examples/hello_world/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\examples\hello_world\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/examples/hello_world_cpp/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\examples\hello_world_cpp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/examples/td_cpp/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\examples\td_cpp\"/>
+		</Unit>
+		<Unit filename="/home/shikugawa/dev/fluent-bit/examples/out_lib/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\examples\out_lib\"/>
+		</Unit>
+	</Project>
+</CodeBlocks_project_file>

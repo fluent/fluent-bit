@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_cloudwatch_logs.a  CMakeFiles/flb-plugin-out_cloudwatch_logs.dir/cloudwatch_logs.c.o CMakeFiles/flb-plugin-out_cloudwatch_logs.dir/cloudwatch_api.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_cloudwatch_logs.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-in_storage_backlog.a  CMakeFiles/flb-plugin-in_storage_backlog.dir/sb.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-in_storage_backlog.a

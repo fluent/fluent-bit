@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_influxdb.a  CMakeFiles/flb-plugin-out_influxdb.dir/influxdb_bulk.c.o CMakeFiles/flb-plugin-out_influxdb.dir/influxdb.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_influxdb.a

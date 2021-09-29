@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_throttle.a  CMakeFiles/flb-plugin-filter_throttle.dir/window.c.o CMakeFiles/flb-plugin-filter_throttle.dir/throttle.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_throttle.a

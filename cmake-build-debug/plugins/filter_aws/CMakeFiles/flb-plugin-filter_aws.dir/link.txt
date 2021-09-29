@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_aws.a  CMakeFiles/flb-plugin-filter_aws.dir/aws.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_aws.a

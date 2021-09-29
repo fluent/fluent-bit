@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-filter_expect.a  CMakeFiles/flb-plugin-filter_expect.dir/expect.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-filter_expect.a

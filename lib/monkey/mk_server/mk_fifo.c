@@ -116,8 +116,15 @@ struct mk_fifo *mk_fifo_create(pthread_key_t *key, void *data)
 
 
     /* Pthread specifics */
-    ctx->key = key;
-    pthread_key_create(ctx->key, NULL);
+
+    /* We need to isolate this because there is a key that's shared between monkey
+     * instances by design.
+     */
+    if (key != NULL) {
+        ctx->key = key;
+        pthread_key_create(ctx->key, NULL);
+    }
+
     pthread_mutex_init(&ctx->mutex_init, NULL);
 
     return ctx;

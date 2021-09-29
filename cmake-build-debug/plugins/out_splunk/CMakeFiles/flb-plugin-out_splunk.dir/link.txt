@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_splunk.a  CMakeFiles/flb-plugin-out_splunk.dir/splunk_conf.c.o CMakeFiles/flb-plugin-out_splunk.dir/splunk.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_splunk.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_skywalking.a  CMakeFiles/flb-plugin-out_skywalking.dir/skywalking.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_skywalking.a

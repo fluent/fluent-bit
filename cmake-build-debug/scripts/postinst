@@ -1,0 +1,5 @@
+
+mkdir -p /etc/ld.so.conf.d
+echo "lib/fluent-bit" > /etc/ld.so.conf.d/libfluent-bit.conf
+ldconfig
+    

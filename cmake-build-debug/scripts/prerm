@@ -1,0 +1,4 @@
+
+rm -f -- /etc/ld.so.conf.d/libfluent-bit.conf
+ldconfig
+    

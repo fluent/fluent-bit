@@ -22,6 +22,12 @@
 
 #include <monkey/mk_info.h>
 
+#define MK_INIT_INITIALIZE_TLS_UNIVERSAL()                      \
+    /* mk_utils.c */                                            \
+    pthread_key_create(&mk_utils_error_key, NULL);              \
+    /* mk_lib.c */                                              \
+    pthread_key_create(&mk_server_fifo_key, NULL);
+
 #ifdef MK_HAVE_C_TLS  /* Use Compiler Thread Local Storage (TLS) */
 
 /* mk_cache.c */
@@ -45,9 +51,12 @@ extern __thread struct mk_list *mk_tls_server_listen;
 extern __thread struct mk_server_timeout *mk_tls_server_timeout;
 
 /* TLS helper macros */
-#define MK_TLS_SET(key, val)        key=val
-#define MK_TLS_GET(key)             key
-#define MK_TLS_INIT()               do {} while (0)
+#define MK_TLS_SET(key, val)      key=val
+#define MK_TLS_GET(key)           key
+#define MK_TLS_INIT(key)          do {} while (0)
+#define MK_TLS_DEFINE(type, name) __thread type *name;
+
+#define MK_INIT_INITIALIZE_TLS()  do {} while (0)
 
 #else /* Use Posix Thread Keys */
 
@@ -71,9 +80,12 @@ pthread_key_t mk_tls_sched_worker_node;
 pthread_key_t mk_tls_server_listen;
 pthread_key_t mk_tls_server_timeout;
 
-#define MK_TLS_SET(key, val)  pthread_setspecific(key, (void *) val)
-#define MK_TLS_GET(key)       pthread_getspecific(key)
-#define MK_TLS_INIT()                                           \
+#define MK_TLS_SET(key, val)      pthread_setspecific(key, (void *) val)
+#define MK_TLS_GET(key)           pthread_getspecific(key)
+#define MK_TLS_INIT(key)          pthread_key_create(&key, NULL)
+#define MK_TLS_DEFINE(type, name) pthread_key_t name;
+
+#define MK_INIT_INITIALIZE_TLS()                                \
     /* mk_cache.c */                                            \
     pthread_key_create(&mk_tls_cache_iov_header, NULL);         \
     pthread_key_create(&mk_tls_cache_header_cl, NULL);          \

@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../library/libflb-plugin-out_stdout.a  CMakeFiles/flb-plugin-out_stdout.dir/stdout.c.o
+/usr/bin/ranlib ../../library/libflb-plugin-out_stdout.a
