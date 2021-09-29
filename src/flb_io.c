@@ -224,6 +224,11 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
              */
             flb_coro_yield(co, FLB_FALSE);
 
+            /* We want this field to hold NULL at all times unless we are explicitly
+             * waiting to be resumed.
+             */
+            u_conn->coro = NULL;
+
             /* Save events mask since mk_event_del() will reset it */
             mask = u_conn->event.mask;
 
@@ -277,7 +282,14 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                 return -1;
             }
         }
+
         flb_coro_yield(co, MK_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry;
     }
 
@@ -326,7 +338,14 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                  */
                 return -1;
             }
+
             flb_coro_yield(co, MK_FALSE);
+
+            /* We want this field to hold NULL at all times unless we are explicitly
+             * waiting to be resumed.
+             */
+            u_conn->coro = NULL;
+
             goto retry_read;
         }
         return -1;
