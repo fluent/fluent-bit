@@ -810,6 +810,34 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
+
+                /*
+                 * If the connection has its coro field set it means it's waiting for a
+                 * FLB_ENGINE_EV_THREAD event which in some specific cases might never
+                 * arrive which would leave the coroutin eternally suspended and the
+                 * chunk it was trying to handle (in case of output related coroutines)
+                 * locked which (if repeated enough times) could lead to a system wide
+                 * lockup.
+                 *
+                 * Since we don't have a proper way to generate the required activity in
+                 * the socket to have the system organically resume the coroutine we need
+                 * to resume it ourselves.
+                 */
+                if (u_conn->event.type == FLB_ENGINE_EV_THREAD &&
+                    u_conn->coro != NULL) {
+                    MK_EVENT_NEW(&u_conn->event);
+
+                    flb_trace("[upstream] resuming timed out coroutine=%p", u_conn->coro);
+                    flb_coro_resume(u_conn->coro);
+
+                    if (u_conn->coro != NULL) {
+                        flb_trace("[upstream] the recently resumed coroutine=%p "
+                                  "did not clear the u_conn->coro field which could "
+                                  "cause issues, please correct the code." , u_conn->coro);
+
+                        u_conn->coro = NULL;
+                    }
+                }
             }
         }
 
