@@ -420,6 +420,11 @@ static int net_connect_async(int fd,
      */
     flb_coro_yield(async_ctx, FLB_FALSE);
 
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+    u_conn->coro = NULL;
+
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
 
