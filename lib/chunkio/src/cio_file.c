@@ -528,6 +528,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     int ret;
     int len;
     char *path;
+    struct stat f_st;
     struct cio_file *cf;
 
     len = strlen(ch->name);
@@ -574,6 +575,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     /* Should we open and put this file up ? */
     ret = open_and_up(ctx);
     if (ret == CIO_FALSE) {
+        /* make sure to set the file size before to return */
+        ret = stat(cf->path, &f_st);
+        if (ret == 0) {
+            cf->fs_size = f_st.st_size;
+        }
+
         /* we reached our limit, let the file 'down' */
         return cf;
     }
@@ -1056,6 +1063,13 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
          * fallocate() is not portable, Linux only.
          */
         ret = fallocate(cf->fd, 0, 0, new_size);
+        if (ret == EOPNOTSUPP) {
+            /* If fallocate fails with an EOPNOTSUPP try operation using
+             * posix_fallocate. Required since some filesystems do not support
+             * the fallocate operation e.g. ext3 and reiserfs.
+             */
+            ret = posix_fallocate(cf->fd, 0, new_size);
+        }
     }
     else
 #endif
