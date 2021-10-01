@@ -50,7 +50,7 @@ struct flb_aws_imds_config {
 };
 
 /* Default config values */
-const struct flb_aws_imds_config flb_aws_imds_config_default;
+extern const struct flb_aws_imds_config flb_aws_imds_config_default;
 
 /* Metadata service context struct */
 struct flb_aws_imds {
