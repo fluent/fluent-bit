@@ -123,6 +123,10 @@ static int cb_file_init(struct flb_output_instance *ins,
         else if (!strcasecmp(tmp, "template")) {
             ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
         }
+        else if (!strcasecmp(tmp, "out_file")) {
+            /* for explicit setting */
+            ctx->format = FLB_OUT_FILE_FMT_JSON;
+        }
         else {
             flb_plg_error(ctx->ins, "unknown format %s. abort.", tmp);
             flb_free(ctx);
