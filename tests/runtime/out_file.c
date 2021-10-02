@@ -15,6 +15,7 @@ void flb_test_file_json_small(void);
 void flb_test_file_format_csv(void);
 void flb_test_file_format_ltsv(void);
 void flb_test_file_format_invalid(void);
+void flb_test_file_format_out_file(void);
 
 /* Test list */
 TEST_LIST = {
@@ -24,6 +25,7 @@ TEST_LIST = {
     {"format_csv",      flb_test_file_format_csv     },
     {"format_ltsv",     flb_test_file_format_ltsv    },
     {"format_invalid",  flb_test_file_format_invalid },
+    {"format_out_file", flb_test_file_format_out_file},
     {NULL, NULL}
 };
 
@@ -242,6 +244,54 @@ void flb_test_file_format_ltsv(void)
     flb_output_set(ctx, out_ffd, "format", "ltsv", NULL);
     flb_output_set(ctx, out_ffd, "delimiter", "tab", NULL);
     flb_output_set(ctx, out_ffd, "label_delimiter", "comma", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < (int) sizeof(JSON_SMALL) - 1; i++) {
+        bytes = flb_lib_push(ctx, in_ffd, p + i, 1);
+        TEST_CHECK(bytes == 1);
+    }
+
+    sleep(1); /* waiting flush */
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    fp = fopen(TEST_LOGFILE, "r");
+    TEST_CHECK(fp != NULL);
+    if (fp != NULL) {
+        fclose(fp);
+        remove(TEST_LOGFILE);
+    }
+}
+
+/* https://github.com/fluent/fluent-bit/issues/4152 */
+void flb_test_file_format_out_file(void)
+{
+    int i;
+    int ret;
+    int bytes;
+    char *p = (char *) JSON_SMALL;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    FILE *fp;
+
+    remove(TEST_LOGFILE);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "format", "out_file", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
