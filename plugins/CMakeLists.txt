@@ -219,6 +219,7 @@ endif()
 if(FLB_PARSER)
   REGISTER_IN_PLUGIN("in_syslog")
   REGISTER_IN_PLUGIN("in_exec")
+  REGISTER_IN_PLUGIN("in_coproc")
 endif()
 
 REGISTER_IN_PLUGIN("in_udp")

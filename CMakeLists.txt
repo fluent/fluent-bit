@@ -177,6 +177,7 @@ option(FLB_IN_EMITTER                  "Enable emitter input plugin"            
 option(FLB_IN_NODE_EXPORTER_METRICS    "Enable node exporter metrics input plugin"    Yes)
 option(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" Yes)
 option(FLB_IN_OPENTELEMETRY            "Enable OpenTelemetry input plugin"            Yes)
+option(FLB_IN_COPROC                   "Enable Coproc input plugin"                   Yes)
 option(FLB_OUT_AZURE                   "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_BLOB              "Enable Azure output plugin"                   Yes)
 option(FLB_OUT_AZURE_KUSTO             "Enable Azure Kusto output plugin"             Yes)
@@ -279,6 +280,7 @@ if(FLB_ALL)
   set(FLB_IN_NGINX_STATUS 1)
   set(FLB_IN_EXEC         1)
   set(FLB_IN_UNIX_SOCKET  1)
+  set(FLB_IN_COPROC       1)
 
   # Output plugins
   set(FLB_OUT_ES          1)
