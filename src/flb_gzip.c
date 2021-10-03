@@ -356,3 +356,73 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
 
     return 0;
 }
+
+int flb_zlib_uncompress(void *in_data, size_t in_len,
+                        void **out_data, size_t *out_len)
+{
+    int status;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+    mz_stream stream;
+
+    /* Allocate outgoing buffer */
+    out_size = in_len * 2;
+    out_buf = flb_malloc(out_size);
+    if (!out_buf) {
+        flb_errno();
+        return -1;
+    }
+
+    memset(&stream, 0, sizeof(stream));
+    stream.next_in = in_data,
+    stream.avail_in = in_len,
+    stream.next_out = out_buf;
+    stream.avail_out = out_size;
+
+    status = mz_inflateInit2(&stream, Z_DEFAULT_WINDOW_BITS);
+    if (status != MZ_OK) {
+        flb_free(out_buf);
+        return -1;
+    }
+
+    while (1) {
+        status = mz_inflate(&stream, MZ_NO_FLUSH);
+        if (status == MZ_STREAM_END) {
+            break;
+        }
+        else if (status == MZ_OK) {
+            void *tmp;
+            size_t new_out_size = out_size * 2;
+            /* Limit decompressed length to 100MB */
+            if (new_out_size > 100000000) {
+                flb_error("[zlib] maximum decompression size is 100MB");
+                mz_inflateEnd(&stream);
+                flb_free(out_buf);
+                return -1;
+            }
+            tmp = flb_realloc(out_buf, new_out_size);
+            if (!tmp) {
+                flb_errno();
+                mz_inflateEnd(&stream);
+                flb_free(out_buf);
+                return -1;
+            }
+            out_buf = tmp;
+            stream.next_out = out_buf + stream.total_out;
+            stream.avail_out = new_out_size - out_size;
+            out_size = new_out_size;
+        }
+        else {
+            flb_error("[zlib] error: %s", mz_error(status));
+            mz_inflateEnd(&stream);
+            flb_free(out_buf);
+            return -1;
+        }
+    }
+
+    *out_len = stream.total_out;
+    *out_data = out_buf;
+    mz_inflateEnd(&stream);
+
+    return 0;
+}
