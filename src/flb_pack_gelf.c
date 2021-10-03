@@ -907,7 +907,7 @@ int flb_gelf_to_msgpack(const char *js, size_t len, struct flb_time *tm,
 
     ret = flb_json_tokenise(js, len, &state);
     if (ret != 0) {
-//        flb_error("[flb_gelf_to_msgpack] error parsing message");
+        flb_error("[flb_gelf_to_msgpack] error parsing message");
         ret = -1;
         goto flb_pack_gelf_end;
     }
