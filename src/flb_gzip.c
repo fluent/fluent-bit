@@ -308,7 +308,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
                 return -1;
             }
             out_buf = tmp;
-            stream.next_out = out_buf + stream.total_out;
+            stream.next_out = (unsigned char *)out_buf + stream.total_out;
             stream.avail_out = new_out_size - out_size;
             out_size = new_out_size;
         }
@@ -408,7 +408,7 @@ int flb_zlib_uncompress(void *in_data, size_t in_len,
                 return -1;
             }
             out_buf = tmp;
-            stream.next_out = out_buf + stream.total_out;
+            stream.next_out = (unsigned char *)out_buf + stream.total_out;
             stream.avail_out = new_out_size - out_size;
             out_size = new_out_size;
         }
