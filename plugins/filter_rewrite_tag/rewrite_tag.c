@@ -398,7 +398,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * - record with new tag was emitted and the rule says it must be preserved
          * - record was not emitted
          */
-        if ((ret == FLB_TRUE && keep == FLB_TRUE) || ret == FLB_FALSE) {
+        if (keep == FLB_TRUE) {
             msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
         }
 
