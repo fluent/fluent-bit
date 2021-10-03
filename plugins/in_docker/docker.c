@@ -708,7 +708,7 @@ static void flush_snapshot(struct flb_input_instance *i_ins,
     /* Memory limit [bytes] */
     msgpack_pack_str(&mp_pck, 9);
     msgpack_pack_str_body(&mp_pck, "mem_limit", 9);
-    msgpack_pack_unsigned_int(&mp_pck, snapshot->mem->limit);
+    msgpack_pack_uint64(&mp_pck, snapshot->mem->limit);
 
     flb_trace("[in_docker] ID %s CPU %lu MEMORY %ld", snapshot->id,
               snapshot->cpu->used, snapshot->mem->used);
