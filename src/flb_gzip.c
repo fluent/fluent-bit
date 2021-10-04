@@ -281,7 +281,7 @@ int flb_gzip_uncompress(void *in_data, size_t in_len,
 
     status = mz_inflateInit2(&stream, -Z_DEFAULT_WINDOW_BITS);
     if (status != MZ_OK) {
-        free(out_buf);
+        flb_free(out_buf);
         return -1;
     }
 
