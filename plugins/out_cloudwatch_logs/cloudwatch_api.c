@@ -847,6 +847,13 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             check = FLB_FALSE;
             found = FLB_FALSE;
 
+            /* Check type of msgpack object */
+            if (root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
+                flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
+                    ctx->log_key);
+                continue;
+            }
+
             kv = map.via.map.ptr;
 
             for(j=0; j < map_size; j++) {
@@ -896,14 +903,14 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
              * Iterate through the record map, extract intermediate metric data, 
              * and add to the list.
              */
-            for (i = 0; i < map_size; i++) {
+            for (j = 0; j < map_size; j++) {
                 metric = flb_malloc(sizeof(struct flb_intermediate_metric));
                 if (!metric) {
                     goto error;
                 }
 
-                metric->key = (kv + i)->key;
-                metric->value = (kv + i)->val;
+                metric->key = (kv + j)->key;
+                metric->value = (kv + j)->val;
                 metric->metric_type = intermediate_metric_type;
                 metric->metric_unit = intermediate_metric_unit;
                 metric->timestamp = tms;
