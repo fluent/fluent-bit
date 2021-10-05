@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-filter_multiline.a  CMakeFiles/flb-plugin-filter_multiline.dir/ml.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-filter_multiline.a

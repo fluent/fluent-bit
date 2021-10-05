@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../library/libmaxminddb.a  CMakeFiles/maxminddb.dir/src/maxminddb.c.o CMakeFiles/maxminddb.dir/src/data-pool.c.o
-/usr/bin/ranlib ../../../library/libmaxminddb.a

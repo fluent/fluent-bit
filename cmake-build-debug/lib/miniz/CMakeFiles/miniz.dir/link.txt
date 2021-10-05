@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libminiz.a  CMakeFiles/miniz.dir/miniz.c.o
-/usr/bin/ranlib ../../library/libminiz.a

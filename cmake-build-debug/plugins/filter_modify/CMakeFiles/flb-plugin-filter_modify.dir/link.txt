@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-filter_modify.a  CMakeFiles/flb-plugin-filter_modify.dir/modify.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-filter_modify.a

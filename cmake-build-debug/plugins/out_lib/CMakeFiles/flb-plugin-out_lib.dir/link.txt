@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_lib.a  CMakeFiles/flb-plugin-out_lib.dir/out_lib.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_lib.a

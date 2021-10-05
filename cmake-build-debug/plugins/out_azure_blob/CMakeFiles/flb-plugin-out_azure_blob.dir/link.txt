@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_azure_blob.a  CMakeFiles/flb-plugin-out_azure_blob.dir/azure_blob.c.o CMakeFiles/flb-plugin-out_azure_blob.dir/azure_blob_uri.c.o CMakeFiles/flb-plugin-out_azure_blob.dir/azure_blob_conf.c.o CMakeFiles/flb-plugin-out_azure_blob.dir/azure_blob_http.c.o CMakeFiles/flb-plugin-out_azure_blob.dir/azure_blob_appendblob.c.o CMakeFiles/flb-plugin-out_azure_blob.dir/azure_blob_blockblob.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_azure_blob.a

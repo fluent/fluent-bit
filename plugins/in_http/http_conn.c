@@ -25,6 +25,9 @@
 #include "http_conn.h"
 #include "http_prot.h"
 
+static void http_conn_request_init(struct mk_http_session *session,
+                                   struct mk_http_request *request);
+
 static int http_conn_event(void *data)
 {
     int status;
@@ -37,8 +40,6 @@ static int http_conn_event(void *data)
     struct http_conn *conn = data;
     struct mk_event *event;
     struct flb_http *ctx = conn->ctx;
-    struct mk_http_session *session;
-    struct mk_http_request *request;
 
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
@@ -67,8 +68,7 @@ static int http_conn_event(void *data)
         }
 
         /* Read data */
-        bytes = recv(conn->fd,
-                     conn->buf_data + conn->buf_len, available, 0);
+        bytes = recv(conn->fd, conn->buf_data + conn->buf_len, available, 0);
         if (bytes <= 0) {
             flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
             http_conn_del(conn);
@@ -80,16 +80,12 @@ static int http_conn_event(void *data)
         conn->buf_len += bytes;
         conn->buf_data[conn->buf_len] = '\0';
 
-        session = &conn->session;
-        request = mk_list_entry_first(&session->request_list,
-                                 struct mk_http_request, _head);
-
-        status = mk_http_parser(request, &session->parser,
-                                conn->buf_data, conn->buf_len, NULL);
+        status = mk_http_parser(&conn->request, &conn->session.parser,
+                                conn->buf_data, conn->buf_len, conn->session.server);
 
         if (status == MK_HTTP_PARSER_OK) {
             /* Do more logic parsing and checks for this request */
-            http_prot_handle(ctx, conn, session, request);
+            http_prot_handle(ctx, conn, &conn->session, &conn->request);
 
             /* Evict the processed request from the connection buffer and reinitialize
              * the HTTP parser.
@@ -97,8 +93,8 @@ static int http_conn_event(void *data)
 
             request_end = NULL;
 
-            if (NULL != request->data.data) {
-                request_end = &request->data.data[request->data.len];
+            if (NULL != conn->request.data.data) {
+                request_end = &conn->request.data.data[conn->request.data.len];
             }
             else {
                 request_end = strstr(conn->buf_data, "\r\n\r\n");
@@ -128,9 +124,21 @@ static int http_conn_event(void *data)
                  * handled, the additional memset intends to wipe any left over data
                  * from the headers parsed in the previous request.
                  */
-                memset(&session->parser, 0, sizeof(mk_http_parser));
-                mk_http_parser_init(&session->parser);
+                memset(&conn->session.parser, 0, sizeof(mk_http_parser));
+                mk_http_parser_init(&conn->session.parser);
+                http_conn_request_init(&conn->session, &conn->request);
             }
+        }
+        else if (status == MK_HTTP_PARSER_ERROR) {
+            http_prot_handle_error(ctx, conn, &conn->session, &conn->request);
+
+            /* Reinitialize the parser so the next request is properly
+             * handled, the additional memset intends to wipe any left over data
+             * from the headers parsed in the previous request.
+             */
+            memset(&conn->session.parser, 0, sizeof(mk_http_parser));
+            mk_http_parser_init(&conn->session.parser);
+            http_conn_request_init(&conn->session, &conn->request);
         }
 
         /* FIXME: add Protocol handler here */
@@ -148,25 +156,47 @@ static int http_conn_event(void *data)
 }
 
 static void http_conn_session_init(struct mk_http_session *session,
-                                   struct mk_server *server)
+                                   struct mk_server *server,
+                                   int client_fd)
 {
     /* Alloc memory for node */
     session->_sched_init = MK_TRUE;
     session->pipelined   = MK_FALSE;
     session->counter_connections = 0;
     session->close_now = MK_FALSE;
-    session->socket = -1;
     session->status = MK_REQUEST_STATUS_INCOMPLETE;
     session->server = server;
+    session->socket = client_fd;
 
     /* creation time in unix time */
     session->init_time = time(NULL);
+
+    session->channel = mk_channel_new(MK_CHANNEL_SOCKET, session->socket);
+    session->channel->io = session->server->network;
 
     /* Init session request list */
     mk_list_init(&session->request_list);
 
     /* Initialize the parser */
     mk_http_parser_init(&session->parser);
+}
+
+static void http_conn_request_init(struct mk_http_session *session,
+                                   struct mk_http_request *request)
+{
+    memset(request, 0, sizeof(struct mk_http_request));
+
+    mk_http_request_init(session, request, session->server);
+
+    request->in_headers.type        = MK_STREAM_IOV;
+    request->in_headers.dynamic     = MK_FALSE;
+    request->in_headers.cb_consumed = NULL;
+    request->in_headers.cb_finished = NULL;
+    request->in_headers.stream      = &request->stream;
+
+    mk_list_add(&request->in_headers._head, &request->stream.inputs);
+
+    request->session = session;
 }
 
 struct http_conn *http_conn_add(int fd, struct flb_http *ctx)
@@ -214,7 +244,12 @@ struct http_conn *http_conn_add(int fd, struct flb_http *ctx)
     }
 
     /* Initialize HTTP Session: this is a custom context for Monkey HTTP */
-    http_conn_session_init(&conn->session, ctx->server);
+    http_conn_session_init(&conn->session, ctx->server, conn->fd);
+
+    /* Initialize HTTP Request: this is the initial request and it will be reinitialized
+     * automatically after the request is handled so it can be used for the next one.
+     */
+    http_conn_request_init(&conn->session, &conn->request);
 
     /* Link connection node to parent context list */
     mk_list_add(&conn->_head, &ctx->connections);

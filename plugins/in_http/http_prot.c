@@ -445,3 +445,14 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
     send_response(conn, ctx->successful_response_code, NULL);
     return ret;
 }
+
+/*
+ * Handle an incoming request which has resulted in an http parser error.
+ */
+int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
+                           struct mk_http_session *session,
+                           struct mk_http_request *request)
+{
+    send_response(conn, 400, "error: invalid request\n");
+    return -1;
+}

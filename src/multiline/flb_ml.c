@@ -920,8 +920,6 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     breakline_prepare(parser_i, group);
     len = flb_sds_len(group->buf);
 
-    len = flb_sds_len(group->buf);
-
     /* init msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);

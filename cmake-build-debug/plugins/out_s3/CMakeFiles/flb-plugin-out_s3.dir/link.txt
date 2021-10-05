@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_s3.a  CMakeFiles/flb-plugin-out_s3.dir/s3.c.o CMakeFiles/flb-plugin-out_s3.dir/s3_store.c.o CMakeFiles/flb-plugin-out_s3.dir/s3_multipart.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_s3.a

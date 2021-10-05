@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_syslog.a  CMakeFiles/flb-plugin-out_syslog.dir/syslog.c.o CMakeFiles/flb-plugin-out_syslog.dir/syslog_conf.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_syslog.a

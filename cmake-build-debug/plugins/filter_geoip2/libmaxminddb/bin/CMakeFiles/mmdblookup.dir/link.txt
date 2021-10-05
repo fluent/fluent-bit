@@ -1,1 +1,0 @@
-/opt/llvm/bin/clang -std=gnu99  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -g  -rdynamic CMakeFiles/mmdblookup.dir/mmdblookup.c.o  -o ../../../../bin/mmdblookup  ../../../../library/libmaxminddb.a -lpthread 

@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-in_fluentbit_metrics.a  CMakeFiles/flb-plugin-in_fluentbit_metrics.dir/metrics.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-in_fluentbit_metrics.a

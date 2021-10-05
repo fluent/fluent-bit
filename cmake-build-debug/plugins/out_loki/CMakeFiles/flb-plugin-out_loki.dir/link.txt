@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_loki.a  CMakeFiles/flb-plugin-out_loki.dir/loki.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_loki.a

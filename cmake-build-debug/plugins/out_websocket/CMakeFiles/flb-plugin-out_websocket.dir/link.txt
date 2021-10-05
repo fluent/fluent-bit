@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_websocket.a  CMakeFiles/flb-plugin-out_websocket.dir/websocket_conf.c.o CMakeFiles/flb-plugin-out_websocket.dir/websocket.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_websocket.a

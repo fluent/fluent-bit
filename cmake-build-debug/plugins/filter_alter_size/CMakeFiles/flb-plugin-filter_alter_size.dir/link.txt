@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-filter_alter_size.a  CMakeFiles/flb-plugin-filter_alter_size.dir/alter_size.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-filter_alter_size.a

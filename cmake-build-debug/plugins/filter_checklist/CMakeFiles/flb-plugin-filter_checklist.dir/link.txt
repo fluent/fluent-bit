@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-filter_checklist.a  CMakeFiles/flb-plugin-filter_checklist.dir/checklist.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-filter_checklist.a

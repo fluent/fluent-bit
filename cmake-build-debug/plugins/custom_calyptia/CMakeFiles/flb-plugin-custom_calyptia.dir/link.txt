@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-custom_calyptia.a  CMakeFiles/flb-plugin-custom_calyptia.dir/calyptia.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-custom_calyptia.a

@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/monkey-liana.a  CMakeFiles/monkey-liana-static.dir/liana.c.o
-/usr/bin/ranlib ../../library/monkey-liana.a

@@ -1,1 +1,0 @@
-/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -g  -rdynamic CMakeFiles/xxd-c.dir/xxd-c.c.o  -o ../../bin/xxd-c 

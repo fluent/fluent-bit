@@ -202,6 +202,12 @@ int flb_tls_net_read_async(struct flb_coro *co, struct flb_upstream_conn *u_conn
         u_conn->coro = co;
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_read;
     }
     else if (ret < 0) {
@@ -251,19 +257,31 @@ int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_con
     size_t total = 0;
     struct flb_tls *tls = u_conn->tls;
 
+ retry_write:
     u_conn->coro = co;
 
- retry_write:
     ret = tls->api->net_write(u_conn, (unsigned char *) data + total,
                               len - total);
     if (ret == FLB_TLS_WANT_WRITE) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_write;
     }
     else if (ret < 0) {
@@ -275,6 +293,12 @@ int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_con
     if (total < len) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_write;
     }
 
@@ -356,6 +380,8 @@ int flb_tls_session_create(struct flb_tls *tls,
             goto retry_handshake;
         }
 
+        u_conn->coro = co;
+
         /*
          * FIXME: if we need multiple reads we are invoking the same
          * system call multiple times.
@@ -369,6 +395,12 @@ int flb_tls_session_create(struct flb_tls *tls,
         }
 
         flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_handshake;
     }
 

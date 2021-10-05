@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../library/libflb-plugin-out_logdna.a  CMakeFiles/flb-plugin-out_logdna.dir/logdna.c.o
-/usr/bin/ranlib ../../library/libflb-plugin-out_logdna.a

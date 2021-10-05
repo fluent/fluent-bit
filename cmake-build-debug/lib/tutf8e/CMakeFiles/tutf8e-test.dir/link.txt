@@ -1,1 +1,0 @@
-/opt/llvm/bin/clang  -Wall -D__FILENAME__='"$(subst /home/shikugawa/dev/fluent-bit/,,$(abspath $<))"' -Os -Wall -g  -rdynamic CMakeFiles/tutf8e-test.dir/test/test.c.o  -o ../../bin/tutf8e-test  ../../library/libtutf8e.a 
