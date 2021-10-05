@@ -577,6 +577,13 @@ int process_and_send_to_kinesis(struct flb_kinesis *ctx, struct flush *buf,
             check = FLB_FALSE;
             found = FLB_FALSE;
 
+            /* Check type of msgpack object */
+            if (root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
+                flb_plg_error(ctx->ins, "Could not find log_key '%s' in record, %s",
+                              ctx->log_key, ctx->stream_name);
+                continue;
+            }
+
             kv = map.via.map.ptr;
 
             for(j=0; j < map_size; j++) {
