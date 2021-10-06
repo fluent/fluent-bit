@@ -491,11 +491,9 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
 /* Disable notifications, used before to destroy the context */
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
-    int ret;
-
-    ret = mk_event_closesocket(timer->timer_fd);
+    mk_event_timeout_disable(timer->sched->evl, &timer->event);
     timer->timer_fd = -1;
-    return ret;
+    return 0;
 }
 
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)
