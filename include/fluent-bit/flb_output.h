@@ -342,6 +342,11 @@ struct flb_output_instance {
     size_t fs_chunks_size;
 
     /*
+     * Buffer counter: it counts the total of disk space (filesystem) awaiting to be
+     * loaded (in backlog)
+     */
+    size_t fs_backlog_chunks_size;
+    /*
      * Buffer limit: optional limit set by configuration so this output instance
      * cannot buffer more than total_limit_size (bytes unit).
      *
