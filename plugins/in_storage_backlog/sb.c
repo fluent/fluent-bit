@@ -333,7 +333,7 @@ int sb_segregate_chunks(struct flb_config *config)
     context = sb_get_context(config);
 
     if (context == NULL) {
-        return -1;
+        return 0;
     }
 
     result = sb_allocate_backlogs(context);
