@@ -44,6 +44,7 @@ struct cio_file {
     crc_t crc_cur;
 };
 
+size_t cio_file_real_size(struct cio_file *cf);
 struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
                                struct cio_chunk *ch,
