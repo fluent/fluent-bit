@@ -286,6 +286,12 @@ ssize_t cio_chunk_get_real_size(struct cio_chunk *ch)
     }
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
+
+        /* If the file is not open we need to explicitly get its size */
+        if (cf->fs_size == 0) {
+            return cio_file_real_size(cf);
+        }
+
         return cf->fs_size;
     }
 
