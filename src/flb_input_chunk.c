@@ -31,6 +31,8 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <chunkio/chunkio.h>
 
+#define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
+
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL  0
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
@@ -301,7 +303,8 @@ static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
 int flb_input_chunk_release_space_compound(
                         struct flb_input_chunk *new_input_chunk,
                         struct flb_output_instance *output_plugin,
-                        size_t *local_release_requirement)
+                        size_t *local_release_requirement,
+                        int release_local_space)
 {
     ssize_t                    segregated_backlog_releasable_space;
     ssize_t                    active_backlog_releasable_space;
@@ -382,6 +385,23 @@ int flb_input_chunk_release_space_compound(
         }
 
         required_space_remainder -= segregated_backlog_releasable_space;
+    }
+
+    if (release_local_space) {
+        if (required_space_remainder > 0 && active_plugin_releasable_space > 0) {
+            result = flb_input_chunk_release_space(new_input_chunk,
+                                                   new_input_chunk->in,
+                                                   output_plugin,
+                                                   active_plugin_releasable_space,
+                                                   FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL);
+
+            if (result) {
+                printf("FAILED\n");
+                return -5;
+            }
+
+            required_space_remainder -= active_plugin_releasable_space;
+        }
     }
 
     if (required_space_remainder < 0) {
@@ -479,7 +499,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
 
         result = flb_input_chunk_release_space_compound(
                                             ic, o_ins,
-                                            &local_release_requirement);
+                                            &local_release_requirement,
+                                            FLB_FALSE);
 
         if (!result && local_release_requirement == 0) {
             /* If this function returned 0 it means the space requirement was
