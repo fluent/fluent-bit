@@ -387,7 +387,8 @@ static int bigquery_format(const void *data, size_t bytes,
 
     if (ctx->skip_invalid_rows) {
         msgpack_pack_true(&mp_pck);
-    } else {
+    }
+    else {
         msgpack_pack_false(&mp_pck);
     }
 
@@ -396,7 +397,8 @@ static int bigquery_format(const void *data, size_t bytes,
 
     if (ctx->ignore_unknown_values) {
         msgpack_pack_true(&mp_pck);
-    } else {
+    }
+    else {
         msgpack_pack_false(&mp_pck);
     }
 
