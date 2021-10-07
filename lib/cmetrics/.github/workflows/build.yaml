@@ -23,7 +23,7 @@ jobs:
           .\scripts\win_build.bat
       - name: Run unit tests.
         run: |
-          ctest -C Debug --test-dir .\tests\
+          ctest --rerun-failed --output-on-failure -C Debug --test-dir .\tests\
   build-unix:
     name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
