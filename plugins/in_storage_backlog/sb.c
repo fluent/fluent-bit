@@ -18,9 +18,9 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_utils.h>
 #include <chunkio/chunkio.h>
