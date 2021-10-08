@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "bigquery.h"
 #include "bigquery_conf.h"
@@ -302,6 +303,24 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "property 'table_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* config: 'skip_invalid_rows' */
+    tmp = flb_output_get_property("skip_invalid_rows", ins);
+    if (tmp && flb_utils_bool(tmp)) {
+        ctx->skip_invalid_rows = FLB_TRUE;
+    }
+    else {
+        ctx->skip_invalid_rows = FLB_FALSE;
+    }
+
+    /* config: 'ignore_unknown_values' */
+    tmp = flb_output_get_property("ignore_unknown_values", ins);
+    if (tmp && flb_utils_bool(tmp)) {
+        ctx->ignore_unknown_values = FLB_TRUE;
+    }
+    else {
+        ctx->ignore_unknown_values = FLB_FALSE;
     }
 
     /* Create the target URI */
