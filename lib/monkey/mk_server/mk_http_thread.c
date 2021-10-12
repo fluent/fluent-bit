@@ -42,20 +42,63 @@ struct mk_http_libco_params {
     struct mk_thread *th;
 };
 
-struct mk_http_libco_params libco_param;
+pthread_once_t mk_http_thread_initialize_tls_once_flag = PTHREAD_ONCE_INIT;
 
-pthread_key_t mk_thread_key;
+MK_TLS_DEFINE(struct mk_http_libco_params, mk_http_thread_libco_params);
+MK_TLS_DEFINE(struct mk_thread,            mk_thread);
+
+/* This function could return NULL if the process runs out of memory, in that
+ * case failure is imminent.
+ */
+static inline struct mk_http_libco_params *thread_get_libco_params()
+{
+    struct mk_http_libco_params *libco_params;
+
+    libco_params = MK_TLS_GET(mk_http_thread_libco_params);
+
+    if (libco_params == NULL) {
+        libco_params = mk_mem_alloc_z(sizeof(struct mk_http_libco_params));
+
+        if (libco_params == NULL) {
+            mk_err("libco thread params could not be allocated.");
+        }
+
+        MK_TLS_SET(mk_http_thread_libco_params, libco_params);
+    }
+
+    return libco_params;
+}
+
+static void mk_http_thread_initialize_tls_once()
+{
+    MK_TLS_INIT(mk_http_thread_libco_params);
+    MK_TLS_INIT(mk_thread);
+}
+
+void mk_http_thread_initialize_tls()
+{
+    pthread_once(&mk_http_thread_initialize_tls_once_flag,
+                 mk_http_thread_initialize_tls_once);
+}
 
 static inline void thread_cb_init_vars()
 {
-    int close;
-    int type = libco_param.type;
-    struct mk_vhost_handler *handler = libco_param.handler;
-    struct mk_http_session *session = libco_param.session;
-    struct mk_http_request *request = libco_param.request;
-    struct mk_thread *th = libco_param.th;
-    struct mk_http_thread *mth;
-    //struct mk_plugin *plugin;
+    struct mk_http_libco_params *libco_params;
+    struct mk_vhost_handler     *handler;
+    struct mk_http_session      *session;
+    struct mk_http_request      *request;
+    int                          close;
+    int                          type;
+    struct mk_http_thread       *mth;
+    struct mk_thread            *th;
+
+    libco_params = thread_get_libco_params();
+
+    type = libco_params->type;
+    handler = libco_params->handler;
+    session = libco_params->session;
+    request = libco_params->request;
+    th = libco_params->th;
 
     /*
      * Until this point the th->callee already set the variables, so we
@@ -120,14 +163,18 @@ static inline void thread_params_set(struct mk_thread *th,
                                      int n_params,
                                      struct mk_list *params)
 {
+    struct mk_http_libco_params *libco_params;
+
+    libco_params = thread_get_libco_params();
+
     /* Callback parameters in order */
-    libco_param.type     = type;
-    libco_param.handler  = handler;
-    libco_param.session  = session;
-    libco_param.request  = request;
-    libco_param.n_params = n_params;
-    libco_param.params   = params;
-    libco_param.th = th;
+    libco_params->type     = type;
+    libco_params->handler  = handler;
+    libco_params->session  = session;
+    libco_params->request  = request;
+    libco_params->n_params = n_params;
+    libco_params->params   = params;
+    libco_params->th       = th;
 
     co_switch(th->callee);
 }

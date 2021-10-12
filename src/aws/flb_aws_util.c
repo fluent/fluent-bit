@@ -40,6 +40,7 @@
 #define S3_KEY_SIZE 1024
 #define RANDOM_STRING "$UUID"
 #define INDEX_STRING "$INDEX"
+#define FLB_MAX_AWS_RESP_BUFFER_SIZE 0 /* 0 means unlimited capacity as per requirement */
 
 struct flb_http_client *request_do(struct flb_aws_client *aws_client,
                                    int method, const char *uri,
@@ -156,10 +157,15 @@ struct flb_http_client *flb_aws_client_request(struct flb_aws_client *aws_client
 {
     struct flb_http_client *c = NULL;
 
-    //TODO: Need to think more about the retry strategy.
-
     c = request_do(aws_client, method, uri, body, body_len,
                    dynamic_headers, dynamic_headers_len);
+
+    // Auto retry if request fails
+    if (c == NULL && aws_client->retry_requests) {
+        flb_debug("[aws_client] auto-retrying");
+        c = request_do(aws_client, method, uri, body, body_len,
+                       dynamic_headers, dynamic_headers_len);
+    }
 
     /*
      * 400 or 403 could indicate an issue with credentials- so we check for auth
@@ -196,6 +202,7 @@ struct flb_aws_client *flb_aws_client_create()
         return NULL;
     }
     client->client_vtable = &client_vtable;
+    client->retry_requests = FLB_FALSE;
     client->debug_only = FLB_FALSE;
     return client;
 }
@@ -308,6 +315,12 @@ struct flb_http_client *request_do(struct flb_aws_client *aws_client,
         }
         goto error;
     }
+
+    /* Increase the maximum HTTP response buffer size to fit large responses from AWS services */
+    ret = flb_http_buffer_size(c, FLB_MAX_AWS_RESP_BUFFER_SIZE);
+    if (ret != 0) {
+        flb_warn("[aws_http_client] failed to increase max response buffer size");
+    } 
 
     /* Add AWS Fluent Bit user agent */
     if (aws_client->extra_user_agent == NULL) {
@@ -596,53 +609,6 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key)
     }
     flb_free(tokens);
     return error_type;
-}
-
-int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
-                     flb_sds_t *metadata, size_t *metadata_len)
-{
-    struct flb_http_client *c = NULL;
-    flb_sds_t ec2_metadata;
-
-    flb_debug("[imds] Using instance metadata V1");
-    c = client->client_vtable->request(client, FLB_HTTP_GET,
-                                       metadata_path, NULL, 0,
-                                       NULL, 0);
-
-    if (!c) {
-        return -1;
-    }
-
-    if (c->resp.status != 200) {
-        if (c->resp.payload_size > 0) {
-            flb_debug("[ecs_imds] IMDS metadata response\n%s",
-                      c->resp.payload);
-        }
-
-        flb_http_client_destroy(c);
-        return -1;
-    }
-
-    if (c->resp.payload_size > 0) {
-        ec2_metadata = flb_sds_create_len(c->resp.payload,
-                                          c->resp.payload_size);
-
-        if (!ec2_metadata) {
-            flb_errno();
-            flb_http_client_destroy(c);
-            return -1;
-        }
-        *metadata = ec2_metadata;
-        *metadata_len = c->resp.payload_size;
-
-        flb_http_client_destroy(c);
-        return 0;
-    }
-
-    flb_debug("[ecs_imds] IMDS metadata response was empty");
-    flb_http_client_destroy(c);
-    return -1;
-
 }
 
 /* Generic replace function for strings. */

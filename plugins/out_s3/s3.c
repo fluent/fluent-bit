@@ -823,6 +823,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
+    ctx->s3_client->retry_requests = ctx->retry_requests;
 
     ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
                                                    FLB_IO_TLS, ctx->client_tls);
@@ -1568,6 +1569,7 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 
     /* Create buffer to upload to S3 */
     ret = construct_request_buffer(ctx, chunk, upload_file, &buffer, &buffer_size);
+    flb_sds_destroy(chunk);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                       upload_file->file_path);
@@ -2284,6 +2286,16 @@ static struct flb_config_map config_map[] = {
     "A series of characters which will be used to split the tag into “parts” for "
     "use with the s3_key_format option. See the in depth examples and tutorial in "
     "the documentation."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, retry_requests),
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     {

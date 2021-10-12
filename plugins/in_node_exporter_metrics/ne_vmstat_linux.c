@@ -154,7 +154,6 @@ static int vmstat_update(struct flb_ne *ctx)
         if (ret == -1) {
             continue;
         }
-        parts = ret;
 
         parts = ret;
         if (parts == 0) {

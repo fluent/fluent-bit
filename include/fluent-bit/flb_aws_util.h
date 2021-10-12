@@ -89,6 +89,9 @@ struct flb_aws_client {
      struct flb_aws_header *static_headers;
      size_t static_headers_len;
 
+    /* Are requests to AWS services retried? */
+    int retry_requests;
+
     /*
      * If an API responds with auth error, we refresh creds and retry.
      * For safety, credential refresh can only happen once per
@@ -161,12 +164,6 @@ flb_sds_t flb_json_get_val(char *response, size_t response_len, char *key);
  * Param `tag` should include angle brackets; ex "<code>"
  */
 flb_sds_t flb_xml_get_val(char *response, size_t response_len, char *tag);
-
-/*
- * Request data from an IMDS path.
- */
-int flb_imds_request(struct flb_aws_client *client, char *metadata_path,
-                     flb_sds_t *metadata, size_t *metadata_len);
 
 /*
  * Checks if a response contains an AWS Auth error

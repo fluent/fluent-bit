@@ -78,6 +78,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kafka_rest, tag_key),
      "Specify the key name of the record if include_tag_key is enabled. "
     },
+    {
+     FLB_CONFIG_MAP_BOOL, "avro_http_header", "false",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, avro_http_header),
+     "Specify if the format has avro header in http request"
+    },
 
     /* EOF */
     {0}
@@ -275,10 +280,17 @@ static void cb_kafka_flush(const void *data, size_t bytes,
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         js, js_size, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c,
-                        "Content-Type", 12,
-                        "application/vnd.kafka.json.v2+json", 34);
-
+    if (ctx->avro_http_header == FLB_TRUE) {
+        flb_http_add_header(c,
+                            "Content-Type", 12,
+                            "application/vnd.kafka.avro.v2+json", 34);
+    }
+    else {
+        flb_http_add_header(c,
+                            "Content-Type", 12,
+                            "application/vnd.kafka.json.v2+json", 34);
+    }
+    
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }

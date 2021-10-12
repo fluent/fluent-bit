@@ -136,6 +136,14 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
 
+    /* Scheduler */
+    {FLB_CONF_STR_SCHED_CAP,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, sched_cap)},
+    {FLB_CONF_STR_SCHED_BASE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, sched_base)},
+
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     {FLB_CONF_STR_STREAMS_FILE,
      FLB_CONF_TYPE_STR,
@@ -201,6 +209,9 @@ struct flb_config *flb_config_init()
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
+
+    config->sched_cap  = FLB_SCHED_CAP;
+    config->sched_base = FLB_SCHED_BASE;
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);

@@ -287,7 +287,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->event.mask = MK_EVENT_EMPTY;
 
     /* Get suggested wait_time for this request */
-    seconds = backoff_full_jitter(FLB_SCHED_BASE, FLB_SCHED_CAP, tries);
+    seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, tries);
     seconds += 1;
 
     /* Populare request */
@@ -491,11 +491,9 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
 /* Disable notifications, used before to destroy the context */
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
-    int ret;
-
-    ret = mk_event_closesocket(timer->timer_fd);
+    mk_event_timeout_disable(timer->sched->evl, &timer->event);
     timer->timer_fd = -1;
-    return ret;
+    return 0;
 }
 
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)

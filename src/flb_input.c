@@ -245,6 +245,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
+        instance->storage_buf_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
     }
 
@@ -367,6 +368,15 @@ int flb_input_set_property(struct flb_input_instance *ins,
             }
         }
         flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
+        if (ins->storage_type == CIO_STORE_FS) {
+            ret = flb_utils_bool(tmp);
+            if (ret == -1) {
+                return -1;
+            }
+            ins->storage_pause_on_chunks_overlimit = ret;
+        }
     }
     else {
         /*

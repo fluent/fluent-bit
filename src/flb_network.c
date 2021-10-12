@@ -420,6 +420,11 @@ static int net_connect_async(int fd,
      */
     flb_coro_yield(async_ctx, FLB_FALSE);
 
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+    u_conn->coro = NULL;
+
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
 
@@ -727,16 +732,7 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
 
     event_mask = MK_EVENT_READ;
 
-    /*
-     * c-ares doesn't use a macro for the socket type so :
-     * 1 means it's a TCP socket
-     * 2 means it's a UDP socket
-     *
-     * For TCP sockets we want to monitor for write events because we need to call
-     * ares_process_fd in order to issue the query unlike UDP sockets which automatically
-     * send the query after creating the socket.
-     */
-    if (FLB_ARES_SOCKET_TYPE_TCP == type) {
+    if (SOCK_STREAM == type) {
         event_mask |= MK_EVENT_WRITE;
     }
 
@@ -929,7 +925,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
 
     /* We need to ensure that our timer won't overlap with the upstream timeout handler.
      */
-    if (timeout > 1000) {
+    if (timeout > 3000) {
         timeout -= 1000;
     }
     else {
@@ -944,40 +940,45 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints,
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    if (lookup_context->ares_socket_created) {
-        if (lookup_context->ares_socket_type == FLB_ARES_SOCKET_TYPE_UDP) {
-            /* If the socket type created by c-ares is UDP then we need to create our
-             * own timeout mechanism before yielding and cancel it if things go as
-             * expected.
-             */
-
-            sched = flb_sched_ctx_get();
-            assert(sched != NULL);
-
-            result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
-                                               timeout,
-                                               flb_net_getaddrinfo_timeout_handler,
-                                               lookup_context,
-                                               &lookup_context->udp_timer);
-            if (result == -1) {
-                /* Timer creation failed, it happen because of file descriptor or memory
-                 * exhaustion (ulimits usually)
+    if (!lookup_context->finished) {
+        if (lookup_context->ares_socket_created) {
+            if (lookup_context->ares_socket_type == SOCK_DGRAM) {
+                /* If the socket type created by c-ares is UDP then we need to create our
+                 * own timeout mechanism before yielding and cancel it if things go as
+                 * expected.
                  */
 
-                result_code = ARES_ENOMEM;
+                sched = flb_sched_ctx_get();
+                assert(sched != NULL);
 
-                ares_cancel(lookup_context->ares_channel);
+                result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                                   timeout,
+                                                   flb_net_getaddrinfo_timeout_handler,
+                                                   lookup_context,
+                                                   &lookup_context->udp_timer);
+                if (result == -1) {
+                    /* Timer creation failed, it happen because of file descriptor or memory
+                     * exhaustion (ulimits usually)
+                     */
 
-                lookup_context->coroutine = NULL;
+                    result_code = ARES_ENOMEM;
 
-                flb_net_dns_lookup_context_drop(lookup_context);
+                    ares_cancel(lookup_context->ares_channel);
+
+                    lookup_context->coroutine = NULL;
+
+                    flb_net_dns_lookup_context_drop(lookup_context);
+                }
+                else {
+                    flb_coro_yield(coroutine, FLB_FALSE);
+                }
             }
             else {
                 flb_coro_yield(coroutine, FLB_FALSE);
             }
         }
         else {
-            flb_coro_yield(coroutine, FLB_FALSE);
+            /* Do we want to do anything special for this condition? */
         }
     }
     else {
@@ -1092,6 +1093,21 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
         else {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, gai_strerror(ret));
+        }
+
+        return -1;
+    }
+
+    if (u_conn->net_error > 0) {
+        if (u_conn->net_error == ETIMEDOUT) {
+            flb_warn("[net] timeout detected between DNS lookup and connection attempt");
+        }
+
+        if (is_async) {
+            flb_net_free_translated_addrinfo(res);
+        }
+        else {
+            freeaddrinfo(res);
         }
 
         return -1;
