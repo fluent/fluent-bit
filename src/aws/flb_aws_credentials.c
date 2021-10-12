@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_jsmn.h>
 
-#include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <time.h>
 
-#define TEN_MINUTES    600
+#define FIVE_MINUTES   300
 #define TWELVE_HOURS   43200
 
 /* Credentials Environment Variables */
@@ -217,6 +217,23 @@ void async_fn_standard_chain(struct flb_aws_provider *provider)
     }
 }
 
+void upstream_set_fn_standard_chain(struct flb_aws_provider *provider,
+                                    struct flb_output_instance *ins)
+{
+    struct flb_aws_provider_chain *implementation = provider->implementation;
+    struct flb_aws_provider *sub_provider = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    /* set all providers to async mode */
+    mk_list_foreach_safe(head, tmp, &implementation->sub_providers) {
+        sub_provider = mk_list_entry(head,
+                                     struct flb_aws_provider,
+                                     _head);
+        sub_provider->provider_vtable->upstream_set(sub_provider, ins);
+    }
+}
+
 void destroy_fn_standard_chain(struct flb_aws_provider *provider) {
     struct flb_aws_provider *sub_provider;
     struct flb_aws_provider_chain *implementation;
@@ -244,6 +261,7 @@ static struct flb_aws_provider_vtable standard_chain_provider_vtable = {
     .destroy = destroy_fn_standard_chain,
     .sync = sync_fn_standard_chain,
     .async = async_fn_standard_chain,
+    .upstream_set = upstream_set_fn_standard_chain,
 };
 
 struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
@@ -482,7 +500,6 @@ int init_fn_environment(struct flb_aws_provider *provider)
     return refresh_env(provider);
 }
 
-
 /*
  * sync and async are no-ops for the env provider because it does not make
  * network IO calls
@@ -493,6 +510,12 @@ void sync_fn_environment(struct flb_aws_provider *provider)
 }
 
 void async_fn_environment(struct flb_aws_provider *provider)
+{
+    return;
+}
+
+void upstream_set_fn_environment(struct flb_aws_provider *provider,
+                                 struct flb_output_instance *ins)
 {
     return;
 }
@@ -509,6 +532,7 @@ static struct flb_aws_provider_vtable environment_provider_vtable = {
     .destroy = destroy_fn_environment,
     .sync = sync_fn_environment,
     .async = async_fn_environment,
+    .upstream_set = upstream_set_fn_environment,
 };
 
 struct flb_aws_provider *flb_aws_env_provider_create() {
@@ -588,22 +612,17 @@ time_t flb_aws_cred_expiration(const char *timestamp)
     }
     /*
      * Sanity check - expiration should be ~10 minutes to 12 hours in the future
-     * < 10 minutes is problematic because the provider auto-refreshes if creds
-     * expire in 5 minutes. Disabling auto-refresh reduces requests for creds.
-     * (The flb_aws_client will still force a refresh of creds and then retry
-     * if it receives an auth error).
      * (> 12 hours is impossible with the current APIs and would likely indicate
      *  a bug in how this code processes timestamps.)
      */
      now = time(NULL);
-     if (expiration < (now + TEN_MINUTES)) {
-         flb_warn("[aws_credentials] Credential expiration '%s' is less than"
-                  "10 minutes in the future. Disabling auto-refresh.",
+     if (expiration < (now + FIVE_MINUTES)) {
+         flb_warn("[aws_credentials] Credential expiration '%s' is less than "
+                  "5 minutes in the future.",
                   timestamp);
-         return -1;
      }
      if (expiration > (now + TWELVE_HOURS)) {
-         flb_warn("[aws_credentials] Credential expiration '%s' is greater than"
+         flb_warn("[aws_credentials] Credential expiration '%s' is greater than "
                   "12 hours in the future. This should not be possible.",
                   timestamp);
      }

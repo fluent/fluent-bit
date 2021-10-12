@@ -1,0 +1,26 @@
+name: Merge Bot
+
+on:
+  pull_request:
+    types:
+      - labeled
+      - ready_for_review
+      - review_request_removed
+      - review_requested
+      - synchronize
+      - unlabeled
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    name: Merge pull request
+    steps:
+      - name: Checks for merging
+        uses: squalrus/merge-bot@v0.4.3
+        with:
+          reviewers: false
+          GITHUB_TOKEN: ${{ secrets.GH_PA_TOKEN }}
+          labels: ok-to-merge
+          blocking_labels: docs-required, dont-merge
+          checks_enabled: false
+          method: rebase
+          delete_source_branch: true

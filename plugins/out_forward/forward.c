@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -746,6 +746,8 @@ static int forward_config_ha(const char *upstream_file,
         flb_upstream_node_set_data(fc, node);
     }
 
+    flb_output_upstream_ha_set(ctx->ha, ctx->ins);
+
     return 0;
 }
 
@@ -1342,4 +1344,7 @@ struct flb_output_plugin out_forward_plugin = {
 
     /* Flags */
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+
+    /* Event types */
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS
 };

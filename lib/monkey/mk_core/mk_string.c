@@ -20,10 +20,6 @@
 #define _GNU_SOURCE
 #include <string.h>
 
-#ifdef _WIN32
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -50,6 +46,66 @@ void *memrchr(const void *s, int c, size_t n)
         } while (--n != 0);
     }
     return(NULL);
+}
+#endif
+
+#ifndef MK_HAVE_MEMMEM
+void *memmem(const void *haystack, size_t haystacklen,
+             const void *needle, size_t needlelen)
+{
+    uint8_t *null_terminated_haystack_buffer;
+    uint8_t *null_terminated_needle_buffer;
+    uint8_t  free_haystack_buffer;
+    uint8_t  free_needle_buffer;
+    void    *result;
+
+    result = NULL;
+
+    free_haystack_buffer = 0;
+    free_needle_buffer = 0;
+
+    if(1024 > haystacklen){
+        null_terminated_haystack_buffer = (uint8_t *)_alloca(haystacklen + 1);
+    }
+    else
+    {
+        null_terminated_haystack_buffer = (uint8_t*)malloc(haystacklen + 1);
+        free_haystack_buffer = 1;
+    }
+
+    if(NULL != null_terminated_haystack_buffer){
+        if(1024 > needlelen){
+            null_terminated_needle_buffer = (uint8_t*)_alloca(needlelen + 1);
+        }
+        else
+        {
+            null_terminated_needle_buffer = (uint8_t*)malloc(needlelen + 1);
+            free_needle_buffer = 1;
+        }
+
+        if(NULL != null_terminated_needle_buffer){
+            memset(null_terminated_haystack_buffer, 0, haystacklen + 1);
+
+            memcpy(null_terminated_haystack_buffer, haystack, haystacklen);
+
+            memset(null_terminated_needle_buffer, 0, needlelen + 1);
+
+            memcpy(null_terminated_needle_buffer, needle, needlelen);
+
+            result = strstr(null_terminated_haystack_buffer, 
+                            null_terminated_needle_buffer);
+
+            if(free_needle_buffer){
+                free(null_terminated_needle_buffer);
+            }
+        }
+
+        if(free_haystack_buffer){
+            free(null_terminated_haystack_buffer);
+        }
+    }
+
+    return result;
 }
 #endif
 
@@ -481,7 +537,7 @@ uint32_t digits10(uint64_t v) {
     return 12 + digits10(v / 1000000000000UL);
 }
 
-#ifdef __GNUC__
+#if defined(__GNUC__) || defined(_WIN32)
 int mk_string_itop(uint64_t value, mk_ptr_t *p)
 {
     static const char digits[201] =

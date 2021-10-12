@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +32,7 @@
 #undef stat
 #undef lstat
 #undef fstat
+#undef lseek
 
 #undef S_IFDIR
 #undef S_IFCHR
@@ -49,6 +50,8 @@
 #define stat win32_stat
 #define lstat win32_lstat
 #define fstat win32_fstat
+
+#define lseek _lseeki64
 
 #define S_IFDIR WIN32_S_IFDIR
 #define S_IFCHR WIN32_S_IFCHR

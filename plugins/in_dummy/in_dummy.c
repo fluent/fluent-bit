@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
@@ -54,9 +55,7 @@ static int set_dummy_timestamp(msgpack_packer *mp_pck, struct flb_dummy *ctx)
     return ret;
 }
 
-/* cb_collect callback */
-static int in_dummy_collect(struct flb_input_instance *ins,
-                            struct flb_config *config, void *in_context)
+static int gen_msg(struct flb_input_instance *ins, void *in_context, msgpack_sbuffer *mp_sbuf)
 {
     size_t off = 0;
     size_t start = 0;
@@ -64,20 +63,15 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     int pack_size;
     msgpack_unpacked result;
     msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
     struct flb_dummy *ctx = in_context;
-
-    if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
-        return -1;
-    }
 
     pack = ctx->ref_msgpack;
     pack_size = ctx->ref_msgpack_size;
     msgpack_unpacked_init(&result);
 
     /* Initialize local msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_sbuffer_init(mp_sbuf);
+    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
 
     while (msgpack_unpack_next(&result, pack, pack_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
@@ -94,8 +88,28 @@ static int in_dummy_collect(struct flb_input_instance *ins,
     }
     msgpack_unpacked_destroy(&result);
 
-    flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    return 0;
+}
+
+/* cb_collect callback */
+static int in_dummy_collect(struct flb_input_instance *ins,
+                            struct flb_config *config, void *in_context)
+{
+    struct flb_dummy *ctx = in_context;
+    msgpack_sbuffer mp_sbuf;
+
+    if (ctx->samples > 0 && (ctx->samples_count >= ctx->samples)) {
+        return -1;
+    }
+
+    if (ctx->fixed_timestamp == FLB_FALSE) {
+        msgpack_sbuffer_init(&mp_sbuf);
+        gen_msg(ins, in_context, &mp_sbuf);
+        flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    } else {
+        flb_input_chunk_append_raw(ins, NULL, 0, ctx->mp_sbuf.data, ctx->mp_sbuf.size);
+    }
 
     if (ctx->samples > 0) {
         ctx->samples_count++;
@@ -108,6 +122,9 @@ static int config_destroy(struct flb_dummy *ctx)
     flb_free(ctx->dummy_timestamp);
     flb_free(ctx->base_timestamp);
     flb_free(ctx->dummy_message);
+    if (ctx->fixed_timestamp == FLB_TRUE) {
+        msgpack_sbuffer_destroy(&ctx->mp_sbuf);
+    }
     flb_free(ctx->ref_msgpack);
     flb_free(ctx);
     return 0;
@@ -127,10 +144,9 @@ static int configure(struct flb_dummy *ctx,
 
     ctx->ref_msgpack = NULL;
 
-    /* samples */
-    str = flb_input_get_property("samples", in);
-    if (str != NULL && atoi(str) >= 0) {
-        ctx->samples = atoi(str);
+    ret = flb_input_config_map_set(in, (void *) ctx);
+    if (ret == -1) {
+        return -1;
     }
 
     /* the message */
@@ -194,6 +210,10 @@ static int configure(struct flb_dummy *ctx,
         }
     }
 
+    if (ctx->fixed_timestamp == FLB_TRUE) {
+        gen_msg(in, ctx, &ctx->mp_sbuf);
+    }
+
     return 0;
 }
 
@@ -246,6 +266,42 @@ static int in_dummy_exit(void *data, struct flb_config *config)
 }
 
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_INT, "samples", "0",
+    0, FLB_TRUE, offsetof(struct flb_dummy, samples),
+    "set a number of times to generate event."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "dummy", DEFAULT_DUMMY_MESSAGE,
+    0, FLB_FALSE, 0,
+    "set the sample record to be generated. It should be a JSON object."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "rate", "1",
+    0, FLB_FALSE, 0,
+    "set a number of events per second."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "start_time_sec", "1",
+    0, FLB_FALSE, 0,
+    "set a dummy base timestamp in seconds."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "start_time_nsec", "0",
+    0, FLB_FALSE, 0,
+    "set a dummy base timestamp in nanoseconds."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "fixed_timestamp", "off",
+    0, FLB_TRUE, offsetof(struct flb_dummy, fixed_timestamp),
+    "used a fixed timestamp, allows the message to pre-generated once."
+   },
+   {0}
+};
+
+
 struct flb_input_plugin in_dummy_plugin = {
     .name         = "dummy",
     .description  = "Generate dummy data",
@@ -253,5 +309,6 @@ struct flb_input_plugin in_dummy_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_dummy_collect,
     .cb_flush_buf = NULL,
+    .config_map   = config_map,
     .cb_exit      = in_dummy_exit
 };

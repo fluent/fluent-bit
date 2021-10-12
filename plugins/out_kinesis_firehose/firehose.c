@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -225,6 +225,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     /* initialize credentials and set to sync mode */
     ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
     ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+    ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
     if (ctx->endpoint == NULL) {
         ctx->endpoint = flb_aws_endpoint("firehose", (char *) ctx->region);
@@ -242,6 +243,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->firehose_client->has_auth = FLB_TRUE;
     ctx->firehose_client->provider = ctx->aws_provider;
     ctx->firehose_client->region = (char *) ctx->region;
+    ctx->firehose_client->retry_requests = ctx->retry_requests;
     ctx->firehose_client->service = "firehose";
     ctx->firehose_client->port = 443;
     ctx->firehose_client->flags = 0;
@@ -329,7 +331,7 @@ static void cb_firehose_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_info(ctx->ins, "Processed %d records, sent %d to %s",
+    flb_plg_debug(ctx->ins, "Processed %d records, sent %d to %s",
                  buf->records_processed, buf->records_sent, ctx->delivery_stream);
     flush_destroy(buf);
 
@@ -433,6 +435,16 @@ static struct flb_config_map config_map[] = {
      "that key will be sent to Firehose. For example, if you are using "
      "the Fluentd Docker log driver, you can specify `log_key log` and only "
      "the log message will be sent to Firehose."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     0, FLB_TRUE, offsetof(struct flb_firehose, retry_requests),
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     /* EOF */

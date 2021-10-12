@@ -21,10 +21,16 @@
 #define MK_CONFIG_H
 
 #define _GNU_SOURCE
-#include <unistd.h>
+#include <monkey/mk_core.h>
 
 #include <monkey/mk_info.h>
 #include "../../deps/rbtree/rbtree.h"
+
+#ifdef _WIN32
+typedef uint32_t mode_t;
+typedef uint32_t uid_t;
+typedef uint32_t gid_t;
+#endif
 
 #ifndef O_NOATIME
 #define O_NOATIME       01000000
@@ -148,6 +154,7 @@ struct mk_server
     int lib_mode;                   /* is running in Library mode ? */
     int lib_ch_manager[2];          /* lib channel manager */
     struct mk_event_loop *lib_evl;  /* lib event loop */
+    struct mk_event  lib_ch_event;  /* lib channel manager event ? */
 
     /* Scheduler context (struct mk_sched_ctx) */
     void *sched_ctx;
@@ -164,6 +171,19 @@ struct mk_server
 
     /* FIXME: temporal map of Network Layer plugin */
     struct mk_plugin_network *network;
+
+    /* Thread initializator helpers (sched_launch_thread) */
+    int             pth_init;
+    pthread_cond_t  pth_cond;
+    pthread_mutex_t pth_mutex;
+
+    /* Used for vhost initialization synchronization */
+    pthread_mutex_t vhost_fdt_mutex;
+
+    /* worker_id as used by mk_sched_register_thread, it was moved here
+     * because it has to be local to each mk_server instance.
+     */
+    int             worker_id;
 
     /* Direct map to Stage plugins */
     struct mk_list stage10_handler;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,12 +27,71 @@
 #include "tail_config.h"
 #include "tail_file_internal.h"
 
-int flb_tail_fs_init(struct flb_input_instance *in,
-                     struct flb_tail_config *ctx, struct flb_config *config);
-int flb_tail_fs_add(struct flb_tail_file *file);
-int flb_tail_fs_remove(struct flb_tail_file *file);
-int flb_tail_fs_exit(struct flb_tail_config *ctx);
-void flb_tail_fs_pause(struct flb_tail_config *ctx);
-void flb_tail_fs_resume(struct flb_tail_config *ctx);
+#include "tail_fs_stat.h"
+#ifdef FLB_HAVE_INOTIFY
+#include "tail_fs_inotify.h"
+#endif
+
+static inline int flb_tail_fs_init(struct flb_input_instance *in,
+                     struct flb_tail_config *ctx, struct flb_config *config)
+{
+#ifdef FLB_HAVE_INOTIFY
+    if (ctx->inotify_watcher) {
+        return flb_tail_fs_inotify_init(in, ctx, config);
+    }
+#endif
+    return flb_tail_fs_stat_init(in, ctx, config);
+}
+
+static inline void flb_tail_fs_pause(struct flb_tail_config *ctx)
+{
+#ifdef FLB_HAVE_INOTIFY
+    if (ctx->inotify_watcher) {
+        return flb_tail_fs_inotify_pause(ctx);
+    }
+#endif
+    return flb_tail_fs_stat_pause(ctx);
+}
+
+static inline void flb_tail_fs_resume(struct flb_tail_config *ctx)
+{
+#ifdef FLB_HAVE_INOTIFY
+    if (ctx->inotify_watcher) {
+        return flb_tail_fs_inotify_resume(ctx);
+    }
+#endif
+    return flb_tail_fs_stat_resume(ctx);
+}
+
+static inline int flb_tail_fs_add(struct flb_tail_config *ctx, struct flb_tail_file *file)
+{
+#ifdef FLB_HAVE_INOTIFY
+    if (ctx->inotify_watcher) {
+        return flb_tail_fs_inotify_add(file);
+    }
+#endif
+    return flb_tail_fs_stat_add(file);
+}
+
+static inline int flb_tail_fs_remove(struct flb_tail_config *ctx, struct flb_tail_file *file)
+{
+#ifdef FLB_HAVE_INOTIFY
+    if (ctx->inotify_watcher) {
+        return flb_tail_fs_inotify_remove(file);
+    }
+#endif
+    return flb_tail_fs_stat_remove(file);
+}
+
+static inline int flb_tail_fs_exit(struct flb_tail_config *ctx)
+{
+#ifdef FLB_HAVE_INOTIFY
+    if (ctx->inotify_watcher) {
+        return flb_tail_fs_inotify_exit(ctx);
+    }
+#endif
+    return flb_tail_fs_stat_exit(ctx);
+}
+
 
 #endif

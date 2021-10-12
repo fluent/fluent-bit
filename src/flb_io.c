@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,11 +60,11 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_engine.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_http_client.h>
 
-FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
-                                  struct flb_thread *th)
+int flb_io_net_connect(struct flb_upstream_conn *u_conn,
+                       struct flb_coro *coro)
 {
     int ret;
     int async = FLB_FALSE;
@@ -73,10 +73,12 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
     if (u_conn->fd > 0) {
         flb_socket_close(u_conn->fd);
+        u_conn->fd = -1;
+        u_conn->event.fd = -1;
     }
 
     /* Check which connection mode must be done */
-    if (th) {
+    if (coro) {
         async = flb_upstream_is_async(u);
     }
     else {
@@ -85,7 +87,7 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 
     /* Perform TCP connection */
     fd = flb_net_tcp_connect(u->tcp_host, u->tcp_port, u->net.source_address,
-                             u->net.connect_timeout, async, th, u_conn);
+                             u->net.connect_timeout, async, coro, u_conn);
     if (fd == -1) {
         return -1;
     }
@@ -105,9 +107,8 @@ FLB_INLINE int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 #ifdef FLB_HAVE_TLS
     /* Check if TLS was enabled, if so perform the handshake */
     if (u->flags & FLB_IO_TLS) {
-        ret = flb_tls_session_create(u->tls, u_conn, th);
+        ret = flb_tls_session_create(u->tls, u_conn, coro);
         if (ret != 0) {
-            flb_socket_close(fd);
             return -1;
         }
     }
@@ -123,11 +124,11 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
     int ret;
     int tries = 0;
     size_t total = 0;
+    struct flb_coro *coro;
 
     if (u_conn->fd <= 0) {
-        struct flb_thread *th;
-        th = (struct flb_thread *) pthread_getspecific(flb_thread_key);
-        ret = flb_io_net_connect(u_conn, th);
+        coro = flb_coro_get();
+        ret = flb_io_net_connect(u_conn, coro);
         if (ret == -1) {
             return -1;
         }
@@ -167,7 +168,7 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
  * Intentionally we register/de-register the socket file descriptor from
  * the event loop each time when we require to do some work.
  */
-static FLB_INLINE int net_io_write_async(struct flb_thread *th,
+static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                                          struct flb_upstream_conn *u_conn,
                                          const void *data, size_t len, size_t *out_len)
 {
@@ -193,19 +194,19 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
 
 #ifdef FLB_HAVE_TRACE
     if (bytes > 0) {
-        flb_trace("[io thread=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
-                  th, u_conn->fd, bytes, total + bytes, len);
+        flb_trace("[io coro=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
+                  co, u_conn->fd, bytes, total + bytes, len);
     }
     else {
-        flb_trace("[io thread=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
-                  th, u_conn->fd, bytes, total, len);
+        flb_trace("[io coro=%p] [fd %i] write_async(2)=%d (%lu/%lu)",
+                  co, u_conn->fd, bytes, total, len);
     }
 #endif
 
     if (bytes == -1) {
         if (FLB_WOULDBLOCK()) {
-            u_conn->thread = th;
-            ret = mk_event_add(u->evl,
+            u_conn->coro = co;
+            ret = mk_event_add(u_conn->evl,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
                                MK_EVENT_WRITE, &u_conn->event);
@@ -221,13 +222,18 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
              * Return the control to the parent caller, we need to wait for
              * the event loop to get back to us.
              */
-            flb_thread_yield(th, FLB_FALSE);
+            flb_coro_yield(co, FLB_FALSE);
+
+            /* We want this field to hold NULL at all times unless we are explicitly
+             * waiting to be resumed.
+             */
+            u_conn->coro = NULL;
 
             /* Save events mask since mk_event_del() will reset it */
             mask = u_conn->event.mask;
 
             /* We got a notification, remove the event registered */
-            ret = mk_event_del(u->evl, &u_conn->event);
+            ret = mk_event_del(u_conn->evl, &u_conn->event);
             if (ret == -1) {
                 return -1;
             }
@@ -263,8 +269,8 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
     if (total < len) {
         if (u_conn->event.status == MK_EVENT_NONE) {
             u_conn->event.mask = MK_EVENT_EMPTY;
-            u_conn->thread = th;
-            ret = mk_event_add(u->evl,
+            u_conn->coro = co;
+            ret = mk_event_add(u_conn->evl,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
                                MK_EVENT_WRITE, &u_conn->event);
@@ -276,13 +282,20 @@ static FLB_INLINE int net_io_write_async(struct flb_thread *th,
                 return -1;
             }
         }
-        flb_thread_yield(th, MK_FALSE);
+
+        flb_coro_yield(co, MK_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry;
     }
 
     if (u_conn->event.status & MK_EVENT_REGISTERED) {
         /* We got a notification, remove the event registered */
-        ret = mk_event_del(u->evl, &u_conn->event);
+        ret = mk_event_del(u_conn->evl, &u_conn->event);
         assert(ret == 0);
     }
 
@@ -303,19 +316,18 @@ static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
     return ret;
 }
 
-static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
+static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                                             struct flb_upstream_conn *u_conn,
                                             void *buf, size_t len)
 {
     int ret;
-    struct flb_upstream *u = u_conn->u;
 
  retry_read:
     ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
         if (FLB_WOULDBLOCK()) {
-            u_conn->thread = th;
-            ret = mk_event_add(u->evl,
+            u_conn->coro = co;
+            ret = mk_event_add(u_conn->evl,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
                                MK_EVENT_READ, &u_conn->event);
@@ -324,10 +336,16 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_thread *th,
                  * If we failed here there no much that we can do, just
                  * let the caller we failed
                  */
-                flb_socket_close(u_conn->fd);
                 return -1;
             }
-            flb_thread_yield(th, MK_FALSE);
+
+            flb_coro_yield(co, MK_FALSE);
+
+            /* We want this field to hold NULL at all times unless we are explicitly
+             * waiting to be resumed.
+             */
+            u_conn->coro = NULL;
+
             goto retry_read;
         }
         return -1;
@@ -345,14 +363,13 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
 {
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
-    struct flb_thread *th = pthread_getspecific(flb_thread_key);
+    struct flb_coro *coro = flb_coro_get();
 
-    flb_trace("[io thread=%p] [net_write] trying %zd bytes",
-              th, len);
+    flb_trace("[io coro=%p] [net_write] trying %zd bytes", coro, len);
 
     if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = net_io_write_async(th, u_conn, data, len, out_len);
+            ret = net_io_write_async(coro, u_conn, data, len, out_len);
         }
         else {
             ret = net_io_write(u_conn, data, len, out_len);
@@ -361,7 +378,7 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_tls_net_write_async(th, u_conn, data, len, out_len);
+            ret = flb_tls_net_write_async(coro, u_conn, data, len, out_len);
         }
         else {
             ret = flb_tls_net_write(u_conn, data, len, out_len);
@@ -375,8 +392,8 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
         u_conn->event.fd = -1;
     }
 
-    flb_trace("[io thread=%p] [net_write] ret=%i total=%lu/%lu",
-              th, ret, *out_len, len);
+    flb_trace("[io coro=%p] [net_write] ret=%i total=%lu/%lu",
+              coro, ret, *out_len, len);
     return ret;
 }
 
@@ -384,14 +401,13 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 {
     int ret = -1;
     struct flb_upstream *u = u_conn->u;
-    struct flb_thread *th = pthread_getspecific(flb_thread_key);
+    struct flb_coro *coro = flb_coro_get();
 
-    flb_trace("[io thread=%p] [net_read] try up to %zd bytes",
-              th, len);
+    flb_trace("[io coro=%p] [net_read] try up to %zd bytes", coro, len);
 
     if (!u_conn->tls_session) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = net_io_read_async(th, u_conn, buf, len);
+            ret = net_io_read_async(coro, u_conn, buf, len);
         }
         else {
             ret = net_io_read(u_conn, buf, len);
@@ -400,7 +416,7 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
 #ifdef FLB_HAVE_TLS
     else if (u->flags & FLB_IO_TLS) {
         if (u->flags & FLB_IO_ASYNC) {
-            ret = flb_tls_net_read_async(th, u_conn, buf, len);
+            ret = flb_tls_net_read_async(coro, u_conn, buf, len);
         }
         else {
             ret = flb_tls_net_read(u_conn, buf, len);
@@ -408,6 +424,6 @@ ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     }
 #endif
 
-    flb_trace("[io thread=%p] [net_read] ret=%i", th, ret);
+    flb_trace("[io coro=%p] [net_read] ret=%i", coro, ret);
     return ret;
 }

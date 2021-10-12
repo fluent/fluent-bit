@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_gzip.h>
 #include <mbedtls/sha256.h>
 #include <mbedtls/base64.h>
 
@@ -68,12 +69,17 @@ static int send_blob(struct flb_config *config,
                      char *tag, int tag_len, void *data, size_t bytes)
 {
     int ret;
+    int compressed = FLB_FALSE;
+    int content_encoding = FLB_FALSE;
+    int content_type = FLB_FALSE;
     uint64_t ms = 0;
     size_t b_sent;
     void *out_buf;
     size_t out_size;
     flb_sds_t uri = NULL;
     flb_sds_t blockid = NULL;
+    void *payload_buf;
+    size_t payload_size;
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
 
@@ -117,10 +123,37 @@ static int send_blob(struct flb_config *config,
         return FLB_RETRY;
     }
 
+    /* Map buffer */
+    payload_buf = out_buf;
+    payload_size = out_size;
+
+    if (ctx->compress_gzip == FLB_TRUE || ctx->compress_blob == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) out_buf, out_size,
+                                &payload_buf, &payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
+        }
+        else {
+            compressed = FLB_TRUE;
+            /* JSON buffer is not longer needed */
+            flb_sds_destroy(out_buf);
+        }
+    }
+
+    if (ctx->compress_blob == FLB_TRUE) {
+        content_encoding = AZURE_BLOB_CE_NONE;
+        content_type = AZURE_BLOB_CT_GZIP;
+    }
+    else if (compressed == FLB_TRUE) {
+        content_encoding = AZURE_BLOB_CE_GZIP;
+        content_type = AZURE_BLOB_CT_JSON;
+    }
+
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_PUT,
                         uri,
-                        out_buf, out_size, NULL, 0, NULL, 0);
+                        payload_buf, payload_size, NULL, 0, NULL, 0);
     if (!c) {
         flb_plg_error(ctx->ins, "cannot create HTTP client context");
         flb_sds_destroy(out_buf);
@@ -130,14 +163,21 @@ static int send_blob(struct flb_config *config,
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, (ssize_t) out_size, FLB_FALSE, FLB_FALSE);
+    azb_http_client_setup(ctx, c, (ssize_t) payload_size, FLB_FALSE,
+                          content_type, content_encoding);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
     flb_sds_destroy(uri);
 
     /* Release */
-    flb_sds_destroy(out_buf);
+    if (compressed == FLB_FALSE) {
+        flb_sds_destroy(out_buf);
+    }
+    else {
+        flb_free(payload_buf);
+    }
+
     flb_upstream_conn_release(u_conn);
 
     /* Validate HTTP status */
@@ -214,16 +254,17 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE, FLB_TRUE);
+    azb_http_client_setup(ctx, c, -1, FLB_TRUE,
+                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
     flb_sds_destroy(uri);
-    flb_upstream_conn_release(u_conn);
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending append_blob");
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
@@ -240,10 +281,12 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
                           c->resp.status);
         }
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
     return FLB_OK;
 }
 
@@ -281,7 +324,8 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     }
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE, FLB_FALSE);
+    azb_http_client_setup(ctx, c, -1, FLB_FALSE,
+                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -292,8 +336,8 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     /* Validate http response */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error requesting container creation");
-        flb_upstream_conn_release(u_conn);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
 
@@ -359,7 +403,8 @@ static int ensure_container(struct flb_azure_blob *ctx)
     flb_http_strip_port_from_host(c);
 
     /* Prepare headers and authentication */
-    azb_http_client_setup(ctx, c, -1, FLB_FALSE, FLB_FALSE);
+    azb_http_client_setup(ctx, c, -1, FLB_FALSE,
+                          AZURE_BLOB_CT_NONE, AZURE_BLOB_CE_NONE);
 
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
@@ -476,6 +521,19 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "blob_type", "appendblob",
      0, FLB_TRUE, offsetof(struct flb_azure_blob, blob_type),
      "Set the block type: appendblob or blockblob"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "compress", NULL,
+     0, FLB_FALSE, 0,
+     "Set payload compression in network transfer. Option available is 'gzip'"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "compress_blob", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, compress_blob),
+     "Enable block blob GZIP compression in the final blob file. This option is "
+     "not compatible with 'appendblob' block type"
     },
 
     {

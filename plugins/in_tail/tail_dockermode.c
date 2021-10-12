@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -375,13 +375,13 @@ void flb_tail_dmode_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
                 goto dmode_flush_end;
             }
             flb_tail_pack_line_map(mp_sbuf, mp_pck, &out_time,
-                                   (char**) &out_buf, &out_size, file);
+                                   (char**) &out_buf, &out_size, file, 0);
             goto dmode_flush_end;        }
     }
 #endif
     flb_time_get(&out_time);
     flb_tail_file_pack_line(mp_sbuf, mp_pck, &out_time,
-                            repl_line, repl_line_len, file);
+                            repl_line, repl_line_len, file, 0);
 
  dmode_flush_end:
     flb_free(repl_line);

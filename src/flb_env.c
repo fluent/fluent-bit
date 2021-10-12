@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,7 +103,7 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     int id;
     int klen;
     int vlen;
-    const char *out_buf;
+    void *out_buf;
     size_t out_size;
 
     /* Get lengths */
@@ -118,7 +118,7 @@ int flb_env_set(struct flb_env *env, const char *key, const char *val)
     }
 
     /* Register the new key */
-    id = flb_hash_add(env->ht, key, klen, val, vlen);
+    id = flb_hash_add(env->ht, key, klen, (void *) val, vlen);
     return id;
 }
 
@@ -126,7 +126,7 @@ const char *flb_env_get(struct flb_env *env, const char *key)
 {
     int len;
     int ret;
-    const char *out_buf;
+    void *out_buf;
     size_t out_size;
 
     if (!key) {
@@ -138,7 +138,7 @@ const char *flb_env_get(struct flb_env *env, const char *key)
     /* Try to get the value from the hash table */
     ret = flb_hash_get(env->ht, key, len, &out_buf, &out_size);
     if (ret >= 0) {
-        return out_buf;
+        return (char *) out_buf;
     }
 
     /* If it was not found, try to get it from the real environment */
@@ -151,7 +151,7 @@ const char *flb_env_get(struct flb_env *env, const char *key)
         return NULL;
     }
 
-    return out_buf;
+    return (char *) out_buf;
 }
 
 /*

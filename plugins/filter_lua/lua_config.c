@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,10 +37,10 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
                                      struct flb_config *config)
 {
     int ret;
-    const char *tmp;
     char *tmp_key;
     char buf[PATH_MAX];
     const char *script = NULL;
+    const char *tmp = NULL;
     (void) config;
     struct stat st;
     struct lua_filter *lf;
@@ -56,30 +56,38 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         flb_errno();
         return NULL;
     }
+    ret = flb_filter_config_map_set(ins, (void*)lf);
+    if (ret < 0) {
+        flb_errno();
+        flb_plg_error(ins, "configuration error");
+        flb_free(lf);
+        return NULL;
+    }
+
     mk_list_init(&lf->l2c_types);
     lf->ins = ins;
+    lf->script = NULL;
 
     /* Config: script */
-    tmp = flb_filter_get_property("script", ins);
-    if (!tmp) {
+    script = flb_filter_get_property("script", ins);
+    if (!script) {
         flb_plg_error(lf->ins, "no script path defined");
         flb_free(lf);
         return NULL;
     }
-    script = tmp;
 
     /* Compose path */
-    ret = stat(tmp, &st);
+    ret = stat(script, &st);
     if (ret == -1 && errno == ENOENT) {
-        if (tmp[0] == '/') {
-            flb_plg_error(lf->ins, "cannot access script '%s'", tmp);
+        if (script[0] == '/') {
+            flb_plg_error(lf->ins, "cannot access script '%s'", script);
             flb_free(lf);
             return NULL;
         }
 
         if (config->conf_path) {
             snprintf(buf, sizeof(buf) - 1, "%s%s",
-                     config->conf_path, tmp);
+                     config->conf_path, script);
             script = buf;
         }
     }
@@ -99,15 +107,6 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
-    /* Config: call */
-    tmp = flb_filter_get_property("call", ins);
-    if (!tmp) {
-        flb_plg_error(lf->ins, "no call property defined");
-        lua_config_destroy(lf);
-        return NULL;
-    }
-
-    lf->call = flb_sds_create(tmp);
     if (!lf->call) {
         flb_plg_error(lf->ins, "could not allocate call");
         lua_config_destroy(lf);
@@ -132,6 +131,7 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
 
             tmp_key = flb_strndup(sentry->value, sentry->len);
             l2c->key = flb_sds_create(tmp_key);
+            l2c->type = L2C_TYPE_INT;
             flb_free(tmp_key);
 
             mk_list_add(&l2c->_head, &lf->l2c_types);
@@ -140,16 +140,23 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
         flb_utils_split_free(split);
     }
 
-    lf->protected_mode = FLB_TRUE;
-    tmp = flb_filter_get_property("protected_mode", ins);
+    tmp = flb_filter_get_property("type_array_key", ins);
     if (tmp) {
-        lf->protected_mode = flb_utils_bool(tmp);
-    }
+        split = flb_utils_split(tmp, ' ', L2C_TYPES_NUM_MAX);
+        mk_list_foreach_safe(head, tmp_list, split) {
+            l2c = flb_malloc(sizeof(struct l2c_type));
 
-    lf->time_as_table = FLB_FALSE;
-    tmp = flb_filter_get_property("time_as_table", ins);
-    if (tmp) {
-        lf->time_as_table = flb_utils_bool(tmp);
+            sentry = mk_list_entry(head, struct flb_split_entry, _head);
+
+            tmp_key = flb_strndup(sentry->value, sentry->len);
+            l2c->key = flb_sds_create(tmp_key);
+            l2c->type = L2C_TYPE_ARRAY;
+            flb_free(tmp_key);
+
+            mk_list_add(&l2c->_head, &lf->l2c_types);
+            lf->l2c_types_num++;
+        }
+        flb_utils_split_free(split);
     }
 
     return lf;
@@ -167,9 +174,6 @@ void lua_config_destroy(struct lua_filter *lf)
 
     if (lf->script) {
         flb_sds_destroy(lf->script);
-    }
-    if (lf->call) {
-        flb_sds_destroy(lf->call);
     }
     if (lf->buffer) {
         flb_sds_destroy(lf->buffer);

@@ -38,9 +38,18 @@ target_link_libraries(monkey-core-static mk_core ${CMAKE_THREAD_LIBS_INIT} ${STA
 
 message(STATUS "LINKING ${STATIC_PLUGINS_LIBS}")
 
+if(NOT DEFINED MK_HAVE_REGEX)
+ target_link_libraries(monkey-core-static regex)
+endif()
+
 # Linux Kqueue emulation
 if(MK_HAVE_LINUX_KQUEUE)
   target_link_libraries(monkey-core-static kqueue)
+endif()
+
+# FreeBSD backtrace
+if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+  target_link_libraries(monkey-core-static execinfo)
 endif()
 
 if (CMAKE_SYSTEM_NAME MATCHES "SunOS")

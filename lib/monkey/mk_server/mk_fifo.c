@@ -20,6 +20,10 @@
 #include <monkey/mk_fifo.h>
 #include <monkey/mk_scheduler.h>
 
+#ifdef _WIN32
+#include <event.h>
+#endif
+
 static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
                                                     void *data)
 {
@@ -50,12 +54,21 @@ static struct mk_fifo_worker *mk_fifo_worker_create(struct mk_fifo *ctx,
     fw->buf_len = 0;
     fw->buf_size = MK_FIFO_BUF_SIZE;
 
+#ifdef _WIN32
+    ret = evutil_socketpair(AF_INET, SOCK_STREAM, 0, fw->channel);
+    if (ret == -1) {
+        perror("socketpair");
+        mk_mem_free(fw);
+        return NULL;
+    }
+#else
     ret = pipe(fw->channel);
     if (ret == -1) {
         perror("pipe");
         mk_mem_free(fw);
         return NULL;
     }
+#endif
 
     mk_list_add(&fw->_head, &ctx->workers);
     return fw;
@@ -103,8 +116,15 @@ struct mk_fifo *mk_fifo_create(pthread_key_t *key, void *data)
 
 
     /* Pthread specifics */
-    ctx->key = key;
-    pthread_key_create(ctx->key, NULL);
+
+    /* We need to isolate this because there is a key that's shared between monkey
+     * instances by design.
+     */
+    if (key != NULL) {
+        ctx->key = key;
+        pthread_key_create(ctx->key, NULL);
+    }
+
     pthread_mutex_init(&ctx->mutex_init, NULL);
 
     return ctx;
@@ -244,7 +264,11 @@ static int msg_write(int fd, void *buf, size_t count)
     size_t total = 0;
 
     do {
-        bytes = write(fd, buf + total, count - total);
+#ifdef _WIN32
+        bytes = send(fd, (uint8_t *)buf + total, count - total, 0);
+#else
+        bytes = write(fd, (uint8_t *)buf + total, count - total);
+#endif
         if (bytes == -1) {
             if (errno == EAGAIN) {
                 /*
@@ -252,7 +276,12 @@ static int msg_write(int fd, void *buf, size_t count)
                  * return until all data have been read, just sleep a little
                  * bit (0.05 seconds)
                  */
+
+#ifdef _WIN32
+                Sleep(5);
+#else
                 usleep(50000);
+#endif
                 continue;
             }
         }
@@ -286,6 +315,8 @@ int mk_fifo_send(struct mk_fifo *ctx, int id, void *data, size_t size)
         return -1;
     }
 
+    pthread_mutex_lock(&ctx->mutex_init);
+
     mk_list_foreach(head, &ctx->workers) {
         fw = mk_list_entry(head, struct mk_fifo_worker, _head);
 
@@ -295,6 +326,7 @@ int mk_fifo_send(struct mk_fifo *ctx, int id, void *data, size_t size)
 
         ret = msg_write(fw->channel[1], &msg, sizeof(struct mk_fifo_msg));
         if (ret == -1) {
+            pthread_mutex_unlock(&ctx->mutex_init);
             perror("write");
             fprintf(stderr, "[msg] error writing message header\n");
             return -1;
@@ -302,11 +334,14 @@ int mk_fifo_send(struct mk_fifo *ctx, int id, void *data, size_t size)
 
         ret = msg_write(fw->channel[1], data, size);
         if (ret == -1) {
+            pthread_mutex_unlock(&ctx->mutex_init);
             perror("write");
             fprintf(stderr, "[msg] error writing message body\n");
             return -1;
         }
     }
+
+    pthread_mutex_unlock(&ctx->mutex_init);
 
     return 0;
 }
@@ -368,7 +403,12 @@ int mk_fifo_worker_read(void *event)
     }
 
     /* Read data from pipe */
+#ifdef _WIN32
+    bytes = recv(fw->channel[0], fw->buf_data + fw->buf_len, available, 0);
+#else
     bytes = read(fw->channel[0], fw->buf_data + fw->buf_len, available);
+#endif
+
     if (bytes == 0) {
         return -1;
     }

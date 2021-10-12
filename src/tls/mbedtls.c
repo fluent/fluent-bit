@@ -66,6 +66,11 @@ static void tls_debug(void *ctx, int level,
               line, str);
 }
 
+static int tls_init(void)
+{
+    return 0;
+}
+
 #ifdef _MSC_VER
 static int windows_load_system_certificates(struct tls_context *ctx)
 {

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,10 +22,10 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_jsmn.h>
 
 #include <mbedtls/ctr_drbg.h>
 #include "mbedtls/entropy.h"
-#include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
@@ -219,6 +219,19 @@ void async_fn_sts(struct flb_aws_provider *provider) {
     base_provider->provider_vtable->async(base_provider);
 }
 
+void upstream_set_fn_sts(struct flb_aws_provider *provider,
+                        struct flb_output_instance *ins) {
+    struct flb_aws_provider_sts *implementation = provider->implementation;
+    struct flb_aws_provider *base_provider = implementation->base_provider;
+
+    flb_debug("[aws_credentials] upstream_set called on the STS provider");
+    /* associate output and upstream */
+    flb_output_upstream_set(implementation->sts_client->upstream, ins);
+
+    /* we also need to call upstream_set on the base_provider */
+    base_provider->provider_vtable->upstream_set(base_provider, ins);
+}
+
 void destroy_fn_sts(struct flb_aws_provider *provider) {
     struct flb_aws_provider_sts *implementation;
 
@@ -255,6 +268,7 @@ static struct flb_aws_provider_vtable sts_provider_vtable = {
     .destroy = destroy_fn_sts,
     .sync = sync_fn_sts,
     .async = async_fn_sts,
+    .upstream_set = upstream_set_fn_sts,
 };
 
 struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
@@ -488,6 +502,14 @@ void async_fn_eks(struct flb_aws_provider *provider) {
     implementation->sts_client->upstream->flags |= FLB_IO_ASYNC;
 }
 
+void upstream_set_fn_eks(struct flb_aws_provider *provider,
+                         struct flb_output_instance *ins) {
+    struct flb_aws_provider_eks *implementation = provider->implementation;
+    flb_debug("[aws_credentials] upstream_set called on the EKS provider");
+    /* set upstream on output */
+    flb_output_upstream_set(implementation->sts_client->upstream, ins);
+}
+
 void destroy_fn_eks(struct flb_aws_provider *provider) {
     struct flb_aws_provider_eks *implementation = provider->
                                                           implementation;
@@ -521,6 +543,7 @@ static struct flb_aws_provider_vtable eks_provider_vtable = {
     .destroy = destroy_fn_eks,
     .sync = sync_fn_eks,
     .async = async_fn_eks,
+    .upstream_set = upstream_set_fn_eks,
 };
 
 struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,

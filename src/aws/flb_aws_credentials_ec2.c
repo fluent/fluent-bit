@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,8 +22,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/aws/flb_aws_imds.h>
 
-#include <jsmn/jsmn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <sys/types.h>
@@ -31,8 +32,6 @@
 
 #define AWS_IMDS_ROLE_PATH      "/latest/meta-data/iam/security-credentials/"
 #define AWS_IMDS_ROLE_PATH_LEN  43
-
-#define AWS_IMDS_HOST           "169.254.169.254"
 
 struct flb_aws_provider_ec2;
 static int get_creds_ec2(struct flb_aws_provider_ec2 *implementation);
@@ -49,7 +48,10 @@ struct flb_aws_provider_ec2 {
     time_t next_refresh;
 
     /* upstream connection to IMDS */
-     struct flb_aws_client *client;
+    struct flb_aws_client *client;
+    
+    /* IMDS interface */
+    struct flb_aws_imds *imds_interface;
 };
 
 struct flb_aws_credentials *get_credentials_fn_ec2(struct flb_aws_provider
@@ -167,12 +169,27 @@ void async_fn_ec2(struct flb_aws_provider *provider) {
     implementation->client->upstream->flags |= FLB_IO_ASYNC;
 }
 
+void upstream_set_fn_ec2(struct flb_aws_provider *provider,
+                         struct flb_output_instance *ins) {
+    struct flb_aws_provider_ec2 *implementation = provider->implementation;
+
+    flb_debug("[aws_credentials] upstream_set called on the EC2 provider");
+    /* Make sure TLS is set to false before setting upstream, then reset it */
+    ins->use_tls = FLB_FALSE;
+    flb_output_upstream_set(implementation->client->upstream, ins);
+    ins->use_tls = FLB_TRUE;
+}
+
 void destroy_fn_ec2(struct flb_aws_provider *provider) {
     struct flb_aws_provider_ec2 *implementation = provider->implementation;
 
     if (implementation) {
         if (implementation->creds) {
             flb_aws_credentials_destroy(implementation->creds);
+        }
+
+        if (implementation->imds_interface) {
+            flb_aws_imds_destroy(implementation->imds_interface);
         }
 
         if (implementation->client) {
@@ -193,6 +210,7 @@ static struct flb_aws_provider_vtable ec2_provider_vtable = {
     .destroy = destroy_fn_ec2,
     .sync = sync_fn_ec2,
     .async = async_fn_ec2,
+    .upstream_set = upstream_set_fn_ec2,
 };
 
 struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
@@ -222,7 +240,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     provider->provider_vtable = &ec2_provider_vtable;
     provider->implementation = implementation;
 
-    upstream = flb_upstream_create(config, AWS_IMDS_HOST, 80,
+    upstream = flb_upstream_create(config, FLB_AWS_IMDS_HOST, FLB_AWS_IMDS_PORT,
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_aws_provider_destroy(provider);
@@ -249,6 +267,15 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     implementation->client->proxy = NULL;
     implementation->client->upstream = upstream;
 
+    /* Use default imds configuration */
+    implementation->imds_interface = flb_aws_imds_create(&flb_aws_imds_config_default,
+                                                         implementation->client);
+    if (!implementation->imds_interface) {
+        flb_aws_provider_destroy(provider);
+        flb_error("[aws_credentials] EC2 IMDS configuration error");
+        return NULL;
+    }
+
     return provider;
 }
 
@@ -264,7 +291,7 @@ static int get_creds_ec2(struct flb_aws_provider_ec2 *implementation)
     flb_debug("[aws_credentials] requesting credentials from EC2 IMDS");
 
     /* Get the name of the instance role */
-    ret = flb_imds_request(implementation->client, AWS_IMDS_ROLE_PATH,
+    ret = flb_aws_imds_request(implementation->imds_interface, AWS_IMDS_ROLE_PATH,
                            &instance_role, &instance_role_len);
 
     if (ret < 0) {
@@ -311,7 +338,7 @@ static int ec2_credentials_request(struct flb_aws_provider_ec2
     struct flb_aws_credentials *creds;
     time_t expiration;
 
-    ret = flb_imds_request(implementation->client, cred_path,
+    ret = flb_aws_imds_request(implementation->imds_interface, cred_path,
                            &credentials_response, &credentials_response_len);
 
     if (ret < 0) {

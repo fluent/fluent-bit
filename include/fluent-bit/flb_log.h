@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -96,14 +96,14 @@ static inline int flb_log_check(int l) {
     return FLB_TRUE;
 }
 
-struct flb_log *flb_log_init(struct flb_config *config, int type,
-                             int level, char *out);
+struct flb_log *flb_log_create(struct flb_config *config, int type,
+                               int level, char *out);
 int flb_log_set_level(struct flb_config *config, int level);
 int flb_log_get_level_str(char *str);
 
 int flb_log_set_file(struct flb_config *config, char *out);
 
-int flb_log_stop(struct flb_log *log, struct flb_config *config);
+int flb_log_destroy(struct flb_log *log, struct flb_config *config);
 void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 
 
@@ -139,7 +139,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...);
 #define flb_trace(fmt, ...)  do {} while(0)
 #endif
 
-int flb_log_worker_init(void *data);
+int flb_log_worker_init(struct flb_worker *worker);
 int flb_errno_print(int errnum, const char *file, int line);
 
 #ifdef __FILENAME__

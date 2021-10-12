@@ -22,9 +22,46 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_plugin.h>
 #include <monkey/mk_thread.h>
+#include <monkey/mk_tls.h>
 
-#include <netinet/tcp.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <afunix.h>
+#else
 #include <sys/socket.h>
+#include <netinet/tcp.h>
+#endif
+
+/* Initialize the network stack*/
+int mk_net_init()
+{
+#ifdef _WIN32
+    int result;
+    WSADATA wsa_data;
+    static int initialized = 0;
+
+    if(0 != initialized) {
+        return 0;
+    }
+
+    result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+
+    if(0 != result) {
+        if(WSAEINPROGRESS == result)
+        {
+            Sleep(100); /* Let the other thread finish initializing the stack */
+
+            return 0;
+        }
+
+        return -1;
+    }
+
+    initialized = 1;    
+#endif
+
+    return 0;
+}
 
 /* Connect to a TCP socket server */
 static int mk_net_fd_connect(int fd, char *host, unsigned long port)
@@ -145,7 +182,7 @@ int mk_net_conn_write(struct mk_channel *channel,
     size_t total = 0;
     size_t send;
     socklen_t slen = sizeof(error);
-    struct mk_thread *th = pthread_getspecific(mk_thread_key);
+    struct mk_thread *th = MK_TLS_GET(mk_thread);
     struct mk_sched_worker *sched;
 
     sched = mk_sched_get_thread_conf();
@@ -164,7 +201,7 @@ int mk_net_conn_write(struct mk_channel *channel,
     }
 
     send = len - total;
-    bytes = channel->io->write(channel->fd, data + total, send);
+    bytes = channel->io->write(channel->fd, (uint8_t *)data + total, send);
     if (bytes == -1) {
         if (errno == EAGAIN) {
             MK_EVENT_NEW(channel->event);

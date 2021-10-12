@@ -29,7 +29,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
-#include <fluent-bit/stream_processor/flb_sp_timeseries.h>
+#include <fluent-bit/stream_processor/flb_sp_aggregate_func.h>
 #include <fluent-bit/stream_processor/flb_sp_record_func.h>
 
 #include "sql_parser.h"
@@ -94,33 +94,7 @@ void flb_sp_cmd_destroy(struct flb_sp_cmd *cmd)
         flb_free(cmd->tmp_subkeys);
     }
 
-    if (cmd->tmp_params) {
-        flb_cmd_params_del(cmd->tmp_params);
-        flb_free(cmd->tmp_params);
-    }
-
     flb_free(cmd);
-}
-
-void flb_cmd_params_del(struct mk_list *params)
-{
-    struct flb_exp_param *p;
-    struct mk_list *head;
-    struct mk_list *tmp;
-
-    mk_list_foreach_safe(head, tmp, params) {
-        p = mk_list_entry(head, struct flb_exp_param, _head);
-        switch (p->type) {
-        case FLB_EXP_KEY:
-            flb_sp_cmd_key_del((struct flb_sp_cmd_key *) p->param);
-            break;
-        case FLB_EXP_STRING:
-            flb_sds_destroy(((struct flb_sp_value *) p->param)->val.string);
-            flb_free(p->param);
-            break;
-        }
-        flb_free(p);
-    }
 }
 
 void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
@@ -131,16 +105,9 @@ void flb_sp_cmd_key_del(struct flb_sp_cmd_key *key)
     if (key->alias) {
         flb_sds_destroy(key->alias);
     }
-    if (key->name_keys) {
-        flb_sds_destroy(key->name_keys);
-    }
     if (key->subkeys) {
         flb_slist_destroy(key->subkeys);
         flb_free(key->subkeys);
-    }
-    if (key->timeseries_func) {
-        flb_cmd_params_del(&key->timeseries->params);
-        flb_free(key->timeseries);
     }
     flb_free(key);
 }
@@ -161,19 +128,20 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
                                          const char *key_name,
                                          const char *key_alias)
 {
+    char tmp_alias[256];
     int s;
     int ret;
+    int len;
     int aggr_func = 0;
     int time_func = 0;
     int record_func = 0;
-    int timeseries_func = 0;
     char *tmp;
     struct mk_list *head;
     struct flb_sp_cmd_key *key;
     struct flb_slist_entry *entry;
 
     /* aggregation function ? */
-    if (func >= FLB_SP_AVG && func <= FLB_SP_MAX) {
+    if (func >= FLB_SP_AVG && func <= FLB_SP_FORECAST) {
         aggr_func = func;
     }
     else if (func >= FLB_SP_NOW && func <= FLB_SP_UNIX_TIMESTAMP) {
@@ -183,10 +151,6 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
     else if (func >= FLB_SP_RECORD_TAG && func <= FLB_SP_RECORD_TIME) {
         /* Record function */
         record_func = func;
-    }
-    else if (func >= FLB_SP_TIMESERIES_START && func <= FLB_SP_TIMESERIES_END) {
-        /* Timeseries function */
-        timeseries_func = func;
     }
 
     key = flb_calloc(1, sizeof(struct flb_sp_cmd_key));
@@ -214,7 +178,7 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
          * - aggregation using COUNT(*)
          */
         if (mk_list_size(&cmd->keys) > 0 && aggr_func == 0 &&
-            record_func == 0 && time_func == 0 && timeseries_func == 0) {
+            record_func == 0 && time_func == 0) {
             flb_sp_cmd_key_del(key);
             cmd->status = FLB_SP_ERROR;
             return NULL;
@@ -240,9 +204,6 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
     else if (record_func > 0) {
         key->record_func = record_func;
     }
-    else if (timeseries_func > 0) {
-        key->timeseries_func = timeseries_func;
-    }
 
     /* Lookup for any subkeys in the temporary list */
     if (mk_list_size(cmd->tmp_subkeys) > 0) {
@@ -254,63 +215,93 @@ struct flb_sp_cmd_key *flb_sp_key_create(struct flb_sp_cmd *cmd, int func,
         }
 
         /* Compose a name key that include listed sub keys */
-        s = flb_sds_len(key->name) + (16 * mk_list_size(key->subkeys));
-        key->name_keys = flb_sds_create_size(s);
-        if (!key->name_keys) {
+        if (!key->alias) {
+            s = flb_sds_len(key->name) + (16 * mk_list_size(key->subkeys));
+            key->alias = flb_sds_create_size(s);
+            if (!key->alias) {
+                flb_sp_cmd_key_del(key);
+                return NULL;
+            }
+
+            tmp = flb_sds_cat(key->alias, key->name, flb_sds_len(key->name));
+            if (tmp != key->alias) {
+                key->alias = tmp;
+            }
+
+            mk_list_foreach(head, key->subkeys) {
+                entry = mk_list_entry(head, struct flb_slist_entry, _head);
+
+                /* prefix */
+                tmp = flb_sds_cat(key->alias, "['", 2);
+                if (tmp) {
+                    key->alias = tmp;
+                }
+                else {
+                    flb_sp_cmd_key_del(key);
+                    return NULL;
+                }
+
+                /* selected key name */
+                tmp = flb_sds_cat(key->alias,
+                                  entry->str, flb_sds_len(entry->str));
+                if (tmp) {
+                    key->alias = tmp;
+                }
+                else {
+                    flb_sp_cmd_key_del(key);
+                    return NULL;
+                }
+
+                /* suffix */
+                tmp = flb_sds_cat(key->alias, "']", 2);
+                if (tmp) {
+                    key->alias = tmp;
+                }
+                else {
+                    flb_sp_cmd_key_del(key);
+                    return NULL;
+                }
+            }
+
+            if (aggr_func) {
+                len = snprintf(tmp_alias, sizeof(tmp_alias) - 1, "%s(%s)",
+                               aggregate_func_string[aggr_func - 1], key->alias);
+
+                tmp = flb_sds_copy(key->alias, tmp_alias, len);
+                if (tmp) {
+                    key->alias = tmp;
+                }
+                else {
+                    flb_sp_cmd_key_del(key);
+                    return NULL;
+                }
+            }
+        }
+    }
+    else if (aggr_func && !key->alias) {
+        if (key->name) {
+            len = snprintf(tmp_alias, sizeof(tmp_alias) - 1, "%s(%s)",
+                           aggregate_func_string[aggr_func - 1], key->name);
+        } else {
+            len = snprintf(tmp_alias, sizeof(tmp_alias) - 1, "%s(*)",
+                           aggregate_func_string[aggr_func - 1]);
+        }
+
+        key->alias = flb_sds_create_len(tmp_alias, len);
+        if (!key->alias) {
             flb_sp_cmd_key_del(key);
             return NULL;
-        }
-
-        tmp = flb_sds_cat(key->name_keys, key->name, flb_sds_len(key->name));
-        if (tmp != key->name_keys) {
-            key->name_keys = tmp;
-        }
-
-        mk_list_foreach(head, key->subkeys) {
-            entry = mk_list_entry(head, struct flb_slist_entry, _head);
-
-            /* prefix */
-            tmp = flb_sds_cat(key->name_keys, "['", 2);
-            if (tmp) {
-                key->name_keys = tmp;
-            }
-            else {
-                flb_sp_cmd_key_del(key);
-                return NULL;
-            }
-
-            /* selected key name */
-            tmp = flb_sds_cat(key->name_keys,
-                              entry->str, flb_sds_len(entry->str));
-            if (tmp) {
-                key->name_keys = tmp;
-            }
-            else {
-                flb_sp_cmd_key_del(key);
-                return NULL;
-            }
-
-            /* suffix */
-            tmp = flb_sds_cat(key->name_keys, "']", 2);
-            if (tmp) {
-                key->name_keys = tmp;
-            }
-            else {
-                flb_sp_cmd_key_del(key);
-                return NULL;
-            }
         }
     }
 
     return key;
 }
 
-int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
-                       const char *key_name, const char *key_alias)
+int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func, const char *key_name)
 {
     struct flb_sp_cmd_key *key;
 
-    key = flb_sp_key_create(cmd, func, key_name, key_alias);
+    key = flb_sp_key_create(cmd, func, key_name, cmd->alias);
 
     if (!key) {
         return -1;
@@ -318,7 +309,18 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func,
 
     mk_list_add(&key->_head, &cmd->keys);
 
+   /* free key alias and set cmd->alias to null */
+   if (cmd->alias) {
+       flb_free(cmd->alias);
+       cmd->alias = NULL;
+   }
+
     return 0;
+}
+
+void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, const char *key_alias)
+{
+    cmd->alias = key_alias;
 }
 
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source)
@@ -387,15 +389,6 @@ struct flb_sp_cmd *flb_sp_cmd_create(const char *sql)
         return NULL;
     }
     flb_slist_create(cmd->tmp_subkeys);
-
-    /* Allocate linked list and initialize */
-    cmd->tmp_params = flb_malloc(sizeof(struct mk_list));
-    if (!cmd->tmp_params) {
-        flb_errno();
-        flb_free(cmd);
-        return NULL;
-    }
-    mk_list_init(cmd->tmp_params);
 
     /* Flex/Bison work */
     flb_sp_lex_init(&scanner);
@@ -835,94 +828,25 @@ void flb_sp_cmd_limit_add(struct flb_sp_cmd *cmd, int limit)
     cmd->limit = limit;
 }
 
-/* Timeseries functions */
-int flb_sp_cmd_param_add(struct flb_sp_cmd *cmd, int func, struct flb_exp *param)
+int flb_sp_cmd_timeseries_forecast(struct flb_sp_cmd *cmd, int func, const char *key_name, int seconds)
 {
-    struct flb_exp_param *p;
-    struct flb_exp_key *key;
+    struct flb_sp_cmd_key *key;
 
-    if (func > 0) { /* Parameter is a pre-defined function */
-        key = (struct flb_exp_key *) flb_sp_cmd_condition_key(cmd, NULL);
-        if (!key) {
-            return -1;
-        }
-        key->func = func;
-        param = (struct flb_exp *) key;
-    }
+    key = flb_sp_key_create(cmd, func, key_name, cmd->alias);
 
-    p = flb_calloc(1, sizeof(struct flb_exp_param));
-
-    if (!p) {
+    if (!key) {
         return -1;
     }
 
-    p->type = FLB_EXP_PARAM;
-    p->param = param;
+    mk_list_add(&key->_head, &cmd->keys);
 
-    mk_list_add(&p->_head, cmd->tmp_params);
+    key->constant = seconds;
 
-    return 0;
-}
-
-int flb_sp_cmd_timeseries(struct flb_sp_cmd *cmd, char *func, const char *key_alias)
-{
-    int i;
-    char *ts_name;
-    struct mk_list *head;
-    struct mk_list *tmp;
-    struct flb_sp_cmd_key *key;
-    struct flb_exp_param *param;
-    struct flb_exp_timeseries *ts;
-
-    /* Timeseries functions are keys with no name, with functions added */
-    for (i = 0; i < TIMESERIES_FUNCTIONS_SIZE; i++)
-    {
-        ts_name = timeseries_functions[i];
-        if (strcmp(ts_name, func) == 0)
-        {
-            key = flb_sp_key_create(cmd, i + FLB_SP_TIMESERIES_START, NULL, key_alias);
-
-            if (!key) {
-                return -1;
-            }
-
-            ts = flb_calloc(1, sizeof(struct flb_exp_timeseries));
-            if (!ts) {
-                flb_errno();
-                cmd->status = FLB_SP_ERROR;
-                flb_sp_cmd_key_del(key);
-                return -1;
-            }
-            mk_list_init(&ts->params);
-
-            /*
-             * Traverse over temporary key list and add it to timeseries key as
-             * parameters
-             */
-            mk_list_foreach_safe(head, tmp, cmd->tmp_params) {
-                param = mk_list_entry(head, struct flb_exp_param, _head);
-                mk_list_del(&param->_head);
-                mk_list_add(&param->_head, &ts->params);
-            }
-
-            mk_list_init(cmd->tmp_params);
-
-            ts->cb_func_alloc = timeseries_functions_alloc_ptr[i];
-            ts->cb_func_clone = timeseries_functions_clone_ptr[i];
-            ts->cb_func_add = timeseries_functions_add_ptr[i];
-            ts->cb_func_rem = timeseries_functions_rem_ptr[i];
-            ts->cb_func_calc = timeseries_functions_calc_ptr[i];
-            ts->cb_func_destroy = timeseries_functions_destroy_ptr[i];
-
-            cmd->timeseries_num++;
-
-            key->timeseries = ts;
-
-            mk_list_add(&key->_head, &cmd->keys);
-
-            return 0;
-        }
+    /* free key alias and set cmd->alias to null */
+    if (cmd->alias) {
+        flb_free(cmd->alias);
+        cmd->alias = NULL;
     }
 
-    return -1;
+    return 0;
 }

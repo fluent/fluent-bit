@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,6 +60,7 @@ struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
     ht->max_entries = max_entries;
     ht->size = size;
     ht->total_count = 0;
+    ht->cache_ttl = 0;
     ht->table = flb_calloc(1, sizeof(struct flb_hash_table) * size);
     if (!ht->table) {
         flb_errno();
@@ -73,6 +74,22 @@ struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
         tmp->count = 0;
         mk_list_init(&tmp->chains);
     }
+
+    return ht;
+}
+
+struct flb_hash *flb_hash_create_with_ttl(int cache_ttl, int evict_mode, 
+                                          size_t size, int max_entries)
+{
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(evict_mode, size, max_entries);
+    if (!ht) {
+        flb_errno();
+        return NULL;
+    }
+
+    ht->cache_ttl = cache_ttl;
 
     return ht;
 }
@@ -181,7 +198,7 @@ static struct flb_hash_entry *hash_get_entry(struct flb_hash *ht,
                                              const char *key, int key_len, int *out_id)
 {
     int id;
-    unsigned int hash;
+    uint64_t hash;
     struct mk_list *head;
     struct flb_hash_table *table;
     struct flb_hash_entry *entry;
@@ -269,6 +286,8 @@ static int entry_set_value(struct flb_hash_entry *entry, void *val, size_t val_s
         entry->val = val;
         entry->val_size = -1;
     }
+
+    entry->created = time(NULL);
 
     return 0;
 }
@@ -368,10 +387,19 @@ int flb_hash_get(struct flb_hash *ht,
 {
     int id;
     struct flb_hash_entry *entry;
+    time_t expiration;
 
     entry = hash_get_entry(ht, key, key_len, &id);
     if (!entry) {
         return -1;
+    }
+
+    if (ht->cache_ttl > 0) {
+        expiration = entry->created + ht->cache_ttl;
+        if (time(NULL) > expiration) {
+            flb_hash_entry_free(ht, entry);
+            return -1;
+        }
     }
 
     entry->hits++;
@@ -426,11 +454,26 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id,
     return 0;
 }
 
+void *flb_hash_get_ptr(struct flb_hash *ht,
+                 const char *key, int key_len)
+{
+    int id;
+    struct flb_hash_entry *entry;
+
+    entry = hash_get_entry(ht, key, key_len, &id);
+    if (!entry) {
+        return NULL;
+    }
+
+    entry->hits++;
+    return entry->val;
+}
+
 int flb_hash_del(struct flb_hash *ht, const char *key)
 {
     int id;
     int len;
-    unsigned int hash;
+    uint64_t hash;
     struct mk_list *head;
     struct flb_hash_entry *entry = NULL;
     struct flb_hash_table *table;

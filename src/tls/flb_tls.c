@@ -27,16 +27,79 @@
 #include "mbedtls.c"
 #endif
 
+/* Config map for Upstream networking setup */
+struct flb_config_map tls_configmap[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "tls", "off",
+     0, FLB_FALSE, 0,
+     "Enable or disable TLS/SSL support",
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "on",
+     0, FLB_FALSE, 0,
+     "Force certificate validation",
+    },
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "1",
+     0, FLB_FALSE, 0,
+     "Set TLS debug verbosity level. It accept the following "
+     "values: 0 (No debug), 1 (Error), 2 (State change), 3 "
+     "(Informational) and 4 Verbose"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.ca_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to CA certificate file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.ca_path", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to scan for certificate files"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.crt_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to Certificate file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.key_file", NULL,
+     0, FLB_FALSE, 0,
+     "Absolute path to private Key file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.key_passwd", NULL,
+     0, FLB_FALSE, 0,
+     "Optional password for tls.key_file file"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_FALSE, 0,
+     "Hostname to be used for TLS SNI extension"
+    },
+
+    /* EOF */
+    {0}
+};
+
+struct mk_list *flb_tls_get_config_map(struct flb_config *config)
+{
+    struct mk_list *config_map;
+
+    config_map = flb_config_map_create(config, tls_configmap);
+    return config_map;
+}
+
+
 static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
                                       int mask)
 {
     int ret;
     struct mk_event *event;
-    struct flb_upstream *u = u_conn->u;
 
     event = &u_conn->event;
     if ((event->mask & mask) == 0) {
-        ret = mk_event_add(u->evl,
+        ret = mk_event_add(u_conn->evl,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
                            mask, &u_conn->event);
@@ -62,7 +125,7 @@ struct flb_tls *flb_tls_create(int verify,
     backend = tls_context_create(verify, debug, vhost, ca_path, ca_file,
                                  crt_file, key_file, key_passwd);
     if (!backend) {
-        flb_error("[tls] could not create mbedtls TLS backend");
+        flb_error("[tls] could not create TLS backend");
         return NULL;
     }
 
@@ -90,6 +153,10 @@ struct flb_tls *flb_tls_create(int verify,
     return tls;
 }
 
+int flb_tls_init()
+{
+    return tls_init();
+}
 
 int flb_tls_destroy(struct flb_tls *tls)
 {
@@ -123,7 +190,7 @@ int flb_tls_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     return ret;
 }
 
-int flb_tls_net_read_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_tls_net_read_async(struct flb_coro *co, struct flb_upstream_conn *u_conn,
                            void *buf, size_t len)
 {
     int ret;
@@ -132,9 +199,15 @@ int flb_tls_net_read_async(struct flb_thread *th, struct flb_upstream_conn *u_co
  retry_read:
     ret = tls->api->net_read(u_conn, buf, len);
     if (ret == FLB_TLS_WANT_READ) {
-        u_conn->thread = th;
+        u_conn->coro = co;
         io_tls_event_switch(u_conn, MK_EVENT_READ);
-        flb_thread_yield(th, FLB_FALSE);
+        flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_read;
     }
     else if (ret < 0) {
@@ -177,27 +250,38 @@ retry_write:
     return 0;
 }
 
-int flb_tls_net_write_async(struct flb_thread *th, struct flb_upstream_conn *u_conn,
+int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_conn,
                             const void *data, size_t len, size_t *out_len)
 {
     int ret;
     size_t total = 0;
-    struct flb_upstream *u = u_conn->u;
     struct flb_tls *tls = u_conn->tls;
 
-    u_conn->thread = th;
-
  retry_write:
+    u_conn->coro = co;
+
     ret = tls->api->net_write(u_conn, (unsigned char *) data + total,
                               len - total);
     if (ret == FLB_TLS_WANT_WRITE) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
-        flb_thread_yield(th, FLB_FALSE);
+        flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
         io_tls_event_switch(u_conn, MK_EVENT_READ);
-        flb_thread_yield(th, FLB_FALSE);
+        flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_write;
     }
     else if (ret < 0) {
@@ -208,12 +292,18 @@ int flb_tls_net_write_async(struct flb_thread *th, struct flb_upstream_conn *u_c
     total += ret;
     if (total < len) {
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
-        flb_thread_yield(th, FLB_FALSE);
+        flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_write;
     }
 
     *out_len = total;
-    mk_event_del(u->evl, &u_conn->event);
+    mk_event_del(u_conn->evl, &u_conn->event);
     return 0;
 }
 
@@ -221,7 +311,7 @@ int flb_tls_net_write_async(struct flb_thread *th, struct flb_upstream_conn *u_c
 /* Create a TLS session (+handshake) */
 int flb_tls_session_create(struct flb_tls *tls,
                            struct flb_upstream_conn *u_conn,
-                           struct flb_thread *th)
+                           struct flb_coro *co)
 {
     int ret;
     int flag;
@@ -271,7 +361,7 @@ int flb_tls_session_create(struct flb_tls *tls,
          * In the other case for an async socket 'th' is NOT NULL so the code
          * is under a coroutine context and it can yield.
          */
-        if (!th) {
+        if (!co) {
             flb_trace("[io_tls] handshake connection #%i in process to %s:%i",
                       u_conn->fd, u->tcp_host, u->tcp_port);
 
@@ -290,11 +380,13 @@ int flb_tls_session_create(struct flb_tls *tls,
             goto retry_handshake;
         }
 
+        u_conn->coro = co;
+
         /*
          * FIXME: if we need multiple reads we are invoking the same
          * system call multiple times.
          */
-        ret = mk_event_add(u->evl,
+        ret = mk_event_add(u_conn->evl,
                            u_conn->event.fd,
                            FLB_ENGINE_EV_THREAD,
                            flag, &u_conn->event);
@@ -302,18 +394,24 @@ int flb_tls_session_create(struct flb_tls *tls,
             goto error;
         }
 
-        flb_thread_yield(th, FLB_FALSE);
+        flb_coro_yield(co, FLB_FALSE);
+
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+        u_conn->coro = NULL;
+
         goto retry_handshake;
     }
 
     if (u_conn->event.status & MK_EVENT_REGISTERED) {
-        mk_event_del(u->evl, &u_conn->event);
+        mk_event_del(u_conn->evl, &u_conn->event);
     }
     return 0;
 
  error:
     if (u_conn->event.status & MK_EVENT_REGISTERED) {
-        mk_event_del(u->evl, &u_conn->event);
+        mk_event_del(u_conn->evl, &u_conn->event);
     }
     flb_tls_session_destroy(tls, u_conn);
     u_conn->tls_session = NULL;

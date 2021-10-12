@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,7 +87,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
-    flb_plg_debug(ctx->ins, "api_key: %s", ctx->api_key);
 
     /* Include Tag key */
     tmp = flb_output_get_property("include_tag_key", ins);
@@ -208,6 +207,7 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->upstream = upstream;
+    flb_output_upstream_set(ctx->upstream, ins);
 
     return ctx;
 }

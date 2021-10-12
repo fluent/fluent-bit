@@ -35,6 +35,13 @@ struct cio_chunk {
 
     struct cio_ctx *ctx;      /* library context      */
     struct cio_stream *st;    /* stream context       */
+
+    /*
+     * The state head links to the stream->chunks_up or stream->chunks_down
+     * linked list.
+     */
+    struct mk_list _state_head;
+
     struct mk_list _head;     /* head link to stream->files */
 };
 

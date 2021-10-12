@@ -21,8 +21,9 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
-#include <pthread.h>
 #include <signal.h>
+
+#include <mk_core/mk_pthread.h>
 
 #include <monkey/mk_lib.h>
 #include <monkey/monkey.h>
@@ -30,6 +31,8 @@
 #include <monkey/mk_thread.h>
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_fifo.h>
+#include <monkey/mk_utils.h>
+#include <monkey/mk_tls.h>
 
 #define config_eq(a, b) strcasecmp(a, b)
 
@@ -49,7 +52,7 @@ mk_ctx_t *mk_create()
 {
     mk_ctx_t *ctx;
 
-    ctx = mk_mem_alloc(sizeof(mk_ctx_t));
+    ctx = mk_mem_alloc_z(sizeof(mk_ctx_t));
     if (!ctx) {
         return NULL;
     }
@@ -64,7 +67,8 @@ mk_ctx_t *mk_create()
      * for further communication between the caller (user) and HTTP end-point
      * callbacks.
      */
-    ctx->fifo = mk_fifo_create(&mk_server_fifo_key, ctx->server);
+    ctx->fifo = mk_fifo_create(NULL, ctx->server);
+    ctx->fifo->key = &mk_server_fifo_key;
 
     /*
      * FIFO: Set workers callback associated to the Monkey scheduler to prepare them
@@ -94,7 +98,7 @@ static inline int mk_lib_yield(mk_request_t *req)
         return -1;
     }
 
-    th = pthread_getspecific(mk_thread_key);
+    th = MK_TLS_GET(mk_thread);
     channel = req->session->channel;
 
     channel->thread = th;
@@ -189,7 +193,17 @@ int mk_start(mk_ctx_t *ctx)
     mk_event_wait(server->lib_evl);
     mk_event_foreach(event, server->lib_evl) {
         fd = event->fd;
+
+        /* When using libevent _mk_event_channel_create creates a unix socket
+         * instead of a pipe and windows doesn't us calling read / write on a
+         * socket instead of recv / send
+         */
+#ifdef _WIN32        
+        bytes = recv(fd, &val, sizeof(uint64_t), MSG_WAITALL);
+#else
         bytes = read(fd, &val, sizeof(uint64_t));
+#endif
+        
         if (bytes <= 0) {
             return -1;
         }
@@ -251,7 +265,7 @@ int mk_config_set_property(struct mk_server *server, char *k, char *v)
     else if (config_eq(k, "Workers") == 0) {
         num = atoi(v);
         if (num <= 0) {
-            server->workers = sysconf(_SC_NPROCESSORS_ONLN);
+            server->workers = mk_utils_get_system_core_count();
         }
         else {
             server->workers = num;
@@ -364,7 +378,7 @@ int mk_config_set(mk_ctx_t *ctx, ...)
 }
 
 /* Given a vhost id, return the vhost context */
-static struct mk_vhost *mk_vhost_lookup(mk_ctx_t *ctx, int id)
+struct mk_vhost *mk_vhost_lookup(mk_ctx_t *ctx, int id)
 {
     struct mk_vhost *host;
     struct mk_list *head;

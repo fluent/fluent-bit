@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,6 +101,24 @@ void flb_input_net_default_listener(const char *listen, int port,
     }
 }
 
+int flb_input_event_type_is_metric(struct flb_input_instance *ins)
+{
+    if (ins->event_type == FLB_INPUT_METRICS) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+int flb_input_event_type_is_log(struct flb_input_instance *ins)
+{
+    if (ins->event_type == FLB_INPUT_LOGS) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          const char *input, void *data,
@@ -142,9 +160,17 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         /* Get an ID */
         id =  instance_id(plugin, config);
 
-        /* Index for Chunks (hash table) */
-        instance->ht_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
-        if (!instance->ht_chunks) {
+        /* Index for log Chunks (hash table) */
+        instance->ht_log_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        if (!instance->ht_log_chunks) {
+            flb_free(instance);
+            return NULL;
+        }
+
+        /* Index for metric Chunks (hash table) */
+        instance->ht_metric_chunks = flb_hash_create(FLB_HASH_EVICT_NONE, 512, 0);
+        if (!instance->ht_metric_chunks) {
+            flb_hash_destroy(instance->ht_log_chunks);
             flb_free(instance);
             return NULL;
         }
@@ -153,6 +179,23 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         snprintf(instance->name, sizeof(instance->name) - 1,
                  "%s.%i", plugin->name, id);
 
+        /* set plugin type based on flags: logs or metrics ? */
+        if (plugin->event_type == FLB_INPUT_LOGS) {
+            instance->event_type = FLB_INPUT_LOGS;
+        }
+        else if (plugin->event_type == FLB_INPUT_METRICS) {
+            instance->event_type = FLB_INPUT_METRICS;
+        }
+        else {
+            flb_error("[input] invalid plugin event type %i on '%s'",
+                      plugin->event_type, instance->name);
+            flb_hash_destroy(instance->ht_log_chunks);
+            flb_hash_destroy(instance->ht_metric_chunks);
+            flb_free(instance);
+            return NULL;
+        }
+
+        /* initialize remaining vars */
         instance->alias    = NULL;
         instance->id       = id;
         instance->flags    = plugin->flags;
@@ -179,7 +222,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
         mk_list_init(&instance->collectors);
-        mk_list_init(&instance->threads);
+        mk_list_init(&instance->coros);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
@@ -194,7 +237,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         }
 
         /* Plugin requires a Thread context */
-        if (plugin->flags & FLB_INPUT_THREAD) {
+        if (plugin->flags & FLB_INPUT_CORO) {
             instance->threaded = FLB_TRUE;
         }
 
@@ -202,7 +245,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->mem_buf_status = FLB_INPUT_RUNNING;
         instance->mem_buf_limit = 0;
         instance->mem_chunks_size = 0;
-
+        instance->storage_buf_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
     }
 
@@ -307,18 +350,33 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
-        /* Set the storage type */
-        if (strcasecmp(tmp, "filesystem") == 0) {
-            ins->storage_type = CIO_STORE_FS;
-        }
-        else if (strcasecmp(tmp, "memory") == 0) {
+        /* If the input generate metrics, always use memory storage (for now) */
+        if (flb_input_event_type_is_metric(ins)) {
             ins->storage_type = CIO_STORE_MEM;
         }
         else {
-            flb_sds_destroy(tmp);
-            return -1;
+            /* Set the storage type */
+            if (strcasecmp(tmp, "filesystem") == 0) {
+                ins->storage_type = CIO_STORE_FS;
+            }
+            else if (strcasecmp(tmp, "memory") == 0) {
+                ins->storage_type = CIO_STORE_MEM;
+            }
+            else {
+                flb_sds_destroy(tmp);
+                return -1;
+            }
         }
         flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
+        if (ins->storage_type == CIO_STORE_FS) {
+            ret = flb_utils_bool(tmp);
+            if (ret == -1) {
+                return -1;
+            }
+            ins->storage_pause_on_chunks_overlimit = ret;
+        }
     }
     else {
         /*
@@ -386,6 +444,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
     }
@@ -401,8 +463,12 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     }
 
     /* hash table for chunks */
-    if (ins->ht_chunks) {
-        flb_hash_destroy(ins->ht_chunks);
+    if (ins->ht_log_chunks) {
+        flb_hash_destroy(ins->ht_log_chunks);
+    }
+
+    if (ins->ht_metric_chunks) {
+        flb_hash_destroy(ins->ht_metric_chunks);
     }
 
     /* Unlink and release */
@@ -421,7 +487,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
-    if (ins->log_level == -1) {
+    if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
     }
 
@@ -430,12 +496,30 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         return 0;
     }
 
-    /* Metrics */
+    /* CMetrics */
+    ins->cmt = cmt_create();
+    if (!ins->cmt) {
+        flb_error("[input] could not create cmetrics context: %s",
+                  flb_input_name(ins));
+        return -1;
+    }
+
+    /* Register generic input plugin metrics */
+    ins->cmt_bytes = cmt_counter_create(ins->cmt,
+                                        "fluentbit", "input", "bytes_total",
+                                        "Number of input bytes.",
+                                        1, (char *[]) {"name"});
+    ins->cmt_records = cmt_counter_create(ins->cmt,
+                                        "fluentbit", "input", "records_total",
+                                        "Number of input records.",
+                                        1, (char *[]) {"name"});
+
+    /* OLD Metrics */
 #ifdef FLB_HAVE_METRICS
     /* Get name or alias for the instance */
     name = flb_input_name(ins);
 
-    /* Create the metrics context */
+    /* [OLD METRICS] Create the metrics context */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
@@ -454,8 +538,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
          */
         config_map = flb_config_map_create(config, p->config_map);
         if (!config_map) {
-            flb_error("[filter] error loading config map for '%s' plugin",
+            flb_error("[input] error loading config map for '%s' plugin",
                       p->name);
+            flb_input_instance_destroy(ins);
             return -1;
         }
         ins->config_map = config_map;
@@ -591,7 +676,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *
@@ -876,6 +961,24 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
     return 0;
 }
 
+int flb_input_collector_delete(int coll_id, struct flb_input_instance *in)
+{
+    struct flb_input_collector *coll;
+
+    coll = get_collector(coll_id, in);
+    if (!coll) {
+        return -1;
+    }
+    if (flb_input_collector_pause(coll_id, in) < 0) {
+        return -1;
+    }
+
+    mk_list_del(&coll->_head);
+    mk_list_del(&coll->_head_ins);
+    flb_free(coll);
+    return 0;
+}
+
 int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
 {
     int fd;
@@ -969,7 +1072,7 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector = NULL;
-    struct flb_thread *th;
+    struct flb_coro *co;
 
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
@@ -994,11 +1097,11 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 
     /* Trigger the collector callback */
     if (collector->instance->threaded == FLB_TRUE) {
-        th = flb_input_thread_collect(collector, config);
-        if (!th) {
+        co = flb_input_coro_collect(collector, config);
+        if (!co) {
             return -1;
         }
-        flb_thread_resume(th);
+        flb_coro_resume(co);
     }
     else {
         collector->cb_collect(collector->instance, config,

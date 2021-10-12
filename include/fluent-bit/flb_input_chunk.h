@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,8 +23,12 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_routes_mask.h>
 #include <monkey/mk_core.h>
 #include <msgpack.h>
+
+#define FLB_INPUT_CHUNK_LOG            0
+#define FLB_INPUT_CHUNK_METRIC         1
 
 /*
  * This variable defines a 'hint' size for new Chunks created, this
@@ -39,6 +43,7 @@
 #define FLB_INPUT_CHUNK_FS_MAX_SIZE   2048000  /* 2MB */
 
 struct flb_input_chunk {
+    int event_type;                 /* chunk type: logs or metrics */
     int busy;                       /* buffer is being flushed  */
     int fs_backlog;                 /* chunk originated from fs backlog */
     int sp_done;                    /* sp already processed this chunk */
@@ -51,7 +56,8 @@ struct flb_input_chunk {
     msgpack_packer mp_pck;          /* msgpack packer */
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct flb_task *task;          /* reference to the outgoing task */
-    uint64_t routes_mask;           /* track the output plugin the chunk routes to */
+    uint64_t routes_mask
+        [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
     struct mk_list _head;
 };
 

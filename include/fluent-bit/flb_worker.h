@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,18 +37,23 @@ struct flb_worker {
 #ifdef _WIN32
     intptr_t log[2];
 #else
-    int log[2];
+    flb_pipefd_t log[2];
 #endif
 
     /* Runtime context */
     void *config;
     void *log_ctx;
 
+    pthread_mutex_t mutex;
     struct mk_list _head;    /* link to head at config->workers */
 };
 
 int flb_worker_init(struct flb_config *config);
 struct flb_worker *flb_worker_get();
+
+struct flb_worker *flb_worker_context_create(void (*func) (void *), void *arg,
+                                             struct flb_config *config);
+
 int flb_worker_create(void (*func) (void *), void *arg, pthread_t *tid,
                       struct flb_config *config);
 struct flb_worker *flb_worker_lookup(pthread_t tid, struct flb_config *config);

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -80,7 +80,7 @@ static int in_health_collect(struct flb_input_instance *ins,
     }
 
     if (alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
-        FLB_INPUT_RETURN();
+        return 0;
     }
 
     /* Initialize local msgpack buffer */
@@ -129,7 +129,6 @@ static int in_health_collect(struct flb_input_instance *ins,
     flb_input_chunk_append_raw(ins, NULL, 0, mp_sbuf.data, mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    FLB_INPUT_RETURN();
     return 0;
 }
 
@@ -255,5 +254,5 @@ struct flb_input_plugin in_health_plugin = {
     .cb_collect   = in_health_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_health_exit,
-    .flags        = FLB_INPUT_NET | FLB_INPUT_THREAD,
+    .flags        = FLB_INPUT_NET
 };

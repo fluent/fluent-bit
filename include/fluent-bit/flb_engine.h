@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_thread_storage.h>
 
 /* Types of events handled by the Server engine */
 #define FLB_ENGINE_EV_CORE          MK_EVENT_NOTIFICATION
@@ -34,6 +35,7 @@
 #define FLB_ENGINE_EV_SCHED         2048
 #define FLB_ENGINE_EV_SCHED_FRAME   (FLB_ENGINE_EV_SCHED + 4096)
 #define FLB_ENGINE_EV_OUTPUT        8192
+#define FLB_ENGINE_EV_THREAD_OUTPUT 16384
 
 /* Engine events: all engine events set the left 32 bits to '1' */
 #define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */
@@ -60,5 +62,10 @@ int flb_engine_exit_status(struct flb_config *config, int status);
 int flb_engine_shutdown(struct flb_config *config);
 int flb_engine_destroy_tasks(struct mk_list *tasks);
 void flb_engine_invalidate_running_tasks(struct flb_config *config);
+
+/* Engine event loop */
+void flb_engine_evl_init();
+struct mk_event_loop *flb_engine_evl_get();
+void flb_engine_evl_set(struct mk_event_loop *evl);
 
 #endif

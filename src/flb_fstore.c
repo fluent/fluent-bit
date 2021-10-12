@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -143,6 +143,8 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
         flb_errno();
         return NULL;
     }
+    fsf->stream = fs_stream->stream;
+
     fsf->name = flb_sds_create(name);
     if (!fsf->name) {
         flb_error("[fstore] could not create file: %s:%s",
@@ -165,6 +167,28 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     mk_list_add(&fsf->_head, &fs_stream->files);
 
     return fsf;
+}
+
+/* Lookup file on stream by using it name */
+struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
+                                            struct flb_fstore_stream *fs_stream,
+                                            char *name, size_t size)
+{
+    struct mk_list *head;
+    struct flb_fstore_file *fsf;
+
+    mk_list_foreach(head, &fs_stream->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        if (flb_sds_len(fsf->name) != size) {
+            continue;
+        }
+
+        if (strncmp(fsf->name, name, size) == 0) {
+            return fsf;
+        }
+    }
+
+    return NULL;
 }
 
 /*
@@ -480,7 +504,7 @@ void flb_fstore_dump(struct flb_fstore *fs)
         printf("- stream: %s\n", fs_stream->name);
         mk_list_foreach(f_head, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
-            printf("          %s/%s\n", fs_stream->name, fsf->name);
+            printf("          %s/%s\n", fsf->stream->name, fsf->name);
         }
     }
     printf("\n");

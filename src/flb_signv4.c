@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -351,6 +351,20 @@ static flb_sds_t url_params_format(char *params)
             return NULL;
         }
 
+        /*
+         * If key length is 0 then a problem occurs because val
+         * will not be set flb_kv_item_create_len, which eventually
+         * results in issues since kv->val will be equal to NULL.
+         * Thus, check here whether key length is satisfied
+         */
+        if (flb_sds_len(key) == 0) {
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
+            flb_slist_destroy(&split);
+            flb_kv_release(&list);
+            return NULL;
+        }
+
         kv = flb_kv_item_create_len(&list,
                                     key, flb_sds_len(key),
                                     val, flb_sds_len(val));
@@ -400,24 +414,27 @@ static flb_sds_t url_params_format(char *params)
     for (i = 0; i < items; i++) {
         kv = (struct flb_kv *) arr[i];
         if (i + 1 < items) {
-            tmp = flb_sds_printf(&buf, "%s=%s&",
-                                 kv->key, kv->val);
-        }
-        else if (kv->val == NULL) {
-            /*
-             * special/edge case- last query param has a null value
-             * This happens in the S3 CreateMultipartUpload request
-             */
-            tmp = flb_sds_printf(&buf, "%s=",
-                                 kv->key);
-        }
+            if (kv->val == NULL) {
+                tmp = flb_sds_printf(&buf, "%s=&",
+                                     kv->key);
+            }
+            else {
+                tmp = flb_sds_printf(&buf, "%s=%s&",
+                                     kv->key, kv->val);
+            }
+        } 
         else {
-            tmp = flb_sds_printf(&buf, "%s=%s",
-                                 kv->key, kv->val);
+            if (kv->val == NULL) {
+                tmp = flb_sds_printf(&buf, "%s=",
+                                     kv->key);
+            }
+            else {
+                tmp = flb_sds_printf(&buf, "%s=%s",
+                                     kv->key, kv->val);
+            }
         }
         if (!tmp) {
             flb_error("[signv4] error allocating value");
-
         }
         buf = tmp;
     }

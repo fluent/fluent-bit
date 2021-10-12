@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -203,7 +203,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
 
         /* A rotated file must be re-registered */
         flb_tail_file_rotated(file);
-        flb_tail_fs_remove(file);
+        flb_tail_fs_remove(ctx, file);
         flb_tail_fs_add_rotated(file);
     }
 
@@ -291,11 +291,13 @@ static int tail_fs_event(struct flb_input_instance *ins,
 }
 
 /* File System events based on Inotify(2). Linux >= 2.6.32 is suggested */
-int flb_tail_fs_init(struct flb_input_instance *in,
+int flb_tail_fs_inotify_init(struct flb_input_instance *in,
                      struct flb_tail_config *ctx, struct flb_config *config)
 {
     int fd;
     int ret;
+
+    flb_plg_debug(ctx->ins, "flb_tail_fs_inotify_init() initializing inotify tail input");
 
     /* Create inotify instance */
     fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
@@ -318,17 +320,17 @@ int flb_tail_fs_init(struct flb_input_instance *in,
     return 0;
 }
 
-void flb_tail_fs_pause(struct flb_tail_config *ctx)
+void flb_tail_fs_inotify_pause(struct flb_tail_config *ctx)
 {
     flb_input_collector_pause(ctx->coll_fd_fs1, ctx->ins);
 }
 
-void flb_tail_fs_resume(struct flb_tail_config *ctx)
+void flb_tail_fs_inotify_resume(struct flb_tail_config *ctx)
 {
     flb_input_collector_resume(ctx->coll_fd_fs1, ctx->ins);
 }
 
-int flb_tail_fs_add(struct flb_tail_file *file)
+int flb_tail_fs_inotify_add(struct flb_tail_file *file)
 {
     int ret;
     struct flb_tail_config *ctx = file->config;
@@ -343,7 +345,7 @@ int flb_tail_fs_add(struct flb_tail_file *file)
     return 0;
 }
 
-int flb_tail_fs_remove(struct flb_tail_file *file)
+int flb_tail_fs_inotify_remove(struct flb_tail_file *file)
 {
     struct flb_tail_config *ctx = file->config;
 
@@ -359,7 +361,7 @@ int flb_tail_fs_remove(struct flb_tail_file *file)
     return 0;
 }
 
-int flb_tail_fs_exit(struct flb_tail_config *ctx)
+int flb_tail_fs_inotify_exit(struct flb_tail_config *ctx)
 {
     (void) ctx;
     return 0;

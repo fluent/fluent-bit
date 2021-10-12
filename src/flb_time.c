@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,6 +87,11 @@ int flb_time_msleep(uint32_t ms)
 double flb_time_to_double(struct flb_time *tm)
 {
     return (double)(tm->tm.tv_sec) + ((double)tm->tm.tv_nsec/(double)ONESEC_IN_NSEC);
+}
+
+uint64_t flb_time_to_nanosec(struct flb_time *tm)
+{
+    return (((uint64_t)tm->tm.tv_sec * 1000000000L) + tm->tm.tv_nsec);
 }
 
 int flb_time_add(struct flb_time *base, struct flb_time *duration, struct flb_time *result)
@@ -236,4 +241,26 @@ int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
 
     ret = flb_time_msgpack_to_time(time, &obj);
     return ret;
+}
+
+long flb_time_tz_offset_to_second()
+{
+    time_t t = time(NULL);
+    struct tm local = *localtime(&t);
+    struct tm utc = *gmtime(&t);
+
+    long diff = ((local.tm_hour - utc.tm_hour)          \
+                 * 60 + (local.tm_min - utc.tm_min))    \
+                 * 60L + (local.tm_sec - utc.tm_sec);
+
+    int delta_day = local.tm_mday - utc.tm_mday;
+
+    if ((delta_day == 1) || (delta_day < -1)) {
+        diff += 24L * 60 * 60;
+    }
+    else if ((delta_day == -1) || (delta_day > 1)) {
+        diff -= 24L * 60 * 60;
+    }
+
+    return diff;
 }

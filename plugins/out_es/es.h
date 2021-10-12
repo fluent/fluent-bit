@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,10 +36,15 @@ struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
     char *index;
     char *type;
+    char suppress_type_name;
 
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    /* Elastic Cloud Auth */
+    char *cloud_user;
+    char *cloud_passwd;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_AWS
@@ -95,12 +100,19 @@ struct flb_elasticsearch {
     /* time key nanoseconds */
     int time_key_nanos;
 
+
+    /* id_key */
+    flb_sds_t id_key;
+    struct flb_record_accessor *ra_id_key;
+    
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;
 
     /* Elasticsearch HTTP API */
     char uri[256];
+
+    struct flb_record_accessor *ra_prefix_key;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;

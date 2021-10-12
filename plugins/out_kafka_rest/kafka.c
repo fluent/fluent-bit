@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,11 +24,69 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_config_map.h>
 #include <msgpack.h>
 
 #include "kafka.h"
 #include "kafka_conf.h"
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, message_key),
+     "Specify a message key. "
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, time_key),
+     "Specify the name of the field that holds the record timestamp. "
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "topic", "fluent-bit",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, topic),
+     "Specify the kafka topic. "
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "url_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, url_path),
+     "Specify an optional HTTP URL path for the target web server, e.g: /something"
+    },
+
+    {
+     FLB_CONFIG_MAP_DOUBLE, "partition", "-1",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, partition),
+     "Specify kafka partition number. "
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_key_format", FLB_KAFKA_TIME_KEYF,
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, time_key_format),
+     "Specify the format of the timestamp. "
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, include_tag_key),
+     "Specify whether to append tag name to final record. "
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "tag_key", "_flb-key",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, tag_key),
+     "Specify the key name of the record if include_tag_key is enabled. "
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "avro_http_header", "false",
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, avro_http_header),
+     "Specify if the format has avro header in http request"
+    },
+
+    /* EOF */
+    {0}
+};
 /*
  * Convert the internal Fluent Bit data representation to the required
  * one by Kafka REST Proxy.
@@ -222,10 +280,17 @@ static void cb_kafka_flush(const void *data, size_t bytes,
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         js, js_size, NULL, 0, NULL, 0);
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(c,
-                        "Content-Type", 12,
-                        "application/vnd.kafka.json.v2+json", 34);
-
+    if (ctx->avro_http_header == FLB_TRUE) {
+        flb_http_add_header(c,
+                            "Content-Type", 12,
+                            "application/vnd.kafka.avro.v2+json", 34);
+    }
+    else {
+        flb_http_add_header(c,
+                            "Content-Type", 12,
+                            "application/vnd.kafka.json.v2+json", 34);
+    }
+    
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
@@ -283,5 +348,6 @@ struct flb_output_plugin out_kafka_rest_plugin = {
     .cb_init      = cb_kafka_init,
     .cb_flush     = cb_kafka_flush,
     .cb_exit      = cb_kafka_exit,
+    .config_map   = config_map,
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

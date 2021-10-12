@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
-#include <fluent-bit/flb_thread.h>
+#include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_io.h>
@@ -36,12 +36,15 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
+#include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_pack.h>
 
-FLB_TLS_DEFINE(struct flb_libco_out_params, flb_libco_params);
+FLB_TLS_DEFINE(struct flb_out_coro_params, out_coro_params);
 
 void flb_output_prepare()
 {
-    FLB_TLS_INIT(flb_libco_params);
+    FLB_TLS_INIT(out_coro_params);
 }
 
 /* Validate the the output address protocol */
@@ -69,6 +72,7 @@ static int check_protocol(const char *prot, const char *output)
 
     return 0;
 }
+
 
 /* Invoke pre-run call for the output plugin */
 void flb_output_pre_run(struct flb_config *config)
@@ -114,6 +118,102 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 #endif
 }
 
+void flb_output_coro_prepare_destroy(struct flb_output_coro *out_coro)
+{
+    struct flb_output_instance *ins = out_coro->o_ins;
+    struct flb_out_thread_instance *th_ins;
+
+    /* Move output coroutine context from active list to the destroy one */
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        pthread_mutex_lock(&th_ins->coro_mutex);
+        mk_list_del(&out_coro->_head);
+        mk_list_add(&out_coro->_head, &th_ins->coros_destroy);
+        pthread_mutex_unlock(&th_ins->coro_mutex);
+    }
+    else {
+        mk_list_del(&out_coro->_head);
+        mk_list_add(&out_coro->_head, &ins->coros_destroy);
+    }
+}
+
+int flb_output_coro_id_get(struct flb_output_instance *ins)
+{
+    int id;
+    int max = (2 << 13) - 1; /* max for 14 bits */
+    struct flb_out_thread_instance *th_ins;
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        id = th_ins->coro_id;
+        th_ins->coro_id++;
+
+        /* reset once it reach the maximum allowed */
+        if (th_ins->coro_id > max) {
+            th_ins->coro_id = 0;
+        }
+    }
+    else {
+        id = ins->coro_id;
+        ins->coro_id++;
+
+        /* reset once it reach the maximum allowed */
+        if (ins->coro_id > max) {
+            ins->coro_id = 0;
+        }
+    }
+
+    return id;
+}
+
+void flb_output_coro_add(struct flb_output_instance *ins, struct flb_coro *coro)
+{
+    struct flb_output_coro *out_coro;
+
+    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(coro);
+    mk_list_add(&out_coro->_head, &ins->coros);
+}
+
+/*
+ * Flush a task through the output plugin, either using a worker thread + coroutine
+ * or a simple co-routine in the current thread.
+ */
+int flb_output_task_flush(struct flb_task *task,
+                          struct flb_output_instance *out_ins,
+                          struct flb_config *config)
+{
+    int ret;
+    struct flb_output_coro *out_coro;
+
+    if (flb_output_is_threaded(out_ins) == FLB_TRUE) {
+        flb_task_users_inc(task);
+
+        /* Dispatch the task to the thread pool */
+        ret = flb_output_thread_pool_flush(task, out_ins, config);
+        if (ret == -1) {
+            flb_task_users_dec(task, FLB_FALSE);
+        }
+    }
+    else {
+        /* Direct co-routine handling */
+        out_coro = flb_output_coro_create(task,
+                                          task->i_ins,
+                                          out_ins,
+                                          config,
+                                          task->buf, task->size,
+                                          task->tag,
+                                          task->tag_len);
+        if (!out_coro) {
+            return -1;
+        }
+
+        flb_task_users_inc(task);
+        flb_coro_resume(out_coro->coro);
+    }
+
+    return 0;
+}
+
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
     if (ins->alias) {
@@ -142,10 +242,18 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
             flb_tls_destroy(ins->tls);
         }
     }
+
+    if (ins->tls_config_map) {
+        flb_config_map_destroy(ins->tls_config_map);
+    }
 #endif
 
     /* Remove metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ins->cmt) {
+        cmt_destroy(ins->cmt);
+    }
+
     if (ins->metrics) {
         flb_metrics_destroy(ins->metrics);
     }
@@ -195,6 +303,11 @@ void flb_output_exit(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_output_instance, _head);
         p = ins->p;
 
+        /* Stop any worker thread */
+        if (flb_output_is_threaded(ins) == FLB_TRUE) {
+            flb_output_thread_pool_destroy(ins);
+        }
+
         /* Check a exit callback */
         if (p->cb_exit) {
             if(!p->proxy) {
@@ -204,15 +317,10 @@ void flb_output_exit(struct flb_config *config)
                 p->cb_exit(p, ins->context);
             }
         }
-
-        if (ins->upstream) {
-            flb_upstream_destroy(ins->upstream);
-        }
-
         flb_output_instance_destroy(ins);
     }
 
-    params = FLB_TLS_GET(flb_libco_params);
+    params = FLB_TLS_GET(out_coro_params);
     if (params) {
         flb_free(params);
     }
@@ -231,15 +339,72 @@ static inline int instance_id(struct flb_config *config)
     return (ins->id + 1);
 }
 
+struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
+                                                    int out_id)
+{
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if (ins->id == out_id) {
+            break;
+        }
+        ins = NULL;
+    }
+
+    if (!ins) {
+        return NULL;
+    }
+
+    return ins;
+}
+
+/*
+ * Invoked everytime a flush callback has finished (returned). This function
+ * is called from the event loop.
+ */
+int flb_output_flush_finished(struct flb_config *config, int out_id)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct mk_list *list;
+    struct flb_output_instance *ins;
+    struct flb_output_coro *out_coro;
+    struct flb_out_thread_instance *th_ins;
+
+    ins = flb_output_get_instance(config, out_id);
+    if (!ins) {
+        return -1;
+    }
+
+    if (flb_output_is_threaded(ins) == FLB_TRUE) {
+        th_ins = flb_output_thread_instance_get();
+        list = &th_ins->coros_destroy;
+    }
+    else {
+        list = &ins->coros_destroy;
+    }
+
+    /* Look for output coroutines that needs to be destroyed */
+    mk_list_foreach_safe(head, tmp, list) {
+        out_coro = mk_list_entry(head, struct flb_output_coro, _head);
+        flb_output_coro_destroy(out_coro);
+    }
+
+    return 0;
+}
+
+
 /*
  * It validate an output type given the string, it return the
  * proper type and if valid, populate the global config.
  */
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           const char *output, void *data)
+                                           const char *output, void *data,
+                                           int public_only)
 {
     int ret = -1;
-    int mask_id;
     int flags = 0;
     struct mk_list *head;
     struct flb_output_plugin *plugin;
@@ -249,23 +414,17 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         return NULL;
     }
 
-    /* Get the last mask_id reported by an output instance plugin */
-    if (mk_list_is_empty(&config->outputs) == 0) {
-        mask_id = 0;
-    }
-    else {
-        instance = mk_list_entry_last(&config->outputs,
-                                      struct flb_output_instance,
-                                      _head);
-        mask_id = (instance->mask_id);
-    }
-
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (check_protocol(plugin->name, output)) {
-            break;
+        if (!check_protocol(plugin->name, output)) {
+            plugin = NULL;
+            continue;
         }
-        plugin = NULL;
+
+        if (public_only && plugin->flags & FLB_OUTPUT_PRIVATE) {
+            return NULL;
+        }
+        break;
     }
 
     if (!plugin) {
@@ -278,24 +437,19 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+
+    /* Initialize event type, if not set, default to FLB_OUTPUT_LOGS */
+    if (plugin->event_type == 0) {
+        instance->event_type = FLB_OUTPUT_LOGS;
+    }
+    else {
+        instance->event_type = plugin->event_type;
+    }
     instance->config = config;
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
+    instance->is_threaded = FLB_FALSE;
 
-    /*
-     * Set mask_id: the mask_id is an unique number assigned to this
-     * output instance that is used later to set in an 'unsigned 64
-     * bit number' where a specific task (buffer/records) should be
-     * routed.
-     *
-     * note: This value is different than instance id.
-     */
-    if (mask_id == 0) {
-        instance->mask_id = 1;
-    }
-    else {
-        instance->mask_id = (mask_id * 2);
-    }
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
@@ -331,7 +485,6 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->alias       = NULL;
     instance->flags       = instance->p->flags;
     instance->data        = data;
-    instance->upstream    = NULL;
     instance->match       = NULL;
 #ifdef FLB_HAVE_REGEX
     instance->match_regex = NULL;
@@ -380,6 +533,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
+    mk_list_init(&instance->upstreams);
+    mk_list_init(&instance->coros);
+    mk_list_init(&instance->coros_destroy);
+
     mk_list_add(&instance->_head, &config->outputs);
 
     /* Tests */
@@ -459,18 +616,27 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("retry_limit", k, len) == 0) {
         if (tmp) {
-            if (strcasecmp(tmp, "false") == 0 ||
+            if (strcasecmp(tmp, "no_limits") == 0 ||
+                strcasecmp(tmp, "false") == 0 ||
                 strcasecmp(tmp, "off") == 0) {
                 /* No limits for retries */
-                ins->retry_limit = -1;
+                ins->retry_limit = FLB_OUT_RETRY_UNLIMITED;
+            }
+            else if (strcasecmp(tmp, "no_retries") == 0) {
+                ins->retry_limit = FLB_OUT_RETRY_NONE;
             }
             else {
                 ins->retry_limit = atoi(tmp);
+                if (ins->retry_limit <= 0) {
+                    flb_warn("[config] invalid retry_limit. set default.");
+                    /* set default when input is invalid number */
+                    ins->retry_limit = 1;
+                }
             }
             flb_sds_destroy(tmp);
         }
         else {
-            ins->retry_limit = 0;
+            ins->retry_limit = 1;
         }
     }
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {
@@ -574,6 +740,11 @@ int flb_output_set_property(struct flb_output_instance *ins,
         flb_sds_destroy(tmp);
         ins->total_limit_size = (size_t) limit;
     }
+    else if (prop_key_check("workers", k, len) == 0 && tmp) {
+        /* Set the number of workers */
+        ins->tp_workers = atoi(tmp);
+        flb_sds_destroy(tmp);
+    }
     else {
         /*
          * Create the property, we don't pass the value since we will
@@ -605,6 +776,21 @@ void flb_output_net_default(const char *host, const int port,
     }
 }
 
+/* Add thread pool for output plugin if configured with workers */
+int flb_output_enable_multi_threading(struct flb_output_instance *ins, struct flb_config *config)
+{
+    /* Multi-threading enabled ? (through 'workers' property) */
+    if (ins->tp_workers > 0) {
+        if(flb_output_thread_pool_create(config, ins) != 0) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        flb_output_thread_pool_start(ins);
+    }
+
+    return 0;
+}
+
 /* Return an instance name or alias */
 const char *flb_output_name(struct flb_output_instance *ins)
 {
@@ -625,7 +811,7 @@ int flb_output_init_all(struct flb_config *config)
 {
     int ret;
 #ifdef FLB_HAVE_METRICS
-    const char *name;
+    char *name;
 #endif
     struct mk_list *tmp;
     struct mk_list *head;
@@ -640,7 +826,6 @@ int flb_output_init_all(struct flb_config *config)
             ins->log_level = config->log->level;
         }
         p = ins->p;
-        mk_list_init(&ins->th_queue);
 
         /* Output Events Channel */
         ret = mk_event_channel_create(config->evl,
@@ -667,8 +852,54 @@ int flb_output_init_all(struct flb_config *config)
         /* Metrics */
 #ifdef FLB_HAVE_METRICS
         /* Get name or alias for the instance */
-        name = flb_output_name(ins);
+        name = (char *) flb_output_name(ins);
 
+        /* CMetrics */
+        ins->cmt = cmt_create();
+        if (!ins->cmt) {
+            flb_error("[output] could not create cmetrics context");
+            return -1;
+        }
+
+        /* Register generic output plugin metrics */
+        ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                                   "output", "proc_records_total",
+                                                   "Number of processed output records.",
+                                                   1, (char *[]) {"name"});
+
+        ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
+                                                 "output", "proc_bytes_total",
+                                                 "Number of processed output bytes.",
+                                                 1, (char *[]) {"name"});
+
+        ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "errors_total",
+                                             "Number of output errors.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retries_total",
+                                             "Number of output retries.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retries_failed_total",
+                                             "Number of abandoned batches because "
+                                             "the maximum number of re-tries was "
+                                             "reached.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "dropped_records_total",
+                                             "Number of dropped records.",
+                                             1, (char *[]) {"name"});
+
+        ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
+                                             "output", "retried_records_total",
+                                             "Number of retried records.",
+                                             1, (char *[]) {"name"});
+
+        /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
             flb_metrics_add(FLB_METRIC_OUT_OK_RECORDS,
@@ -681,6 +912,10 @@ int flb_output_init_all(struct flb_config *config)
                             "retries", ins->metrics);
             flb_metrics_add(FLB_METRIC_OUT_RETRY_FAILED,
                         "retries_failed", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_DROPPED_RECORDS,
+                        "dropped_records", ins->metrics);
+            flb_metrics_add(FLB_METRIC_OUT_RETRIED_RECORDS,
+                        "retried_records", ins->metrics);
         }
 #endif
 
@@ -689,8 +924,18 @@ int flb_output_init_all(struct flb_config *config)
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
             ret = flb_plugin_proxy_init(p->proxy, ins, config);
             if (ret == -1) {
+                flb_output_instance_destroy(ins);
                 return -1;
             }
+
+            /* Multi-threading enabled if configured */
+            ret = flb_output_enable_multi_threading(ins, config);
+            if (ret == -1) {
+                flb_error("[output] could not start thread pool for '%s' plugin",
+                          p->name);
+                return -1;
+            }
+
             continue;
         }
 #endif
@@ -726,6 +971,7 @@ int flb_output_init_all(struct flb_config *config)
             if (!config_map) {
                 flb_error("[output] error loading config map for '%s' plugin",
                           p->name);
+                flb_output_instance_destroy(ins);
                 return -1;
             }
             ins->config_map = config_map;
@@ -743,6 +989,9 @@ int flb_output_init_all(struct flb_config *config)
             }
         }
 
+        /* Init network defaults */
+        flb_net_setup_init(&ins->net_setup);
+
         /* Get Upstream net_setup configmap */
         ins->net_config_map = flb_upstream_get_config_map(config);
         if (!ins->net_config_map) {
@@ -750,6 +999,21 @@ int flb_output_init_all(struct flb_config *config)
             return -1;
         }
 
+#ifdef FLB_HAVE_TLS
+        struct flb_config_map *m;
+
+        /* TLS config map (just for 'help' formatting purposes) */
+        ins->tls_config_map = flb_tls_get_config_map(config);
+
+        /* Override first configmap value based on it plugin flag */
+        m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
+        if (p->flags & FLB_IO_TLS) {
+            m->value.val.boolean = FLB_TRUE;
+        }
+        else {
+            m->value.val.boolean = FLB_FALSE;
+        }
+#endif
         /*
          * Validate 'net.*' properties: if the plugin use the Upstream interface,
          * it might receive some networking settings.
@@ -771,8 +1035,17 @@ int flb_output_init_all(struct flb_config *config)
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
         if (ret == -1) {
-            flb_error("[output] Failed to initialize '%s' plugin",
+            flb_error("[output] failed to initialize '%s' plugin",
                       p->name);
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+
+        /* Multi-threading enabled if configured */
+        ret = flb_output_enable_multi_threading(ins, config);
+        if (ret == -1) {
+            flb_error("[output] could not start thread pool for '%s' plugin",
+                      flb_output_name(ins));
             return -1;
         }
     }
@@ -829,8 +1102,31 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     /* Set flags */
     u->flags |= flags;
 
+    /*
+     * If the output plugin flush callbacks will run in multiple threads, enable
+     * the thread safe mode for the Upstream context.
+     */
+    if (ins->tp_workers > 0) {
+        flb_upstream_thread_safe(u);
+        mk_list_add(&u->_head, &ins->upstreams);
+    }
+
     /* Set networking options 'net.*' received through instance properties */
     memcpy(&u->net, &ins->net_setup, sizeof(struct flb_net_setup));
+    return 0;
+}
+
+int flb_output_upstream_ha_set(void *ha, struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_upstream_node *node;
+    struct flb_upstream_ha *upstream_ha = ha;
+
+    mk_list_foreach(head, &upstream_ha->nodes) {
+        node = mk_list_entry(head, struct flb_upstream_node, _head);
+        flb_output_upstream_set(node->u, ins);
+    }
+
     return 0;
 }
 

@@ -14,6 +14,7 @@ set(src
   flb_sp_snapshot.c
   flb_sp_window.c
   flb_sp_groupby.c
+  flb_sp_aggregate_func.c
   )
 
 add_library(flb-sp STATIC ${src})
