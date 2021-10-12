@@ -401,7 +401,6 @@ static int net_connect_async(int fd,
 
     /* Register the connection socket into the main event loop */
     MK_EVENT_ZERO(&u_conn->event);
-    u_conn->coro = async_ctx;
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
@@ -413,6 +412,8 @@ static int net_connect_async(int fd,
          */
         return -1;
     }
+
+    u_conn->coro = async_ctx;
 
     /*
      * Return the control to the parent caller, we need to wait for
