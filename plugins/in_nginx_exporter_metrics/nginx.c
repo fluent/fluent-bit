@@ -390,7 +390,7 @@ static struct flb_config_map config_map[] = {
 
 /* Plugin reference */
 struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
-    .name         = "nginx_stub_status",
+    .name         = "nginx_metrics",
     .description  = "Nginx status metrics",
     .cb_init      = nginx_init,
     .cb_pre_run   = NULL,
