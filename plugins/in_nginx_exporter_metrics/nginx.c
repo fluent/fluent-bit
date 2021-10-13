@@ -193,7 +193,8 @@ conn_error:
     if (ret != 0) {
         flb_plg_error(ins, "could not append metrics");
     }
-    return rc;
+
+    FLB_INPUT_RETURN(rc);
 }
 
 /**
@@ -394,6 +395,6 @@ struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
     .cb_flush_buf = NULL,
     .cb_exit      = nginx_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_NET,
+    .flags        = FLB_INPUT_NET|FLB_INPUT_CORO,
     .event_type   = FLB_INPUT_METRICS
 };
