@@ -283,21 +283,24 @@ static int nginx_init(struct flb_input_instance *ins,
     if (ctx->connections_accepted == NULL) {
         return -1;
     }
-    
-    ctx->connections_handled = cmt_counter_create(ctx->cmt, "nginx", "connections", 
-                                                    "handled", 
+    cmt_counter_allow_reset(ctx->connections_accepted);
+
+    ctx->connections_handled = cmt_counter_create(ctx->cmt, "nginx", "connections",
+                                                    "handled",
                                                     "Handled client connections", 0, NULL);
     if (ctx->connections_handled == NULL) {
         return -1;
     }
-    
-    ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http", 
+    cmt_counter_allow_reset(ctx->connections_handled);
+
+    ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http",
                                                 "requests_total", "Total http requests", 0, NULL);
     if (ctx->connections_total == NULL) {
         return -1;
     }
-    
-    ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
+    cmt_counter_allow_reset(ctx->connections_total);
+
+    ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections",
                                                 "active", "active client connections", 0, NULL);
     if (ctx->connections_active == NULL) {
         return -1;
