@@ -55,6 +55,7 @@ static int cb_sw_init(struct flb_output_instance *ins,
     /* Allocate plugin context */
     ctx = flb_calloc(1, sizeof(struct flb_output_sw));
     if (!ctx) {
+        flb_errno();
         return -1;
     }
 
@@ -66,9 +67,7 @@ static int cb_sw_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    if (ctx->port == 0) {
-        ctx->port = DEFAULT_SW_OAP_PORT;
-    }
+    flb_output_net_default(DEFAULT_SW_OAP_HOST, DEFAULT_SW_OAP_PORT, ctx->ins);
 
     ctx->uri = flb_sds_create(DEFAULT_SW_LOG_PATH);
     if (!ctx->uri) {
@@ -90,7 +89,7 @@ static int cb_sw_init(struct flb_output_instance *ins,
     }
 
     flb_plg_debug(ctx->ins, "configured %s/%s", ctx->svc_name, ctx->svc_inst_name);
-    flb_plg_debug(ctx->ins, "OAP address is %s:%d", ctx->host, ctx->port);
+    flb_plg_debug(ctx->ins, "OAP address is %s:%d", ins->host.name, ins->host.port);
 
     /* scheme configuration */
     if (ins->use_tls == FLB_TRUE) {
@@ -103,7 +102,7 @@ static int cb_sw_init(struct flb_output_instance *ins,
     }
 
     /* configure upstream instance */
-    ctx->u = flb_upstream_create(config, ctx->host, ctx->port, io_flags, ins->tls);
+    ctx->u = flb_upstream_create(config, ins->host.name, ins->host.port, io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "failed to create upstream context");
         sw_output_ctx_destroy(ctx);
@@ -325,13 +324,14 @@ static void cb_sw_flush(const void *data, size_t bytes,
     conn = flb_upstream_conn_get(ctx->u);
     if (!conn) {
         flb_plg_error(ctx->ins, "failed to establish connection to %s:%i",
-                ctx->host, ctx->port);
+                ctx->ins->host.name, ctx->ins->host.port);
         flb_sds_destroy(buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     client = flb_http_client(conn, FLB_HTTP_POST, ctx->uri,
-            (const char*)buf, buf_len, ctx->host, ctx->port, NULL, 0);
+            (const char*)buf, buf_len, ctx->ins->host.name, ctx->ins->host.port,
+            NULL, 0);
     if (!client) {
         flb_plg_error(ctx->ins, "failed to create HTTP client");
         flb_sds_destroy(buf);
@@ -339,7 +339,7 @@ static void cb_sw_flush(const void *data, size_t bytes,
     }
 
     if (ctx->auth_token && flb_sds_len(ctx->auth_token) != 0) {
-        flb_http_add_header(client, "Authentication", 10,
+        flb_http_add_header(client, "Authentication", 14,
                             ctx->auth_token, strlen(ctx->auth_token));
     }
 
@@ -356,8 +356,8 @@ static void cb_sw_flush(const void *data, size_t bytes,
     }
 
     if (tmp_ret == 0) {
-        flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i", ctx->host,
-                      ctx->port, client->resp.status);
+        flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i", ctx->ins->host.name,
+                ctx->ins->host.port, client->resp.status);
 
         if (client->resp.status < 200 || client->resp.status > 205) {
             flush_ret = FLB_RETRY;
@@ -368,7 +368,7 @@ static void cb_sw_flush(const void *data, size_t bytes,
     }
     else {
         flb_plg_error(ctx->ins, "failed to flush buffer to %s:%i",
-                      ctx->host, ctx->port);
+                ctx->ins->host.name, ctx->ins->host.port);
         flush_ret = FLB_RETRY;
     }
 
@@ -390,16 +390,6 @@ static int cb_sw_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
-    {
-        FLB_CONFIG_MAP_STR, "host", DEFAULT_SW_OAP_HOST,
-        0, FLB_TRUE, offsetof(struct flb_output_sw, host),
-        "SkyWalking OAP hostname"
-    },
-    {
-        FLB_CONFIG_MAP_INT, "port", NULL,
-        0, FLB_TRUE, offsetof(struct flb_output_sw, port),
-        "SkyWalking OAP port"
-    },
     {
         FLB_CONFIG_MAP_STR, "auth_token", NULL,
         0, FLB_TRUE, offsetof(struct flb_output_sw, auth_token),

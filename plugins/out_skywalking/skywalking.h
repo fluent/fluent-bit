@@ -25,11 +25,9 @@
 
 struct flb_output_sw {
   /* Configured by user */
-  char* host;
-  int port;
-  char* auth_token;
-  char* svc_name;
-  char* svc_inst_name;
+  flb_sds_t auth_token;
+  flb_sds_t svc_name;
+  flb_sds_t svc_inst_name;
 
   /* Upstream log collector context */
   struct flb_upstream *u;
