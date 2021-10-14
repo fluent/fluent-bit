@@ -156,23 +156,24 @@ static int nginx_collect(struct flb_input_instance *ins,
     data = flb_sds_create_size(client->resp.payload_size+1);
     data[client->resp.payload_size] = NULL;
     memcpy(data, client->resp.payload, client->resp.payload_size);
-    
+
     /* work directly on the data here ... */
     if (nginx_parse_stub_status(data, &status) == -1) {
         flb_plg_error(ins, "unable to parse stub status response");
         goto status_error;
     }
-    
+
     rc = 0;
 
     cmt_counter_set(ctx->connections_accepted, ts, (double)status.accepts, 0, NULL);
-    cmt_counter_set(ctx->connections_handled, ts, (double)status.handled, 0, NULL);
-    cmt_counter_set(ctx->connections_total, ts, (double)status.requests, 0, NULL);
-    
     cmt_gauge_set(ctx->connections_active, ts, (double)status.active, 0, NULL);
+    cmt_counter_set(ctx->connections_handled, ts, (double)status.handled, 0, NULL);
+
     cmt_gauge_set(ctx->connections_reading, ts, (double)status.reading, 0, NULL);
     cmt_gauge_set(ctx->connections_writing, ts, (double)status.writing, 0, NULL);
     cmt_gauge_set(ctx->connections_waiting, ts, (double)status.waiting, 0, NULL);
+
+    cmt_counter_set(ctx->connections_total, ts, (double)status.requests, 0, NULL);
 
 status_error:
     flb_sds_destroy(data);
@@ -285,6 +286,12 @@ static int nginx_init(struct flb_input_instance *ins,
     }
     cmt_counter_allow_reset(ctx->connections_accepted);
 
+    ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections",
+                                                "active", "active client connections", 0, NULL);
+    if (ctx->connections_active == NULL) {
+        return -1;
+    }
+
     ctx->connections_handled = cmt_counter_create(ctx->cmt, "nginx", "connections",
                                                     "handled",
                                                     "Handled client connections", 0, NULL);
@@ -293,6 +300,24 @@ static int nginx_init(struct flb_input_instance *ins,
     }
     cmt_counter_allow_reset(ctx->connections_handled);
 
+    ctx->connections_reading = cmt_gauge_create(ctx->cmt, "nginx", "connections",
+                                                "reading", "reading client connections", 0, NULL);
+    if (ctx->connections_reading == NULL) {
+        return -1;
+    }
+
+    ctx->connections_writing = cmt_gauge_create(ctx->cmt, "nginx", "connections",
+                                                "writing", "writing client connections", 0, NULL);
+    if (ctx->connections_writing == NULL) {
+        return -1;
+    }
+
+    ctx->connections_waiting = cmt_gauge_create(ctx->cmt, "nginx", "connections",
+                                                "waiting", "waiting client connections", 0, NULL);
+    if (ctx->connections_waiting == NULL) {
+        return -1;
+    }
+
     ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http",
                                                 "requests_total", "Total http requests", 0, NULL);
     if (ctx->connections_total == NULL) {
@@ -300,32 +325,8 @@ static int nginx_init(struct flb_input_instance *ins,
     }
     cmt_counter_allow_reset(ctx->connections_total);
 
-    ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections",
-                                                "active", "active client connections", 0, NULL);
-    if (ctx->connections_active == NULL) {
-        return -1;
-    }
-    
-    ctx->connections_reading = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-                                                "reading", "reading client connections", 0, NULL);
-    if (ctx->connections_reading == NULL) {
-        return -1;
-    }
-    
-    ctx->connections_writing = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-                                                "writing", "writing client connections", 0, NULL);
-    if (ctx->connections_writing == NULL) {
-        return -1;
-    }
-    
-    ctx->connections_waiting = cmt_gauge_create(ctx->cmt, "nginx", "connections", 
-                                                "waiting", "waiting client connections", 0, NULL);
-    if (ctx->connections_waiting == NULL) {
-        return -1;
-    }
-
-    ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "connections", "up", 
-                                            "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one", 
+    ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "", "up",
+                                            "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
                                             0, NULL);
     
     flb_input_set_context(ins, ctx);
