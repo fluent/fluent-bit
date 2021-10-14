@@ -242,7 +242,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
     }
 
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
-                                    FLB_IO_TCP, NULL);
+                                   FLB_IO_TCP, NULL);
     if (!upstream) {
         flb_plg_error(ins, "upstream initialization error");
         return NULL;
@@ -276,22 +276,22 @@ static int nginx_init(struct flb_input_instance *ins,
      * https://github.com/nginxinc/nginx-prometheus-exporter#metrics-for-nginx-oss
      */
     ctx->connections_accepted = cmt_counter_create(ctx->cmt, "nginx", "connections",
-                                                    "accepted",
-                                                    "Accepted client connections", 0, NULL);
+                                                   "accepted",
+                                                   "Accepted client connections", 0, NULL);
     if (ctx->connections_accepted == NULL) {
         return -1;
     }
     cmt_counter_allow_reset(ctx->connections_accepted);
 
     ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections",
-                                                "active", "active client connections", 0, NULL);
+                                               "active", "active client connections", 0, NULL);
     if (ctx->connections_active == NULL) {
         return -1;
     }
 
     ctx->connections_handled = cmt_counter_create(ctx->cmt, "nginx", "connections",
-                                                    "handled",
-                                                    "Handled client connections", 0, NULL);
+                                                  "handled",
+                                                  "Handled client connections", 0, NULL);
     if (ctx->connections_handled == NULL) {
         return -1;
     }
@@ -323,8 +323,8 @@ static int nginx_init(struct flb_input_instance *ins,
     cmt_counter_allow_reset(ctx->connections_total);
 
     ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "", "up",
-                                            "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
-                                            0, NULL);
+                                          "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
+                                          0, NULL);
 
     flb_input_set_context(ins, ctx);
 
