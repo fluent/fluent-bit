@@ -31,11 +31,11 @@
 
 /**
  * parse the output of the nginx stub_status module.
- * 
+ *
  * An example:
- *     Active connections: 1 
+ *     Active connections: 1
  *     server accepts handled requests
- *      10 10 10 
+ *      10 10 10
  *     Reading: 0 Writing: 1 Waiting: 0
  *
  * Would result in:
@@ -72,12 +72,12 @@ static int nginx_parse_stub_status(flb_sds_t buf, struct nginx_status *status)
     if (line < 4) {
         goto error;
     }
-    
+
     rc = sscanf(lines[0], "Active connections: %lu \n", &status->active);
     if (rc != 1) {
         goto error;
     }
-    rc = sscanf(lines[2], " %lu %lu %lu \n", 
+    rc = sscanf(lines[2], " %lu %lu %lu \n",
            &status->accepts, &status->handled, &status->requests);
     if (rc != 3) {
         goto error;
@@ -94,9 +94,6 @@ error:
     flb_utils_split_free(llines);
     return -1;
 }
-
-static int nginx_collect(struct flb_input_instance *ins,
-                         struct flb_config *config, void *in_context);
 
 /**
  * Callback function to gather statistics from the nginx
@@ -121,7 +118,7 @@ static int nginx_collect(struct flb_input_instance *ins,
     int ret = -1;
     int rc = -1;
     uint64_t ts = cmt_time_now();
-    
+
 
     u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
@@ -129,7 +126,7 @@ static int nginx_collect(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->status_url, 
+    client = flb_http_client(u_conn, FLB_HTTP_GET, ctx->status_url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
         flb_plg_error(ins, "unable to create http client");
@@ -213,7 +210,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
     int ret;
     struct nginx_ctx *ctx;
     struct flb_upstream *upstream;
- 
+
     if (ins->host.name == NULL) {
         ins->host.name = flb_sds_create("localhost");
     }
@@ -227,7 +224,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
         return NULL;
     }
     ctx->is_up = FLB_FALSE;
-    
+
     ctx->ins = ins;
 
     /* Load the config map */
@@ -243,7 +240,7 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
         flb_free(ctx);
         return NULL;
     }
-    
+
     upstream = flb_upstream_create(config, ins->host.name, ins->host.port,
                                     FLB_IO_TCP, NULL);
     if (!upstream) {
@@ -268,7 +265,7 @@ static int nginx_init(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
     struct nginx_ctx *ctx = NULL;
-    
+
     /* Allocate space for the configuration */
     ctx = nginx_ctx_init(ins, config);
     if (!ctx) {
@@ -276,9 +273,9 @@ static int nginx_init(struct flb_input_instance *ins,
     }
 
     /* These metrics follow the same format as those define here:
-     * https://github.com/nginxinc/nginx-prometheus-exporter#metrics-for-nginx-oss 
+     * https://github.com/nginxinc/nginx-prometheus-exporter#metrics-for-nginx-oss
      */
-    ctx->connections_accepted = cmt_counter_create(ctx->cmt, "nginx", "connections", 
+    ctx->connections_accepted = cmt_counter_create(ctx->cmt, "nginx", "connections",
                                                     "accepted",
                                                     "Accepted client connections", 0, NULL);
     if (ctx->connections_accepted == NULL) {
@@ -328,12 +325,12 @@ static int nginx_init(struct flb_input_instance *ins,
     ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "", "up",
                                             "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
                                             0, NULL);
-    
+
     flb_input_set_context(ins, ctx);
 
-    ctx->coll_id = flb_input_set_collector_time(ins, 
+    ctx->coll_id = flb_input_set_collector_time(ins,
                                                 nginx_collect,
-                                                1, 
+                                                1,
                                                 0, config);
     return 0;
 }
