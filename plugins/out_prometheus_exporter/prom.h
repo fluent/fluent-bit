@@ -28,10 +28,6 @@
 struct prom_exporter {
     void *http;
 
-    /* networking */
-    flb_sds_t listen;
-    flb_sds_t tcp_port;
-
     /* hash table for metrics reported */
     struct flb_hash *ht_metrics;
 

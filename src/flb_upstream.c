@@ -446,6 +446,11 @@ static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 
 static int destroy_conn(struct flb_upstream_conn *u_conn)
 {
+    /* Delay the destruction of busy connections */
+    if (u_conn->busy_flag) {
+        return 0;
+    }
+
 #ifdef FLB_HAVE_TLS
     if (u_conn->tls_session) {
         flb_tls_session_destroy(u_conn->tls, u_conn);
@@ -476,6 +481,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->u             = u;
     conn->fd            = -1;
     conn->net_error     = -1;
+    conn->busy_flag     = FLB_TRUE;
 
     /* retrieve the event loop */
     evl = flb_engine_evl_get();
@@ -525,6 +531,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
         prepare_destroy_conn_safe(conn);
+        conn->busy_flag = FLB_FALSE;
         return NULL;
     }
 
@@ -535,6 +542,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     /* Invalidate timeout for connection */
     conn->ts_connect_timeout = -1;
+    conn->busy_flag = FLB_FALSE;
 
     return conn;
 }
@@ -796,9 +804,40 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                  * waiting for I/O will receive the notification and trigger
                  * the error to it caller.
                  */
-                shutdown(u_conn->fd, SHUT_RDWR);
+                if (u_conn->fd != -1) {
+                    shutdown(u_conn->fd, SHUT_RDWR);
+                }
+
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
+
+                /*
+                 * If the connection has its coro field set it means it's waiting for a
+                 * FLB_ENGINE_EV_THREAD event which in some specific cases might never
+                 * arrive which would leave the coroutin eternally suspended and the
+                 * chunk it was trying to handle (in case of output related coroutines)
+                 * locked which (if repeated enough times) could lead to a system wide
+                 * lockup.
+                 *
+                 * Since we don't have a proper way to generate the required activity in
+                 * the socket to have the system organically resume the coroutine we need
+                 * to resume it ourselves.
+                 */
+                if (u_conn->event.type == FLB_ENGINE_EV_THREAD &&
+                    u_conn->coro != NULL) {
+                    MK_EVENT_NEW(&u_conn->event);
+
+                    flb_trace("[upstream] resuming timed out coroutine=%p", u_conn->coro);
+                    flb_coro_resume(u_conn->coro);
+
+                    if (u_conn->coro != NULL) {
+                        flb_trace("[upstream] the recently resumed coroutine=%p "
+                                  "did not clear the u_conn->coro field which could "
+                                  "cause issues, please correct the code." , u_conn->coro);
+
+                        u_conn->coro = NULL;
+                    }
+                }
             }
         }
 
@@ -806,7 +845,10 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
-                shutdown(u_conn->fd, SHUT_RDWR);
+                if (u_conn->fd != -1) {
+                    shutdown(u_conn->fd, SHUT_RDWR);
+                }
+
                 prepare_destroy_conn(u_conn);
                 flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
                           "(keepalive idle timeout)",

@@ -21,6 +21,8 @@
 #define CHUNKIO_COMPAT_H
 
 #ifdef _WIN32
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <winsock2.h>
 #include <windows.h>
 #include <io.h>

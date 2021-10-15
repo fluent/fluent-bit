@@ -495,6 +495,8 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+extern int sb_segregate_chunks(struct flb_config *config);
+
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
@@ -678,6 +680,14 @@ int flb_engine_start(struct flb_config *config)
 
     /* Signal that we have started */
     flb_engine_started(config);
+
+    ret = sb_segregate_chunks(config);
+
+    if (ret)
+    {
+        flb_error("[engine] could not segregate backlog chunks");
+        return -2;
+    }
 
     while (1) {
         mk_event_wait(evl);

@@ -367,16 +367,40 @@ static int bigquery_format(const void *data, size_t bytes,
     /*
      * Pack root map (kind & rows):
      *
-     * {"kind": "bigquery#tableDataInsertAllRequest"
-     *  "rows": []
+     * {
+     *   "kind": "bigquery#tableDataInsertAllRequest",
+     *   "skipInvalidRows": boolean,
+     *   "ignoreUnknownValues": boolean,
+     *   "rows": []
+     * }
      */
-    msgpack_pack_map(&mp_pck, 2);
+    msgpack_pack_map(&mp_pck, 4);
 
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "kind", 4);
 
     msgpack_pack_str(&mp_pck, 34);
     msgpack_pack_str_body(&mp_pck, "bigquery#tableDataInsertAllRequest", 34);
+
+    msgpack_pack_str(&mp_pck, 15);
+    msgpack_pack_str_body(&mp_pck, "skipInvalidRows", 15);
+
+    if (ctx->skip_invalid_rows) {
+        msgpack_pack_true(&mp_pck);
+    }
+    else {
+        msgpack_pack_false(&mp_pck);
+    }
+
+    msgpack_pack_str(&mp_pck, 19);
+    msgpack_pack_str_body(&mp_pck, "ignoreUnknownValues", 19);
+
+    if (ctx->ignore_unknown_values) {
+        msgpack_pack_true(&mp_pck);
+    }
+    else {
+        msgpack_pack_false(&mp_pck);
+    }
 
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "rows", 4);

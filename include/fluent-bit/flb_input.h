@@ -158,6 +158,9 @@ struct flb_input_instance {
     /* By default all input instances are 'routable' */
     int routable;
 
+    /* flag to pause input when storage is full */
+    int storage_pause_on_chunks_overlimit;
+
     /*
      * Input network info:
      *
@@ -209,6 +212,14 @@ struct flb_input_instance {
      * - FLB_INPUT_PAUSED  -> cannot append data
      */
     int mem_buf_status;
+
+    /*
+     * Define the buffer status:
+     *
+     * - FLB_INPUT_RUNNING -> can append more data
+     * - FLB_INPUT_PAUSED  -> cannot append data
+     */
+    int storage_buf_status;
 
     /*
      * Optional data passed to the plugin, this info is useful when
@@ -378,7 +389,7 @@ struct flb_coro *flb_input_coro_create(struct flb_input_instance *ins,
     }
 
     /* Setup thread specific data */
-    in_coro = (struct flb_input_coro *) flb_malloc(sizeof(struct flb_input_coro));
+    in_coro = (struct flb_input_coro *) flb_calloc(1, sizeof(struct flb_input_coro));
     if (!in_coro) {
         flb_errno();
         return NULL;
@@ -472,7 +483,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     uint64_t val;
     struct flb_input_coro *in_coro;
 
-    in_coro = (struct flb_input_coro *) FLB_CORO_DATA(coro);
+    in_coro = (struct flb_input_coro *) coro->data;
 
     /*
      * To compose the signal event the relevant info is:
@@ -490,9 +501,23 @@ static inline void flb_input_return(struct flb_coro *coro) {
     }
 }
 
+static inline void flb_input_return_do(int ret) {
+    struct flb_coro *coro = flb_coro_get();
+
+    flb_input_return(coro);
+    flb_coro_yield(coro, FLB_TRUE);
+}
+
+#define FLB_INPUT_RETURN(x) \
+    flb_input_return_do(x); \
+    return x;
+
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {
     if (i->mem_buf_status == FLB_INPUT_PAUSED) {
+        return FLB_TRUE;
+    }
+    if (i->storage_buf_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
 

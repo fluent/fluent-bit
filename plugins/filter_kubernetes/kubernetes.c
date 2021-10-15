@@ -823,6 +823,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, cache_use_docker_id),
      "fetch K8s meta when docker_id is changed"
     },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "use_tag_for_meta", "false",
+     0, FLB_TRUE, offsetof(struct flb_kube, use_tag_for_meta),
+     "use tag associated to retrieve metadata instead of kube-server"
+    },
+
     /*
      * Enable the feature for using kubelet to get pods information
      */
