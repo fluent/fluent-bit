@@ -333,6 +333,8 @@ static void proc_metrics_free(struct proc_metrics_pid_cmt *metrics)
     cmt_counter_destroy(metrics->read_bytes);
     cmt_counter_destroy(metrics->write_bytes);
     cmt_counter_destroy(metrics->cancelled_write_bytes);
+    cmt_counter_destroy(metrics->cpu_user_time);
+    cmt_counter_destroy(metrics->cpu_system_time);
 
     cmt_gauge_destroy(metrics->size);
     cmt_gauge_destroy(metrics->resident);
@@ -341,6 +343,10 @@ static void proc_metrics_free(struct proc_metrics_pid_cmt *metrics)
     cmt_gauge_destroy(metrics->lrs);
     cmt_gauge_destroy(metrics->drs);
     cmt_gauge_destroy(metrics->dt);
+
+    cmt_gauge_destroy(metrics->cpu_user_percent);
+    cmt_gauge_destroy(metrics->cpu_system_percent);
+    cmt_gauge_destroy(metrics->cpu_percent);
 
     flb_free(metrics);
 }
