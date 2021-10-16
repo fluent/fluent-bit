@@ -774,6 +774,7 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
+        cmt_destroy(cmt);
     }
     else {
         out_buf = (char *) data;
@@ -845,6 +846,8 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
     }
+
+    flb_kv_release(&ctx->kv_labels);
     flb_free(ctx);
 
     return 0;
@@ -874,6 +877,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "store_path", NULL,
      0, FLB_TRUE, offsetof(struct flb_calyptia, store_path),
      ""
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_calyptia, add_labels),
+     "Label to append to the generated metric."
     },
 
     /* EOF */
