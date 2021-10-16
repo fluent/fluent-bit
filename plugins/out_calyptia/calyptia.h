@@ -57,6 +57,8 @@ struct flb_calyptia {
     flb_sds_t api_key;
     flb_sds_t cloud_host;
     flb_sds_t store_path;
+
+    /* config reader for 'add_label' */
     struct mk_list *add_labels;
 
     /* internal */
