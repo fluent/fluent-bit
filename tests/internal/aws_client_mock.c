@@ -141,6 +141,8 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
     struct flb_aws_client *aws_client, int method, const char *uri, const char *body,
     size_t body_len, struct flb_aws_header *dynamic_headers, size_t dynamic_headers_len)
 {
+    int h;
+    int i;
     int ret;
 
     /* Get access to mock */
@@ -168,7 +170,7 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
     mk_list_init(&c->headers);
 
     /* Response configuration */
-    for (int i = 0; i < response->length; ++i) {
+    for (i = 0; i < response->length; ++i) {
         struct flb_aws_client_mock_response_config *response_config =
             &(response->config_parameters[i]);
         void *val1 = response_config->config_value;
@@ -178,7 +180,7 @@ static struct flb_http_client *flb_aws_client_mock_vtable_request(
         if (response_config->config_parameter == FLB_AWS_CLIENT_MOCK_EXPECT_HEADER) {
             int header_found = FLB_FALSE;
             /* Search for header in request */
-            for (int h = 0; h < dynamic_headers_len; ++h) {
+            for (h = 0; h < dynamic_headers_len; ++h) {
                 ret = strncmp(dynamic_headers[h].key, (char *)val1,
                               dynamic_headers[h].key_len);
                 if (ret == 0) {
