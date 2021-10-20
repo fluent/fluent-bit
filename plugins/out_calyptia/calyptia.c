@@ -657,12 +657,16 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
         }
     }
 
-    /* machine id */
-    ret = get_machine_id(ctx, &machine_id, &size);
-    if (ret == -1) {
-        return NULL;
+    /* If no machine_id has been provided via a configuration option get it from the local machine-id. */
+    if (!ctx->machine_id) {
+        /* machine id */
+        ret = get_machine_id(ctx, &machine_id, &size);
+        if (ret == -1) {
+            return NULL;
+        }
+        ctx->machine_id = (flb_sds_t) machine_id;
     }
-    ctx->machine_id = (flb_sds_t) machine_id;
+
     flb_plg_debug(ctx->ins, "machine_id=%s", ctx->machine_id);
 
     /* Upstream */
@@ -871,6 +875,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "api_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_calyptia, api_key),
      "Calyptia Cloud API Key."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "machine_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_calyptia, machine_id),
+     "Custom machine_id to be used when registering agent"
     },
 
     {

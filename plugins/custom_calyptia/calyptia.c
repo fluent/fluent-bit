@@ -35,6 +35,8 @@ struct calyptia {
     flb_sds_t store_path;
     flb_sds_t cloud_host;
     flb_sds_t cloud_port;
+    flb_sds_t machine_id;
+
     int cloud_tls;
     int cloud_tls_verify;
 
@@ -258,7 +260,6 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         flb_config_map_foreach(head, mv, ctx->add_labels) {
             k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
             v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
-
             kv = flb_sds_create_size(strlen(k->str) + strlen(v->str) + 1);
             if(!kv) {
                 flb_free(ctx);
@@ -275,6 +276,10 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
     flb_output_set_property(ctx->o, "api_key", ctx->api_key);
     if (ctx->store_path) {
         flb_output_set_property(ctx->o, "store_path", ctx->store_path);
+    }
+
+    if (ctx->machine_id) {
+        flb_output_set_property(ctx->o, "machine_id", ctx->machine_id);
     }
 
     /* Override network details: development purposes only */
@@ -358,6 +363,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct calyptia, add_labels),
      "Label to append to the generated metric."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "machine_id", NULL,
+     0, FLB_TRUE, offsetof(struct calyptia, machine_id),
+     "Custom machine_id to be used when registering agent"
     },
 
     /* EOF */
