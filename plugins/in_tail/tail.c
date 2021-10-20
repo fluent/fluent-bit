@@ -102,7 +102,7 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
              */
             if (file->offset < st.st_size) {
                 file->pending_bytes = (st.st_size - file->offset);
-                active++;
+                active++; 
             }
             else {
                 file->pending_bytes = 0;
@@ -128,6 +128,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     int pre_size;
     int pos_size;
     int alter_size = 0;
+    int processed = 0;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
@@ -146,6 +147,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             flb_tail_file_remove(file);
             break;
         case FLB_TAIL_OK:
+            processed ++; // We were able to process 1 more file
         case FLB_TAIL_BUSY:
             active++;
             break;
@@ -205,6 +207,13 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
                     alter_size++;
                 }
             }
+            break;
+        }
+        /* 
+        * if we processed at least one file it is better to break here to give 
+        * control back to the event loop. This will be called again anyway. 
+        */
+        if (processed > 0) {
             break;
         }
     }
