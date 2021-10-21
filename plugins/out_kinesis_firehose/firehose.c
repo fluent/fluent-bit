@@ -438,7 +438,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
      0, FLB_TRUE, offsetof(struct flb_firehose, retry_requests),
      "Immediately retry failed requests to AWS services once. This option "
      "does not affect the normal Fluent Bit retry mechanism with backoff. "
