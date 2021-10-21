@@ -162,11 +162,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
-    ctx->retry_requests = FLB_FALSE;
+    ctx->retry_requests = FLB_TRUE;
     tmp = flb_output_get_property("auto_retry_requests", ins);
     /* native plugins use On/Off as bool, the old Go plugin used true/false */
-    if (tmp && (strcasecmp(tmp, "On") == 0 || strcasecmp(tmp, "true") == 0)) {
-        ctx->retry_requests = FLB_TRUE;
+    if (tmp && (strcasecmp(tmp, "Off") == 0 || strcasecmp(tmp, "false") == 0)) {
+        ctx->retry_requests = FLB_FALSE;
     }
 
     ctx->log_retention_days = 0;
@@ -561,7 +561,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
      0, FLB_FALSE, 0,
      "Immediately retry failed requests to AWS services once. This option "
      "does not affect the normal Fluent Bit retry mechanism with backoff. "
