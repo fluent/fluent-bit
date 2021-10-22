@@ -1231,7 +1231,7 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
         // * * Record array item 1/2
         msgpack_pack_object(packer, ts);
 
-        flb_plg_debug(ctx->ins, "Input map size %d elements, output map size "
+        flb_plg_trace(ctx->ins, "Input map size %d elements, output map size "
                       "%d elements", records_in, map.via.map.size);
 
         // * * Record array item 2/2
