@@ -153,6 +153,51 @@ static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_
     return 0;
 }
 
+static void pack_str(msgpack_packer *mp_pck, char *str)
+{
+    int len;
+
+    len = strlen(str);
+    msgpack_pack_str(mp_pck, len);
+    msgpack_pack_str_body(mp_pck, str, len);
+}
+
+static void pack_env(struct flb_env *env, char *key, struct flb_mp_map_header *h,
+                     msgpack_packer *mp_pck)
+{
+    char *val;
+
+    val = (char *) flb_env_get(env, key);
+    if (val) {
+        flb_mp_map_header_append(h);
+        pack_str(mp_pck, key);
+        pack_str(mp_pck, val);
+    }
+}
+
+static void pack_env_metadata(struct flb_env *env,
+                              struct flb_mp_map_header *mh, msgpack_packer *mp_pck)
+{
+    char *tmp;
+    struct flb_mp_map_header h;
+
+    /* Kubernetes */
+    tmp = (char *) flb_env_get(env, "k8s");
+    if (tmp && strcasecmp(tmp, "enabled") == 0) {
+        flb_mp_map_header_append(mh);
+        pack_str(mp_pck, "k8s");
+
+        /* adding k8s map */
+        flb_mp_map_header_init(&h, mp_pck);
+
+        pack_env(env, "k8s.namespace", &h, mp_pck);
+        pack_env(env, "k8s.pod_name", &h, mp_pck);
+        pack_env(env, "k8s.node_name", &h, mp_pck);
+
+        flb_mp_map_header_end(&h);
+    }
+}
+
 static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
 {
     int len;
@@ -162,6 +207,7 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     struct flb_mp_map_header mh;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    struct flb_config *config = ctx->config;
 
     /* init msgpack */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -224,6 +270,9 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     len = flb_sds_len(ctx->machine_id);
     msgpack_pack_str(&mp_pck, len);
     msgpack_pack_str_body(&mp_pck, ctx->machine_id, len);
+
+    /* pack environment metadata */
+    pack_env_metadata(config->env, &mh, &mp_pck);
 
     /* finalize */
     flb_mp_map_header_end(&mh);
