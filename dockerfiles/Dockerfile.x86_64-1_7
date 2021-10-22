@@ -100,4 +100,5 @@ COPY --from=builder /fluent-bit /fluent-bit
 COPY ci/scripts/run_log_generator.py /run_log_generator.py
 
 EXPOSE 2020
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+ENTRYPOINT["/fluent-bit/bin/fluent-bit"]
+CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
