@@ -102,7 +102,7 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
              */
             if (file->offset < st.st_size) {
                 file->pending_bytes = (st.st_size - file->offset);
-                active++; 
+                active++;
             }
             else {
                 file->pending_bytes = 0;
