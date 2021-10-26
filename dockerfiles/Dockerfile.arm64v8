@@ -10,6 +10,7 @@ ENV FLB_VERSION 1.9.0
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN dpkg --add-architecture arm64
+RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list
 RUN apt update && apt install -y --no-remove --no-install-recommends \
     build-essential \
     g++-aarch64-linux-gnu \
@@ -23,7 +24,7 @@ RUN apt update && apt install -y --no-remove --no-install-recommends \
     dpkg-dev \
     libssl-dev:arm64 \
     libsasl2-dev:arm64 \
-    libsystemd-dev:arm64 \
+    libsystemd-dev:arm64/buster-backports \
     libzstd-dev:arm64 \
     zlib1g-dev:arm64 \
     libpq-dev:arm64
