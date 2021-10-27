@@ -2,7 +2,7 @@
 
 /*  Chunk I/O
  *  =========
- *  Copyright 2018 Eduardo Silva <eduardo@monkey.io>
+ *  Copyright 2018-2021 Eduardo Silva <eduardo@monkey.io>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,16 +17,22 @@
  *  limitations under the License.
  */
 
-#ifndef CIO_UTILS_H
-#define CIO_UTILS_H
+#ifndef CIO_ERROR_H
+#define CIO_ERROR_H
 
-#include <chunkio/cio_info.h>
+#include <chunkio/chunkio.h>
+#include <chunkio/cio_chunk.h>
 
-#ifdef CIO_HAVE_GETPAGESIZE
-int cio_getpagesize();
-#endif
+/*
+ * Error status (do not confuse with return statuses!)
+ */
+#define CIO_ERR_BAD_CHECKSUM -10      /* Chunk has a bad checksum */
+#define CIO_ERR_BAD_LAYOUT   -11      /* Bad magic bytes or general layout */
+#define CIO_ERR_PERMISSION   -12      /* Permission error */
 
-int cio_utils_recursive_delete(const char *dir);
-int cio_utils_read_file(const char *path, char **buf, size_t *size);
+char *cio_error_get_str(struct cio_chunk *ch);
+int cio_error_get(struct cio_chunk *ch);
+void cio_error_set(struct cio_chunk *ch, int status);
+void cio_error_reset(struct cio_chunk *ch);
 
 #endif
