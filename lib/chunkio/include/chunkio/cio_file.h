@@ -41,7 +41,8 @@ struct cio_file {
 #endif
     /* cached addr */
     char *st_content;
-    crc_t crc_cur;
+    crc_t crc_cur;            /* crc: current value calculated */
+    int crc_reset;            /* crc: must recalculate from the beginning ? */
 };
 
 struct cio_file *cio_file_open(struct cio_ctx *ctx,

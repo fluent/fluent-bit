@@ -8,6 +8,7 @@ set(src
   cio_utils.c
   cio_stream.c
   cio_stats.c
+  cio_error.c
   chunkio.c
   )
 
