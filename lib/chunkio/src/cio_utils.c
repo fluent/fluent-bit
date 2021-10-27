@@ -29,6 +29,7 @@
 #include <fts.h>
 #endif
 
+#include <chunkio/cio_info.h>
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/cio_log.h>
 
@@ -144,3 +145,10 @@ int cio_utils_read_file(const char *path, char **buf, size_t *size)
 
     return 0;
 }
+
+#ifdef CIO_HAVE_GETPAGESIZE
+int cio_getpagesize()
+{
+    return getpagesize();
+}
+#endif
