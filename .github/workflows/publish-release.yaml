@@ -156,8 +156,9 @@ jobs:
       matrix:
         distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
                   debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
-                  debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
-                  ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
+                  debian/buster.arm64v8, debian/bullseye, debian/bullseye.arm64v8, ubuntu/16.04,
+                  ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8, ubuntu/20.04.arm64v8,
+                  raspbian/jessie, raspbian/stretch, raspbian/buster, raspbian/bullseye ]
         include:
           - distro: amazonlinux/2
             target: amazonlinux/2/
@@ -199,6 +200,14 @@ jobs:
             target: debian/buster/
             format: deb
 
+          - distro: debian/bullseye
+            target: debian/bullseye/
+            format: deb
+
+          - distro: debian/bullseye.arm64v8
+            target: debian/bullseye/
+            format: deb
+
           - distro: ubuntu/16.04
             target: ubuntu/xenial/
             format: deb
@@ -229,6 +238,10 @@ jobs:
 
           - distro: raspbian/buster
             target: raspbian/buster/
+            format: deb
+
+          - distro: raspbian/bullseye
+            target: raspbian/bullseye/
             format: deb
 
     runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
