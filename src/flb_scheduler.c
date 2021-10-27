@@ -256,7 +256,7 @@ static int backoff_full_jitter(int base, int cap, int n)
 {
     int temp;
 
-    temp = xmin(cap, ipow(base * 2, n));
+    temp = xmin(cap, base * ipow(2, n));
     return random_uniform(base, temp);
 }
 
