@@ -54,6 +54,7 @@ struct nginx_ctx
     struct nginx_plus_server_zones *server_zones;
     struct nginx_plus_location_zones *location_zones;
     struct nginx_plus_upstreams *upstreams;
+    struct nginx_plus_streams *streams;
 };
 
 struct nginx_status
@@ -118,6 +119,15 @@ struct nginx_plus_location_zones {
     struct cmt_counter *requests;
     struct cmt_counter *responses;
     struct cmt_counter *sent;
+};
+
+struct nginx_plus_streams {
+    struct cmt_counter *connections;
+    struct cmt_counter *discarded;
+    struct cmt_counter *processing;
+    struct cmt_counter *received;
+    struct cmt_counter *sent;
+    struct cmt_counter *sessions;
 };
 
 #endif

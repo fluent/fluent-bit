@@ -626,6 +626,53 @@ void *process_location_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts, msgp
     return ctx;
 }
 
+void *process_stream_server_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts, msgpack_object_map *map)
+{
+    msgpack_object_kv *sessions;
+    int i = 0;
+    int x = 0;
+    char code[4] = { '0', 'x', 'x', 0};
+
+
+    for (i = 0; i < map->size; i++) {
+        if (strncmp(map->ptr[i].key.via.str.ptr, "connections", map->ptr[i].key.via.str.size) == 0) {
+            cmt_counter_set(ctx->streams->connections, ts,
+                            (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
+        }
+        if (strncmp(map->ptr[i].key.via.str.ptr, "processing", map->ptr[i].key.via.str.size) == 0) {
+            cmt_counter_set(ctx->streams->processing, ts,
+                            (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
+        }
+        else if (strncmp(map->ptr[i].key.via.str.ptr, "discarded", map->ptr[i].key.via.str.size) == 0) {
+            cmt_counter_set(ctx->streams->discarded, ts,
+                            (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
+        }
+        else if (strncmp(map->ptr[i].key.via.str.ptr, "received", map->ptr[i].key.via.str.size) == 0) {
+            cmt_counter_set(ctx->streams->received, ts,
+                            (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
+        }
+        else if (strncmp(map->ptr[i].key.via.str.ptr, "sent", map->ptr[i].key.via.str.size) == 0) {
+            cmt_counter_set(ctx->streams->sent, ts,
+                            (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
+        }
+        else if (strncmp(map->ptr[i].key.via.str.ptr, "sessions", map->ptr[i].key.via.str.size) == 0) {
+            for (x = 0; x < map->ptr[i].val.via.map.size; x++) {
+                sessions = &map->ptr[i].val.via.map.ptr[x];
+                if (sessions->key.via.str.size == 3 &&
+                    sessions->key.via.str.ptr[1] == 'x' &&
+                    sessions->key.via.str.ptr[2] == 'x') {
+                    code[0] = sessions->key.via.str.ptr[0];
+                    cmt_counter_set(ctx->streams->sessions, ts,
+                                    (double)sessions->val.via.i64,
+                                    2, (char *[]){zone, code});
+                }
+            }
+        }
+    }
+    //msgpack_unpacked_destroy(&result);
+    return ctx;
+}
+
 static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t ts,
                                   msgpack_object_array *peers)
 {
@@ -995,6 +1042,74 @@ conn_error:
 
     return rc;
 }
+
+/**
+ * Callback function to gather statistics from the nginx
+ * plus ngx_http module.
+ *
+ * @param ins           Pointer to flb_input_instance
+ * @param config        Pointer to flb_config
+ * @param in_context    void Pointer used to cast to nginx_ctx
+ *
+ * @return int Always returns success
+ */
+static int nginx_collect_plus_stream_server_zones(struct flb_input_instance *ins,
+                         struct flb_config *config, struct nginx_ctx *ctx, uint64_t ts)
+{
+    struct flb_upstream_conn *u_conn;
+    struct flb_http_client *client;
+    char url[1024];
+    size_t b_sent;
+    int ret = -1;
+    int rc = -1;
+
+
+    u_conn = flb_upstream_conn_get(ctx->upstream);
+    if (!u_conn) {
+        flb_plg_error(ins, "upstream connection initialization error");
+        goto conn_error;
+    }
+
+    snprintf(url, sizeof(url)-1, "%s/7/stream/server_zones", ctx->status_url);
+    client = flb_http_client(u_conn, FLB_HTTP_GET, url,
+                             NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+    if (!client) {
+        flb_plg_error(ins, "unable to create http client");
+        goto client_error;
+    }
+
+    ret = flb_http_do(client, &b_sent);
+    if (ret != 0) {
+        flb_plg_error(ins, "http do error");
+        goto http_error;
+    }
+
+    if (client->resp.status != 200) {
+        flb_plg_error(ins, "http status code error: [%s] %d", url, client->resp.status);
+        goto http_error;
+    }
+
+    if (client->resp.payload_size <= 0) {
+        flb_plg_error(ins, "empty response");
+        goto http_error;
+    }
+
+    parse_payload_json_table(ctx, ts, process_stream_server_zone,
+                       client->resp.payload, client->resp.payload_size);
+    rc = 0;
+http_error:
+    flb_http_client_destroy(client);
+client_error:
+    flb_upstream_conn_release(u_conn);
+conn_error:
+    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
+    }
+
+    return rc;
+}
+
 /**
  * Callback function to gather statistics from the nginx
  * plus ngx_http module.
@@ -1028,6 +1143,7 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
     rc = nginx_collect_plus_server_zones(ins, config, ctx, ts);
     rc = nginx_collect_plus_location_zones(ins, config, ctx, ts);
     rc = nginx_collect_plus_upstreams(ins, config, ctx, ts);
+    rc = nginx_collect_plus_stream_server_zones(ins, config, ctx, ts);
     if (rc == 0) {
         cmt_gauge_set(ctx->connection_up, ts, (double)1.0, 0, NULL);
     } else {
@@ -1195,6 +1311,7 @@ static int nginx_init(struct flb_input_instance *ins,
         ctx->server_zones = flb_calloc(1, sizeof(struct nginx_plus_server_zones));
         ctx->location_zones = flb_calloc(1, sizeof(struct nginx_plus_location_zones));
         ctx->upstreams = flb_calloc(1, sizeof(struct nginx_plus_upstreams));
+        ctx->streams = flb_calloc(1, sizeof(struct nginx_plus_streams));
 
         ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginxplus", "", "up",
                                               "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
@@ -1426,6 +1543,49 @@ static int nginx_init(struct flb_input_instance *ins,
                                                      "unavail",
                                                      "NGINX Upstream Unavailable",
                                                      2, (char *[]){"upstream","server"});
+
+        ctx->streams->connections = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "stream_server_zone",
+                                                          "connections",
+                                                          "NGINX Stream Server Zone connections",
+                                                          1, (char *[]){"server_zone"});
+
+
+        ctx->streams->discarded = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "stream_server_zone",
+                                                          "discarded",
+                                                          "NGINX Stream Server Zone discarded",
+                                                          1, (char *[]){"server_zone"});
+
+        ctx->streams->processing = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "stream_server_zone",
+                                                          "processing",
+                                                          "NGINX Stream Server Zone processing",
+                                                          1, (char *[]){"server_zone"});
+
+        ctx->streams->received = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "stream_server_zone",
+                                                          "received",
+                                                          "NGINX Stream Server Zone received",
+                                                          1, (char *[]){"server_zone"});
+
+        ctx->streams->sent = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "server_zone",
+                                                          "sent",
+                                                          "NGINX Stream Server Zone sent",
+                                                          1, (char *[]){"server_zone"});
+
+        ctx->streams->sessions = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "stream_server_zone",
+                                                          "sessions",
+                                                          "NGINX Stream Server Zone Sessions",
+                                                          2, (char *[]){"server_zone", "code"});
 
         ctx->coll_id = flb_input_set_collector_time(ins,
                                                     nginx_collect_plus,
