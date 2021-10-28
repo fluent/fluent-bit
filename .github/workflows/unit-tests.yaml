@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - master
-      - 1.7
+      - 1.8
   pull_request:
     paths-ignore:
       - '.github/**'
@@ -11,7 +11,7 @@ on:
       - 'docker_compose/**'
     branches:
       - master
-      - 1.7
+      - 1.8
     types: [opened, edited, synchronize]
 jobs:
   run-unit-tests-amd64:
