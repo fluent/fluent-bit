@@ -46,6 +46,14 @@ struct nginx_ctx
     struct cmt_gauge *connections_waiting;
     struct cmt_gauge *connection_up;
     bool is_up;
+    bool is_nginx_plus;
+
+    struct nginx_plus_connections *plus_connections;
+    struct nginx_plus_http_requests *plus_http_requests;
+    struct nginx_plus_ssl *plus_ssl;
+    struct nginx_plus_server_zones *server_zones;
+    struct nginx_plus_location_zones *location_zones;
+    struct nginx_plus_upstreams *upstreams;
 };
 
 struct nginx_status
@@ -57,6 +65,59 @@ struct nginx_status
     uint64_t accepts;
     uint64_t handled;
     uint64_t requests;
+};
+
+struct nginx_plus_connections {
+    struct cmt_counter *connections_accepted;
+    struct cmt_counter *connections_dropped;
+    struct cmt_counter *connections_active;
+    struct cmt_counter *connections_idle;
+};
+
+struct nginx_plus_ssl {
+    struct cmt_counter *handshakes;
+    struct cmt_counter *handshakes_failed;
+    struct cmt_counter *session_reuses;
+};
+
+struct nginx_plus_http_requests {
+    struct cmt_counter *total;
+    struct cmt_counter *current;
+};
+
+struct nginx_plus_server_zones {
+    struct cmt_counter *discarded;
+    struct cmt_counter *processing;
+    struct cmt_counter *received;
+    struct cmt_counter *requests;
+    struct cmt_counter *responses;
+    struct cmt_counter *sent;
+};
+
+struct nginx_plus_upstreams {
+    //struct nginx_plux_upstream_peer **peers;
+    struct cmt_gauge   *keepalives;
+    struct cmt_gauge   *zombies;
+    // per peer
+    struct cmt_gauge   *active;
+    struct cmt_counter *fails;
+    struct cmt_gauge   *header_time;
+    struct cmt_gauge   *limit;
+    struct cmt_counter *received;
+    struct cmt_counter *requests;
+    struct cmt_counter *responses;
+    struct cmt_gauge   *response_time;
+    struct cmt_counter *sent;
+    struct cmt_gauge   *state;
+    struct cmt_counter *unavail;
+};
+
+struct nginx_plus_location_zones {
+    struct cmt_counter *discarded;
+    struct cmt_counter *received;
+    struct cmt_counter *requests;
+    struct cmt_counter *responses;
+    struct cmt_counter *sent;
 };
 
 #endif
