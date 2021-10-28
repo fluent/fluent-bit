@@ -545,4 +545,5 @@ endif()
 
 if(FLB_RAW_MSGPACK_API)
   add_subdirectory(raw_msgpack_api)
+  add_subdirectory(collectx_plugin_api)
 endif()
