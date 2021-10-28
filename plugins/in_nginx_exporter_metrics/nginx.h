@@ -55,6 +55,7 @@ struct nginx_ctx
     struct nginx_plus_location_zones *location_zones;
     struct nginx_plus_upstreams *upstreams;
     struct nginx_plus_streams *streams;
+    struct nginx_plus_stream_upstreams *stream_upstreams;
 };
 
 struct nginx_status
@@ -128,6 +129,22 @@ struct nginx_plus_streams {
     struct cmt_counter *received;
     struct cmt_counter *sent;
     struct cmt_counter *sessions;
+};
+
+struct nginx_plus_stream_upstreams {
+    struct cmt_gauge   *zombies;
+    // per peer
+    struct cmt_gauge   *active;
+    struct cmt_counter *fails;
+    struct cmt_gauge   *limit;
+    struct cmt_counter *received;
+    struct cmt_gauge   *connect_time;
+    struct cmt_gauge   *first_byte_time;
+    struct cmt_counter *connections;
+    struct cmt_gauge   *response_time;
+    struct cmt_counter *sent;
+    struct cmt_gauge   *state;
+    struct cmt_counter *unavail;
 };
 
 #endif

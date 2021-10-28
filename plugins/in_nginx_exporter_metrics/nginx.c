@@ -786,6 +786,104 @@ void *process_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts, msgpa
     return ctx;
 }
 
+static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t ts,
+                                         msgpack_object_array *peers)
+{
+    int i = 0;
+    int p = 0;
+    msgpack_object_map *map;
+    char *server;
+
+
+    for (i = 0; i < peers->size; i++) {
+        map = &peers->ptr[i].via.map;
+        for (p = 0, server = NULL; p < map->size; p++) {
+            if (strncmp(map->ptr[p].key.via.str.ptr, "server", map->ptr[p].key.via.str.size) == 0) {
+                server = flb_calloc(1, map->ptr[p].val.via.str.size+1);
+                memcpy(server, map->ptr[p].val.via.str.ptr, map->ptr[p].val.via.str.size);
+                break;
+            }
+        }
+        if (server == NULL) {
+            flb_plg_warn(ctx->ins, "no server for stream upstream");
+            continue;
+        }
+        for (p = 0; p < map->size; p++) {
+            // initialize to zero for now to respond
+            // how the official exporter does...
+            cmt_gauge_set(ctx->stream_upstreams->limit, ts, (double)0.0, 2, (char *[]){backend, server});
+            cmt_gauge_set(ctx->stream_upstreams->response_time, ts, (double)0.0, 2, (char *[]){backend, server});
+            cmt_gauge_set(ctx->stream_upstreams->connect_time, ts, (double)0.0, 2, (char *[]){backend, server});
+            cmt_gauge_set(ctx->stream_upstreams->first_byte_time, ts, (double)0.0, 2, (char *[]){backend, server});
+
+            if (strncmp(map->ptr[p].key.via.str.ptr, "active", map->ptr[p].key.via.str.size) == 0) {
+                cmt_gauge_set(ctx->stream_upstreams->active, ts,
+                              (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "fails", map->ptr[p].key.via.str.size) == 0) {
+                cmt_counter_set(ctx->stream_upstreams->fails, ts,
+                                (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "limit", map->ptr[p].key.via.str.size) == 0) {
+                cmt_gauge_set(ctx->stream_upstreams->limit, ts,
+                              (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "received", map->ptr[p].key.via.str.size) == 0) {
+                cmt_counter_set(ctx->stream_upstreams->received, ts,
+                                (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "connect_time", map->ptr[p].key.via.str.size) == 0) {
+                cmt_gauge_set(ctx->stream_upstreams->connect_time, ts,
+                              (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "first_byte_time", map->ptr[p].key.via.str.size) == 0) {
+                cmt_gauge_set(ctx->stream_upstreams->first_byte_time, ts,
+                              (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "connections", map->ptr[p].key.via.str.size) == 0) {
+                cmt_counter_set(ctx->stream_upstreams->connections, ts,
+                                (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "response_time", map->ptr[p].key.via.str.size) == 0) {
+                cmt_gauge_set(ctx->stream_upstreams->response_time, ts,
+                              (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "sent", map->ptr[p].key.via.str.size) == 0) {
+                cmt_counter_set(ctx->stream_upstreams->sent, ts,
+                                (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "state", map->ptr[p].key.via.str.size) == 0) {
+                cmt_gauge_set(ctx->stream_upstreams->state, ts,
+                              (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+            else if (strncmp(map->ptr[p].key.via.str.ptr, "unavail", map->ptr[p].key.via.str.size) == 0) {
+                cmt_counter_set(ctx->stream_upstreams->unavail, ts,
+                                (double)map->ptr[p].val.via.i64, 2, (char *[]){backend, server});
+            }
+        }
+        flb_free(server);
+    }
+    return 0;
+}
+
+void *process_stream_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts, msgpack_object_map *map)
+{
+    int i = 0;
+
+    for (i = 0; i < map->size; i++) {
+        if (strncmp(map->ptr[i].key.via.str.ptr, "zombies", map->ptr[i].key.via.str.size) == 0) {
+            cmt_gauge_set(ctx->stream_upstreams->zombies, ts,
+                            (double)map->ptr[i].val.via.i64, 1, (char *[]){backend});
+        }
+        // go into the peer...
+        else if (strncmp(map->ptr[i].key.via.str.ptr, "peers", map->ptr[i].key.via.str.size) == 0) {
+            process_stream_upstream_peers(ctx, backend, ts, &map->ptr[i].val.via.array);
+        }
+    }
+    //msgpack_unpacked_destroy(&result);
+    return ctx;
+}
+
 static ssize_t parse_payload_json_table(struct nginx_ctx *ctx, int64_t ts,
                                   void *(*process_payload)(struct nginx_ctx *, char *, uint64_t, msgpack_object_map *),
                                   char *payload, size_t size)
@@ -1120,6 +1218,74 @@ conn_error:
  *
  * @return int Always returns success
  */
+static int nginx_collect_plus_stream_upstreams(struct flb_input_instance *ins,
+                                               struct flb_config *config,
+                                               struct nginx_ctx *ctx, uint64_t ts)
+{
+    struct flb_upstream_conn *u_conn;
+    struct flb_http_client *client;
+    char url[1024];
+    size_t b_sent;
+    int ret = -1;
+    int rc = -1;
+
+
+    u_conn = flb_upstream_conn_get(ctx->upstream);
+    if (!u_conn) {
+        flb_plg_error(ins, "upstream connection initialization error");
+        goto conn_error;
+    }
+
+    snprintf(url, sizeof(url)-1, "%s/7/stream/upstreams", ctx->status_url);
+    client = flb_http_client(u_conn, FLB_HTTP_GET, url,
+                             NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+    if (!client) {
+        flb_plg_error(ins, "unable to create http client");
+        goto client_error;
+    }
+
+    ret = flb_http_do(client, &b_sent);
+    if (ret != 0) {
+        flb_plg_error(ins, "http do error");
+        goto http_error;
+    }
+
+    if (client->resp.status != 200) {
+        flb_plg_error(ins, "http status code error: [%s] %d", url, client->resp.status);
+        goto http_error;
+    }
+
+    if (client->resp.payload_size <= 0) {
+        flb_plg_error(ins, "empty response");
+        goto http_error;
+    }
+
+    parse_payload_json_table(ctx, ts, process_stream_upstreams,
+                       client->resp.payload, client->resp.payload_size);
+    rc = 0;
+http_error:
+    flb_http_client_destroy(client);
+client_error:
+    flb_upstream_conn_release(u_conn);
+conn_error:
+    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
+    }
+
+    return rc;
+}
+
+/**
+ * Callback function to gather statistics from the nginx
+ * plus ngx_http module.
+ *
+ * @param ins           Pointer to flb_input_instance
+ * @param config        Pointer to flb_config
+ * @param in_context    void Pointer used to cast to nginx_ctx
+ *
+ * @return int Always returns success
+ */
 static int nginx_collect_plus(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
@@ -1144,6 +1310,7 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
     rc = nginx_collect_plus_location_zones(ins, config, ctx, ts);
     rc = nginx_collect_plus_upstreams(ins, config, ctx, ts);
     rc = nginx_collect_plus_stream_server_zones(ins, config, ctx, ts);
+    rc = nginx_collect_plus_stream_upstreams(ins, config, ctx, ts);
     if (rc == 0) {
         cmt_gauge_set(ctx->connection_up, ts, (double)1.0, 0, NULL);
     } else {
@@ -1312,6 +1479,7 @@ static int nginx_init(struct flb_input_instance *ins,
         ctx->location_zones = flb_calloc(1, sizeof(struct nginx_plus_location_zones));
         ctx->upstreams = flb_calloc(1, sizeof(struct nginx_plus_upstreams));
         ctx->streams = flb_calloc(1, sizeof(struct nginx_plus_streams));
+        ctx->stream_upstreams = flb_calloc(1, sizeof(struct nginx_plus_stream_upstreams));
 
         ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginxplus", "", "up",
                                               "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
@@ -1581,11 +1749,95 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           1, (char *[]){"server_zone"});
 
         ctx->streams->sessions = cmt_counter_create(ctx->cmt,
+                                                    "nginxplus",
+                                                    "stream_server_zone",
+                                                    "sessions",
+                                                    "NGINX Stream Server Zone Sessions",
+                                                    2, (char *[]){"server_zone", "code"});
+
+        ctx->stream_upstreams->zombies = cmt_gauge_create(ctx->cmt,
                                                           "nginxplus",
-                                                          "stream_server_zone",
-                                                          "sessions",
-                                                          "NGINX Stream Server Zone Sessions",
-                                                          2, (char *[]){"server_zone", "code"});
+                                                          "stream_upstream",
+                                                          "zombies",
+                                                          "NGINX Upstream Zombies",
+                                                          1, (char *[]){"upstream"});
+
+        ctx->stream_upstreams->active = cmt_gauge_create(ctx->cmt,
+                                                         "nginxplus",
+                                                         "stream_upstream_server",
+                                                         "active",
+                                                         "NGINX Upstream Active",
+                                                         2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->fails = cmt_counter_create(ctx->cmt,
+                                                          "nginxplus",
+                                                          "stream_upstream_server",
+                                                          "fails",
+                                                          "NGINX Upstream Fails",
+                                                          2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->limit = cmt_gauge_create(ctx->cmt,
+                                                        "nginxplus",
+                                                        "stream_upstream_server",
+                                                        "limit",
+                                                        "NGINX Upstream Limit",
+                                                        2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->received = cmt_counter_create(ctx->cmt,
+                                                             "nginxplus",
+                                                             "stream_upstream_server",
+                                                             "received",
+                                                             "NGINX Upstream Received",
+                                                             2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->connect_time = cmt_gauge_create(ctx->cmt,
+                                                               "nginxplus",
+                                                               "stream_upstream_server",
+                                                               "connect_time",
+                                                               "NGINX Upstream Header Time",
+                                                               2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->first_byte_time = cmt_gauge_create(ctx->cmt,
+                                                                  "nginxplus",
+                                                                  "stream_upstream_server",
+                                                                  "first_byte_time",
+                                                                  "NGINX Upstream Header Time",
+                                                                  2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->connections = cmt_counter_create(ctx->cmt,
+                                                                "nginxplus",
+                                                                "stream_upstream_server",
+                                                                "connections",
+                                                                "NGINX Upstream Requests",
+                                                                2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->response_time = cmt_gauge_create(ctx->cmt,
+                                                                "nginxplus",
+                                                                "stream_upstream_server",
+                                                                "response_time",
+                                                                "NGINX Upstream Response Time",
+                                                                2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->sent = cmt_counter_create(ctx->cmt,
+                                                         "nginxplus",
+                                                         "stream_upstream_server",
+                                                         "sent",
+                                                         "NGINX Upstream Sent",
+                                                         2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->state = cmt_gauge_create(ctx->cmt,
+                                                        "nginxplus",
+                                                        "stream_upstream_server",
+                                                        "state",
+                                                        "NGINX Upstream State",
+                                                        2, (char *[]){"upstream","server"});
+
+        ctx->stream_upstreams->unavail = cmt_counter_create(ctx->cmt,
+                                                            "nginxplus",
+                                                            "stream_upstream_server",
+                                                            "unavail",
+                                                            "NGINX Upstream Unavailable",
+                                                            2, (char *[]){"upstream","server"});
 
         ctx->coll_id = flb_input_set_collector_time(ins,
                                                     nginx_collect_plus,
