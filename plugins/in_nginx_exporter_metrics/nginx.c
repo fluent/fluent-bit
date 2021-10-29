@@ -1482,7 +1482,9 @@ static int nginx_init(struct flb_input_instance *ins,
         ctx->stream_upstreams = flb_calloc(1, sizeof(struct nginx_plus_stream_upstreams));
 
         ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginxplus", "", "up",
-                                              "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
+                                              "Shows the status of the last metric scrape: "
+                                              "1 for a successful scrape and 0 for a failed "
+                                              "one",
                                               0, NULL);
 
         ctx->plus_connections->connections_accepted = cmt_counter_create(ctx->cmt,
@@ -1742,11 +1744,11 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           1, (char *[]){"server_zone"});
 
         ctx->streams->sent = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "sent",
-                                                          "NGINX Stream Server Zone sent",
-                                                          1, (char *[]){"server_zone"});
+                                                "nginxplus",
+                                                "server_zone",
+                                                "sent",
+                                                "NGINX Stream Server Zone sent",
+                                                1, (char *[]){"server_zone"});
 
         ctx->streams->sessions = cmt_counter_create(ctx->cmt,
                                                     "nginxplus",
