@@ -181,8 +181,13 @@ static int process_config(struct flb_rewrite_tag *ctx)
 
 static int is_wildcard(char* match)
 {
-    size_t len = strlen(match);
+    size_t len;
     size_t i;
+
+    if (match == NULL) {
+        return 0;
+    }
+    len = strlen(match);
 
     /* '***' should be ignored. So we check every char. */
     for (i=0; i<len; i++) {
