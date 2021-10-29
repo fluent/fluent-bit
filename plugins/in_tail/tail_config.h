@@ -104,6 +104,8 @@ struct flb_tail_config {
     sqlite3_stmt *stmt_offset;
 #endif
 
+    int process_files_batch_size;
+
     /* Parser / Format */
     struct flb_parser *parser;
 

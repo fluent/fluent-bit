@@ -209,12 +209,16 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             }
             break;
         }
-        /* 
-        * if we processed at least one file it is better to break here to give 
-        * control back to the event loop. This will be called again anyway. 
-        */
-        if (processed > 0) {
-            break;
+
+        if (ctx->process_files_batch_size > 0) {
+           /* 
+            * For performance when there are lots of files users can opt to break  
+            * here to give control back to the event loop. 
+            * This will be called again anyway. 
+            */
+            if (processed > ctx->process_files_batch_size) {
+                break;
+            }
         }
     }
 
@@ -672,6 +676,14 @@ static struct flb_config_map config_map[] = {
      "specify one or multiple multiline parsers: docker, cri, go, java, etc."
     },
 #endif
+
+    {
+     FLB_CONFIG_MAP_INT, "process_files_batch_size", "0",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, process_files_batch_size),
+     "Number of files to process in a single invocation of the plugin by the event loop. "
+     "Default is 0 which means unlimited/all watched files."
+
+    },
 
     /* EOF */
     {0}
