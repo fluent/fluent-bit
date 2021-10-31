@@ -33,6 +33,7 @@ static void cb_root(mk_request_t *request, void *data)
     struct flb_hs *hs = data;
 
     mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
     mk_http_send(request, hs->ep_root_buf, hs->ep_root_size, NULL);
     mk_http_done(request);
 }
