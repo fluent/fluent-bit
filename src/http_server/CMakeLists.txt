@@ -6,6 +6,7 @@ endif()
 set(src
   flb_hs.c
   flb_hs_endpoints.c
+  flb_hs_utils.c
   )
 
 # api/v1
