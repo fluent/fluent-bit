@@ -36,6 +36,10 @@
 #define FLB_DATADOG_REMAP_PROVIDER    "ecs"
 #define FLB_DATADOG_TAG_SEPERATOR     ","
 
+#define FLB_DATADOG_API_HDR             "DD-API-KEY"
+#define FLB_DATADOG_ORIGIN_HDR          "DD-EVP-ORIGIN"
+#define FLB_DATADOG_ORIGIN_VERSION_HDR  "DD-EVP-ORIGIN-VERSION"
+
 #define FLB_DATADOG_CONTENT_TYPE   "Content-Type"
 #define FLB_DATADOG_MIME_JSON      "application/json"
 
