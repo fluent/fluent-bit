@@ -115,12 +115,13 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     ctx->remap = tmp && (strlen(tmp) == strlen(FLB_DATADOG_REMAP_PROVIDER)) && \
         (strncmp(tmp, FLB_DATADOG_REMAP_PROVIDER, strlen(tmp)) == 0);
 
-    ctx->uri = flb_sds_create("/v1/input/");
+    ctx->uri = flb_sds_create("/api/v2/logs");
     if (!ctx->uri) {
         flb_plg_error(ctx->ins, "error on uri generation");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
+
     /* Add the api_key to the URI */
     ctx->uri = flb_sds_cat(ctx->uri, ctx->api_key, flb_sds_len(ctx->api_key));
     flb_plg_debug(ctx->ins, "uri: %s", ctx->uri);
