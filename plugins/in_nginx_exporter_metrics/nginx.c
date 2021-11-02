@@ -993,11 +993,6 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-
     return rc;
 }
 
@@ -1060,11 +1055,6 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-
     return rc;
 }
 
@@ -1127,11 +1117,6 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-
     return rc;
 }
 
@@ -1194,11 +1179,6 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-
     return rc;
 }
 
@@ -1262,11 +1242,6 @@ http_error:
 client_error:
     flb_upstream_conn_release(u_conn);
 conn_error:
-    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
-    if (ret != 0) {
-        flb_plg_error(ins, "could not append metrics");
-    }
-
     return rc;
 }
 
@@ -1285,30 +1260,51 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
 {
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
     int rc = -1;
+    int ret = -1;
     uint64_t ts = cmt_time_now();
 
 
     rc = nginx_collect_plus_connections(ins, config, ctx, ts);
     if (rc != 0) {
-        FLB_INPUT_RETURN(rc);
+        goto error;
     }
     rc = nginx_collect_plus_ssl(ins, config, ctx, ts);
     if (rc != 0) {
-        FLB_INPUT_RETURN(rc);
+        goto error;
     }
     rc = nginx_collect_plus_http_requests(ins, config, ctx, ts);
     if (rc != 0) {
-        FLB_INPUT_RETURN(rc);
+        goto error;
     }
     rc = nginx_collect_plus_server_zones(ins, config, ctx, ts);
+    if (rc != 0) {
+        goto error;
+    }
     rc = nginx_collect_plus_location_zones(ins, config, ctx, ts);
+    if (rc != 0) {
+        goto error;
+    }
     rc = nginx_collect_plus_upstreams(ins, config, ctx, ts);
+    if (rc != 0) {
+        goto error;
+    }
     rc = nginx_collect_plus_stream_server_zones(ins, config, ctx, ts);
+    if (rc != 0) {
+        goto error;
+    }
     rc = nginx_collect_plus_stream_upstreams(ins, config, ctx, ts);
+    if (rc != 0) {
+        goto error;
+    }
+error:
     if (rc == 0) {
         cmt_gauge_set(ctx->connection_up, ts, (double)1.0, 0, NULL);
     } else {
         cmt_gauge_set(ctx->connection_up, ts, (double)0.0, 0, NULL);
+    }
+    ret = flb_input_metrics_append(ins, NULL, 0, ctx->cmt);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not append metrics");
     }
     FLB_INPUT_RETURN(rc);
 }
