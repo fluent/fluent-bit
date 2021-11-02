@@ -1483,24 +1483,45 @@ static int nginx_init(struct flb_input_instance *ins,
                                                                          "accepted",
                                                                          "NGINX Plus Total Connections",
                                                                          0, NULL);
+        if (ctx->plus_connections->connections_accepted == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_connections->connections_accepted);
+
         ctx->plus_connections->connections_dropped = cmt_counter_create(ctx->cmt,
                                                                          "nginxplus",
                                                                          "connections",
                                                                          "dropped",
                                                                          "NGINX Plus Total Connections",
                                                                          0, NULL);
+        if (ctx->plus_connections->connections_dropped == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_connections->connections_dropped);
+
+	// @TODO check if gauge
         ctx->plus_connections->connections_active = cmt_counter_create(ctx->cmt,
                                                                          "nginxplus",
                                                                          "connections",
                                                                          "active",
                                                                          "NGINX Plus Total Connections",
                                                                          0, NULL);
+        if (ctx->plus_connections->connections_active == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_connections->connections_active);
+
+	// @TODO check if gauge
         ctx->plus_connections->connections_idle = cmt_counter_create(ctx->cmt,
                                                                          "nginxplus",
                                                                          "connections",
                                                                          "idle",
                                                                          "NGINX Plus Total Connections",
                                                                          0, NULL);
+        if (ctx->plus_connections->connections_idle == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_connections->connections_idle);
 
         ctx->plus_ssl->handshakes = cmt_counter_create(ctx->cmt,
                                                        "nginxplus",
@@ -1508,18 +1529,32 @@ static int nginx_init(struct flb_input_instance *ins,
                                                        "handshakes",
                                                        "NGINX Plus Total Connections",
                                                        0, NULL);
+        if (ctx->plus_ssl->handshakes == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_ssl->handshakes);
+
         ctx->plus_ssl->handshakes_failed = cmt_counter_create(ctx->cmt,
                                                        "nginxplus",
                                                        "ssl",
                                                        "handshakes_failed",
                                                        "NGINX Plus Total Connections",
                                                        0, NULL);
+        if (ctx->plus_ssl->handshakes_failed == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_ssl->handshakes_failed);
+
         ctx->plus_ssl->session_reuses = cmt_counter_create(ctx->cmt,
                                                        "nginxplus",
                                                        "ssl",
                                                        "session_reuses",
                                                        "NGINX Plus Total Connections",
                                                        0, NULL);
+        if (ctx->plus_ssl->session_reuses == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_ssl->session_reuses);
 
         ctx->plus_http_requests->total = cmt_counter_create(ctx->cmt,
                                                        "nginxplus",
@@ -1527,12 +1562,21 @@ static int nginx_init(struct flb_input_instance *ins,
                                                        "total",
                                                        "NGINX Plus Total Connections",
                                                        0, NULL);
+        if (ctx->plus_http_requests->total == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_http_requests->total);
+
         ctx->plus_http_requests->current = cmt_counter_create(ctx->cmt,
                                                               "nginxplus",
                                                               "http_requests",
                                                               "current",
                                                               "NGINX Plus Total Connections",
                                                               0, NULL);
+        if (ctx->plus_http_requests->current == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->plus_http_requests->current);
 
         ctx->server_zones->discarded = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1540,13 +1584,22 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "discarded",
                                                           "NGINX Server Zone discarded",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->server_zones->discarded == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->server_zones->discarded);
 
+	// @TODO check if gauge
         ctx->server_zones->processing = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
                                                           "server_zone",
                                                           "processing",
                                                           "NGINX Server Zone processing",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->server_zones->processing == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->server_zones->processing);
 
         ctx->server_zones->received = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1554,6 +1607,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "received",
                                                           "NGINX Server Zone received",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->server_zones->received == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->server_zones->received);
 
         ctx->server_zones->requests = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1561,6 +1618,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "requests",
                                                           "NGINX Server Zone requests",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->server_zones->requests == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->server_zones->requests);
 
         ctx->server_zones->responses = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1568,6 +1629,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "responses",
                                                           "NGINX Server Zone responses",
                                                           2, (char *[]){"server_zone", "code"});
+        if (ctx->server_zones->responses == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->server_zones->responses);
 
         ctx->server_zones->sent = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1575,7 +1640,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "sent",
                                                           "NGINX Server Zone sent",
                                                           1, (char *[]){"server_zone"});
-
+        if (ctx->server_zones->sent == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->server_zones->sent);
 
         ctx->location_zones->discarded = cmt_counter_create(ctx->cmt,
                                                             "nginxplus",
@@ -1583,6 +1651,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                             "discarded",
                                                             "NGINX Server Zone discarded",
                                                             1, (char *[]){"location_zone"});
+        if (ctx->location_zones->discarded == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->location_zones->discarded);
 
         ctx->location_zones->received = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1590,6 +1662,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "received",
                                                           "NGINX Server Zone received",
                                                           1, (char *[]){"location_zone"});
+        if (ctx->location_zones->received == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->location_zones->received);
 
         ctx->location_zones->requests = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1597,6 +1673,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "requests",
                                                           "NGINX Server Zone requests",
                                                           1, (char *[]){"location_zone"});
+        if (ctx->location_zones->requests == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->location_zones->requests);
 
         ctx->location_zones->responses = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1604,6 +1684,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "responses",
                                                           "NGINX Server Zone responses",
                                                           2, (char *[]){"location_zone", "code"});
+        if (ctx->location_zones->responses == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->location_zones->responses);
 
         ctx->location_zones->sent = cmt_counter_create(ctx->cmt,
                                                        "nginxplus",
@@ -1611,6 +1695,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                        "sent",
                                                        "NGINX Server Zone sent",
                                                        1, (char *[]){"location_zone"});
+        if (ctx->location_zones->sent == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->location_zones->sent);
 
         ctx->upstreams->keepalives = cmt_gauge_create(ctx->cmt,
                                                       "nginxplus",
@@ -1639,6 +1727,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                    "fails",
                                                    "NGINX Upstream Fails",
                                                    2, (char *[]){"upstream","server"});
+        if (ctx->upstreams->fails == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->upstreams->fails);
 
         ctx->upstreams->header_time = cmt_gauge_create(ctx->cmt,
                                                        "nginxplus",
@@ -1660,6 +1752,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                       "received",
                                                       "NGINX Upstream Received",
                                                       2, (char *[]){"upstream","server"});
+        if (ctx->upstreams->received == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->upstreams->received);
 
         ctx->upstreams->requests = cmt_counter_create(ctx->cmt,
                                                       "nginxplus",
@@ -1667,6 +1763,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                       "requests",
                                                       "NGINX Upstream Requests",
                                                       2, (char *[]){"upstream","server"});
+        if (ctx->upstreams->requests == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->upstreams->requests);
 
         ctx->upstreams->responses = cmt_counter_create(ctx->cmt,
                                                    "nginxplus",
@@ -1675,6 +1775,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                    "NGINX Upstream Responses",
                                                    3,
                                                    (char *[]){"code", "upstream","server"});
+        if (ctx->upstreams->responses == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->upstreams->responses);
 
         ctx->upstreams->response_time = cmt_gauge_create(ctx->cmt,
                                                          "nginxplus",
@@ -1689,6 +1793,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                   "sent",
                                                   "NGINX Upstream Sent",
                                                   2, (char *[]){"upstream","server"});
+        if (ctx->upstreams->sent == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->upstreams->sent);
 
         ctx->upstreams->state = cmt_gauge_create(ctx->cmt,
                                                  "nginxplus",
@@ -1703,6 +1811,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                      "unavail",
                                                      "NGINX Upstream Unavailable",
                                                      2, (char *[]){"upstream","server"});
+        if (ctx->upstreams->unavail == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->upstreams->unavail);
 
         ctx->streams->connections = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1710,6 +1822,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "connections",
                                                           "NGINX Stream Server Zone connections",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->streams->connections == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->streams->connections);
 
 
         ctx->streams->discarded = cmt_counter_create(ctx->cmt,
@@ -1718,6 +1834,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "discarded",
                                                           "NGINX Stream Server Zone discarded",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->streams->discarded == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->streams->discarded);
 
         ctx->streams->processing = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1725,6 +1845,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "processing",
                                                           "NGINX Stream Server Zone processing",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->streams->processing == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->streams->processing);
 
         ctx->streams->received = cmt_counter_create(ctx->cmt,
                                                           "nginxplus",
@@ -1732,6 +1856,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "received",
                                                           "NGINX Stream Server Zone received",
                                                           1, (char *[]){"server_zone"});
+        if (ctx->streams->received == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->streams->received);
 
         ctx->streams->sent = cmt_counter_create(ctx->cmt,
                                                 "nginxplus",
@@ -1739,6 +1867,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                 "sent",
                                                 "NGINX Stream Server Zone sent",
                                                 1, (char *[]){"server_zone"});
+        if (ctx->streams->sent == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->streams->sent);
 
         ctx->streams->sessions = cmt_counter_create(ctx->cmt,
                                                     "nginxplus",
@@ -1746,6 +1878,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                     "sessions",
                                                     "NGINX Stream Server Zone Sessions",
                                                     2, (char *[]){"server_zone", "code"});
+        if (ctx->streams->sessions == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->streams->sessions);
 
         ctx->stream_upstreams->zombies = cmt_gauge_create(ctx->cmt,
                                                           "nginxplus",
@@ -1767,6 +1903,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                           "fails",
                                                           "NGINX Upstream Fails",
                                                           2, (char *[]){"upstream","server"});
+        if (ctx->stream_upstreams->fails == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->stream_upstreams->fails);
 
         ctx->stream_upstreams->limit = cmt_gauge_create(ctx->cmt,
                                                         "nginxplus",
@@ -1781,6 +1921,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                              "received",
                                                              "NGINX Upstream Received",
                                                              2, (char *[]){"upstream","server"});
+        if (ctx->stream_upstreams->received == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->stream_upstreams->received);
 
         ctx->stream_upstreams->connect_time = cmt_gauge_create(ctx->cmt,
                                                                "nginxplus",
@@ -1802,6 +1946,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                                 "connections",
                                                                 "NGINX Upstream Requests",
                                                                 2, (char *[]){"upstream","server"});
+        if (ctx->stream_upstreams->connections == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->stream_upstreams->connections);
 
         ctx->stream_upstreams->response_time = cmt_gauge_create(ctx->cmt,
                                                                 "nginxplus",
@@ -1816,6 +1964,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                          "sent",
                                                          "NGINX Upstream Sent",
                                                          2, (char *[]){"upstream","server"});
+        if (ctx->stream_upstreams->sent == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->stream_upstreams->sent);
 
         ctx->stream_upstreams->state = cmt_gauge_create(ctx->cmt,
                                                         "nginxplus",
@@ -1830,6 +1982,10 @@ static int nginx_init(struct flb_input_instance *ins,
                                                             "unavail",
                                                             "NGINX Upstream Unavailable",
                                                             2, (char *[]){"upstream","server"});
+        if (ctx->stream_upstreams->unavail == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(ctx->stream_upstreams->unavail);
 
         ctx->coll_id = flb_input_set_collector_time(ins,
                                                     nginx_collect_plus,
