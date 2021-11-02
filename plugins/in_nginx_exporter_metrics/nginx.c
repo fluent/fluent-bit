@@ -256,17 +256,14 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
 
             for (i = 0; i < result.data.via.map.size; i++) {
                 if (strncmp(result.data.via.map.ptr[i].key.via.str.ptr, "handshakes", result.data.via.map.ptr[i].key.via.str.size) == 0) {
-                    flb_info("ssl handshakes");
                     cmt_counter_set(plus->handshakes, ts,
                                     (double)result.data.via.map.ptr[i].val.via.i64, 0, NULL);
                 }
                 else if (strncmp(result.data.via.map.ptr[i].key.via.str.ptr, "handshakes_failed", result.data.via.map.ptr[i].key.via.str.size) == 0) {
-                    flb_info("ssl handshakes failed");
                     cmt_counter_set(plus->handshakes_failed, ts,
                                     (double)result.data.via.map.ptr[i].val.via.i64, 0, NULL);
                 }
                 else if (strncmp(result.data.via.map.ptr[i].key.via.str.ptr, "session_reuses", result.data.via.map.ptr[i].key.via.str.size) == 0) {
-                    flb_info("ssl session reuses");
                     cmt_counter_set(plus->session_reuses, ts,
                                     (double)result.data.via.map.ptr[i].val.via.i64, 0, NULL);
                 }
@@ -902,7 +899,6 @@ static ssize_t parse_payload_json_table(struct nginx_ctx *ctx, int64_t ts,
     flb_pack_state_init(&pack_state);
 
     /* Pack JSON as msgpack */
-    flb_info("PARSE INTO THE DANGAAAH ZOOOOOUUNE=[%d]%s", size, payload);
     ret = flb_pack_json_state(payload, size, &pack, &out_size, &pack_state);
     flb_pack_state_reset(&pack_state);
 
@@ -922,12 +918,10 @@ static ssize_t parse_payload_json_table(struct nginx_ctx *ctx, int64_t ts,
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            flb_info("HIGHWAY TO THE SERVER ZONE");
             for (i = 0; i < result.data.via.map.size; i++) {
                 name = &result.data.via.map.ptr[i].key.via.str;
                 zone = flb_calloc(1, name->size+1);
                 memcpy(zone, name->ptr, name->size);
-                flb_info("DANGER ZONE=%s", zone);
                 process_payload(ctx, zone, ts, &result.data.via.map.ptr[i].val.via.map);
                 flb_free(zone);
             }
