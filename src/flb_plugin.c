@@ -371,7 +371,7 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
 
         mk_list_foreach(head_e, &section->entries) {
             entry = mk_list_entry(head_e, struct mk_rconf_entry, _head);
-            if (strcmp(entry->key, "Path") != 0) {
+            if (strcasecmp(entry->key, "Path") != 0) {
                 continue;
             }
 
