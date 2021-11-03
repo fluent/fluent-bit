@@ -522,8 +522,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
              * old chunks for the incoming chunk. We need to adjust the routes_mask
              * of the incoming chunk to not flush to that output instance.
              */
-            flb_error("[input chunk] no enough space in filesystem to buffer "
-                      "chunk %s in plugin %s", flb_input_chunk_get_name(ic), o_ins->name);
+            flb_error("[input chunk] chunk %s would exceed total limit size in plugin %s",
+                      flb_input_chunk_get_name(ic), o_ins->name);
 
             flb_routes_mask_clear_bit(ic->routes_mask, o_ins->id);
             if (flb_routes_mask_is_empty(ic->routes_mask)) {
