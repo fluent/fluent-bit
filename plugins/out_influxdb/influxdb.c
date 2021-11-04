@@ -475,6 +475,7 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
                               struct flb_config *config)
 {
     int ret;
+    int out_ret = FLB_OK;
     int is_metric = FLB_FALSE;
     size_t b_sent;
     size_t bytes_out;
@@ -559,7 +560,8 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
         flb_plg_debug(ctx->ins, "http_do=%i OK", ret);
     }
     else {
-        flb_plg_warn(ctx->ins, "http_do=%i", ret);
+        flb_plg_error(ctx->ins, "http_do=%i", ret);
+        out_ret = FLB_RETRY;
     }
 
     flb_http_client_destroy(c);
@@ -574,7 +576,7 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
     /* Release the connection */
     flb_upstream_conn_release(u_conn);
 
-    FLB_OUTPUT_RETURN(FLB_OK);
+    FLB_OUTPUT_RETURN(out_ret);
 }
 
 static int cb_influxdb_exit(void *data, struct flb_config *config)
