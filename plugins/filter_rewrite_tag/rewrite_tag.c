@@ -210,9 +210,7 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
         return -1;
     }
     if (is_wildcard(ins->match)) {
-        flb_plg_error(ins, "'Match' causes infinite loop. abort.");
-        flb_free(ctx);
-        return -1;
+        flb_plg_warn(ins, "'Match' may cause infinite loop.");
     }
     ctx->ins = ins;
     ctx->config = config;
