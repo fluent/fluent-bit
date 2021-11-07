@@ -262,8 +262,10 @@ static void *tls_context_create(int verify, int debug,
 
         /* Make sure the key and certificate file match */
         if (SSL_CTX_check_private_key(ssl_ctx) != 1) {
-            flb_error("[tls] private_key '%s' and password don't match",
-                      key_file);
+            flb_error("[tls] private_key '%s' %lu: %s",
+                      key_file,
+                      ERR_get_error(),
+                      ERR_error_string(ERR_get_error(), NULL));
             goto error;
         }
     }
