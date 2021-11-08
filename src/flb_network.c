@@ -281,7 +281,6 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
                             char *host, int port, int connect_timeout)
 {
     int ret;
-    int err;
     int socket_errno;
     struct pollfd pfd_read;
 
@@ -298,14 +297,10 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          */
 #ifdef FLB_SYSTEM_WINDOWS
         socket_errno = flb_socket_error(fd);
-        err = -1;
 #else
         socket_errno = errno;
-        err = flb_socket_error(fd);
 #endif
-        if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
-            flb_error("[net] connection #%i failed to: %s:%i",
-                      fd, host, port);
+        if (!FLB_EINPROGRESS(socket_errno)) {
             goto exit_error;
         }
 
@@ -363,7 +358,6 @@ static int net_connect_async(int fd,
                              void *async_ctx, struct flb_upstream_conn *u_conn)
 {
     int ret;
-    int err;
     int error = 0;
     int socket_errno;
     uint32_t mask;
@@ -384,14 +378,15 @@ static int net_connect_async(int fd,
      */
 #ifdef FLB_SYSTEM_WINDOWS
     socket_errno = flb_socket_error(fd);
-    err = -1;
 #else
     socket_errno = errno;
-    err = flb_socket_error(fd);
 #endif
-    if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
-        flb_error("[net] connection #%i failed to: %s:%i",
-                  fd, host, port);
+    /* The  '&& flb_socket_error != 0' comparison was removed because when
+     * there is no route to the destination host getopt doesn't return
+     * anything when we query SO_ERROR and this causes a false negative
+     * which is the origin of issue 4262
+     */
+    if (!FLB_EINPROGRESS(socket_errno)) {
         return -1;
     }
 
@@ -1055,6 +1050,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     int ret;
     flb_sockfd_t fd = -1;
     char _port[6];
+    char address[41];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
 
@@ -1113,8 +1109,14 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
      * available address.
      */
     for (rp = res; rp != NULL; rp = rp->ai_next) {
+        if (u_conn->net_error > 0) {
+            if (u_conn->net_error == ETIMEDOUT) {
+                flb_warn("[net] timeout detected between connection attempts");
+            }
+        }
+
         /* create socket */
-        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd == -1) {
             flb_error("[net] coult not create client socket, retrying");
             continue;
@@ -1157,18 +1159,31 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         if (ret == -1) {
+            address[0] = '\0';
+
+            ret = flb_net_address_to_str(rp->ai_family, rp->ai_addr,
+                                         address, sizeof(address));
+
             /* If the connection failed, just abort and report the problem */
-            flb_error("[net] socket #%i could not connect to %s:%s",
-                      fd, host, _port);
+            flb_debug("[net] socket #%i could not connect to %s:%s",
+                      fd, address, _port);
             if (u_conn) {
                 u_conn->fd = -1;
                 u_conn->event.fd = -1;
             }
+
             flb_socket_close(fd);
             fd = -1;
-            break;
+
+            continue;
         }
+
         break;
+    }
+
+    if (fd == -1) {
+        flb_error("[net] could not connect to %s:%s",
+                  host, _port);
     }
 
     if (is_async) {
@@ -1428,6 +1443,39 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
     }
 
     return remote_fd;
+}
+
+int flb_net_address_to_str(int family, const struct sockaddr *addr,
+                           char *output_buffer, size_t output_buffer_size)
+{
+    struct sockaddr *proper_addr;
+    const char      *result;
+
+    if (family == AF_INET) {
+        proper_addr = (struct sockaddr *) &((struct sockaddr_in *) addr)->sin_addr;
+    }
+    else if (family == AF_INET6) {
+        proper_addr = (struct sockaddr *) &((struct sockaddr_in6 *) addr)->sin6_addr;
+    }
+    else {
+        strncpy(output_buffer,
+                "CONVERSION ERROR 1",
+                output_buffer_size);
+
+        return -1;
+    }
+
+    result = inet_ntop(family, proper_addr, output_buffer, output_buffer_size);
+
+    if (result == NULL) {
+        strncpy(output_buffer,
+                "CONVERSION ERROR 2",
+                output_buffer_size);
+
+        return -2;
+    }
+
+    return 0;
 }
 
 int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len)
