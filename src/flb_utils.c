@@ -47,6 +47,14 @@ extern struct flb_aws_error_reporter *error_reporter;
 #include <openssl/rand.h>
 #endif
 
+/*
+ * The following block descriptor describes the private use unicode character range
+ * used for denoting invalid utf-8 fragments. Invalid fragment 0xCE would become
+ * utf-8 codepoint U+E0CE if FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR is set to
+ * E0 since U+E0CE = U+<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR><HEX_FRAGMENT>
+ */
+#define FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR 0xE0
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;
@@ -636,6 +644,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     int required;
     int len;
     int hex_bytes;
+    int is_valid;
+    int utf_sequence_number;
+    int utf_sequence_length;
     uint32_t codepoint;
     uint32_t state = 0;
     char tmp[16];
@@ -732,20 +743,102 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             i += (hex_bytes - 1);
         }
         else if (c > 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if (available - written < 6) {
-                return FLB_FALSE;
-            }
+            utf_sequence_length = flb_utf8_len(str + i);
 
-            if (i + hex_bytes > str_len) {
+            if (i + utf_sequence_length > str_len) {
                 break; /* skip truncated UTF-8 */
             }
-            for (b = 0; b < hex_bytes; b++) {
-                tmp[b] = str[i+b];
+
+            is_valid = FLB_TRUE;
+            for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length;
+                utf_sequence_number++) {
+                /* Leading characters must start with bits 11 */
+                if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
+                    /* Invalid unicode character. replace */
+                    flb_debug("[pack] unexpected UTF-8 leading byte, "
+                             "substituting character with replacement character");
+                    tmp[utf_sequence_number] = str[i];
+                    ++i; /* Consume invalid leading byte */
+                    utf_sequence_length = utf_sequence_number + 1;
+                    is_valid = FLB_FALSE;
+                    break;
+                }
+                /* Trailing characters must start with bits 10 */
+                else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
+                    /* Invalid unicode character. replace */
+                    flb_debug("[pack] unexpected UTF-8 continuation byte, "
+                             "substituting character with replacement character");
+                    /* This byte, i, is the start of the next unicode character */
+                    utf_sequence_length = utf_sequence_number;
+                    is_valid = FLB_FALSE;
+                    break;
+                }
+
+                tmp[utf_sequence_number] = str[i];
+                ++i;
             }
-            encoded_to_buf(p, tmp, hex_bytes);
-            p += hex_bytes;
-            i += (hex_bytes - 1);
+            --i;
+
+            if (is_valid) {
+                if (available - written < utf_sequence_length) {
+                    return FLB_FALSE;
+                }
+
+                encoded_to_buf(p, tmp, utf_sequence_length);
+                p += utf_sequence_length;
+            }
+            else {
+                if (available - written < utf_sequence_length * 3) {
+                    return FLB_FALSE;
+                }
+
+                /*
+                 * Utf-8 sequence is invalid. Map fragments to private use area
+                 * codepoints in range:
+                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
+                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF
+                 */
+                for (b = 0; b < utf_sequence_length; ++b) {
+                    /*
+                     * Utf-8 private block invalid hex mapping. Format unicode charpoint
+                     * in the following format:
+                     *
+                     *      +--------+--------+--------+
+                     *      |1110PPPP|10PPPPHH|10HHHHHH|
+                     *      +--------+--------+--------+
+                     *
+                     * Where:
+                     *   P is FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR bits (1 byte)
+                     *   H is Utf-8 fragment hex bits (1 byte)
+                     *   1 is bit 1
+                     *   0 is bit 0
+                     */
+
+                    /* unicode codepoint start */
+                    *p = 0xE0;
+
+                    /* print unicode private block header first 4 bits */
+                    *p |= FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4;
+                    ++p;
+
+                    /* unicode codepoint middle */
+                    *p = 0x80;
+
+                    /* print end of unicode private block header last 4 bits */
+                    *p |= ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f);
+
+                    /* print hex fragment first 2 bits */
+                    *p |= (tmp[b] >> 6) & 0x03;
+                    ++p;
+
+                    /* unicode codepoint middle */
+                    *p = 0x80;
+
+                    /* print hex fragment last 6 bits */
+                    *p |= tmp[b] & 0x3f;
+                    ++p;
+                }
+            }
         }
         else {
             *p++ = c;
