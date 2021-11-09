@@ -1,3 +1,42 @@
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#include <fluent-bit/flb_sha512.h>
+
+#ifdef FLB_HAVE_OPENSSL
+
+void flb_sha512_init(struct flb_sha512 *s)
+{
+	SHA512_Init(&s->ctx);
+}
+
+void flb_sha512_sum(struct flb_sha512 *s, uint8_t *md)
+{
+	SHA512_Final(md, &s->ctx);
+}
+
+void flb_sha512_update(struct flb_sha512 *s, const void *m, unsigned long len)
+{
+	SHA512_Update(&s->ctx, m, len);
+}
+
+#else /* FLB_HAVE_OPENSSL */
+
 /*
  * public domain sha512 crypt implementation
  *
@@ -9,7 +48,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <fluent-bit/flb_sha512.h>
 
 /* public domain sha512 implementation based on fips180-3 */
 /* >=2^64 bits messages are not supported (about 2000 peta bytes) */
@@ -167,3 +205,5 @@ void flb_sha512_update(struct flb_sha512 *s, const void *m, unsigned long len)
 		processblock(s, p);
 	memcpy(s->buf, p, len);
 }
+
+#endif /* FLB_HAVE_OPENSSL */
