@@ -41,62 +41,37 @@
  * Here there is no error logging in case of failures, we defer that task to the
  * caller.
  */
-#ifdef __GNUC__
-  #if ((__GNUC__ * 100 + __GNUC__MINOR__) > 430)  /* gcc version > 4.3 */
-    #define ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
-  #else
-    #define ALLOCSZ_ATTR(x,...)
-  #endif
+#ifdef FLB_HAVE_ATTRIBUTE_ALLOC_SIZE
+    #define FLB_ALLOCSZ_ATTR(x,...) __attribute__ ((alloc_size(x, ##__VA_ARGS__)))
 #else
-    #define ALLOCSZ_ATTR(x,...)
+    #define FLB_ALLOCSZ_ATTR(x,...)
 #endif
 
-static inline ALLOCSZ_ATTR(1)
+static inline FLB_ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
-    void *aux;
-
     if (size == 0) {
         return NULL;
     }
 
-    aux = malloc(size);
-    if (flb_unlikely(!aux && size)) {
-        return NULL;
-    }
-
-    return aux;
+    return malloc(size);
 }
 
-static inline ALLOCSZ_ATTR(1)
+static inline FLB_ALLOCSZ_ATTR(1, 2)
 void *flb_calloc(size_t n, const size_t size) {
-    void *buf;
-
     if (size == 0) {
         return NULL;
     }
 
-    buf = calloc(n, size);
-    if (flb_unlikely(!buf)) {
-        return NULL;
-    }
-
-    return buf;
+    return calloc(n, size);
 }
 
-static inline ALLOCSZ_ATTR(2)
+static inline FLB_ALLOCSZ_ATTR(2)
 void *flb_realloc(void *ptr, const size_t size)
 {
-    void *aux;
-
-    aux = realloc(ptr, size);
-    if (flb_unlikely(!aux && size)) {
-        return NULL;
-    }
-
-    return aux;
+    return realloc(ptr, size);
 }
 
-static inline ALLOCSZ_ATTR(2, 3)
+static inline FLB_ALLOCSZ_ATTR(3)
 void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
 {
     void *tmp;
@@ -121,5 +96,7 @@ void *flb_realloc_z(void *ptr, const size_t old_size, const size_t new_size)
 static inline void flb_free(void *ptr) {
     free(ptr);
 }
+
+#undef FLB_ALLOCSZ_ATTR
 
 #endif
