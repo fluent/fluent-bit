@@ -1231,8 +1231,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     int new_chunk = FLB_FALSE;
     uint64_t ts;
     size_t diff;
+    size_t real_diff;
     size_t size;
+    size_t real_size;
     size_t pre_size;
+    size_t pre_real_size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
 
@@ -1294,6 +1297,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * after filtering
      */
     pre_size = cio_chunk_get_content_size(ic->chunk);
+    /*
+     * Keep the previous real size just to satisfy
+     * flb_input_chunk_update_output_instances().
+     */
+    pre_real_size = cio_chunk_get_real_size(ic->chunk);
 
     /* Write the new data */
     ret = flb_input_chunk_write(ic, buf, buf_size);
@@ -1333,9 +1341,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Get chunk size */
     size = cio_chunk_get_content_size(ic->chunk);
+    real_size = cio_chunk_get_real_size(ic->chunk);
 
     /* calculate the 'real' new bytes being added after the filtering phase */
     diff = llabs(size - pre_size);
+    real_diff = llabs(real_size - pre_real_size);
 
     /*
      * Update output instance bytes counters, note that bytes counter should
@@ -1364,7 +1374,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     if (diff != 0) {
-        flb_input_chunk_update_output_instances(ic, diff);
+        flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
     /* Lock buffers where size > 2MB */
