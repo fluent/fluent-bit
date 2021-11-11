@@ -328,8 +328,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             ctx->http_request_key = http_request_key;
             ctx->http_request_key_size = (int)http_request_key_size;
         } else {
-            ctx->http_request_key = flb_sds_create(HTTPREQUEST_FIELD_IN_JSON);
-            ctx->http_request_key_size = HTTP_REQUEST_KEY_SIZE;
+            flb_plg_error(ctx->ins, "http_request_key is too long");
         }
     }
     else {
