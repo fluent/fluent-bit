@@ -2072,8 +2072,8 @@ static int stackdriver_format(struct flb_config *config,
     return 0;
 }
 
-static void cb_stackdriver_flush(const void *data, size_t bytes,
-                                 const char *tag, int tag_len,
+static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
+                                 struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins,
                                  void *out_context,
                                  struct flb_config *config)
@@ -2112,8 +2112,8 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     /* Reformat msgpack to stackdriver JSON payload */
     ret = stackdriver_format(config, i_ins,
                              ctx, NULL,
-                             tag, tag_len,
-                             data, bytes,
+                             event_chunk->tag, flb_sds_len(event_chunk->tag),
+                             event_chunk->data, event_chunk->size,
                              &out_buf, &out_size);
     if (ret != 0) {
 #ifdef FLB_HAVE_METRICS
