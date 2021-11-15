@@ -143,11 +143,11 @@ static int msgpack_to_json(const void *data, size_t bytes,
     return 0;
 }
 
-void cb_nats_flush(const void *data, size_t bytes,
-                   const char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_nats_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
 {
     int ret;
     size_t bytes_sent;
@@ -175,14 +175,16 @@ void cb_nats_flush(const void *data, size_t bytes,
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
-    ret = msgpack_to_json(data, bytes, tag, tag_len, &json_msg, &json_len);
+    ret = msgpack_to_json(event_chunk->data, event_chunk->size,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
+                          &json_msg, &json_len);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Compose the NATS Publish request */
-    request = flb_malloc(json_len + tag_len + 32);
+    request = flb_malloc(json_len + flb_sds_len(event_chunk->tag) + 32);
     if (!request) {
         flb_errno();
         flb_sds_destroy(json_msg);
@@ -190,8 +192,9 @@ void cb_nats_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    req_len = snprintf(request, tag_len + 32, "PUB %s %zu\r\n",
-                       tag, json_len);
+    req_len = snprintf(request, flb_sds_len(event_chunk->tag)+ 32,
+                       "PUB %s %zu\r\n",
+                       event_chunk->tag, json_len);
 
     /* Append JSON message and ending CRLF */
     memcpy(request + req_len, json_msg, json_len);
