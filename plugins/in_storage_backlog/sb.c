@@ -415,10 +415,8 @@ int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
                                   size_t                      required_space)
 {
     struct mk_list      *chunk_iterator_tmp;
-    size_t               releasable_space;
     struct mk_list      *chunk_iterator;
     size_t               released_space;
-    size_t               chunk_size;
     struct flb_sb       *context;
     struct sb_out_queue *backlog;
     struct sb_out_chunk *chunk;
