@@ -468,8 +468,8 @@ static int format_metrics(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_influxdb_flush(const void *data, size_t bytes,
-                              const char *tag, int tag_len,
+static void cb_influxdb_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)
@@ -490,9 +490,11 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
     struct flb_influxdb *ctx = out_context;
 
     /* Convert format: metrics / logs */
-    if (flb_input_event_type_is_metric(i_ins)) {
+    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
         /* format metrics */
-        ret = format_metrics(ctx->ins, (char *) data, bytes,
+        ret = format_metrics(ctx->ins,
+                             (char *) event_chunk->data,
+                             event_chunk->size,
                              &pack, &bytes_out);
         if (ret == -1) {
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -501,7 +503,9 @@ static void cb_influxdb_flush(const void *data, size_t bytes,
     }
     else {
         /* format logs */
-        pack = influxdb_format(tag, tag_len, data, bytes, &bytes_out, ctx);
+        pack = influxdb_format(event_chunk->tag, flb_sds_len(event_chunk->tag),
+                               event_chunk->data, event_chunk->size,
+                               &bytes_out, ctx);
         if (!pack) {
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
