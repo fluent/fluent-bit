@@ -31,6 +31,7 @@
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 #define FLB_ES_DEFAULT_HTTP_MAX   "512k"
+#define FLB_ES_DEFAULT_HTTPS_PORT 443
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
