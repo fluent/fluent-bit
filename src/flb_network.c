@@ -407,9 +407,6 @@ static int net_connect_async(int fd,
      */
 
     if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
-        flb_info("[net] connection #%i failed to: %s:%i",
-                  fd, host, port);
-
         return -1;
     }
 
