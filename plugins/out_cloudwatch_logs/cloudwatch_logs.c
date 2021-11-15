@@ -376,8 +376,8 @@ error:
     return -1;
 }
 
-static void cb_cloudwatch_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
+static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
+                                struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
                                 void *out_context,
                                 struct flb_config *config)
@@ -398,12 +398,14 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         }
     }
 
-    stream = get_log_stream(ctx, tag, tag_len);
+    stream = get_log_stream(ctx,
+                            event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!stream) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream, data, bytes);
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream,
+                                   event_chunk->data, event_chunk->size);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
