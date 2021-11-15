@@ -654,6 +654,7 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
 
 /* Create an input chunk using a Chunk I/O */
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
+                                            int event_type,
                                             void *chunk)
 {
     int records = 0;
@@ -674,7 +675,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         flb_errno();
         return NULL;
     }
-
+    ic->event_type = event_type;
     ic->busy = FLB_FALSE;
     ic->fs_backlog = FLB_TRUE;
     ic->chunk = chunk;
@@ -688,38 +689,73 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         return NULL;
     }
 
-    /* Validate records in the chunk */
-    ret = flb_mp_validate_chunk(buf_data, buf_size, &records, &offset);
-    if (ret == -1) {
-        /* If there are valid records, truncate the chunk size */
-        if (records <= 0) {
-            flb_plg_error(in,
-                          "chunk validation failed, data might be corrupted. "
-                          "No valid records found, the chunk will be discarded.");
-            flb_free(ic);
-            return NULL;
-        }
-        if (records > 0 && offset > 32) {
-            flb_plg_warn(in,
-                         "chunk validation failed, data might be corrupted. "
-                         "Found %d valid records, failed content starts "
-                         "right after byte %lu. Recovering valid records.",
-                         records, offset);
+    if (ic->event_type == FLB_INPUT_LOGS) {
+        /* Validate records in the chunk */
+        ret = flb_mp_validate_log_chunk(buf_data, buf_size, &records, &offset);
+        if (ret == -1) {
+            /* If there are valid records, truncate the chunk size */
+            if (records <= 0) {
+                flb_plg_error(in,
+                              "chunk validation failed, data might be corrupted. "
+                              "No valid records found, the chunk will be discarded.");
+                flb_free(ic);
+                return NULL;
+            }
+            if (records > 0 && offset > 32) {
+                flb_plg_warn(in,
+                             "chunk validation failed, data might be corrupted. "
+                             "Found %d valid records, failed content starts "
+                             "right after byte %lu. Recovering valid records.",
+                             records, offset);
 
-            /* truncate the chunk to recover valid records */
-            cio_chunk_write_at(chunk, offset, NULL, 0);
+                /* truncate the chunk to recover valid records */
+                cio_chunk_write_at(chunk, offset, NULL, 0);
+            }
+            else {
+                flb_plg_error(in,
+                              "chunk validation failed, data might be corrupted. "
+                              "Found %d valid records, failed content starts "
+                              "right after byte %lu. Cannot recover chunk,",
+                              records, offset);
+                flb_free(ic);
+                return NULL;
+            }
         }
-        else {
-            flb_plg_error(in,
-                          "chunk validation failed, data might be corrupted. "
-                          "Found %d valid records, failed content starts "
-                          "right after byte %lu. Cannot recover chunk,",
-                          records, offset);
-            flb_free(ic);
-            return NULL;
+    }
+    else if (ic->event_type == FLB_INPUT_METRICS) {
+        ret = flb_mp_validate_metric_chunk(buf_data, buf_size, &records, &offset);
+        if (ret == -1) {
+            if (records <= 0) {
+                flb_plg_error(in,
+                              "metrics chunk validation failed, data might be corrupted. "
+                              "No valid records found, the chunk will be discarded.");
+                flb_free(ic);
+                return NULL;
+            }
+            if (records > 0 && offset > 32) {
+                flb_plg_warn(in,
+                             "metrics chunk validation failed, data might be corrupted. "
+                             "Found %d valid records, failed content starts "
+                             "right after byte %lu. Recovering valid records.",
+                             records, offset);
+
+                /* truncate the chunk to recover valid records */
+                cio_chunk_write_at(chunk, offset, NULL, 0);
+            }
+            else {
+                flb_plg_error(in,
+                              "metrics chunk validation failed, data might be corrupted. "
+                              "Found %d valid records, failed content starts "
+                              "right after byte %lu. Cannot recover chunk,",
+                              records, offset);
+                flb_free(ic);
+                return NULL;
+            }
+
         }
     }
 
+    /* Skip chunks without content data */
     if (records == 0) {
         flb_plg_error(in,
                       "chunk validation failed, data might be corrupted. "
@@ -741,7 +777,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         cio_chunk_write_at(chunk, offset, NULL, 0);
     }
 
-    /* Updat metrics */
+    /* Update metrics */
 #ifdef FLB_HAVE_METRICS
     ic->total_records = records;
     if (ic->total_records > 0) {
@@ -790,6 +826,72 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     return ic;
 }
 
+static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
+                                    char *tag, int tag_len)
+
+{
+    int ret;
+    int meta_size;
+    char *meta;
+
+    /*
+     * Prepare the Chunk metadata header
+     * ----------------------------------
+     * m[0] = FLB_INPUT_CHUNK_MAGIC_BYTE_0
+     * m[1] = FLB_INPUT_CHUNK_MAGIC_BYTE_1
+     * m[2] = type (FLB_INPUT_CHUNK_TYPE_LOG | FLB_INPUT_CHUNK_TYPE_METRIC)
+     * m[3] = 0 (unused for now)
+     */
+
+    /* write metadata (tag) */
+    if (tag_len > (65535 - FLB_INPUT_CHUNK_META_HEADER)) {
+        /* truncate length */
+        tag_len = 65535 - FLB_INPUT_CHUNK_META_HEADER;
+    }
+    meta_size = FLB_INPUT_CHUNK_META_HEADER + tag_len;
+
+    /* Allocate buffer for metadata header */
+    meta = flb_calloc(1, meta_size);
+    if (!meta) {
+        flb_errno();
+        return -1;
+    }
+
+    /*
+     * Write chunk header in a temporary buffer
+     * ----------------------------------------
+     */
+
+    /* magic bytes */
+    meta[0] = FLB_INPUT_CHUNK_MAGIC_BYTE_0;
+    meta[1] = FLB_INPUT_CHUNK_MAGIC_BYTE_1;
+
+    /* event type */
+    if (event_type == FLB_INPUT_LOGS) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_LOG;
+    }
+    else if (event_type == FLB_INPUT_METRICS) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_METRIC;
+    }
+
+    /* unused byte */
+    meta[3] = 0;
+
+    /* copy the tag after magic bytes */
+    memcpy(meta + FLB_INPUT_CHUNK_META_HEADER, tag, tag_len);
+
+    /* Write tag into metadata section */
+    ret = cio_meta_write(chunk, (char *) meta, meta_size);
+    if (ret == -1) {
+        flb_error("[input chunk] could not write metadata");
+        flb_free(meta);
+        return -1;
+    }
+    flb_free(meta);
+
+    return 0;
+}
+
 struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
                                                const char *tag, int tag_len)
 {
@@ -829,16 +931,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         set_down = FLB_TRUE;
     }
 
-    /* write metadata (tag) */
-    if (tag_len > 65535) {
-        /* truncate length */
-        tag_len = 65535;
-    }
-
-    /* Write tag into metadata section */
-    ret = cio_meta_write(chunk, (char *) tag, tag_len);
+    /* Write chunk header */
+    ret = input_chunk_write_header(chunk, in->event_type, (char *) tag, tag_len);
     if (ret == -1) {
-        flb_error("[input chunk] could not write metadata");
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
@@ -1503,6 +1598,53 @@ flb_sds_t flb_input_chunk_get_name(struct flb_input_chunk *ic)
     return ch->name;
 }
 
+static inline int input_chunk_has_magic_bytes(char *buf, int len)
+{
+    unsigned char *p;
+
+    if (len < FLB_INPUT_CHUNK_META_HEADER) {
+        return FLB_FALSE;
+    }
+
+    p = (unsigned char *) buf;
+    if (p[0] == FLB_INPUT_CHUNK_MAGIC_BYTE_0 &&
+        p[1] == FLB_INPUT_CHUNK_MAGIC_BYTE_1 && p[3] == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+/* Get the event type by retrieving metadata header */
+int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
+{
+    int len;
+    int ret;
+    int type = -1;
+    char *buf = NULL;
+
+    ret = cio_meta_read(ic->chunk, &buf, &len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Check metadata header / magic bytes */
+    if (input_chunk_has_magic_bytes(buf, len)) {
+        if (buf[2] == FLB_INPUT_CHUNK_TYPE_LOG) {
+            type = FLB_INPUT_LOGS;
+        }
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_METRIC) {
+            type = FLB_INPUT_METRICS;
+        }
+    }
+    else {
+        type = FLB_INPUT_LOGS;
+    }
+
+
+    return type;
+}
+
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len)
 {
@@ -1517,8 +1659,16 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
         return -1;
     }
 
-    *tag_len = len;
-    *tag_buf = buf;
+    /* If magic bytes exists, just set the offset */
+    if (input_chunk_has_magic_bytes(buf, len)) {
+        *tag_len = len - FLB_INPUT_CHUNK_META_HEADER;
+        *tag_buf = buf + FLB_INPUT_CHUNK_META_HEADER;
+    }
+    else {
+        /* Old Chunk version without magic bytes */
+        *tag_len = len;
+        *tag_buf = buf;
+    }
 
     return ret;
 }
