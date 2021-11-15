@@ -204,8 +204,8 @@ static void append_labels(struct prometheus_remote_write_context *ctx,
     }
 }
 
-static void cb_prom_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_prom_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
@@ -226,17 +226,20 @@ static void cb_prom_flush(const void *data, size_t bytes,
     result = FLB_OK;
 
     /* Buffer to concatenate multiple metrics contexts */
-    buf = flb_sds_create_size(bytes);
+    buf = flb_sds_create_size(event_chunk->size);
     if (!buf) {
         flb_plg_error(ctx->ins, "could not allocate outgoing buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_debug(ctx->ins, "cmetrics msgpack size: %lu", bytes);
+    flb_plg_debug(ctx->ins, "cmetrics msgpack size: %lu",
+                  event_chunk->size);
 
     /* Decode and encode every CMetric context */
     diff = 0;
-    while ((ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off)) == ok) {
+    while ((ret = cmt_decode_msgpack_create(&cmt,
+                                            (char *) event_chunk->data,
+                                            event_chunk->size, &off)) == ok) {
         /* append labels set by config */
         append_labels(ctx, cmt);
 
@@ -266,7 +269,9 @@ static void cb_prom_flush(const void *data, size_t bytes,
         flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
         if (buf && flb_sds_len(buf) > 0) {
             /* Send HTTP request */
-            result = http_post(ctx, buf, flb_sds_len(buf), tag, tag_len);
+            result = http_post(ctx, buf, flb_sds_len(buf),
+                               event_chunk->tag,
+                               flb_sds_len(event_chunk->tag));
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
