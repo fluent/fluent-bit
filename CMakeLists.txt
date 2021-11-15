@@ -805,6 +805,20 @@ if(FLB_INOTIFY)
   endif()
 endif()
 
+include(CheckSymbolExists)
+
+# Check for getentropy(3)
+check_symbol_exists(getentropy "unistd.h" HAVE_GETENTROPY)
+if(HAVE_GETENTROPY)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY)
+endif()
+
+# getentropy(3) is in sys/random.h on mac
+check_symbol_exists(getentropy "sys/random.h" HAVE_GETENTROPY_SYS_RANDOM)
+if(HAVE_GETENTROPY_SYS_RANDOM)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY_SYS_RANDOM)
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"

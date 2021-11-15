@@ -1,0 +1,81 @@
+---
+name: Deploy to staging
+
+on:
+  push:
+    tags:
+      - '*'
+  release:
+    types: [created]
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of Fluent Bit to build
+        required: true
+        default: 1.8.10
+jobs:
+
+  # This job copes with the variable approach of either being triggered by a tag,
+  # where the data is then in the reference provided, or by a manual event where
+  # the data is then in another structure entirely. We take the manual input if
+  # it is present, otherwise we try to figure it out.
+  staging-build-get-version:
+    name: Get version to build
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      version: ${{ steps.formatted_version.outputs.replaced }}
+    steps:
+      - name: Get the version
+        id: get_version
+        # Use the input variable if defined, if not attempt to get a tag
+        run: |
+            VERSION="${INPUT_VERSION}"
+            if [ -z "${VERSION}" ]; then
+              if [ -z "${GITHUB_REF/refs\/tags\//}" ]; then
+                VERSION="${GITHUB_REF/refs\/tags\//}"
+              else
+                echo "Unable to get a version to build"
+                exit 1
+              fi
+            fi
+            echo ::set-output name=VERSION::$VERSION
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+
+      - uses: frabert/replace-string-action@v2.0
+        id: formatted_version
+        with:
+          pattern: '[v]*(.*)$'
+          string: "${{ steps.get_version.outputs.VERSION }}"
+          replace-with: '$1'
+          flags: 'g'
+
+  staging-build-images:
+    needs: staging-build-get-version
+    uses: patrick-stephens/fluent-bit/.github/workflows/call-build-images.yaml@master
+    with:
+      version: ${{ needs.staging-build-get-version.outputs.version }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      cosign_private_key_password: ${{ secrets.COSIGN_PASSWORD }}
+
+  staging-build-packages:
+    needs: staging-build-get-version
+    uses: patrick-stephens/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    with:
+      version: ${{ needs.staging-build-get-version.outputs.version }}
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}

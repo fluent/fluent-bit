@@ -2060,11 +2060,11 @@ static void flush_init(void *out_context)
     }
 }
 
-static void cb_s3_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_s3_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
 {
     int ret;
     int chunk_size;
@@ -2080,10 +2080,13 @@ static void cb_s3_flush(const void *data, size_t bytes,
 
     /* Process chunk */
     if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx, data, bytes);
+        chunk = flb_pack_msgpack_extract_log_key(ctx,
+                                                 event_chunk->data,
+                                                 event_chunk->size);
     }
     else {
-        chunk = flb_pack_msgpack_to_json_format(data, bytes,
+        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                                event_chunk->size,
                                                 FLB_PACK_JSON_FORMAT_LINES,
                                                 ctx->json_date_format,
                                                 ctx->date_key);
@@ -2095,17 +2098,21 @@ static void cb_s3_flush(const void *data, size_t bytes,
     chunk_size = flb_sds_len(chunk);
 
     /* Get a file candidate matching the given 'tag' */
-    upload_file = s3_store_file_get(ctx, tag, tag_len);
+    upload_file = s3_store_file_get(ctx,
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag));
 
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
-        unit_test_flush(ctx, upload_file, tag, tag_len, chunk, chunk_size, m_upload_file);
+        unit_test_flush(ctx, upload_file,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag),
+                        chunk, chunk_size, m_upload_file);
     }
 
     /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
     if (upload_file != NULL && upload_file->failures >= MAX_UPLOAD_ERRORS) {
         flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
-                     "retry", tag, MAX_UPLOAD_ERRORS);
+                     "retry", event_chunk->tag, MAX_UPLOAD_ERRORS);
         s3_store_file_inactive(ctx, upload_file);
         upload_file = NULL;
     }
@@ -2114,15 +2121,17 @@ static void cb_s3_flush(const void *data, size_t bytes,
     if (upload_file != NULL && time(NULL) >
         (upload_file->create_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for %s",
+                     event_chunk->tag);
     }
 
-    m_upload_file = get_upload(ctx, tag, tag_len);
+    m_upload_file = get_upload(ctx,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
 
     if (m_upload_file != NULL && time(NULL) >
         (m_upload_file->init_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for %s", event_chunk->tag);
     }
 
     /* If total_file_size has been reached, upload file */
@@ -2135,14 +2144,16 @@ static void cb_s3_flush(const void *data, size_t bytes,
     if (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE) {
         if (ctx->preserve_data_ordering == FLB_TRUE) {
             /* Buffer last chunk in file and lock file to prevent further changes */
-            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size, tag, tag_len);
+            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             s3_store_file_lock(upload_file);
 
             /* Add chunk file to upload queue */
-            ret = add_to_queue(ctx, upload_file, m_upload_file, tag, tag_len);
+            ret = add_to_queue(ctx, upload_file, m_upload_file,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2157,7 +2168,9 @@ static void cb_s3_flush(const void *data, size_t bytes,
         }
         else {
             /* Send upload directly without upload queue */
-            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file, tag, tag_len);
+            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file,
+                                      event_chunk->tag,
+                                      flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2166,7 +2179,8 @@ static void cb_s3_flush(const void *data, size_t bytes,
     }
 
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
-    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size, tag, tag_len);
+    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                       event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }

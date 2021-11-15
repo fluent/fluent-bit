@@ -1,0 +1,76 @@
+---
+name: Reusable workflow to test packages in S3 bucket
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: false
+    secrets:
+      bucket:
+        required: true
+      token:
+        required: true
+
+jobs:
+  call-test-packaging:
+    # We use Dokken to run a series of test suites locally on containers representing
+    # each OS we want to install on. This creates custom images with the package
+    # installed and configured as per our documentation then verifies that the agent
+    # is running at startup.
+    name: Binary package tests
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      RELEASE_URL: https://packages.fluentbit.io
+      AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Install Chef
+      uses: actionshub/chef-install@2.0.1
+
+    - name: Get the version
+      id: get_version
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        VERSION=$(cat latest-version.txt)
+        echo ::set-output name=VERSION::$VERSION
+      shell: bash
+
+    - name: Official package installation tests
+      # Check if official packages work
+      uses: actionshub/kitchen-dokken@1.0.1
+      env:
+        suite: ${{ matrix.suite }}
+        os: ${{ matrix.os }}
+        CHEF_LICENSE: accept-no-persist
+        KITCHEN_YAML: packaging/testing/smoke/packages/kitchen-official-install.yaml
+        # No version to test
+        # STAGING_VERSION:
+
+    - name: Staging package installation tests
+      uses: actionshub/kitchen-dokken@1.0.1
+      env:
+        suite: ${{ matrix.suite }}
+        os: ${{ matrix.os }}
+        CHEF_LICENSE: accept-no-persist # https://docs.chef.io/chef_license/
+        KITCHEN_YAML: packaging/testing/smoke/packages/kitchen-staging-install.yaml
+        STAGING_VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+    - name: Staging package upgrade tests
+      # Install the latest release version then upgrade to staging version.
+      uses: actionshub/kitchen-dokken@1.0.1
+      env:
+        suite: ${{ matrix.suite }}
+        os: ${{ matrix.os }}
+        CHEF_LICENSE: accept-no-persist
+        KITCHEN_YAML:  packaging/testing/smoke/packages/kitchen-staging-upgrade.yaml
+        STAGING_VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+    - name: Failed output
+      if: failure()
+      run: |
+        kitchen diagnose --all
+        cat .kitchen/logs/kitchen.log

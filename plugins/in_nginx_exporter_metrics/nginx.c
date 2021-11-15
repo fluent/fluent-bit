@@ -149,10 +149,13 @@ static int nginx_collect(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    // copy and NULL terminate the payload
-    data = flb_sds_create_size(client->resp.payload_size+1);
-    data[client->resp.payload_size] = NULL;
+    /* copy and NULL terminate the payload */
+    data = flb_sds_create_size(client->resp.payload_size + 1);
+    if (!data) {
+        goto http_error;
+    }
     memcpy(data, client->resp.payload, client->resp.payload_size);
+    data[client->resp.payload_size] = '\0';
 
     /* work directly on the data here ... */
     if (nginx_parse_stub_status(data, &status) == -1) {

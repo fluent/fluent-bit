@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_storage.h>
@@ -415,10 +415,8 @@ int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
                                   size_t                      required_space)
 {
     struct mk_list      *chunk_iterator_tmp;
-    size_t               releasable_space;
     struct mk_list      *chunk_iterator;
     size_t               released_space;
-    size_t               chunk_size;
     struct flb_sb       *context;
     struct sb_out_queue *backlog;
     struct sb_out_chunk *chunk;
@@ -468,10 +466,12 @@ static int cb_queue_chunks(struct flb_input_instance *in,
     struct sb_out_chunk    *chunk_instance;
     struct flb_sb          *ctx;
     struct flb_input_chunk *ic;
+    struct flb_input_chunk  tmp_ic;
     void                   *ch;
     size_t                  total = 0;
     ssize_t                 size;
     int                     ret;
+    int                     event_type;
 
     /* Get context */
     ctx = (struct flb_sb *) data;
@@ -526,6 +526,27 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                     }
                 }
 
+                /*
+                 * Map the chunk file context into a temporary buffer since the
+                 * flb_input_chunk_get_event_type() interface needs an
+                 * struct fb_input_chunk argument.
+                 */
+                tmp_ic.chunk = chunk_instance->chunk;
+
+                /* Retrieve the event type: FLB_INPUT_LOGS or FLB_INPUT_METRICS */
+                ret = flb_input_chunk_get_event_type(&tmp_ic);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "removing chunk with wrong metadata "
+                                  "from the queue %s:%s",
+                                  chunk_instance->stream->name,
+                                  chunk_instance->chunk->name);
+                    cio_chunk_close(chunk_instance->chunk, FLB_TRUE);
+                    sb_remove_chunk_from_segregated_backlogs(chunk_instance->chunk,
+                                                             ctx);
+                    continue;
+                }
+                event_type = ret;
+
                 /* get the number of bytes being used by the chunk */
                 size = cio_chunk_get_content_size(chunk_instance->chunk);
                 if (size <= 0) {
@@ -543,7 +564,7 @@ static int cb_queue_chunks(struct flb_input_instance *in,
                 ch = chunk_instance->chunk;
 
                 /* Associate this backlog chunk to this instance into the engine */
-                ic = flb_input_chunk_map(in, ch);
+                ic = flb_input_chunk_map(in, event_type, ch);
                 if (!ic) {
                     flb_plg_error(ctx->ins, "removing chunk %s:%s from the queue",
                                   chunk_instance->stream->name, chunk_instance->chunk->name);

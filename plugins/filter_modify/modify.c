@@ -681,6 +681,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_EQUAL(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_EQUALS(ctx, map, condition);
 }
 
@@ -715,6 +718,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_MATCHES(ctx, map, condition);
 }
 

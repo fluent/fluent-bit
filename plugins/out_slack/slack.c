@@ -143,8 +143,8 @@ error:
     return -1;
 }
 
-static void cb_slack_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_slack_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -167,7 +167,7 @@ static void cb_slack_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_slack *ctx = out_context;
 
-    size = bytes * 4;
+    size = event_chunk->size * 4;
     json = flb_sds_create_size(size);
     if (!json) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -175,7 +175,9 @@ static void cb_slack_flush(const void *data, size_t bytes,
     memset(json, '\0', size);
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tmp, &result, &p);
 
         ret = snprintf(json + printed, size - printed,

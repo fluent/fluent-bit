@@ -110,7 +110,7 @@ static int get_token_with_command(const char *command,
     res = flb_calloc(1, FLB_KUBE_TOKEN_BUF_SIZE);
     if (!res) {
         flb_errno();
-        fclose(fp);
+        pclose(fp);
         return -1;
     }
     
@@ -121,7 +121,7 @@ static int get_token_with_command(const char *command,
             if (temp == NULL) {
                 flb_errno();
                 flb_free(res);
-                fclose(fp);
+                pclose(fp);
                 return -1;
             }
             res = temp;
@@ -132,11 +132,11 @@ static int get_token_with_command(const char *command,
 
     if (strlen(res) < 1) {
         flb_free(res);
-        fclose(fp);
+        pclose(fp);
         return -1;
     }
     
-    fclose(fp);
+    pclose(fp);
 
     *out_buf = res;
     *out_size = strlen(res);
