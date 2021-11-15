@@ -786,8 +786,8 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     cmt_destroy(cmt);
 }
 
-static void cb_calyptia_flush(const void *data, size_t bytes,
-                              const char *tag, int tag_len,
+static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)
@@ -811,7 +811,10 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
 
     /* if we have labels append them */
     if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
-        ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+        ret = cmt_decode_msgpack_create(&cmt,
+                                        (char *) event_chunk->data,
+                                        event_chunk->size,
+                                        &off);
         if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -830,15 +833,15 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
         cmt_destroy(cmt);
     }
     else {
-        out_buf = (char *) data;
-        out_size = bytes;
+        out_buf = (char *) event_chunk->data;
+        out_size = event_chunk->size;
     }
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->metrics_endpoint,
                         out_buf, out_size, NULL, 0, NULL, 0);
     if (!c) {
-        if (out_buf != data) {
+        if (out_buf != event_chunk->data) {
             cmt_encode_msgpack_destroy(out_buf);
         }
         flb_upstream_conn_release(u_conn);
@@ -855,7 +858,7 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
         debug_payload(ctx, out_buf, out_size);
     }
 
-    if (out_buf != data) {
+    if (out_buf != event_chunk->data) {
         cmt_encode_msgpack_destroy(out_buf);
     }
 
