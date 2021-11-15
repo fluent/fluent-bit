@@ -1298,10 +1298,16 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      */
     pre_size = cio_chunk_get_content_size(ic->chunk);
     /*
-     * Keep the previous real size just to satisfy
-     * flb_input_chunk_update_output_instances().
+     * Keep the previous real size to calculate the real size
+     * difference for flb_input_chunk_update_output_instances(),
+     * use 0 when the chunk is new since it's size will never
+     * have been calculated before.
      */
-    pre_real_size = new_chunk == FLB_TRUE ? 0 : flb_input_chunk_get_real_size(ic);
+    if (new_chunk == FLB_TRUE) {
+        pre_real_size = 0;
+    } else {
+        pre_real_size = flb_input_chunk_get_real_size(ic);
+    }
 
     /* Write the new data */
     ret = flb_input_chunk_write(ic, buf, buf_size);
