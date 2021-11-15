@@ -306,11 +306,11 @@ struct flush *new_flush_buffer()
     return buf;
 }
 
-static void cb_firehose_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
-                                struct flb_input_instance *i_ins,
-                                void *out_context,
-                                struct flb_config *config)
+static void cb_firehose_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
+                              struct flb_input_instance *i_ins,
+                              void *out_context,
+                              struct flb_config *config)
 {
     struct flb_firehose *ctx = out_context;
     int ret;
@@ -324,7 +324,8 @@ static void cb_firehose_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = process_and_send_records(ctx, buf, data, bytes);
+    ret = process_and_send_records(ctx, buf,
+                                   event_chunk->data, event_chunk->size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records");
         flush_destroy(buf);
