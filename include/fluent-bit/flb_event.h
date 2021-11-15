@@ -23,6 +23,11 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_input_chunk.h>
+
+/* Event types */
+#define FLB_EVENT_TYPE_LOG     FLB_INPUT_CHUNK_TYPE_LOG
+#define FLB_EVENT_TYPE_METRIC  FLB_INPUT_CHUNK_TYPE_METRIC
 
 /*
  * The flb_event_chunk structure is a full context used in the output plugins
