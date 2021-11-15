@@ -446,8 +446,8 @@ static int bigquery_format(const void *data, size_t bytes,
     return 0;
 }
 
-static void cb_bigquery_flush(const void *data, size_t bytes,
-                              const char *tag, int tag_len,
+static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)
@@ -464,7 +464,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
 
-    flb_plg_trace(ctx->ins, "flushing bytes %zu", bytes);
+    flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -481,7 +481,8 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     }
 
     /* Reformat msgpack to bigquery JSON payload */
-    ret = bigquery_format(data, bytes, tag, tag_len,
+    ret = bigquery_format(event_chunk->data, event_chunk->size,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
                           &payload_buf, &payload_size, ctx);
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);
