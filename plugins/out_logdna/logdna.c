@@ -354,8 +354,8 @@ static int cb_logdna_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_logdna_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
+static void cb_logdna_flush(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)
@@ -371,7 +371,11 @@ static void cb_logdna_flush(const void *data, size_t bytes,
     struct flb_http_client *c;
 
     /* Format the data to the expected LogDNA Payload */
-    payload = logdna_compose_payload(ctx, data, bytes, tag, tag_len);
+    payload = logdna_compose_payload(ctx,
+                                     event_chunk->data,
+                                     event_chunk->size,
+                                     event_chunk->tag,
+                                     flb_sds_len(event_chunk->tag));
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
         FLB_OUTPUT_RETURN(FLB_RETRY);
