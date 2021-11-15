@@ -196,17 +196,19 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     /* A task has finished, delete it */
     if (ret == FLB_OK) {
         /* cmetrics */
-        cmt_counter_add(ins->cmt_proc_records, ts, task->records,
+        cmt_counter_add(ins->cmt_proc_records, ts, task->event_chunk->total_events,
                         1, (char *[]) {name});
 
-        cmt_counter_add(ins->cmt_proc_bytes, ts, task->size,
+        cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
                         1, (char *[]) {name});
 
         /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
-            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, task->records, ins->metrics);
-            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS,
+                            task->event_chunk->total_events, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES,
+                            task->event_chunk->size, ins->metrics);
         }
 #endif
         /* Inform the user if a 'retry' succedeed */
