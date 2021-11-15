@@ -350,22 +350,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
-        /* If the input generate metrics, always use memory storage (for now) */
-        if (flb_input_event_type_is_metric(ins)) {
+        /* Set the storage type */
+        if (strcasecmp(tmp, "filesystem") == 0) {
+            ins->storage_type = CIO_STORE_FS;
+        }
+        else if (strcasecmp(tmp, "memory") == 0) {
             ins->storage_type = CIO_STORE_MEM;
         }
         else {
-            /* Set the storage type */
-            if (strcasecmp(tmp, "filesystem") == 0) {
-                ins->storage_type = CIO_STORE_FS;
-            }
-            else if (strcasecmp(tmp, "memory") == 0) {
-                ins->storage_type = CIO_STORE_MEM;
-            }
-            else {
-                flb_sds_destroy(tmp);
-                return -1;
-            }
+            flb_sds_destroy(tmp);
+            return -1;
         }
         flb_sds_destroy(tmp);
     }
