@@ -37,22 +37,26 @@
 /* Proxies */
 #include "proxy/go/go.h"
 
-static void flb_proxy_cb_flush(const void *data, size_t bytes,
-                               const char *tag, int tag_len,
-                               struct flb_input_instance *i_ins,
-                               void *out_context,
-                               struct flb_config *config)
+static void proxy_cb_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     int ret = FLB_ERROR;
     struct flb_plugin_proxy_context *ctx = out_context;
-    (void) tag_len;
     (void) i_ins;
     (void) config;
+
 
 #ifdef FLB_HAVE_PROXY_GO
     if (ctx->proxy->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_flush()");
-        ret = proxy_go_flush(ctx, data, bytes, tag, tag_len);
+        ret = proxy_go_flush(ctx,
+                             event_chunk->data,
+                             event_chunk->size,
+                             event_chunk->tag,
+                             flb_sds_len(event_chunk->tag));
     }
 #else
     (void) ctx;
@@ -113,7 +117,7 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
      * the core plugins specs, have a different callback approach, so
      * we put our proxy-middle callbacks to do the translation properly.
      */
-    out->cb_flush = flb_proxy_cb_flush;
+    out->cb_flush = proxy_cb_flush;
     out->cb_exit = flb_proxy_cb_exit;
     return 0;
 }
