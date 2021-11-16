@@ -281,6 +281,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
                             char *host, int port, int connect_timeout)
 {
     int ret;
+    int err;
     int socket_errno;
     struct pollfd pfd_read;
 
@@ -297,10 +298,13 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          */
 #ifdef FLB_SYSTEM_WINDOWS
         socket_errno = flb_socket_error(fd);
+        err = 0;
 #else
         socket_errno = errno;
+        err = flb_socket_error(fd);
 #endif
-        if (!FLB_EINPROGRESS(socket_errno)) {
+
+        if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
             goto exit_error;
         }
 
@@ -358,6 +362,7 @@ static int net_connect_async(int fd,
                              void *async_ctx, struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int err;
     int error = 0;
     int socket_errno;
     uint32_t mask;
@@ -378,15 +383,30 @@ static int net_connect_async(int fd,
      */
 #ifdef FLB_SYSTEM_WINDOWS
     socket_errno = flb_socket_error(fd);
+    err = 0;
 #else
     socket_errno = errno;
+    err = flb_socket_error(fd);
 #endif
-    /* The  '&& flb_socket_error != 0' comparison was removed because when
-     * there is no route to the destination host getopt doesn't return
-     * anything when we query SO_ERROR and this causes a false negative
-     * which is the origin of issue 4262
+    /* The logic behind this check is that when establishing a connection
+     * errno should be EINPROGRESS with no additional information in order
+     * for it to be a healthy attempt. However, when errno is EINPROGRESS
+     * and an error occurs it could be saved in the so_error socket field
+     * which has to be accessed through getsockopt(... SO_ERROR ...) so
+     * in order to preserve that behavior while also properly detecting
+     * other errno values as error conditions the comparison was changed.
+     *
+     * Windows note : flb_socket_error returns either the value returned
+     * by WSAGetLastError or the value returned by getsockopt(... SO_ERROR ...)
+     * if WSAGetLastError returns WSAEWOULDBLOCK as per libevents code.
+     *
+     * General note : according to the connect syscall man page (not libc)
+     * there could be a timing issue with checking SO_ERROR here because
+     * the suggested use involves checking it after a select or poll call
+     * returns the socket as writable which is not the case here.
      */
-    if (!FLB_EINPROGRESS(socket_errno)) {
+
+    if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
         return -1;
     }
 
