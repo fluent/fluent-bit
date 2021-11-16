@@ -174,6 +174,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     int ret;
     const char *tmp;
     struct flb_stackdriver *ctx;
+    flb_sds_t http_request_key;
+    size_t http_request_key_size;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -322,8 +324,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 
     tmp = flb_output_get_property("http_request_key", ins);
     if (tmp) {
-        flb_sds_t http_request_key = flb_sds_create(tmp);
-        size_t http_request_key_size = flb_sds_len(http_request_key);
+        http_request_key = flb_sds_create(tmp);
+        http_request_key_size = flb_sds_len(http_request_key);
         if (http_request_key_size < INT_MAX) {
             ctx->http_request_key = http_request_key;
             ctx->http_request_key_size = (int)http_request_key_size;
