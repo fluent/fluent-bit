@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +25,10 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+
+#ifdef FLB_HAVE_PARSER
+#include <fluent-bit/multiline/flb_ml.h>
+#endif
 
 #include "tail.h"
 #include "tail_config.h"
@@ -56,8 +60,8 @@ struct flb_tail_file {
     int mult_firstline_append;  /* bool: mult firstline appendable ?     */
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
-    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer               */
-    msgpack_packer mult_pck;    /* temporary msgpack packer               */
+    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer              */
+    msgpack_packer mult_pck;    /* temporary msgpack packer              */
     struct flb_time mult_time;  /* multiline time parsed from first line */
 
     /* docker mode */
@@ -66,6 +70,9 @@ struct flb_tail_file {
     flb_sds_t dmode_lastline;   /* last incomplete line                  */
     bool dmode_complete;        /* buffer contains completed log         */
     bool dmode_firstline;       /* dmode mult firstline found ?          */
+
+    /* multiline engine: file stream_id */
+    uint64_t ml_stream_id;
 
     /* buffering */
     size_t parsed;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +38,8 @@
     "  rotated INTEGER DEFAULT 0"                                       \
     ");"
 
-#define SQL_GET_FILE "SELECT * from in_tail_files WHERE inode=@inode;"
+#define SQL_GET_FILE                                                    \
+    "SELECT * from in_tail_files WHERE inode=@inode order by id desc;"
 
 #define SQL_INSERT_FILE                                             \
     "INSERT INTO in_tail_files (name, offset, inode, created)"      \
@@ -57,7 +58,7 @@
     "PRAGMA synchronous=%i;"
 
 #define SQL_PRAGMA_JOURNAL_MODE                 \
-    "PRAGMA journal_mode=WAL;"
+    "PRAGMA journal_mode=%s;"
 
 #define SQL_PRAGMA_LOCKING_MODE                 \
     "PRAGMA locking_mode=EXCLUSIVE;"

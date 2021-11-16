@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +27,7 @@
 #define FLB_ERR_CFG_FLUSH             20
 #define FLB_ERR_CFG_FLUSH_CREATE      21
 #define FLB_ERR_CFG_FLUSH_REGISTER    22
+#define FLB_ERR_CUSTOM_INVALID        49
 #define FLB_ERR_INPUT_INVALID         50
 #define FLB_ERR_INPUT_UNDEF           51
 #define FLB_ERR_INPUT_UNSUP           52

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,17 +23,16 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
 
-#include <jsmn/jsmn.h>
+#include <fluent-bit/flb_jsmn.h>
 #include <stdlib.h>
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
-/* HTTP Credentials Endpoints have a standard set of JSON Keys */
-#define AWS_HTTP_RESPONSE_ACCESS_KEY   "AccessKeyId"
-#define AWS_HTTP_RESPONSE_SECRET_KEY   "SecretAccessKey"
-#define AWS_HTTP_RESPONSE_TOKEN        "Token"
-#define AWS_HTTP_RESPONSE_EXPIRATION   "Expiration"
+#define AWS_CREDENTIAL_RESPONSE_ACCESS_KEY   "AccessKeyId"
+#define AWS_CREDENTIAL_RESPONSE_SECRET_KEY   "SecretAccessKey"
+#define AWS_HTTP_RESPONSE_TOKEN              "Token"
+#define AWS_CREDENTIAL_RESPONSE_EXPIRATION   "Expiration"
 
 #define ECS_CREDENTIALS_HOST           "169.254.170.2"
 #define ECS_CREDENTIALS_HOST_LEN       13
@@ -182,6 +181,17 @@ void async_fn_http(struct flb_aws_provider *provider) {
     implementation->client->upstream->flags |= FLB_IO_ASYNC;
 }
 
+void upstream_set_fn_http(struct flb_aws_provider *provider,
+                          struct flb_output_instance *ins) {
+    struct flb_aws_provider_http *implementation = provider->implementation;
+
+    flb_debug("[aws_credentials] upstream_set called on the http provider");
+    /* Make sure TLS is set to false before setting upstream, then reset it */
+    ins->use_tls = FLB_FALSE;
+    flb_output_upstream_set(implementation->client->upstream, ins);
+    ins->use_tls = FLB_TRUE;
+}
+
 void destroy_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
 
@@ -216,6 +226,7 @@ static struct flb_aws_provider_vtable http_provider_vtable = {
     .destroy = destroy_fn_http,
     .sync = sync_fn_http,
     .async = async_fn_http,
+    .upstream_set = upstream_set_fn_http,
 };
 
 struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
@@ -380,6 +391,15 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                                                        size_t response_len,
                                                        time_t *expiration)
 {
+    return flb_parse_json_credentials(response, response_len, AWS_HTTP_RESPONSE_TOKEN,
+                                      expiration);
+}
+
+struct flb_aws_credentials *flb_parse_json_credentials(char *response,
+                                                       size_t response_len,
+                                                       char* session_token_field,
+                                                       time_t *expiration)
+{
     jsmntok_t *tokens = NULL;
     const jsmntok_t *t = NULL;
     char *current_token = NULL;
@@ -411,14 +431,14 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                      tokens, tokens_size);
 
     if (ret == JSMN_ERROR_INVAL || ret == JSMN_ERROR_PART) {
-        flb_error("[aws_credentials] Could not parse http credentials response"
+        flb_error("[aws_credentials] Could not parse credentials response"
                   " - invalid JSON.");
         goto error;
     }
 
     /* Shouldn't happen, but just in case, check for too many tokens error */
     if (ret == JSMN_ERROR_NOMEM) {
-        flb_error("[aws_credentials] Could not parse http credentials response"
+        flb_error("[aws_credentials] Could not parse credentials response"
                   " - response contained more tokens than expected.");
         goto error;
     }
@@ -447,7 +467,7 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
             current_token = &response[t->start];
             len = t->end - t->start;
 
-            if (strncmp(current_token, AWS_HTTP_RESPONSE_ACCESS_KEY, len) == 0)
+            if (strncmp(current_token, AWS_CREDENTIAL_RESPONSE_ACCESS_KEY, len) == 0)
             {
                 i++;
                 t = &tokens[i];
@@ -460,7 +480,7 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                 }
                 continue;
             }
-            if (strncmp(current_token, AWS_HTTP_RESPONSE_SECRET_KEY, len) == 0)
+            if (strncmp(current_token, AWS_CREDENTIAL_RESPONSE_SECRET_KEY, len) == 0)
             {
                 i++;
                 t = &tokens[i];
@@ -474,7 +494,7 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                 }
                 continue;
             }
-            if (strncmp(current_token, AWS_HTTP_RESPONSE_TOKEN, len) == 0) {
+            if (strncmp(current_token, session_token_field, len) == 0) {
                 i++;
                 t = &tokens[i];
                 current_token = &response[t->start];
@@ -486,7 +506,7 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                 }
                 continue;
             }
-            if (strncmp(current_token, AWS_HTTP_RESPONSE_EXPIRATION, len) == 0)
+            if (strncmp(current_token, AWS_CREDENTIAL_RESPONSE_EXPIRATION, len) == 0)
             {
                 i++;
                 t = &tokens[i];
@@ -502,7 +522,7 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
                 if (*expiration < 0) {
                     flb_warn("[aws_credentials] '%s' was invalid or "
                              "could not be parsed. Disabling auto-refresh of "
-                             "credentials.", AWS_HTTP_RESPONSE_EXPIRATION);
+                             "credentials.", AWS_CREDENTIAL_RESPONSE_EXPIRATION);
                 }
             }
         }
@@ -511,20 +531,14 @@ struct flb_aws_credentials *flb_parse_http_credentials(char *response,
     }
 
     if (creds->access_key_id == NULL) {
-        flb_error("[aws_credentials] Missing %s field in http"
-                  "credentials response", AWS_HTTP_RESPONSE_ACCESS_KEY);
+        flb_error("[aws_credentials] Missing %s field in"
+                  "credentials response", AWS_CREDENTIAL_RESPONSE_ACCESS_KEY);
         goto error;
     }
 
     if (creds->secret_access_key == NULL) {
-        flb_error("[aws_credentials] Missing %s field in http"
-                  "credentials response", AWS_HTTP_RESPONSE_SECRET_KEY);
-        goto error;
-    }
-
-    if (creds->session_token == NULL) {
-        flb_error("[aws_credentials] Missing %s field in http"
-                  "credentials response", AWS_HTTP_RESPONSE_TOKEN);
+        flb_error("[aws_credentials] Missing %s field in"
+                  "credentials response", AWS_CREDENTIAL_RESPONSE_SECRET_KEY);
         goto error;
     }
 

@@ -146,6 +146,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
 {
     int ret;
 
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
+
     ret = epoll_ctl(ctx->efd, EPOLL_CTL_DEL, event->fd, NULL);
     MK_TRACE("[FD %i] Epoll, remove from QUEUE_FD=%i, ret=%i",
              event->fd, ctx->efd, ret);
@@ -154,6 +158,8 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
         mk_libc_warn("epoll_ctl");
 #endif
     }
+
+    MK_EVENT_NEW(event);
 
     return ret;
 }
@@ -309,9 +315,15 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
 static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data)
 {
-    (void) ctx;
-    (void) data;
+    struct mk_event *event;
 
+    if (!data) {
+        return 0;
+    }
+
+    event = (struct mk_event *) data;
+    _mk_event_del(ctx, event);
+    close(event->fd);
     return 0;
 }
 

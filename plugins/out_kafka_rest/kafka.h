@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,12 +51,16 @@ struct flb_kafka_rest {
 
     /* HTTP URI */
     char uri[256];
+    char *url_path;
 
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    /* Avro http header*/
+    int avro_http_header;
 };
 
 

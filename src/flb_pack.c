@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -86,11 +86,15 @@ static inline int is_float(const char *buf, int len)
     const char *p = buf;
 
     while (p <= end) {
-        if (*p == '.') {
+        if (*p == 'e' && p < end && *(p + 1) == '-') {
+            return 1;
+        }
+        else if (*p == '.') {
             return 1;
         }
         p++;
     }
+
     return 0;
 }
 
@@ -131,11 +135,13 @@ static inline int pack_string_token(struct flb_pack_state *state,
 /* Receive a tokenized JSON message and convert it to MsgPack */
 static char *tokens_to_msgpack(struct flb_pack_state *state,
                                const char *js,
-                               int *out_size, int *last_byte)
+                               int *out_size, int *last_byte,
+                               int *out_records)
 {
     int i;
     int flen;
     int arr_size;
+    int records = 0;
     const char *p;
     char *buf;
     const jsmntok_t *t;
@@ -163,6 +169,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
 
         if (t->parent == -1) {
             *last_byte = t->end;
+            records++;
         }
 
         flen = (t->end - t->start);
@@ -192,7 +199,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
                     msgpack_pack_double(&pck, atof(p));
                 }
                 else {
-                    msgpack_pack_int64(&pck, atol(p));
+                    msgpack_pack_int64(&pck, atoll(p));
                 }
             }
             break;
@@ -203,6 +210,7 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
     }
 
     *out_size = sbuf.size;
+    *out_records = records;
     buf = sbuf.data;
 
     return buf;
@@ -216,11 +224,11 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
-                  int *root_type)
-
+static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
+                                size_t *size, int *root_type, int *records)
 {
     int ret = -1;
+    int n_records;
     int out;
     int last;
     char *buf = NULL;
@@ -241,7 +249,7 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
         goto flb_pack_json_end;
     }
 
-    buf = tokens_to_msgpack(&state, js, &out, &last);
+    buf = tokens_to_msgpack(&state, js, &out, &last, &n_records);
     if (!buf) {
         ret = -1;
         goto flb_pack_json_end;
@@ -250,12 +258,31 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
     *root_type = state.tokens[0].type;
     *size = out;
     *buffer = buf;
-
+    *records = n_records;
     ret = 0;
 
  flb_pack_json_end:
     flb_pack_state_reset(&state);
     return ret;
+}
+
+/* Pack unlimited serialized JSON messages into msgpack */
+int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
+                  int *root_type)
+{
+    int records;
+
+    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records);
+}
+
+/*
+ * Pack unlimited serialized JSON messages into msgpack, finally it writes on
+ * 'out_records' the number of messages.
+ */
+int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
+                       int *root_type, int *out_records)
+{
+    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records);
 }
 
 /* Initialize a JSON packer state */
@@ -314,6 +341,7 @@ int flb_pack_json_state(const char *js, size_t len,
     int out;
     int delim = 0;
     int last =  0;
+    int records;
     char *buf;
     jsmntok_t *t;
 
@@ -362,7 +390,7 @@ int flb_pack_json_state(const char *js, size_t len,
         return FLB_ERR_JSON_INVAL;
     }
 
-    buf = tokens_to_msgpack(state, js, &out, &last);
+    buf = tokens_to_msgpack(state, js, &out, &last, &records);
     if (!buf) {
         return -1;
     }
@@ -667,7 +695,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     flb_sds_t out_buf;
     flb_sds_t tmp_buf;
 
-    out_size = in_size * 1.5;
+    out_size = in_size * 3 / 2;
     out_buf = flb_sds_create_size(out_size);
     if (!out_buf) {
         flb_errno();
@@ -678,6 +706,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     ret = msgpack_unpack_next(&result, in_buf, in_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         flb_sds_destroy(out_buf);
+        msgpack_unpacked_destroy(&result);
         return NULL;
     }
 
@@ -783,7 +812,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
-        out_buf = flb_sds_create_size(bytes * 1.25);
+        out_buf = flb_sds_create_size(bytes + bytes / 4);
         if (!out_buf) {
             flb_errno();
             return NULL;
@@ -812,6 +841,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == ok) {
         /* Each array must have two entries: time and record */
         root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
         if (root.via.array.size != 2) {
             continue;
         }
@@ -821,6 +853,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 
         /* Get the record/map */
         map = root.via.array.ptr[1];
+        if (map.type != MSGPACK_OBJECT_MAP) {
+            continue;
+        }
         map_size = map.via.map.size;
 
         if (date_key != NULL) {
@@ -896,8 +931,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             /* Encode current record into JSON in a temporary variable */
             out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
             if (!out_js) {
-                msgpack_sbuffer_destroy(&tmp_sbuf);
                 flb_sds_destroy(out_buf);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_unpacked_destroy(&result);
                 return NULL;
             }
 
@@ -907,9 +943,10 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
              */
             out_tmp = flb_sds_cat(out_buf, out_js, flb_sds_len(out_js));
             if (!out_tmp) {
-                msgpack_sbuffer_destroy(&tmp_sbuf);
                 flb_sds_destroy(out_js);
                 flb_sds_destroy(out_buf);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_unpacked_destroy(&result);
                 return NULL;
             }
 
@@ -925,8 +962,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             if (json_format == FLB_PACK_JSON_FORMAT_LINES) {
                 out_tmp = flb_sds_cat(out_buf, "\n", 1);
                 if (!out_tmp) {
-                    msgpack_sbuffer_destroy(&tmp_sbuf);
                     flb_sds_destroy(out_buf);
+                    msgpack_sbuffer_destroy(&tmp_sbuf);
+                    msgpack_unpacked_destroy(&result);
                     return NULL;
                 }
                 if (out_tmp != out_buf) {
@@ -1040,7 +1078,9 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
 
     msgpack_unpacked_init(&result);
-    if ( (i=msgpack_unpack_next(&result, map_data, map_size, &off)) != MSGPACK_UNPACK_SUCCESS ){
+    if ((i=msgpack_unpack_next(&result, map_data, map_size, &off)) !=
+        MSGPACK_UNPACK_SUCCESS ) {
+        msgpack_unpacked_destroy(&result);
         return -1;
     }
     if (result.data.type != MSGPACK_OBJECT_MAP) {
@@ -1055,11 +1095,11 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
     msgpack_pack_map(&pck, map_num);
 
-    for(i=0; i<len; i++) {
+    for (i=0; i<len; i++) {
         msgpack_pack_object(&pck, result.data.via.map.ptr[i].key);
         msgpack_pack_object(&pck, result.data.via.map.ptr[i].val);
     }
-    for(i=0; i<kv_arr_len; i++){
+    for (i=0; i<kv_arr_len; i++){
         msgpack_pack_object(&pck, kv_arr[i]->key);
         msgpack_pack_object(&pck, kv_arr[i]->val);
     }

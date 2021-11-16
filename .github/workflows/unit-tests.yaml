@@ -1,0 +1,92 @@
+name: Run unit tests
+on:
+  push:
+    branches:
+      - master
+      - 1.7
+  pull_request:
+    paths-ignore:
+      - '.github/**'
+      - 'dockerfiles/**'
+      - 'docker_compose/**'
+    branches:
+      - master
+      - 1.7
+    types: [opened, edited, synchronize]
+jobs:
+  run-unit-tests-amd64:
+    name: Run unit tests on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      max-parallel: 48
+      fail-fast: false
+      matrix:
+        flb_option: [ "-DFLB_JEMALLOC=On", "-DFLB_JEMALLOC=Off", "-DFLB_SMALL=On", "-DSANITIZE_ADDRESS=On", "-DSANITIZE_UNDEFINED=On", "-DFLB_COVERAGE=On", "-DFLB_SANITIZE_MEMORY=On", "-DFLB_SANITIZE_THREAD=On"]
+        os: [ubuntu-18.04, macos-latest]
+        compiler: [ gcc, clang ]
+        exclude:
+          - os: macos-latest
+            flb_option: "-DFLB_JEMALLOC=On"
+          - os: macos-latest
+            flb_option: "-DFLB_SMALL=On"
+          - os: macos-latest
+            flb_option: "-DSANITIZE_ADDRESS=On"
+          - os: macos-latest
+            flb_option: "-DSANITIZE_UNDEFINED=On"
+          - os: macos-latest
+            flb_option: "-DFLB_COVERAGE=On"
+          - os: macos-latest
+            flb_option: "-DFLB_JEMALLOC=Off"
+            compiler: clang
+          - os: ubuntu-18.04
+            flb_option: "-DFLB_COVERAGE=On"
+            compiler: clang
+    steps:
+      - name: Setup environment ubuntu-18.04
+        if: matrix.os == 'ubuntu-18.04'
+        run: |
+          sudo apt update
+          sudo apt install -yyq gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr
+          sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
+
+      - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+        with:
+          repository: calyptia/fluent-bit-ci
+          path: ci
+
+      - name: Run ci/s/run-unit-tests.sh on ${{ matrix.os }} with ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+        if: matrix.os == 'ubuntu-18.04'
+        run: |
+          echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
+          sudo usermod -a -G systemd-journal $(id -un)
+          sudo -E su -p $(id -un) -c "PATH=$PATH ci/scripts/run-unit-tests.sh"
+        env:
+          CC: ${{ matrix.compiler }}
+          CXX: ${{ matrix.compiler }}
+          FLB_OPT: ${{ matrix.flb_option }}
+
+      - name: Run ci/s/run-unit-tests.sh on ${{ matrix.os }} with ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
+          brew update
+          brew install bison flex || true
+          ci/scripts/run-unit-tests.sh || true
+        env:
+          CC: gcc
+          CXX: g++
+          FLB_OPT: ${{ matrix.flb_option }}
+
+  run-all-unit-tests:
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    name: Unit tests (matrix)
+    needs: run-unit-tests-amd64
+    steps:
+      - name: Check build matrix status
+        if: ${{ needs.run-unit-tests-amd64.result != 'success' }}
+        run: exit 1

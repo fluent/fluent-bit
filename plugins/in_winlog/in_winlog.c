@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@
 
 #define DEFAULT_INTERVAL_SEC  1
 #define DEFAULT_INTERVAL_NSEC 0
-#define DEFAULT_BUFFER_SIZE 0x7fff /* Max size allowed by Win32 (32kb) */
+#define DEFAULT_BUFFER_SIZE 0x7ffff /* Max size allowed by Win32 (512kb) */
 
 static int in_winlog_collect(struct flb_input_instance *ins,
                              struct flb_config *config, void *in_context);
@@ -142,7 +142,6 @@ static int in_winlog_read_channel(struct flb_input_instance *ins,
         return -1;
     }
     if (read == 0) {
-        flb_plg_trace(ctx->ins, "EOF reached on '%s'", ch->name);
         return 0;
     }
     flb_plg_debug(ctx->ins, "read %u bytes from '%s'", read, ch->name);
@@ -245,6 +244,12 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct winlog_config, string_inserts),
       "Whether to include StringInserts in output records"
     },
+    {
+      FLB_CONFIG_MAP_BOOL, "use_ansi", "false",
+      0, FLB_TRUE, offsetof(struct winlog_config, use_ansi),
+      "Use ANSI encoding on eventlog messages"
+    },
+
     /* EOF */
     {0}
 };

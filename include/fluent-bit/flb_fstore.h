@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ struct flb_fstore_file {
     size_t meta_size;               /* metadata size */
     void *data;                     /* opaque data type for user/caller context */
     struct cio_chunk *chunk;        /* chunk context */
-    struct cio_chunk *stream;       /* parent stream that owns this file */
+    struct cio_stream *stream;      /* parent stream that owns this file */
     struct mk_list _head;           /* link to parent flb_fstore->files */
 };
 
@@ -81,6 +81,9 @@ int flb_fstore_file_content_copy(struct flb_fstore *fs,
                                  void **out_buf, size_t *out_size);
 
 int flb_fstore_file_append(struct flb_fstore_file *fsf, void *data, size_t size);
+struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
+                                            struct flb_fstore_stream *fs_stream,
+                                            char *name, size_t size);
 int flb_fstore_file_inactive(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf);
 int flb_fstore_file_delete(struct flb_fstore *fs,

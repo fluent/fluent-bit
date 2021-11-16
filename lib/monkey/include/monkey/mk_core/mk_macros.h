@@ -166,7 +166,11 @@
   #define MK_EXPORT __declspec(dllexport)
 #endif
 
-#define MK_INLINE inline __attribute__((always_inline))
+#ifdef _WIN32
+    #define MK_INLINE __forceinline
+#else
+    #define MK_INLINE inline __attribute__((always_inline))
+#endif
 
 /* Some old libc do not declare O_CLOEXEC */
 #ifndef O_CLOEXEC

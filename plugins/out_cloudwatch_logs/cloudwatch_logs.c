@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -162,6 +162,13 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
+    ctx->retry_requests = FLB_FALSE;
+    tmp = flb_output_get_property("auto_retry_requests", ins);
+    /* native plugins use On/Off as bool, the old Go plugin used true/false */
+    if (tmp && (strcasecmp(tmp, "On") == 0 || strcasecmp(tmp, "true") == 0)) {
+        ctx->retry_requests = FLB_TRUE;
+    }
+
     ctx->log_retention_days = 0;
     tmp = flb_output_get_property("log_retention_days", ins);
     if (tmp) {
@@ -277,6 +284,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     /* initialize credentials and set to sync mode */
     ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
     ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+    ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
 
     if (ctx->endpoint == NULL) {
         ctx->endpoint = flb_aws_endpoint("logs", (char *) ctx->region);
@@ -301,10 +309,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
     ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
+    ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
-                                                        &ctx->client_tls);
+                                                        ctx->client_tls);
     if (!upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         goto error;
@@ -400,7 +409,8 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_info(ctx->ins, "Sent %d events to CloudWatch", event_count);
+    // TODO: this msg is innaccurate if events are skipped
+    flb_plg_debug(ctx->ins, "Sent %d events to CloudWatch", event_count);
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
@@ -548,6 +558,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Automatically create the log group (log streams will always automatically"
      " be created)"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     0, FLB_FALSE, 0,
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     {

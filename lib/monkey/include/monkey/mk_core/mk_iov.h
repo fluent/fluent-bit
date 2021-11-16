@@ -21,7 +21,7 @@
 #define MK_IOV_H
 
 #include <stdio.h>
-#include <sys/uio.h>
+#include "mk_uio.h"
 #include "mk_utils.h"
 #include "mk_macros.h"
 
@@ -50,7 +50,7 @@ struct mk_iov {
     int buf_idx;
     int size;
     unsigned long total_len;
-    struct iovec *io;
+    struct mk_iovec *io;
     void **buf_to_free;
 };
 

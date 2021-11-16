@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -206,6 +206,26 @@ static int in_fw_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_STR, "unix_path", NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_path),
+    "The path to unix socket to receive a Forward message."
+   },
+   {
+    FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_IN_FW_CHUNK_SIZE,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_chunk_size),
+    "The buffer memory size used to receive a Forward message."
+   },
+   {
+    FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_FW_CHUNK_MAX_SIZE,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_max_size),
+    "The maximum buffer memory size used to receive a Forward message."
+   },
+   {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_forward_plugin = {
     .name         = "forward",
@@ -216,5 +236,6 @@ struct flb_input_plugin in_forward_plugin = {
     .cb_flush_buf = NULL,
     .cb_pause     = in_fw_pause,
     .cb_exit      = in_fw_exit,
+    .config_map   = config_map,
     .flags        = FLB_INPUT_NET
 };

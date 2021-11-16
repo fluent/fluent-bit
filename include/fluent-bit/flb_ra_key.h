@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +54,12 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
                                          msgpack_object map,
                                          struct mk_list *subkeys);
 void flb_ra_key_value_destroy(struct flb_ra_value *v);
+
+int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
+                         struct mk_list *subkeys,
+                         msgpack_object **start_key,
+                         msgpack_object **out_key, msgpack_object **out_val);
+
 int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
                       struct mk_list *subkeys, char *str, int len);
 int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,

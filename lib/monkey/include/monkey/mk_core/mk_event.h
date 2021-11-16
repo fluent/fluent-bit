@@ -122,6 +122,7 @@ static inline void MK_EVENT_NEW(struct mk_event *e)
     e->status = MK_EVENT_NONE;
 }
 
+int mk_event_init();
 int mk_event_initialize();
 struct mk_event_loop *mk_event_loop_create(int size);
 void mk_event_loop_destroy(struct mk_event_loop *loop);
@@ -130,6 +131,7 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
 int mk_event_del(struct mk_event_loop *loop, struct mk_event *event);
 int mk_event_timeout_create(struct mk_event_loop *loop,
                             time_t sec, long nsec,void *data);
+int mk_event_timeout_disable(struct mk_event_loop *loop, void *data);
 int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data);
 int mk_event_channel_create(struct mk_event_loop *loop,
                             int *r_fd, int *w_fd, void *data);

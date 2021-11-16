@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_utils.h>
 #include <mbedtls/base64.h>
 
 #include "azure.h"
@@ -42,6 +43,15 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->ins = ins;
+
+    /* Set context */
+    flb_output_set_context(ins, ctx);
+
+    /* Load config map */
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        return NULL;
+    }
 
     /* config: 'customer_id' */
     cid = flb_output_get_property("customer_id", ins);
@@ -108,6 +118,15 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     if (!ctx->time_key) {
         flb_azure_conf_destroy(ctx);
         return NULL;
+    }
+
+    /* config: 'time_generated' */
+    tmp = flb_output_get_property("time_generated", ins);
+    if (tmp) {
+        ctx->time_generated = flb_utils_bool(tmp);
+    }
+    else {
+        ctx->time_generated = FLB_FALSE;
     }
 
     /* Validate hostname given by command line or 'Host' property */
@@ -182,6 +201,7 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
     ctx->u = upstream;
+    flb_output_upstream_set(ctx->u, ins);
 
     /* Compose uri */
     ctx->uri = flb_sds_create_size(1024);

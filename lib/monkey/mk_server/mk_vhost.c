@@ -26,31 +26,25 @@
 #include <monkey/mk_http_status.h>
 #include <monkey/mk_info.h>
 
-#include <regex.h>
-#include <sys/stat.h>
-#include <dirent.h>
-#include <fcntl.h>
+#include <mk_core/mk_dirent.h>
 
-/* Initialize Virtual Host FDT mutex */
-pthread_mutex_t mk_vhost_fdt_mutex = PTHREAD_MUTEX_INITIALIZER;
+#include <re.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 static int str_to_regex(char *str, regex_t *reg)
 {
-    int ret;
-    char tmp[80];
     char *p = str;
+    regex_t *result;
 
     while (*p) {
         if (*p == ' ') *p = '|';
         p++;
     }
 
-    ret = regcomp(reg, str, REG_EXTENDED|REG_ICASE|REG_NOSUB);
-    if (ret) {
-        regerror(ret, reg, tmp, sizeof(tmp));
-        mk_err("Handler config: Failed to compile regex: %s", tmp);
-        return -1;
-    }
+    result = re_compile(str);
+
+    memcpy(reg, result, REGEXP_SIZE);
 
     return 0;
 }
@@ -86,7 +80,7 @@ int mk_vhost_fdt_worker_init(struct mk_server *server)
      * Under an initialization context we need to protect this critical
      * section
      */
-    pthread_mutex_lock(&mk_vhost_fdt_mutex);
+    pthread_mutex_lock(&server->vhost_fdt_mutex);
 
     /*
      * Initialize the thread FDT/Hosts list and create an entry per
@@ -118,7 +112,7 @@ int mk_vhost_fdt_worker_init(struct mk_server *server)
     }
 
     MK_TLS_SET(mk_tls_vhost_fdt, list);
-    pthread_mutex_unlock(&mk_vhost_fdt_mutex);
+    pthread_mutex_unlock(&server->vhost_fdt_mutex);
 
     return 0;
 }
@@ -326,7 +320,7 @@ struct mk_vhost_handler *mk_vhost_handler_match(char *match,
     h->name  = NULL;
     h->cb    = cb;
     h->data  = data;
-    h->match = mk_mem_alloc(sizeof(regex_t));
+    h->match = mk_mem_alloc(REGEXP_SIZE);
     if (!h->match) {
         mk_mem_free(h);
         return NULL;
@@ -516,6 +510,11 @@ struct mk_vhost *mk_vhost_read(char *path)
             }
             h_handler = mk_mem_alloc(sizeof(struct mk_vhost_handler));
             if (!h_handler) {
+                exit(EXIT_FAILURE);
+            }
+            h_handler->match = mk_mem_alloc(REGEXP_SIZE);
+            if (!h_handler->match) {
+                mk_mem_free(h_handler);
                 exit(EXIT_FAILURE);
             }
             h_handler->cb = NULL;
@@ -745,57 +744,78 @@ static void mk_vhost_handler_free(struct mk_vhost_handler *h)
         mk_mem_free(param);
     }
 
-    regfree(h->match);
     mk_mem_free(h->match);
     mk_mem_free(h->name);
     mk_mem_free(h);
 }
 
-void mk_vhost_free_all(struct mk_server *server)
+int mk_vhost_destroy(struct mk_vhost *vh)
 {
-    struct mk_vhost *host;
-    struct mk_vhost_alias *host_alias;
-    struct mk_vhost_handler *host_handler;
+    struct mk_vhost_alias *halias = NULL;
+    struct mk_vhost_handler *hhandler;
     struct mk_vhost_error_page *ep;
     struct mk_list *head;
     struct mk_list *tmp;
-    struct mk_list *head2;
-    struct mk_list *tmp2;
 
-    mk_list_foreach_safe(head, tmp, &server->hosts) {
-        host = mk_list_entry(head, struct mk_vhost, _head);
-
+    if (vh) {
         /* Free aliases or servernames */
-        mk_list_foreach_safe(head2, tmp2, &host->server_names) {
-            host_alias = mk_list_entry(head2, struct mk_vhost_alias, _head);
-            mk_list_del(&host_alias->_head);
-            mk_mem_free(host_alias->name);
-            mk_mem_free(host_alias);
+        mk_list_foreach_safe(head, tmp, &vh->server_names) {
+            halias = mk_list_entry(head, struct mk_vhost_alias, _head);
+            if (halias) {
+                mk_list_del(&halias->_head);
+                if (halias->name) {
+                    mk_mem_free(halias->name);
+                }
+                mk_mem_free(halias);
+            }
         }
 
         /* Handlers */
-        mk_list_foreach_safe(head2, tmp2, &host->handlers) {
-            host_handler = mk_list_entry(head2, struct mk_vhost_handler, _head);
-            mk_vhost_handler_free(host_handler);
+        mk_list_foreach_safe(head, tmp, &vh->handlers) {
+            hhandler = mk_list_entry(head, struct mk_vhost_handler, _head);
+            if (hhandler) {
+                mk_vhost_handler_free(hhandler);
+            }
         }
 
         /* Free error pages */
-        mk_list_foreach_safe(head2, tmp2, &host->error_pages) {
-            ep = mk_list_entry(head2, struct mk_vhost_error_page, _head);
-            mk_list_del(&ep->_head);
-            mk_mem_free(ep->file);
-            mk_mem_free(ep->real_path);
-            mk_mem_free(ep);
+        mk_list_foreach_safe(head, tmp, &vh->error_pages) {
+            ep = mk_list_entry(head, struct mk_vhost_error_page, _head);
+            if (ep) {
+                mk_list_del(&ep->_head);
+                if (ep->file) {
+                    mk_mem_free(ep->file);
+                }
+                if (ep->real_path) {
+                    mk_mem_free(ep->real_path);
+                }
+                mk_mem_free(ep);
+            }
         }
-
-        mk_ptr_free(&host->documentroot);
+        mk_ptr_free(&vh->documentroot);
 
         /* Free source configuration */
-        if (host->config) {
-            mk_rconf_free(host->config);
+        if (vh->config) {
+            mk_rconf_free(vh->config);
         }
-        mk_list_del(&host->_head);
-        mk_mem_free(host->file);
-        mk_mem_free(host);
+        mk_list_del(&vh->_head);
+        if (vh->file) {
+            mk_mem_free(vh->file);
+        }
+
+        mk_mem_free(vh);
+    }
+    return 0;
+}
+
+void mk_vhost_free_all(struct mk_server *server)
+{
+    struct mk_vhost *host;
+    struct mk_list *head;
+    struct mk_list *tmp;
+
+    mk_list_foreach_safe(head, tmp, &server->hosts) {
+        host = mk_list_entry(head, struct mk_vhost, _head);
+        mk_vhost_destroy(host);
     }
 }

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,6 +59,33 @@ void winlog_close(struct winlog_channel *ch)
     CloseEventLog(ch->h);
     flb_free(ch);
 }
+
+/*
+ * This routine is called when Windows Event Log was cleared
+ * while reading (e.g. running Clear-EventLog on PowerShell).
+ *
+ * In such a case, the only neat thing to do is to reopen the
+ * channel and start reading from the beginning.
+ */
+int winlog_on_cleared(struct winlog_channel *ch)
+{
+    HANDLE h;
+
+    h = OpenEventLogA(NULL, ch->name);
+    if (!h) {
+        flb_error("[in_winlog] cannot open '%s' (%i)", ch->name, GetLastError());
+        return -1;
+    }
+
+    if (ch->h) {
+        CloseEventLog(ch->h);
+    }
+
+    ch->h = h;
+    ch->seek = 0;
+    return 0;
+}
+
 
 /*
  * ReadEventLog() has a known bug that SEEK_READ fails when the log file
@@ -138,12 +165,19 @@ int winlog_read(struct winlog_channel *ch, char *buf, unsigned int size,
         flags = EVENTLOG_SEQUENTIAL_READ | EVENTLOG_FORWARDS_READ;
     }
 
+    /*
+     * Note: ReadEventLogW() ignores `ch->record_number` (dwRecordOffset)
+     * if EVENTLOG_SEEK_READ is not set.
+     */
     if (!ReadEventLogW(ch->h, flags, ch->record_number, buf, size, read, &req)) {
         switch (err = GetLastError()) {
             case ERROR_HANDLE_EOF:
                 break;
             case ERROR_INVALID_PARAMETER:
                 return winlog_seek(ch, buf, size, read);
+            case ERROR_EVENTLOG_FILE_CHANGED:
+                flb_info("[in_winlog] channel '%s' is cleared. reopen it.", ch->name);
+                return winlog_on_cleared(ch);
             default:
                 flb_error("[in_winlog] cannot read '%s' (%i)", ch->name, err);
                 return -1;

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,17 +26,18 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_metrics.h>
 
 struct flb_me {
     int fd;
     struct flb_config *config;
     struct mk_event event;
-
 };
 
 int flb_me_fd_event(int fd, struct flb_me *me);
 struct flb_me *flb_me_create(struct flb_config *ctx);
 int flb_me_destroy(struct flb_me *me);
+struct cmt *flb_me_get_cmetrics(struct flb_config *ctx);
 
 #endif
 #endif /* FLB_HAVE_METRICS */

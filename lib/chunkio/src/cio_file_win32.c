@@ -59,7 +59,7 @@ static char init_bytes[] = {
     CIO_FILE_ID_00, CIO_FILE_ID_01,
 
     /* crc32 (4 bytes) in network byte order */
-    0xff, 0x12, 0xd9, 0x41,
+    0x41, 0xd9, 0x12, 0xff,
 
     /* padding bytes (we have 16 extra bytes */
     0x00, 0x00, 0x00, 0x00, 0x00,
@@ -327,6 +327,33 @@ static int is_valid_file_name(const char *name)
         }
     }
     return 1;
+}
+
+/*
+ * Fetch the file size regardless of if we opened this file or not.
+ */
+size_t cio_file_real_size(struct cio_file *cf)
+{
+    int ret;
+#ifdef _WIN64
+    struct _stat64 st;
+#else
+    struct _stat32 st;
+#endif
+
+    /* Store the current real size */
+#ifdef _WIN64
+    ret = _stat64(cf->path, &st);
+#else
+    ret = _stat32(cf->path, &st);
+#endif
+
+    if (ret != 0) {
+        cio_errno();
+        return 0;
+    }
+
+    return st.st_size;
 }
 
 /*

@@ -1,3 +1,21 @@
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -9,10 +27,12 @@
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_sha512.h>
 #include <fluent-bit/flb_regex.h>
+#include "flb_fuzz_header.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    /* We need a bit of data in this fuzzer */
+    TIMEOUT_GUARD
+
     if (size < 600) {
         return 0;
     }
@@ -48,18 +68,28 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         flb_free(uri);
     }
 
-    char *split_protocol;
-    char *split_username;
-    char *split_password;
-    char *split_host;
-    char *split_port;
+    char *split_protocol = NULL;
+    char *split_username = NULL;
+    char *split_password = NULL;
+    char *split_host     = NULL;
+    char *split_port     = NULL;
     if (flb_utils_proxy_url_split(null_terminated, &split_protocol,
-            split_username, split_password, split_host, split_port) == 0) {
-        flb_free(split_protocol);
-        flb_free(split_username);
-        flb_free(split_password);
-        flb_free(split_host);
-        flb_free(split_port);
+            &split_username, &split_password, &split_host, &split_port) == 0) {
+        if (split_protocol) {
+            flb_free(split_protocol);
+        }
+        if (split_username) {
+            flb_free(split_username);
+        }
+        if (split_password) {
+            flb_free(split_password);
+        }
+        if (split_host) {
+            flb_free(split_host);
+        }
+        if (split_port) {
+            flb_free(split_port);
+        }
     }
 
 
@@ -112,7 +142,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         for(int i = 0; i < 20; i++) {
             char *hash_out_buf;
             size_t hash_out_size;
-            flb_hash_get_by_id(ht, (int)data[i], (char*)&data[i+1],
+            flb_hash_get_by_id(ht, (int)data[i], null_terminated,
                                (const char **)&hash_out_buf, &hash_out_size);
         }
 

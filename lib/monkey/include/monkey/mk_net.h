@@ -31,6 +31,8 @@ struct mk_net_connection {
     void *thread;
 };
 
+int mk_net_init();
+
 struct mk_net_connection *mk_net_conn_create(char *addr, int port);
 int mk_net_conn_write(struct mk_channel *channel,
                       void *data, size_t len);

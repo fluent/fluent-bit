@@ -24,8 +24,6 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
     ${src}
     "external/winpthreads.c"
     )
-  include_directories(deps/libevent/include)
-  include_directories("${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include/")
   add_subdirectory(deps/)
 else()
   MK_DEFINITION(MK_THREADS_POSIX)
@@ -54,10 +52,28 @@ check_c_source_compiles("
   }" HAVE_SYS_UIO_H)
 
 if (HAVE_SYS_UIO_H)
-  set(src "${src}"
-    mk_iov.c
-    )
   MK_DEFINITION(MK_HAVE_SYS_UIO_H)
+endif()
+
+# We need to compile mk_iov regardless of system UIO support
+set(src "${src}"
+  mk_iov.c
+  )
+
+check_c_source_compiles("
+  #include <string.h>
+  int main() {
+     char  haystack[] = \"1234\";
+     char  needle[] = \"23\";
+     void *result;
+
+     result = memmem(haystack, sizeof(haystack) - 1, needle, sizeof(needle) - 1);
+
+     return (NULL != result);
+  }" HAVE_MEMMEM)
+
+if (HAVE_MEMMEM)
+  MK_DEFINITION(MK_HAVE_MEMMEM)
 endif()
 
 # Check for unistd.h

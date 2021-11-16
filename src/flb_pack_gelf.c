@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -719,8 +719,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
                 }
                 else if (v->type == MSGPACK_OBJECT_EXT) {
                     quote   = FLB_TRUE;
-                    val     = o->via.ext.ptr;
-                    val_len = o->via.ext.size;
+                    val     = v->via.ext.ptr;
+                    val_len = v->via.ext.size;
                 }
 
                 if (!val || !key) {
@@ -762,7 +762,8 @@ flb_sds_t flb_msgpack_to_gelf(flb_sds_t *s, msgpack_object *o,
         }
         *s = tmp;
 
-        tmp = flb_sds_printf(s, "%" PRIu32".%lu",
+        /* gelf supports milliseconds */
+        tmp = flb_sds_printf(s, "%" PRIu32".%03lu",
                              tm->tm.tv_sec, tm->tm.tv_nsec / 1000000);
         if (tmp == NULL) {
             return NULL;
@@ -801,6 +802,7 @@ flb_sds_t flb_msgpack_raw_to_gelf(char *buf, size_t buf_size,
     msgpack_unpacked_init(&result);
     ret = msgpack_unpack_next(&result, buf, buf_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
+        msgpack_unpacked_destroy(&result);
         return NULL;
     }
 

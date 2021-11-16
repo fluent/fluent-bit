@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +38,7 @@ static int decode_json(struct flb_parser_dec *dec,
 {
     int ret;
     int root_type;
+    int records;
     char *buf;
     const char *p;
     size_t size;
@@ -53,8 +54,14 @@ static int decode_json(struct flb_parser_dec *dec,
         return -1;
     }
 
-    ret = flb_pack_json(p, len, &buf, &size, &root_type);
+    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records);
     if (ret != 0) {
+        return -1;
+    }
+
+    /* We expect to decode only one JSON element */
+    if (records != 1) {
+        flb_free(buf);
         return -1;
     }
 
@@ -385,6 +392,10 @@ int flb_parser_decoder_do(struct mk_list *decoders,
          * The content of this buffer is just a serialized number of maps.
          */
         if (dec->add_extra_keys == FLB_TRUE) {
+            /* We need to clean up already allocated extra buffers */
+            if (extra_keys == FLB_TRUE) {
+                msgpack_sbuffer_destroy(&extra_mp_sbuf);
+            }
             extra_keys = FLB_TRUE;
             msgpack_sbuffer_init(&extra_mp_sbuf);
             msgpack_packer_init(&extra_mp_pck, &extra_mp_sbuf,

@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -195,12 +195,18 @@ static int cb_throttle_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    ctx->hash = window_create(ctx->window_size);
+    ticker_ctx = flb_malloc(sizeof(struct ticker));
+    if (!ticker_ctx) {
+        flb_errno();
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Set our context */
     flb_filter_set_context(f_ins, ctx);
 
-    ticker_ctx = flb_malloc(sizeof(struct ticker));
+    ctx->hash = window_create(ctx->window_size);
+
     ticker_ctx->ctx = ctx;
     ticker_ctx->done = false;
     ticker_ctx->seconds = parse_duration(ctx, ctx->slide_interval);

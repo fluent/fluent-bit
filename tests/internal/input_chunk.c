@@ -258,7 +258,7 @@ void flb_test_input_chunk_dropping_chunks()
 
     /* create chunks in /tmp folder */
     ret = flb_service_set(ctx,
-                          "flush", "1", "grace", "1",
+                          "flush", "2", "grace", "1",
                           "storage.path", "/tmp/input-chunk-test/",
                           "Log_Level", "error",
                           NULL);

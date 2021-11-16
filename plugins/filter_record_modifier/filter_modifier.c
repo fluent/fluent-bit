@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,7 +45,7 @@ static int configure(struct record_modifier_ctx *ctx,
 
     ctx->records_num = 0;
     ctx->remove_keys_num = 0;
-    ctx->whitelist_keys_num = 0;
+    ctx->allowlist_keys_num = 0;
 
     /* Iterate all filter properties */
     mk_list_foreach(head, &f_ins->properties) {
@@ -69,7 +69,8 @@ static int configure(struct record_modifier_ctx *ctx,
             mk_list_add(&mod_key->_head, &ctx->remove_keys);
             ctx->remove_keys_num++;
         }
-        else if (!strcasecmp(kv->key, "whitelist_key")) {
+        else if (!strcasecmp(kv->key, "allowlist_key") ||
+                 !strcasecmp(kv->key, "whitelist_key")) {
             mod_key = flb_malloc(sizeof(struct modifier_key));
             if (!mod_key) {
                 flb_errno();
@@ -84,8 +85,8 @@ static int configure(struct record_modifier_ctx *ctx,
             else {
                 mod_key->dynamic_key = FLB_FALSE;
             }
-            mk_list_add(&mod_key->_head, &ctx->whitelist_keys);
-            ctx->whitelist_keys_num++;
+            mk_list_add(&mod_key->_head, &ctx->allowlist_keys);
+            ctx->allowlist_keys_num++;
         }
         else if (!strcasecmp(kv->key, "record")) {
             mod_record = flb_malloc(sizeof(struct modifier_record));
@@ -116,8 +117,8 @@ static int configure(struct record_modifier_ctx *ctx,
         }
     }
 
-    if (ctx->remove_keys_num > 0 && ctx->whitelist_keys_num > 0) {
-        flb_plg_error(ctx->ins, "remove_keys and whitelist_keys are exclusive "
+    if (ctx->remove_keys_num > 0 && ctx->allowlist_keys_num > 0) {
+        flb_plg_error(ctx->ins, "remove_keys and allowlist_keys are exclusive "
                       "with each other.");
         return -1;
     }
@@ -136,7 +137,7 @@ static int delete_list(struct record_modifier_ctx *ctx)
         mk_list_del(&key->_head);
         flb_free(key);
     }
-    mk_list_foreach_safe(head, tmp, &ctx->whitelist_keys) {
+    mk_list_foreach_safe(head, tmp, &ctx->allowlist_keys) {
         key = mk_list_entry(head, struct modifier_key,  _head);
         mk_list_del(&key->_head);
         flb_free(key);
@@ -167,7 +168,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
     }
     mk_list_init(&ctx->records);
     mk_list_init(&ctx->remove_keys);
-    mk_list_init(&ctx->whitelist_keys);
+    mk_list_init(&ctx->allowlist_keys);
     ctx->ins = f_ins;
 
     if ( configure(ctx, f_ins) < 0 ){
@@ -204,8 +205,8 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
         check = &(ctx->remove_keys);
         is_to_delete = FLB_TRUE;
     }
-    else if(ctx->whitelist_keys_num > 0) {
-        check = &(ctx->whitelist_keys);
+    else if(ctx->allowlist_keys_num > 0) {
+        check = &(ctx->allowlist_keys);
         is_to_delete = FLB_FALSE;
     }
 
@@ -248,6 +249,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
+#define BOOL_MAP_LIMIT 65535
 static int cb_modifier_filter(const void *data, size_t bytes,
                               const char *tag, int tag_len,
                               void **out_buf, size_t *out_size,
@@ -261,7 +263,7 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     int i;
     int removed_map_num  = 0;
     int map_num          = 0;
-    bool_map_t bool_map[128];
+    bool_map_t *bool_map = NULL;
     (void) f_ins;
     (void) config;
     struct flb_time tm;
@@ -283,6 +285,11 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         map_num = 0;
         removed_map_num = 0;
+        if (bool_map != NULL) {
+            flb_free(bool_map);
+            bool_map = NULL;
+        }
+
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }
@@ -292,6 +299,17 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         /* grep keys */
         if (obj->type == MSGPACK_OBJECT_MAP) {
             map_num = obj->via.map.size;
+            if (map_num > BOOL_MAP_LIMIT) {
+                flb_plg_error(ctx->ins, "The number of elements exceeds limit %d",
+                              BOOL_MAP_LIMIT);
+                return -1;
+            }
+            /* allocate map_num + guard byte */
+            bool_map = flb_calloc(map_num+1, sizeof(bool_map_t));
+            if (bool_map == NULL) {
+                flb_errno();
+                return -1;
+            }
             removed_map_num = make_bool_map(ctx, obj,
                                             bool_map, obj->via.map.size);
         }
@@ -319,6 +337,8 @@ static int cb_modifier_filter(const void *data, size_t bytes,
                 msgpack_pack_object(&tmp_pck, (kv+i)->val);
             }
         }
+        flb_free(bool_map);
+        bool_map = NULL;
 
         /* append record */
         if (ctx->records_num > 0) {
@@ -335,6 +355,9 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         }
     }
     msgpack_unpacked_destroy(&result);
+    if (bool_map != NULL) {
+        flb_free(bool_map);
+    }
 
     if (is_modified != FLB_TRUE) {
         /* Destroy the buffer to avoid more overhead */

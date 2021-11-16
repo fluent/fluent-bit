@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -306,6 +306,7 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
         new->set_property = m->set_property;
         new->offset = m->offset;
         new->value.mult = NULL;
+        new->desc = m->desc;
         mk_list_add(&new->_head, list);
 
         if (new->set_property == FLB_FALSE) {

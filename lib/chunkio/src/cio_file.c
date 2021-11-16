@@ -305,7 +305,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     }
 
     /* Mmap */
-    if (cf->flags & CIO_OPEN) {
+    if (cf->flags & CIO_OPEN_RW) {
         oflags = PROT_READ | PROT_WRITE;
     }
     else if (cf->flags & CIO_OPEN_RD) {
@@ -318,6 +318,11 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         cf->synced = CIO_TRUE;
     }
     else if (fs_size == 0) {
+        /* We can only prepare a file if it has been opened in RW mode */
+        if ((cf->flags & CIO_OPEN_RW) == 0) {
+            return CIO_CORRUPTED;
+        }
+
         cf->synced = CIO_FALSE;
 
         /* Adjust size to make room for headers */
@@ -334,6 +339,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
                           cf->path, size);
             return CIO_ERROR;
         }
+
+        cio_log_debug(ctx, "%s:%s adjusting size OK", ch->st->name, ch->name);
     }
 
     /* Map the file */
@@ -397,7 +404,7 @@ static int file_open(struct cio_ctx *ctx, struct cio_file *cf)
     }
 
     /* Open file descriptor */
-    if (cf->flags & CIO_OPEN) {
+    if (cf->flags & CIO_OPEN_RW) {
         cf->fd = open(cf->path, O_RDWR | O_CREAT, (mode_t) 0600);
     }
     else if (cf->flags & CIO_OPEN_RD) {
@@ -501,10 +508,28 @@ static inline int open_and_up(struct cio_ctx *ctx)
 }
 
 /*
+ * Fetch the file size regardless of if we opened this file or not.
+ */
+size_t cio_file_real_size(struct cio_file *cf)
+{
+    int ret;
+    struct stat st;
+
+    /* Store the current real size */
+    ret = stat(cf->path, &st);
+    if (ret == -1) {
+        cio_errno();
+        return 0;
+    }
+
+    return st.st_size;
+}
+
+/*
  * Open or create a data file: the following behavior is expected depending
  * of the passed flags:
  *
- * CIO_OPEN:
+ * CIO_OPEN | CIO_OPEN_RW:
  *    - Open for read/write, if the file don't exist, it's created and the
  *      memory map size is assigned to the given value on 'size'.
  *
@@ -521,6 +546,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     int ret;
     int len;
     char *path;
+    struct stat f_st;
     struct cio_file *cf;
 
     len = strlen(ch->name);
@@ -567,6 +593,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     /* Should we open and put this file up ? */
     ret = open_and_up(ctx);
     if (ret == CIO_FALSE) {
+        /* make sure to set the file size before to return */
+        ret = stat(cf->path, &f_st);
+        if (ret == 0) {
+            cf->fs_size = f_st.st_size;
+        }
+
         /* we reached our limit, let the file 'down' */
         return cf;
     }
@@ -755,7 +787,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     }
 
     if (cio_chunk_is_up(ch) == CIO_FALSE) {
-        cio_log_error("[cio file] file is not mmap()ed: %s:%s",
+        cio_log_error(ch->ctx, "[cio file] file is not mmap()ed: %s:%s",
                       ch->st->name, ch->name);
         return -1;
     }
@@ -1013,6 +1045,14 @@ int cio_file_sync(struct cio_chunk *ch)
     }
 
     cf->synced = CIO_TRUE;
+
+    ret = fstat(cf->fd, &fst);
+    if (ret == -1) {
+        cio_errno();
+        return -1;
+    }
+    cf->fs_size = fst.st_size;
+
     cio_log_debug(ch->ctx, "[cio file] synced at: %s/%s",
                   ch->st->name, ch->name);
     return 0;
@@ -1041,11 +1081,22 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
          * fallocate() is not portable, Linux only.
          */
         ret = fallocate(cf->fd, 0, 0, new_size);
+        if (ret == EOPNOTSUPP) {
+            /* If fallocate fails with an EOPNOTSUPP try operation using
+             * posix_fallocate. Required since some filesystems do not support
+             * the fallocate operation e.g. ext3 and reiserfs.
+             */
+            ret = posix_fallocate(cf->fd, 0, new_size);
+        }
     }
     else
 #endif
     {
         ret = ftruncate(cf->fd, new_size);
+    }
+
+    if (!ret) {
+        cf->fs_size = new_size;
     }
 
     return ret;

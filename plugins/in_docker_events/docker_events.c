@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,6 +75,150 @@ static int de_unix_create(struct flb_in_de_config *ctx)
     return 0;
 }
 
+static int in_de_collect(struct flb_input_instance *ins,
+                         struct flb_config *config, void *in_context);
+
+static int reconnect_docker_sock(struct flb_input_instance *ins,
+                                 struct flb_config *config,
+                                 struct flb_in_de_config *ctx)
+{
+    int ret;
+
+    /* remove old socket collector */
+    if (ctx->coll_id >= 0) {
+        ret = flb_input_collector_delete(ctx->coll_id, ins);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "failed to pause event");
+            return -1;
+        }
+        ctx->coll_id = -1;
+    }
+    if (ctx->fd > 0) {
+        flb_plg_debug(ctx->ins, "close socket fd=%d", ctx->fd);
+        close(ctx->fd);
+        ctx->fd = -1;
+    }
+
+    /* create socket again */
+    if (de_unix_create(ctx) < 0) {
+        flb_plg_error(ctx->ins, "failed to re-initialize socket");
+        if (ctx->fd > 0) {
+            flb_plg_debug(ctx->ins, "close socket fd=%d", ctx->fd);
+            close(ctx->fd);
+            ctx->fd = -1;
+        }
+        return -1;
+    }
+    /* set event */
+    ctx->coll_id = flb_input_set_collector_event(ins,
+                                                 in_de_collect,
+                                                 ctx->fd, config);
+    if (ctx->coll_id < 0) {
+        flb_plg_error(ctx->ins,
+                      "could not set collector for IN_DOCKER_EVENTS plugin");
+        close(ctx->fd);
+        ctx->fd = -1;
+        return -1;
+    }
+    ret = flb_input_collector_start(ctx->coll_id, ins);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins,
+                      "could not start collector for IN_DOCKER_EVENTS plugin");
+        flb_input_collector_delete(ctx->coll_id, ins);
+        close(ctx->fd);
+        ctx->coll_id = -1;
+        ctx->fd = -1;
+        return -1;
+    }
+
+    flb_plg_info(ctx->ins, "Reconnect successful");
+    return 0;
+}
+
+static int cb_reconnect(struct flb_input_instance *ins,
+                       struct flb_config *config,
+                       void *in_context)
+{
+    struct flb_in_de_config *ctx = in_context;
+    int ret;
+
+    flb_plg_info(ctx->ins, "Retry(%d/%d)",
+                 ctx->current_retries, ctx->reconnect_retry_limits);
+    ret = reconnect_docker_sock(ins, config, ctx);
+    if (ret < 0) {
+        /* Failed to reconnect */
+        ctx->current_retries++;
+        if (ctx->current_retries > ctx->reconnect_retry_limits) {
+            /* give up */
+            flb_plg_error(ctx->ins, "Failed to retry. Giving up...");
+            goto cb_reconnect_end;
+        }
+        flb_plg_info(ctx->ins, "Failed. Waiting for next retry..");
+        return 0;
+    }
+
+ cb_reconnect_end:
+    if(flb_input_collector_delete(ctx->retry_coll_id, ins) < 0) {
+        flb_plg_error(ctx->ins, "failed to delete timer event");
+    }
+    ctx->current_retries = 0;
+    ctx->retry_coll_id = -1;
+    return ret;
+}
+
+static int create_reconnect_event(struct flb_input_instance *ins,
+                                  struct flb_config *config,
+                                  struct flb_in_de_config *ctx)
+{
+    int ret;
+
+    if (ctx->retry_coll_id >= 0) {
+        flb_plg_debug(ctx->ins, "already retring ?");
+        return 0;
+    }
+
+    /* try before creating event to stop incoming event */
+    ret = reconnect_docker_sock(ins, config, ctx);
+    if (ret == 0) {        
+        return 0;
+    }
+
+    ctx->current_retries = 1;
+    ctx->retry_coll_id = flb_input_set_collector_time(ins,
+                                                      cb_reconnect,
+                                                      ctx->reconnect_retry_interval,
+                                                      0,
+                                                      config);
+    if (ctx->retry_coll_id < 0) {
+        flb_plg_error(ctx->ins, "failed to create timer event");
+        return -1;
+    }
+    ret = flb_input_collector_start(ctx->retry_coll_id, ins);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "failed to start timer event");
+        flb_input_collector_delete(ctx->retry_coll_id, ins);
+        ctx->retry_coll_id = -1;
+        return -1;
+    }
+    flb_plg_info(ctx->ins, "create reconnect event. interval=%d second",
+                 ctx->reconnect_retry_interval);
+
+    return 0;
+}
+
+static int is_recoverable_error(int error)
+{
+    /* ENOTTY: 
+          It reports on Docker in Docker mode.
+          https://github.com/fluent/fluent-bit/issues/3439#issuecomment-831424674
+     */
+    if (error == ENOTTY || error == EBADF) {
+        return FLB_TRUE;
+    }
+    return FLB_FALSE;
+}
+
+
 /**
  * Callback function to process events recieved on the unix
  * socket.
@@ -102,7 +246,9 @@ static int in_de_collect(struct flb_input_instance *ins,
     size_t out_size = 0;
     struct flb_time out_time;
 
-    if ((ret = read(ctx->fd, ctx->buf, ctx->buf_size - 1)) > 0) {
+    ret = read(ctx->fd, ctx->buf, ctx->buf_size - 1);
+
+    if (ret > 0) {
         str_len = ret;
         ctx->buf[str_len] = '\0';
 
@@ -153,10 +299,30 @@ static int in_de_collect(struct flb_input_instance *ins,
             }
         }
     }
+    else if (ret == 0) {
+        /* EOF */
+
+        /* docker service may be restarted */
+        flb_plg_info(ctx->ins, "EOF detected. Re-initialize");
+        if (ctx->reconnect_retry_limits > 0) {
+            ret = create_reconnect_event(ins, config, ctx);
+            if (ret < 0) {
+                return ret;
+            }
+        }
+    }
     else {
         error = errno;
         flb_plg_error(ctx->ins, "read returned error: %d, %s", error,
                       strerror(error));
+        if (is_recoverable_error(error)) {
+            if (ctx->reconnect_retry_limits > 0) {
+                ret = create_reconnect_event(ins, config, ctx);
+                if (ret < 0) {
+                    return ret;
+                }
+            }
+        }
     }
 
     return 0;
@@ -183,6 +349,8 @@ static int in_de_init(struct flb_input_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+    ctx->retry_coll_id = -1;
+    ctx->current_retries = 0;
 
     /* Set the context */
     flb_input_set_context(ins, ctx);
@@ -194,8 +362,9 @@ static int in_de_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    if (flb_input_set_collector_event(ins, in_de_collect,
-                                      ctx->fd, config) == -1) {
+    ctx->coll_id = flb_input_set_collector_event(ins, in_de_collect,
+                                                 ctx->fd, config);
+    if(ctx->coll_id < 0){
         flb_plg_error(ctx->ins,
                       "could not set collector for IN_DOCKER_EVENTS plugin");
         de_config_destroy(ctx);
@@ -249,6 +418,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "key", DEFAULT_FIELD_NAME,
      0, FLB_TRUE, offsetof(struct flb_in_de_config, key),
      "Set the key name to store unparsed Docker events"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "reconnect.retry_limits", "5",
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, reconnect_retry_limits),
+     "Maximum number to retry to connect docker socket"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "reconnect.retry_interval", "1",
+     0, FLB_TRUE, offsetof(struct flb_in_de_config, reconnect_retry_interval),
+     "Retry interval to connect docker socket"
     },
     /* EOF */
     {0}

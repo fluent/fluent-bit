@@ -31,7 +31,7 @@ struct flb_syslog {
     flb_sockfd_t fd;
     struct flb_upstream *u;
     flb_sds_t mode;
-    int format;
+    flb_sds_t format;
     size_t maxsize;
     flb_sds_t severity_key;
     flb_sds_t facility_key;

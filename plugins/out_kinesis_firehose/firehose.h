@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
+ *  Copyright (C) 2019-2021 The Fluent Bit Authors
  *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -88,6 +88,7 @@ struct flb_firehose {
     const char *log_key;
     char *sts_endpoint;
     int custom_endpoint;
+    int retry_requests;
 
     /* must be freed on shutdown if custom_endpoint is not set */
     char *endpoint;
