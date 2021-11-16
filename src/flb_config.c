@@ -155,7 +155,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
-    config->max_shutdown_retries = 5;
+    config->max_shutdown_retries = 0;
     config->num_shutdowns_attempted = 0;
     config->exit_status_code = 0;
 
