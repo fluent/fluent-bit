@@ -315,7 +315,7 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
         /*
          * Prepare a timeout using poll(2): we could use our own
          * event loop mechanism for this, but it will require an
-         * extra file descriptor, the poll(2) call is straightforward
+         * extra file descriptor,   the poll(2) call is straightforward
          * for this use case.
          */
 
@@ -1185,7 +1185,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                          address, sizeof(address));
 
             /* If the connection failed, just abort and report the problem */
-            flb_error("[net] socket #%i could not connect to %s:%s",
+            flb_debug("[net] socket #%i could not connect to %s:%s",
                       fd, address, _port);
             if (u_conn) {
                 u_conn->fd = -1;
