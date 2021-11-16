@@ -523,6 +523,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->trace_key);
     flb_sds_destroy(ctx->log_name_key);
+    flb_sds_destroy(ctx->http_request_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
     flb_sds_destroy(ctx->custom_k8s_regex);
