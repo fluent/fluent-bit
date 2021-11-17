@@ -1347,11 +1347,9 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Get chunk size */
     size = cio_chunk_get_content_size(ic->chunk);
-    real_size = flb_input_chunk_get_real_size(ic);
 
     /* calculate the 'real' new bytes being added after the filtering phase */
     diff = llabs(size - pre_size);
-    real_diff = llabs(real_size - pre_real_size);
 
     /*
      * Update output instance bytes counters, note that bytes counter should
@@ -1377,12 +1375,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      */
     if (flb_input_chunk_get_size(ic) == 0) {
         diff = 0;
-    }
-
-    if (real_diff != 0) {
-        flb_debug("[input chunk] update output instances with new chunk size diff=%d",
-                  real_diff);
-        flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
     /* Lock buffers where size > 2MB */
@@ -1458,6 +1450,14 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                 cio_chunk_down(ic->chunk);
             }
         }
+    }
+
+    real_size = flb_input_chunk_get_real_size(ic);
+    real_diff = llabs(real_size - pre_real_size);
+    if (real_diff != 0) {
+        flb_debug("[input chunk] update output instances with new chunk size diff=%d",
+                  real_diff);
+        flb_input_chunk_update_output_instances(ic, real_diff);
     }
 
     flb_input_chunk_protect(in);
