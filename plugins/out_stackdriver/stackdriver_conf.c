@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_sds.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -173,6 +174,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     int ret;
     const char *tmp;
     struct flb_stackdriver *ctx;
+    flb_sds_t http_request_key;
+    size_t http_request_key_size;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -317,6 +320,23 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     else {
         ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
+    }
+
+    tmp = flb_output_get_property("http_request_key", ins);
+    if (tmp) {
+        http_request_key = flb_sds_create(tmp);
+        http_request_key_size = flb_sds_len(http_request_key);
+        if (http_request_key_size < INT_MAX) {
+            ctx->http_request_key = http_request_key;
+            ctx->http_request_key_size = (int)http_request_key_size;
+        } 
+        else {
+            flb_plg_error(ctx->ins, "http_request_key is too long");
+        }
+    }
+    else {
+        ctx->http_request_key = flb_sds_create(HTTPREQUEST_FIELD_IN_JSON);
+        ctx->http_request_key_size = HTTP_REQUEST_KEY_SIZE;
     }
 
     if (flb_sds_cmp(ctx->resource, "k8s_container",
@@ -506,6 +526,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->trace_key);
     flb_sds_destroy(ctx->log_name_key);
+    flb_sds_destroy(ctx->http_request_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
     flb_sds_destroy(ctx->custom_k8s_regex);

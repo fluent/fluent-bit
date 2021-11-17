@@ -1373,8 +1373,8 @@ static int pack_json_payload(int insert_id_extracted,
             continue;
         }
 
-        if (validate_key(kv->key, HTTPREQUEST_FIELD_IN_JSON,
-                         HTTP_REQUEST_KEY_SIZE)
+        if (validate_key(kv->key, ctx->http_request_key,
+                         ctx->http_request_key_size)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(http_request_extra_size > 0) {
