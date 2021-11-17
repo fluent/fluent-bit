@@ -1469,8 +1469,12 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
     int ret;
+    size_t pre_size, post_size;
+    ssize_t diff_size;
     char *buf = NULL;
 
+
+    pre_size = flb_input_chunk_get_real_size(ic);
     if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
         ret = cio_chunk_up(ic->chunk);
         if (ret == -1) {
@@ -1500,6 +1504,11 @@ const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
     /* Lock the internal chunk */
     cio_chunk_lock(ic->chunk);
 
+    post_size = flb_input_chunk_get_real_size(ic);
+    if (post_size != pre_size) {
+        diff_size = post_size - pre_size;
+        flb_input_chunk_update_output_instances(ic, diff_size);
+    }
     return buf;
 }
 
