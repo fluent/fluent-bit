@@ -1236,14 +1236,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     int ret;
     int set_down = FLB_FALSE;
     int min;
-    int meta_size;
     int new_chunk = FLB_FALSE;
     uint64_t ts;
-    size_t diff;
+    size_t content_size;
     size_t real_diff;
-    size_t size;
     size_t real_size;
-    size_t pre_size;
     size_t pre_real_size;
     struct flb_input_chunk *ic;
     struct flb_storage_input *si;
@@ -1302,11 +1299,6 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     /*
-     * Previous size from the chunk, used to calculate the difference
-     * after filtering
-     */
-    pre_size = cio_chunk_get_content_size(ic->chunk);
-    /*
      * Keep the previous real size to calculate the real size
      * difference for flb_input_chunk_update_output_instances(),
      * use 0 when the chunk is new since it's size will never
@@ -1354,26 +1346,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                       tag, tag_len, in->config);
     }
 
-    /* Get chunk size */
-    size = cio_chunk_get_content_size(ic->chunk);
-
-    /* calculate the 'real' new bytes being added after the filtering phase */
-    diff = llabs(size - pre_size);
-
-    /*
-     * Update output instance bytes counters, note that bytes counter should
-     * always count the chunk size in the file system. Therefore, it should
-     * add the extra bytes for the metadata.
-     */
-    meta_size = cio_meta_size(ic->chunk);
-    if (new_chunk == FLB_TRUE) {
-        diff += meta_size
-            /* See https://github.com/edsiper/chunkio#file-layout for more details */
-            + 2    /* HEADER BYTES */
-            + 4    /* CRC32 */
-            + 16   /* PADDING */
-            + 2;   /* METADATA LENGTH BYTES */
-    }
+    /* get the chunks content size */
+    content_size = cio_chunk_get_content_size(ic->chunk);
 
     /*
      * There is a case that rewrite_tag will modify the tag and keep rule is set
@@ -1383,16 +1357,16 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * sets the diff to 0 in order to not update the fs_chunks_size.
      */
     if (flb_input_chunk_get_size(ic) == 0) {
-        diff = 0;
+        real_diff = 0;
     }
 
     /* Lock buffers where size > 2MB */
-    if (size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+    if (content_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
         cio_chunk_lock(ic->chunk);
     }
 
     /* Make sure the data was not filtered out and the buffer size is zero */
-    if (size == 0) {
+    if (content_size == 0) {
         flb_input_chunk_destroy(ic, FLB_TRUE);
         flb_input_chunk_set_limits(in);
         return 0;
@@ -1451,11 +1425,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
              * it capacity as available space, otherwise keep it 'up' so
              * it available space can be used.
              */
-            size = cio_chunk_get_content_size(ic->chunk);
+            content_size = cio_chunk_get_content_size(ic->chunk);
 
             /* Do we have less than 1% available ? */
             min = (FLB_INPUT_CHUNK_FS_MAX_SIZE * 0.01);
-            if (FLB_INPUT_CHUNK_FS_MAX_SIZE - size < min) {
+            if (FLB_INPUT_CHUNK_FS_MAX_SIZE - content_size < min) {
                 cio_chunk_down(ic->chunk);
             }
         }
@@ -1478,7 +1452,8 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
     int ret;
-    size_t pre_size, post_size;
+    size_t pre_size
+    size_t post_size;
     ssize_t diff_size;
     char *buf = NULL;
 
