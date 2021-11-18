@@ -389,6 +389,9 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     return 0;
 }
 
+/* This tests uses the subsystems of the engine directly
+ * to avoid threading issues when submitting chunks.
+ */
 void flb_test_input_chunk_fs_chunks_size_real()
 {
     bool have_size_discrepancy = FLB_FALSE;
@@ -428,12 +431,14 @@ void flb_test_input_chunk_fs_chunks_size_real()
     msgpack_sbuffer_init(&mp_sbuf);
     gen_buf(&mp_sbuf, buf, sizeof(buf));
     flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, sizeof(buf));
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* then force a realloc? */
     memset((void *)buf, 0x42, 256);
     msgpack_sbuffer_init(&mp_sbuf);
     gen_buf(&mp_sbuf, buf, 256);
     flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, 256);
+    msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* clean up test chunks */
     mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
@@ -470,6 +475,12 @@ void flb_test_input_chunk_fs_chunks_size_real()
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
         flb_input_chunk_destroy(ic, FLB_TRUE);
     }
+
+    cio_destroy(cio);
+    flb_router_exit(cfg);
+    flb_input_exit_all(cfg);
+    flb_output_exit(cfg);
+    flb_config_exit(cfg);
 }
 
 /* Test list */
