@@ -143,6 +143,23 @@ int flb_router_connect(struct flb_input_instance *in,
     return 0;
 }
 
+int flb_router_connect_direct(struct flb_input_instance *in,
+                              struct flb_output_instance *out)
+{
+    struct flb_router_path *p;
+
+    p = flb_malloc(sizeof(struct flb_router_path));
+    if (!p) {
+        flb_errno();
+        return -1;
+    }
+
+    p->ins = out;
+    mk_list_add(&p->_head, &in->routes_direct);
+
+    return 0;
+}
+
 /*
  * This routine defines static routes for the plugins that have registered
  * tags. It check where data should go before the service start running, each
@@ -198,6 +215,7 @@ int flb_router_io_set(struct flb_config *config)
                      i_ins->name);
             continue;
         }
+
 
         flb_trace("[router] input=%s tag=%s", i_ins->name, i_ins->tag);
 
@@ -266,6 +284,13 @@ void flb_router_exit(struct flb_config *config)
 
         /* Iterate instance routes */
         mk_list_foreach_safe(r_head, r_tmp, &in->routes) {
+            r = mk_list_entry(r_head, struct flb_router_path, _head);
+            mk_list_del(&r->_head);
+            flb_free(r);
+        }
+
+        /* Iterate instance routes direct */
+        mk_list_foreach_safe(r_head, r_tmp, &in->routes_direct) {
             r = mk_list_entry(r_head, struct flb_router_path, _head);
             mk_list_del(&r->_head);
             flb_free(r);
