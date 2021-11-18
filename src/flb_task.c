@@ -397,7 +397,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
             route = flb_malloc(sizeof(struct flb_task_route));
             if (!route) {
                 flb_errno();
-                task->event_chunk->data = NULL;
+                task->buf = NULL;
                 flb_task_destroy(task, FLB_TRUE);
                 return NULL;
             }
