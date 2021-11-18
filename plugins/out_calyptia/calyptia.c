@@ -162,15 +162,22 @@ static void pack_str(msgpack_packer *mp_pck, char *str)
     msgpack_pack_str_body(mp_pck, str, len);
 }
 
-static void pack_env(struct flb_env *env, char *key, struct flb_mp_map_header *h,
+static void pack_env(struct flb_env *env, char *prefix,  char *key,
+                     struct flb_mp_map_header *h,
                      msgpack_packer *mp_pck)
 {
+    int len = 0;
     char *val;
+
+    /* prefix set in the key, if set, adjust the key name */
+    if (prefix) {
+        len = strlen(prefix);
+    }
 
     val = (char *) flb_env_get(env, key);
     if (val) {
         flb_mp_map_header_append(h);
-        pack_str(mp_pck, key);
+        pack_str(mp_pck, key + len);
         pack_str(mp_pck, val);
     }
 }
@@ -180,22 +187,51 @@ static void pack_env_metadata(struct flb_env *env,
 {
     char *tmp;
     struct flb_mp_map_header h;
+    struct flb_mp_map_header meta;
+
+    /* Metadata */
+    flb_mp_map_header_append(mh);
+    pack_str(mp_pck, "metadata");
+
+    flb_mp_map_header_init(&meta, mp_pck);
 
     /* Kubernetes */
     tmp = (char *) flb_env_get(env, "k8s");
     if (tmp && strcasecmp(tmp, "enabled") == 0) {
-        flb_mp_map_header_append(mh);
+        flb_mp_map_header_append(&meta);
         pack_str(mp_pck, "k8s");
 
         /* adding k8s map */
         flb_mp_map_header_init(&h, mp_pck);
 
-        pack_env(env, "k8s.namespace", &h, mp_pck);
-        pack_env(env, "k8s.pod_name", &h, mp_pck);
-        pack_env(env, "k8s.node_name", &h, mp_pck);
+        pack_env(env, "k8s.", "k8s.namespace", &h, mp_pck);
+        pack_env(env, "k8s.", "k8s.pod_name", &h, mp_pck);
+        pack_env(env, "k8s.", "k8s.node_name", &h, mp_pck);
 
         flb_mp_map_header_end(&h);
     }
+
+    /* AWS */
+    tmp = (char *) flb_env_get(env, "aws");
+    if (tmp && strcasecmp(tmp, "enabled") == 0) {
+        flb_mp_map_header_append(&meta);
+        pack_str(mp_pck, "aws");
+
+        /* adding aws map */
+        flb_mp_map_header_init(&h, mp_pck);
+
+        pack_env(env, "aws.", "aws.az", &h, mp_pck);
+        pack_env(env, "aws.", "aws.ec2_instance_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.ec2_instance_type", &h, mp_pck);
+        pack_env(env, "aws.", "aws.private_ip", &h, mp_pck);
+        pack_env(env, "aws.", "aws.vpc_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.ami_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.account_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.hostname", &h, mp_pck);
+
+        flb_mp_map_header_end(&h);
+    }
+    flb_mp_map_header_end(&meta);
 }
 
 static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
