@@ -218,6 +218,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->host.ipv6    = FLB_FALSE;
 
         /* Initialize list heads */
+        mk_list_init(&instance->routes_direct);
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
