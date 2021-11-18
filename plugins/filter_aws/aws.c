@@ -30,7 +30,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_kv.h>
-
+#include <fluent-bit/flb_env.h>
 
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
@@ -45,6 +45,64 @@ static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
 static int get_ec2_metadata(struct flb_filter_aws *ctx);
 static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
                                flb_sds_t *metadata, size_t *metadata_len, char *key);
+
+static void expose_aws_meta(struct flb_filter_aws *ctx)
+{
+    struct flb_env *env;
+    struct flb_config *config = ctx->ins->config;
+
+    env = config->env;
+
+    flb_env_set(env, "aws", "enabled");
+
+    if (ctx->availability_zone_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY,
+                    ctx->availability_zone);
+    }
+
+    if (ctx->instance_id_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_INSTANCE_ID_KEY,
+                    ctx->instance_id);
+    }
+
+    if (ctx->instance_type_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_INSTANCE_TYPE_KEY,
+                    ctx->instance_type);
+    }
+
+    if (ctx->private_ip_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_PRIVATE_IP_KEY,
+                    ctx->private_ip);
+    }
+
+    if (ctx->vpc_id_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_VPC_ID_KEY,
+                    ctx->vpc_id);
+    }
+
+    if (ctx->ami_id_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_AMI_ID_KEY,
+                    ctx->ami_id);
+    }
+
+    if (ctx->account_id_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_ACCOUNT_ID_KEY,
+                    ctx->account_id);
+    }
+
+    if (ctx->hostname_include) {
+        flb_env_set(env,
+                    "aws." FLB_FILTER_AWS_HOSTNAME_KEY,
+                    ctx->hostname);
+    }
+}
 
 static int cb_aws_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
@@ -116,6 +174,9 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
          */
         flb_plg_error(ctx->ins, "Could not retrieve ec2 metadata from IMDS "
                       "on initialization");
+    }
+    else {
+        expose_aws_meta(ctx);
     }
 
     flb_filter_set_context(f_ins, ctx);
@@ -439,6 +500,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
                           "from IMDS");
             return FLB_FILTER_NOTOUCH;
         }
+        expose_aws_meta(ctx);
     }
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
