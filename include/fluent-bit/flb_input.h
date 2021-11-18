@@ -231,6 +231,8 @@ struct flb_input_instance {
     struct mk_list *config_map;          /* configuration map        */
 
     struct mk_list _head;                /* link to config->inputs     */
+
+    struct mk_list routes_direct;        /* direct routes set by API   */
     struct mk_list routes;               /* flb_router_path's list     */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
