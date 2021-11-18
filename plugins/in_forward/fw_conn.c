@@ -161,3 +161,17 @@ int fw_conn_del(struct fw_conn *conn)
 
     return 0;
 }
+
+int fw_conn_del_all(struct flb_in_fw_config *ctx)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct fw_conn *conn;
+
+    mk_list_foreach_safe(head, tmp, &ctx->connections) {
+        conn = mk_list_entry(head, struct fw_conn, _head);
+        fw_conn_del(conn);
+    }
+
+    return 0;
+}
