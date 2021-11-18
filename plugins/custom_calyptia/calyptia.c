@@ -255,6 +255,14 @@ static int cb_calyptia_init(struct flb_custom_instance *ins,
         return -1;
     }
 
+    /* direct connect / routing */
+    ret = flb_router_connect_direct(ctx->i, ctx->o);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not load Calyptia Cloud connector");
+        flb_free(ctx);
+        return -1;
+    }
+
     if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
         /* iterate all 'add_label' definitions */
         flb_config_map_foreach(head, mv, ctx->add_labels) {
