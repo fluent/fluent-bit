@@ -42,6 +42,7 @@
 static int get_ec2_token(struct flb_filter_aws *ctx);
 static int get_metadata(struct flb_filter_aws *ctx, char *metadata_path,
                         flb_sds_t *metadata, size_t *metadata_len);
+static int get_ec2_metadata(struct flb_filter_aws *ctx);
 static int get_metadata_by_key(struct flb_filter_aws *ctx, char *metadata_path,
                                flb_sds_t *metadata, size_t *metadata_len, char *key);
 
@@ -106,8 +107,18 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     /* Remove async flag from upstream */
     ctx->ec2_upstream->flags &= ~(FLB_IO_ASYNC);
 
-    flb_filter_set_context(f_ins, ctx);
+    /* Retrieve metadata */
+    ret = get_ec2_metadata(ctx);
+    if (ret < 0) {
+        /*
+         * If metadata fails, just print the error. Every flush will try to
+         * retrieve it if needed.
+         */
+        flb_plg_error(ctx->ins, "Could not retrieve ec2 metadata from IMDS "
+                      "on initialization");
+    }
 
+    flb_filter_set_context(f_ins, ctx);
     return 0;
 }
 
