@@ -18,6 +18,9 @@
  *  limitations under the License.
  */
 
+#define FS_CHUNK_SIZE_DEBUG(op)  {flb_debug("[%d] %s -> fs_chunks_size = %zu", __LINE__, op->name, op->fs_chunks_size);}
+#define FS_CHUNK_SIZE_DEBUG_MOD(op, chunk, mod)  {flb_debug("[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
@@ -127,6 +130,7 @@ static int flb_input_chunk_release_space(
             flb_routes_mask_clear_bit(old_input_chunk->routes_mask,
                                       output_plugin->id);
 
+            FS_CHUNK_SIZE_DEBUG_MOD(output_plugin, old_input_chunk, chunk_size);
             output_plugin->fs_chunks_size -= chunk_size;
 
             chunk_destroy_flag = flb_routes_mask_is_empty(
@@ -427,6 +431,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
     struct mk_list *head;
     struct flb_input_chunk *old_ic;
 
+    FS_CHUNK_SIZE_DEBUG(o_ins);
     bytes_remained = o_ins->total_limit_size -
                      o_ins->fs_chunks_size -
                      o_ins->fs_backlog_chunks_size;
@@ -534,6 +539,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                      * hasn't updated the fs_chunks_size yet.
                      */
                     bytes = flb_input_chunk_get_real_size(ic);
+                    FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
                     o_ins->fs_chunks_size -= bytes;
                     flb_debug("[input chunk] chunk %s has no output route, "
                               "remove %ld bytes from fs_chunks_size",
@@ -562,6 +568,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
 
             /* drop chunk by adjusting the routes_mask */
             flb_routes_mask_clear_bit(old_ic->routes_mask, o_ins->id);
+            FS_CHUNK_SIZE_DEBUG_MOD(o_ins, old_ic, -old_ic_bytes);
             o_ins->fs_chunks_size -= old_ic_bytes;
 
             flb_debug("[input chunk] remove route of chunk %s with size %ld bytes to output plugin %s "
@@ -621,6 +628,7 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
             continue;
         }
 
+        FS_CHUNK_SIZE_DEBUG(o_ins);
         flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left "
                   "in plugin %s", flb_input_chunk_get_name(ic), chunk_size,
                   o_ins->total_limit_size -
@@ -918,6 +926,7 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
 
         if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
+            FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
             o_ins->fs_chunks_size -= bytes;
             flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
                       "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
@@ -1572,6 +1581,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
              * if there is match on any index of 1's in the binary, it indicates
              * that the input chunk will flush to this output instance
              */
+            FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, chunk_size);
             o_ins->fs_chunks_size += chunk_size;
 
             flb_debug("[input chunk] chunk %s update plugin %s fs_chunks_size by %ld bytes, "
