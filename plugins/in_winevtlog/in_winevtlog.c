@@ -45,7 +45,7 @@ static int in_winevtlog_init(struct flb_input_instance *in,
 
     /* Initialize context */
     ctx = flb_calloc(1, sizeof(struct winevtlog_config));
-    if (!ctx) {
+    if (ctx == NULL) {
         flb_errno();
         return -1;
     }

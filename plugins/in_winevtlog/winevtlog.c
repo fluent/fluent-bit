@@ -41,7 +41,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     void *buf;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
-    if (!ch) {
+    if (ch == NULL) {
         flb_errno();
         return NULL;
     }
