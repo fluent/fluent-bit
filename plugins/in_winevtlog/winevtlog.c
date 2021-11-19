@@ -36,8 +36,10 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
     struct winevtlog_channel *ch;
     EVT_HANDLE bookmark = NULL;
     HANDLE signal_event = NULL;
-    DWORD len, flags = 0L;
-    PWSTR wide_channel = L"Application", wide_query = L"*";
+    DWORD len;
+    DWORD flags = 0L;
+    PWSTR wide_channel = L"Application";
+    PWSTR wide_query = L"*";
     void *buf;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
@@ -358,7 +360,8 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
     WCHAR *buffer[EVENT_PROVIDER_NAME_LENGTH];
     PEVT_VARIANT values = NULL;
     DWORD buffer_used = 0;
-    DWORD status = ERROR_SUCCESS, count = 0;
+    DWORD status = ERROR_SUCCESS;
+    DWORD count = 0;
     WCHAR *message = NULL;
     EVT_HANDLE metadata = NULL;
 
