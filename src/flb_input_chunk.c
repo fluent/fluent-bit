@@ -1452,7 +1452,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size)
 {
     int ret;
-    size_t pre_size
+    size_t pre_size;
     size_t post_size;
     ssize_t diff_size;
     char *buf = NULL;
