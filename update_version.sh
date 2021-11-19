@@ -20,15 +20,15 @@ git commit -s -m "build: bump to v$1" -- CMakeLists.txt
 sed -i "s/ENV FLB_MAJOR [0-9]/ENV FLB_MAJOR $major/g" dockerfiles/Dockerfile*
 sed -i "s/ENV FLB_MINOR [0-9]/ENV FLB_MINOR $minor/g" dockerfiles/Dockerfile*
 sed -i "s/ENV FLB_PATCH [0-9]/ENV FLB_PATCH $patch/g" dockerfiles/Dockerfile*
-sed -i "s/ENV FLB_VERSION [0-9].[0-9].[0-9]/ENV FLB_VERSION $1/g" dockerfiles/Dockerfile*
+sed -i "s/ENV FLB_VERSION [0-9]+.[0-9]+.[0-9]+/ENV FLB_VERSION $1/g" dockerfiles/Dockerfile*
 
 git commit -s -m "dockerfile: bump to v$1" -- dockerfiles/*
 
 # Snap
-sed -i "s/version: '[0-9].[0-9].[0-9]'/version: '$1'/g" snap/snapcraft.yaml
+sed -i "s/version: '[0-9]\+.[0-9]\+.[0-9]\+'/version: '$1'/g" snap/snapcraft.yaml
 git commit -s -m "snap: bump to v$1" snap/snapcraft.yaml
 
 # Bitbake / Yocto
-sed -i "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$1\"/g" fluent-bit_*.*.*.bb
+sed -i "s/PV = \"[0-9]\+.[0-9]\+.[0-9]\+\"/PV = \"$1\"/g" fluent-bit_*.*.*.bb
 git mv fluent-bit_*.*.*.bb fluent-bit_$1.bb
 git commit -a -s -m "bitbake: bump to v$1"
