@@ -203,7 +203,13 @@ static int pack_systemtime(msgpack_packer *mp_pck, SYSTEMTIME *st)
     if (st != NULL) {
         SystemTimeToTzSpecificLocalTime(&tzi, st, &st_local);
 
-        struct tm tm = {st_local.wSecond, st_local.wMinute, st_local.wHour, st_local.wDay, st_local.wMonth-1, st_local.wYear-1900, st_local.wDayOfWeek, 0, 0};
+        struct tm tm = {st_local.wSecond,
+                        st_local.wMinute,
+                        st_local.wHour,
+                        st_local.wDay,
+                        st_local.wMonth-1,
+                        st_local.wYear-1900,
+                        st_local.wDayOfWeek, 0, 0};
         len = _strftime_l(buf, 64, FORMAT_ISO8601, &tm, locale);
         if (len == 0) {
             flb_errno();
