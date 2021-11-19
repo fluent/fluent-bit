@@ -156,28 +156,23 @@ PWSTR render_event(EVT_HANDLE hEvent, DWORD flags, unsigned int *event_size)
         return NULL;
     }
 
-    if (!EvtRender(NULL, hEvent, flags, dwBufferSize, wEventXML, &dwBufferUsed, &count))
-    {
+    if (!EvtRender(NULL, hEvent, flags, dwBufferSize, wEventXML, &dwBufferUsed, &count)) {
         status = GetLastError();
-        if (status == ERROR_INSUFFICIENT_BUFFER)
-        {
+        if (status == ERROR_INSUFFICIENT_BUFFER) {
             dwBufferSize = dwBufferUsed;
             /* return buffer size */
             *event_size = dwBufferSize;
             wEventXML = (LPWSTR)flb_malloc(dwBufferSize);
-            if (wEventXML)
-            {
+            if (wEventXML) {
                 EvtRender(NULL, hEvent, flags, dwBufferSize, wEventXML, &dwBufferUsed, &count);
             }
-            else
-            {
+            else {
                 flb_error("malloc failed");
                 goto cleanup;
             }
         }
 
-        if (ERROR_SUCCESS != (status = GetLastError()))
-        {
+        if (ERROR_SUCCESS != (status = GetLastError())) {
             flb_error("EvtRender failed with %d", GetLastError());
             goto cleanup;
         }
