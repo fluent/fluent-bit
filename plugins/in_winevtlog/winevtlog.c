@@ -31,13 +31,13 @@ static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
 struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_existing_events,
-                                              EVT_HANDLE bookmark)
+                                              EVT_HANDLE stored_bookmark)
 {
     struct winevtlog_channel *ch;
-    EVT_HANDLE hBookmark = NULL;
-    HANDLE hSignalEvent = NULL;
+    EVT_HANDLE bookmark = NULL;
+    HANDLE signal_event = NULL;
     DWORD len, flags = 0L;
-    PWSTR wChannel = L"Application", wQuery = L"*";
+    PWSTR wide_channel = L"Application", wide_query = L"*";
     void *buf;
 
     ch = flb_calloc(1, sizeof(struct winevtlog_channel));
@@ -53,14 +53,14 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         return NULL;
     }
 
-    hSignalEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    signal_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // channel : To wide char
     len = MultiByteToWideChar(CP_UTF8, 0, channel, -1, NULL, 0);
-    wChannel = flb_malloc(sizeof(PWSTR) * len);
-    MultiByteToWideChar(CP_UTF8, 0, channel, -1, wChannel, len);
+    wide_channel = flb_malloc(sizeof(PWSTR) * len);
+    MultiByteToWideChar(CP_UTF8, 0, channel, -1, wide_channel, len);
 
-    if (bookmark) {
+    if (stored_bookmark) {
         flags |= EvtSubscribeStartAfterBookmark;
     } else if (read_existing_events) {
         flags |= EvtSubscribeStartAtOldestRecord;
@@ -68,39 +68,40 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
         flags |= EvtSubscribeToFutureEvents;
     }
 
-    ch->subscription = EvtSubscribe(NULL, hSignalEvent, wChannel, wQuery, bookmark, NULL, NULL, flags);
+    ch->subscription = EvtSubscribe(NULL, signal_event, wide_channel, wide_query,
+                                    stored_bookmark, NULL, NULL, flags);
     if (!ch->subscription) {
         flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
         flb_free(ch->name);
         flb_free(ch);
         return NULL;
     }
-    ch->signal_event = hSignalEvent;
+    ch->signal_event = signal_event;
 
-    if (bookmark) {
-        ch->bookmark = bookmark;
+    if (stored_bookmark) {
+        ch->bookmark = stored_bookmark;
     }
     else {
-        hBookmark = EvtCreateBookmark(NULL);
-        if (hBookmark) {
-            ch->bookmark = hBookmark;
+        bookmark = EvtCreateBookmark(NULL);
+        if (bookmark) {
+            ch->bookmark = bookmark;
         }
         else {
             if (ch->subscription) {
                 EvtClose(ch->subscription);
             }
-            if (hSignalEvent) {
-                CloseHandle(hSignalEvent);
+            if (signal_event) {
+                CloseHandle(signal_event);
             }
             flb_error("[in_winevtlog] cannot subscribe '%s' (%i)", channel, GetLastError());
-            flb_free(wChannel);
+            flb_free(wide_channel);
             flb_free(ch->name);
             flb_free(ch);
             return NULL;
         }
     }
 
-    flb_free(wChannel);
+    flb_free(wide_channel);
 
     return ch;
 }
@@ -146,25 +147,25 @@ void winevtlog_close(struct winevtlog_channel *ch)
 PWSTR render_event(EVT_HANDLE hEvent, DWORD flags, unsigned int *event_size)
 {
     DWORD status = ERROR_SUCCESS;
-    DWORD dwBufferSize = 0;
-    DWORD dwBufferUsed = 0;
+    DWORD buffer_size = 0;
+    DWORD buffer_used = 0;
     DWORD count = 0;
-    LPWSTR wEventXML = NULL;
+    LPWSTR event_xml = NULL;
 
     if (flags != EvtRenderEventXml && flags != EvtRenderBookmark) {
         flb_error("Invalid flags is specified: %d", flags);
         return NULL;
     }
 
-    if (!EvtRender(NULL, hEvent, flags, dwBufferSize, wEventXML, &dwBufferUsed, &count)) {
+    if (!EvtRender(NULL, hEvent, flags, buffer_size, event_xml, &buffer_used, &count)) {
         status = GetLastError();
         if (status == ERROR_INSUFFICIENT_BUFFER) {
-            dwBufferSize = dwBufferUsed;
+            buffer_size = buffer_used;
             /* return buffer size */
-            *event_size = dwBufferSize;
-            wEventXML = (LPWSTR)flb_malloc(dwBufferSize);
-            if (wEventXML) {
-                EvtRender(NULL, hEvent, flags, dwBufferSize, wEventXML, &dwBufferUsed, &count);
+            *event_size = buffer_size;
+            event_xml = (LPWSTR)flb_malloc(buffer_size);
+            if (event_xml) {
+                EvtRender(NULL, hEvent, flags, buffer_size, event_xml, &buffer_used, &count);
             }
             else {
                 flb_error("malloc failed");
@@ -172,64 +173,65 @@ PWSTR render_event(EVT_HANDLE hEvent, DWORD flags, unsigned int *event_size)
             }
         }
 
-        if (ERROR_SUCCESS != (status = GetLastError())) {
+        status = GetLastError();
+        if (status != ERROR_SUCCESS) {
             flb_error("EvtRender failed with %d", GetLastError());
             goto cleanup;
         }
     }
 
-    return wEventXML;
+    return event_xml;
 
 cleanup:
 
-    if (wEventXML) {
-        flb_free(wEventXML);
+    if (event_xml) {
+        flb_free(event_xml);
     }
 
     return NULL;
 }
 
-DWORD render_system_event(EVT_HANDLE hEvent, PEVT_VARIANT *pSystem, unsigned int *system_size)
+DWORD render_system_event(EVT_HANDLE event, PEVT_VARIANT *system, unsigned int *system_size)
 {
     DWORD status = ERROR_SUCCESS;
-    EVT_HANDLE hContext = NULL;
-    DWORD dwBufferSize = 0;
-    DWORD dwBufferUsed = 0;
-    DWORD dwPropertyCount = 0;
-    PEVT_VARIANT pValues = NULL;
+    EVT_HANDLE context = NULL;
+    DWORD buffer_size = 0;
+    DWORD buffer_used = 0;
+    DWORD count = 0;
+    PEVT_VARIANT rendered_system = NULL;
 
-    hContext = EvtCreateRenderContext(0, NULL, EvtRenderContextSystem);
-    if (NULL == hContext) {
+    context = EvtCreateRenderContext(0, NULL, EvtRenderContextSystem);
+    if (NULL == context) {
         status = GetLastError();
         flb_error("failed to create RenderContext with %d", status);
 
         goto cleanup;
     }
-    if (!EvtRender(hContext,
-                   hEvent,
+    if (!EvtRender(context,
+                   event,
                    EvtRenderEventValues,
-                   dwBufferSize,
-                   pValues,
-                   &dwBufferUsed,
-                   &dwPropertyCount)) {
+                   buffer_size,
+                   rendered_system,
+                   &buffer_used,
+                   &count)) {
         status = GetLastError();
 
         if (status == ERROR_INSUFFICIENT_BUFFER) {
-            dwBufferSize = dwBufferUsed;
-            pValues = (PEVT_VARIANT)flb_malloc(dwBufferSize);
-            if (pValues) {
-                EvtRender(hContext,
-                          hEvent,
+            buffer_size = buffer_used;
+            rendered_system = (PEVT_VARIANT)flb_malloc(buffer_size);
+            if (rendered_system) {
+                EvtRender(context,
+                          event,
                           EvtRenderEventValues,
-                          dwBufferSize,
-                          pValues,
-                          &dwBufferUsed,
-                          &dwPropertyCount);
+                          buffer_size,
+                          rendered_system,
+                          &buffer_used,
+                          &count);
                 status = GetLastError();
-                *system_size = dwBufferUsed;
+                *system_size = buffer_used;
             } else {
-                if (pValues)
-                    flb_free(pValues);
+                if (rendered_system)
+                    flb_free(rendered_system);
 
                 flb_error("failed to malloc memory with %d", status);
 
@@ -238,57 +240,57 @@ DWORD render_system_event(EVT_HANDLE hEvent, PEVT_VARIANT *pSystem, unsigned int
         }
 
         if (ERROR_SUCCESS != status) {
-            EvtClose(hContext);
-            flb_free(pValues);
+            EvtClose(context);
+            flb_free(rendered_system);
 
             return status;
         }
     }
 
-    *pSystem = pValues;
+    *system = rendered_system;
 
 cleanup:
 
-    if (hContext)
-        EvtClose(hContext);
+    if (context)
+        EvtClose(context);
 
     return status;
 }
 
 
-PWSTR get_message(EVT_HANDLE hMetadata, EVT_HANDLE handle, unsigned int *message_size)
+PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_size)
 {
-    WCHAR* pBuffer = NULL;
+    WCHAR* buffer = NULL;
     DWORD status = ERROR_SUCCESS;
-    DWORD dwBufferSize = 0;
-    DWORD dwBufferUsed = 0;
-    LPVOID lpMsgBuf;
-    WCHAR* wMessage = NULL;
+    DWORD buffer_size = 0;
+    DWORD buffer_used = 0;
+    LPVOID format_message_buffer;
+    WCHAR* message = NULL;
     char *error_message = NULL;
 
     // Get the size of the buffer
-    if (!EvtFormatMessage(hMetadata, handle, 0, 0, NULL,
-                          EvtFormatMessageEvent, dwBufferSize, pBuffer, &dwBufferUsed)) {
+    if (!EvtFormatMessage(metadata, handle, 0, 0, NULL,
+                          EvtFormatMessageEvent, buffer_size, buffer, &buffer_used)) {
         status = GetLastError();
         if (ERROR_INSUFFICIENT_BUFFER == status) {
-            dwBufferSize = dwBufferUsed;
-            pBuffer = flb_malloc(sizeof(WCHAR) * dwBufferSize);
-            if (!pBuffer) {
+            buffer_size = buffer_used;
+            buffer = flb_malloc(sizeof(WCHAR) * buffer_size);
+            if (!buffer) {
                 flb_error("failed to malloc message buffer");
 
                 goto cleanup;
             }
-            if (!EvtFormatMessage(hMetadata,
+            if (!EvtFormatMessage(metadata,
                                   handle,
                                   0xffffffff,
                                   0,
                                   NULL,
                                   EvtFormatMessageEvent,
-                                  dwBufferSize,
-                                  pBuffer,
-                                  &dwBufferUsed)) {
+                                  buffer_size,
+                                  buffer,
+                                  &buffer_used)) {
                 status = GetLastError();
-                *message_size = dwBufferUsed;
+                *message_size = buffer_used;
 
                 if (status != ERROR_EVT_UNRESOLVED_VALUE_INSERT) {
                     switch (status) {
@@ -307,7 +309,7 @@ PWSTR get_message(EVT_HANDLE hMetadata, EVT_HANDLE handle, unsigned int *message
                                                NULL,
                                                status,
                                                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                                               (WCHAR*)(&lpMsgBuf),
+                                               (WCHAR*)(&format_message_buffer),
                                                0,
                                                NULL) == 0)
                                 FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
@@ -315,15 +317,15 @@ PWSTR get_message(EVT_HANDLE hMetadata, EVT_HANDLE handle, unsigned int *message
                                                NULL,
                                                status,
                                                MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
-                                               (WCHAR*)(&lpMsgBuf),
+                                               (WCHAR*)(&format_message_buffer),
                                                0,
                                                NULL);
-                            error_message = convert_wstr((WCHAR*)lpMsgBuf, CP_ACP);
+                            error_message = convert_wstr((WCHAR*)format_message_buffer, CP_ACP);
                             flb_error("Failed to get message with %d, err = %s", status, error_message);
                             flb_free(error_message);
 
-                            wMessage = _wcsdup((WCHAR*)lpMsgBuf);
-                            LocalFree(lpMsgBuf);
+                            message = _wcsdup((WCHAR*)format_message_buffer);
+                            LocalFree(format_message_buffer);
 
                             goto cleanup;
                         }
@@ -338,38 +340,38 @@ PWSTR get_message(EVT_HANDLE hMetadata, EVT_HANDLE handle, unsigned int *message
         }
     }
 
-    wMessage = _wcsdup(pBuffer);
+    message = _wcsdup(buffer);
 
 cleanup:
-    if (pBuffer)
-        flb_free(pBuffer);
+    if (buffer)
+        flb_free(buffer);
 
-    return wMessage;
+    return message;
 }
 
 PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size)
 {
-    WCHAR *wBuffer[EVENT_PROVIDER_NAME_LENGTH];
-    PEVT_VARIANT pValues = NULL;
-    DWORD dwBufferUsed = 0;
+    WCHAR *buffer[EVENT_PROVIDER_NAME_LENGTH];
+    PEVT_VARIANT values = NULL;
+    DWORD buffer_used = 0;
     DWORD status = ERROR_SUCCESS, count = 0;
-    WCHAR *wMessage = NULL;
-    EVT_HANDLE hMetadata = NULL;
+    WCHAR *message = NULL;
+    EVT_HANDLE metadata = NULL;
 
-    PCWSTR eventProperties[] = { L"Event/System/Provider/@Name" };
-    EVT_HANDLE hContext =
-            EvtCreateRenderContext(1, eventProperties, EvtRenderContextValues);
-    if (hContext == NULL) {
+    PCWSTR properties[] = { L"Event/System/Provider/@Name" };
+    EVT_HANDLE context =
+            EvtCreateRenderContext(1, properties, EvtRenderContextValues);
+    if (context == NULL) {
         flb_error("Failed to create renderContext");
         goto cleanup;
     }
 
-    if (EvtRender(hContext,
+    if (EvtRender(context,
                   handle,
                   EvtRenderEventValues,
                   EVENT_PROVIDER_NAME_LENGTH,
-                  wBuffer,
-                  &dwBufferUsed,
+                  buffer,
+                  &buffer_used,
                   &count) != FALSE){
         status = ERROR_SUCCESS;
     }
@@ -381,79 +383,80 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
         flb_error("failed to query RenderContextValues");
         goto cleanup;
     }
-    pValues = (PEVT_VARIANT)wBuffer;
+    values = (PEVT_VARIANT)buffer;
 
-    hMetadata = EvtOpenPublisherMetadata(
+    metadata = EvtOpenPublisherMetadata(
             NULL, // TODO: Remote handle
-            pValues[0].StringVal,
+            values[0].StringVal,
             NULL,
             MAKELCID(langID, SORT_DEFAULT),
             0);
-    if (hMetadata == NULL) {
+    if (metadata == NULL) {
         goto cleanup;
     }
 
-    wMessage = get_message(hMetadata, handle, message_size);
+    message = get_message(metadata, handle, message_size);
 
 cleanup:
-    if (hContext) {
-        EvtClose(hContext);
+    if (context) {
+        EvtClose(context);
     }
 
-    if (hMetadata) {
-        EvtClose(hMetadata);
+    if (metadata) {
+        EvtClose(metadata);
     }
 
-    return wMessage;
+    return message;
 }
 
-int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *values, UINT *prop_count, unsigned int *string_inserts_size)
+int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
+                       UINT *prop_count, unsigned int *string_inserts_size)
 {
-    PEVT_VARIANT pValues;
-    DWORD dwBufferSize = 0;
-    DWORD dwBufferSizeUsed = 0;
-    DWORD dwPropCount = 0;
+    PEVT_VARIANT values;
+    DWORD buffer_size = 0;
+    DWORD buffer_size_used = 0;
+    DWORD count = 0;
     BOOL succeeded = FLB_TRUE;
 
-    EVT_HANDLE hContext = EvtCreateRenderContext(0, NULL, EvtRenderContextUser);
-    if (hContext == NULL) {
+    EVT_HANDLE context = EvtCreateRenderContext(0, NULL, EvtRenderContextUser);
+    if (context == NULL) {
         flb_error("Failed to create renderContext");
         succeeded = FLB_FALSE;
         goto cleanup;
     }
 
     // Get the size of the buffer
-    EvtRender(hContext, handle, EvtRenderEventValues, 0, NULL, &dwBufferSize, &dwPropCount);
-    pValues = (PEVT_VARIANT)flb_malloc(dwBufferSize);
+    EvtRender(context, handle, EvtRenderEventValues, 0, NULL, &buffer_size, &count);
+    values = (PEVT_VARIANT)flb_malloc(buffer_size);
 
-    succeeded = EvtRender(hContext,
+    succeeded = EvtRender(context,
                           handle,
                           EvtRenderContextValues,
-                          dwBufferSize,
-                          pValues,
-                          &dwBufferSizeUsed,
-                          &dwPropCount);
+                          buffer_size,
+                          values,
+                          &buffer_size_used,
+                          &count);
 
     if (!succeeded) {
         flb_error("Failed to get string inserts with %d\n", GetLastError());
         goto cleanup;
     }
 
-    *prop_count = dwPropCount;
-    *values = pValues;
-    *string_inserts_size = dwBufferSize;
+    *prop_count = count;
+    *string_inserts_values = values;
+    *string_inserts_size = buffer_size;
 
 cleanup:
 
-    if (hContext != NULL)
-        EvtClose(hContext);
+    if (context != NULL)
+        EvtClose(context);
 
     return succeeded;
 }
 
 static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
 {
-    EVT_HANDLE hEvents[SUBSCRIBE_ARRAY_SIZE];
+    EVT_HANDLE events[SUBSCRIBE_ARRAY_SIZE];
     DWORD count = 0;
     DWORD status = ERROR_SUCCESS;
     BOOL has_next = FALSE;
@@ -469,7 +472,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     }
 
     has_next = EvtNext(ch->subscription, SUBSCRIBE_ARRAY_SIZE,
-                       hEvents, INFINITE, 0, &count);
+                       events, INFINITE, 0, &count);
 
     if (!has_next) {
         status = GetLastError();
@@ -484,7 +487,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     if (status == ERROR_SUCCESS) {
         ch->count = count;
         for (int i = 0; i < count; i++) {
-            ch->events[i] = hEvents[i];
+            ch->events[i] = events[i];
             EvtUpdateBookmark(ch->bookmark, ch->events[i]);
         }
 
@@ -501,48 +504,50 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
                    unsigned int *read)
 {
     DWORD status = ERROR_SUCCESS;
-    PWSTR wSystem = NULL;
+    PWSTR system_xml = NULL;
     unsigned int system_size = 0;
     unsigned int message_size = 0;
     unsigned int string_inserts_size = 0;
     int hit_threshold = FLB_FALSE;
     unsigned int read_size = 0;
-    PWSTR wMessage = NULL;
-    PEVT_VARIANT pSystem = NULL;
-    PEVT_VARIANT pStringInserts = NULL;
-    UINT countInserts = 0;
+    PWSTR message = NULL;
+    PEVT_VARIANT rendered_system = NULL;
+    PEVT_VARIANT string_inserts = NULL;
+    UINT count_inserts = 0;
     DWORD i = 0;
 
     while (winevtlog_next(ch, hit_threshold)) {
         for (DWORD i = 0; i < ch->count; i++) {
             if (ctx->render_event_as_xml) {
-                wSystem = render_event(ch->events[i], EvtRenderEventXml, &system_size);
-                wMessage = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
-                get_string_inserts(ch->events[i], &pStringInserts, &countInserts, &string_inserts_size);
-                if (wSystem) {
+                system_xml = render_event(ch->events[i], EvtRenderEventXml, &system_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
+                get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
+                if (system_xml) {
                     /* Caluculate total allocated size: system + message + string_inserts */
                     read_size += (system_size + message_size + string_inserts_size);
-                    winevtlog_pack_xml_event(mp_pck, wSystem, wMessage, pStringInserts, countInserts, ch, ctx);
+                    winevtlog_pack_xml_event(mp_pck, system_xml, message, string_inserts,
+                                             count_inserts, ch, ctx);
 
-                    flb_free(pStringInserts);
-                    flb_free(wSystem);
-                    if (wMessage)
-                        flb_free(wMessage);
+                    flb_free(string_inserts);
+                    flb_free(system_xml);
+                    if (message)
+                        flb_free(message);
                 }
             }
             else {
-                render_system_event(ch->events[i], &pSystem, &system_size);
-                wMessage = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
-                get_string_inserts(ch->events[i], &pStringInserts, &countInserts, &string_inserts_size);
-                if (pSystem) {
+                render_system_event(ch->events[i], &rendered_system, &system_size);
+                message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
+                get_string_inserts(ch->events[i], &string_inserts, &count_inserts, &string_inserts_size);
+                if (rendered_system) {
                     /* Caluculate total allocated size: system + message + string_inserts */
                     read_size += (system_size + message_size + string_inserts_size);
-                    winevtlog_pack_event(mp_pck, pSystem, wMessage, pStringInserts, countInserts, ch, ctx);
+                    winevtlog_pack_event(mp_pck, rendered_system, message, string_inserts,
+                                         count_inserts, ch, ctx);
 
-                    flb_free(pStringInserts);
-                    flb_free(pSystem);
-                    if (wMessage)
-                        flb_free(wMessage);
+                    flb_free(string_inserts);
+                    flb_free(rendered_system);
+                    if (message)
+                        flb_free(message);
                 }
             }
         }
@@ -692,8 +697,8 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
     int ret;
     char query[1024];
     struct winevtlog_sqlite_record record = {0};
-    EVT_HANDLE hBookmark = NULL;
-    PWSTR wBookmarkXML = NULL;
+    EVT_HANDLE bookmark = NULL;
+    PWSTR bookmark_xml = NULL;
     struct winevtlog_channel *re_ch = NULL;
 
     snprintf(query, sizeof(query) - 1, SQL_GET_CHANNEL, ch->name);
@@ -711,12 +716,12 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
     }
 
     if (record.name) {
-        wBookmarkXML = convert_str(record.bookmark_xml);
-        if (wBookmarkXML) {
-            hBookmark = EvtCreateBookmark(wBookmarkXML);
-            if (hBookmark) {
+        bookmark_xml = convert_str(record.bookmark_xml);
+        if (bookmark_xml) {
+            bookmark = EvtCreateBookmark(bookmark_xml);
+            if (bookmark) {
                 /* re-create subscription handles */
-                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, hBookmark);
+                re_ch = winevtlog_subscribe(ch->name, FLB_FALSE, bookmark);
                 if (re_ch != NULL) {
                     close_handles(ch);
 
@@ -725,17 +730,17 @@ int winevtlog_sqlite_load(struct winevtlog_channel *ch, struct flb_sqldb *db)
                     ch->signal_event = re_ch->signal_event;
                 }
                 else {
-                    flb_error("Failed to subscribe with bookmarkXML: %s\n", record.bookmark_xml);
+                    flb_error("Failed to subscribe with bookmark XML: %s\n", record.bookmark_xml);
                     ch->bookmark = EvtCreateBookmark(NULL);
                 }
             }
             else {
-                flb_error("Failed to load bookmarkXML with %d\n", GetLastError());
+                flb_error("Failed to load bookmark XML with %d\n", GetLastError());
                 ch->bookmark = EvtCreateBookmark(NULL);
             }
         }
-        if (wBookmarkXML) {
-            flb_free(wBookmarkXML);
+        if (bookmark_xml) {
+            flb_free(bookmark_xml);
         }
     }
     return 0;
@@ -748,40 +753,40 @@ int winevtlog_sqlite_save(struct winevtlog_channel *ch, struct flb_sqldb *db)
 {
     int ret;
     char query[1024];
-    PWSTR wBookmarkXML = NULL;
-    char *bookmarkXML;
+    PWSTR wide_bookmark_xml = NULL;
+    char *bookmark_xml;
     int used_size = 0;
 
-    wBookmarkXML = render_event(ch->bookmark, EvtRenderBookmark, &used_size);
-    if (wBookmarkXML == NULL) {
+    wide_bookmark_xml = render_event(ch->bookmark, EvtRenderBookmark, &used_size);
+    if (wide_bookmark_xml == NULL) {
         flb_error("failed to render bookmark with %d", GetLastError());
-        flb_free(wBookmarkXML);
+        flb_free(wide_bookmark_xml);
 
         return -1;
     }
-    bookmarkXML = convert_wstr(wBookmarkXML, CP_UTF8);
-    if (bookmarkXML == NULL) {
+    bookmark_xml = convert_wstr(wide_bookmark_xml, CP_UTF8);
+    if (bookmark_xml == NULL) {
         flb_error("failed to convert Wider string with %d", GetLastError());
-        flb_free(wBookmarkXML);
-        flb_free(bookmarkXML);
+        flb_free(wide_bookmark_xml);
+        flb_free(bookmark_xml);
 
         return -1;
     }
 
     snprintf(query, sizeof(query) - 1, SQL_UPDATE_CHANNEL,
-             ch->name, bookmarkXML, ch->time_updated, time(NULL));
+             ch->name, bookmark_xml, ch->time_updated, time(NULL));
 
     ret = flb_sqldb_query(db, query, NULL, NULL);
     if (ret == FLB_ERROR) {
         flb_error("failed to save db with %d", GetLastError());
-        flb_free(wBookmarkXML);
-        flb_free(bookmarkXML);
+        flb_free(wide_bookmark_xml);
+        flb_free(bookmark_xml);
 
         return -1;
     }
 
-    flb_free(wBookmarkXML);
-    flb_free(bookmarkXML);
+    flb_free(wide_bookmark_xml);
+    flb_free(bookmark_xml);
 
     return 0;
 }

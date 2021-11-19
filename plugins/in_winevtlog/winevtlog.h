@@ -83,11 +83,11 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck,
 struct mk_list *winevtlog_open_all(const char *channels, int read_exising_events);
 void winevtlog_close_all(struct mk_list *list);
 
-void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *wSystem, WCHAR *wMessage,
-                              PEVT_VARIANT pValues, UINT countInserts, struct winevtlog_channel *ch,
+void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *system_xml, WCHAR *message,
+                              PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx);
-void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *wMessage,
-                          PEVT_VARIANT pValues, UINT countInserts, struct winevtlog_channel *ch,
+void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT system, WCHAR *message,
+                          PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx);
 
 /*

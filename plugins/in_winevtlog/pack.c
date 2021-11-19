@@ -266,75 +266,75 @@ static int pack_filetime(msgpack_packer *mp_pck, ULONGLONG filetime)
 static int pack_sid(msgpack_packer *mp_pck, PSID sid, struct winevtlog_config *ctx)
 {
     size_t size;
-    LPWSTR pSid = NULL;
+    LPWSTR wide_sid = NULL;
     int ret = -1;
 
-    if (ConvertSidToStringSidW(sid, &pSid)) {
-        ret = pack_wstr(mp_pck, pSid, ctx);
+    if (ConvertSidToStringSidW(sid, &wide_sid)) {
+        ret = pack_wstr(mp_pck, wide_sid, ctx);
 
-        LocalFree(pSid);
+        LocalFree(wide_sid);
         return ret;
     }
 
     return ret;
 }
 
-static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT pValues, DWORD propCount, struct winevtlog_config *ctx)
+static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT values, DWORD count, struct winevtlog_config *ctx)
 {
     int i;
 
-    msgpack_pack_array(mp_pck, propCount);
+    msgpack_pack_array(mp_pck, count);
 
-    for (i = 0; i < propCount; i++) {
-        if (pValues[i].Type & EVT_VARIANT_TYPE_ARRAY)
+    for (i = 0; i < count; i++) {
+        if (values[i].Type & EVT_VARIANT_TYPE_ARRAY)
             continue;
 
-        switch (pValues[i].Type & EVT_VARIANT_TYPE_MASK) {
+        switch (values[i].Type & EVT_VARIANT_TYPE_MASK) {
         case EvtVarTypeNull:
             pack_nullstr(mp_pck);
             break;
         case EvtVarTypeString:
-            if (pack_wstr(mp_pck, pValues[i].StringVal, ctx)) {
+            if (pack_wstr(mp_pck, values[i].StringVal, ctx)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeAnsiString:
-            if (pack_wstr(mp_pck, pValues[i].AnsiStringVal, ctx)) {
+            if (pack_wstr(mp_pck, values[i].AnsiStringVal, ctx)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeSByte:
-            msgpack_pack_int8(mp_pck, pValues[i].SByteVal);
+            msgpack_pack_int8(mp_pck, values[i].SByteVal);
             break;
         case EvtVarTypeByte:
-            msgpack_pack_uint8(mp_pck, pValues[i].ByteVal);
+            msgpack_pack_uint8(mp_pck, values[i].ByteVal);
             break;
         case EvtVarTypeInt16:
-            msgpack_pack_int16(mp_pck, pValues[i].Int16Val);
+            msgpack_pack_int16(mp_pck, values[i].Int16Val);
             break;
         case EvtVarTypeUInt16:
-            msgpack_pack_uint16(mp_pck, pValues[i].UInt16Val);
+            msgpack_pack_uint16(mp_pck, values[i].UInt16Val);
             break;
         case EvtVarTypeInt32:
-            msgpack_pack_int32(mp_pck, pValues[i].Int32Val);
+            msgpack_pack_int32(mp_pck, values[i].Int32Val);
             break;
         case EvtVarTypeUInt32:
-            msgpack_pack_uint32(mp_pck, pValues[i].UInt32Val);
+            msgpack_pack_uint32(mp_pck, values[i].UInt32Val);
             break;
         case EvtVarTypeInt64:
-            msgpack_pack_int64(mp_pck, pValues[i].Int64Val);
+            msgpack_pack_int64(mp_pck, values[i].Int64Val);
             break;
         case EvtVarTypeUInt64:
-            msgpack_pack_uint64(mp_pck, pValues[i].UInt64Val);
+            msgpack_pack_uint64(mp_pck, values[i].UInt64Val);
             break;
         case EvtVarTypeSingle:
-            msgpack_pack_float(mp_pck, pValues[i].SingleVal);
+            msgpack_pack_float(mp_pck, values[i].SingleVal);
             break;
         case EvtVarTypeDouble:
-            msgpack_pack_double(mp_pck, pValues[i].DoubleVal);
+            msgpack_pack_double(mp_pck, values[i].DoubleVal);
             break;
         case EvtVarTypeBoolean:
-            if (pValues[i].BooleanVal) {
+            if (values[i].BooleanVal) {
                 msgpack_pack_true(mp_pck);
             }
             else {
@@ -342,45 +342,45 @@ static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT pValues, DW
             }
             break;
         case EvtVarTypeGuid:
-            if (pack_guid(mp_pck, pValues[i].GuidVal, ctx)) {
+            if (pack_guid(mp_pck, values[i].GuidVal, ctx)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeSizeT:
-            msgpack_pack_uint64(mp_pck, pValues[i].SizeTVal);
+            msgpack_pack_uint64(mp_pck, values[i].SizeTVal);
             break;
         case EvtVarTypeFileTime:
-            if (pack_filetime(mp_pck, pValues[i].FileTimeVal)) {
+            if (pack_filetime(mp_pck, values[i].FileTimeVal)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeSysTime:
-            if (pack_systemtime(mp_pck, pValues[i].SysTimeVal)) {
+            if (pack_systemtime(mp_pck, values[i].SysTimeVal)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeSid:
-            if (pack_sid(mp_pck, pValues[i].SidVal, ctx)) {
+            if (pack_sid(mp_pck, values[i].SidVal, ctx)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeHexInt32:
-            if (pack_hex32(mp_pck, pValues[i].Int32Val)) {
+            if (pack_hex32(mp_pck, values[i].Int32Val)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeHexInt64:
-            if (pack_hex64(mp_pck, pValues[i].Int64Val)) {
+            if (pack_hex64(mp_pck, values[i].Int64Val)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeEvtXml:
-            if (pack_wstr(mp_pck, pValues[i].XmlVal, ctx)) {
+            if (pack_wstr(mp_pck, values[i].XmlVal, ctx)) {
                 pack_nullstr(mp_pck);
             }
             break;
         case EvtVarTypeBinary:
-            if (pack_binary(mp_pck, pValues[i].BinaryVal, pValues[i].Count)) {
+            if (pack_binary(mp_pck, values[i].BinaryVal, values[i].Count)) {
                 pack_nullstr(mp_pck);
             }
         default:
@@ -390,8 +390,8 @@ static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT pValues, DW
     }
 }
 
-void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *wSystem, WCHAR *wMessage,
-                              PEVT_VARIANT pValues, UINT countInserts, struct winevtlog_channel *ch,
+void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *system_xml, WCHAR *message,
+                              PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                               struct winevtlog_config *ctx)
 {
     int count = 2;
@@ -407,23 +407,23 @@ void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *wSystem, WCHAR *wMe
 
     msgpack_pack_str(mp_pck, 6);
     msgpack_pack_str_body(mp_pck, "System", 6);
-    if (pack_wstr(mp_pck, wSystem, ctx)) {
+    if (pack_wstr(mp_pck, system_xml, ctx)) {
         pack_nullstr(mp_pck);
     }
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "Message", 7);
-    if (pack_wstr(mp_pck, wMessage, ctx)) {
+    if (pack_wstr(mp_pck, message, ctx)) {
         pack_nullstr(mp_pck);
     }
     if (ctx->string_inserts) {
         msgpack_pack_str(mp_pck, 13);
         msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_string_inserts(mp_pck, pValues, countInserts, ctx);
+        pack_string_inserts(mp_pck, string_inserts, count_inserts, ctx);
     }
 }
 
-void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *wMessage,
-                          PEVT_VARIANT pValues, UINT countInserts, struct winevtlog_channel *ch,
+void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT system, WCHAR *message,
+                          PEVT_VARIANT string_inserts, UINT count_inserts, struct winevtlog_channel *ch,
                           struct winevtlog_config *ctx)
 {
     size_t len;
@@ -441,15 +441,15 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* ProviderName */
     msgpack_pack_str(mp_pck, 12);
     msgpack_pack_str_body(mp_pck, "ProviderName", 12);
-    if (pack_wstr(mp_pck, pSystem[EvtSystemProviderName].StringVal, ctx)) {
+    if (pack_wstr(mp_pck, system[EvtSystemProviderName].StringVal, ctx)) {
         pack_nullstr(mp_pck);
     }
 
     /* ProviderGuid */
     msgpack_pack_str(mp_pck, 12);
     msgpack_pack_str_body(mp_pck, "ProviderGuid", 12);
-    if (EvtVarTypeNull != pSystem[EvtSystemProviderGuid].Type) {
-        if (pack_guid(mp_pck, pSystem[EvtSystemProviderGuid].GuidVal, ctx)) {
+    if (EvtVarTypeNull != system[EvtSystemProviderGuid].Type) {
+        if (pack_guid(mp_pck, system[EvtSystemProviderGuid].GuidVal, ctx)) {
             pack_nullstr(mp_pck);
         }
     }
@@ -460,8 +460,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Qualifiers */
     msgpack_pack_str(mp_pck, 10);
     msgpack_pack_str_body(mp_pck, "Qualifiers", 10);
-    if (EvtVarTypeNull != pSystem[EvtSystemQualifiers].Type) {
-        msgpack_pack_uint16(mp_pck, pSystem[EvtSystemQualifiers].UInt16Val);
+    if (EvtVarTypeNull != system[EvtSystemQualifiers].Type) {
+        msgpack_pack_uint16(mp_pck, system[EvtSystemQualifiers].UInt16Val);
     }
     else {
         pack_nullstr(mp_pck);
@@ -470,8 +470,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* EventID */
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "EventID", 7);
-    if (EvtVarTypeNull != pSystem[EvtSystemEventID].Type) {
-        msgpack_pack_uint16(mp_pck, pSystem[EvtSystemEventID].UInt16Val);
+    if (EvtVarTypeNull != system[EvtSystemEventID].Type) {
+        msgpack_pack_uint16(mp_pck, system[EvtSystemEventID].UInt16Val);
     }
     else {
         pack_nullstr(mp_pck);
@@ -480,8 +480,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Version */
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "Version", 7);
-    if (EvtVarTypeNull != pSystem[EvtSystemVersion].Type) {
-        msgpack_pack_uint8(mp_pck, pSystem[EvtSystemVersion].ByteVal);
+    if (EvtVarTypeNull != system[EvtSystemVersion].Type) {
+        msgpack_pack_uint8(mp_pck, system[EvtSystemVersion].ByteVal);
     }
     else {
         msgpack_pack_uint8(mp_pck, 0);
@@ -490,8 +490,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Level */
     msgpack_pack_str(mp_pck, 5);
     msgpack_pack_str_body(mp_pck, "Level", 5);
-    if (EvtVarTypeNull != pSystem[EvtSystemLevel].Type) {
-        msgpack_pack_uint8(mp_pck, pSystem[EvtSystemLevel].ByteVal);
+    if (EvtVarTypeNull != system[EvtSystemLevel].Type) {
+        msgpack_pack_uint8(mp_pck, system[EvtSystemLevel].ByteVal);
     }
     else {
         msgpack_pack_uint8(mp_pck, 0);
@@ -500,8 +500,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Task */
     msgpack_pack_str(mp_pck, 4);
     msgpack_pack_str_body(mp_pck, "Task", 4);
-    if (EvtVarTypeNull != pSystem[EvtSystemTask].Type) {
-        msgpack_pack_uint16(mp_pck, pSystem[EvtSystemTask].UInt16Val);
+    if (EvtVarTypeNull != system[EvtSystemTask].Type) {
+        msgpack_pack_uint16(mp_pck, system[EvtSystemTask].UInt16Val);
     }
     else {
         msgpack_pack_uint16(mp_pck, 0);
@@ -510,8 +510,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Opcode */
     msgpack_pack_str(mp_pck, 6);
     msgpack_pack_str_body(mp_pck, "Opcode", 6);
-    if (EvtVarTypeNull != pSystem[EvtSystemOpcode].Type) {
-        msgpack_pack_uint8(mp_pck, pSystem[EvtSystemOpcode].ByteVal);
+    if (EvtVarTypeNull != system[EvtSystemOpcode].Type) {
+        msgpack_pack_uint8(mp_pck, system[EvtSystemOpcode].ByteVal);
     }
     else {
         msgpack_pack_uint8(mp_pck, 0);
@@ -520,8 +520,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Keywords */
     msgpack_pack_str(mp_pck, 8);
     msgpack_pack_str_body(mp_pck, "Keywords", 8);
-    if (EvtVarTypeNull != pSystem[EvtSystemKeywords].Type) {
-        pack_keywords(mp_pck, pSystem[EvtSystemKeywords].UInt64Val);
+    if (EvtVarTypeNull != system[EvtSystemKeywords].Type) {
+        pack_keywords(mp_pck, system[EvtSystemKeywords].UInt64Val);
     }
     else {
         msgpack_pack_uint64(mp_pck, 0);
@@ -530,15 +530,15 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* TimeCreated */
     msgpack_pack_str(mp_pck, 11);
     msgpack_pack_str_body(mp_pck, "TimeCreated", 11);
-    if (pack_filetime(mp_pck, pSystem[EvtSystemTimeCreated].FileTimeVal)) {
+    if (pack_filetime(mp_pck, system[EvtSystemTimeCreated].FileTimeVal)) {
         pack_nullstr(mp_pck);
     }
 
     /* EventRecordID */
     msgpack_pack_str(mp_pck, 13);
     msgpack_pack_str_body(mp_pck, "EventRecordID", 13);
-    if (EvtVarTypeNull != pSystem[EvtSystemEventRecordId].Type) {
-        msgpack_pack_uint64(mp_pck, pSystem[EvtSystemEventRecordId].UInt64Val);
+    if (EvtVarTypeNull != system[EvtSystemEventRecordId].Type) {
+        msgpack_pack_uint64(mp_pck, system[EvtSystemEventRecordId].UInt64Val);
     }
     else {
         msgpack_pack_uint64(mp_pck, 0);
@@ -547,22 +547,22 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* ActivityID */
     msgpack_pack_str(mp_pck, 10);
     msgpack_pack_str_body(mp_pck, "ActivityID", 10);
-    if (pack_guid(mp_pck, pSystem[EvtSystemActivityID].GuidVal, ctx)) {
+    if (pack_guid(mp_pck, system[EvtSystemActivityID].GuidVal, ctx)) {
         pack_nullstr(mp_pck);
     }
 
     /* Related ActivityID */
     msgpack_pack_str(mp_pck, 17);
     msgpack_pack_str_body(mp_pck, "RelatedActivityID", 17);
-    if (pack_guid(mp_pck, pSystem[EvtSystemRelatedActivityID].GuidVal, ctx)) {
+    if (pack_guid(mp_pck, system[EvtSystemRelatedActivityID].GuidVal, ctx)) {
         pack_nullstr(mp_pck);
     }
 
     /* ProcessID */
     msgpack_pack_str(mp_pck, 9);
     msgpack_pack_str_body(mp_pck, "ProcessID", 9);
-    if (EvtVarTypeNull != pSystem[EvtSystemProcessID].Type) {
-        msgpack_pack_uint32(mp_pck, pSystem[EvtSystemProcessID].UInt32Val);
+    if (EvtVarTypeNull != system[EvtSystemProcessID].Type) {
+        msgpack_pack_uint32(mp_pck, system[EvtSystemProcessID].UInt32Val);
     }
     else {
         msgpack_pack_uint32(mp_pck, 0);
@@ -571,8 +571,8 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* ThreadID */
     msgpack_pack_str(mp_pck, 8);
     msgpack_pack_str_body(mp_pck, "ThreadID", 8);
-    if (EvtVarTypeNull != pSystem[EvtSystemThreadID].Type) {
-        msgpack_pack_uint32(mp_pck, pSystem[EvtSystemThreadID].UInt32Val);
+    if (EvtVarTypeNull != system[EvtSystemThreadID].Type) {
+        msgpack_pack_uint32(mp_pck, system[EvtSystemThreadID].UInt32Val);
     }
     else {
         msgpack_pack_uint32(mp_pck, 0);
@@ -581,27 +581,27 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     /* Channel */
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "Channel", 7);
-    if (pack_wstr(mp_pck, pSystem[EvtSystemChannel].StringVal, ctx)) {
+    if (pack_wstr(mp_pck, system[EvtSystemChannel].StringVal, ctx)) {
         pack_nullstr(mp_pck);
     }
     /* Computer */
     msgpack_pack_str(mp_pck, 8);
     msgpack_pack_str_body(mp_pck, "Computer", 8);
-    if (pack_wstr(mp_pck, pSystem[EvtSystemComputer].StringVal, ctx)) {
+    if (pack_wstr(mp_pck, system[EvtSystemComputer].StringVal, ctx)) {
         pack_nullstr(mp_pck);
     }
 
     /* UserID */
     msgpack_pack_str(mp_pck, 6);
     msgpack_pack_str_body(mp_pck, "UserID", 6);
-    if (pack_sid(mp_pck, pSystem[EvtSystemUserID].SidVal, ctx)) {
+    if (pack_sid(mp_pck, system[EvtSystemUserID].SidVal, ctx)) {
         pack_nullstr(mp_pck);
     }
 
     /* Message */
     msgpack_pack_str(mp_pck, 7);
     msgpack_pack_str_body(mp_pck, "Message", 7);
-    if (pack_wstr(mp_pck, wMessage, ctx)) {
+    if (pack_wstr(mp_pck, message, ctx)) {
         pack_nullstr(mp_pck);
     }
 
@@ -609,6 +609,6 @@ void winevtlog_pack_event(msgpack_packer *mp_pck, PEVT_VARIANT pSystem, WCHAR *w
     if (ctx->string_inserts) {
         msgpack_pack_str(mp_pck, 13);
         msgpack_pack_str_body(mp_pck, "StringInserts", 13);
-        pack_string_inserts(mp_pck, pValues, countInserts, ctx);
+        pack_string_inserts(mp_pck, string_inserts, count_inserts, ctx);
     }
 }
