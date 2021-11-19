@@ -44,6 +44,7 @@ static int pack_wstr(msgpack_packer *mp_pck, const wchar_t *wstr, struct winevtl
     char *buf;
     UINT code_page = CP_UTF8;
     LPCSTR defaultChar = L" ";
+
     if (ctx->use_ansi) {
         code_page = CP_ACP;
     }
@@ -109,6 +110,7 @@ static int pack_binary(msgpack_packer *mp_pck, PBYTE bin, size_t length)
 static int pack_guid(msgpack_packer *mp_pck, const GUID *guid, struct winevtlog_config *ctx)
 {
     LPOLESTR p = NULL;
+
     if (FAILED(StringFromCLSID(guid, &p))) {
         return -1;
     }
@@ -126,6 +128,7 @@ static int pack_hex32(msgpack_packer *mp_pck, int32_t hex)
 {
     CHAR buffer[32];
     size_t size = _countof(buffer);
+
     _snprintf_s(buffer,
                 size,
                 _TRUNCATE,
@@ -146,6 +149,7 @@ static int pack_hex64(msgpack_packer *mp_pck, int64_t hex)
 {
     CHAR buffer[32];
     size_t size = _countof(buffer);
+
     _snprintf_s(buffer,
                 size,
                 _TRUNCATE,
@@ -168,6 +172,7 @@ static int pack_keywords(msgpack_packer *mp_pck, uint64_t keywords)
 {
     CHAR buffer[32];
     size_t size = _countof(buffer);
+
     _snprintf_s(buffer,
                 size,
                 _TRUNCATE,
@@ -271,6 +276,7 @@ static int pack_sid(msgpack_packer *mp_pck, PSID sid, struct winevtlog_config *c
 static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT pValues, DWORD propCount, struct winevtlog_config *ctx)
 {
     int i;
+
     msgpack_pack_array(mp_pck, propCount);
 
     for (i = 0; i < propCount; i++) {
@@ -383,6 +389,7 @@ void winevtlog_pack_xml_event(msgpack_packer *mp_pck, WCHAR *wSystem, WCHAR *wMe
                               struct winevtlog_config *ctx)
 {
     int count = 2;
+
     msgpack_pack_array(mp_pck, 2);
     flb_pack_time_now(mp_pck);
 
