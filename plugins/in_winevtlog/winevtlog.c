@@ -25,6 +25,8 @@
 #include <fluent-bit/flb_input.h>
 #include "winevtlog.h"
 
+#define EVENT_PROVIDER_NAME_LENGTH 256
+
 static char* convert_wstr(wchar_t *wstr, UINT codePage);
 static wchar_t* convert_str(char *str);
 
@@ -105,10 +107,7 @@ struct winevtlog_channel *winevtlog_subscribe(const char *channel, int read_exis
 
 BOOL cancel_subscription(struct winevtlog_channel *ch)
 {
-    int result = TRUE;
-    result = EvtCancel(ch->subscription);
-
-    return result;
+    return EvtCancel(ch->subscription);
 }
 
 static void close_handles(struct winevtlog_channel *ch)
@@ -159,7 +158,8 @@ PWSTR render_event(EVT_HANDLE hEvent, DWORD flags, unsigned int *event_size)
 
     if (!EvtRender(NULL, hEvent, flags, dwBufferSize, wEventXML, &dwBufferUsed, &count))
     {
-        if (ERROR_INSUFFICIENT_BUFFER == (status = GetLastError()))
+        status = GetLastError();
+        if (status == ERROR_INSUFFICIENT_BUFFER)
         {
             dwBufferSize = dwBufferUsed;
             /* return buffer size */
@@ -187,8 +187,9 @@ PWSTR render_event(EVT_HANDLE hEvent, DWORD flags, unsigned int *event_size)
 
 cleanup:
 
-    if (wEventXML)
+    if (wEventXML) {
         flb_free(wEventXML);
+    }
 
     return NULL;
 }
@@ -218,7 +219,7 @@ DWORD render_system_event(EVT_HANDLE hEvent, PEVT_VARIANT *pSystem, unsigned int
                    &dwPropertyCount)) {
         status = GetLastError();
 
-        if (ERROR_INSUFFICIENT_BUFFER == status) {
+        if (status == ERROR_INSUFFICIENT_BUFFER) {
             dwBufferSize = dwBufferUsed;
             pValues = (PEVT_VARIANT)flb_malloc(dwBufferSize);
             if (pValues) {
@@ -271,7 +272,8 @@ PWSTR get_message(EVT_HANDLE hMetadata, EVT_HANDLE handle, unsigned int *message
     char *error_message = NULL;
 
     // Get the size of the buffer
-    if (!EvtFormatMessage(hMetadata, handle, 0, 0, NULL, EvtFormatMessageEvent, dwBufferSize, pBuffer, &dwBufferUsed)) {
+    if (!EvtFormatMessage(hMetadata, handle, 0, 0, NULL,
+                          EvtFormatMessageEvent, dwBufferSize, pBuffer, &dwBufferUsed)) {
         status = GetLastError();
         if (ERROR_INSUFFICIENT_BUFFER == status) {
             dwBufferSize = dwBufferUsed;
@@ -352,8 +354,7 @@ cleanup:
 
 PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_size)
 {
-#define BUFSIZE 256
-    WCHAR *wBuffer[BUFSIZE];
+    WCHAR *wBuffer[EVENT_PROVIDER_NAME_LENGTH];
     PEVT_VARIANT pValues = NULL;
     DWORD dwBufferUsed = 0;
     DWORD status = ERROR_SUCCESS, count = 0;
@@ -371,7 +372,7 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
     if (EvtRender(hContext,
                   handle,
                   EvtRenderEventValues,
-                  BUFSIZE,
+                  EVENT_PROVIDER_NAME_LENGTH,
                   wBuffer,
                   &dwBufferUsed,
                   &count) != FALSE){
@@ -398,8 +399,6 @@ PWSTR get_description(EVT_HANDLE handle, LANGID langID, unsigned int *message_si
     }
 
     wMessage = get_message(hMetadata, handle, message_size);
-
-#undef BUFSIZE
 
 cleanup:
     if (hContext) {
@@ -504,13 +503,16 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
 {
     DWORD status = ERROR_SUCCESS;
     PWSTR wSystem = NULL;
-    unsigned int system_size = 0, message_size = 0, string_inserts_size = 0;
+    unsigned int system_size = 0;
+    unsigned int message_size = 0;
+    unsigned int string_inserts_size = 0;
     int hit_threshold = FLB_FALSE;
     unsigned int read_size = 0;
     PWSTR wMessage = NULL;
     PEVT_VARIANT pSystem = NULL;
     PEVT_VARIANT pStringInserts = NULL;
     UINT countInserts = 0;
+    DWORD i = 0;
 
     while (winevtlog_next(ch, hit_threshold)) {
         for (DWORD i = 0; i < ch->count; i++) {
@@ -547,7 +549,7 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
         }
 
         /* Closes any events in case an error occurred above. */
-        for (DWORD i = 0; i < ch->count; i++) {
+        for (i = 0; i < ch->count; i++) {
             if (NULL != ch->events[i]) {
                 EvtClose(ch->events[i]);
                 ch->events[i] = NULL;
