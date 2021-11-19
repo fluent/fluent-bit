@@ -905,36 +905,32 @@ static int pack_record(struct flb_loki *ctx,
 
     /* Drop single key */
     if (ctx->drop_single_key == FLB_TRUE && rec->type == MSGPACK_OBJECT_MAP && rec->via.map.size == 1) {
-        if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
-            rec = &rec->via.map.ptr[0].val;
-        } else if (ctx->out_line_format == FLB_LOKI_FMT_KV) {
-            val = rec->via.map.ptr[0].val;
+        val = rec->via.map.ptr[0].val;
 
-            if (val.type == MSGPACK_OBJECT_STR) {
-                msgpack_pack_str(mp_pck, val.via.str.size);
-                msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
-            } else {
-                buf = flb_sds_create_size(size_hint);
-                if (!buf) {
-                    msgpack_unpacked_destroy(&mp_buffer);
-                    if (tmp_sbuf_data) {
-                        flb_free(tmp_sbuf_data);
-                    }
-                    return -1;
+        if (val.type == MSGPACK_OBJECT_STR) {
+            msgpack_pack_str(mp_pck, val.via.str.size);
+            msgpack_pack_str_body(mp_pck, val.via.str.ptr, val.via.str.size);
+        } else {
+            buf = flb_sds_create_size(size_hint);
+            if (!buf) {
+                msgpack_unpacked_destroy(&mp_buffer);
+                if (tmp_sbuf_data) {
+                    flb_free(tmp_sbuf_data);
                 }
-                pack_format_line_value(buf, &val);
-                msgpack_pack_str(mp_pck, flb_sds_len(buf));
-                msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
-                flb_sds_destroy(buf);
+                return -1;
             }
-
-            msgpack_unpacked_destroy(&mp_buffer);
-            if (tmp_sbuf_data) {
-                flb_free(tmp_sbuf_data);
-            }
-
-            return 0;
+            pack_format_line_value(buf, &val);
+            msgpack_pack_str(mp_pck, flb_sds_len(buf));
+            msgpack_pack_str_body(mp_pck, buf, flb_sds_len(buf));
+            flb_sds_destroy(buf);
         }
+
+        msgpack_unpacked_destroy(&mp_buffer);
+        if (tmp_sbuf_data) {
+            flb_free(tmp_sbuf_data);
+        }
+
+        return 0;
     }
 
     if (ctx->out_line_format == FLB_LOKI_FMT_JSON) {
