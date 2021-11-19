@@ -461,6 +461,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     EVT_HANDLE hEvents[SUBSCRIBE_ARRAY_SIZE];
     DWORD count = 0;
     DWORD status = ERROR_SUCCESS;
+    BOOL has_next = FALSE;
 
     /* If subscription handle is NULL, it should return false. */
     if (!ch->subscription) {
@@ -472,7 +473,10 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
         return FLB_FALSE;
     }
 
-    if (!EvtNext(ch->subscription, SUBSCRIBE_ARRAY_SIZE, hEvents, INFINITE, 0, &count)) {
+    has_next = EvtNext(ch->subscription, SUBSCRIBE_ARRAY_SIZE,
+                       hEvents, INFINITE, 0, &count);
+
+    if (!has_next) {
         status = GetLastError();
         if (ERROR_CANCELLED == status) {
             return FLB_FALSE;
