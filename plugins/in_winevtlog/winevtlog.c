@@ -113,6 +113,8 @@ BOOL cancel_subscription(struct winevtlog_channel *ch)
 
 static void close_handles(struct winevtlog_channel *ch)
 {
+    int i;
+
     if (ch->subscription) {
         EvtClose(ch->subscription);
         ch->subscription = NULL;
@@ -125,7 +127,7 @@ static void close_handles(struct winevtlog_channel *ch)
         EvtClose(ch->bookmark);
         ch->bookmark = NULL;
     }
-    for (int i = 0; i < ch->count; i++) {
+    for (i = 0; i < ch->count; i++) {
         if (ch->events[i]) {
             EvtClose(ch->events[i]);
             ch->events[i] = NULL;
@@ -460,6 +462,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
     DWORD count = 0;
     DWORD status = ERROR_SUCCESS;
     BOOL has_next = FALSE;
+    int i;
 
     /* If subscription handle is NULL, it should return false. */
     if (!ch->subscription) {
@@ -486,7 +489,7 @@ static int winevtlog_next(struct winevtlog_channel *ch, int hit_threshold)
 
     if (status == ERROR_SUCCESS) {
         ch->count = count;
-        for (int i = 0; i < count; i++) {
+        for (i = 0; i < count; i++) {
             ch->events[i] = events[i];
             EvtUpdateBookmark(ch->bookmark, ch->events[i]);
         }
@@ -517,7 +520,7 @@ int winevtlog_read(struct winevtlog_channel *ch, msgpack_packer *mp_pck, struct 
     DWORD i = 0;
 
     while (winevtlog_next(ch, hit_threshold)) {
-        for (DWORD i = 0; i < ch->count; i++) {
+        for (i = 0; i < ch->count; i++) {
             if (ctx->render_event_as_xml) {
                 system_xml = render_event(ch->events[i], EvtRenderEventXml, &system_size);
                 message = get_description(ch->events[i], LANG_NEUTRAL, &message_size);
