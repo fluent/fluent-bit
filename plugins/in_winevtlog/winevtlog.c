@@ -253,8 +253,9 @@ DWORD render_system_event(EVT_HANDLE event, PEVT_VARIANT *system, unsigned int *
 
 cleanup:
 
-    if (context)
+    if (context) {
         EvtClose(context);
+    }
 
     return status;
 }
@@ -345,8 +346,9 @@ PWSTR get_message(EVT_HANDLE metadata, EVT_HANDLE handle, unsigned int *message_
     message = _wcsdup(buffer);
 
 cleanup:
-    if (buffer)
+    if (buffer) {
         flb_free(buffer);
+    }
 
     return message;
 }
@@ -450,8 +452,9 @@ int get_string_inserts(EVT_HANDLE handle, PEVT_VARIANT *string_inserts_values,
 
 cleanup:
 
-    if (context != NULL)
+    if (context != NULL) {
         EvtClose(context);
+    }
 
     return succeeded;
 }
@@ -652,8 +655,9 @@ static wchar_t* convert_str(char *str)
     wchar_t *buf = NULL;
 
     size = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);
-    if (size == 0)
+    if (size == 0) {
         return NULL;
+    }
 
     buf = flb_malloc(sizeof(PWSTR) * size);
     if (buf == NULL) {
@@ -675,8 +679,9 @@ static char* convert_wstr(wchar_t *wstr, UINT codePage)
     char *buf = NULL;
 
     size = WideCharToMultiByte(codePage, 0, wstr, -1, NULL, 0, NULL, NULL);
-    if (size == 0)
+    if (size == 0) {
         return NULL;
+    }
 
     buf = flb_malloc(size);
     if (buf == NULL) {

@@ -286,8 +286,9 @@ static void pack_string_inserts(msgpack_packer *mp_pck, PEVT_VARIANT values, DWO
     msgpack_pack_array(mp_pck, count);
 
     for (i = 0; i < count; i++) {
-        if (values[i].Type & EVT_VARIANT_TYPE_ARRAY)
+        if (values[i].Type & EVT_VARIANT_TYPE_ARRAY) {
             continue;
+        }
 
         switch (values[i].Type & EVT_VARIANT_TYPE_MASK) {
         case EvtVarTypeNull:
