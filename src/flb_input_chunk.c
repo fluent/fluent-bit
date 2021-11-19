@@ -684,6 +684,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     }
 
     ic->busy = FLB_FALSE;
+    ic->fs_counted = FLB_FALSE;
     ic->fs_backlog = FLB_TRUE;
     ic->chunk = chunk;
     ic->in = in;
@@ -866,6 +867,7 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
     ic->event_type = in->event_type;
 
     ic->busy = FLB_FALSE;
+    ic->fs_counted = FLB_FALSE;
     ic->chunk = chunk;
     ic->fs_backlog = FLB_FALSE;
     ic->in = in;
@@ -926,11 +928,13 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
         }
 
         if (flb_routes_mask_get_bit(ic->routes_mask, o_ins->id) != 0) {
-            FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
-            o_ins->fs_chunks_size -= bytes;
-            flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
-                      "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
-                      bytes, o_ins->name, o_ins->fs_chunks_size);
+            if (ic->fs_counted == FLB_TRUE) {
+                FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, -bytes);
+                o_ins->fs_chunks_size -= bytes;
+                flb_debug("[input chunk] remove chunk %s with %ld bytes from plugin %s, "
+                          "the updated fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
+                          bytes, o_ins->name, o_ins->fs_chunks_size);
+            }
         }
     }
 
@@ -1558,6 +1562,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
              */
             FS_CHUNK_SIZE_DEBUG_MOD(o_ins, ic, chunk_size);
             o_ins->fs_chunks_size += chunk_size;
+            ic->fs_counted = FLB_TRUE;
 
             flb_debug("[input chunk] chunk %s update plugin %s fs_chunks_size by %ld bytes, "
                       "the current fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
