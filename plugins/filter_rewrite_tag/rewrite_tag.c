@@ -35,6 +35,7 @@
 static int emitter_create(struct flb_rewrite_tag *ctx)
 {
     int ret;
+    int coll_fd;
     struct flb_input_instance *ins;
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
@@ -70,6 +71,13 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         flb_plg_error(ctx->ins, "cannot set storage.type");
     }
 
+    /* Set async mode property */
+    ret = flb_input_set_property(ins, "async_emit",
+                                 ctx->emitter_async_emit);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "cannot set storage.type");
+    }
+
     /* Initialize emitter plugin */
     ret = flb_input_instance_init(ins, ctx->config);
     if (ret == -1) {
@@ -80,6 +88,13 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         return -1;
     }
 
+    if (flb_utils_bool(ctx->emitter_async_emit)) {
+        /* Retrieve the collector id registered on the in_emitter initialization */
+        coll_fd = in_emitter_get_collector_id(ins);
+
+        /* Initialize plugin collector (event callback) */
+        flb_input_collector_start(coll_fd, ins);
+    }
 #ifdef FLB_HAVE_METRICS
     /* Override Metrics title */
     ret = flb_metrics_title(ctx->emitter_name, ins->metrics);
@@ -497,6 +512,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SIZE, "emitter_mem_buf_limit", FLB_RTAG_MEM_BUF_LIMIT_DEFAULT,
      FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_mem_buf_limit),
      "set a memory buffer limit to restrict memory usage of emitter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "emitter_async_emit", "false",
+     FLB_FALSE, FLB_TRUE, offsetof(struct flb_rewrite_tag, emitter_async_emit),
+     "If true, in_emitter tries to buffer records and enqueue chunks by timer."
     },
     /* EOF */
     {0}
