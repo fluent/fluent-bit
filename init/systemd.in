@@ -1,5 +1,6 @@
 [Unit]
 Description=@FLB_PROG_NAME@
+Documentation=https://docs.fluentbit.io/manual/
 Requires=network.target
 After=network.target
 
