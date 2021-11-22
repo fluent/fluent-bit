@@ -1354,14 +1354,6 @@ retry_request:
         if (c->resp.status == 200) {
             if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
                 /* code was 200, but response is invalid, treat as failure */
-                if (retry == FLB_TRUE) {
-                    flb_plg_debug(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
-                                  AMZN_REQUEST_ID_HEADER);
-                }
-                else {
-                    flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
-                                  AMZN_REQUEST_ID_HEADER);
-                }
                 if (c->resp.data != NULL) {
                     flb_plg_debug(ctx->ins, "Could not find sequence token in "
                                   "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
@@ -1369,10 +1361,12 @@ retry_request:
                 flb_http_client_destroy(c);
 
                 if (retry == FLB_TRUE) {
-                    flb_plg_debug(ctx->ins, "issuing immediate retry for invalid request");
+                    flb_plg_debug(ctx->ins, "issuing immediate retry for invalid response");
                     retry = FLB_FALSE;
                     goto retry_request;
                 }
+                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
+                                  AMZN_REQUEST_ID_HEADER);
                 return -1;
             }
 
