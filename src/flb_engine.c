@@ -234,7 +234,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
-    else if (ret == FLB_RETRY) {
+    else if (ret == FLB_RETRY && config->is_running && !config->is_shutting_down) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
@@ -859,6 +859,7 @@ int flb_engine_exit(struct flb_config *config)
     uint64_t val = FLB_ENGINE_EV_STOP;
 
     config->is_ingestion_active = FLB_FALSE;
+    config->is_shutting_down = FLB_TRUE;
 
     flb_input_pause_all(config);
 
