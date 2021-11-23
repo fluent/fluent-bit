@@ -82,8 +82,15 @@ struct flb_upstream {
     struct flb_tls *tls;
 #endif
 
+    struct flb_config *config;
     struct mk_list _head;
 };
+
+
+static inline int flb_upstream_is_shutting_down(struct flb_upstream *u)
+{
+    return u->config->is_shutting_down;
+}
 
 void flb_upstream_queue_init(struct flb_upstream_queue *uq);
 struct flb_upstream_queue *flb_upstream_queue_get(struct flb_upstream *u);
