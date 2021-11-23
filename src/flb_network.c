@@ -1212,7 +1212,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (fd == -1) {
-        flb_error("[net] could not connect to %s:%s",
+        flb_debug("[net] could not connect to %s:%s",
                   host, _port);
     }
 
