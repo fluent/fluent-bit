@@ -429,15 +429,19 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
 static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int locked = FLB_FALSE;
     struct flb_upstream *u = u_conn->u;
 
     if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
+        ret = pthread_mutex_trylock(&u->mutex_lists);
+        if (ret == 0) {
+            locked = FLB_TRUE;
+        }
     }
 
     ret = prepare_destroy_conn(u_conn);
 
-    if (u->thread_safe == FLB_TRUE) {
+    if (u->thread_safe == FLB_TRUE && locked) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
 
