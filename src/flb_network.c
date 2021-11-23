@@ -298,14 +298,13 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          */
 #ifdef FLB_SYSTEM_WINDOWS
         socket_errno = flb_socket_error(fd);
-        err = -1;
+        err = 0;
 #else
         socket_errno = errno;
         err = flb_socket_error(fd);
 #endif
-        if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
-            flb_error("[net] connection #%i failed to: %s:%i",
-                      fd, host, port);
+
+        if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
             goto exit_error;
         }
 
@@ -384,14 +383,30 @@ static int net_connect_async(int fd,
      */
 #ifdef FLB_SYSTEM_WINDOWS
     socket_errno = flb_socket_error(fd);
-    err = -1;
+    err = 0;
 #else
     socket_errno = errno;
     err = flb_socket_error(fd);
 #endif
-    if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
-        flb_error("[net] connection #%i failed to: %s:%i",
-                  fd, host, port);
+    /* The logic behind this check is that when establishing a connection
+     * errno should be EINPROGRESS with no additional information in order
+     * for it to be a healthy attempt. However, when errno is EINPROGRESS
+     * and an error occurs it could be saved in the so_error socket field
+     * which has to be accessed through getsockopt(... SO_ERROR ...) so
+     * in order to preserve that behavior while also properly detecting
+     * other errno values as error conditions the comparison was changed.
+     *
+     * Windows note : flb_socket_error returns either the value returned
+     * by WSAGetLastError or the value returned by getsockopt(... SO_ERROR ...)
+     * if WSAGetLastError returns WSAEWOULDBLOCK as per libevents code.
+     *
+     * General note : according to the connect syscall man page (not libc)
+     * there could be a timing issue with checking SO_ERROR here because
+     * the suggested use involves checking it after a select or poll call
+     * returns the socket as writable which is not the case here.
+     */
+
+    if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
         return -1;
     }
 
@@ -401,7 +416,6 @@ static int net_connect_async(int fd,
 
     /* Register the connection socket into the main event loop */
     MK_EVENT_ZERO(&u_conn->event);
-    u_conn->coro = async_ctx;
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
@@ -413,6 +427,8 @@ static int net_connect_async(int fd,
          */
         return -1;
     }
+
+    u_conn->coro = async_ctx;
 
     /*
      * Return the control to the parent caller, we need to wait for
@@ -1060,6 +1076,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     int ret;
     flb_sockfd_t fd = -1;
     char _port[6];
+    char address[41];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
 
@@ -1118,8 +1135,14 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
      * available address.
      */
     for (rp = res; rp != NULL; rp = rp->ai_next) {
+        if (u_conn->net_error > 0) {
+            if (u_conn->net_error == ETIMEDOUT) {
+                flb_warn("[net] timeout detected between connection attempts");
+            }
+        }
+
         /* create socket */
-        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd == -1) {
             flb_error("[net] coult not create client socket, retrying");
             continue;
@@ -1162,18 +1185,31 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         if (ret == -1) {
+            address[0] = '\0';
+
+            ret = flb_net_address_to_str(rp->ai_family, rp->ai_addr,
+                                         address, sizeof(address));
+
             /* If the connection failed, just abort and report the problem */
-            flb_error("[net] socket #%i could not connect to %s:%s",
-                      fd, host, _port);
+            flb_debug("[net] socket #%i could not connect to %s:%s",
+                      fd, address, _port);
             if (u_conn) {
                 u_conn->fd = -1;
                 u_conn->event.fd = -1;
             }
+
             flb_socket_close(fd);
             fd = -1;
-            break;
+
+            continue;
         }
+
         break;
+    }
+
+    if (fd == -1) {
+        flb_error("[net] could not connect to %s:%s",
+                  host, _port);
     }
 
     if (is_async) {
@@ -1433,6 +1469,39 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
     }
 
     return remote_fd;
+}
+
+int flb_net_address_to_str(int family, const struct sockaddr *addr,
+                           char *output_buffer, size_t output_buffer_size)
+{
+    struct sockaddr *proper_addr;
+    const char      *result;
+
+    if (family == AF_INET) {
+        proper_addr = (struct sockaddr *) &((struct sockaddr_in *) addr)->sin_addr;
+    }
+    else if (family == AF_INET6) {
+        proper_addr = (struct sockaddr *) &((struct sockaddr_in6 *) addr)->sin6_addr;
+    }
+    else {
+        strncpy(output_buffer,
+                "CONVERSION ERROR 1",
+                output_buffer_size);
+
+        return -1;
+    }
+
+    result = inet_ntop(family, proper_addr, output_buffer, output_buffer_size);
+
+    if (result == NULL) {
+        strncpy(output_buffer,
+                "CONVERSION ERROR 2",
+                output_buffer_size);
+
+        return -2;
+    }
+
+    return 0;
 }
 
 int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len)

@@ -41,6 +41,9 @@
 #include "arrow/compress.h"
 #endif
 
+#define DEFAULT_S3_PORT 443
+#define DEFAULT_S3_INSECURE_PORT 80
+
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
@@ -497,6 +500,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct flb_aws_client_generator *generator;
     (void) config;
     (void) data;
+    char *ep;
+    struct flb_split_entry *tok;
+    struct mk_list *split;
+    int list_size;
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
@@ -657,12 +664,48 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
-        ctx->endpoint = removeProtocol((char *) tmp, "https://");
-        ctx->free_endpoint = FLB_FALSE;
+        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
+        if (ctx->insecure == FLB_TRUE) {
+          ep = removeProtocol((char *) tmp, "http://");
+        }
+        else {
+          ep = removeProtocol((char *) tmp, "https://");
+        }
+
+        split = flb_utils_split((const char *)ep, ':', 1);
+        if (!split) {
+          flb_errno();
+          return -1;
+        }
+        list_size = mk_list_size(split);
+        if (list_size > 2) {
+          flb_plg_error(ctx->ins, "Failed to split endpoint");
+          flb_utils_split_free(split);
+          return -1;
+        }
+
+        tok = mk_list_entry_first(split, struct flb_split_entry, _head);
+        ctx->endpoint = flb_strndup(tok->value, tok->len);
+        if (!ctx->endpoint) {
+            flb_errno();
+            flb_utils_split_free(split);
+            return -1;
+        }
+        ctx->free_endpoint = FLB_TRUE;
+        if (list_size == 2) {
+          tok = mk_list_entry_next(&tok->_head, struct flb_split_entry, _head, split);
+          ctx->port = atoi(tok->value);
+        }
+        else {
+          ctx->port = ctx->insecure == FLB_TRUE ? DEFAULT_S3_INSECURE_PORT : DEFAULT_S3_PORT;
+        }
+        flb_utils_split_free(split);
     }
     else {
         /* default endpoint for the given region */
         ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
+        ctx->insecure = FLB_FALSE;
+        ctx->port = DEFAULT_S3_PORT;
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
@@ -705,18 +748,20 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (tmp) {
         ctx->content_type = (char *) tmp;
     }
-    
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
-                                     ins->tls_debug,
-                                     ins->tls_vhost,
-                                     ins->tls_ca_path,
-                                     ins->tls_ca_file,
-                                     ins->tls_crt_file,
-                                     ins->tls_key_file,
-                                     ins->tls_key_passwd);
-    if (!ctx->client_tls) {
-        flb_plg_error(ctx->ins, "Failed to create tls context");
-        return -1;
+
+    if (ctx->insecure == FLB_FALSE) {
+        ctx->client_tls = flb_tls_create(ins->tls_verify,
+                                         ins->tls_debug,
+                                         ins->tls_vhost,
+                                         ins->tls_ca_path,
+                                         ins->tls_ca_file,
+                                         ins->tls_crt_file,
+                                         ins->tls_key_file,
+                                         ins->tls_key_passwd);
+        if (!ctx->client_tls) {
+            flb_plg_error(ctx->ins, "Failed to create tls context");
+            return -1;
+        }
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -819,18 +864,24 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->provider = ctx->provider;
     ctx->s3_client->region = ctx->region;
     ctx->s3_client->service = "s3";
-    ctx->s3_client->port = 443;
+    ctx->s3_client->port = ctx->port;
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
     ctx->s3_client->retry_requests = ctx->retry_requests;
 
-    ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
-                                                   FLB_IO_TLS, ctx->client_tls);
+    if (ctx->insecure == FLB_TRUE) {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TCP, NULL);
+    } else {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TLS, ctx->client_tls);
+    }
     if (!ctx->s3_client->upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
     }
+
     flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
 
     ctx->s3_client->host = ctx->endpoint;
@@ -2009,11 +2060,11 @@ static void flush_init(void *out_context)
     }
 }
 
-static void cb_s3_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_s3_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
 {
     int ret;
     int chunk_size;
@@ -2029,10 +2080,13 @@ static void cb_s3_flush(const void *data, size_t bytes,
 
     /* Process chunk */
     if (ctx->log_key) {
-        chunk = flb_pack_msgpack_extract_log_key(ctx, data, bytes);
+        chunk = flb_pack_msgpack_extract_log_key(ctx,
+                                                 event_chunk->data,
+                                                 event_chunk->size);
     }
     else {
-        chunk = flb_pack_msgpack_to_json_format(data, bytes,
+        chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                                event_chunk->size,
                                                 FLB_PACK_JSON_FORMAT_LINES,
                                                 ctx->json_date_format,
                                                 ctx->date_key);
@@ -2044,17 +2098,21 @@ static void cb_s3_flush(const void *data, size_t bytes,
     chunk_size = flb_sds_len(chunk);
 
     /* Get a file candidate matching the given 'tag' */
-    upload_file = s3_store_file_get(ctx, tag, tag_len);
+    upload_file = s3_store_file_get(ctx,
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag));
 
     /* Specific to unit tests, will not get called normally */
     if (s3_plugin_under_test() == FLB_TRUE) {
-        unit_test_flush(ctx, upload_file, tag, tag_len, chunk, chunk_size, m_upload_file);
+        unit_test_flush(ctx, upload_file,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag),
+                        chunk, chunk_size, m_upload_file);
     }
 
     /* Discard upload_file if it has failed to upload MAX_UPLOAD_ERRORS times */
     if (upload_file != NULL && upload_file->failures >= MAX_UPLOAD_ERRORS) {
         flb_plg_warn(ctx->ins, "File with tag %s failed to send %d times, will not "
-                     "retry", tag, MAX_UPLOAD_ERRORS);
+                     "retry", event_chunk->tag, MAX_UPLOAD_ERRORS);
         s3_store_file_inactive(ctx, upload_file);
         upload_file = NULL;
     }
@@ -2063,15 +2121,17 @@ static void cb_s3_flush(const void *data, size_t bytes,
     if (upload_file != NULL && time(NULL) >
         (upload_file->create_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for %s",
+                     event_chunk->tag);
     }
 
-    m_upload_file = get_upload(ctx, tag, tag_len);
+    m_upload_file = get_upload(ctx,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
 
     if (m_upload_file != NULL && time(NULL) >
         (m_upload_file->init_time + ctx->upload_timeout)) {
         upload_timeout_check = FLB_TRUE;
-        flb_plg_info(ctx->ins, "upload_timeout reached for %s", tag);
+        flb_plg_info(ctx->ins, "upload_timeout reached for %s", event_chunk->tag);
     }
 
     /* If total_file_size has been reached, upload file */
@@ -2084,14 +2144,16 @@ static void cb_s3_flush(const void *data, size_t bytes,
     if (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE) {
         if (ctx->preserve_data_ordering == FLB_TRUE) {
             /* Buffer last chunk in file and lock file to prevent further changes */
-            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size, tag, tag_len);
+            ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             s3_store_file_lock(upload_file);
 
             /* Add chunk file to upload queue */
-            ret = add_to_queue(ctx, upload_file, m_upload_file, tag, tag_len);
+            ret = add_to_queue(ctx, upload_file, m_upload_file,
+                               event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2106,7 +2168,9 @@ static void cb_s3_flush(const void *data, size_t bytes,
         }
         else {
             /* Send upload directly without upload queue */
-            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file, tag, tag_len);
+            ret = send_upload_request(ctx, chunk, upload_file, m_upload_file,
+                                      event_chunk->tag,
+                                      flb_sds_len(event_chunk->tag));
             if (ret < 0) {
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
@@ -2115,7 +2179,8 @@ static void cb_s3_flush(const void *data, size_t bytes,
     }
 
     /* Buffer current chunk in filesystem and wait for next chunk from engine */
-    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size, tag, tag_len);
+    ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                       event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (ret < 0) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2289,7 +2354,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
      0, FLB_TRUE, offsetof(struct flb_s3, retry_requests),
      "Immediately retry failed requests to AWS services once. This option "
      "does not affect the normal Fluent Bit retry mechanism with backoff. "

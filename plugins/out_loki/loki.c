@@ -1152,8 +1152,8 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
     return json;
 }
 
-static void cb_loki_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_loki_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -1167,7 +1167,10 @@ static void cb_loki_flush(const void *data, size_t bytes,
     struct flb_http_client *c;
 
     /* Format the data to the expected Newrelic Payload */
-    payload = loki_compose_payload(ctx, (char *) tag, tag_len, data, bytes);
+    payload = loki_compose_payload(ctx,
+                                   (char *) event_chunk->tag,
+                                   flb_sds_len(event_chunk->tag),
+                                   event_chunk->data, event_chunk->size);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
         FLB_OUTPUT_RETURN(FLB_RETRY);

@@ -47,11 +47,18 @@ struct prometheus_remote_write_context {
     /* Log the response paylod */
     int log_response_payload;
 
+    /* config reader for 'add_label' */
+    struct mk_list *add_labels;
+
+    /* internal labels ready to append */
+    struct mk_list kv_labels;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
+
 
     /* instance context */
     struct flb_output_instance *ins;

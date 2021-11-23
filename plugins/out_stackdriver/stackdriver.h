@@ -131,6 +131,8 @@ struct flb_stackdriver {
     flb_sds_t severity_key;
     flb_sds_t trace_key;
     flb_sds_t log_name_key;
+    flb_sds_t http_request_key;
+    int http_request_key_size;
     bool autoformat_stackdriver_trace;
 
     flb_sds_t stackdriver_agent;

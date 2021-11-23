@@ -167,8 +167,8 @@ static flb_sds_t hash_format_metrics(struct prom_exporter *ctx)
     return buf;
 }
 
-static void cb_prom_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_prom_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
@@ -184,7 +184,9 @@ static void cb_prom_flush(const void *data, size_t bytes,
      * convert to Prometheus text format and store the output in the
      * hash table for metrics.
      */
-    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    ret = cmt_decode_msgpack_create(&cmt,
+                                    (char *) event_chunk->data,
+                                    event_chunk->size, &off);
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }

@@ -29,12 +29,15 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_task.h>
+#include <fluent-bit/flb_event.h>
+
 
 /* It creates a new output thread using a 'Retry' context */
 int flb_engine_dispatch_retry(struct flb_task_retry *retry,
                               struct flb_config *config)
 {
     int ret;
+    char *buf_data;
     size_t buf_size;
     struct flb_task *task;
 
@@ -61,16 +64,18 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
     }
 
     /* There is a match, get the buffer */
-    task->buf = flb_input_chunk_flush(task->ic, &buf_size);
-    task->size = buf_size;
-
-    if (!task->buf) {
+    buf_data = (char *) flb_input_chunk_flush(task->ic, &buf_size);
+    if (!buf_data) {
         /* Could not retrieve chunk content */
         flb_error("[engine_dispatch] could not retrieve chunk content, removing retry");
         flb_task_retry_destroy(retry);
         return -1;
     }
 
+    /* Update the buffer reference */
+    flb_event_chunk_update(task->event_chunk, buf_data, buf_size);
+
+    /* flush the task */
     ret = flb_output_task_flush(task, retry->o_ins, config);
     if (ret == -1) {
         flb_task_retry_destroy(retry);
@@ -89,16 +94,18 @@ static void test_run_formatter(struct flb_config *config,
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_test_out_formatter *otf;
+    struct flb_event_chunk *evc;
 
     otf = &o_ins->test_formatter;
+    evc = task->event_chunk;
 
     /* Invoke the output plugin formatter test callback */
     ret = otf->callback(config,
                         i_ins,
                         o_ins->context,
                         flush_ctx,
-                        task->tag, task->tag_len,
-                        task->buf, task->size,
+                        evc->tag, flb_sds_len(evc->tag),
+                        evc->data, evc->size,
                         &out_buf, &out_size);
 
     /* Call the runtime test callback checker */

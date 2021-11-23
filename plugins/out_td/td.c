@@ -180,8 +180,8 @@ static int cb_td_init(struct flb_output_instance *ins, struct flb_config *config
     return 0;
 }
 
-static void cb_td_flush(const void *data, size_t bytes,
-                        const char *tag, int tag_len,
+static void cb_td_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
                         void *out_context,
                         struct flb_config *config)
@@ -195,11 +195,9 @@ static void cb_td_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
     (void) i_ins;
-    (void) tag;
-    (void) tag_len;
 
     /* Convert format */
-    pack = td_format(data, bytes, &bytes_out);
+    pack = td_format(event_chunk->data, event_chunk->size, &bytes_out);
     if (!pack) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }

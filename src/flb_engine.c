@@ -196,17 +196,19 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
     /* A task has finished, delete it */
     if (ret == FLB_OK) {
         /* cmetrics */
-        cmt_counter_add(ins->cmt_proc_records, ts, task->records,
+        cmt_counter_add(ins->cmt_proc_records, ts, task->event_chunk->total_events,
                         1, (char *[]) {name});
 
-        cmt_counter_add(ins->cmt_proc_bytes, ts, task->size,
+        cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
                         1, (char *[]) {name});
 
         /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
-            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, task->records, ins->metrics);
-            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS,
+                            task->event_chunk->total_events, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES,
+                            task->event_chunk->size, ins->metrics);
         }
 #endif
         /* Inform the user if a 'retry' succedeed */
@@ -695,6 +697,11 @@ int flb_engine_start(struct flb_config *config)
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == FLB_ENGINE_STOP) {
+                    if (config->grace_count == 0) {
+                        flb_warn("[engine] service will shutdown in max %u seconds",
+                                 config->grace);
+                    }
+
                     /*
                      * We are preparing to shutdown, we give a graceful time
                      * of 'config->grace' seconds to process any pending event.
@@ -702,18 +709,29 @@ int flb_engine_start(struct flb_config *config)
                     event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
+
+                    /*
+                     * Configure a timer of 1 second, on expiration the code will
+                     * jump into the FLB_ENGINE_SHUTDOWN condition where it will
+                     * check if the grace period has finished, or if there are
+                     * any remaining tasks.
+                     *
+                     * If no tasks exists, there is no need to wait for the maximum
+                     * grace period.
+                     */
                     config->shutdown_fd = mk_event_timeout_create(evl,
-                                                                  config->grace,
+                                                                  1,
                                                                   0,
                                                                   event);
-                    flb_warn("[engine] service will stop in %u seconds", config->grace);
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
-                    flb_info("[engine] service stopped");
                     if (config->shutdown_fd > 0) {
                         mk_event_timeout_destroy(config->evl,
                                                  &config->event_shutdown);
                     }
+
+                    /* Increase the grace counter */
+                    config->grace_count++;
 
                     /*
                      * Grace period has finished, but we need to check if there is
@@ -723,13 +741,18 @@ int flb_engine_start(struct flb_config *config)
                      * wait again for the grace period and re-check again.
                      */
                     ret = flb_task_running_count(config);
-                    if (ret > 0) {
-                        flb_warn("[engine] shutdown delayed, grace period has "
-                                 "finished but some tasks are still running.");
-                        flb_task_running_print(config);
+                    if (ret > 0 && config->grace_count < config->grace) {
+                        if (config->grace_count == 1) {
+                            flb_task_running_print(config);
+                        }
                         flb_engine_exit(config);
                     }
                     else {
+                        if (ret > 0) {
+                            flb_task_running_print(config);
+                        }
+                        flb_info("[engine] service has stopped (%i pending tasks)",
+                                 ret);
                         ret = config->exit_status_code;
                         flb_engine_shutdown(config);
                         config = NULL;

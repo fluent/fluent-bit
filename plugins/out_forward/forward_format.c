@@ -44,6 +44,8 @@ int flb_forward_format_append_tag(struct flb_forward *ctx,
 #ifdef FLB_HAVE_RECORD_ACCESSOR
     flb_sds_t tmp;
     msgpack_object m;
+    
+    memset(&m, 0, sizeof(m));
 
     if (!fc->ra_tag) {
         msgpack_pack_str(mp_pck, tag_len);
@@ -422,7 +424,7 @@ int flb_forward_format(struct flb_config *config,
                        const void *data, size_t bytes,
                        void **out_buf, size_t *out_size)
 {
-    int ret;
+    int ret = 0;
     int mode = MODE_FORWARD;
     struct flb_upstream_node *node = NULL;
     struct flb_forward_config *fc;

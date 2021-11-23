@@ -200,21 +200,25 @@ int flb_tls_net_read_async(struct flb_coro *co, struct flb_upstream_conn *u_conn
     ret = tls->api->net_read(u_conn, buf, len);
     if (ret == FLB_TLS_WANT_READ) {
         u_conn->coro = co;
+
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
 
+        goto retry_read;
+    }
+    else
+    {
         /* We want this field to hold NULL at all times unless we are explicitly
          * waiting to be resumed.
          */
         u_conn->coro = NULL;
 
-        goto retry_read;
-    }
-    else if (ret < 0) {
-        return -1;
-    }
-    else if (ret == 0) {
-        return -1;
+        if (ret < 0) {
+            return -1;
+        }
+        else if (ret == 0) {
+            return -1;
+        }
     }
 
     return ret;
@@ -266,25 +270,21 @@ int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_con
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
 
-        /* We want this field to hold NULL at all times unless we are explicitly
-         * waiting to be resumed.
-         */
-        u_conn->coro = NULL;
-
         goto retry_write;
     }
     else if (ret == FLB_TLS_WANT_READ) {
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
 
-        /* We want this field to hold NULL at all times unless we are explicitly
-         * waiting to be resumed.
-         */
-        u_conn->coro = NULL;
-
         goto retry_write;
     }
     else if (ret < 0) {
+        /* We want this field to hold NULL at all times unless we are explicitly
+         * waiting to be resumed.
+         */
+
+        u_conn->coro = NULL;
+
         return -1;
     }
 
@@ -294,13 +294,14 @@ int flb_tls_net_write_async(struct flb_coro *co, struct flb_upstream_conn *u_con
         io_tls_event_switch(u_conn, MK_EVENT_WRITE);
         flb_coro_yield(co, FLB_FALSE);
 
-        /* We want this field to hold NULL at all times unless we are explicitly
-         * waiting to be resumed.
-         */
-        u_conn->coro = NULL;
-
         goto retry_write;
     }
+
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+
+    u_conn->coro = NULL;
 
     *out_len = total;
     mk_event_del(u_conn->evl, &u_conn->event);
@@ -380,8 +381,6 @@ int flb_tls_session_create(struct flb_tls *tls,
             goto retry_handshake;
         }
 
-        u_conn->coro = co;
-
         /*
          * FIXME: if we need multiple reads we are invoking the same
          * system call multiple times.
@@ -393,6 +392,8 @@ int flb_tls_session_create(struct flb_tls *tls,
         if (ret == -1) {
             goto error;
         }
+
+        u_conn->coro = co;
 
         flb_coro_yield(co, FLB_FALSE);
 

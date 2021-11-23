@@ -362,8 +362,6 @@ static void cb_check_nothing(void *ctx, int ffd,
                             int res_ret, void *res_data, size_t res_size,
                             void *data)
 {
-    char *p;
-    char *out_js = res_data;
     flb_free(res_data);
 }
 

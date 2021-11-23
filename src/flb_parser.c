@@ -187,14 +187,15 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     else if (strcasecmp(format, "json") == 0) {
         p->type = FLB_PARSER_JSON;
     }
-    else if (strcmp(format, "ltsv") == 0) {
+    else if (strcasecmp(format, "ltsv") == 0) {
         p->type = FLB_PARSER_LTSV;
     }
-    else if (strcmp(format, "logfmt") == 0) {
+    else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
+        mk_list_del(&p->_head);
         flb_free(p);
         return NULL;
     }
@@ -202,6 +203,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     if (p->type == FLB_PARSER_REGEX) {
         if (!p_regex) {
             flb_error("[parser:%s] Invalid regex pattern", name);
+            mk_list_del(&p->_head);
             flb_free(p);
             return NULL;
         }
@@ -209,6 +211,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
         regex = flb_regex_create(p_regex);
         if (!regex) {
             flb_error("[parser:%s] Invalid regex pattern %s", name, p_regex);
+            mk_list_del(&p->_head);
             flb_free(p);
             return NULL;
         }
@@ -317,6 +320,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
 void flb_parser_destroy(struct flb_parser *parser)
 {
     int i = 0;
+
     if (parser->type == FLB_PARSER_REGEX) {
         flb_regex_destroy(parser->regex);
         flb_free(parser->p_regex);
@@ -867,8 +871,15 @@ struct flb_parser *flb_parser_get(const char *name, struct flb_config *config)
     struct mk_list *head;
     struct flb_parser *parser;
 
+    if (config == NULL || mk_list_size(&config->parsers) <= 0) {
+        return NULL;
+    }
+
     mk_list_foreach(head, &config->parsers) {
         parser = mk_list_entry(head, struct flb_parser, _head);
+        if (parser == NULL || parser->name == NULL) {
+            continue;
+        }
         if (strcmp(parser->name, name) == 0) {
             return parser;
         }

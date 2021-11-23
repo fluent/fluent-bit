@@ -28,22 +28,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline char *flb_strdup(const char *s)
-{
-    int len;
-    char *str;
-
-    len = strlen(s);
-    str = (char *) flb_malloc(len + 1);
-    if (!str) {
-        return NULL;
-    }
-    memcpy(str, s, len);
-    str[len] = '\0';
-
-    return str;
-}
-
 static inline char *flb_strndup(const char *s, size_t n)
 {
     char *str;
@@ -56,6 +40,11 @@ static inline char *flb_strndup(const char *s, size_t n)
     str[n] = '\0';
 
     return str;
+}
+
+static inline char *flb_strdup(const char *s)
+{
+    return flb_strndup(s, strlen(s));
 }
 
 /* emptyval checks whether a string has a non-null value "". */

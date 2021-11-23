@@ -623,6 +623,21 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# check attribute alloc_size
+check_c_source_compiles("
+#include <stdlib.h>
+__attribute__ ((alloc_size(1, 2))) static void* f(size_t a, size_t b) {
+    return calloc(a, b);
+}
+int main() {
+    f(1, 2);
+    return 0;
+}
+" FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+if(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+  FLB_DEFINITION(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
