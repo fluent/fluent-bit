@@ -1440,7 +1440,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     real_size = flb_input_chunk_get_real_size(ic);
-    real_diff = llabs(real_size - pre_real_size);
+    real_diff = real_size - pre_real_size;
     if (real_diff != 0) {
         flb_debug("[input chunk] update output instances with new chunk size diff=%d",
                   real_diff);
