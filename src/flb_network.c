@@ -444,6 +444,16 @@ static int net_connect_async(int fd,
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
 
+    /*
+     * If the socket has been invalidated (e.g: timeout or shutdown), just
+     * print a debug message and return.
+     */
+    if (u_conn->fd == -1) {
+        flb_debug("[net] TCP connection not longer available: %s:%i",
+                  u->tcp_host, u->tcp_port);
+        return -1;
+    }
+
     /* We got a notification, remove the event registered */
     ret = mk_event_del(u_conn->evl, &u_conn->event);
     if (ret == -1) {
