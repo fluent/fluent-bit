@@ -792,8 +792,6 @@ static void cb_es_flush(const void *data, size_t bytes,
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 #endif
 
-    flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
-
     if (ctx->http_user && ctx->http_passwd) {
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
     }
@@ -812,6 +810,8 @@ static void cb_es_flush(const void *data, size_t bytes,
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
     }
 #endif
+
+    flb_http_add_header(c, "Content-Type", 12, "application/x-ndjson", 20);
 
     /* Map debug callbacks */
     flb_http_client_debug(c, ctx->ins->callback);
