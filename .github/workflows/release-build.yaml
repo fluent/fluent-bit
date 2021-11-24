@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "The version to create"
+        description: "The version to create packages for"
         required: false
-        default: "v99.99.99"
+        default: "v1.8.9"
 
 name: Build release
 jobs:
@@ -37,11 +37,11 @@ jobs:
       - name: Get the version
         id: get_version
         run: |
-          # if [[ "${{ github.events.inputs.version }}" != "" ]]; then
-          #   echo ::set-output name=VERSION::${{ github.events.inputs.version }}
-          # else
-          #   echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-          # fi
+          if [[ "${{ github.events.inputs.version }}" != "" ]]; then
+            echo ::set-output name=VERSION::${{ github.events.inputs.version }}
+          else
+            echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+          fi
           # hard code for now
           echo ::set-output name=VERSION::1.8.9
 
@@ -79,11 +79,12 @@ jobs:
         working-directory: packaging
 
       - name: Archive the release artifacts (packages)
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v2.2.4
         with:
           name: release-${{env.release}}-${{env.bucket-name}}-pkgs
           path: |
             packaging/packages/${{env.distro}}/${{env.release}}/**/*
+          if-no-files-found: error
         env:
           bucket-name: ${{ steps.formatted_distro.outputs.replaced }}
           release: ${{ steps.formatted_version.outputs.replaced }}
