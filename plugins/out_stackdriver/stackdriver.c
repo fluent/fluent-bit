@@ -2108,6 +2108,7 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
+    u_conn->busy_flag = FLB_TRUE;
 
     /* Reformat msgpack to stackdriver JSON payload */
     ret = stackdriver_format(config, i_ins,
@@ -2219,6 +2220,8 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     flb_sds_destroy(payload_buf);
     flb_sds_destroy(token);
     flb_http_client_destroy(c);
+
+    u_conn->busy_flag = FLB_FALSE;
     flb_upstream_conn_release(u_conn);
 
     /* Done */

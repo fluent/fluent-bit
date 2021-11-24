@@ -324,6 +324,8 @@ void mk_server_loop_balancer(struct mk_server *server)
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct mk_sched_worker *sched;
+    struct mk_event management_event;
+    int operation_flag;
 
     /* Init the listeners */
     listeners = mk_server_listen_init(server);
@@ -347,10 +349,45 @@ void mk_server_loop_balancer(struct mk_server *server)
                      listener);
     }
 
-    while (1) {
+    memset(&management_event, 0, sizeof(struct mk_event));
+
+    mk_event_add(evl,
+                 server->lib_ch_manager[0],
+                 MK_EVENT_NOTIFICATION,
+                 MK_EVENT_READ,
+                 &management_event);
+
+    operation_flag = MK_TRUE;
+    while (operation_flag) {
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             if (event->mask & MK_EVENT_READ) {
+                if (server->lib_ch_manager[0] = event->fd) {
+                    size_t bytes;
+                    uint64_t val;
+
+#ifdef _WIN32
+        bytes = recv(event->fd, &val, sizeof(uint64_t), MSG_WAITALL);
+#else
+        bytes = read(event->fd, &val, sizeof(uint64_t));
+#endif
+
+                    if (bytes <= 0) {
+                        printf("could not read from control channel 1\n");
+                        return;
+                    }
+
+                    if (val == MK_SERVER_SIGNAL_STOP) {
+                        printf("breaking out of work loop\n");
+                        operation_flag = MK_FALSE;
+
+                        break;
+                    }
+
+                    continue;
+                }
+
+
                 /*
                  * Accept connection: determinate which thread may work on this
                  * new connection.
@@ -540,7 +577,7 @@ void mk_server_worker_loop(struct mk_server *server)
                     }
                     else if (val == MK_SCHED_SIGNAL_FREE_ALL) {
                         if (timeout_fd > 0) {
-                            close(timeout_fd);
+                            // close(timeout_fd);
                         }
                         mk_mem_free(MK_TLS_GET(mk_tls_server_timeout));
                         mk_server_listen_exit(sched->listeners);

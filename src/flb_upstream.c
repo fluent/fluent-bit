@@ -810,6 +810,15 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
 
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
+
+                if (u_conn->event.type == FLB_ENGINE_EV_THREAD &&
+                    u_conn->coro != NULL) {
+                    MK_EVENT_NEW(&u_conn->event);
+
+                    flb_info("[upstream] resuming timed out coroutine=%p", u_conn->coro);
+                    flb_coro_resume(u_conn->coro);
+                }
+
             }
         }
 
