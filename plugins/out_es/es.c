@@ -823,6 +823,7 @@ static void cb_es_flush(const void *data, size_t bytes,
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
+        flb_plg_error(ctx->ins, "Headers: \n%s", c->resp.data);
         flb_plg_debug(ctx->ins, "HTTP Status=%i URI=%s", c->resp.status, ctx->uri);
         if (c->resp.status != 200 && c->resp.status != 201) {
             if (c->resp.payload_size > 0) {
