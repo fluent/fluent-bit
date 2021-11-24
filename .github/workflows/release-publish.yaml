@@ -5,7 +5,7 @@ on:
     types:
       - completed
 jobs:
-  publish-docker-images:
+  release_publish-docker-images:
     name: publish docker images
     strategy:
       max-parallel: 48
@@ -51,7 +51,7 @@ jobs:
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           arch: ${{ matrix.arch }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
 
       - name: Import docker image
         run: |
@@ -59,7 +59,7 @@ jobs:
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           arch: ${{ matrix.arch }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
 
       - name: Login to Docker Hub
         uses: docker/login-action@v1
@@ -73,12 +73,12 @@ jobs:
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           arch: ${{ matrix.arch }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
 
-  publish-docker-manifest:
+  release-publish-docker-manifest:
 
     name: publish docker manifest
-    needs: publish-docker-images
+    needs: release-publish-docker-images
     runs-on: [ ubuntu-latest ]
     steps:
       - uses: actions/checkout@v2
@@ -113,7 +113,7 @@ jobs:
           docker pull ${{ env.dockerhub_organization }}/fluent-bit:x86_64-${{ env.release }} && docker pull ${{ env.dockerhub_organization }}/fluent-bit:arm64v8-${{ env.release }} && docker pull ${{ env.dockerhub_organization }}/fluent-bit:arm32v7-${{ env.release }} && docker pull ${{ env.dockerhub_organization }}/fluent-bit:x86_64-debug-${{ env.release }}
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
           DOCKER_CLI_EXPERIMENTAL: enabled
 
       - name: Create manifests for docker release images
@@ -121,7 +121,7 @@ jobs:
           docker manifest create ${{ env.dockerhub_organization }}/fluent-bit:${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:x86_64-${{ env.release }} --amend ${{ env.dockerhub_organization}}/fluent-bit:arm64v8-${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:arm32v7-${{ env.release }}
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
           DOCKER_CLI_EXPERIMENTAL: enabled
 
       - name: Create manifests for docker latest images
@@ -129,7 +129,7 @@ jobs:
           docker manifest create ${{ env.dockerhub_organization }}/fluent-bit:latest --amend ${{ env.dockerhub_organization }}/fluent-bit:x86_64-${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:arm64v8-${{ env.release }} --amend ${{ env.dockerhub_organization }}/fluent-bit:arm32v7-${{ env.release }}
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
           DOCKER_CLI_EXPERIMENTAL: enabled
 
       - name: Create manifests for docker debug images
@@ -137,7 +137,7 @@ jobs:
           docker manifest create ${{ env.dockerhub_organization }}/fluent-bit:${{ env.release }}-debug --amend ${{ env.dockerhub_organization }}/fluent-bit:x86_64-debug-${{ env.release }}
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
           DOCKER_CLI_EXPERIMENTAL: enabled
 
       - name: Push docker manifests
@@ -145,11 +145,11 @@ jobs:
           docker manifest push --purge ${{ env.dockerhub_organization }}/fluent-bit:${{ env.release }} && docker manifest push --purge ${{ env.dockerhub_organization }}/fluent-bit:latest && docker manifest push --purge ${{ env.dockerhub_organization}}/fluent-bit:${{ env.release }}-debug
         env:
            release: ${{ steps.formatted_version.outputs.replaced }}
-           dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+           dockerhub_organization: fluentbitdev
            DOCKER_CLI_EXPERIMENTAL: enabled
 
-  publish-distro-artifacts:
-    name: publis distro artifacts
+  release-publish-distro-artifacts:
+    name: publish distribution artifacts
     strategy:
       max-parallel: 48
       fail-fast: true
@@ -266,7 +266,7 @@ jobs:
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           distro: ${{ steps.formatted_distro.outputs.replaced }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
 
       - name: Move artifacts to main packages folder
         run: |

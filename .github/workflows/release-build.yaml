@@ -4,30 +4,46 @@ on:
       - '*'
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to create"
+        required: false
+        default: "v99.99.99"
+
 name: Build release
 jobs:
-  build-distro-packages:
+  release-build-distro-packages:
     name: build packages
     strategy:
       max-parallel: 48
       fail-fast: true
       matrix:
-        distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
-                  debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
-                  debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
-                  ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
+        distro: [ ubuntu/18.04 ]
+        # distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
+        #           debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
+        #           debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
+        #           ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
 
     runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
     steps:
       - name: Setup environment
         run: |
+            sudo apt-get update || true
             sudo apt-get install --yes qemu binfmt-support qemu-user-static qemu-utils qemu-efi-aarch64 qemu-system-arm docker.io containerd runc
             sudo systemctl unmask docker && sudo systemctl start docker
             docker run --rm --privileged --name qemu multiarch/qemu-user-static:register --reset
 
       - name: Get the version
         id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+        run: |
+          # if [[ "${{ github.events.inputs.version }}" != "" ]]; then
+          #   echo ::set-output name=VERSION::${{ github.events.inputs.version }}
+          # else
+          #   echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+          # fi
+          # hard code for now
+          echo ::set-output name=VERSION::1.8.9
 
       - uses: frabert/replace-string-action@master
         id: formatted_version
@@ -36,6 +52,10 @@ jobs:
           string: "${{ steps.get_version.outputs.VERSION }}"
           replace-with: '$1'
           flags: 'g'
+
+      - id: specify_version
+        if: ${{ github.events.inputs.version }}
+        run: echo ::set-output name=VERSION::${{ github.events.inputs.version }}
 
       - uses: frabert/replace-string-action@master
         id: formatted_distro
@@ -47,7 +67,7 @@ jobs:
 
       - uses: actions/checkout@v2
         with:
-          repository: ${{ github.actor }}/fluent-bit-packaging
+          repository: patrick-stephens/fluent-bit-packaging
           fetch-depth: 1
           path: packaging
 
@@ -69,7 +89,7 @@ jobs:
           release: ${{ steps.formatted_version.outputs.replaced }}
           distro: ${{ matrix.distro }}
 
-  build-docker-images:
+  release-build-docker-images:
     name: build docker images
     strategy:
       max-parallel: 48
@@ -92,13 +112,14 @@ jobs:
       - uses: actions/checkout@master
       - name: Setup environment
         run: |
+          sudo apt-get update || true
           sudo apt-get install --yes qemu binfmt-support qemu-user-static qemu-utils qemu-efi-aarch64 qemu-system-arm docker.io containerd runc
           sudo systemctl unmask docker && sudo systemctl start docker
           docker run --rm --privileged --name qemu multiarch/qemu-user-static:register --reset
 
       - name: Get the version
         id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+        run: echo ::set-output name=VERSION::${{ github.events.inputs.version || ${GITHUB_REF/refs\/tags\//} }}
 
       - uses: frabert/replace-string-action@master
         id: formatted_version
@@ -115,7 +136,7 @@ jobs:
           arch: ${{ matrix.arch }}
           suffix: ${{ matrix.suffix }}
           os: ${{ matrix.os }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
 
       - name: Archive the docker images
         uses: ishworkh/docker-image-artifact-upload@v1
@@ -124,4 +145,4 @@ jobs:
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           arch: ${{ matrix.arch }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+          dockerhub_organization: fluentbitdev
