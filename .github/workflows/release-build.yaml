@@ -79,6 +79,7 @@ jobs:
         working-directory: packaging
 
       - name: Archive the release artifacts (packages)
+        if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
         uses: actions/upload-artifact@v2.2.4
         with:
           name: release-${{env.release}}-${{env.bucket-name}}-pkgs
