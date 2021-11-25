@@ -97,18 +97,18 @@ jobs:
       max-parallel: 48
       fail-fast: true
       matrix:
-        arch: [ amd64, arm64v8, arm32v7 ]
-        suffix: [ x86_64, arm64v8, arm32v7, x86_64-debug ]
+        arch: [ amd64 ] #, arm64v8, arm32v7 ]
+        suffix: [ x86_64 ] #, arm64v8, arm32v7, x86_64-debug ]
         os: [ linux ]
-        exclude:
-          - {arch: amd64, suffix: arm64v8}
-          - {arch: amd64, suffix: arm32v7}
-          - {arch: arm64v8, suffix: x86_64}
-          - {arch: arm64v8, suffix: arm32v7}
-          - {arch: arm64v8, suffix: x86_64-debug}
-          - {arch: arm32v7, suffix: x86_64}
-          - {arch: arm32v7, suffix: arm64v8}
-          - {arch: arm32v7, suffix: x86_64-debug}
+        # exclude:
+        #   - {arch: amd64, suffix: arm64v8}
+        #   - {arch: amd64, suffix: arm32v7}
+        #   - {arch: arm64v8, suffix: x86_64}
+        #   - {arch: arm64v8, suffix: arm32v7}
+        #   - {arch: arm64v8, suffix: x86_64-debug}
+        #   - {arch: arm32v7, suffix: x86_64}
+        #   - {arch: arm32v7, suffix: arm64v8}
+        #   - {arch: arm32v7, suffix: x86_64-debug}
     runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
     steps:
       - uses: actions/checkout@master
@@ -137,7 +137,14 @@ jobs:
         uses: docker/setup-buildx-action@v1
 
       - name: Build the docker images
-        run: docker build --no-cache -f ./dockerfiles/Dockerfile.${{ env.suffix }} -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.suffix }}-${{ env.release }} --platform ${{ env.os }}/${{ env.arch }} .
+        run: |
+          echo "Building release ${{ env.release }}"
+          docker build --no-cache \
+          -f ./dockerfiles/Dockerfile.${{ env.suffix }} \
+          -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ env.release }} \
+          --platform ${{ env.os }}/${{ env.arch }} \
+          --build-arg FLB_VERSION=${{ env.release }} \
+          .
         env:
           release: ${{ steps.formatted_version.outputs.replaced }}
           arch: ${{ matrix.arch }}
