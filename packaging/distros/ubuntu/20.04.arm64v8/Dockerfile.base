@@ -1,0 +1,10 @@
+FROM arm64v8/ubuntu:20.04
+ENV DEBIAN_FRONTEND noninteractive
+
+COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
+RUN apt-get -qq update && \
+    apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
+    cmake make bash sudo wget unzip nano vim valgrind dh-make flex bison \
+    libpq-dev postgresql-server-dev-all && \
+    apt-get install -y -qq --reinstall lsb-base lsb-release

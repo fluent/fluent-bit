@@ -1,3 +1,5 @@
+![](https://github.com/patrick-stephens/fluent-bit/workflows/Deploy%20to%20staging/badge.svg)
+
 ### Available workflows
 
 

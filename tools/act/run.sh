@@ -9,4 +9,6 @@ act --privileged \
     -P ubuntu-18.04=nektos/act-environments-ubuntu:18.04 \
     --rm \
     -s GITHUB_TOKEN="${GITHUB_TOKEN}" \
+    -s DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+    -s DOCKERHUB_USERNAME="$DOCKERHUB_USERNAME" \
     -j "${JOB}"
