@@ -153,6 +153,7 @@ jobs:
           dockerhub_organization: fluentbitdev
 
       - name: Archive the docker images
+        if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
         uses: ishworkh/docker-image-artifact-upload@v1
         with:
           image: ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-${{ env.release }}
