@@ -196,6 +196,7 @@ jobs:
         docker push ${{ steps.meta.outputs.tags }}
 
     - name: Upload artifact
+      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
       uses: actions/upload-artifact@v2
       with:
           name: ${{ matrix.arch }}-${{ steps.formatted_version.outputs.replaced }}-image
