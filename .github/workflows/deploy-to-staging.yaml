@@ -13,7 +13,8 @@ on:
       ref:
         description: Branch, tag, or commit SHA to use
         required: true
-        default: packaging-test
+        default: master
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -58,7 +59,7 @@ jobs:
           echo ::set-output name=VERSION::$VERSION
       shell: bash
 
-    - uses: frabert/replace-string-action@master
+    - uses: frabert/replace-string-action@v2.0
       id: formatted_version
       with:
         pattern: '[v]*(.*)$'
@@ -93,7 +94,7 @@ jobs:
       with:
         name: release-${{env.release}}-${{env.bucket-name}}-pkgs
         path: |
-          packaging/packages/${{env.distro}}/${{env.release}}/**/*
+          packaging/packages/${{env.distro}}/${{env.release}}/
         if-no-files-found: error
       env:
         bucket-name: ${{ steps.formatted_distro.outputs.replaced }}
@@ -101,14 +102,13 @@ jobs:
         distro: ${{ matrix.distro }}
 
     - name: Push packages to S3
-      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
       uses: jakejarvis/s3-sync-action@master
+      # To use with Minio or similar add the endpoint, e.g. "--endpoint http://localhost:9000"
       with:
         args: --acl public-read --follow-symlinks --delete
       env:
         SOURCE_DIR: "./packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/"
         DEST_DIR: "/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/"
-
 
   deploy-staging-images:
     name: build docker images
@@ -149,7 +149,7 @@ jobs:
           echo ::set-output name=VERSION::$VERSION
       shell: bash
 
-    - uses: frabert/replace-string-action@master
+    - uses: frabert/replace-string-action@v2
       id: formatted_version
       with:
         pattern: '[v]*(.*)$'
@@ -185,28 +185,7 @@ jobs:
         file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
         context: .
         platforms: ${{ matrix.os }}/${{ matrix.arch }}
-        push: false # Cannot push and load together
-        load: true
+        push: true # Cannot push and load together
+        load: false
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-
-    - name: Archive images for S3 and push to ghcr.io
-      run: |
-        docker save --output /tmp/image.tar ${{ steps.meta.outputs.tags }}
-        docker push ${{ steps.meta.outputs.tags }}
-
-    - name: Upload artifact
-      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
-      uses: actions/upload-artifact@v2
-      with:
-          name: ${{ matrix.arch }}-${{ steps.formatted_version.outputs.replaced }}-image
-          path: /tmp/image.tar
-
-    - name: Push packages to S3
-      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
-      uses: jakejarvis/s3-sync-action@master
-      with:
-        args: --acl public-read --follow-symlinks --delete
-      env:
-        SOURCE_DIR: "/tmp/image.tar"
-        DEST_DIR: "/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/image.tar"
