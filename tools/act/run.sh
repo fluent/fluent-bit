@@ -17,4 +17,5 @@ act --privileged \
     -s AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
     -s AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
     -s AWS_S3_BUCKET_STAGING="$AWS_S3_BUCKET_STAGING" \
+    --env AWS_S3_ENDPOINT="http://localhost:9000" \
     -j "${JOB}"

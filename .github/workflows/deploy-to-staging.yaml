@@ -22,6 +22,8 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+  # To use with Minio locally
+  # AWS_S3_ENDPOINT: http://localhost:9000
 
 jobs:
   deploy-staging-packages:
@@ -82,19 +84,21 @@ jobs:
         flags: 'g'
 
     - name: Build the distro artifacts
-      run: ./build.sh -v ${{ env.release }} -d ${{ env.distro }}
+      run: |
+        ./build.sh -v ${{ env.release }} -d ${{ env.distro }}
       env:
         release: ${{ steps.formatted_version.outputs.replaced }}
         distro: ${{ matrix.distro }}
+        FLB_OUT_DIR: staging
       working-directory: packaging
 
     - name: Archive the release artifacts (packages)
-      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool
+      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool as requires undocumented variables
       uses: actions/upload-artifact@v2
       with:
         name: release-${{env.release}}-${{env.bucket-name}}-pkgs
         path: |
-          packaging/packages/${{env.distro}}/${{env.release}}/
+          packaging/packages/${{env.distro}}/${{env.release}}/staging/*
         if-no-files-found: error
       env:
         bucket-name: ${{ steps.formatted_distro.outputs.replaced }}
@@ -103,11 +107,10 @@ jobs:
 
     - name: Push packages to S3
       uses: jakejarvis/s3-sync-action@master
-      # To use with Minio or similar add the endpoint, e.g. "--endpoint http://localhost:9000"
       with:
         args: --acl public-read --follow-symlinks --delete
       env:
-        SOURCE_DIR: "./packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/"
+        SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/staging/"
         DEST_DIR: "/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/"
 
   deploy-staging-images:
