@@ -441,7 +441,7 @@ static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 
     ret = prepare_destroy_conn(u_conn);
 
-    if (u->thread_safe == FLB_TRUE && locked) {
+    if (locked) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
 
