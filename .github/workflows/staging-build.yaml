@@ -25,7 +25,7 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
   # To use with Minio locally
-  # AWS_S3_ENDPOINT: http://localhost:9000
+  AWS_S3_ENDPOINT: http://localhost:9000
 
 jobs:
   deploy-staging-packages:
@@ -108,9 +108,8 @@ jobs:
         distro: ${{ matrix.distro }}
 
     - name: Push packages to S3
-      uses: jakejarvis/s3-sync-action@master
-      with:
-        args: --acl public-read --follow-symlinks --delete
+      run: |
+        aws s3 sync "${SOURCE_DIR}" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --acl public-read --follow-symlinks --delete --no-progress --endpoint ${AWS_S3_ENDPOINT}
       env:
         SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/staging/"
         DEST_DIR: "/${{ steps.formatted_version.outputs.replaced }}/${{ matrix.distro }}/"

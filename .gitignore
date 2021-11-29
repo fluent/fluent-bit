@@ -15,8 +15,12 @@ init/fluent-bit.service
 lib/chunkio/include/chunkio/cio_version.h
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
-# packaging/packages - breaks S3 sync action as it ignores the files
+
+packaging/packages
+packaging/releases
+workflow/
 
 # clangd files
 .cache/
 compile_commands.json
+workflow/get_version.sh

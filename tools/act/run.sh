@@ -7,7 +7,10 @@ AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
 AWS_S3_BUCKET_STAGING=${AWS_S3_BUCKET_STAGING:-fluentbit-ci-testbucket}
 
-act --privileged \
+rm -rf workflow/
+mkdir -p workflow/
+
+act --privileged --bind \
     -P ubuntu-latest=nektos/act-environments-ubuntu:18.04 \
     -P ubuntu-18.04=nektos/act-environments-ubuntu:18.04 \
     --rm \
