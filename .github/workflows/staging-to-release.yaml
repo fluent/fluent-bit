@@ -11,11 +11,11 @@ on:
 
 env:
   STAGING_REGISTRY: ghcr.io
-  STAGING_IMAGE_NAME: patrick-stephens/staging/fluent-bit
+  STAGING_IMAGE_NAME: ${{ github.repository }}
 
-  # TODO: change to official
   # docker.io/fluent/fluent-bit
-  RELEASE_IMAGE_NAME: patrick-stephens/fluent-bit
+  RELEASE_REGISTRY: docker.io
+  RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}/fluent-bit
 
   AWS_REGION: "us-east-1"
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -27,9 +27,7 @@ env:
 jobs:
   staging-release-packages:
     runs-on: ubuntu-latest
-    # Pull from S3 and upload to relevant locations
-    steps:
-      - uses: actions/checkout@v2
+    # Just sync everything to the release server
 
   staging-release-images:
     runs-on: ubuntu-latest
@@ -40,7 +38,7 @@ jobs:
           docker run --rm quay.io/skopeo/stable:latest \
             sync --all \
             --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
-            --dest-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
+            --dest-creds ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }} \
             --src docker --dest docker \
             ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
-            ${{ env.STAGING_REGISTRY }}/${{ env.RELEASE_IMAGE_NAME }}
+            ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
