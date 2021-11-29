@@ -15,7 +15,7 @@ env:
 
   # docker.io/fluent/fluent-bit
   RELEASE_REGISTRY: docker.io
-  RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}/fluent-bit
+  RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}
 
   AWS_REGION: "us-east-1"
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
