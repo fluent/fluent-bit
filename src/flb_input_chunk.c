@@ -18,8 +18,11 @@
  *  limitations under the License.
  */
 
-#define FS_CHUNK_SIZE_DEBUG(op)  {flb_debug("[%d] %s -> fs_chunks_size = %zu", __LINE__, op->name, op->fs_chunks_size);}
-#define FS_CHUNK_SIZE_DEBUG_MOD(op, chunk, mod)  {flb_debug("[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
+#define FS_CHUNK_SIZE_DEBUG(op)  {flb_trace("[%d] %s -> fs_chunks_size = %zu", \
+	__LINE__, op->name, op->fs_chunks_size);}
+#define FS_CHUNK_SIZE_DEBUG_MOD(op, chunk, mod)  {flb_trace( \
+	"[%d] %s -> fs_chunks_size = %zu mod=%zd chunk=%s", __LINE__, \
+	op->name, op->fs_chunks_size, mod, flb_input_chunk_get_name(chunk));}
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
