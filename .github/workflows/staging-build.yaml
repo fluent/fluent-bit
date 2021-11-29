@@ -16,10 +16,11 @@ on:
         default: master
 
 env:
+  # Containers
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  # We included staging in the repo name to make it easier to manage and more obvious
-  # STAGING_IMAGE_NAME: patrick-stephens/staging/fluent-bit
+
+  # Packages
   AWS_REGION: "us-east-1"
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
