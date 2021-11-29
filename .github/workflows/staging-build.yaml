@@ -17,7 +17,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # IMAGE_NAME: ${{ github.repository }}
+  # We included staging in the repo name to make it easier to manage and more obvious
+  STAGING_IMAGE_NAME: patrick-stephens/staging/fluent-bit
   AWS_REGION: "us-east-1"
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -111,7 +113,9 @@ jobs:
         args: --acl public-read --follow-symlinks --delete
       env:
         SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/staging/"
-        DEST_DIR: "/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/"
+        DEST_DIR: "/${{ steps.formatted_version.outputs.replaced }}/${{ matrix.distro }}/"
+
+    # TODO: trigger packaging tests
 
   deploy-staging-images:
     name: build docker images
@@ -152,7 +156,7 @@ jobs:
           echo ::set-output name=VERSION::$VERSION
       shell: bash
 
-    - uses: frabert/replace-string-action@v2
+    - uses: frabert/replace-string-action@v2.0
       id: formatted_version
       with:
         pattern: '[v]*(.*)$'
@@ -177,10 +181,11 @@ jobs:
       id: meta
       uses: docker/metadata-action@v3
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.REGISTRY }}/${{ env.STAGING_IMAGE_NAME }}
         flavor: |
-          latest=auto
-          prefix=${{ matrix.arch }}-${{ steps.formatted_version.outputs.replaced }}-staging-
+          latest=false
+        tags: |
+          type=raw,${{ matrix.arch }}-${{ steps.formatted_version.outputs.replaced }}
 
     - name: Build the staging images
       uses: docker/build-push-action@v2
@@ -192,3 +197,5 @@ jobs:
         load: false
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+    # TODO: trigger container tests

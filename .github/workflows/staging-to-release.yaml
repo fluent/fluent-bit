@@ -1,0 +1,46 @@
+---
+name: Release from staging a particular version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to release
+        required: true
+        default: 99.99.99
+
+env:
+  STAGING_REGISTRY: ghcr.io
+  STAGING_IMAGE_NAME: patrick-stephens/staging/fluent-bit
+
+  # TODO: change to official
+  # docker.io/fluent/fluent-bit
+  RELEASE_IMAGE_NAME: patrick-stephens/fluent-bit
+
+  AWS_REGION: "us-east-1"
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+  # To use with Minio locally
+  # AWS_S3_ENDPOINT: http://localhost:9000
+
+jobs:
+  staging-release-packages:
+    runs-on: ubuntu-latest
+    # Pull from S3 and upload to relevant locations
+    steps:
+      - uses: actions/checkout@v2
+
+  staging-release-images:
+    runs-on: ubuntu-latest
+    # Use skopeo to do all the work
+    steps:
+      - name: Sync container images from staging to release
+        run: |
+          docker run --rm quay.io/skopeo/stable:latest \
+            sync --all \
+            --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
+            --dest-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
+            --src docker --dest docker \
+            ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
+            ${{ env.STAGING_REGISTRY }}/${{ env.RELEASE_IMAGE_NAME }}
