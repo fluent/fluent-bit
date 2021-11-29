@@ -211,17 +211,22 @@ static int in_stdin_collect(struct flb_input_instance *ins,
     return 0;
 }
 
-/* Read stdin config*/
+/* Read stdin config */
 static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
                                struct flb_input_instance *in,
                                struct flb_config *config)
 {
+    int ret;
     const char *pval = NULL;
 
-    ctx->buf_size = DEFAULT_BUF_SIZE;
     ctx->buf = NULL;
     ctx->buf_len = 0;
     ctx->ins = in;
+
+    ret = flb_input_config_map_set(in, (void *) ctx);
+    if (ret == -1) {
+        return -1;
+    }
 
     /* parser settings */
     pval = flb_input_get_property("parser", in);
@@ -229,22 +234,6 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
         ctx->parser = flb_parser_get(pval, config);
         if (!ctx->parser) {
             flb_plg_error(ctx->ins, "requested parser '%s' not found", pval);
-            return -1;
-        }
-    }
-
-    /* buffer size setting */
-    pval = flb_input_get_property("buffer_size", in);
-    if (pval != NULL) {
-        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
-
-        if (ctx->buf_size == -1) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", pval);
-            return -1;
-        }
-        else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
-                          pval, DEFAULT_BUF_SIZE);
             return -1;
         }
     }
@@ -276,7 +265,7 @@ static int in_stdin_init(struct flb_input_instance *in,
     (void) data;
 
     /* Allocate space for the configuration context */
-    ctx = flb_malloc(sizeof(struct flb_in_stdin_config));
+    ctx = flb_calloc(1, sizeof(struct flb_in_stdin_config));
     if (!ctx) {
         return -1;
     }
@@ -346,6 +335,25 @@ static int in_stdin_exit(void *in_context, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "parser", NULL,
+     0, FLB_FALSE, 0,
+     "Specifies the registered parser name to apply to the incoming data. If no "
+     "parser is defined, the built-in JSON parser is used which expects a JSON map.",
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", "16k",
+     0, FLB_TRUE, offsetof(struct flb_in_stdin_config, buf_size),
+    "Set the incoming buffer size. It cannot be less than 16k.",
+    },
+
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_stdin_plugin = {
     .name         = "stdin",
@@ -354,5 +362,7 @@ struct flb_input_plugin in_stdin_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_stdin_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_stdin_exit
+    .cb_exit      = in_stdin_exit,
+    .config_map   = config_map,
+    .flags        = 0
 };
