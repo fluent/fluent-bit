@@ -62,9 +62,7 @@ struct flb_coro {
     void *data;
 };
 
-#ifdef FLB_CORO_STACK_SIZE
-#define FLB_CORO_STACK_SIZE      FLB_CORO_STACK_SIZE
-#else
+#ifndef FLB_CORO_STACK_SIZE
 #define FLB_CORO_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
 #endif
 
