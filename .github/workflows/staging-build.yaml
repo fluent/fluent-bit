@@ -42,8 +42,69 @@ jobs:
         #           debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
         #           debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
         #           ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
+        include:
+            - distro: ubuntu/18.04
+              target: ubuntu/bionic
 
+          # - distro: amazonlinux/2
+          #   target: amazonlinux/2/
+
+          # - distro: amazonlinux/2.arm64v8
+          #   target: amazonlinux/2/
+
+          # - distro: centos/7
+          #   target: centos/7/
+
+          # - distro: centos/7.arm64v8
+          #   target: centos/7/
+
+          # - distro: debian/jessie
+          #   target: debian/jessie/
+
+          # - distro: debian/jessie.arm64v8
+          #   target: debian/jessie/
+
+          # - distro: debian/stretch
+          #   target: debian/stretch/
+
+          # - distro: debian/stretch.arm64v8
+          #   target: debian/stretch/
+
+          # - distro: debian/buster
+          #   target: debian/buster/
+
+          # - distro: debian/buster.arm64v8
+          #   target: debian/buster/
+
+          # - distro: ubuntu/16.04
+          #   target: ubuntu/xenial/
+
+          # - distro: ubuntu/18.04.arm64v8
+          #   target: ubuntu/bionic/
+
+          # - distro: ubuntu/20.04
+          #   target: ubuntu/focal/
+
+          # - distro: ubuntu/20.04.arm64v8
+          #   target: ubuntu/focal/
+
+          # - distro: raspbian/jessie
+          #   target: raspbian/jessie/
+
+          # - distro: raspbian/stretch
+          #   target: raspbian/stretch/
+
+          # - distro: raspbian/buster
+          #   target: raspbian/buster/
     steps:
+
+    - run: |
+        if [ -z "${target}" ]; then
+          echo Missing target
+          exit 1
+        fi
+      env:
+        target: ${{ matrix.target }}
 
     - name: Checkout code
       uses: actions/checkout@v2
@@ -95,19 +156,6 @@ jobs:
         FLB_OUT_DIR: staging
       working-directory: packaging
 
-    - name: Archive the release artifacts (packages)
-      if: ${{ !env.ACT }} # Skip when running locally with nektos/act tool as requires undocumented variables
-      uses: actions/upload-artifact@v2
-      with:
-        name: release-${{env.release}}-${{env.bucket-name}}-pkgs
-        path: |
-          packaging/packages/${{env.distro}}/${{env.release}}/staging/*
-        if-no-files-found: error
-      env:
-        bucket-name: ${{ steps.formatted_distro.outputs.replaced }}
-        release: ${{ steps.formatted_version.outputs.replaced }}
-        distro: ${{ matrix.distro }}
-
     - name: Push packages to S3
       run: |
         if [ -n "${AWS_S3_ENDPOINT}" ]; then
@@ -116,7 +164,7 @@ jobs:
         aws s3 sync "${SOURCE_DIR}" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --acl public-read --follow-symlinks --delete --no-progress ${ENDPOINT}
       env:
         SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/staging/"
-        DEST_DIR: "/${{ steps.formatted_version.outputs.replaced }}/${{ matrix.distro }}/"
+        DEST_DIR: "/${{ steps.formatted_version.outputs.replaced }}/${{ matrix.target }}/"
 
     # TODO: trigger packaging tests
 
