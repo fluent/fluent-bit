@@ -47,6 +47,7 @@ struct nginx_ctx
     struct cmt_gauge *connection_up;
     bool is_up;
     bool is_nginx_plus;
+    int nginx_plus_version;
 
     struct nginx_plus_connections *plus_connections;
     struct nginx_plus_http_requests *plus_http_requests;

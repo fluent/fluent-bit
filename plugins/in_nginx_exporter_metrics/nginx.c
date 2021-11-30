@@ -375,7 +375,8 @@ static int nginx_collect_plus_connections(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/connections", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/connections", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -438,7 +439,7 @@ static int nginx_collect_plus_ssl(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/ssl", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/ssl", ctx->status_url, ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -501,7 +502,8 @@ static int nginx_collect_plus_http_requests(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/http/requests", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/http/requests", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -964,7 +966,8 @@ static int nginx_collect_plus_server_zones(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/http/server_zones", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/http/server_zones", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -1026,7 +1029,8 @@ static int nginx_collect_plus_location_zones(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/http/location_zones", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/http/location_zones", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -1088,7 +1092,8 @@ static int nginx_collect_plus_upstreams(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/http/upstreams", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/http/upstreams", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -1150,7 +1155,8 @@ static int nginx_collect_plus_stream_server_zones(struct flb_input_instance *ins
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/stream/server_zones", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/stream/server_zones", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -1213,7 +1219,8 @@ static int nginx_collect_plus_stream_upstreams(struct flb_input_instance *ins,
         goto conn_error;
     }
 
-    snprintf(url, sizeof(url)-1, "%s/7/stream/upstreams", ctx->status_url);
+    snprintf(url, sizeof(url)-1, "%s/%d/stream/upstreams", ctx->status_url,
+             ctx->nginx_plus_version);
     client = flb_http_client(u_conn, FLB_HTTP_GET, url,
                              NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
     if (!client) {
@@ -1249,6 +1256,112 @@ conn_error:
 }
 
 /**
+ * Get the current highest REST API version
+ *
+ * @param ins           Pointer to flb_input_instance
+ * @param config        Pointer to flb_config
+ * @param in_context    void Pointer used to cast to nginx_ctx
+ *
+ * @return int highest version if > 0, error otherwise.
+ */
+static int nginx_plus_get_version(struct flb_input_instance *ins,
+                                  struct flb_config *config,
+                                  struct nginx_ctx *ctx)
+{
+    struct flb_upstream_conn *u_conn;
+    struct flb_http_client *client;
+    char url[1024];
+    size_t b_sent;
+    int rc = -1;
+    int out_size;
+    char *pack;
+    struct flb_pack_state pack_state;
+    size_t off = 0;
+    msgpack_unpacked result;
+    int maxversion = 1;
+    int i = 0;
+
+
+    u_conn = flb_upstream_conn_get(ctx->upstream);
+    if (!u_conn) {
+        flb_plg_error(ins, "upstream connection initialization error");
+        goto conn_error;
+    }
+
+    snprintf(url, sizeof(url)-1, "%s/", ctx->status_url);
+    client = flb_http_client(u_conn, FLB_HTTP_GET, url,
+                             NULL, 0, ctx->ins->host.name, ctx->ins->host.port, NULL, 0);
+    if (!client) {
+        flb_plg_error(ins, "unable to create http client");
+        goto client_error;
+    }
+
+    rc = flb_http_do(client, &b_sent);
+    if (rc != 0) {
+        flb_plg_error(ins, "http do error");
+        goto http_error;
+    }
+
+    if (client->resp.status != 200) {
+        flb_plg_error(ins, "http status code error: [%s] %d", url, client->resp.status);
+        goto http_error;
+    }
+
+    if (client->resp.payload_size <= 0) {
+        flb_plg_error(ins, "empty response");
+        goto http_error;
+    }
+
+    /* Initialize packer */
+    flb_pack_state_init(&pack_state);
+
+    /* Pack JSON as msgpack */
+    rc = flb_pack_json_state(client->resp.payload, client->resp.payload_size,
+                              &pack, &out_size, &pack_state);
+    flb_pack_state_reset(&pack_state);
+
+    /* Handle exceptions */
+    if (rc == FLB_ERR_JSON_PART) {
+        flb_plg_warn(ins, "JSON data is incomplete, skipping");
+        goto json_error;
+    }
+    else if (rc == FLB_ERR_JSON_INVAL) {
+        flb_plg_warn(ins, "invalid JSON message, skipping");
+        goto json_error;
+    }
+    else if (rc == -1) {
+        flb_plg_error(ins, "unable to parse JSON response");
+        goto json_error;
+    }
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        if (result.data.type == MSGPACK_OBJECT_ARRAY) {
+            for (i = 0; i < result.data.via.array.size; i++) {
+                if (result.data.via.array.ptr[i].via.i64 > maxversion) {
+                    maxversion = result.data.via.array.ptr[i].via.i64;
+                }
+            }
+        } else {
+            flb_plg_error(ins, "NOT AN ARRAY");
+            goto rest_error;
+        }
+    }
+
+rest_error:
+    msgpack_unpacked_destroy(&result);
+json_error:
+    flb_free(pack);
+http_error:
+    flb_http_client_destroy(client);
+client_error:
+    flb_upstream_conn_release(u_conn);
+conn_error:
+    return maxversion;
+}
+
+
+/**
  * Callback function to gather statistics from the nginx
  * plus ngx_http module.
  *
@@ -1261,11 +1374,19 @@ conn_error:
 static int nginx_collect_plus(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
+    int version = -1;
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
     int rc = -1;
     int ret = -1;
     uint64_t ts = cmt_time_now();
 
+
+    version = nginx_plus_get_version(ins, config, in_context);
+    if (version <= 0) {
+        flb_plg_error(ins, "bad NGINX plus REST API version = %d", version);
+        goto error;
+    }
+    ctx->nginx_plus_version = version;
 
     rc = nginx_collect_plus_connections(ins, config, ctx, ts);
     if (rc != 0) {
@@ -1283,10 +1404,14 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
     if (rc != 0) {
         goto error;
     }
-    rc = nginx_collect_plus_location_zones(ins, config, ctx, ts);
-    if (rc != 0) {
-        goto error;
+
+    if (ctx->nginx_plus_version >= 5) {
+        rc = nginx_collect_plus_location_zones(ins, config, ctx, ts);
+        if (rc != 0) {
+            goto error;
+        }
     }
+    
     rc = nginx_collect_plus_upstreams(ins, config, ctx, ts);
     if (rc != 0) {
         goto error;
