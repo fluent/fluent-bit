@@ -57,6 +57,7 @@ set(src
   flb_fstore.c
   flb_thread_pool.c
   flb_routes_mask.c
+  flb_event.c
   )
 
 # Multiline subsystem

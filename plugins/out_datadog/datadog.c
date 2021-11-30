@@ -291,8 +291,8 @@ static int datadog_format(struct flb_config *config,
     return 0;
 }
 
-static void cb_datadog_flush(const void *data, size_t bytes,
-                             const char *tag, int tag_len,
+static void cb_datadog_flush(struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush,
                              struct flb_input_instance *i_ins,
                              void *out_context,
                              struct flb_config *config)
@@ -319,8 +319,8 @@ static void cb_datadog_flush(const void *data, size_t bytes,
     /* Convert input data into a Datadog JSON payload */
     ret = datadog_format(config, i_ins,
                          ctx, NULL,
-                         tag, tag_len,
-                         data, bytes,
+                         event_chunk->tag, flb_sds_len(event_chunk->tag),
+                         event_chunk->data, event_chunk->size,
                          &out_buf, &out_size);
     if (ret == -1) {
         flb_upstream_conn_release(upstream_conn);

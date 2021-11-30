@@ -86,9 +86,6 @@ int mk_liana_close(int socket_fd)
 int mk_liana_send_file(int socket_fd, int file_fd, off_t *file_offset,
                        size_t file_count)
 {
-    ssize_t bytes_written = 0;
-    ssize_t to_be_sent = -1;
-    ssize_t send_ret = -1;
     ssize_t ret = -1;
 
 #if defined (__linux__)
@@ -129,6 +126,9 @@ int mk_liana_send_file(int socket_fd, int file_fd, off_t *file_offset,
 #else
     #pragma message ("This is a terrible sendfile \"implementation\" and just a crutch")
 
+    ssize_t bytes_written = 0;
+    ssize_t to_be_sent = -1;
+    ssize_t send_ret = -1;
     uint8_t temporary_buffer[1024];
 
     if (NULL != file_offset) {

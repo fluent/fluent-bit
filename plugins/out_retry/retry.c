@@ -62,16 +62,12 @@ static int cb_retry_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_retry_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_retry_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
 {
-    (void) data;
-    (void) bytes;
-    (void) tag;
-    (void) tag_len;
     (void) i_ins;
     (void) out_context;
     (void) config;
@@ -89,7 +85,7 @@ static void cb_retry_flush(const void *data, size_t bytes,
         ctx->count = 0;
     }
 
-    flb_pack_print(data, bytes);
+    flb_pack_print(event_chunk->data, event_chunk->size);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

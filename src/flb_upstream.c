@@ -209,6 +209,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+    u->config = config;
 
     /* Set default networking setup values */
     flb_net_setup_init(&u->net);
@@ -253,7 +254,6 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     u->flags          = flags;
     u->flags         |= FLB_IO_ASYNC;
     u->thread_safe    = FLB_FALSE;
-
 
     /* Initialize queues */
     flb_upstream_queue_init(&u->queue);
@@ -429,15 +429,19 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
 static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int locked = FLB_FALSE;
     struct flb_upstream *u = u_conn->u;
 
     if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
+        ret = pthread_mutex_trylock(&u->mutex_lists);
+        if (ret == 0) {
+            locked = FLB_TRUE;
+        }
     }
 
     ret = prepare_destroy_conn(u_conn);
 
-    if (u->thread_safe == FLB_TRUE) {
+    if (locked) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
 
@@ -791,10 +795,13 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                 u_conn->ts_connect_timeout > 0 &&
                 u_conn->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
-                flb_error("[upstream] connection #%i to %s:%i timed out after "
-                          "%i seconds",
-                          u_conn->fd,
-                          u->tcp_host, u->tcp_port, u->net.connect_timeout);
+
+                if (!flb_upstream_is_shutting_down(u)) {
+                    flb_error("[upstream] connection #%i to %s:%i timed out after "
+                              "%i seconds",
+                              u_conn->fd,
+                              u->tcp_host, u->tcp_port, u->net.connect_timeout);
+                }
             }
 
             if (drop == FLB_TRUE) {

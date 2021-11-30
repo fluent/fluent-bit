@@ -68,8 +68,8 @@ static int cb_plot_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_plot_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_plot_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -90,7 +90,7 @@ static void cb_plot_flush(const void *data, size_t bytes,
 
     /* Set the right output */
     if (!ctx->out_file) {
-        out_file = tag;
+        out_file = event_chunk->tag;
     }
     else {
         out_file = ctx->out_file;
@@ -110,7 +110,9 @@ static void cb_plot_flush(const void *data, size_t bytes,
      * of the map to use as a data point.
      */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&atime, &result, &map);
 
         /*

@@ -137,6 +137,8 @@ int flb_net_bind(flb_sockfd_t fd, const struct sockaddr *addr,
 int flb_net_bind_udp(flb_sockfd_t fd, const struct sockaddr *addr,
                  socklen_t addrlen);
 flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd);
+int flb_net_address_to_str(int family, const struct sockaddr *addr,
+                           char *output_buffer, size_t output_buffer_size);
 int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len);
 
 #endif

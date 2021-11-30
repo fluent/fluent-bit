@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_metrics.h>
 
 #include <msgpack.h>
 #include <mpack/mpack.h>
@@ -33,6 +34,7 @@
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
 #define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
 
+/* Return the number of msgpack serialized events in the buffer */
 int flb_mp_count(const void *data, size_t bytes)
 {
     int count = 0;
@@ -48,8 +50,52 @@ int flb_mp_count(const void *data, size_t bytes)
     return count;
 }
 
-int flb_mp_validate_chunk(const void *data, size_t bytes,
-                          int *out_records, size_t *processed_bytes)
+int flb_mp_validate_metric_chunk(const void *data, size_t bytes,
+                                 int *out_series, size_t *processed_bytes)
+{
+    int ret;
+    int ok = CMT_DECODE_MSGPACK_SUCCESS;
+    int count = 0;
+    size_t off = 0;
+    size_t pre_off = 0;
+    struct cmt *cmt;
+
+    while ((ret = cmt_decode_msgpack_create(&cmt,
+                                            (char *) data, bytes, &off)) == ok) {
+        cmt_destroy(cmt);
+        count++;
+        pre_off = off;
+    }
+
+    switch (ret) {
+        case CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR:
+        case CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR:
+        case CMT_DECODE_MSGPACK_CONSUME_ERROR:
+        case CMT_DECODE_MSGPACK_ENGINE_ERROR:
+        case CMT_DECODE_MSGPACK_PENDING_MAP_ENTRIES:
+        case CMT_DECODE_MSGPACK_PENDING_ARRAY_ENTRIES:
+        case CMT_DECODE_MSGPACK_UNEXPECTED_KEY_ERROR:
+        case CMT_DECODE_MSGPACK_UNEXPECTED_DATA_TYPE_ERROR:
+        case CMT_DECODE_MSGPACK_DICTIONARY_LOOKUP_ERROR:
+        case CMT_DECODE_MSGPACK_VERSION_ERROR:
+            goto error;
+    }
+
+    if (ret == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA && off == bytes) {
+        *out_series = count;
+        *processed_bytes = pre_off;
+        return 0;
+    }
+
+error:
+    *out_series = count;
+    *processed_bytes = pre_off;
+
+    return -1;
+}
+
+int flb_mp_validate_log_chunk(const void *data, size_t bytes,
+                              int *out_records, size_t *processed_bytes)
 {
     int ret;
     int count = 0;
@@ -127,6 +173,7 @@ int flb_mp_validate_chunk(const void *data, size_t bytes,
     msgpack_unpacked_destroy(&result);
     *out_records = count;
     *processed_bytes = pre_off;
+
     return -1;
 }
 

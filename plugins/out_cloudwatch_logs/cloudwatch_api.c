@@ -1313,6 +1313,7 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     flb_sds_t tmp;
     flb_sds_t error;
     int num_headers = 1;
+    int retry = FLB_TRUE;
 
     buf->put_events_calls++;
 
@@ -1336,6 +1337,7 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         num_headers = 2;
     }
 
+retry_request:
     if (plugin_under_test() == FLB_TRUE) {
         c = mock_http_call("TEST_PUT_LOG_EVENTS_ERROR", "PutLogEvents");
     }
@@ -1350,6 +1352,25 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         flb_plg_debug(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
 
         if (c->resp.status == 200) {
+            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
+                /* code was 200, but response is invalid, treat as failure */
+                if (c->resp.data != NULL) {
+                    flb_plg_debug(ctx->ins, "Could not find sequence token in "
+                                  "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
+                }
+                flb_http_client_destroy(c);
+
+                if (retry == FLB_TRUE) {
+                    flb_plg_debug(ctx->ins, "issuing immediate retry for invalid response");
+                    retry = FLB_FALSE;
+                    goto retry_request;
+                }
+                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
+                                  AMZN_REQUEST_ID_HEADER);
+                return -1;
+            }
+
+
             /* success */
             if (c->resp.payload_size > 0) {
                 flb_plg_debug(ctx->ins, "Sent events to %s", stream->name);
@@ -1370,18 +1391,6 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                 }
             }
         
-            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
-                /* code was 200, but response is invalid, treat as failure */
-                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
-                              AMZN_REQUEST_ID_HEADER);
-                if (c->resp.data != NULL) {
-                    flb_plg_debug(ctx->ins, "Could not find sequence token in "
-                                  "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
-                }
-                flb_http_client_destroy(c);
-                return -1;
-            }
-            
             flb_http_client_destroy(c);
             return 0;
         }

@@ -45,9 +45,11 @@ struct flb_config {
 
     int support_mode;         /* enterprise support mode ?      */
     int is_ingestion_active;  /* date ingestion active/allowed  */
+    int is_shutting_down;     /* is the service shutting down ? */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
-    int grace;                /* Grace on shutdown              */
+    int grace;                /* Maximum grace time on shutdown */
+    int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
 
     int daemon;               /* Run as a daemon ?              */

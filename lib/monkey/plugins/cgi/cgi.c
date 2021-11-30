@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <monkey/mk_stream.h>
 #include "cgi.h"
 
 #include <sys/types.h>
@@ -78,7 +79,7 @@ int channel_write(struct cgi_request *r, void *buf, size_t count)
     }
 
     MK_TRACE("channel write: %d bytes", count);
-    mk_stream_in_cbuf(&r->sr->stream,
+    mk_stream_in_raw(&r->sr->stream,
                       NULL,
                       buf, count,
                       NULL, NULL);

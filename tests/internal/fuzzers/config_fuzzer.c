@@ -308,8 +308,13 @@ char conf_file[] = "# Parser: no_year\n"
 "    Time_Format %Y-%M-%S %H:%M:%S\n"
 "    Time_Keep   On\n"
 "    Decode_Field_As   json key001\n"
-"    Types A1:integer A2:string A3:bool A4:float A5:hex\n";
-
+"    Types A1:integer A2:string A3:bool A4:float A5:hex\n"
+"[MULTILINE_PARSER]\n"
+"    name          exception_test\n"
+"    type          regex\n"
+"    flush_timeout 1000\n"
+"    rule          \"start_state\"  \"/(Dec \d+ \d+\:\d+\:\d+)(.*)/\" \"cont\"\n"
+"    rule          \"cont\" \"/^\s+at.*/\" \"cont\"\n";
 
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
@@ -401,23 +406,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     }
 
     /* clean up the file */
-    unlink(filename);
-
-    /* finally try to parser a random file */
-    fp = fopen(filename, "wb");
-    if (!fp) {
-        return 0;
-    }
-    fwrite(data, size, 1, fp);
-    fclose(fp);
-
-    config = NULL;
-    config = flb_config_init();
-    flb_parser_conf_file(filename, config);
-    flb_parser_exit(config);
-    flb_config_exit(config);
-
-    /* Cleanup written config file */
     unlink(filename);
 
     return 0;
