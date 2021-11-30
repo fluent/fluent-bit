@@ -1617,26 +1617,31 @@ static int nginx_init(struct flb_input_instance *ins,
         }
 
         ctx->connections_writing = cmt_gauge_create(ctx->cmt, "nginx", "connections",
-                                                    "writing", "writing client connections", 0, NULL);
+                                                    "writing", 
+                                                    "writing client connections", 0, NULL);
         if (ctx->connections_writing == NULL) {
             return -1;
         }
 
         ctx->connections_waiting = cmt_gauge_create(ctx->cmt, "nginx", "connections",
-                                                    "waiting", "waiting client connections", 0, NULL);
+                                                    "waiting",
+                                                    "waiting client connections", 0, NULL);
         if (ctx->connections_waiting == NULL) {
             return -1;
         }
 
         ctx->connections_total = cmt_counter_create(ctx->cmt, "nginx", "http",
-                                                    "requests_total", "Total http requests", 0, NULL);
+                                                    "requests_total", 
+                                                    "Total http requests", 0, NULL);
         if (ctx->connections_total == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->connections_total);
 
         ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "", "up",
-                                              "Shows the status of the last metric scrape: 1 for a successful scrape and 0 for a failed one",
+                                              "Shows the status of the last metric scrape: "
+                                              "1 for a successful scrape and "
+                                              "s0 for a failed one",
                                               0, NULL);
 
         ctx->coll_id = flb_input_set_collector_time(ins,
@@ -1673,35 +1678,35 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->plus_connections->connections_accepted);
 
         ctx->plus_connections->connections_dropped = cmt_counter_create(ctx->cmt,
-                                                                         "nginxplus",
-                                                                         "connections",
-                                                                         "dropped",
-                                                                         "NGINX Plus Total Connections",
-                                                                         0, NULL);
+                                                                        "nginxplus",
+                                                                        "connections",
+                                                                        "dropped",
+                                                                        "NGINX Plus Total Connections",
+                                                                        0, NULL);
         if (ctx->plus_connections->connections_dropped == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->plus_connections->connections_dropped);
 
-	// @TODO check if gauge
+        // @TODO check if gauge
         ctx->plus_connections->connections_active = cmt_counter_create(ctx->cmt,
-                                                                         "nginxplus",
-                                                                         "connections",
-                                                                         "active",
-                                                                         "NGINX Plus Total Connections",
-                                                                         0, NULL);
+                                                                       "nginxplus",
+                                                                       "connections",
+                                                                       "active",
+                                                                       "NGINX Plus Total Connections",
+                                                                       0, NULL);
         if (ctx->plus_connections->connections_active == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->plus_connections->connections_active);
 
-	// @TODO check if gauge
+        // @TODO check if gauge
         ctx->plus_connections->connections_idle = cmt_counter_create(ctx->cmt,
-                                                                         "nginxplus",
-                                                                         "connections",
-                                                                         "idle",
-                                                                         "NGINX Plus Total Connections",
-                                                                         0, NULL);
+                                                                     "nginxplus",
+                                                                     "connections",
+                                                                     "idle",
+                                                                     "NGINX Plus Total Connections",
+                                                                     0, NULL);
         if (ctx->plus_connections->connections_idle == NULL) {
             return -1;
         }
@@ -1719,33 +1724,33 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->plus_ssl->handshakes);
 
         ctx->plus_ssl->handshakes_failed = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "ssl",
-                                                       "handshakes_failed",
-                                                       "NGINX Plus Total Connections",
-                                                       0, NULL);
+                                                              "nginxplus",
+                                                              "ssl",
+                                                              "handshakes_failed",
+                                                              "NGINX Plus Total Connections",
+                                                              0, NULL);
         if (ctx->plus_ssl->handshakes_failed == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->plus_ssl->handshakes_failed);
 
         ctx->plus_ssl->session_reuses = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "ssl",
-                                                       "session_reuses",
-                                                       "NGINX Plus Total Connections",
-                                                       0, NULL);
+                                                           "nginxplus",
+                                                           "ssl",
+                                                           "session_reuses",
+                                                           "NGINX Plus Total Connections",
+                                                           0, NULL);
         if (ctx->plus_ssl->session_reuses == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->plus_ssl->session_reuses);
 
         ctx->plus_http_requests->total = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "http_requests",
-                                                       "total",
-                                                       "NGINX Plus Total Connections",
-                                                       0, NULL);
+                                                            "nginxplus",
+                                                            "http_requests",
+                                                            "total",
+                                                            "NGINX Plus Total Connections",
+                                                            0, NULL);
         if (ctx->plus_http_requests->total == NULL) {
             return -1;
         }
@@ -1797,11 +1802,11 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->server_zones->received);
 
         ctx->server_zones->requests = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "requests",
-                                                          "NGINX Server Zone requests",
-                                                          1, (char *[]){"server_zone"});
+                                                         "nginxplus",
+                                                         "server_zone",
+                                                         "requests",
+                                                         "NGINX Server Zone requests",
+                                                         1, (char *[]){"server_zone"});
         if (ctx->server_zones->requests == NULL) {
             return -1;
         }
@@ -1863,11 +1868,14 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->location_zones->requests);
 
         ctx->location_zones->responses = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "location_zone",
-                                                          "responses",
-                                                          "NGINX Server Zone responses",
-                                                          2, (char *[]){"location_zone", "code"});
+                                                            "nginxplus",
+                                                            "location_zone",
+                                                            "responses",
+                                                            "NGINX Server Zone responses",
+                                                            2, (char *[]){
+                                                                "location_zone",
+                                                                "code"}
+                                                            );
         if (ctx->location_zones->responses == NULL) {
             return -1;
         }
