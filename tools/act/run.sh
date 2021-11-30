@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eux
+set -eu
 
 # release-build-docker-images
 JOB=${JOB:-release-build-distro-packages}
@@ -7,8 +7,10 @@ AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
 AWS_S3_BUCKET_STAGING=${AWS_S3_BUCKET_STAGING:-fluentbit-ci-staging}
 AWS_S3_BUCKET_RELEASE=${AWS_S3_BUCKET_RELEASE:-fluentbit-ci-release}
-
-GPG_PRIVATE_KEY=$(gpg --armor --export-secret-key $USER@calyptia.com -w0)
+FLUENTBITIO_HOST=${FLUENTBITIO_HOST:-localhost}
+FLUENTBITIO_USERNAME=${FLUENTBITIO_USERNAME:-$USER}
+FLUENTBITIO_SSHKEY=${FLUENTBITIO_SSHKEY:-$(cat $HOME/.ssh/id_rsa)}
+GPG_PRIVATE_KEY=${GPG_PRIVATE_KEY:-$(gpg --armor --export-secret-key $USER@calyptia.com -w0)}
 
 rm -rf workflow/
 mkdir -p workflow/
@@ -26,5 +28,8 @@ act --privileged --bind \
     -s AWS_S3_BUCKET_STAGING="$AWS_S3_BUCKET_STAGING" \
     -s AWS_S3_BUCKET_RELEASE="$AWS_S3_BUCKET_RELEASE" \
     -s GPG_PRIVATE_KEY="$GPG_PRIVATE_KEY" \
+    -s FLUENTBITIO_HOST="$FLUENTBITIO_HOST" \
+    -s FLUENTBITIO_USERNAME="$FLUENTBITIO_USERNAME" \
+    -s FLUENTBITIO_SSHKEY="$FLUENTBITIO_SSHKEY" \
     --env AWS_S3_ENDPOINT="http://localhost:9000" \
     -j "${JOB}"

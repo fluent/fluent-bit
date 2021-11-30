@@ -31,9 +31,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - run: |
-        sudo apt-get install debsigs
-
     - name: Get the version
       id: get_version
       # Use the input variable if defined, if not attempt to get a tag
@@ -58,19 +55,45 @@ jobs:
         replace-with: '$1'
         flags: 'g'
 
+    - name: Hashed known hosts value
+      id: known_hosts
+      run: |
+          OUTPUT=$(ssh-keyscan -H ${{ secrets.FLUENTBITIO_HOST }})
+          echo ::set-output name=OUTPUT::$OUTPUT
+
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.FLUENTBITIO_SSHKEY }}
+        known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+    - name: Sync packages from staging on S3
+      run: |
+        rm -rf ./releases/
+        mkdir -p ./releases/
+
+        if [ -n "${AWS_S3_ENDPOINT}" ]; then
+          ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+        fi
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}" ./releases/ --no-progress ${ENDPOINT}
+
+        rsync -avz ./releases/$VERSION $USERNAME@$HOST:/home/$USERNAME/apt
+      env:
+        VERSION: ${{ steps.formatted_version.outputs.replaced }}
+        HOST: ${{ secrets.FLUENTBITIO_HOST }}
+        USERNAME: ${{ secrets.FLUENTBITIO_USERNAME }}
+        KEY: ${{ secrets.FLUENTBITIO_SSHKEY }}
+      shell: bash
+      working-directory: packaging
+
     - name: Import GPG key for signing
       id: import_gpg
       uses: crazy-max/ghaction-import-gpg@v4
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
 
-    - name: GPG set up for signing
+    - name: GPG set up RPM keys for signing
       run: |
-        echo "fingerprint: ${{ steps.import_gpg.outputs.fingerprint }}"
-        echo "keyid:       ${{ steps.import_gpg.outputs.keyid }}"
-        echo "name:        ${{ steps.import_gpg.outputs.name }}"
-        echo "email:       ${{ steps.import_gpg.outputs.email }}"
-        gpg --list-keys
         KEYFILE=$(mktemp)
         gpg --export -a "${{ steps.import_gpg.outputs.name }}" > $KEYFILE
         rpm --import $KEYFILE
@@ -82,13 +105,15 @@ jobs:
       # Sign and set up metadata for it all
       # Upload to release bucket
       run: |
+        rm -rf ./releases/
+        mkdir -p ./releases/
         if [ -n "${AWS_S3_ENDPOINT}" ]; then
           ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
         fi
-        rm -rf ./releases/
-        mkdir -p ./releases/
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" ./releases/ --no-progress ${ENDPOINT}
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/${VERSION}" ./releases/ --no-progress ${ENDPOINT}
+
+        sudo apt-get install debsigs
         ./update-repos.sh $VERSION ./releases/
         aws s3 sync ./releases/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" --acl public-read --follow-symlinks --no-progress ${ENDPOINT}
       env:

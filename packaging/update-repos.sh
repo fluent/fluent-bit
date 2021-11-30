@@ -41,7 +41,7 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
 
     echo "Updating $DEB_REPO"
 
-    debsigs --sign=origin -k "$GPG_KEY" "$REPO_DIR/td-agent-bit-${VERSION}"_*.deb
+    find "$REPO_DIR" -name "td-agent-bit-${VERSION}_*.deb" -exec debsigs --sign=origin -k "$GPG_KEY" {} \;
     dpkg-scanpackages -m "$REPO_DIR" | gzip -c > "$REPO_DIR"/Packages.gz
 
     # REPO_NAME="flb-${DEB_REPO/\//-}"
