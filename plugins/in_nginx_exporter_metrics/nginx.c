@@ -204,8 +204,6 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
 {
     struct nginx_plus_connections *plus = (struct nginx_plus_connections *)ctx;
     size_t off = 0;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_unpacked result;
     int i = 0;
 
@@ -213,9 +211,6 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
             for (i = 0; i < result.data.via.map.size; i++) {
                 if (strncmp(result.data.via.map.ptr[i].key.via.str.ptr, "accepted", result.data.via.map.ptr[i].key.via.str.size) == 0) {
                     cmt_counter_set(plus->connections_accepted, ts,
@@ -245,8 +240,6 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
 {
     struct nginx_plus_ssl *plus = (struct nginx_plus_ssl *)ctx;
     size_t off = 0;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_unpacked result;
     int i = 0;
 
@@ -254,9 +247,6 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
             for (i = 0; i < result.data.via.map.size; i++) {
                 if (strncmp(result.data.via.map.ptr[i].key.via.str.ptr, "handshakes", result.data.via.map.ptr[i].key.via.str.size) == 0) {
                     cmt_counter_set(plus->handshakes, ts,
@@ -282,8 +272,6 @@ int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
 {
     struct nginx_plus_http_requests *plus = (struct nginx_plus_http_requests *)ctx;
     size_t off = 0;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
     msgpack_unpacked result;
     int i = 0;
 
@@ -291,9 +279,6 @@ int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
     msgpack_unpacked_init(&result);
     while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_MAP) {
-            msgpack_sbuffer_init(&mp_sbuf);
-            msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
             for (i = 0; i < result.data.via.map.size; i++) {
                 if (strncmp(result.data.via.map.ptr[i].key.via.str.ptr, "total", result.data.via.map.ptr[i].key.via.str.size) == 0) {
                     cmt_counter_set(plus->total, ts,
