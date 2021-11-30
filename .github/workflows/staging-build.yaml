@@ -37,23 +37,23 @@ jobs:
       max-parallel: 48
       fail-fast: true
       matrix:
-        distro: [ ubuntu/18.04 ]
+        distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, ubuntu/18.04 ]
         # distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
         #           debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
         #           debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
         #           ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
         include:
-            - distro: ubuntu/18.04
-              target: ubuntu/bionic
+          - distro: ubuntu/18.04
+            target: ubuntu/bionic
 
-          # - distro: amazonlinux/2
-          #   target: amazonlinux/2/
+          - distro: amazonlinux/2
+            target: amazonlinux/2/
 
-          # - distro: amazonlinux/2.arm64v8
-          #   target: amazonlinux/2/
+          - distro: amazonlinux/2.arm64v8
+            target: amazonlinux/2/
 
-          # - distro: centos/7
-          #   target: centos/7/
+          - distro: centos/7
+            target: centos/7/
 
           # - distro: centos/7.arm64v8
           #   target: centos/7/

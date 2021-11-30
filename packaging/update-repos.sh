@@ -14,6 +14,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         RPM="$REPO_DIR/td-agent-bit-${VERSION}-1.$ARCH.rpm"
         [[ ! -d "$REPO_DIR" ]] && continue
         [[ ! -f "$RPM" ]] && continue
+
         echo "Updating $RPM_REPO/$ARCH"
         # Sign the RPM
         rpm --add-sign "$RPM"
@@ -35,10 +36,12 @@ DEB_REPO_PATHS=( "debian/jessie"
                  "raspbian/buster" )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
-    echo "Updating $DEB_REPO"
     REPO_DIR="$BASE_PATH/$DEB_REPO"
+    [[ ! -d "$REPO_DIR" ]] && continue
 
-    debsigs --sign=origin -k "$GPG_KEY" "$REPO_DIR/td-agent-bit_${VERSION}_*.deb"
+    echo "Updating $DEB_REPO"
+
+    debsigs --sign=origin -k "$GPG_KEY" "$REPO_DIR/td-agent-bit-${VERSION}"_*.deb
     dpkg-scanpackages -m "$REPO_DIR" | gzip -c > "$REPO_DIR"/Packages.gz
 
     # REPO_NAME="flb-${DEB_REPO/\//-}"

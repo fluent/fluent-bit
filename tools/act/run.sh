@@ -8,17 +8,12 @@ AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
 AWS_S3_BUCKET_STAGING=${AWS_S3_BUCKET_STAGING:-fluentbit-ci-staging}
 AWS_S3_BUCKET_RELEASE=${AWS_S3_BUCKET_RELEASE:-fluentbit-ci-release}
 
-FLUENTBITIO_HOST=${FLUENTBITIO_HOST:-localhost}
-FLUENTBITIO_USERNAME=${FLUENTBITIO_USERNAME:-$USER}
-FLUENTBITIO_SSHKEY=${FLUENTBITIO_SSHKEY:-$HOME/.ssh/id_ed25519.pub}
-
-FLUENTBITIO_DIR=$(mktemp -d)
-echo "FLUENTBITIO_DIR=$FLUENTBITIO_DIR"
+GPG_PRIVATE_KEY=$(gpg --armor --export-secret-key $USER@calyptia.com -w0)
 
 rm -rf workflow/
 mkdir -p workflow/
 
-act --privileged --bind --verbose \
+act --privileged --bind \
     -P ubuntu-latest=nektos/act-environments-ubuntu:18.04 \
     -P ubuntu-18.04=nektos/act-environments-ubuntu:18.04 \
     --rm \
@@ -30,6 +25,6 @@ act --privileged --bind --verbose \
     -s AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
     -s AWS_S3_BUCKET_STAGING="$AWS_S3_BUCKET_STAGING" \
     -s AWS_S3_BUCKET_RELEASE="$AWS_S3_BUCKET_RELEASE" \
+    -s GPG_PRIVATE_KEY="$GPG_PRIVATE_KEY" \
     --env AWS_S3_ENDPOINT="http://localhost:9000" \
-    --env FLUENTBITIO_DIR="$FLUENTBITIO_DIR" \
     -j "${JOB}"
