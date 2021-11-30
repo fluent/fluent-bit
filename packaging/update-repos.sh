@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eux
+set -eu
 # VERSION must be defined
 VERSION=${VERSION:-$1}
 # Where the base of all the repos is
@@ -10,14 +10,14 @@ RPM_REPO_PATHS=("amazonlinux/2/" "centos/7/")
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     echo "Updating $RPM_REPO"
     for ARCH in x86_64 aarch64; do
-        REPO_DIR="$BASE_PATH/$RPM_REPO/$ARCH"
+        REPO_DIR="$BASE_PATH/$RPM_REPO/"
         RPM="$REPO_DIR/td-agent-bit-${VERSION}-1.$ARCH.rpm"
         [[ ! -d "$REPO_DIR" ]] && continue
         [[ ! -f "$RPM" ]] && continue
 
         echo "Updating $RPM_REPO/$ARCH"
         # Sign the RPM
-        rpm --add-sign "$RPM"
+        rpm --addsign "$RPM"
         # Full repo
         # createrepo -dp "$REPO_DIR"
         # Latest version only
