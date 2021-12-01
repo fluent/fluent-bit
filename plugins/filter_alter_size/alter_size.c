@@ -62,6 +62,7 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
                                 const char *tag, int tag_len,
                                 void **out_buf, size_t *out_size,
                                 struct flb_filter_instance *ins,
+                                struct flb_input_instance *i_ins,
                                 void *filter_context,
                                 struct flb_config *config)
 {
@@ -72,6 +73,7 @@ static int cb_alter_size_filter(const void *data, size_t bytes,
     int count = 0;
     size_t off = 0;
     (void) config;
+    (void) i_ins;
     char tmp[32];
     msgpack_unpacked result;
     msgpack_object root;
