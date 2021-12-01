@@ -37,11 +37,10 @@ jobs:
       max-parallel: 48
       fail-fast: true
       matrix:
-        distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, ubuntu/18.04 ]
-        # distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
-        #           debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
-        #           debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
-        #           ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
+        distro: [ amazonlinux/2, amazonlinux/2.arm64v8, centos/7, centos/7.arm64v8, debian/jessie,
+                  debian/jessie.arm64v8, debian/stretch, debian/stretch.arm64v8, debian/buster,
+                  debian/buster.arm64v8, ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8,
+                  ubuntu/20.04.arm64v8, raspbian/jessie, raspbian/stretch, raspbian/buster ]
         include:
           - distro: ubuntu/18.04
             target: ubuntu/bionic
@@ -55,50 +54,51 @@ jobs:
           - distro: centos/7
             target: centos/7/
 
-          # - distro: centos/7.arm64v8
-          #   target: centos/7/
+          - distro: centos/7.arm64v8
+            target: centos/7/
 
-          # - distro: debian/jessie
-          #   target: debian/jessie/
+          - distro: debian/jessie
+            target: debian/jessie/
 
-          # - distro: debian/jessie.arm64v8
-          #   target: debian/jessie/
+          - distro: debian/jessie.arm64v8
+            target: debian/jessie/
 
-          # - distro: debian/stretch
-          #   target: debian/stretch/
+          - distro: debian/stretch
+            target: debian/stretch/
 
-          # - distro: debian/stretch.arm64v8
-          #   target: debian/stretch/
+          - distro: debian/stretch.arm64v8
+            target: debian/stretch/
 
-          # - distro: debian/buster
-          #   target: debian/buster/
+          - distro: debian/buster
+            target: debian/buster/
 
-          # - distro: debian/buster.arm64v8
-          #   target: debian/buster/
+          - distro: debian/buster.arm64v8
+            target: debian/buster/
 
-          # - distro: ubuntu/16.04
-          #   target: ubuntu/xenial/
+          - distro: ubuntu/16.04
+            target: ubuntu/xenial/
 
-          # - distro: ubuntu/18.04.arm64v8
-          #   target: ubuntu/bionic/
+          - distro: ubuntu/18.04.arm64v8
+            target: ubuntu/bionic/
 
-          # - distro: ubuntu/20.04
-          #   target: ubuntu/focal/
+          - distro: ubuntu/20.04
+            target: ubuntu/focal/
 
-          # - distro: ubuntu/20.04.arm64v8
-          #   target: ubuntu/focal/
+          - distro: ubuntu/20.04.arm64v8
+            target: ubuntu/focal/
 
-          # - distro: raspbian/jessie
-          #   target: raspbian/jessie/
+          - distro: raspbian/jessie
+            target: raspbian/jessie/
 
-          # - distro: raspbian/stretch
-          #   target: raspbian/stretch/
+          - distro: raspbian/stretch
+            target: raspbian/stretch/
 
-          # - distro: raspbian/buster
-          #   target: raspbian/buster/
+          - distro: raspbian/buster
+            target: raspbian/buster/
     steps:
 
-    - run: |
+    - name: Verify prerequisites
+      run: |
         if [ -z "${target}" ]; then
           echo Missing target
           exit 1
@@ -165,8 +165,6 @@ jobs:
       env:
         SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ steps.formatted_version.outputs.replaced }}/staging/"
         DEST_DIR: "/${{ steps.formatted_version.outputs.replaced }}/${{ matrix.target }}/"
-
-    # TODO: trigger packaging tests
 
   deploy-staging-images:
     name: build docker images
