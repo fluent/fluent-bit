@@ -10,7 +10,7 @@ RPM_REPO_PATHS=("amazonlinux/2/" "centos/7/")
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     echo "Updating $RPM_REPO"
     for ARCH in x86_64 aarch64; do
-        REPO_DIR="$BASE_PATH/$RPM_REPO/"
+        REPO_DIR="$BASE_PATH/$RPM_REPO"
         RPM="$REPO_DIR/td-agent-bit-${VERSION}-1.$ARCH.rpm"
         [[ ! -d "$REPO_DIR" ]] && continue
         [[ ! -f "$RPM" ]] && continue
