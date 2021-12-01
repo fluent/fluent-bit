@@ -335,12 +335,14 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
                          struct flb_filter_instance *f_ins,
+                         struct flb_input_instance *i_ins,
                          void *filter_context,
                          struct flb_config *config)
 {
     int ret;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     double ts = 0;
     msgpack_object *p;
