@@ -2284,6 +2284,16 @@ static int nginx_ctx_destroy(struct nginx_ctx *ctx)
     if (ctx->cmt) {
         cmt_destroy(ctx->cmt);
     }
+    if (ctx->is_nginx_plus) {
+        if (ctx->plus_connections) flb_free(ctx->plus_connections);
+        if (ctx->plus_ssl) flb_free(ctx->plus_ssl);
+        if (ctx->plus_http_requests) flb_free(ctx->plus_http_requests); 
+        if (ctx->server_zones) flb_free(ctx->server_zones);
+        if (ctx->location_zones) flb_free(ctx->location_zones);
+        if (ctx->upstreams) flb_free(ctx->upstreams);
+        if (ctx->streams) flb_free(ctx->streams);
+        if (ctx->stream_upstreams) flb_free(ctx->stream_upstreams);
+    }
     flb_free(ctx);
     return 0;
 }
