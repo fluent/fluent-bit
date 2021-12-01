@@ -1,0 +1,61 @@
+name: 'Pull requests compile checks'
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or commit SHA to use
+        required: false
+        default: master
+jobs:
+  # Reuse all the actual CentOS 7 existing packaging container to test.
+  # This way if any changes are made there then they will be reflected here.
+  # Once packaging is migrated into the source repo it will be simpler.
+  pr-compile-centos-7:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Fluent Bit code
+      uses: actions/checkout@v2
+      with:
+        ref:  ${{ github.event.inputs.ref || github.event.pull_request.head.sha }}
+
+    - name: Checkout packaging code
+      uses: actions/checkout@v2
+      with:
+        repository: fluent/fluent-bit-packaging
+        fetch-depth: 1
+        path: packaging
+
+    - name: Tar up local source to use with packaging container
+      run: |
+        tar --exclude='./packaging' --exclude='./.git' --transform 's,^,fluent-bit-pr/,' -czvf packaging/distros/centos/7/fluent-bit-pr.tgz .
+      shell: bash
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Build base image to use
+      uses: docker/build-push-action@v2
+      with:
+        push: false
+        load: true
+        context: packaging/distros/centos/7/
+        file: packaging/distros/centos/7/Dockerfile.base
+        tags: flb-build-base-centos/7
+
+    - name: Attempt to build current source from tarball
+      uses: docker/build-push-action@v2
+      with:
+        push: false
+        load: true
+        no-cache: true
+        context: packaging/distros/centos/7/
+        file: packaging/distros/centos/7/Dockerfile
+        build-args:
+          FLB_SRC=fluent-bit-pr.tgz
+          FLB_VERSION=pr
