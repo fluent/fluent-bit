@@ -1,0 +1,48 @@
+---
+name: Test staging
+# The intention is this workflow is triggered either manually or
+# after build has completed.
+on:
+  workflow_run:
+    workflows: ['Deploy to staging']
+    types:
+      - completed
+  workflow_dispatch:
+
+env:
+  # Containers
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+  # Packages
+  AWS_REGION: "us-east-1"
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+
+jobs:
+  staging-test-packaging:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - centos-7
+          - ubuntu-1804
+        suite: [default]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+      with:
+        repository: ruilapa/fluentbit-packages-test
+
+    - name: Install Chef
+      uses: actionshub/chef-install@master
+
+    - name: Test-Kitchen
+      uses: actionshub/test-kitchen@master
+      with:
+        suite: ${{ matrix.suite }}
+        os: ${{ matrix.os }}
+      env:
+        CHEF_LICENSE: accept-no-persist
