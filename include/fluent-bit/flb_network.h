@@ -40,6 +40,9 @@ struct flb_net_setup {
     /* max time in seconds to wait for a established connection */
     int connect_timeout;
 
+    /* max time in seconds to wait for blocking io calls */
+    int io_timeout;
+
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
 
