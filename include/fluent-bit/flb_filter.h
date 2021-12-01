@@ -58,6 +58,7 @@ struct flb_filter_plugin {
                       const char *, int,
                       void **, size_t *,
                       struct flb_filter_instance *,
+                      struct flb_input_instance *,
                       void *, struct flb_config *);
     int (*cb_exit) (void *, struct flb_config *);
 
