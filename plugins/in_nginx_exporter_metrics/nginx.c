@@ -1780,22 +1780,22 @@ static int nginx_init(struct flb_input_instance *ins,
 
 	// @TODO check if gauge
         ctx->server_zones->processing = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "processing",
-                                                          "NGINX Server Zone processing",
-                                                          1, (char *[]){"server_zone"});
+                                                           "nginxplus",
+                                                           "server_zone",
+                                                           "processing",
+                                                           "NGINX Server Zone processing",
+                                                           1, (char *[]){"server_zone"});
         if (ctx->server_zones->processing == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->server_zones->processing);
 
         ctx->server_zones->received = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "received",
-                                                          "NGINX Server Zone received",
-                                                          1, (char *[]){"server_zone"});
+                                                         "nginxplus",
+                                                         "server_zone",
+                                                         "received",
+                                                         "NGINX Server Zone received",
+                                                         1, (char *[]){"server_zone"});
         if (ctx->server_zones->received == NULL) {
             return -1;
         }
@@ -1824,11 +1824,11 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->server_zones->responses);
 
         ctx->server_zones->sent = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "sent",
-                                                          "NGINX Server Zone sent",
-                                                          1, (char *[]){"server_zone"});
+                                                     "nginxplus",
+                                                     "server_zone",
+                                                     "sent",
+                                                     "NGINX Server Zone sent",
+                                                     1, (char *[]){"server_zone"});
         if (ctx->server_zones->sent == NULL) {
             return -1;
         }
@@ -1846,22 +1846,22 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->location_zones->discarded);
 
         ctx->location_zones->received = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "location_zone",
-                                                          "received",
-                                                          "NGINX Server Zone received",
-                                                          1, (char *[]){"location_zone"});
+                                                           "nginxplus",
+                                                           "location_zone",
+                                                           "received",
+                                                           "NGINX Server Zone received",
+                                                           1, (char *[]){"location_zone"});
         if (ctx->location_zones->received == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->location_zones->received);
 
         ctx->location_zones->requests = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "location_zone",
-                                                          "requests",
-                                                          "NGINX Server Zone requests",
-                                                          1, (char *[]){"location_zone"});
+                                                           "nginxplus",
+                                                           "location_zone",
+                                                           "requests",
+                                                           "NGINX Server Zone requests",
+                                                           1, (char *[]){"location_zone"});
         if (ctx->location_zones->requests == NULL) {
             return -1;
         }
@@ -1961,12 +1961,12 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->upstreams->requests);
 
         ctx->upstreams->responses = cmt_counter_create(ctx->cmt,
-                                                   "nginxplus",
-                                                   "upstream_server",
-                                                   "responses",
-                                                   "NGINX Upstream Responses",
-                                                   3,
-                                                   (char *[]){"code", "upstream","server"});
+                                                       "nginxplus",
+                                                       "upstream_server",
+                                                       "responses",
+                                                       "NGINX Upstream Responses",
+                                                       3,
+                                                       (char *[]){"code", "upstream","server"});
         if (ctx->upstreams->responses == NULL) {
             return -1;
         }
@@ -2009,11 +2009,11 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->upstreams->unavail);
 
         ctx->streams->connections = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "stream_server_zone",
-                                                          "connections",
-                                                          "NGINX Stream Server Zone connections",
-                                                          1, (char *[]){"server_zone"});
+                                                       "nginxplus",
+                                                       "stream_server_zone",
+                                                       "connections",
+                                                       "NGINX Stream Server Zone connections",
+                                                       1, (char *[]){"server_zone"});
         if (ctx->streams->connections == NULL) {
             return -1;
         }
@@ -2021,33 +2021,33 @@ static int nginx_init(struct flb_input_instance *ins,
 
 
         ctx->streams->discarded = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "stream_server_zone",
-                                                          "discarded",
-                                                          "NGINX Stream Server Zone discarded",
-                                                          1, (char *[]){"server_zone"});
+                                                     "nginxplus",
+                                                     "stream_server_zone",
+                                                     "discarded",
+                                                     "NGINX Stream Server Zone discarded",
+                                                     1, (char *[]){"server_zone"});
         if (ctx->streams->discarded == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->streams->discarded);
 
         ctx->streams->processing = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "stream_server_zone",
-                                                          "processing",
-                                                          "NGINX Stream Server Zone processing",
-                                                          1, (char *[]){"server_zone"});
+                                                      "nginxplus",
+                                                      "stream_server_zone",
+                                                      "processing",
+                                                      "NGINX Stream Server Zone processing",
+                                                      1, (char *[]){"server_zone"});
         if (ctx->streams->processing == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->streams->processing);
 
         ctx->streams->received = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "stream_server_zone",
-                                                          "received",
-                                                          "NGINX Stream Server Zone received",
-                                                          1, (char *[]){"server_zone"});
+                                                    "nginxplus",
+                                                    "stream_server_zone",
+                                                    "received",
+                                                    "NGINX Stream Server Zone received",
+                                                    1, (char *[]){"server_zone"});
         if (ctx->streams->received == NULL) {
             return -1;
         }
