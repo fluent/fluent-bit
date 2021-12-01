@@ -658,6 +658,7 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
                                    const char *tag, int tag_len,
                                    void **out_buf, size_t * out_size,
                                    struct flb_filter_instance *ins,
+                                   struct flb_input_instance *i_ins,
                                    void *context, struct flb_config *config)
 {
     int ret;
@@ -668,6 +669,7 @@ static int cb_throttle_size_filter(const void *data, size_t bytes,
     msgpack_object map;
     size_t off = 0;
     (void) ins;
+    (void) i_ins;
     (void) config;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
