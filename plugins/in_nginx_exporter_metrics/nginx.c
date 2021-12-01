@@ -822,8 +822,8 @@ void *process_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts,
     return ctx;
 }
 
-static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t ts,
-                                         msgpack_object_array *peers)
+static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
+                                         uint64_t ts, msgpack_object_array *peers)
 {
     int i = 0;
     int p = 0;
@@ -1467,7 +1467,7 @@ static int nginx_collect_plus(struct flb_input_instance *ins,
             goto error;
         }
     }
-    
+
     rc = nginx_collect_plus_upstreams(ins, config, ctx, ts);
     if (rc != 0) {
         goto error;
@@ -1573,13 +1573,14 @@ static int nginx_init(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
     struct nginx_ctx *ctx = NULL;
+    struct cmt_counter *c;
+    struct cmt_gauge *g;
 
     /* Allocate space for the configuration */
     ctx = nginx_ctx_init(ins, config);
     if (!ctx) {
         return -1;
     }
-
 
 
     flb_input_set_context(ins, ctx);
@@ -1590,42 +1591,49 @@ static int nginx_init(struct flb_input_instance *ins,
          */
         ctx->connections_accepted = cmt_counter_create(ctx->cmt, "nginx", "connections",
                                                        "accepted",
-                                                       "Accepted client connections", 0, NULL);
+                                                       "Accepted client connections", 0, 
+                                                       NULL);
         if (ctx->connections_accepted == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->connections_accepted);
 
         ctx->connections_active = cmt_gauge_create(ctx->cmt, "nginx", "connections",
-                                                   "active", "active client connections", 0, NULL);
+                                                   "active", "active client connections", 
+                                                   0, NULL);
         if (ctx->connections_active == NULL) {
             return -1;
         }
 
         ctx->connections_handled = cmt_counter_create(ctx->cmt, "nginx", "connections",
                                                       "handled",
-                                                      "Handled client connections", 0, NULL);
+                                                      "Handled client connections", 0, 
+                                                      NULL);
         if (ctx->connections_handled == NULL) {
             return -1;
         }
         cmt_counter_allow_reset(ctx->connections_handled);
 
         ctx->connections_reading = cmt_gauge_create(ctx->cmt, "nginx", "connections",
-                                                    "reading", "reading client connections", 0, NULL);
+                                                    "reading", 
+                                                    "reading client connections",
+                                                    0, NULL);
         if (ctx->connections_reading == NULL) {
             return -1;
         }
 
         ctx->connections_writing = cmt_gauge_create(ctx->cmt, "nginx", "connections",
                                                     "writing", 
-                                                    "writing client connections", 0, NULL);
+                                                    "writing client connections",
+                                                    0, NULL);
         if (ctx->connections_writing == NULL) {
             return -1;
         }
 
         ctx->connections_waiting = cmt_gauge_create(ctx->cmt, "nginx", "connections",
                                                     "waiting",
-                                                    "waiting client connections", 0, NULL);
+                                                    "waiting client connections",
+                                                    0, NULL);
         if (ctx->connections_waiting == NULL) {
             return -1;
         }
@@ -1639,9 +1647,9 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(ctx->connections_total);
 
         ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginx", "", "up",
-                                              "Shows the status of the last metric scrape: "
-                                              "1 for a successful scrape and "
-                                              "s0 for a failed one",
+                                              "Shows the status of the last metric "
+                                              "scrape: 1 for a successful scrape and "
+                                              "0 for a failed one",
                                               0, NULL);
 
         ctx->coll_id = flb_input_set_collector_time(ins,
@@ -1660,524 +1668,596 @@ static int nginx_init(struct flb_input_instance *ins,
         ctx->streams = flb_calloc(1, sizeof(struct nginx_plus_streams));
         ctx->stream_upstreams = flb_calloc(1, sizeof(struct nginx_plus_stream_upstreams));
 
-        ctx->connection_up = cmt_gauge_create(ctx->cmt, "nginxplus", "", "up",
-                                              "Shows the status of the last metric scrape: "
-                                              "1 for a successful scrape and 0 for a failed "
-                                              "one",
-                                              0, NULL);
-
-        ctx->plus_connections->connections_accepted = cmt_counter_create(ctx->cmt,
-                                                                         "nginxplus",
-                                                                         "connections",
-                                                                         "accepted",
-                                                                         "NGINX Plus Total Connections",
-                                                                         0, NULL);
-        if (ctx->plus_connections->connections_accepted == NULL) {
+        g = cmt_gauge_create(ctx->cmt, "nginxplus", "", "up",
+                             "Shows the status of the last metric scrape: "
+                             "1 for a successful scrape and 0 for a failed "
+                             "one", 0, NULL);
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_connections->connections_accepted);
+        ctx->connection_up = g;
 
-        ctx->plus_connections->connections_dropped = cmt_counter_create(ctx->cmt,
-                                                                        "nginxplus",
-                                                                        "connections",
-                                                                        "dropped",
-                                                                        "NGINX Plus Total Connections",
-                                                                        0, NULL);
-        if (ctx->plus_connections->connections_dropped == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "connections", "accepted",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_connections->connections_dropped);
+        cmt_counter_allow_reset(c);
+        ctx->plus_connections->connections_accepted = c;
 
-        // @TODO check if gauge
-        ctx->plus_connections->connections_active = cmt_counter_create(ctx->cmt,
-                                                                       "nginxplus",
-                                                                       "connections",
-                                                                       "active",
-                                                                       "NGINX Plus Total Connections",
-                                                                       0, NULL);
-        if (ctx->plus_connections->connections_active == NULL) {
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "connections", "dropped",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_connections->connections_active);
+        cmt_counter_allow_reset(c);
+        ctx->plus_connections->connections_dropped = c;
 
-        // @TODO check if gauge
-        ctx->plus_connections->connections_idle = cmt_counter_create(ctx->cmt,
-                                                                     "nginxplus",
-                                                                     "connections",
-                                                                     "idle",
-                                                                     "NGINX Plus Total Connections",
-                                                                     0, NULL);
-        if (ctx->plus_connections->connections_idle == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "connections", "active",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_connections->connections_idle);
+        cmt_counter_allow_reset(c);
+        ctx->plus_connections->connections_active = c;
 
-        ctx->plus_ssl->handshakes = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "ssl",
-                                                       "handshakes",
-                                                       "NGINX Plus Total Connections",
-                                                       0, NULL);
-        if (ctx->plus_ssl->handshakes == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "connections", "idle",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_ssl->handshakes);
-
-        ctx->plus_ssl->handshakes_failed = cmt_counter_create(ctx->cmt,
-                                                              "nginxplus",
-                                                              "ssl",
-                                                              "handshakes_failed",
-                                                              "NGINX Plus Total Connections",
-                                                              0, NULL);
-        if (ctx->plus_ssl->handshakes_failed == NULL) {
+        cmt_counter_allow_reset(c);
+        ctx->plus_connections->connections_idle = c;
+        
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "ssl", "handshakes",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_ssl->handshakes_failed);
+        cmt_counter_allow_reset(c);
+        ctx->plus_ssl->handshakes = c;
 
-        ctx->plus_ssl->session_reuses = cmt_counter_create(ctx->cmt,
-                                                           "nginxplus",
-                                                           "ssl",
-                                                           "session_reuses",
-                                                           "NGINX Plus Total Connections",
-                                                           0, NULL);
-        if (ctx->plus_ssl->session_reuses == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "ssl", "handshakes_failed",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_ssl->session_reuses);
+        cmt_counter_allow_reset(c);
+        ctx->plus_ssl->handshakes_failed = c;
 
-        ctx->plus_http_requests->total = cmt_counter_create(ctx->cmt,
-                                                            "nginxplus",
-                                                            "http_requests",
-                                                            "total",
-                                                            "NGINX Plus Total Connections",
-                                                            0, NULL);
-        if (ctx->plus_http_requests->total == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "ssl", "session_reuses",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_http_requests->total);
+        cmt_counter_allow_reset(c);
+        ctx->plus_ssl->session_reuses = c;
 
-        ctx->plus_http_requests->current = cmt_counter_create(ctx->cmt,
-                                                              "nginxplus",
-                                                              "http_requests",
-                                                              "current",
-                                                              "NGINX Plus Total Connections",
-                                                              0, NULL);
-        if (ctx->plus_http_requests->current == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "http_requests", "total",
+                               "NGINX Plus Total Connections",
+                               0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->plus_http_requests->current);
+        cmt_counter_allow_reset(c);
+        ctx->plus_http_requests->total = c;
 
-        ctx->server_zones->discarded = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "discarded",
-                                                          "NGINX Server Zone discarded",
-                                                          1, (char *[]){"server_zone"});
-        if (ctx->server_zones->discarded == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus", "http_requests", "current",
+                               "NGINX Plus Total Connections",
+                              0, NULL);
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->server_zones->discarded);
+        cmt_counter_allow_reset(c);
+        ctx->plus_http_requests->current = c;
 
-	// @TODO check if gauge
-        ctx->server_zones->processing = cmt_counter_create(ctx->cmt,
-                                                           "nginxplus",
-                                                           "server_zone",
-                                                           "processing",
-                                                           "NGINX Server Zone processing",
-                                                           1, (char *[]){"server_zone"});
-        if (ctx->server_zones->processing == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "discarded",
+                               "NGINX Server Zone discarded",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->server_zones->processing);
+        cmt_counter_allow_reset(c);
+        ctx->server_zones->discarded = c;
 
-        ctx->server_zones->received = cmt_counter_create(ctx->cmt,
-                                                         "nginxplus",
-                                                         "server_zone",
-                                                         "received",
-                                                         "NGINX Server Zone received",
-                                                         1, (char *[]){"server_zone"});
-        if (ctx->server_zones->received == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "processing",
+                               "NGINX Server Zone processing",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->server_zones->received);
+        cmt_counter_allow_reset(c);
+        ctx->server_zones->processing = c;
 
-        ctx->server_zones->requests = cmt_counter_create(ctx->cmt,
-                                                         "nginxplus",
-                                                         "server_zone",
-                                                         "requests",
-                                                         "NGINX Server Zone requests",
-                                                         1, (char *[]){"server_zone"});
-        if (ctx->server_zones->requests == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "received",
+                               "NGINX Server Zone received",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->server_zones->requests);
+        cmt_counter_allow_reset(c);
+        ctx->server_zones->received = c;
 
-        ctx->server_zones->responses = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "server_zone",
-                                                          "responses",
-                                                          "NGINX Server Zone responses",
-                                                          2, (char *[]){"server_zone", "code"});
-        if (ctx->server_zones->responses == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "requests",
+                               "NGINX Server Zone requests",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->server_zones->responses);
+        cmt_counter_allow_reset(c);
+        ctx->server_zones->requests = c;
 
-        ctx->server_zones->sent = cmt_counter_create(ctx->cmt,
-                                                     "nginxplus",
-                                                     "server_zone",
-                                                     "sent",
-                                                     "NGINX Server Zone sent",
-                                                     1, (char *[]){"server_zone"});
-        if (ctx->server_zones->sent == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "responses",
+                               "NGINX Server Zone responses",
+                               2, (char *[]){"server_zone", "code"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->server_zones->sent);
+        cmt_counter_allow_reset(c);
+        ctx->server_zones->responses = c;
 
-        ctx->location_zones->discarded = cmt_counter_create(ctx->cmt,
-                                                            "nginxplus",
-                                                            "server_zone",
-                                                            "discarded",
-                                                            "NGINX Server Zone discarded",
-                                                            1, (char *[]){"location_zone"});
-        if (ctx->location_zones->discarded == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "sent",
+                               "NGINX Server Zone sent",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->location_zones->discarded);
+        cmt_counter_allow_reset(c);
+        ctx->server_zones->sent = c;
 
-        ctx->location_zones->received = cmt_counter_create(ctx->cmt,
-                                                           "nginxplus",
-                                                           "location_zone",
-                                                           "received",
-                                                           "NGINX Server Zone received",
-                                                           1, (char *[]){"location_zone"});
-        if (ctx->location_zones->received == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "discarded",
+                               "NGINX Server Zone discarded",
+                               1, (char *[]){"location_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->location_zones->received);
+        cmt_counter_allow_reset(c);
+        ctx->location_zones->discarded = c;
 
-        ctx->location_zones->requests = cmt_counter_create(ctx->cmt,
-                                                           "nginxplus",
-                                                           "location_zone",
-                                                           "requests",
-                                                           "NGINX Server Zone requests",
-                                                           1, (char *[]){"location_zone"});
-        if (ctx->location_zones->requests == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "location_zone",
+                               "received",
+                               "NGINX Server Zone received",
+                               1, (char *[]){"location_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->location_zones->requests);
+        cmt_counter_allow_reset(c);
+        ctx->location_zones->received = c;
 
-        ctx->location_zones->responses = cmt_counter_create(ctx->cmt,
-                                                            "nginxplus",
-                                                            "location_zone",
-                                                            "responses",
-                                                            "NGINX Server Zone responses",
-                                                            2, (char *[]){
-                                                                "location_zone",
-                                                                "code"}
-                                                            );
-        if (ctx->location_zones->responses == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "location_zone",
+                               "requests",
+                               "NGINX Server Zone requests",
+                               1, (char *[]){"location_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->location_zones->responses);
+        cmt_counter_allow_reset(c);
+        ctx->location_zones->requests = c;
 
-        ctx->location_zones->sent = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "location_zone",
-                                                       "sent",
-                                                       "NGINX Server Zone sent",
-                                                       1, (char *[]){"location_zone"});
-        if (ctx->location_zones->sent == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "location_zone",
+                               "responses",
+                               "NGINX Server Zone responses",
+                               2, (char *[]){"location_zone", "code"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->location_zones->sent);
+        cmt_counter_allow_reset(c);
+        ctx->location_zones->responses = c;
 
-        ctx->upstreams->keepalives = cmt_gauge_create(ctx->cmt,
-                                                      "nginxplus",
-                                                      "upstream",
-                                                      "keepalives",
-                                                      "NGINX Upstream Keepalives",
-                                                      1, (char *[]){"upstream"});
-
-        ctx->upstreams->zombies = cmt_gauge_create(ctx->cmt,
-                                                   "nginxplus",
-                                                   "upstream",
-                                                   "zombies",
-                                                   "NGINX Upstream Zombies",
-                                                   1, (char *[]){"upstream"});
-
-        ctx->upstreams->active = cmt_gauge_create(ctx->cmt,
-                                                  "nginxplus",
-                                                  "upstream_server",
-                                                  "active",
-                                                  "NGINX Upstream Active",
-                                                  2, (char *[]){"upstream","server"});
-
-        ctx->upstreams->fails = cmt_counter_create(ctx->cmt,
-                                                   "nginxplus",
-                                                   "upstream_server",
-                                                   "fails",
-                                                   "NGINX Upstream Fails",
-                                                   2, (char *[]){"upstream","server"});
-        if (ctx->upstreams->fails == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "location_zone",
+                               "sent",
+                               "NGINX Server Zone sent",
+                               1, (char *[]){"location_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->upstreams->fails);
+        cmt_counter_allow_reset(c);
+        ctx->location_zones->sent = c;
 
-        ctx->upstreams->header_time = cmt_gauge_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "upstream_server",
-                                                       "header_time",
-                                                       "NGINX Upstream Header Time",
-                                                       2, (char *[]){"upstream","server"});
-
-        ctx->upstreams->limit = cmt_gauge_create(ctx->cmt,
-                                                 "nginxplus",
-                                                 "upstream_server",
-                                                 "limit",
-                                                 "NGINX Upstream Limit",
-                                                 2, (char *[]){"upstream","server"});
-
-        ctx->upstreams->received = cmt_counter_create(ctx->cmt,
-                                                      "nginxplus",
-                                                      "upstream_server",
-                                                      "received",
-                                                      "NGINX Upstream Received",
-                                                      2, (char *[]){"upstream","server"});
-        if (ctx->upstreams->received == NULL) {
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "upstream",
+                             "keepalives",
+                             "NGINX Upstream Keepalives",
+                             1, (char *[]){"upstream"});
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->upstreams->received);
+        ctx->upstreams->keepalives = g;
 
-        ctx->upstreams->requests = cmt_counter_create(ctx->cmt,
-                                                      "nginxplus",
-                                                      "upstream_server",
-                                                      "requests",
-                                                      "NGINX Upstream Requests",
-                                                      2, (char *[]){"upstream","server"});
-        if (ctx->upstreams->requests == NULL) {
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "upstream",
+                             "zombies",
+                             "NGINX Upstream Zombies",
+                             1, (char *[]){"upstream"});
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->upstreams->requests);
+        ctx->upstreams->zombies = g;
 
-        ctx->upstreams->responses = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "upstream_server",
-                                                       "responses",
-                                                       "NGINX Upstream Responses",
-                                                       3,
-                                                       (char *[]){"code", "upstream","server"});
-        if (ctx->upstreams->responses == NULL) {
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "upstream_server",
+                             "active",
+                             "NGINX Upstream Active",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->upstreams->responses);
+        ctx->upstreams->active = g;
 
-        ctx->upstreams->response_time = cmt_gauge_create(ctx->cmt,
-                                                         "nginxplus",
-                                                         "upstream_server",
-                                                         "response_time",
-                                                         "NGINX Upstream Response Time",
-                                                         2, (char *[]){"upstream","server"});
-
-        ctx->upstreams->sent = cmt_counter_create(ctx->cmt,
-                                                  "nginxplus",
-                                                  "upstream_server",
-                                                  "sent",
-                                                  "NGINX Upstream Sent",
-                                                  2, (char *[]){"upstream","server"});
-        if (ctx->upstreams->sent == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "upstream_server",
+                               "fails",
+                               "NGINX Upstream Fails",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->upstreams->sent);
+        cmt_counter_allow_reset(c);
+        ctx->upstreams->fails = c;
 
-        ctx->upstreams->state = cmt_gauge_create(ctx->cmt,
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "upstream_server",
+                             "header_time",
+                             "NGINX Upstream Header Time",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->upstreams->header_time = g;
+        
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "upstream_server",
+                             "limit",
+                             "NGINX Upstream Limit",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->upstreams->limit = g;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "upstream_server",
+                               "received",
+                               "NGINX Upstream Received",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->upstreams->received = c;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "upstream_server",
+                               "requests",
+                               "NGINX Upstream Requests",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);                                            
+        ctx->upstreams->requests = c;
+        
+        c = cmt_counter_create(ctx->cmt,
+                              "nginxplus",
+                              "upstream_server",
+                              "responses",
+                              "NGINX Upstream Responses",
+                              3, (char *[]){"code", "upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->upstreams->responses = c;
+
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "upstream_server",
+                             "response_time",
+                             "NGINX Upstream Response Time",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->upstreams->response_time = g;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "upstream_server",
+                               "sent",
+                               "NGINX Upstream Sent",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->upstreams->sent = c;
+
+        g = cmt_gauge_create(ctx->cmt,
                                                  "nginxplus",
                                                  "upstream_server",
                                                  "state",
                                                  "NGINX Upstream State",
                                                  2, (char *[]){"upstream","server"});
-
-        ctx->upstreams->unavail = cmt_counter_create(ctx->cmt,
-                                                     "nginxplus",
-                                                     "upstream_server",
-                                                     "unavail",
-                                                     "NGINX Upstream Unavailable",
-                                                     2, (char *[]){"upstream","server"});
-        if (ctx->upstreams->unavail == NULL) {
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->upstreams->unavail);
+        ctx->upstreams->state = g;
 
-        ctx->streams->connections = cmt_counter_create(ctx->cmt,
-                                                       "nginxplus",
-                                                       "stream_server_zone",
-                                                       "connections",
-                                                       "NGINX Stream Server Zone connections",
-                                                       1, (char *[]){"server_zone"});
-        if (ctx->streams->connections == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                              "nginxplus",
+                              "upstream_server",
+                              "unavail",
+                              "NGINX Upstream Unavailable",
+                              2, (char *[]){"upstream","server"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->streams->connections);
+        cmt_counter_allow_reset(c);
+        ctx->upstreams->unavail = c;
 
-
-        ctx->streams->discarded = cmt_counter_create(ctx->cmt,
-                                                     "nginxplus",
-                                                     "stream_server_zone",
-                                                     "discarded",
-                                                     "NGINX Stream Server Zone discarded",
-                                                     1, (char *[]){"server_zone"});
-        if (ctx->streams->discarded == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_server_zone",
+                               "connections",
+                               "NGINX Stream Server Zone connections",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->streams->discarded);
+        cmt_counter_allow_reset(c);
+        ctx->streams->connections = c;
 
-        ctx->streams->processing = cmt_counter_create(ctx->cmt,
-                                                      "nginxplus",
-                                                      "stream_server_zone",
-                                                      "processing",
-                                                      "NGINX Stream Server Zone processing",
-                                                      1, (char *[]){"server_zone"});
-        if (ctx->streams->processing == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_server_zone",
+                               "discarded",
+                               "NGINX Stream Server Zone discarded",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->streams->processing);
+        cmt_counter_allow_reset(c);
+        ctx->streams->discarded = c;
 
-        ctx->streams->received = cmt_counter_create(ctx->cmt,
-                                                    "nginxplus",
-                                                    "stream_server_zone",
-                                                    "received",
-                                                    "NGINX Stream Server Zone received",
-                                                    1, (char *[]){"server_zone"});
-        if (ctx->streams->received == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_server_zone",
+                               "processing",
+                               "NGINX Stream Server Zone "
+                               "processing",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->streams->received);
+        cmt_counter_allow_reset(c);
+        ctx->streams->processing = c;
 
-        ctx->streams->sent = cmt_counter_create(ctx->cmt,
-                                                "nginxplus",
-                                                "server_zone",
-                                                "sent",
-                                                "NGINX Stream Server Zone sent",
-                                                1, (char *[]){"server_zone"});
-        if (ctx->streams->sent == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_server_zone",
+                               "received",
+                               "NGINX Stream Server Zone received",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->streams->sent);
+        cmt_counter_allow_reset(c);
+        ctx->streams->received = c;
 
-        ctx->streams->sessions = cmt_counter_create(ctx->cmt,
-                                                    "nginxplus",
-                                                    "stream_server_zone",
-                                                    "sessions",
-                                                    "NGINX Stream Server Zone Sessions",
-                                                    2, (char *[]){"server_zone", "code"});
-        if (ctx->streams->sessions == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "server_zone",
+                               "sent",
+                               "NGINX Stream Server Zone sent",
+                               1, (char *[]){"server_zone"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->streams->sessions);
+        cmt_counter_allow_reset(c);
+        ctx->streams->sent = c;
 
-        ctx->stream_upstreams->zombies = cmt_gauge_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "stream_upstream",
-                                                          "zombies",
-                                                          "NGINX Upstream Zombies",
-                                                          1, (char *[]){"upstream"});
-
-        ctx->stream_upstreams->active = cmt_gauge_create(ctx->cmt,
-                                                         "nginxplus",
-                                                         "stream_upstream_server",
-                                                         "active",
-                                                         "NGINX Upstream Active",
-                                                         2, (char *[]){"upstream","server"});
-
-        ctx->stream_upstreams->fails = cmt_counter_create(ctx->cmt,
-                                                          "nginxplus",
-                                                          "stream_upstream_server",
-                                                          "fails",
-                                                          "NGINX Upstream Fails",
-                                                          2, (char *[]){"upstream","server"});
-        if (ctx->stream_upstreams->fails == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_server_zone",
+                               "sessions",
+                               "NGINX Stream Server Zone Sessions",
+                               2, (char *[]){"server_zone", "code"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->stream_upstreams->fails);
+        cmt_counter_allow_reset(c);
+        ctx->streams->sessions = c;
 
-        ctx->stream_upstreams->limit = cmt_gauge_create(ctx->cmt,
-                                                        "nginxplus",
-                                                        "stream_upstream_server",
-                                                        "limit",
-                                                        "NGINX Upstream Limit",
-                                                        2, (char *[]){"upstream","server"});
-
-        ctx->stream_upstreams->received = cmt_counter_create(ctx->cmt,
-                                                             "nginxplus",
-                                                             "stream_upstream_server",
-                                                             "received",
-                                                             "NGINX Upstream Received",
-                                                             2, (char *[]){"upstream","server"});
-        if (ctx->stream_upstreams->received == NULL) {
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream",
+                             "zombies",
+                             "NGINX Upstream Zombies",
+                             1, (char *[]){"upstream"});
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->stream_upstreams->received);
+        ctx->stream_upstreams->zombies = g;
 
-        ctx->stream_upstreams->connect_time = cmt_gauge_create(ctx->cmt,
-                                                               "nginxplus",
-                                                               "stream_upstream_server",
-                                                               "connect_time",
-                                                               "NGINX Upstream Header Time",
-                                                               2, (char *[]){"upstream","server"});
-
-        ctx->stream_upstreams->first_byte_time = cmt_gauge_create(ctx->cmt,
-                                                                  "nginxplus",
-                                                                  "stream_upstream_server",
-                                                                  "first_byte_time",
-                                                                  "NGINX Upstream Header Time",
-                                                                  2, (char *[]){"upstream","server"});
-
-        ctx->stream_upstreams->connections = cmt_counter_create(ctx->cmt,
-                                                                "nginxplus",
-                                                                "stream_upstream_server",
-                                                                "connections",
-                                                                "NGINX Upstream Requests",
-                                                                2, (char *[]){"upstream","server"});
-        if (ctx->stream_upstreams->connections == NULL) {
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream_server",
+                             "active",
+                             "NGINX Upstream Active",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->stream_upstreams->connections);
+        ctx->stream_upstreams->active = g;
 
-        ctx->stream_upstreams->response_time = cmt_gauge_create(ctx->cmt,
-                                                                "nginxplus",
-                                                                "stream_upstream_server",
-                                                                "response_time",
-                                                                "NGINX Upstream Response Time",
-                                                                2, (char *[]){"upstream","server"});
-
-        ctx->stream_upstreams->sent = cmt_counter_create(ctx->cmt,
-                                                         "nginxplus",
-                                                         "stream_upstream_server",
-                                                         "sent",
-                                                         "NGINX Upstream Sent",
-                                                         2, (char *[]){"upstream","server"});
-        if (ctx->stream_upstreams->sent == NULL) {
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_upstream_server",
+                               "fails",
+                               "NGINX Upstream Fails",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->stream_upstreams->sent);
+        cmt_counter_allow_reset(c);
+        ctx->stream_upstreams->fails = c;
 
-        ctx->stream_upstreams->state = cmt_gauge_create(ctx->cmt,
-                                                        "nginxplus",
-                                                        "stream_upstream_server",
-                                                        "state",
-                                                        "NGINX Upstream State",
-                                                        2, (char *[]){"upstream","server"});
-
-        ctx->stream_upstreams->unavail = cmt_counter_create(ctx->cmt,
-                                                            "nginxplus",
-                                                            "stream_upstream_server",
-                                                            "unavail",
-                                                            "NGINX Upstream Unavailable",
-                                                            2, (char *[]){"upstream","server"});
-        if (ctx->stream_upstreams->unavail == NULL) {
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream_server",
+                             "limit",
+                             "NGINX Upstream Limit",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
             return -1;
         }
-        cmt_counter_allow_reset(ctx->stream_upstreams->unavail);
+        ctx->stream_upstreams->limit = g;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_upstream_server",
+                               "received",
+                               "NGINX Upstream Received",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->stream_upstreams->received = c;
+
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream_server",
+                             "connect_time",
+                             "NGINX Upstream Header Time",
+                             2, (char *[]){"upstream", "server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->stream_upstreams->connect_time = g;
+
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream_server",
+                             "first_byte_time",
+                             "NGINX Upstream Header Time",
+                             2, (char *[]){"upstream", "server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->stream_upstreams->first_byte_time = g;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_upstream_server",
+                               "connections",
+                               "NGINX Upstream Requests",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->stream_upstreams->connections = c;
+
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream_server",
+                             "response_time",
+                             "NGINX Upstream Response Time",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->stream_upstreams->response_time = g;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_upstream_server",
+                               "sent",
+                               "NGINX Upstream Sent",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->stream_upstreams->sent = c;
+
+        g = cmt_gauge_create(ctx->cmt,
+                             "nginxplus",
+                             "stream_upstream_server",
+                             "state",
+                             "NGINX Upstream State",
+                             2, (char *[]){"upstream","server"});
+        if (g == NULL) {
+            return -1;
+        }
+        ctx->stream_upstreams->state = g;
+
+        c = cmt_counter_create(ctx->cmt,
+                               "nginxplus",
+                               "stream_upstream_server",
+                               "unavail",
+                               "NGINX Upstream Unavailable",
+                               2, (char *[]){"upstream","server"});
+        if (c == NULL) {
+            return -1;
+        }
+        cmt_counter_allow_reset(c);
+        ctx->stream_upstreams->unavail = c;
 
         ctx->coll_id = flb_input_set_collector_time(ins,
                                                     nginx_collect_plus,
