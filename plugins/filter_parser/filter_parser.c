@@ -168,6 +168,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             const char *tag, int tag_len,
                             void **ret_buf, size_t *ret_bytes,
                             struct flb_filter_instance *f_ins,
+                            struct flb_input_instance *i_ins,
                             void *context,
                             struct flb_config *config)
 {
@@ -176,6 +177,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
     msgpack_unpacked result;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     struct flb_time tm;
     msgpack_object *obj;
