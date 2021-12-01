@@ -436,6 +436,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_bytes,
                           struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
                           void *filter_context,
                           struct flb_config *config)
 {
@@ -457,6 +458,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
     struct flb_kube_props props = {0};
     struct flb_time time_lookup;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
 
     if (ctx->use_journal == FLB_FALSE || ctx->dummy_meta == FLB_TRUE) {
