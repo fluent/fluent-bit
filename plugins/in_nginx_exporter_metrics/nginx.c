@@ -196,7 +196,7 @@ conn_error:
         flb_plg_error(ins, "could not append metrics");
     }
 
-    FLB_INPUT_RETURN(rc);
+    return rc;
 }
 
 
@@ -1490,7 +1490,7 @@ error:
     if (ret != 0) {
         flb_plg_error(ins, "could not append metrics");
     }
-    FLB_INPUT_RETURN(rc);
+    return rc;
 }
 
 /**
@@ -1553,11 +1553,14 @@ struct nginx_ctx *nginx_ctx_init(struct flb_input_instance *ins,
 static int nginx_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
+    int rc;
     struct nginx_ctx *ctx = (struct nginx_ctx *)in_context;
     if (ctx->is_nginx_plus == FLB_TRUE) {
-        return nginx_collect_plus(ins, config, in_context);
+        rc = nginx_collect_plus(ins, config, in_context);
+    } else {
+        rc = nginx_collect_stub_status(ins, config, in_context);
     }
-    return nginx_collect_stub_status(ins, config, in_context);
+    FLB_INPUT_RETURN(rc);
 }
 
 /**
@@ -1651,11 +1654,6 @@ static int nginx_init(struct flb_input_instance *ins,
                                               "scrape: 1 for a successful scrape and "
                                               "0 for a failed one",
                                               0, NULL);
-
-        ctx->coll_id = flb_input_set_collector_time(ins,
-                                                    nginx_collect_stub_status,
-                                                    1,
-                                                    0, config);
     } else {
         flb_plg_info(ins, "nginx-plus mode on");
 
@@ -2259,12 +2257,11 @@ static int nginx_init(struct flb_input_instance *ins,
         cmt_counter_allow_reset(c);
         ctx->stream_upstreams->unavail = c;
 
-        ctx->coll_id = flb_input_set_collector_time(ins,
-                                                    nginx_collect_plus,
-                                                    1,
-                                                    0, config);
-
     }
+    ctx->coll_id = flb_input_set_collector_time(ins,
+                                                nginx_collect,
+                                                1,
+                                                0, config);
     return 0;
 }
 
