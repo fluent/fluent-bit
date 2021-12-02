@@ -42,6 +42,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_PARSER     "filter_parser.c")
   FLB_RT_TEST(FLB_FILTER_MODIFY     "filter_modify.c")
   FLB_RT_TEST(FLB_FILTER_LUA        "filter_lua.c")
+  FLB_RT_TEST(FLB_FILTER_MULTILINE  "filter_multiline.c")
 endif()
 
 
