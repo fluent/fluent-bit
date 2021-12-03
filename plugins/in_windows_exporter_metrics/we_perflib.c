@@ -384,33 +384,6 @@ int we_perflib_query_raw_data(struct flb_we *ctx, char *source,
     char   *buffer;
     LSTATUS result;
 
-/*
-{
-        static char temp_buffer[512*1000];
-        HANDLE xxxxx;
-
-        data_size = sizeof(temp_buffer);
-
-        // result = RegOpenKeyExA(HKEY_PERFORMANCE_DATA, NULL, 0, 0, &xxxxx);
-
-        // if (result != ERROR_SUCCESS) {
-        //     printf("RegOpenKeyExA FAILURE : %d %d\n", result, GetLastError());
-        //     return -1;
-        // }
-
-        result = RegQueryValueExA(HKEY_PERFORMANCE_DATA,
-                                  source,
-                                  NULL,
-                                  NULL,
-                                  temp_buffer,
-                                  &data_size);
-
-        RegCloseKey(HKEY_PERFORMANCE_DATA);
-
-    return -1;
-}
-*/
-
     buffer_size = WE_PERFLIB_QUERY_BUFFER_INITIAL_SIZE;
 
     result = ERROR_MORE_DATA;
