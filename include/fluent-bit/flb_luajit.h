@@ -26,6 +26,7 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
+#include <monkey/mk_core/mk_list.h>
 
 /* Lua Context */
 struct flb_luajit {
