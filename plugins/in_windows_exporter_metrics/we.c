@@ -98,7 +98,7 @@ static int in_we_init(struct flb_input_instance *in,
     ctx->windows_version = we_get_windows_version();
 
     if (ctx->windows_version == 0) {
-        flb_plg_error(in, "could not get windows cversion");
+        flb_plg_error(in, "could not get windows version");
 
         return -1;
     }

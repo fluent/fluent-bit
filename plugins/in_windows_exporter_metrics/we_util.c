@@ -59,3 +59,60 @@ double we_get_windows_version()
 
     return strtod(version_text, NULL);
 }
+
+void we_hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
+    char  *printable_line;
+    size_t buffer_index;
+    size_t filler_index;
+
+    if (40 < line_length)
+    {
+        line_length = 40;
+    }
+
+    printable_line = malloc(line_length + 1);
+
+    if (NULL == printable_line)
+    {
+        printf("Alloca returned NULL\n");
+
+        return;
+    }
+
+    memset(printable_line, '\0', line_length + 1);
+
+    for (buffer_index = 0 ; buffer_index < buffer_length ; buffer_index++) {
+        if (0 != buffer_index &&
+            0 == (buffer_index % line_length)) {
+
+            printf("%s\n", printable_line);
+
+            memset(printable_line, '\0', line_length + 1);
+        }
+
+        if (0 != isprint(buffer[buffer_index])) {
+            printable_line[(buffer_index % line_length)] = buffer[buffer_index];
+        }
+        else {
+            printable_line[(buffer_index % line_length)] = '.';
+        }
+
+        printf("%02X ", buffer[buffer_index]);
+    }
+
+    if (0 != buffer_index &&
+        0 != (buffer_index % line_length)) {
+
+        for (filler_index = 0 ;
+             filler_index < (line_length - (buffer_index % line_length)) ;
+             filler_index++) {
+            printf("   ");
+        }
+
+        printf("%s\n", printable_line);
+
+        memset(printable_line, '.', line_length);
+    }
+
+    free(printable_line);
+}

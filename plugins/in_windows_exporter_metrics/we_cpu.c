@@ -203,6 +203,8 @@ int we_cpu_init(struct flb_we *ctx)
     ctx->cpu.metrics = flb_hash_create(FLB_HASH_EVICT_NONE, 64, 128);
 
     if (ctx->cpu.metrics == NULL) {
+        flb_plg_error(ctx->ins, "could not create metrics hash table");
+
         return -1;
     }
 
@@ -214,6 +216,8 @@ int we_cpu_init(struct flb_we *ctx)
                                                 full_metric_specs);
 
     if (result != 0) {
+        flb_plg_error(ctx->ins, "could not initialize metric specs");
+
         return -2;
     }
 
@@ -231,7 +235,10 @@ int we_cpu_init(struct flb_we *ctx)
                                                   metric_sources);
 
     if (result != 0) {
+        flb_plg_error(ctx->ins, "could not initialize metric sources");
+
         we_deinitialize_perflib_metric_specs(ctx->cpu.metric_specs);
+        flb_free(ctx->cpu.metric_specs);
 
         return -3;
     }
@@ -245,6 +252,9 @@ int we_cpu_exit(struct flb_we *ctx)
 {
     we_deinitialize_perflib_metric_sources(ctx->cpu.metric_sources);
     we_deinitialize_perflib_metric_specs(ctx->cpu.metric_specs);
+
+    flb_free(ctx->cpu.metric_sources);
+    flb_free(ctx->cpu.metric_specs);
 
     ctx->cpu.operational = FLB_FALSE;
 
@@ -279,6 +289,8 @@ int we_cpu_label_prepend_hook(char                           **label_list,
 int we_cpu_update(struct flb_we *ctx)
 {
     if (!ctx->cpu.operational) {
+        flb_plg_error(ctx->ins, "cpu collector not yet in operational state");
+
         return -1;
     }
 

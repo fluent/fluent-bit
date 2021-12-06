@@ -438,75 +438,12 @@ static char *we_perflib_lookup_counter_name(struct flb_hash *mapping_table,
 {
     char hash_table_index[11];
 
-    sprintf(hash_table_index, "%lu", index);
+    sprintf(hash_table_index, "%" PRIu32, index);
 
     return flb_hash_get_ptr(mapping_table,
                             hash_table_index,
                             strlen(hash_table_index));
 }
-
-
-
-
-
-
-void hexdump(uint8_t *buffer, size_t buffer_length, size_t line_length) {
-    char  *printable_line;
-    size_t buffer_index;
-    size_t filler_index;
-
-    if (40 < line_length)
-    {
-        line_length = 40;
-    }
-
-    printable_line = malloc(line_length + 1);
-
-    if (NULL == printable_line)
-    {
-        printf("Alloca returned NULL\n");
-
-        return;
-    }
-
-    memset(printable_line, '\0', line_length + 1);
-
-    for (buffer_index = 0 ; buffer_index < buffer_length ; buffer_index++) {
-        if (0 != buffer_index &&
-            0 == (buffer_index % line_length)) {
-
-            printf("%s\n", printable_line);
-
-            memset(printable_line, '\0', line_length + 1);
-        }
-
-        if (0 != isprint(buffer[buffer_index])) {
-            printable_line[(buffer_index % line_length)] = buffer[buffer_index];
-        }
-        else {
-            printable_line[(buffer_index % line_length)] = '.';
-        }
-
-        printf("%02X ", buffer[buffer_index]);
-    }
-
-    if (0 != buffer_index &&
-        0 != (buffer_index % line_length)) {
-
-        for (filler_index = 0 ;
-             filler_index < (line_length - (buffer_index % line_length)) ;
-             filler_index++) {
-            printf("   ");
-        }
-
-        printf("%s\n", printable_line);
-
-        memset(printable_line, '.', line_length);
-    }
-
-    free(printable_line);
-}
-
 
 static int we_perflib_process_object_type(
                                    struct we_perflib_context *context,
@@ -600,7 +537,7 @@ static int we_perflib_process_counter_definition(
 
     snprintf(name_index_str,
              sizeof(name_index_str),
-             "%lu",
+             "%" PRIu32,
              counter_definition->name_index);
 
     counter_definition->name_index_str = flb_sds_create(name_index_str);
