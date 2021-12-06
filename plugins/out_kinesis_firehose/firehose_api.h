@@ -23,6 +23,7 @@
 #define PUT_RECORD_BATCH_PAYLOAD_SIZE    4194304
 #define MAX_EVENTS_PER_PUT               500
 #define MAX_EVENT_SIZE                   1024000
+#define MAX_B64_EVENT_SIZE               1365336  /* ceil(1024000 / 3) * 4 */
 
 /* number of characters needed to 'start' a PutRecordBatch payload */
 #define PUT_RECORD_BATCH_HEADER_LEN      42
