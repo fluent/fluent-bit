@@ -97,6 +97,7 @@ if(FLB_AWS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     aws_util.c
+    aws_compress.c
     aws_credentials.c
     aws_credentials_ec2.c
     aws_credentials_sts.c
@@ -169,6 +170,10 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
       endif()
 
+      if(FLB_AWS)
+        target_link_libraries(${source_file_we} flb-aws)
+      endif()
+
       if(FLB_STREAM_PROCESSOR)
         target_link_libraries(${source_file_we} flb-sp)
       endif()
@@ -188,10 +193,6 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
-
-if(FLB_AWS)
-  add_subdirectory(aws)
-endif()
 
 if(FLB_TESTS_INTERNAL_FUZZ)
   add_subdirectory(fuzzers)
