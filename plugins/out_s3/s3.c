@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
@@ -36,10 +37,6 @@
 
 #include "s3.h"
 #include "s3_store.h"
-
-#ifdef FLB_HAVE_ARROW
-#include "arrow/compress.h"
-#endif
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
@@ -132,7 +129,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -159,7 +156,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -729,18 +726,12 @@ static int cb_s3_init(struct flb_output_instance *ins,
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
-        if (strcmp(tmp, "gzip") == 0) {
-            ctx->compression = COMPRESS_GZIP;
-        }
-#ifdef FLB_HAVE_ARROW
-        else if (strcmp(tmp, "arrow") == 0) {
-            ctx->compression = COMPRESS_ARROW;
-        }
-#endif
-        else {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
             flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
             return -1;
         }
+        ctx->compression = ret;
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -1318,8 +1309,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_destroy(s3_key);
     uri = tmp;
 
-    if (ctx->compression == COMPRESS_GZIP) {
-        ret = flb_gzip_compress(body, body_size, &compressed_body, &final_body_size);
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        ret = flb_aws_compression_compress(ctx->compression, body, body_size,
+                                          &compressed_body, &final_body_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
             flb_sds_destroy(uri);
@@ -1327,17 +1319,6 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         }
         final_body = (char *) compressed_body;
     }
-#ifdef FLB_HAVE_ARROW
-    else if (ctx->compression == COMPRESS_ARROW) {
-        ret = out_s3_compress_arrow(body, body_size, &compressed_body, &final_body_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to compress data");
-            flb_sds_destroy(uri);
-            return -1;
-        }
-        final_body = compressed_body;
-    }
-#endif
     else {
         final_body = body;
         final_body_size = body_size;
@@ -1381,7 +1362,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, final_body, final_body_size,
                                               headers, num_headers);
-        if (ctx->compression != COMPRESS_NONE) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
              flb_free(compressed_body);
         }
         flb_free(headers);
@@ -2307,9 +2288,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip' is currently the only supported value. "
-    "The Content-Encoding HTTP Header will be set to 'gzip'. "
-    "If Apache Arrow was enabled at compile time, you can set 'arrow' to this option."
+    "Compression type for S3 objects. 'gzip' and 'arrow' are the supported values. "
+    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Defaults to no compression. "
+    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,

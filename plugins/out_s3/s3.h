@@ -45,10 +45,6 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
-#define COMPRESS_NONE  0
-#define COMPRESS_GZIP  1
-#define COMPRESS_ARROW 2
-
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
