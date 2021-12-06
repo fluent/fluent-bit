@@ -77,6 +77,7 @@ if(FLB_AWS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     aws_util.c
+    aws_compress.c
     aws_credentials.c
     aws_credentials_ec2.c
     aws_credentials_sts.c
@@ -139,6 +140,10 @@ foreach(source_file ${UNIT_TESTS_FILES})
       target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
     else()
       target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
+
+    if(FLB_AWS)
+      target_link_libraries(${source_file_we} flb-aws)
     endif()
 
     if(FLB_STREAM_PROCESSOR)

@@ -137,33 +137,6 @@ if(FLB_HTTP_CLIENT_DEBUG)
      )
 endif()
 
-if(FLB_AWS)
-  set(src
-    ${src}
-    "aws/flb_aws_credentials_log.h"
-    "aws/flb_aws_util.c"
-    "aws/flb_aws_credentials.c"
-    "aws/flb_aws_credentials_sts.c"
-    "aws/flb_aws_credentials_ec2.c"
-    "aws/flb_aws_imds.c"
-    "aws/flb_aws_credentials_http.c"
-    "aws/flb_aws_credentials_profile.c"
-    )
-  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
-    set(src
-      ${src}
-      "aws/flb_aws_credentials_process.c"
-      )
-  endif()
-endif()
-
-if (FLB_AWS_ERROR_REPORTER)
-  set(src
-    ${src}
-    "aws/flb_aws_error_reporter.c"
-    )
-endif()
-
 if(FLB_LUAJIT)
   set(src
     ${src}
@@ -246,6 +219,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     )
 endif()
 
+# AWS specific
+if(FLB_AWS)
+  add_subdirectory(aws)
+endif()
 
 # Record Accessor
 # ---------------
@@ -332,6 +309,14 @@ set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
   )
+endif()
+
+# AWS specific
+if(FLB_AWS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-aws
+    )
 endif()
 
 # Record Accessor
