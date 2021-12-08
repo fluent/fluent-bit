@@ -144,6 +144,9 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 
     /* Lookup the registration callback */
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
+    if (!cb_register) {
+        return -1;
+    }
 
     /*
      * Create a temporary definition used for registration. This definition
