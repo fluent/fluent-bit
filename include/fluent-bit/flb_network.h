@@ -48,6 +48,9 @@ struct flb_net_setup {
 
     /* dns mode : TCP or UDP */
     char *dns_mode;
+
+    /* dns reolver : LEGACY or ASYNC */
+    char *dns_resolver;
 };
 
 /* Defines a host service and it properties */
@@ -85,11 +88,11 @@ struct flb_dns_lookup_context {
     ((struct flb_dns_lookup_context *) \
         &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
 
+#define FLB_DNS_LEGACY  'L'
+#define FLB_DNS_ASYNC   'A'
+
 #define FLB_DNS_USE_TCP 'T'
 #define FLB_DNS_USE_UDP 'U'
-
-#define FLB_ARES_SOCKET_TYPE_TCP 1
-#define FLB_ARES_SOCKET_TYPE_UDP 2
 
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23
