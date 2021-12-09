@@ -188,6 +188,7 @@ struct flb_config {
 
     /* DNS */
     char *dns_mode;
+    char *dns_resolver;
 
     /* Chunk I/O Buffering */
     void *cio;
@@ -292,6 +293,7 @@ enum conf_type {
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
+#define FLB_CONF_DNS_RESOLVER          "dns.resolver"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
