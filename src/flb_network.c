@@ -1108,7 +1108,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
 
-    use_async_dns = FLB_TRUE;
+    use_async_dns = is_async;
 
     if (u_conn->u->net.dns_resolver != NULL) {
         resolver_initial = toupper(u_conn->u->net.dns_resolver[0]);
