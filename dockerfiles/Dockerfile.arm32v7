@@ -80,7 +80,8 @@ RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sou
       libpq5 \
       libsystemd0/buster-backports \
       zlib1g \
-      ca-certificates
+      ca-certificates \
+      libatomic1
 
 COPY --from=builder /fluent-bit /fluent-bit
 RUN rm /usr/bin/qemu-arm-static
