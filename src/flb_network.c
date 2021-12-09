@@ -103,6 +103,7 @@ void flb_net_ctx_init(struct flb_net_dns *dns_ctx)
 void flb_net_setup_init(struct flb_net_setup *net)
 {
     net->dns_mode = NULL;
+    net->dns_resolver = NULL;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -1084,6 +1085,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int use_async_dns;
+    char resolver_initial;
     flb_sockfd_t fd = -1;
     char _port[6];
     char address[41];
@@ -1105,8 +1108,18 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
 
+    use_async_dns = FLB_TRUE;
+
+    if (u_conn->u->net.dns_resolver != NULL) {
+        resolver_initial = toupper(u_conn->u->net.dns_resolver[0]);
+
+        if (resolver_initial == FLB_DNS_LEGACY) {
+            use_async_dns = FLB_FALSE;
+        }
+    }
+
     /* retrieve DNS info */
-    if (is_async) {
+    if (use_async_dns) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res,
                                   u_conn->u->net.dns_mode, connect_timeout);
     }
@@ -1115,7 +1128,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (ret) {
-        if (is_async) {
+        if (use_async_dns) {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, ares_strerror(ret));
         }
         else {
@@ -1130,7 +1143,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
             flb_warn("[net] timeout detected between DNS lookup and connection attempt");
         }
 
-        if (is_async) {
+        if (use_async_dns) {
             flb_net_free_translated_addrinfo(res);
         }
         else {
@@ -1222,7 +1235,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                   host, _port);
     }
 
-    if (is_async) {
+    if (use_async_dns) {
         flb_net_free_translated_addrinfo(res);
     }
     else {
