@@ -1,5 +1,4 @@
-# Build on amd64 and cross-compile to arch for max speed
-FROM --platform=linux/amd64 debian:buster as builder
+FROM --platform=linux/arm64 debian:buster-slim as builder
 
 # Fluent Bit version
 ENV FLB_MAJOR 1
@@ -7,38 +6,37 @@ ENV FLB_MINOR 9
 ENV FLB_PATCH 0
 ENV FLB_VERSION 1.9.0
 
+ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
+ENV FLB_SOURCE $FLB_TARBALL
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-master/
+
 ENV DEBIAN_FRONTEND noninteractive
 
-RUN dpkg --add-architecture arm64
-RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list
-RUN apt update && apt install -y --no-remove --no-install-recommends \
+RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
     build-essential \
-    g++-aarch64-linux-gnu \
-    gcc-aarch64-linux-gnu \
+    curl \
     ca-certificates \
-    pkg-config \
     cmake \
     make \
+    tar \
+    libssl-dev \
+    libsasl2-dev \
+    pkg-config \
+    libsystemd-dev/buster-backports \
+    zlib1g-dev \
+    libpq-dev \
+    postgresql-server-dev-all \
     flex \
     bison \
-    dpkg-dev \
-    libssl-dev:arm64 \
-    libsasl2-dev:arm64 \
-    libsystemd-dev:arm64/buster-backports \
-    libzstd-dev:arm64 \
-    zlib1g-dev:arm64 \
-    libpq-dev:arm64
+    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
+    && cd tmp/ && mkdir fluent-bit \
+    && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
+    && cd fluent-bit/build/ \
+    && rm -rf /tmp/fluent-bit/build/*
 
-# postgresql-server-dev-11:arm64 has conflicts if installed using apt. hack here to manually force install with dpkg
-WORKDIR /tmp
-RUN apt download postgresql-server-dev-11:arm64
-RUN dpkg --force-all -i postgresql-server-*.deb
-
-RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/src/
-COPY . /tmp/src/
-RUN rm -rf /tmp/src/build/*
-WORKDIR /tmp/src/build/
-
+WORKDIR /tmp/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
@@ -48,11 +46,21 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_HTTP_SERVER=On \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
-          -DFLB_OUT_PGSQL=On \
-          -DCMAKE_TOOLCHAIN_FILE=/tmp/src/cmake/linux-arm64.cmake ../
+          -DFLB_OUT_PGSQL=On ..
 
 RUN make -j $(getconf _NPROCESSORS_ONLN)
 RUN install bin/fluent-bit /fluent-bit/bin/
+
+# Configuration files
+COPY conf/fluent-bit.conf \
+     conf/parsers.conf \
+     conf/parsers_ambassador.conf \
+     conf/parsers_java.conf \
+     conf/parsers_extra.conf \
+     conf/parsers_openstack.conf \
+     conf/parsers_cinder.conf \
+     conf/plugins.conf \
+     /fluent-bit/etc/
 
 FROM --platform=linux/arm64 debian:buster-slim
 LABEL maintainer="Eduardo Silva <eduardo@treasure-data.com>"
@@ -70,7 +78,7 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libssl.so* /usr/lib/aarch64-linux
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcrypto.so* /usr/lib/aarch64-linux-gnu/
 
 # These below are all needed for systemd
-COPY --from=builder /lib/aarch64-linux-gnu/libsystemd* /lib/aarch64-linux-gnu/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libsystemd* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/liblzma.so* /lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/liblz4.so* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/libgcrypt.so* /lib/aarch64-linux-gnu/
@@ -95,17 +103,6 @@ COPY --from=builder /lib/aarch64-linux-gnu/libkeyutils* /lib/aarch64-linux-gnu/
 
 # Build artifact
 COPY --from=builder /fluent-bit /fluent-bit
-
-# Configuration files
-COPY conf/fluent-bit.conf \
-     conf/parsers.conf \
-     conf/parsers_ambassador.conf \
-     conf/parsers_java.conf \
-     conf/parsers_extra.conf \
-     conf/parsers_openstack.conf \
-     conf/parsers_cinder.conf \
-     conf/plugins.conf \
-     /fluent-bit/etc/
 
 EXPOSE 2020
 
