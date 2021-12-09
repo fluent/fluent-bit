@@ -41,6 +41,12 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "net.dns.resolver", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_resolver),
+     "Select the primary DNS resolver type (LEGACY or ASYNC)"
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "net.keepalive", "true",
      0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive),
      "Enable or disable Keepalive support"
@@ -106,12 +112,15 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
      * flb_net_setup structure (and not lose it when flb_output_upstream_set overwrites
      * the structure) we need to do it this way (or at least that's what I think)
      */
-    if (config->dns_mode != NULL) {
-
-        for (config_index = 0 ; upstream_net[config_index].name != NULL ; config_index++) {
-            if(strcmp(upstream_net[config_index].name, "net.dns.mode") == 0)
-            {
+    for (config_index = 0 ; upstream_net[config_index].name != NULL ; config_index++) {
+        if (config->dns_mode != NULL) {
+            if (strcmp(upstream_net[config_index].name, "net.dns.mode") == 0) {
                 upstream_net[config_index].def_value = config->dns_mode;
+            }
+        }
+        if (config->dns_resolver != NULL) {
+            if (strcmp(upstream_net[config_index].name, "net.dns.resolver") == 0) {
+                upstream_net[config_index].def_value = config->dns_resolver;
             }
         }
     }
