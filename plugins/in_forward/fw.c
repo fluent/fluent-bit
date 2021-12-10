@@ -193,11 +193,8 @@ static void in_fw_pause(void *data, struct flb_config *config)
 
 static int in_fw_exit(void *data, struct flb_config *config)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
     (void) *config;
     struct flb_in_fw_config *ctx = data;
-    struct fw_conn *conn;
 
     if (!ctx) {
         return 0;
