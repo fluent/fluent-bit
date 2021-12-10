@@ -1,5 +1,7 @@
 FROM --platform=linux/arm64 debian:buster-slim as builder
 
+COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+
 # Fluent Bit version
 ENV FLB_MAJOR 1
 ENV FLB_MINOR 9
