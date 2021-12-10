@@ -1,4 +1,4 @@
-name: Run unit tests
+name: Unit Tests
 on:
   push:
     branches:
@@ -15,7 +15,7 @@ on:
     types: [opened, edited, synchronize]
 jobs:
   run-unit-tests-amd64:
-    name: Run unit tests on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+    name: amd64 for ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }}
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 48
