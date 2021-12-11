@@ -231,7 +231,7 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_CORO_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
