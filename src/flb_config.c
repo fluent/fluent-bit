@@ -232,6 +232,11 @@ struct flb_config *flb_config_init()
 
     /* Set default coroutines stack size */
     config->coro_stack_size = FLB_CORO_STACK_SIZE;
+    if (config->coro_stack_size < getpagesize()) {
+        flb_info("[config] changing coro_stack_size from %u to %u bytes",
+                 config->coro_stack_size, getpagesize());
+        config->coro_stack_size = (unsigned int)getpagesize();
+    }
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
