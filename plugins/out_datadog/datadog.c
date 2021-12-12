@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include <msgpack.h>
 
@@ -422,6 +423,76 @@ static int cb_datadog_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "compress", "false",
+     0, FLB_FALSE, 0,
+     "compresses the payload in GZIP format, "
+     "Datadog supports and recommends setting this to 'gzip'."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "apikey", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, api_key),
+     "Datadog API key"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_service", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_service),
+     "The human readable name for your service generating the logs "
+     "- the name of your application or database."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_source", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_source),
+     "A human readable name for the underlying technology of your service. "
+     "For example, 'postgres' or 'nginx'."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_tags", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_tags),
+     "The tags you want to assign to your logs in Datadog."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "proxy", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, proxy),
+     "Specify an HTTP Proxy. The expected format of this value is http://host:port. "
+     "Note that https is not supported yet."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "include_tag_key", "false",
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, include_tag_key),
+     "If enabled, tag is appended to output. "
+     "The key name is used 'tag_key' property."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tag_key", FLB_DATADOG_DEFAULT_TAG_KEY,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, tag_key),
+     "The key name of tag. If 'include_tag_key' is false, "
+     "This property is ignored"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "dd_message_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, dd_message_key),
+     "By default, the plugin searches for the key 'log' "
+     "and remap the value to the key 'message'. "
+     "If the property is set, the plugin will search the property name key."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "provider", NULL,
+     0, FLB_FALSE, 0,
+     "To activate the remapping, specify configuration flag provider with value 'ecs'"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", FLB_DATADOG_DEFAULT_TIME_KEY,
+     0, FLB_TRUE, offsetof(struct flb_out_datadog, json_date_key),
+     "Date key name for output."
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_datadog_plugin = {
     .name         = "datadog",
     .description  = "Send events to DataDog HTTP Event Collector",
@@ -431,6 +502,9 @@ struct flb_output_plugin out_datadog_plugin = {
 
     /* Test */
     .test_formatter.callback = datadog_format,
+
+    /* Config map */
+    .config_map   = config_map,
 
     /* Plugin flags */
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
