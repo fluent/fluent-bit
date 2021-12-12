@@ -18,15 +18,25 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#ifdef FLB_HAVE_HTTP_SERVER
+#ifndef FLB_FILTER_TYPE_CONVERTER_H
+#define FLB_FILTER_TYPE_CONVERTER_H
 
-#ifndef FLB_HTTP_SERVER_H
-#define FLB_HTTP_SERVER_H
-#include "http_server/flb_hs.h"
-#include "http_server/flb_hs_utils.h"
-#include "http_server/flb_hs_endpoints.h"
+#include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_typecast.h>
+#include <fluent-bit/flb_record_accessor.h>
+
+struct conv_entry {
+    flb_sds_t from_key;
+    struct flb_record_accessor *from_ra;
+    flb_sds_t to_key;
+    struct flb_typecast_rule *rule;
+    struct mk_list _head;
+};
+
+struct type_converter_ctx {
+    struct mk_list conv_entries;
+    struct flb_filter_instance *ins;
+};
 
 #endif
-
-#endif /* !FLB_HAVE_HTTP_SERVER */

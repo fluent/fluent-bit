@@ -97,6 +97,7 @@ static void cb_uptime(mk_request_t *request, void *data)
     out_size = flb_sds_len(out_buf);
 
     mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
     mk_http_send(request, out_buf, out_size, NULL);
     mk_http_done(request);
 

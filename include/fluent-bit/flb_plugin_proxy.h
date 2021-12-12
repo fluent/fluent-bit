@@ -44,10 +44,7 @@ struct flb_plugin_proxy_def {
 /* Proxy context */
 struct flb_plugin_proxy {
     /* Fields populated once remote flb_cb_register() is called */
-    int type;                 /* defined by FLB_PROXY_[INPUT|OUTPUT]_PLUGIN  */
-    int proxy;                /* proxy type                                  */
-    char *name;               /* plugin short name                           */
-    char *description;        /* plugin description                          */
+    struct flb_plugin_proxy_def *def;
 
     /* Internal */
     struct flb_api *api;      /* API context to export functions             */

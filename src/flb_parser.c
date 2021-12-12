@@ -141,6 +141,7 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
 
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
+                                     int skip_empty,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
                                      int time_keep,
@@ -216,6 +217,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
             return NULL;
         }
         p->regex = regex;
+        p->skip_empty = skip_empty;
         p->p_regex = flb_strdup(p_regex);
     }
 
@@ -461,6 +463,7 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
     flb_sds_t time_offset;
     flb_sds_t types_str;
     flb_sds_t tmp_str;
+    int skip_empty;
     int time_keep;
     int time_strict;
     int types_len;
@@ -506,6 +509,14 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
             flb_error("[parser] no parser 'regex' found for '%s' in file '%s", name, cfg);
             goto fconf_error;
         }
+        
+        /* Skip_Empty_Values */
+        skip_empty = FLB_TRUE;
+        tmp_str = get_parser_key("Skip_Empty_Values", config, section);
+        if (tmp_str) {
+            skip_empty = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
 
         /* Time_Format */
         time_fmt = get_parser_key("Time_Format", config, section);
@@ -545,7 +556,7 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
         decoders = flb_parser_decoder_list_create(section);
 
         /* Create the parser context */
-        if (!flb_parser_create(name, format, regex,
+        if (!flb_parser_create(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
                                types, types_len, decoders, config)) {
             goto fconf_error;
