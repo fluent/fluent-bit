@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "remote_write.h"
 #include "remote_write_conf.h"
@@ -191,8 +192,20 @@ static int cb_prom_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_prom_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void append_labels(struct prometheus_remote_write_context *ctx,
+                          struct cmt *cmt)
+{
+    struct flb_kv *kv;
+    struct mk_list *head;
+
+    mk_list_foreach(head, &ctx->kv_labels) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        cmt_label_add(cmt, kv->key, kv->val);
+    }
+}
+
+static void cb_prom_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
@@ -213,17 +226,23 @@ static void cb_prom_flush(const void *data, size_t bytes,
     result = FLB_OK;
 
     /* Buffer to concatenate multiple metrics contexts */
-    buf = flb_sds_create_size(bytes);
+    buf = flb_sds_create_size(event_chunk->size);
     if (!buf) {
         flb_plg_error(ctx->ins, "could not allocate outgoing buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_debug(ctx->ins, "cmetrics msgpack size: %lu", bytes);
+    flb_plg_debug(ctx->ins, "cmetrics msgpack size: %lu",
+                  event_chunk->size);
 
     /* Decode and encode every CMetric context */
     diff = 0;
-    while ((ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off)) == ok) {
+    while ((ret = cmt_decode_msgpack_create(&cmt,
+                                            (char *) event_chunk->data,
+                                            event_chunk->size, &off)) == ok) {
+        /* append labels set by config */
+        append_labels(ctx, cmt);
+
         /* Create a Prometheus Remote Write payload */
         encoded_chunk = cmt_encode_prometheus_remote_write_create(cmt);
         if (encoded_chunk == NULL) {
@@ -242,7 +261,7 @@ static void cb_prom_flush(const void *data, size_t bytes,
         flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
 
         /* release */
-        cmt_encode_text_destroy(encoded_chunk);
+        cmt_encode_prometheus_remote_write_destroy(encoded_chunk);
         cmt_destroy(cmt);
     }
 
@@ -250,7 +269,9 @@ static void cb_prom_flush(const void *data, size_t bytes,
         flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
         if (buf && flb_sds_len(buf) > 0) {
             /* Send HTTP request */
-            result = http_post(ctx, buf, flb_sds_len(buf), tag, tag_len);
+            result = http_post(ctx, buf, flb_sds_len(buf),
+                               event_chunk->tag,
+                               flb_sds_len(event_chunk->tag));
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
@@ -290,6 +311,13 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prometheus_remote_write_context,
+                                             add_labels),
+     "Adds a custom label to the metrics use format: 'add_label name value'"
+    },
+
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
      0, FLB_FALSE, 0,

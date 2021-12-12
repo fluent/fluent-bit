@@ -426,8 +426,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
     return 0;
 }
 
-static void cb_splunk_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
+static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)
@@ -453,7 +453,11 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     }
 
     /* Convert binary logs into a JSON payload */
-    ret = splunk_format(data, bytes, (char *) tag, tag_len, &buf_data, &buf_size, ctx);
+    ret = splunk_format(event_chunk->data,
+                        event_chunk->size,
+                        (char *) event_chunk->tag,
+                        flb_sds_len(event_chunk->tag),
+                        &buf_data, &buf_size, ctx);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

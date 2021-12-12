@@ -8,6 +8,7 @@ set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -135,6 +136,7 @@ option(FLB_IN_HEAD            "Enable Head input plugin"            Yes)
 option(FLB_IN_PROC            "Enable Process input plugin"         Yes)
 option(FLB_IN_SYSTEMD         "Enable Systemd input plugin"         Yes)
 option(FLB_IN_DUMMY           "Enable Dummy input plugin"           Yes)
+option(FLB_IN_NGINX_EXPORTER_METRICS "Enable Nginx Metrics input plugin" Yes)
 option(FLB_IN_NETIF           "Enable NetworkIF input plugin"       Yes)
 option(FLB_IN_WINLOG          "Enable Windows Log input plugin"      No)
 option(FLB_IN_WINSTAT         "Enable Windows Stat input plugin"     No)
@@ -226,6 +228,7 @@ if(FLB_ALL)
   set(FLB_IN_DISK      1)
   set(FLB_IN_DUMMY     1)
   set(FLB_IN_NETIF     1)
+  set(FLB_IN_NGINX_STATUS 1)
   set(FLB_IN_EXEC      1)
 
   # Output plugins
@@ -620,6 +623,21 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# check attribute alloc_size
+check_c_source_compiles("
+#include <stdlib.h>
+__attribute__ ((alloc_size(1, 2))) static void* f(size_t a, size_t b) {
+    return calloc(a, b);
+}
+int main() {
+    f(1, 2);
+    return 0;
+}
+" FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+if(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+  FLB_DEFINITION(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
@@ -787,6 +805,20 @@ if(FLB_INOTIFY)
   if(FLB_HAVE_INOTIFY)
     FLB_DEFINITION(FLB_HAVE_INOTIFY)
   endif()
+endif()
+
+include(CheckSymbolExists)
+
+# Check for getentropy(3)
+check_symbol_exists(getentropy "unistd.h" HAVE_GETENTROPY)
+if(HAVE_GETENTROPY)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY)
+endif()
+
+# getentropy(3) is in sys/random.h on mac
+check_symbol_exists(getentropy "sys/random.h" HAVE_GETENTROPY_SYS_RANDOM)
+if(HAVE_GETENTROPY_SYS_RANDOM)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY_SYS_RANDOM)
 endif()
 
 configure_file(

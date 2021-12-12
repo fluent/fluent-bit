@@ -81,7 +81,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     int sec;
     int i;
     long nsec;
-    char *name;
     const char *tmp;
     struct flb_tail_config *ctx;
 
@@ -382,8 +381,6 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 #endif
 
 #ifdef FLB_HAVE_METRICS
-    name = (char *) flb_input_name(ins);
-
     ctx->cmt_files_opened = cmt_counter_create(ins->cmt,
                                                "fluentbit", "input",
                                                "files_opened_total",

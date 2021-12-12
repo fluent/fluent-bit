@@ -20,6 +20,7 @@
 #ifndef CHUNKIO_H
 #define CHUNKIO_H
 
+#include <chunkio/cio_info.h>
 #include <monkey/mk_core/mk_list.h>
 
 #define CIO_FALSE   0
@@ -44,10 +45,11 @@
 #define CIO_FULL_SYNC       8         /* force sync to fs through MAP_SYNC */
 
 /* Return status */
-#define CIO_CORRUPTED      -3  /* Indicate that a chunk is corrupted */
-#define CIO_RETRY          -2  /* The operations needs to be retried */
-#define CIO_ERROR          -1  /* Generic error */
-#define CIO_OK              0  /* OK */
+#define CIO_CORRUPTED      -3         /* Indicate that a chunk is corrupted */
+#define CIO_RETRY          -2         /* The operations needs to be retried */
+#define CIO_ERROR          -1         /* Generic error */
+#define CIO_OK              0         /* OK */
+
 
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */

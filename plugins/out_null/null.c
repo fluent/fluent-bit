@@ -32,21 +32,17 @@ int cb_null_init(struct flb_output_instance *ins,
     return 0;
 }
 
-void cb_null_flush(const void *data, size_t bytes,
-                   const char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_null_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
 {
-    (void) data;
-    (void) bytes;
-    (void) tag;
-    (void) tag_len;
     (void) out_context;
     (void) config;
     struct flb_output_instance *ins = out_context;
 
-    flb_plg_debug(ins, "discarding %lu bytes", bytes);
+    flb_plg_debug(ins, "discarding %lu bytes", event_chunk->size);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

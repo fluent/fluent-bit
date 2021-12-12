@@ -162,11 +162,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
-    ctx->retry_requests = FLB_FALSE;
+    ctx->retry_requests = FLB_TRUE;
     tmp = flb_output_get_property("auto_retry_requests", ins);
     /* native plugins use On/Off as bool, the old Go plugin used true/false */
-    if (tmp && (strcasecmp(tmp, "On") == 0 || strcasecmp(tmp, "true") == 0)) {
-        ctx->retry_requests = FLB_TRUE;
+    if (tmp && (strcasecmp(tmp, "Off") == 0 || strcasecmp(tmp, "false") == 0)) {
+        ctx->retry_requests = FLB_FALSE;
     }
 
     ctx->log_retention_days = 0;
@@ -376,8 +376,8 @@ error:
     return -1;
 }
 
-static void cb_cloudwatch_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
+static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
+                                struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
                                 void *out_context,
                                 struct flb_config *config)
@@ -398,12 +398,14 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         }
     }
 
-    stream = get_log_stream(ctx, tag, tag_len);
+    stream = get_log_stream(ctx,
+                            event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!stream) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream, data, bytes);
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream,
+                                   event_chunk->data, event_chunk->size);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -561,7 +563,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
      0, FLB_FALSE, 0,
      "Immediately retry failed requests to AWS services once. This option "
      "does not affect the normal Fluent Bit retry mechanism with backoff. "

@@ -44,6 +44,7 @@ struct cmt_msgpack_decode_context {
     struct cmt_map    *map;
     struct cmt_metric *metric;
     struct mk_list     unique_label_list;
+    int                static_labels_unpacked;
 };
 
 int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size, 

@@ -81,14 +81,14 @@ int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
         if (converted_size == 0) {
             /* converted_size = 0 causes div/0 */
             flb_debug("[out_es] converted_size is 0");
-            append_size = ES_BULK_CHUNK;
+            append_size = required - available;
         } else {
             append_size = (whole_size - converted_size) /* rest of size to convert */
                         * (bulk->size / converted_size); /* = json size / msgpack size */
-            if (append_size < ES_BULK_CHUNK) {
-                /* append at least ES_BULK_CHUNK size */
-                append_size = ES_BULK_CHUNK;
-            }
+        }
+        if (append_size < ES_BULK_CHUNK) {
+            /* append at least ES_BULK_CHUNK size */
+            append_size = ES_BULK_CHUNK;
         }
         ptr = flb_realloc(bulk->ptr, bulk->size + append_size);
         if (!ptr) {

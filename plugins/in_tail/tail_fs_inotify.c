@@ -363,6 +363,5 @@ int flb_tail_fs_inotify_remove(struct flb_tail_file *file)
 
 int flb_tail_fs_inotify_exit(struct flb_tail_config *ctx)
 {
-    (void) ctx;
-    return 0;
+    return close(ctx->fd_notify);
 }

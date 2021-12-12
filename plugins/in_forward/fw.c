@@ -186,22 +186,21 @@ static void in_fw_pause(void *data, struct flb_config *config)
      */
     if (config->is_ingestion_active == FLB_FALSE) {
         mk_event_closesocket(ctx->server_fd);
+        fw_conn_del_all(ctx);
+
     }
 }
 
 static int in_fw_exit(void *data, struct flb_config *config)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
     (void) *config;
     struct flb_in_fw_config *ctx = data;
-    struct fw_conn *conn;
 
-    mk_list_foreach_safe(head, tmp, &ctx->connections) {
-        conn = mk_list_entry(head, struct fw_conn, _head);
-        fw_conn_del(conn);
+    if (!ctx) {
+        return 0;
     }
 
+    fw_conn_del_all(ctx);
     fw_config_destroy(ctx);
     return 0;
 }

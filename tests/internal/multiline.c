@@ -1128,6 +1128,98 @@ void test_issue_3817_1()
     flb_config_exit(config);
 }
 
+static void test_issue_4034()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = cri_output;
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create cri multiline mode */
+    ml = flb_ml_create(config, "cri-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline cri parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object *map;
+
+    entries = sizeof(cri_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &cri_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+
+        /* initialize buffers */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+        msgpack_pack_array(&mp_pck, 2);
+        flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+
+        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_str(&mp_pck, 3);
+        msgpack_pack_str_body(&mp_pck, "log", 3);
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, r->buf, len);
+
+        /* Unpack and lookup the content map */
+        msgpack_unpacked_init(&result);
+        off = 0;
+        ret = msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off);
+
+        flb_pack_print(mp_sbuf.data, mp_sbuf.size);
+
+        root = result.data;
+        map = &root.via.array.ptr[1];
+
+        /* Package as msgpack */
+        ret = flb_ml_append_object(ml, stream_id, &tm, map);
+
+        msgpack_unpacked_destroy(&result);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+    flb_ml_flush_pending_now(ml);
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -1141,5 +1233,6 @@ TEST_LIST = {
 
     /* Issues reported on Github */
     { "issue_3817_1"  , test_issue_3817_1},
+    { "issue_4034"    , test_issue_4034},
     { 0 }
 };

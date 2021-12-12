@@ -232,11 +232,11 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_pgsql_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            struct flb_input_instance *i_ins,
-                            void *out_context,
-                            struct flb_config *config)
+static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
 {
     struct flb_pgsql_config *ctx = out_context;
     flb_sds_t json;
@@ -253,19 +253,19 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
     }
 
     /*
-      PQreset()
-      This function will close the connection to the server and attempt to
-      reestablish a new connection to the same server, using all the same
-      parameters previously used. This might be useful for error recovery
-      if a working connection is lost.
+     * PQreset()
+     * This function will close the connection to the server and attempt to
+     * reestablish a new connection to the same server, using all the same
+     * parameters previously used. This might be useful for error recovery
+     * if a working connection is lost.
      */
     if (PQstatus(ctx->conn_current->conn) != CONNECTION_OK) {
         PQreset(ctx->conn_current->conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-
-    json = flb_pack_msgpack_to_json_format(data, bytes,
+    json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                           event_chunk->size,
                                            FLB_PACK_JSON_FORMAT_JSON,
                                            FLB_PACK_JSON_DATE_DOUBLE,
                                            ctx->timestamp_key);
@@ -292,12 +292,15 @@ static void cb_pgsql_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    tmp = PQescapeLiteral(ctx->conn_current->conn, tag, tag_len);
+    tmp = PQescapeLiteral(ctx->conn_current->conn,
+                          event_chunk->tag,
+                          flb_sds_len(event_chunk->tag));
     if (!tmp) {
         flb_errno();
         flb_sds_destroy(json);
         PQfreemem(tmp);
-        flb_plg_error(ctx->ins, "Can't escape tag string: %s", tag);
+        flb_plg_error(ctx->ins, "Can't escape tag string: %s",
+                      event_chunk->tag);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 

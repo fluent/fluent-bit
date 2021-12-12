@@ -111,6 +111,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, dns_mode)},
 
+    {FLB_CONF_DNS_RESOLVER,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_resolver)},
+
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
      FLB_CONF_TYPE_STR,
@@ -182,6 +186,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->grace_count  = 0;
     config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER

@@ -77,16 +77,16 @@ struct flb_out_thread_instance {
      *
      * note: in single-thread mode, the same fields are in 'struct flb_output_instance'.
      */
-    int coro_id;                         /* coroutine id counter */
-    struct mk_list coros;                /* list of co-routines */
-    struct mk_list coros_destroy;        /* list of co-routines */
+    int flush_id;                             /* coroutine id counter */
+    struct mk_list flush_list;                /* flush context list */
+    struct mk_list flush_list_destroy;        /* flust context destroy list */
 
     /*
      * If the main engine (parent thread) needs to query the number of active
-     * coroutines being used by a threaded instance, the access to the 'coros'
-     * list must be protected: we use 'coro_mutex for that purpose.
+     * 'flushes' running by a threaded instance, then the access to the 'flush_list'
+     * must be protected: we use 'flush_mutex for that purpose.
      */
-     pthread_mutex_t coro_mutex;         /* mutex for 'coros' list */
+     pthread_mutex_t flush_mutex;         /* mutex for 'flush_list' */
 
     /* List of mapped 'upstream' contexts */
     struct mk_list upstreams;

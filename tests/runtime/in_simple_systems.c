@@ -191,7 +191,7 @@ void flb_test_in_proc_absent_process(void)
     in_ffd = flb_input(ctx, (char *) "proc", NULL);
     TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
-                  "interval_sec", "1", "proc_name", "",
+                  "interval_sec", "1", "proc_name", "-",
                   "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", &cb);
