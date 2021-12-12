@@ -145,3 +145,22 @@ int proxy_go_flush(struct flb_plugin_proxy_context *ctx,
     flb_free(buf);
     return ret;
 }
+
+int proxy_go_destroy(void *data)
+{
+    int ret = 0;
+    struct flbgo_output_plugin *plugin;
+
+    plugin = (struct flbgo_output_plugin *) data;
+    flb_debug("[GO] running exit callback");
+
+    if (plugin->cb_exit_ctx) {
+        ret = plugin->cb_exit_ctx(plugin->context->remote_context);
+    }
+    else if (plugin->cb_exit) {
+        ret = plugin->cb_exit();
+    }
+    flb_free(plugin->name);
+    flb_free(plugin);
+    return ret;
+}
