@@ -3,9 +3,6 @@ on:
   pull_request_target:
     types:
       - opened
-      - edited
-      - reopened
-      - synchronize
 jobs:
   apply-default-labels:
     name: apply default labels
