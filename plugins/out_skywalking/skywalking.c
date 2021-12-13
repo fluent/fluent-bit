@@ -301,8 +301,8 @@ static bool check_sw_under_test()
     return FLB_FALSE;
 }
 
-static void cb_sw_flush(const void *data, size_t bytes,
-                        const char *tag, int tag_len,
+static void cb_sw_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
                         struct flb_input_instance *i_ins,
                         void *out_context, struct flb_config *config)
 {
@@ -315,7 +315,10 @@ static void cb_sw_flush(const void *data, size_t bytes,
     size_t buf_len;
     size_t sent_size;
 
-    tmp_ret = sw_format(ctx, data, bytes, &buf, &buf_len);
+    tmp_ret = sw_format(ctx,
+                        event_chunk->data,
+                        event_chunk->size,
+                        &buf, &buf_len);
     if (tmp_ret != 0) {
         flb_plg_error(ctx->ins, "failed to create buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
