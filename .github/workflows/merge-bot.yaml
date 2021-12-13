@@ -15,7 +15,7 @@ jobs:
     name: Merge pull request
     steps:
       - name: Checks for merging
-        uses: squalrus/merge-bot@v0.4.3
+        uses: squalrus/merge-bot@v0.4.5
         with:
           reviewers: false
           GITHUB_TOKEN: ${{ secrets.GH_PA_TOKEN }}
