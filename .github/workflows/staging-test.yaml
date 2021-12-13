@@ -15,7 +15,7 @@ jobs:
     # Workflow run always triggers on completion regardless of status
     # This prevents us from running if build fails.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    uses: patrick-stephens/fluent-bit/.github/workflows/call-test-images.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
     with:
       registry: ghcr.io
       username: ${{ github.actor }}
@@ -31,7 +31,7 @@ jobs:
     # Workflow run always triggers on completion regardless of status
     # This prevents us from running if build fails.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    uses: patrick-stephens/fluent-bit/.github/workflows/call-test-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-test-packages.yaml@master
     with:
       environment: staging
     secrets:

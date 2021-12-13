@@ -55,7 +55,7 @@ jobs:
 
   staging-build-images:
     needs: staging-build-get-version
-    uses: patrick-stephens/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       registry: ghcr.io
@@ -69,7 +69,7 @@ jobs:
 
   staging-build-packages:
     needs: staging-build-get-version
-    uses: patrick-stephens/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       environment: staging
