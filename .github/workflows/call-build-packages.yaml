@@ -137,7 +137,7 @@ jobs:
       release: ${{ needs.deploy-get-version.outputs.releaseTag }}
     steps:
       - name: Install dependencies
-        run: sudo apt-get install createrepo debsigs
+        run: sudo apt-get install createrepo debsigs apt-utils
 
       - name: Checkout code
         uses: actions/checkout@v2

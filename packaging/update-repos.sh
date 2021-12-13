@@ -28,9 +28,9 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         cat << EOF > "$BASE_PATH/$REPO_TYPE.repo"
 [Fluent-Bit]
 name=Fluent Bit Packages - $REPO_TYPE - \$basearch
-baseurl=https://$AWS_S3_BUCKET.amazonaws.com/$RPM_REPO/\$basearch/
+baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
 enabled=1
-gpgkey=https://$AWS_S3_BUCKET.amazonaws.com/fluentbit.key
+gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
 gpgcheck=1
 EOF
     fi
@@ -50,8 +50,36 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     REPO_DIR=$(realpath -sm "$BASE_PATH/$DEB_REPO" )
     [[ ! -d "$REPO_DIR" ]] && continue
 
-    echo "Updating $DEB_REPO"
+    CODENAME=${DEB_REPO##*/}
+    echo "Updating $DEB_REPO for $CODENAME"
 
-    find "$REPO_DIR" -name "td-agent-bit-${VERSION}_*.deb" -exec debsigs --sign=origin -k "$GPG_KEY" {} \;
-    dpkg-scanpackages -m "$REPO_DIR" | gzip -c > "$REPO_DIR"/Packages.gz
+    # Sign our packages
+    find "$REPO_DIR" -name "td-agent-bit*.deb" -exec debsigs --sign=origin -k "$GPG_KEY" {} \;
+
+    # Set up directory structure
+    mkdir -p "$REPO_DIR/dists/$CODENAME"
+    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit"
+    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers"
+    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra"
+    mv $REPO_DIR/td-agent-bit*-headers-extra.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra/"
+    mv $REPO_DIR/td-agent-bit*-headers.deb "$REPO_DIR/pool/main/t/td-agent-bit-heaers/"
+    mv $REPO_DIR/td-agent-bit*.deb "$REPO_DIR/pool/main/t/td-agent-bit/"
+
+    # All paths must be relative and using `dists/CODENAME` for the package info
+    pushd "$REPO_DIR"
+    apt-ftparchive packages . > "$REPO_DIR/dists/$CODENAME"/Packages
+    apt-ftparchive contents . > "$REPO_DIR/dists/$CODENAME"/Contents
+    popd
+    gzip -c -f "$REPO_DIR/dists/$CODENAME"/Packages > "$REPO_DIR/dists/$CODENAME"/Packages.gz
+    gzip -c -f "$REPO_DIR/dists/$CODENAME"/Contents > "$REPO_DIR/dists/$CODENAME"/Contents.gz
+
+    apt-ftparchive \
+        -o APT::FTPArchive::Release::Origin="Fluent Bit" \
+        -o APT::FTPArchive::Release::Suite="focal" \
+        -o APT::FTPArchive::Release::Codename="$CODENAME" \
+        -o APT::FTPArchive::Release::Version="$VERSION" \
+        -o APT::FTPArchive::Release::Architectures="amd64 arm64 armhf" \
+        -o APT::FTPArchive::Release::Components="main" \
+        release "$REPO_DIR/dists/$CODENAME" > "$REPO_DIR/dists/$CODENAME"/Release
+    gpg --yes --clearsign -o "$REPO_DIR/dists/$CODENAME"/InRelease --local-user "$GPG_KEY" --detach-sign "$REPO_DIR/dists/$CODENAME"/Release
 done
