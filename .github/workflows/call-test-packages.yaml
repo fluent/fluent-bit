@@ -50,6 +50,14 @@ jobs:
         # No version to test
         # STAGING_VERSION:
 
+    - name: Failed output
+      if: failure()
+      run: |
+        cat .kitchen/logs/kitchen.log
+        kitchen diagnose --all
+      env:
+        KITCHEN_YAML: packaging/testing/smoke/packages/kitchen-official-install.yaml
+
     - name: Staging package installation tests
       uses: actionshub/kitchen-dokken@1.0.1
       env:
@@ -58,6 +66,14 @@ jobs:
         CHEF_LICENSE: accept-no-persist # https://docs.chef.io/chef_license/
         KITCHEN_YAML: packaging/testing/smoke/packages/kitchen-staging-install.yaml
         STAGING_VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+    - name: Failed output
+      if: failure()
+      run: |
+        cat .kitchen/logs/kitchen.log
+        kitchen diagnose --all
+      env:
+        KITCHEN_YAML: packaging/testing/smoke/packages/kitchen-staging-install.yaml
 
     - name: Staging package upgrade tests
       # Install the latest release version then upgrade to staging version.
@@ -72,5 +88,7 @@ jobs:
     - name: Failed output
       if: failure()
       run: |
-        kitchen diagnose --all
         cat .kitchen/logs/kitchen.log
+        kitchen diagnose --all
+      env:
+        KITCHEN_YAML: packaging/testing/smoke/packages/kitchen-staging-upgrade.yaml
