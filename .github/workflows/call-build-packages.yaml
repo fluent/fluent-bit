@@ -1,0 +1,178 @@
+---
+name: Reusable workflow to build binary packages into S3 bucket
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: false
+    secrets:
+      token:
+        required: true
+      bucket:
+        required: true
+      access_key_id:
+        required: true
+      secret_access_key:
+        required: true
+      gpg_private_key:
+        required: true
+
+jobs:
+  call-build-packages:
+    name: ${{ matrix.distro }} package build and stage to S3
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        distro: [ amazonlinux/2, amazonlinux/2.arm64v8,
+                  centos/7, centos/7.arm64v8,
+                  debian/stretch, debian/stretch.arm64v8, debian/buster, debian/buster.arm64v8,
+                  ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8, ubuntu/20.04.arm64v8,
+                  raspbian/buster ]
+        include:
+          - distro: ubuntu/18.04
+            target: ubuntu/bionic
+
+          - distro: amazonlinux/2
+            target: amazonlinux/2/
+
+          - distro: amazonlinux/2.arm64v8
+            target: amazonlinux/2/
+
+          - distro: centos/7
+            target: centos/7/
+
+          - distro: centos/7.arm64v8
+            target: centos/7/
+
+          - distro: debian/stretch
+            target: debian/stretch/
+
+          - distro: debian/stretch.arm64v8
+            target: debian/stretch/
+
+          - distro: debian/buster
+            target: debian/buster/
+
+          - distro: debian/buster.arm64v8
+            target: debian/buster/
+
+          - distro: ubuntu/16.04
+            target: ubuntu/xenial/
+
+          - distro: ubuntu/18.04.arm64v8
+            target: ubuntu/bionic/
+
+          - distro: ubuntu/20.04
+            target: ubuntu/focal/
+
+          - distro: ubuntu/20.04.arm64v8
+            target: ubuntu/focal/
+
+          - distro: raspbian/buster
+            target: raspbian/buster/
+    steps:
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - uses: frabert/replace-string-action@master
+      id: formatted_distro
+      with:
+        pattern: '(.*)\/(.*)$'
+        string: "${{ matrix.distro }}"
+        replace-with: '$1-$2'
+        flags: 'g'
+
+    - name: Build the ${{ matrix.distro }} artifacts
+      run: |
+        ./build.sh -v "${{ inputs.version }}" -d "${{ matrix.distro }}"
+      env:
+        FLB_OUT_DIR: staging
+      working-directory: packaging
+
+    - name: Push packages to S3
+      # Make sure not to do a --delete on sync as it will remove the other architecture
+      run: |
+        if [ -n "${AWS_S3_ENDPOINT}" ]; then
+          ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+        fi
+        aws --region "$AWS_REGION" s3 sync "${SOURCE_DIR}" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+      env:
+        SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ inputs.version }}/staging/"
+        DEST_DIR: "${{ inputs.version }}/${{ matrix.target }}" # No extra slashes as they affect the URL to download
+        AWS_REGION: "us-east-1"
+        AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+        AWS_S3_BUCKET: ${{ secrets.bucket }}
+        # To use with Minio locally (or update to whatever endpoint you want)
+        # AWS_S3_ENDPOINT: http://localhost:9000
+
+    - name: Upload the ${{ matrix.distro }} artifacts
+      if: always()
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ steps.formatted_distro.outputs.replaced }}-package
+        path: packaging/packages/
+        if-no-files-found: error
+
+  call-build-packages-repo:
+    name: Create repo metadata in S3
+    runs-on: ubuntu-18.04 # no createrepo otherwise
+    environment: ${{ inputs.environment }}
+    needs: call-build-packages
+    env:
+      release: ${{ needs.deploy-get-version.outputs.releaseTag }}
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get install createrepo debsigs apt-utils
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Import GPG key for signing
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v4
+        with:
+          gpg_private_key: ${{ secrets.gpg_private_key }}
+
+      - name: Create repositories on staging now
+        # We sync down what we have for the release directories.
+        # Create the repo metadata then upload to the root of the bucket.
+        # This will wipe out any versioned directories in the process.
+        run: |
+          rm -rf ./latest/
+          mkdir -p ./latest/
+          if [ -n "${AWS_S3_ENDPOINT}" ]; then
+            ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+          fi
+          aws s3 sync "s3://$AWS_S3_BUCKET/${{ inputs.version }}" ./latest/ --no-progress ${ENDPOINT}
+
+          gpg --export -a "${{ steps.import_gpg.outputs.name }}" > ./latest/fluentbit.key
+          rpm --import ./latest/fluentbit.key
+
+          ./update-repos.sh "${{ inputs.version }}" "./latest/"
+          echo "${{ inputs.version }}" > "./latest/latest-version.txt"
+          aws s3 sync "./latest/" "s3://$AWS_S3_BUCKET" --delete --follow-symlinks --no-progress ${ENDPOINT}
+        env:
+          GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+          AWS_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_S3_BUCKET: ${{ secrets.bucket }}
+          # To use with Minio locally (or update to whatever endpoint you want)
+          # AWS_S3_ENDPOINT: http://localhost:9000
+        shell: bash
+        working-directory: packaging

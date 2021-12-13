@@ -1,0 +1,46 @@
+---
+name: Reusable workflow to test packages in S3 bucket
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: false
+    secrets:
+      bucket:
+        required: true
+      token:
+        required: true
+
+jobs:
+  call-test-packaging:
+    # We use Dokken to run a series of test suites locally on containers representing
+    # each OS we want to install on. This creates custom images with the package
+    # installed and configured as per our documentation then verifies that the agent
+    # is running at startup.
+    name: ${{ matrix.distro }} package tests
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ amazonlinux, centos7, debian10, ubuntu1804, ubuntu2004 ]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Get the version
+      id: get_version
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        VERSION=$(cat latest-version.txt)
+        echo ::set-output name=VERSION::$VERSION
+      shell: bash
+
+    - name: Run package installation tests
+      run: |
+        packaging/testing/smoke/packages/run-package-tests.sh
+      env:
+        PACKAGE_TEST: ${{ matrix.distro }}
+        RELEASE_URL: https://packages.fluentbit.io
+        AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
