@@ -8,7 +8,7 @@ jobs:
   docker_cleanup:
     runs-on: ubuntu-latest
     steps:
-      - uses: addnab/docker-run-action@v2
+      - uses: addnab/docker-run-action@v3
         with:
           image: lumir/remove-dockerhub-tag
           run: python3 remove-dockerhub-tag.py --user ${{ env.dockerhub_username }} --password ${{ env.dockerhub_password }} ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }} || exit 0
