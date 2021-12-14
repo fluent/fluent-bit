@@ -1,6 +1,10 @@
 name: 'Pull requests compile checks'
 on:
   pull_request:
+    # Only trigger if there is a code change
+    paths:
+      - '**.h'
+      - '**.c'
     types:
       - opened
       - edited
