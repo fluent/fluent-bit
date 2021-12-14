@@ -22,7 +22,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     createrepo -dvp "$REPO_DIR"
 
     # Set up repo info
-    if [[ -n "${AWS_S3_BUCKET}" ]]; then
+    if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
         REPO_TYPE=${RPM_REPO%%/*}
         echo "Setting up $BASE_PATH/$REPO_TYPE.repo"
         cat << EOF > "$BASE_PATH/$REPO_TYPE.repo"
@@ -61,9 +61,9 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit"
     mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers"
     mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra"
-    mv $REPO_DIR/td-agent-bit*-headers-extra.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra/"
-    mv $REPO_DIR/td-agent-bit*-headers.deb "$REPO_DIR/pool/main/t/td-agent-bit-heaers/"
-    mv $REPO_DIR/td-agent-bit*.deb "$REPO_DIR/pool/main/t/td-agent-bit/"
+    mv "$REPO_DIR"/td-agent-bit*-headers-extra.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra/"
+    mv "$REPO_DIR"/td-agent-bit*-headers.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers/"
+    mv "$REPO_DIR"/td-agent-bit*.deb "$REPO_DIR/pool/main/t/td-agent-bit/"
 
     # All paths must be relative and using `dists/CODENAME` for the package info
     pushd "$REPO_DIR"
