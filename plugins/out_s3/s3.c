@@ -28,9 +28,10 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_base64.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <mbedtls/base64.h>
+
 #include <mbedtls/md5.h>
 #include <msgpack.h>
 
@@ -1436,7 +1437,7 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
         return ret;
     }
 
-    ret = mbedtls_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
                                 sizeof(md5_bin));
     if (ret != 0) {
         return ret;
