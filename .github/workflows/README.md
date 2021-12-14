@@ -3,7 +3,7 @@
 | Workflow file                                         | Description               | Run event                                         |
 | :---------------------------------------------------- | ------------------------  | ------------------------------------------------- |
 | [staging-build](./staging-build.yaml)            | Builds the distro packages and docker images from a tagged release into staging (S3 and GHCR) | on new release/tag |
-| [staging-test](./staging-build.yaml)            | Test the staging distro packages and docker images| manually or when `staging-build` completes successfully |
+| [staging-test](./staging-test.yaml)            | Test the staging distro packages and docker images| manually or when `staging-build` completes successfully |
 | [staging-release](./staging-release.yaml)        | Publishes the docker images/manifest on hub.docker.io/fluent/ and the distro packages | manual approval |
 | [pr-closed-docker](./pr-closed-docker.yaml)      | Removes docker images for PR on hub.docker.io/fluentbitdev/| on pr closed|
 | [pr-compile-check](./pr-compile-check.yaml)      | Runs some compilation sanity checks on a PR |
