@@ -36,8 +36,9 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
 
+#include <fluent-bit/flb_base64.h>
+
 #include <monkey/mk_core.h>
-#include <mbedtls/base64.h>
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
@@ -276,7 +277,7 @@ static int process_event(struct flb_firehose *ctx, struct flush *buf,
     }
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
-    ret = mbedtls_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
+    ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
                                 (unsigned char *) tmp_buf_ptr, written);
     if (ret != 0) {
         flb_errno();
