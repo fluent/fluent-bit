@@ -60,6 +60,7 @@ set(src
   flb_routes_mask.c
   flb_typecast.c
   flb_event.c
+  flb_base64.c
   )
 
 # Config format
