@@ -51,13 +51,14 @@
 #define FLB_INPUT_CHUNK_TYPE_METRIC   1
 
 struct flb_input_chunk {
-    int event_type;                 /* chunk type: logs or metrics */
-    int busy;                       /* buffer is being flushed  */
-    int fs_backlog;                 /* chunk originated from fs backlog */
-    int sp_done;                    /* sp already processed this chunk */
+    int  event_type;                 /* chunk type: logs or metrics */
+    bool fs_counted;
+    int  busy;                       /* buffer is being flushed  */
+    int  fs_backlog;                 /* chunk originated from fs backlog */
+    int  sp_done;                    /* sp already processed this chunk */
 #ifdef FLB_HAVE_METRICS
-    int total_records;              /* total records in the chunk */
-    int added_records;              /* recently added records */
+    int  total_records;              /* total records in the chunk */
+    int  added_records;              /* recently added records */
 #endif
     void *chunk;                    /* context of struct cio_chunk */
     off_t stream_off;               /* stream offset */
