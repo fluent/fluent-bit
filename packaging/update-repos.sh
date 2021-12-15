@@ -53,33 +53,25 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     CODENAME=${DEB_REPO##*/}
     echo "Updating $DEB_REPO for $CODENAME"
 
-    # Sign our packages
-    find "$REPO_DIR" -name "td-agent-bit*.deb" -exec debsigs --sign=origin -k "$GPG_KEY" {} \;
+    # Use reprepro to create the repository, this will sign and create all the metadata very easily
+    mkdir -p "$REPO_DIR/conf"
+    cat << EOF > "$REPO_DIR/conf/distributions"
+Origin: Fluent Bit
+Label: Fluent Bit
+Codename: $CODENAME
+Architectures: amd64 arm64
+Components: main
+Description: Apt repository for project Fluent Bit
+SignWith: $GPG_KEY
+EOF
+    cat << EOF > "$REPO_DIR/conf/options"
+    verbose
+    basedir $REPO_DIR
+EOF
+    pushd "$REPO_DIR" || exit 1
+    find "$REPO_DIR" -name "td-agent-bit*.deb" -exec reprepro includedeb "$CODENAME" {} \;
+    popd || true
 
-    # Set up directory structure
-    mkdir -p "$REPO_DIR/dists/$CODENAME"
-    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit"
-    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers"
-    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra"
-    mv "$REPO_DIR"/td-agent-bit*-headers-extra.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra/"
-    mv "$REPO_DIR"/td-agent-bit*-headers.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers/"
-    mv "$REPO_DIR"/td-agent-bit*.deb "$REPO_DIR/pool/main/t/td-agent-bit/"
-
-    # All paths must be relative and using `dists/CODENAME` for the package info
-    pushd "$REPO_DIR"
-    apt-ftparchive packages . > "$REPO_DIR/dists/$CODENAME"/Packages
-    apt-ftparchive contents . > "$REPO_DIR/dists/$CODENAME"/Contents
-    popd
-    gzip -c -f "$REPO_DIR/dists/$CODENAME"/Packages > "$REPO_DIR/dists/$CODENAME"/Packages.gz
-    gzip -c -f "$REPO_DIR/dists/$CODENAME"/Contents > "$REPO_DIR/dists/$CODENAME"/Contents.gz
-
-    apt-ftparchive \
-        -o APT::FTPArchive::Release::Origin="Fluent Bit" \
-        -o APT::FTPArchive::Release::Suite="focal" \
-        -o APT::FTPArchive::Release::Codename="$CODENAME" \
-        -o APT::FTPArchive::Release::Version="$VERSION" \
-        -o APT::FTPArchive::Release::Architectures="amd64 arm64 armhf" \
-        -o APT::FTPArchive::Release::Components="main" \
-        release "$REPO_DIR/dists/$CODENAME" > "$REPO_DIR/dists/$CODENAME"/Release
-    gpg --yes --clearsign -o "$REPO_DIR/dists/$CODENAME"/InRelease --local-user "$GPG_KEY" --detach-sign "$REPO_DIR/dists/$CODENAME"/Release
+    # Remove unnecessary files
+    rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/"
 done
