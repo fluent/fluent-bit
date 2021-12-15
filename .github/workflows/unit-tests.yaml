@@ -10,6 +10,7 @@ on:
       - 'dockerfiles/**'
       - 'docker_compose/**'
       - 'packaging/**'
+      - '.gitignore'
     branches:
       - master
       - 1.8
