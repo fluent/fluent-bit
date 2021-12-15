@@ -59,9 +59,9 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
 Origin: Fluent Bit
 Label: Fluent Bit
 Codename: $CODENAME
-Architectures: amd64 arm64
+Architectures: amd64 arm64 armhf
 Components: main
-Description: Apt repository for project Fluent Bit
+Description: Apt repository for Fluent Bit
 SignWith: $GPG_KEY
 EOF
     cat << EOF > "$REPO_DIR/conf/options"
