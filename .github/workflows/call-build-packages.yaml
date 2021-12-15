@@ -31,7 +31,7 @@ jobs:
       fail-fast: true
       matrix:
         distro: [ amazonlinux/2, amazonlinux/2.arm64v8,
-                  centos/7, centos/7.arm64v8,
+                  centos/7, centos/7.arm64v8, centos/8, centos/8.arm64v8,
                   debian/stretch, debian/stretch.arm64v8, debian/buster, debian/buster.arm64v8,
                   ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, ubuntu/18.04.arm64v8, ubuntu/20.04.arm64v8,
                   raspbian/buster ]
@@ -50,6 +50,12 @@ jobs:
 
           - distro: centos/7.arm64v8
             target: centos/7/
+
+          - distro: centos/8
+            target: centos/8/
+
+          - distro: centos/8.arm64v8
+            target: centos/8/
 
           - distro: debian/stretch
             target: debian/stretch/
@@ -139,7 +145,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y createrepo debsigs apt-utils
+          sudo apt-get install -y createrepo aptly
 
       - name: Checkout code
         uses: actions/checkout@v2

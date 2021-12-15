@@ -13,7 +13,7 @@ on:
       version:
         description: Version of Fluent Bit to build
         required: true
-        default: 1.8.10
+        default: 1.8.11
 jobs:
 
   # This job copes with the variable approach of either being triggered by a tag,

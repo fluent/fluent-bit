@@ -21,6 +21,8 @@ jobs:
     name: ${{ matrix.distro }} package tests
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+        AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
     strategy:
       fail-fast: false
       matrix:
@@ -43,4 +45,3 @@ jobs:
       env:
         PACKAGE_TEST: ${{ matrix.distro }}
         RELEASE_URL: https://packages.fluentbit.io
-        AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
