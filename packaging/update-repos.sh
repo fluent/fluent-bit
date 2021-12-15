@@ -53,25 +53,30 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     CODENAME=${DEB_REPO##*/}
     echo "Updating $DEB_REPO for $CODENAME"
 
-    # Use reprepro to create the repository, this will sign and create all the metadata very easily
-    mkdir -p "$REPO_DIR/conf"
-    cat << EOF > "$REPO_DIR/conf/distributions"
-Origin: Fluent Bit
-Label: Fluent Bit
-Codename: $CODENAME
-Architectures: amd64 arm64 armhf
-Components: main
-Description: Apt repository for Fluent Bit
-SignWith: $GPG_KEY
+    # We use Aptly to create repos with a local temporary directory as the root.
+    # Once complete, we then move these to the output directory for upload.
+    # Based on https://github.com/spotify/debify/blob/master/debify.sh
+    APTLY_REPO_NAME="debify-$CODENAME"
+    APTLY_ROOTDIR=$(mktemp -d)
+    APTLY_CONFIG=$(mktemp)
+
+    cat << EOF > "$APTLY_CONFIG"
+{
+    "rootDir": "$APTLY_ROOTDIR/"
+}
 EOF
-    cat << EOF > "$REPO_DIR/conf/options"
-    verbose
-    basedir $REPO_DIR
-EOF
-    pushd "$REPO_DIR" || exit 1
-    find "$REPO_DIR" -name "td-agent-bit*.deb" -exec reprepro includedeb "$CODENAME" {} \;
-    popd || true
+    cat "$APTLY_CONFIG"
+
+    aptly -config="$APTLY_CONFIG" repo create \
+        -component="main" \
+        -distribution="$CODENAME" \
+        "$APTLY_REPO_NAME"
+
+    aptly -config="$APTLY_CONFIG" repo add "$APTLY_REPO_NAME" "$REPO_DIR/"
+    aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
+    aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
+    mv "$APTLY_ROOTDIR"/public/* "$REPO_DIR"/
 
     # Remove unnecessary files
-    rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/"
+    rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
 done
