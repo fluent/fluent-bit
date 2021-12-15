@@ -190,5 +190,6 @@ void lua_config_destroy(struct lua_filter *lf)
         }
     }
 
+    flb_sds_destroy(lf->packbuf);
     flb_free(lf);
 }
