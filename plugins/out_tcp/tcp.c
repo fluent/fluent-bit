@@ -52,8 +52,8 @@ static int cb_tcp_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_tcp_flush(const void *data, size_t bytes,
-                         const char *tag, int tag_len,
+static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
+                         struct flb_output_flush *out_flush,
                          struct flb_input_instance *i_ins,
                          void *out_context,
                          struct flb_config *config)
@@ -76,10 +76,13 @@ static void cb_tcp_flush(const void *data, size_t bytes,
     }
 
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
-        ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+        ret = flb_io_net_write(u_conn,
+                               event_chunk->data, event_chunk->size,
+                               &bytes_sent);
     }
     else {
-        json = flb_pack_msgpack_to_json_format(data, bytes,
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                               event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
                                                ctx->date_key);

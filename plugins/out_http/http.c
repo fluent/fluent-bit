@@ -303,8 +303,8 @@ static int http_gelf(struct flb_out_http *ctx,
     return ret;
 }
 
-static void cb_http_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_http_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -318,20 +318,26 @@ static void cb_http_flush(const void *data, size_t bytes,
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
 
-        json = flb_pack_msgpack_to_json_format(data, bytes,
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                               event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
                                                ctx->date_key);
         if (json != NULL) {
-            ret = http_post(ctx, json, flb_sds_len(json), tag, tag_len);
+            ret = http_post(ctx, json, flb_sds_len(json),
+                            event_chunk->tag, flb_sds_len(event_chunk->tag));
             flb_sds_destroy(json);
         }
     }
     else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
-        ret = http_gelf(ctx, data, bytes, tag, tag_len);
+        ret = http_gelf(ctx,
+                        event_chunk->data, event_chunk->size,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag));
     }
     else {
-        ret = http_post(ctx, data, bytes, tag, tag_len);
+        ret = http_post(ctx,
+                        event_chunk->data, event_chunk->size,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag));
     }
 
     FLB_OUTPUT_RETURN(ret);

@@ -182,14 +182,12 @@ static struct flb_out_fcount_buffer* seek_buffer(time_t t,
 
 
 
-static void out_fcount_flush(const void *data, size_t bytes,
-                             const char *tag, int tag_len,
+static void out_fcount_flush(struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush,
                              struct flb_input_instance *i_ins,
                              void *out_context,
                              struct flb_config *config)
 {
-    msgpack_unpacked result;
-    msgpack_object *obj;
     struct flb_flowcounter *ctx = out_context;
     struct flb_out_fcount_buffer *buf = NULL;
     size_t off = 0;
@@ -197,11 +195,15 @@ static void out_fcount_flush(const void *data, size_t bytes,
     uint64_t last_off   = 0;
     uint64_t byte_data  = 0;
     struct flb_time tm;
+    msgpack_unpacked result;
+    msgpack_object *obj;
     (void) i_ins;
     (void) config;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tm, &result, &obj);
 
         if (ctx->event_based == FLB_FALSE) {
@@ -236,7 +238,6 @@ static void out_fcount_flush(const void *data, size_t bytes,
         }
     }
     msgpack_unpacked_destroy(&result);
-
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 

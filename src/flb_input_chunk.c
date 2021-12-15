@@ -29,6 +29,154 @@
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
+#include <chunkio/chunkio.h>
+
+#define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
+
+#define FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL  0
+#define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
+
+extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
+                                                    size_t                      required_space);
+
+extern int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
+                                         size_t                      required_space);
+
+static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
+                                       struct flb_input_chunk *old_ic,
+                                       uint64_t o_id);
+
+static int flb_input_chunk_is_task_safe_delete(struct flb_task *task);
+
+static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic);
+
+static ssize_t flb_input_chunk_get_releasable_space(
+                                    struct flb_input_chunk     *new_input_chunk,
+                                    struct flb_input_instance  *input_plugin,
+                                    struct flb_output_instance *output_plugin,
+                                    size_t                      required_space)
+{
+    struct mk_list         *input_chunk_iterator;
+    ssize_t                 releasable_space;
+    struct flb_input_chunk *old_input_chunk;
+
+    releasable_space = 0;
+
+    mk_list_foreach(input_chunk_iterator, &input_plugin->chunks) {
+        old_input_chunk = mk_list_entry(input_chunk_iterator, struct flb_input_chunk, _head);
+
+        if (!flb_routes_mask_get_bit(old_input_chunk->routes_mask, output_plugin->id)) {
+            continue;
+        }
+
+        if (flb_input_chunk_safe_delete(new_input_chunk, old_input_chunk,
+                                        output_plugin->id) == FLB_FALSE ||
+            flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+            continue;
+        }
+
+        releasable_space += flb_input_chunk_get_real_size(old_input_chunk);
+
+        if (releasable_space >= required_space) {
+            break;
+        }
+    }
+
+    return releasable_space;
+}
+
+static int flb_input_chunk_release_space(
+                    struct flb_input_chunk     *new_input_chunk,
+                    struct flb_input_instance  *input_plugin,
+                    struct flb_output_instance *output_plugin,
+                    ssize_t                     required_space,
+                    int                         release_scope)
+{
+    struct mk_list         *input_chunk_iterator_tmp;
+    struct mk_list         *input_chunk_iterator;
+    int                     chunk_destroy_flag;
+    struct flb_input_chunk *old_input_chunk;
+    ssize_t                 released_space;
+    int                     chunk_released;
+    ssize_t                 chunk_size;
+
+    released_space = 0;
+
+    mk_list_foreach_safe(input_chunk_iterator, input_chunk_iterator_tmp,
+                         &input_plugin->chunks) {
+        old_input_chunk = mk_list_entry(input_chunk_iterator,
+                                             struct flb_input_chunk, _head);
+
+        if (!flb_routes_mask_get_bit(old_input_chunk->routes_mask,
+                                     output_plugin->id)) {
+            continue;
+        }
+
+        if (flb_input_chunk_safe_delete(new_input_chunk,
+                                        old_input_chunk,
+                                        output_plugin->id) == FLB_FALSE ||
+            flb_input_chunk_is_task_safe_delete(old_input_chunk->task) == FLB_FALSE) {
+            continue;
+        }
+
+        chunk_size = flb_input_chunk_get_real_size(old_input_chunk);
+        chunk_released = FLB_FALSE;
+        chunk_destroy_flag = FLB_FALSE;
+
+        if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL) {
+            flb_routes_mask_clear_bit(old_input_chunk->routes_mask,
+                                      output_plugin->id);
+
+            output_plugin->fs_chunks_size -= chunk_size;
+
+            chunk_destroy_flag = flb_routes_mask_is_empty(
+                                                old_input_chunk->routes_mask);
+
+            chunk_released = FLB_TRUE;
+        }
+        else if (release_scope == FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL) {
+            chunk_destroy_flag = FLB_TRUE;
+        }
+
+        if (chunk_destroy_flag) {
+            if (old_input_chunk->task != NULL) {
+                /*
+                 * If the chunk is referenced by a task and task has no active route,
+                 * we need to destroy the task as well.
+                 */
+                if (old_input_chunk->task->users == 0) {
+                    flb_debug("[task] drop task_id %d with no active route from input plugin %s",
+                              old_input_chunk->task->id, new_input_chunk->in->name);
+                    flb_task_destroy(old_input_chunk->task, FLB_TRUE);
+
+                    chunk_released = FLB_TRUE;
+                }
+            }
+            else {
+                flb_debug("[input chunk] drop chunk %s with no output route from input plugin %s",
+                          flb_input_chunk_get_name(old_input_chunk), new_input_chunk->in->name);
+
+                flb_input_chunk_destroy(old_input_chunk, FLB_TRUE);
+
+                chunk_released = FLB_TRUE;
+            }
+        }
+
+        if (chunk_released) {
+            released_space += chunk_size;
+        }
+
+        if (released_space >= required_space) {
+            break;
+        }
+    }
+
+    if (released_space < required_space) {
+        return -2;
+    }
+
+    return 0;
+}
 
 static void generate_chunk_name(struct flb_input_instance *in,
                                 char *out_buf, int buf_size)
@@ -54,10 +202,13 @@ ssize_t flb_input_chunk_get_size(struct flb_input_chunk *ic)
  * is used to track the size of chunks in filesystem so we need to call
  * cio_chunk_get_real_size to return the original size in the file system
  */
-ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
+static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
 {
     ssize_t meta_size;
-    ssize_t size = cio_chunk_get_real_size(ic->chunk);
+    ssize_t size;
+
+    size = cio_chunk_get_real_size(ic->chunk);
+
     if (size != 0) {
         return size;
     }
@@ -128,9 +279,9 @@ static int flb_input_chunk_is_task_safe_delete(struct flb_task *task)
     return FLB_TRUE;
 }
 
-int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
-                                struct flb_input_chunk *old_ic,
-                                uint64_t o_id)
+static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
+                                       struct flb_input_chunk *old_ic,
+                                       uint64_t o_id)
 {
     /* The chunk we want to drop should not be the incoming chunk */
     if (ic == old_ic) {
@@ -149,6 +300,119 @@ int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
     return FLB_TRUE;
 }
 
+int flb_input_chunk_release_space_compound(
+                        struct flb_input_chunk *new_input_chunk,
+                        struct flb_output_instance *output_plugin,
+                        size_t *local_release_requirement,
+                        int release_local_space)
+{
+    ssize_t                    segregated_backlog_releasable_space;
+    ssize_t                    active_backlog_releasable_space;
+    ssize_t                    active_plugin_releasable_space;
+    ssize_t                    required_space_remainder;
+    struct flb_input_instance *storage_backlog_instance;
+    int                        result;
+
+    storage_backlog_instance = output_plugin->config->storage_input_plugin;
+
+    *local_release_requirement = flb_input_chunk_get_real_size(new_input_chunk);
+    required_space_remainder = (ssize_t) *local_release_requirement;
+
+    segregated_backlog_releasable_space = 0;
+    active_backlog_releasable_space = 0;
+    active_plugin_releasable_space = 0;
+
+    active_backlog_releasable_space = flb_input_chunk_get_releasable_space(
+                                                        new_input_chunk,
+                                                        storage_backlog_instance,
+                                                        output_plugin,
+                                                        required_space_remainder);
+
+    required_space_remainder -= active_backlog_releasable_space;
+
+    if (required_space_remainder > 0) {
+        segregated_backlog_releasable_space = sb_get_releasable_output_queue_space(
+                                                            output_plugin,
+                                                            required_space_remainder);
+
+        required_space_remainder -= segregated_backlog_releasable_space;
+    }
+
+    if (required_space_remainder > 0) {
+        active_plugin_releasable_space = flb_input_chunk_get_releasable_space(
+                                                    new_input_chunk,
+                                                    new_input_chunk->in,
+                                                    output_plugin,
+                                                    required_space_remainder);
+
+        required_space_remainder -= active_plugin_releasable_space;
+    }
+
+    /* When we get here required_space_remainder could be negative but it's not a problem
+     * this happens when the weight of the removed chunk is higher than the remainder of
+     * the required space and it's not something that can nor should be prevented.
+     */
+
+    if (required_space_remainder > 0) {
+        return -2;
+    }
+
+    required_space_remainder = (ssize_t) *local_release_requirement;
+
+    if (required_space_remainder > 0 && active_backlog_releasable_space > 0) {
+        result = flb_input_chunk_release_space(new_input_chunk,
+                                               storage_backlog_instance,
+                                               output_plugin,
+                                               active_backlog_releasable_space,
+                                               FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL);
+
+        if (result) {
+            return -3;
+        }
+
+        required_space_remainder -= active_backlog_releasable_space;
+    }
+
+    if (required_space_remainder > 0 && segregated_backlog_releasable_space > 0) {
+        result = sb_release_output_queue_space(
+                                            output_plugin,
+                                            segregated_backlog_releasable_space);
+
+        if (result) {
+            *local_release_requirement = (size_t) required_space_remainder;
+
+            return -4;
+        }
+
+        required_space_remainder -= segregated_backlog_releasable_space;
+    }
+
+    if (release_local_space) {
+        if (required_space_remainder > 0 && active_plugin_releasable_space > 0) {
+            result = flb_input_chunk_release_space(new_input_chunk,
+                                                   new_input_chunk->in,
+                                                   output_plugin,
+                                                   active_plugin_releasable_space,
+                                                   FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL);
+
+            if (result) {
+                printf("FAILED\n");
+                return -5;
+            }
+
+            required_space_remainder -= active_plugin_releasable_space;
+        }
+    }
+
+    if (required_space_remainder < 0) {
+        required_space_remainder = 0;
+    }
+
+    *local_release_requirement = (size_t) required_space_remainder;
+
+    return 0;
+}
+
 /*
  * Returns how many chunks needs to be dropped in order to get enough space to
  * buffer the incoming data (with size chunk_size)
@@ -163,7 +427,10 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
     struct mk_list *head;
     struct flb_input_chunk *old_ic;
 
-    bytes_remained = o_ins->total_limit_size - o_ins->fs_chunks_size;
+    bytes_remained = o_ins->total_limit_size -
+                     o_ins->fs_chunks_size -
+                     o_ins->fs_backlog_chunks_size;
+
     mk_list_foreach(head, &ic->in->chunks) {
         old_ic = mk_list_entry(head, struct flb_input_chunk, _head);
 
@@ -174,7 +441,7 @@ int flb_intput_chunk_count_dropped_chunks(struct flb_input_chunk *ic,
 
         bytes_remained += flb_input_chunk_get_real_size(old_ic);
         count++;
-        if (bytes_remained >= chunk_size) {
+        if (bytes_remained >= (ssize_t) chunk_size) {
             enough_space = FLB_TRUE;
             break;
         }
@@ -203,6 +470,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
                                         size_t chunk_size, int overlimit)
 {
     int count;
+    int result;
     ssize_t bytes;
     ssize_t old_ic_bytes;
     struct mk_list *tmp;
@@ -210,6 +478,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
     struct mk_list *head_chunk;
     struct flb_output_instance *o_ins;
     struct flb_input_chunk *old_ic;
+    size_t local_release_requirement;
 
     /*
      * For each output instances that will be over the limit after adding the new chunk,
@@ -226,7 +495,26 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
             continue;
         }
 
-        count = flb_intput_chunk_count_dropped_chunks(ic, o_ins, chunk_size);
+        local_release_requirement = 0;
+
+        result = flb_input_chunk_release_space_compound(
+                                            ic, o_ins,
+                                            &local_release_requirement,
+                                            FLB_FALSE);
+
+        if (!result && local_release_requirement == 0) {
+            /* If this function returned 0 it means the space requirement was
+             * satisfied solely by releasing chunks in either storage_backlog
+             * state (segregated or in queue)
+             */
+            continue;
+        }
+
+        /* flb_input_chunk_find_space_new_data_backlog may fail to meet the space
+         * requirements but it always sets local_release_requirement to the right amount
+         */
+
+        count = flb_intput_chunk_count_dropped_chunks(ic, o_ins, local_release_requirement);
 
         if (count == 0) {
             /*
@@ -234,8 +522,8 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
              * old chunks for the incoming chunk. We need to adjust the routes_mask
              * of the incoming chunk to not flush to that output instance.
              */
-            flb_error("[input chunk] no enough space in filesystem to buffer "
-                      "chunk %s in plugin %s", flb_input_chunk_get_name(ic), o_ins->name);
+            flb_error("[input chunk] chunk %s would exceed total limit size in plugin %s",
+                      flb_input_chunk_get_name(ic), o_ins->name);
 
             flb_routes_mask_clear_bit(ic->routes_mask, o_ins->id);
             if (flb_routes_mask_is_empty(ic->routes_mask)) {
@@ -301,7 +589,7 @@ int flb_input_chunk_find_space_new_data(struct flb_input_chunk *ic,
 
             count--;
             if (count == 0) {
-                /* we have dropped enough chunks to place the incoming chunks*/
+                /* we have dropped enough chunks to place the incoming chunks */
                 break;
             }
         }
@@ -335,9 +623,14 @@ int flb_input_chunk_has_overlimit_routes(struct flb_input_chunk *ic,
 
         flb_debug("[input chunk] chunk %s required %ld bytes and %ld bytes left "
                   "in plugin %s", flb_input_chunk_get_name(ic), chunk_size,
-                  o_ins->total_limit_size - o_ins->fs_chunks_size, o_ins->name);
+                  o_ins->total_limit_size -
+                  o_ins->fs_backlog_chunks_size -
+                  o_ins->fs_chunks_size,
+                  o_ins->name);
 
-        if (o_ins->fs_chunks_size + chunk_size > o_ins->total_limit_size) {
+        if ((o_ins->fs_chunks_size +
+             o_ins->fs_backlog_chunks_size +
+             chunk_size) > o_ins->total_limit_size) {
             overlimit |= (1 << o_ins->id);
         }
     }
@@ -361,6 +654,7 @@ int flb_input_chunk_place_new_chunk(struct flb_input_chunk *ic, size_t chunk_siz
 
 /* Create an input chunk using a Chunk I/O */
 struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
+                                            int event_type,
                                             void *chunk)
 {
     int records = 0;
@@ -381,7 +675,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         flb_errno();
         return NULL;
     }
-
+    ic->event_type = event_type;
     ic->busy = FLB_FALSE;
     ic->fs_backlog = FLB_TRUE;
     ic->chunk = chunk;
@@ -395,38 +689,73 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         return NULL;
     }
 
-    /* Validate records in the chunk */
-    ret = flb_mp_validate_chunk(buf_data, buf_size, &records, &offset);
-    if (ret == -1) {
-        /* If there are valid records, truncate the chunk size */
-        if (records <= 0) {
-            flb_plg_error(in,
-                          "chunk validation failed, data might be corrupted. "
-                          "No valid records found, the chunk will be discarded.");
-            flb_free(ic);
-            return NULL;
-        }
-        if (records > 0 && offset > 32) {
-            flb_plg_warn(in,
-                         "chunk validation failed, data might be corrupted. "
-                         "Found %d valid records, failed content starts "
-                         "right after byte %lu. Recovering valid records.",
-                         records, offset);
+    if (ic->event_type == FLB_INPUT_LOGS) {
+        /* Validate records in the chunk */
+        ret = flb_mp_validate_log_chunk(buf_data, buf_size, &records, &offset);
+        if (ret == -1) {
+            /* If there are valid records, truncate the chunk size */
+            if (records <= 0) {
+                flb_plg_error(in,
+                              "chunk validation failed, data might be corrupted. "
+                              "No valid records found, the chunk will be discarded.");
+                flb_free(ic);
+                return NULL;
+            }
+            if (records > 0 && offset > 32) {
+                flb_plg_warn(in,
+                             "chunk validation failed, data might be corrupted. "
+                             "Found %d valid records, failed content starts "
+                             "right after byte %lu. Recovering valid records.",
+                             records, offset);
 
-            /* truncate the chunk to recover valid records */
-            cio_chunk_write_at(chunk, offset, NULL, 0);
+                /* truncate the chunk to recover valid records */
+                cio_chunk_write_at(chunk, offset, NULL, 0);
+            }
+            else {
+                flb_plg_error(in,
+                              "chunk validation failed, data might be corrupted. "
+                              "Found %d valid records, failed content starts "
+                              "right after byte %lu. Cannot recover chunk,",
+                              records, offset);
+                flb_free(ic);
+                return NULL;
+            }
         }
-        else {
-            flb_plg_error(in,
-                          "chunk validation failed, data might be corrupted. "
-                          "Found %d valid records, failed content starts "
-                          "right after byte %lu. Cannot recover chunk,",
-                          records, offset);
-            flb_free(ic);
-            return NULL;
+    }
+    else if (ic->event_type == FLB_INPUT_METRICS) {
+        ret = flb_mp_validate_metric_chunk(buf_data, buf_size, &records, &offset);
+        if (ret == -1) {
+            if (records <= 0) {
+                flb_plg_error(in,
+                              "metrics chunk validation failed, data might be corrupted. "
+                              "No valid records found, the chunk will be discarded.");
+                flb_free(ic);
+                return NULL;
+            }
+            if (records > 0 && offset > 32) {
+                flb_plg_warn(in,
+                             "metrics chunk validation failed, data might be corrupted. "
+                             "Found %d valid records, failed content starts "
+                             "right after byte %lu. Recovering valid records.",
+                             records, offset);
+
+                /* truncate the chunk to recover valid records */
+                cio_chunk_write_at(chunk, offset, NULL, 0);
+            }
+            else {
+                flb_plg_error(in,
+                              "metrics chunk validation failed, data might be corrupted. "
+                              "Found %d valid records, failed content starts "
+                              "right after byte %lu. Cannot recover chunk,",
+                              records, offset);
+                flb_free(ic);
+                return NULL;
+            }
+
         }
     }
 
+    /* Skip chunks without content data */
     if (records == 0) {
         flb_plg_error(in,
                       "chunk validation failed, data might be corrupted. "
@@ -448,7 +777,7 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         cio_chunk_write_at(chunk, offset, NULL, 0);
     }
 
-    /* Updat metrics */
+    /* Update metrics */
 #ifdef FLB_HAVE_METRICS
     ic->total_records = records;
     if (ic->total_records > 0) {
@@ -491,9 +820,76 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
     }
 
     mk_list_add(&ic->_head, &in->chunks);
+
     flb_input_chunk_update_output_instances(ic, bytes);
 
     return ic;
+}
+
+static int input_chunk_write_header(struct cio_chunk *chunk, int event_type,
+                                    char *tag, int tag_len)
+
+{
+    int ret;
+    int meta_size;
+    char *meta;
+
+    /*
+     * Prepare the Chunk metadata header
+     * ----------------------------------
+     * m[0] = FLB_INPUT_CHUNK_MAGIC_BYTE_0
+     * m[1] = FLB_INPUT_CHUNK_MAGIC_BYTE_1
+     * m[2] = type (FLB_INPUT_CHUNK_TYPE_LOG | FLB_INPUT_CHUNK_TYPE_METRIC)
+     * m[3] = 0 (unused for now)
+     */
+
+    /* write metadata (tag) */
+    if (tag_len > (65535 - FLB_INPUT_CHUNK_META_HEADER)) {
+        /* truncate length */
+        tag_len = 65535 - FLB_INPUT_CHUNK_META_HEADER;
+    }
+    meta_size = FLB_INPUT_CHUNK_META_HEADER + tag_len;
+
+    /* Allocate buffer for metadata header */
+    meta = flb_calloc(1, meta_size);
+    if (!meta) {
+        flb_errno();
+        return -1;
+    }
+
+    /*
+     * Write chunk header in a temporary buffer
+     * ----------------------------------------
+     */
+
+    /* magic bytes */
+    meta[0] = FLB_INPUT_CHUNK_MAGIC_BYTE_0;
+    meta[1] = FLB_INPUT_CHUNK_MAGIC_BYTE_1;
+
+    /* event type */
+    if (event_type == FLB_INPUT_LOGS) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_LOG;
+    }
+    else if (event_type == FLB_INPUT_METRICS) {
+        meta[2] = FLB_INPUT_CHUNK_TYPE_METRIC;
+    }
+
+    /* unused byte */
+    meta[3] = 0;
+
+    /* copy the tag after magic bytes */
+    memcpy(meta + FLB_INPUT_CHUNK_META_HEADER, tag, tag_len);
+
+    /* Write tag into metadata section */
+    ret = cio_meta_write(chunk, (char *) meta, meta_size);
+    if (ret == -1) {
+        flb_error("[input chunk] could not write metadata");
+        flb_free(meta);
+        return -1;
+    }
+    flb_free(meta);
+
+    return 0;
 }
 
 struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
@@ -535,16 +931,9 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in,
         set_down = FLB_TRUE;
     }
 
-    /* write metadata (tag) */
-    if (tag_len > 65535) {
-        /* truncate length */
-        tag_len = 65535;
-    }
-
-    /* Write tag into metadata section */
-    ret = cio_meta_write(chunk, (char *) tag, tag_len);
+    /* Write chunk header */
+    ret = input_chunk_write_header(chunk, in->event_type, (char *) tag, tag_len);
     if (ret == -1) {
-        flb_error("[input chunk] could not write metadata");
         cio_chunk_close(chunk, CIO_TRUE);
         return NULL;
     }
@@ -681,7 +1070,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
                                                const char *tag, int tag_len,
                                                size_t chunk_size, int *set_down)
 {
-    int id;
+    int id = -1;
     int ret;
     int new_chunk = FLB_FALSE;
     size_t out_size;
@@ -741,7 +1130,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     return ic;
 }
 
-static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
+static inline int flb_input_chunk_is_mem_overlimit(struct flb_input_instance *i)
 {
     if (i->mem_buf_limit <= 0) {
         return FLB_FALSE;
@@ -749,6 +1138,22 @@ static inline int flb_input_chunk_is_overlimit(struct flb_input_instance *i)
 
     if (i->mem_chunks_size >= i->mem_buf_limit) {
         return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static inline int flb_input_chunk_is_storage_overlimit(struct flb_input_instance *i)
+{
+    struct flb_storage_input *storage = (struct flb_storage_input *)i->storage;
+
+
+    if (storage->type == CIO_STORE_FS) {
+        if (i->storage_pause_on_chunks_overlimit == FLB_TRUE) {
+            if (storage->cio->total_chunks >= storage->cio->max_chunks_up) {
+                return FLB_TRUE;
+            }
+        }
     }
 
     return FLB_FALSE;
@@ -788,14 +1193,28 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
      * After the adjustments, validate if the plugin is overlimit or paused
      * and perform further adjustments.
      */
-    if (flb_input_chunk_is_overlimit(in) == FLB_FALSE &&
-        flb_input_buf_paused(in) && in->config->is_running == FLB_TRUE &&
-        in->config->is_ingestion_active == FLB_TRUE) {
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_FALSE &&
+        in->config->is_running == FLB_TRUE &&
+        in->config->is_ingestion_active == FLB_TRUE &&
+        in->mem_buf_status == FLB_INPUT_PAUSED) {
         in->mem_buf_status = FLB_INPUT_RUNNING;
         if (in->p->cb_resume) {
             in->p->cb_resume(in->context, in->config);
             flb_info("[input] %s resume (mem buf overlimit)",
                       in->name);
+        }
+    }
+    if (flb_input_chunk_is_storage_overlimit(in) == FLB_FALSE &&
+        in->config->is_running == FLB_TRUE &&
+        in->config->is_ingestion_active == FLB_TRUE &&
+        in->storage_buf_status == FLB_INPUT_PAUSED) {
+        in->storage_buf_status = FLB_INPUT_RUNNING;
+        if (in->p->cb_resume) {
+            in->p->cb_resume(in->context, in->config);
+            flb_info("[input] %s resume (storage buf overlimit %d/%d)",
+                      in->name,
+                      ((struct flb_storage_input *)in->storage)->cio->total_chunks,
+                      ((struct flb_storage_input *)in->storage)->cio->max_chunks_up);
         }
     }
 
@@ -808,7 +1227,28 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
  */
 static inline int flb_input_chunk_protect(struct flb_input_instance *i)
 {
-    if (flb_input_chunk_is_overlimit(i) == FLB_TRUE) {
+    struct flb_storage_input *storage = i->storage;
+
+    if (flb_input_chunk_is_storage_overlimit(i) == FLB_TRUE) {
+        flb_warn("[input] %s paused (storage buf overlimit %d/%d)",
+                 i->name,
+                 storage->cio->total_chunks,
+                 storage->cio->max_chunks_up);
+
+        if (!flb_input_buf_paused(i)) {
+            if (i->p->cb_pause) {
+                i->p->cb_pause(i->context, i->config);
+            }
+        }
+        i->storage_buf_status = FLB_INPUT_PAUSED;
+        return FLB_TRUE;
+    }
+
+    if (storage->type == CIO_STORE_FS) {
+        return FLB_FALSE;
+    }
+
+    if (flb_input_chunk_is_mem_overlimit(i) == FLB_TRUE) {
         flb_warn("[input] %s paused (mem buf overlimit)",
                  i->name);
         if (!flb_input_buf_paused(i)) {
@@ -843,7 +1283,7 @@ int flb_input_chunk_set_up_down(struct flb_input_chunk *ic)
     /* Register the total into the context variable */
     in->mem_chunks_size = total;
 
-    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE) {
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             cio_chunk_down(ic->chunk);
 
@@ -1085,7 +1525,7 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
      * for I/O operations.
      */
     si = (struct flb_storage_input *) in->storage;
-    if (flb_input_chunk_is_overlimit(in) == FLB_TRUE &&
+    if (flb_input_chunk_is_mem_overlimit(in) == FLB_TRUE &&
         si->type == CIO_STORE_FS) {
         if (cio_chunk_is_up(ic->chunk) == CIO_TRUE) {
             /*
@@ -1103,10 +1543,10 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
                 cio_chunk_down(ic->chunk);
             }
         }
-        return 0;
     }
 
     flb_input_chunk_protect(in);
+
     return 0;
 }
 
@@ -1166,6 +1606,53 @@ flb_sds_t flb_input_chunk_get_name(struct flb_input_chunk *ic)
     return ch->name;
 }
 
+static inline int input_chunk_has_magic_bytes(char *buf, int len)
+{
+    unsigned char *p;
+
+    if (len < FLB_INPUT_CHUNK_META_HEADER) {
+        return FLB_FALSE;
+    }
+
+    p = (unsigned char *) buf;
+    if (p[0] == FLB_INPUT_CHUNK_MAGIC_BYTE_0 &&
+        p[1] == FLB_INPUT_CHUNK_MAGIC_BYTE_1 && p[3] == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+/* Get the event type by retrieving metadata header */
+int flb_input_chunk_get_event_type(struct flb_input_chunk *ic)
+{
+    int len;
+    int ret;
+    int type = -1;
+    char *buf = NULL;
+
+    ret = cio_meta_read(ic->chunk, &buf, &len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    /* Check metadata header / magic bytes */
+    if (input_chunk_has_magic_bytes(buf, len)) {
+        if (buf[2] == FLB_INPUT_CHUNK_TYPE_LOG) {
+            type = FLB_INPUT_LOGS;
+        }
+        else if (buf[2] == FLB_INPUT_CHUNK_TYPE_METRIC) {
+            type = FLB_INPUT_METRICS;
+        }
+    }
+    else {
+        type = FLB_INPUT_LOGS;
+    }
+
+
+    return type;
+}
+
 int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
                             const char **tag_buf, int *tag_len)
 {
@@ -1180,8 +1667,16 @@ int flb_input_chunk_get_tag(struct flb_input_chunk *ic,
         return -1;
     }
 
-    *tag_len = len;
-    *tag_buf = buf;
+    /* If magic bytes exists, just set the offset */
+    if (input_chunk_has_magic_bytes(buf, len)) {
+        *tag_len = len - FLB_INPUT_CHUNK_META_HEADER;
+        *tag_buf = buf + FLB_INPUT_CHUNK_META_HEADER;
+    }
+    else {
+        /* Old Chunk version without magic bytes */
+        *tag_len = len;
+        *tag_buf = buf;
+    }
 
     return ret;
 }
@@ -1209,6 +1704,7 @@ void flb_input_chunk_update_output_instances(struct flb_input_chunk *ic,
              * that the input chunk will flush to this output instance
              */
             o_ins->fs_chunks_size += chunk_size;
+
             flb_debug("[input chunk] chunk %s update plugin %s fs_chunks_size by %ld bytes, "
                       "the current fs_chunks_size is %ld bytes", flb_input_chunk_get_name(ic),
                       o_ins->name, chunk_size, o_ins->fs_chunks_size);

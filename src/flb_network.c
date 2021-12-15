@@ -103,6 +103,7 @@ void flb_net_ctx_init(struct flb_net_dns *dns_ctx)
 void flb_net_setup_init(struct flb_net_setup *net)
 {
     net->dns_mode = NULL;
+    net->dns_resolver = NULL;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -298,14 +299,13 @@ static int net_connect_sync(int fd, const struct sockaddr *addr, socklen_t addrl
          */
 #ifdef FLB_SYSTEM_WINDOWS
         socket_errno = flb_socket_error(fd);
-        err = -1;
+        err = 0;
 #else
         socket_errno = errno;
         err = flb_socket_error(fd);
 #endif
-        if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
-            flb_error("[net] connection #%i failed to: %s:%i",
-                      fd, host, port);
+
+        if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
             goto exit_error;
         }
 
@@ -384,14 +384,30 @@ static int net_connect_async(int fd,
      */
 #ifdef FLB_SYSTEM_WINDOWS
     socket_errno = flb_socket_error(fd);
-    err = -1;
+    err = 0;
 #else
     socket_errno = errno;
     err = flb_socket_error(fd);
 #endif
-    if (!FLB_EINPROGRESS(socket_errno) && err != 0) {
-        flb_error("[net] connection #%i failed to: %s:%i",
-                  fd, host, port);
+    /* The logic behind this check is that when establishing a connection
+     * errno should be EINPROGRESS with no additional information in order
+     * for it to be a healthy attempt. However, when errno is EINPROGRESS
+     * and an error occurs it could be saved in the so_error socket field
+     * which has to be accessed through getsockopt(... SO_ERROR ...) so
+     * in order to preserve that behavior while also properly detecting
+     * other errno values as error conditions the comparison was changed.
+     *
+     * Windows note : flb_socket_error returns either the value returned
+     * by WSAGetLastError or the value returned by getsockopt(... SO_ERROR ...)
+     * if WSAGetLastError returns WSAEWOULDBLOCK as per libevents code.
+     *
+     * General note : according to the connect syscall man page (not libc)
+     * there could be a timing issue with checking SO_ERROR here because
+     * the suggested use involves checking it after a select or poll call
+     * returns the socket as writable which is not the case here.
+     */
+
+    if (!FLB_EINPROGRESS(socket_errno) || err != 0) {
         return -1;
     }
 
@@ -401,7 +417,6 @@ static int net_connect_async(int fd,
 
     /* Register the connection socket into the main event loop */
     MK_EVENT_ZERO(&u_conn->event);
-    u_conn->coro = async_ctx;
     ret = mk_event_add(u_conn->evl,
                        fd,
                        FLB_ENGINE_EV_THREAD,
@@ -414,14 +429,31 @@ static int net_connect_async(int fd,
         return -1;
     }
 
+    u_conn->coro = async_ctx;
+
     /*
      * Return the control to the parent caller, we need to wait for
      * the event loop to get back to us.
      */
     flb_coro_yield(async_ctx, FLB_FALSE);
 
+    /* We want this field to hold NULL at all times unless we are explicitly
+     * waiting to be resumed.
+     */
+    u_conn->coro = NULL;
+
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
+
+    /*
+     * If the socket has been invalidated (e.g: timeout or shutdown), just
+     * print a debug message and return.
+     */
+    if (u_conn->fd == -1) {
+        flb_debug("[net] TCP connection not longer available: %s:%i",
+                  u->tcp_host, u->tcp_port);
+        return -1;
+    }
 
     /* We got a notification, remove the event registered */
     ret = mk_event_del(u_conn->evl, &u_conn->event);
@@ -727,16 +759,7 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
 
     event_mask = MK_EVENT_READ;
 
-    /*
-     * c-ares doesn't use a macro for the socket type so :
-     * 1 means it's a TCP socket
-     * 2 means it's a UDP socket
-     *
-     * For TCP sockets we want to monitor for write events because we need to call
-     * ares_process_fd in order to issue the query unlike UDP sockets which automatically
-     * send the query after creating the socket.
-     */
-    if (FLB_ARES_SOCKET_TYPE_TCP == type) {
+    if (SOCK_STREAM == type) {
         event_mask |= MK_EVENT_WRITE;
     }
 
@@ -929,7 +952,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
 
     /* We need to ensure that our timer won't overlap with the upstream timeout handler.
      */
-    if (timeout > 1000) {
+    if (timeout > 3000) {
         timeout -= 1000;
     }
     else {
@@ -944,40 +967,45 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
     ares_getaddrinfo(lookup_context->ares_channel, node, service, &ares_hints,
                      flb_net_getaddrinfo_callback, lookup_context);
 
-    if (lookup_context->ares_socket_created) {
-        if (lookup_context->ares_socket_type == FLB_ARES_SOCKET_TYPE_UDP) {
-            /* If the socket type created by c-ares is UDP then we need to create our
-             * own timeout mechanism before yielding and cancel it if things go as
-             * expected.
-             */
-
-            sched = flb_sched_ctx_get();
-            assert(sched != NULL);
-
-            result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
-                                               timeout,
-                                               flb_net_getaddrinfo_timeout_handler,
-                                               lookup_context,
-                                               &lookup_context->udp_timer);
-            if (result == -1) {
-                /* Timer creation failed, it happen because of file descriptor or memory
-                 * exhaustion (ulimits usually)
+    if (!lookup_context->finished) {
+        if (lookup_context->ares_socket_created) {
+            if (lookup_context->ares_socket_type == SOCK_DGRAM) {
+                /* If the socket type created by c-ares is UDP then we need to create our
+                 * own timeout mechanism before yielding and cancel it if things go as
+                 * expected.
                  */
 
-                result_code = ARES_ENOMEM;
+                sched = flb_sched_ctx_get();
+                assert(sched != NULL);
 
-                ares_cancel(lookup_context->ares_channel);
+                result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                                   timeout,
+                                                   flb_net_getaddrinfo_timeout_handler,
+                                                   lookup_context,
+                                                   &lookup_context->udp_timer);
+                if (result == -1) {
+                    /* Timer creation failed, it happen because of file descriptor or memory
+                     * exhaustion (ulimits usually)
+                     */
 
-                lookup_context->coroutine = NULL;
+                    result_code = ARES_ENOMEM;
 
-                flb_net_dns_lookup_context_drop(lookup_context);
+                    ares_cancel(lookup_context->ares_channel);
+
+                    lookup_context->coroutine = NULL;
+
+                    flb_net_dns_lookup_context_drop(lookup_context);
+                }
+                else {
+                    flb_coro_yield(coroutine, FLB_FALSE);
+                }
             }
             else {
                 flb_coro_yield(coroutine, FLB_FALSE);
             }
         }
         else {
-            flb_coro_yield(coroutine, FLB_FALSE);
+            /* Do we want to do anything special for this condition? */
         }
     }
     else {
@@ -1057,8 +1085,11 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int use_async_dns;
+    char resolver_initial;
     flb_sockfd_t fd = -1;
     char _port[6];
+    char address[41];
     struct addrinfo hints;
     struct addrinfo *res, *rp;
 
@@ -1077,8 +1108,18 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
 
+    use_async_dns = is_async;
+
+    if (u_conn->u->net.dns_resolver != NULL) {
+        resolver_initial = toupper(u_conn->u->net.dns_resolver[0]);
+
+        if (resolver_initial == FLB_DNS_LEGACY) {
+            use_async_dns = FLB_FALSE;
+        }
+    }
+
     /* retrieve DNS info */
-    if (is_async) {
+    if (use_async_dns) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res,
                                   u_conn->u->net.dns_mode, connect_timeout);
     }
@@ -1087,11 +1128,26 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (ret) {
-        if (is_async) {
+        if (use_async_dns) {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, ares_strerror(ret));
         }
         else {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, gai_strerror(ret));
+        }
+
+        return -1;
+    }
+
+    if (u_conn->net_error > 0) {
+        if (u_conn->net_error == ETIMEDOUT) {
+            flb_warn("[net] timeout detected between DNS lookup and connection attempt");
+        }
+
+        if (use_async_dns) {
+            flb_net_free_translated_addrinfo(res);
+        }
+        else {
+            freeaddrinfo(res);
         }
 
         return -1;
@@ -1102,8 +1158,14 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
      * available address.
      */
     for (rp = res; rp != NULL; rp = rp->ai_next) {
+        if (u_conn->net_error > 0) {
+            if (u_conn->net_error == ETIMEDOUT) {
+                flb_warn("[net] timeout detected between connection attempts");
+            }
+        }
+
         /* create socket */
-        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd == -1) {
             flb_error("[net] coult not create client socket, retrying");
             continue;
@@ -1146,21 +1208,34 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         if (ret == -1) {
+            address[0] = '\0';
+
+            ret = flb_net_address_to_str(rp->ai_family, rp->ai_addr,
+                                         address, sizeof(address));
+
             /* If the connection failed, just abort and report the problem */
-            flb_error("[net] socket #%i could not connect to %s:%s",
-                      fd, host, _port);
+            flb_debug("[net] socket #%i could not connect to %s:%s",
+                      fd, address, _port);
             if (u_conn) {
                 u_conn->fd = -1;
                 u_conn->event.fd = -1;
             }
+
             flb_socket_close(fd);
             fd = -1;
-            break;
+
+            continue;
         }
+
         break;
     }
 
-    if (is_async) {
+    if (fd == -1) {
+        flb_debug("[net] could not connect to %s:%s",
+                  host, _port);
+    }
+
+    if (use_async_dns) {
         flb_net_free_translated_addrinfo(res);
     }
     else {
@@ -1417,6 +1492,39 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
     }
 
     return remote_fd;
+}
+
+int flb_net_address_to_str(int family, const struct sockaddr *addr,
+                           char *output_buffer, size_t output_buffer_size)
+{
+    struct sockaddr *proper_addr;
+    const char      *result;
+
+    if (family == AF_INET) {
+        proper_addr = (struct sockaddr *) &((struct sockaddr_in *) addr)->sin_addr;
+    }
+    else if (family == AF_INET6) {
+        proper_addr = (struct sockaddr *) &((struct sockaddr_in6 *) addr)->sin6_addr;
+    }
+    else {
+        strncpy(output_buffer,
+                "CONVERSION ERROR 1",
+                output_buffer_size);
+
+        return -1;
+    }
+
+    result = inet_ntop(family, proper_addr, output_buffer, output_buffer_size);
+
+    if (result == NULL) {
+        strncpy(output_buffer,
+                "CONVERSION ERROR 2",
+                output_buffer_size);
+
+        return -2;
+    }
+
+    return 0;
 }
 
 int flb_net_socket_ip_str(flb_sockfd_t fd, char **buf, int size, unsigned long *len)

@@ -1,0 +1,191 @@
+---
+name: Reusable workflow to build container images
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      registry:
+        type: string
+        required: true
+      username:
+        type: string
+        required: true
+      image:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: false
+    secrets:
+      token:
+        required: true
+      cosign_private_key:
+        required: false
+      cosign_private_key_password:
+        required: false
+jobs:
+  call-build-images-matrix:
+    name: ${{ matrix.arch }} container image stage to GHCR
+    runs-on: [ ubuntu-latest ]
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ amd64, arm64, arm/v7 ]
+        include:
+          - arch: amd64
+            suffix: x86_64
+          - arch: arm/v7
+            suffix: arm32v7
+          - arch: arm64
+            suffix: arm64v8
+          # - arch: amd64
+          #   suffix: x86_64-debug
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ secrets.token }}
+
+    - name: Extract metadata from Github
+      id: meta
+      uses: docker/metadata-action@v3
+      with:
+        images: ${{ inputs.registry }}/${{ inputs.image }}
+        tags: |
+          raw,${{ matrix.suffix }}-${{ inputs.version }}
+          raw,${{ matrix.suffix }}-latest
+
+    - name: Build the staging image
+      uses: docker/build-push-action@v2
+      with:
+        file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
+        context: .
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: linux/${{ matrix.arch }}
+        push: true
+        load: false
+        build-args: |
+          FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+
+  call-build-scan-images:
+    name: Trivy + Dockle image scan
+    runs-on: [ ubuntu-latest ]
+    environment: ${{ inputs.environment }}
+    needs: call-build-images-matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        suffix: [ x86_64, arm32v7, arm64v8 ]
+    steps:
+      - name: Checkout code for ignore list
+        uses: actions/checkout@v2
+
+      - name: Run Trivy and Dockle scans
+        uses: azure/container-scan@v0
+        with:
+          image-name: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+  # https://github.com/tfsaggregator/aggregator-cli/blob/master/.github/workflows/build-and-deploy.yml
+  call-build-push-sign-images:
+    name: Deploy and sign multi-arch container image manifests
+    permissions:
+      contents: read
+      packages: write
+      # This is used to complete the identity challenge
+      # with sigstore/fulcio when running outside of PRs.
+      id-token: write
+    runs-on: [ ubuntu-latest ]
+    environment: ${{ inputs.environment }}
+    needs: call-build-images-matrix
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Pull all the images
+        # Use platform to trigger warnings on invalid image metadata
+        run: |
+          docker pull --platform=linux/amd64 ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }}
+          docker pull --platform=linux/arm64 ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }}
+          docker pull --platform=linux/arm/v7  ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
+
+      - name: Create manifests for images
+        run: |
+          docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
+
+          docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:latest \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
+
+          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}
+          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:latest
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Cosign keyless signing using Rektor public transparency log
+        # This step uses the identity token to provision an ephemeral certificate
+        # against the sigstore community Fulcio instance, and records it to the
+        # sigstore community Rekor transparency log.
+        #
+        # We use recursive signing on the manifest to cover all the images.
+        run: |
+          cosign sign --recursive \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "ref=${{ github.sha }}" \
+            -a "release=${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}:latest"
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+
+      - name: Cosign with a key
+        # Only run if we have a key defined
+        if: ${{ env.COSIGN_PRIVATE_KEY }}
+        # The key needs to cope with newlines
+        run: |
+          echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
+          cosign sign --key /tmp/my_cosign.key --recursive \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "ref=${{ github.sha }}" \
+            -a "release=${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}:latest"
+          rm -f /tmp/my_cosign.key
+        shell: bash
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
+          COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional

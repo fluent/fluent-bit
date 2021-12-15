@@ -176,15 +176,17 @@ if(MK_LINUX_TRACE)
 endif()
 
 # Use old Pthread TLS
-check_c_source_compiles("
-   __thread int a;
-   int main() {
-       __tls_get_addr(0);
-       return 0;
-   }" HAVE_C_TLS)
+if(NOT MK_PTHREAD_TLS)
+  check_c_source_compiles("
+     __thread int a;
+     int main() {
+         __tls_get_addr(0);
+         return 0;
+     }" HAVE_C_TLS)
 
-if(HAVE_C_TLS)
-  MK_DEFINITION(MK_HAVE_C_TLS)
+  if(HAVE_C_TLS)
+    MK_DEFINITION(MK_HAVE_C_TLS)
+  endif()
 endif()
 
 # Valgrind support

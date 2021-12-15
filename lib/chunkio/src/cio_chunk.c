@@ -23,6 +23,7 @@
 #include <chunkio/cio_file.h>
 #include <chunkio/cio_memfs.h>
 #include <chunkio/cio_log.h>
+#include <chunkio/cio_error.h>
 
 #include <string.h>
 
@@ -73,6 +74,8 @@ struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
 
     mk_list_add(&ch->_head, &st->chunks);
 
+    cio_error_reset(ch);
+
     /* create backend context */
     if (st->type == CIO_STORE_FS) {
         backend = cio_file_open(ctx, st, ch, flags, size, err);
@@ -114,6 +117,8 @@ void cio_chunk_close(struct cio_chunk *ch, int delete)
         return;
     }
 
+    cio_error_reset(ch);
+
     ctx = ch->ctx;
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
@@ -143,6 +148,8 @@ int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
     struct cio_memfs *mf;
     struct cio_file *cf;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
         mf = ch->backend;
@@ -151,6 +158,7 @@ int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
         cf->data_size = offset;
+        cf->crc_reset = CIO_TRUE;
     }
 
     /*
@@ -164,6 +172,8 @@ int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
     int ret = 0;
     int type;
+
+    cio_error_reset(ch);
 
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
@@ -181,6 +191,8 @@ int cio_chunk_sync(struct cio_chunk *ch)
     int ret = 0;
     int type;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
         ret = cio_file_sync(ch);
@@ -195,6 +207,8 @@ int cio_chunk_get_content(struct cio_chunk *ch, char **buf, size_t *size)
     int type;
     struct cio_memfs *mf;
     struct cio_file *cf;
+
+    cio_error_reset(ch);
 
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
@@ -223,6 +237,8 @@ int cio_chunk_get_content_copy(struct cio_chunk *ch,
 {
     int type;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
         return cio_memfs_content_copy(ch, out_buf, out_size);
@@ -240,6 +256,8 @@ size_t cio_chunk_get_content_end_pos(struct cio_chunk *ch)
     off_t pos = 0;
     struct cio_memfs *mf;
     struct cio_file *cf;
+
+    cio_error_reset(ch);
 
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
@@ -260,6 +278,8 @@ ssize_t cio_chunk_get_content_size(struct cio_chunk *ch)
     struct cio_memfs *mf;
     struct cio_file *cf;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
         mf = ch->backend;
@@ -279,6 +299,8 @@ ssize_t cio_chunk_get_real_size(struct cio_chunk *ch)
     struct cio_memfs *mf;
     struct cio_file *cf;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
         mf = ch->backend;
@@ -286,6 +308,12 @@ ssize_t cio_chunk_get_real_size(struct cio_chunk *ch)
     }
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
+
+        /* If the file is not open we need to explicitly get its size */
+        if (cf->fs_size == 0) {
+            return cio_file_real_size(cf);
+        }
+
         return cf->fs_size;
     }
 
@@ -315,6 +343,8 @@ char *cio_chunk_hash(struct cio_chunk *ch)
 
 int cio_chunk_lock(struct cio_chunk *ch)
 {
+    cio_error_reset(ch);
+
     if (ch->lock == CIO_TRUE) {
         return CIO_ERROR;
     }
@@ -330,6 +360,8 @@ int cio_chunk_lock(struct cio_chunk *ch)
 
 int cio_chunk_unlock(struct cio_chunk *ch)
 {
+    cio_error_reset(ch);
+
     if (ch->lock == CIO_FALSE) {
         return CIO_ERROR;
     }
@@ -353,6 +385,8 @@ int cio_chunk_tx_begin(struct cio_chunk *ch)
     int type;
     struct cio_memfs *mf;
     struct cio_file *cf;
+
+    cio_error_reset(ch);
 
     if (cio_chunk_is_locked(ch)) {
         return CIO_RETRY;
@@ -386,6 +420,8 @@ int cio_chunk_tx_commit(struct cio_chunk *ch)
 {
     int ret;
 
+    cio_error_reset(ch);
+
     ret = cio_chunk_sync(ch);
     if (ret == -1) {
         return CIO_ERROR;
@@ -402,6 +438,8 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch)
     int type;
     struct cio_memfs *mf;
     struct cio_file *cf;
+
+    cio_error_reset(ch);
 
     if (ch->tx_active == CIO_FALSE) {
         return -1;
@@ -480,6 +518,8 @@ int cio_chunk_down(struct cio_chunk *ch)
     int ret;
     int type;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
         ret = cio_file_down(ch);
@@ -495,6 +535,8 @@ int cio_chunk_up(struct cio_chunk *ch)
     int ret;
     int type;
 
+    cio_error_reset(ch);
+
     type = ch->st->type;
     if (type == CIO_STORE_FS) {
         ret = cio_file_up(ch);
@@ -509,6 +551,8 @@ int cio_chunk_up_force(struct cio_chunk *ch)
 {
     int ret;
     int type;
+
+    cio_error_reset(ch);
 
     type = ch->st->type;
     if (type == CIO_STORE_FS) {

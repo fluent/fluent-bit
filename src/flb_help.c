@@ -80,6 +80,9 @@ int pack_config_map_entry(msgpack_packer *mp_pck, struct flb_config_map *m)
     if (m->type == FLB_CONFIG_MAP_STR) {
         pack_str(mp_pck, "string");
     }
+    else if (m->type == FLB_CONFIG_MAP_DEPRECATED) {
+        pack_str(mp_pck, "deprecated");
+    }
     else if (m->type == FLB_CONFIG_MAP_INT) {
         pack_str(mp_pck, "integer");
     }

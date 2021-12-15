@@ -254,8 +254,8 @@ static int build_headers(struct flb_http_client *c,
     return 0;
 }
 
-static void cb_azure_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_azure_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -278,7 +278,8 @@ static void cb_azure_flush(const void *data, size_t bytes,
     }
 
     /* Convert binary logs into a JSON payload */
-    ret = azure_format(data, bytes, &buf_data, &buf_size, ctx);
+    ret = azure_format(event_chunk->data, event_chunk->size,
+                       &buf_data, &buf_size, ctx);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

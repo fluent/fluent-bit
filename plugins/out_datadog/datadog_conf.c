@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include "datadog.h"
 #include "datadog_conf.h"
@@ -49,6 +50,13 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->nb_additional_entries = 0;
 
+    ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "flb_output_config_map_set failed");
+        flb_free(ctx);
+        return NULL;
+    }
+
     tmp = flb_output_get_property("proxy", ins);
     if (tmp) {
         ret = flb_utils_url_split(tmp, &protocol, &host, &port, &uri);
@@ -60,7 +68,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
         ctx->proxy_host = host;
         ctx->proxy_port = atoi(port);
-        ctx->proxy = tmp;
         flb_free(protocol);
         flb_free(port);
         flb_free(uri);
@@ -79,57 +86,30 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
 
     /* configure URI */
     api_key = flb_output_get_property("apikey", ins);
-    if (api_key) {
-        ctx->api_key = flb_sds_create(api_key);
-    }
-    else {
+    if (api_key == NULL) {
         flb_plg_error(ctx->ins, "no ApiKey configuration key defined");
         flb_datadog_conf_destroy(ctx);
         return NULL;
     }
 
-    /* Include Tag key */
-    tmp = flb_output_get_property("include_tag_key", ins);
-    if (tmp) {
-        ctx->include_tag_key = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->include_tag_key = FLB_FALSE;
-    }
-
     /* Tag Key */
     if (ctx->include_tag_key == FLB_TRUE) {
         ctx->nb_additional_entries++;
-        tmp = flb_output_get_property("tag_key", ins);
-        if (tmp) {
-            ctx->tag_key = flb_sds_create(tmp);
-        }
-        else {
-            ctx->tag_key = flb_sds_create(FLB_DATADOG_DEFAULT_TAG_KEY);
-        }
     }
 
     tmp = flb_output_get_property("dd_source", ins);
     if (tmp) {
         ctx->nb_additional_entries++;
-        ctx->dd_source = flb_sds_create(tmp);
     }
 
     tmp = flb_output_get_property("dd_service", ins);
     if (tmp) {
         ctx->nb_additional_entries++;
-        ctx->dd_service = flb_sds_create(tmp);
     }
 
     tmp = flb_output_get_property("dd_tags", ins);
     if (tmp) {
         ctx->nb_additional_entries++;
-        ctx->dd_tags = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("dd_message_key", ins);
-    if (tmp) {
-        ctx->dd_message_key = flb_sds_create(tmp);
     }
 
     tmp = flb_output_get_property("provider", ins);
@@ -167,13 +147,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
     flb_plg_debug(ctx->ins, "port: %i", ctx->port);
 
     /* Date tag for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create(FLB_DATADOG_DEFAULT_TIME_KEY);
-    }
     ctx->nb_additional_entries++;
     flb_plg_debug(ctx->ins, "json_date_key: %s", ctx->json_date_key);
 
@@ -229,27 +202,6 @@ int flb_datadog_conf_destroy(struct flb_out_datadog *ctx)
     }
     if (ctx->uri) {
         flb_sds_destroy(ctx->uri);
-    }
-    if (ctx->api_key) {
-        flb_sds_destroy(ctx->api_key);
-    }
-    if (ctx->tag_key) {
-        flb_sds_destroy(ctx->tag_key);
-    }
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
-    if (ctx->dd_source) {
-        flb_sds_destroy(ctx->dd_source);
-    }
-    if (ctx->dd_service) {
-        flb_sds_destroy(ctx->dd_service);
-    }
-    if (ctx->dd_tags) {
-        flb_sds_destroy(ctx->dd_tags);
-    }
-    if (ctx->dd_message_key) {
-        flb_sds_destroy(ctx->dd_message_key);
     }
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);

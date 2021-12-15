@@ -192,7 +192,7 @@ static void cb_root(mk_request_t *request, void *data)
 
 struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
                                           const char *listen,
-                                          const char *tcp_port,
+                                          int tcp_port,
                                           struct flb_config *config)
 {
     int ret;
@@ -215,7 +215,7 @@ struct prom_http *prom_http_server_create(struct prom_exporter *ctx,
     }
 
     /* Compose listen address */
-    snprintf(tmp, sizeof(tmp) -1, "%s:%s", listen, tcp_port);
+    snprintf(tmp, sizeof(tmp) -1, "%s:%d", listen, tcp_port);
     mk_config_set(ph->ctx,
                   "Listen", tmp,
                   "Workers", "1",

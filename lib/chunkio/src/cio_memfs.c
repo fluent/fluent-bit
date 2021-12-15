@@ -17,8 +17,9 @@
  *  limitations under the License.
  */
 
-#include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
+#include <chunkio/cio_utils.h>
+#include <chunkio/chunkio_compat.h>
 #include <chunkio/cio_memfs.h>
 #include <chunkio/cio_log.h>
 
@@ -48,7 +49,7 @@ struct cio_memfs *cio_memfs_open(struct cio_ctx *ctx, struct cio_stream *st,
     }
     mf->buf_size = size;
     mf->buf_len = 0;
-    mf->realloc_size = getpagesize() * 8;
+    mf->realloc_size = cio_getpagesize() * 8;
 
     return mf;
 }

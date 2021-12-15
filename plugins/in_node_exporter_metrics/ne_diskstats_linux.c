@@ -26,6 +26,7 @@
 #include "ne_utils.h"
 
 #include <unistd.h>
+#include <float.h>
 
 /*
  * Diskstats interface references
@@ -119,7 +120,7 @@ static void metric_cache_update(struct flb_ne *ctx, int id, flb_sds_t device,
 
     ts = cmt_time_now();
 
-    if (m->factor != 0) {
+    if (m->factor > DBL_EPSILON) {
         val *= m->factor;
     }
 

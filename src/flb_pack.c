@@ -31,6 +31,11 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
 
+/* cmetrics */
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_text.h>
+
 #include <msgpack.h>
 #include <jsmn/jsmn.h>
 
@@ -454,6 +459,32 @@ void flb_pack_print(const char *data, size_t bytes)
     msgpack_unpacked_destroy(&result);
 }
 
+void flb_pack_print_metrics(const char *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    cmt_sds_t text;
+    struct cmt *cmt = NULL;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_error("could not process metrics payload");
+        return;
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_text_create(cmt);
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    printf("%s", text);
+    fflush(stdout);
+
+    cmt_encode_text_destroy(text);
+
+}
 
 static inline int try_to_write(char *buf, int *off, size_t left,
                                const char *str, size_t str_len)

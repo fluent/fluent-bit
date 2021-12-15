@@ -35,10 +35,15 @@ struct mk_http_thread {
     struct mk_list _head;             /* Link to worker->threads */
 };
 
+extern MK_TLS_DEFINE(struct mk_http_libco_params, mk_http_thread_libco_params);
+extern MK_TLS_DEFINE(struct mk_thread,            mk_thread);
+
 static MK_INLINE void mk_http_thread_resume(struct mk_http_thread *mth)
 {
     mk_thread_resume(mth->parent);
 }
+
+void mk_http_thread_initialize_tls();
 
 struct mk_http_thread *mk_http_thread_create(int type,
                                              struct mk_vhost_handler *handler,

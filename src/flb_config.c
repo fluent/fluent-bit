@@ -111,6 +111,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, dns_mode)},
 
+    {FLB_CONF_DNS_RESOLVER,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_resolver)},
+
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
      FLB_CONF_TYPE_STR,
@@ -135,6 +139,14 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_CORO_STACK_SIZE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
+
+    /* Scheduler */
+    {FLB_CONF_STR_SCHED_CAP,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, sched_cap)},
+    {FLB_CONF_STR_SCHED_BASE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, sched_base)},
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     {FLB_CONF_STR_STREAMS_FILE,
@@ -174,6 +186,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->grace_count  = 0;
     config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -202,6 +215,9 @@ struct flb_config *flb_config_init()
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
 
+    config->sched_cap  = FLB_SCHED_CAP;
+    config->sched_base = FLB_SCHED_BASE;
+
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);
 #endif
@@ -215,7 +231,12 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_CORO_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
+    if (config->coro_stack_size < getpagesize()) {
+        flb_info("[config] changing coro_stack_size from %u to %u bytes",
+                 config->coro_stack_size, getpagesize());
+        config->coro_stack_size = (unsigned int)getpagesize();
+    }
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);

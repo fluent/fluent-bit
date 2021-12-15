@@ -153,6 +153,87 @@ static int get_machine_id(struct flb_calyptia *ctx, char **out_buf, size_t *out_
     return 0;
 }
 
+static void pack_str(msgpack_packer *mp_pck, char *str)
+{
+    int len;
+
+    len = strlen(str);
+    msgpack_pack_str(mp_pck, len);
+    msgpack_pack_str_body(mp_pck, str, len);
+}
+
+static void pack_env(struct flb_env *env, char *prefix,  char *key,
+                     struct flb_mp_map_header *h,
+                     msgpack_packer *mp_pck)
+{
+    int len = 0;
+    char *val;
+
+    /* prefix set in the key, if set, adjust the key name */
+    if (prefix) {
+        len = strlen(prefix);
+    }
+
+    val = (char *) flb_env_get(env, key);
+    if (val) {
+        flb_mp_map_header_append(h);
+        pack_str(mp_pck, key + len);
+        pack_str(mp_pck, val);
+    }
+}
+
+static void pack_env_metadata(struct flb_env *env,
+                              struct flb_mp_map_header *mh, msgpack_packer *mp_pck)
+{
+    char *tmp;
+    struct flb_mp_map_header h;
+    struct flb_mp_map_header meta;
+
+    /* Metadata */
+    flb_mp_map_header_append(mh);
+    pack_str(mp_pck, "metadata");
+
+    flb_mp_map_header_init(&meta, mp_pck);
+
+    /* Kubernetes */
+    tmp = (char *) flb_env_get(env, "k8s");
+    if (tmp && strcasecmp(tmp, "enabled") == 0) {
+        flb_mp_map_header_append(&meta);
+        pack_str(mp_pck, "k8s");
+
+        /* adding k8s map */
+        flb_mp_map_header_init(&h, mp_pck);
+
+        pack_env(env, "k8s.", "k8s.namespace", &h, mp_pck);
+        pack_env(env, "k8s.", "k8s.pod_name", &h, mp_pck);
+        pack_env(env, "k8s.", "k8s.node_name", &h, mp_pck);
+
+        flb_mp_map_header_end(&h);
+    }
+
+    /* AWS */
+    tmp = (char *) flb_env_get(env, "aws");
+    if (tmp && strcasecmp(tmp, "enabled") == 0) {
+        flb_mp_map_header_append(&meta);
+        pack_str(mp_pck, "aws");
+
+        /* adding aws map */
+        flb_mp_map_header_init(&h, mp_pck);
+
+        pack_env(env, "aws.", "aws.az", &h, mp_pck);
+        pack_env(env, "aws.", "aws.ec2_instance_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.ec2_instance_type", &h, mp_pck);
+        pack_env(env, "aws.", "aws.private_ip", &h, mp_pck);
+        pack_env(env, "aws.", "aws.vpc_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.ami_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.account_id", &h, mp_pck);
+        pack_env(env, "aws.", "aws.hostname", &h, mp_pck);
+
+        flb_mp_map_header_end(&h);
+    }
+    flb_mp_map_header_end(&meta);
+}
+
 static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
 {
     int len;
@@ -162,6 +243,7 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     struct flb_mp_map_header mh;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
+    struct flb_config *config = ctx->config;
 
     /* init msgpack */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -224,6 +306,9 @@ static flb_sds_t get_agent_metadata(struct flb_calyptia *ctx)
     len = flb_sds_len(ctx->machine_id);
     msgpack_pack_str(&mp_pck, len);
     msgpack_pack_str_body(&mp_pck, ctx->machine_id, len);
+
+    /* pack environment metadata */
+    pack_env_metadata(config->env, &mh, &mp_pck);
 
     /* finalize */
     flb_mp_map_header_end(&mh);
@@ -657,12 +742,16 @@ static struct flb_calyptia *config_init(struct flb_output_instance *ins,
         }
     }
 
-    /* machine id */
-    ret = get_machine_id(ctx, &machine_id, &size);
-    if (ret == -1) {
-        return NULL;
+    /* If no machine_id has been provided via a configuration option get it from the local machine-id. */
+    if (!ctx->machine_id) {
+        /* machine id */
+        ret = get_machine_id(ctx, &machine_id, &size);
+        if (ret == -1) {
+            return NULL;
+        }
+        ctx->machine_id = (flb_sds_t) machine_id;
     }
-    ctx->machine_id = (flb_sds_t) machine_id;
+
     flb_plg_debug(ctx->ins, "machine_id=%s", ctx->machine_id);
 
     /* Upstream */
@@ -733,8 +822,8 @@ static void debug_payload(struct flb_calyptia *ctx, void *data, size_t bytes)
     cmt_destroy(cmt);
 }
 
-static void cb_calyptia_flush(const void *data, size_t bytes,
-                              const char *tag, int tag_len,
+static void cb_calyptia_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)
@@ -758,7 +847,10 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
 
     /* if we have labels append them */
     if (ctx->add_labels && mk_list_size(ctx->add_labels) > 0) {
-        ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+        ret = cmt_decode_msgpack_create(&cmt,
+                                        (char *) event_chunk->data,
+                                        event_chunk->size,
+                                        &off);
         if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -774,17 +866,18 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
             flb_upstream_conn_release(u_conn);
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
+        cmt_destroy(cmt);
     }
     else {
-        out_buf = (char *) data;
-        out_size = bytes;
+        out_buf = (char *) event_chunk->data;
+        out_size = event_chunk->size;
     }
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->metrics_endpoint,
                         out_buf, out_size, NULL, 0, NULL, 0);
     if (!c) {
-        if (out_buf != data) {
+        if (out_buf != event_chunk->data) {
             cmt_encode_msgpack_destroy(out_buf);
         }
         flb_upstream_conn_release(u_conn);
@@ -801,7 +894,7 @@ static void cb_calyptia_flush(const void *data, size_t bytes,
         debug_payload(ctx, out_buf, out_size);
     }
 
-    if (out_buf != data) {
+    if (out_buf != event_chunk->data) {
         cmt_encode_msgpack_destroy(out_buf);
     }
 
@@ -845,6 +938,8 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
     }
+
+    flb_kv_release(&ctx->kv_labels);
     flb_free(ctx);
 
     return 0;
@@ -869,11 +964,22 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_calyptia, api_key),
      "Calyptia Cloud API Key."
     },
+    {
+     FLB_CONFIG_MAP_STR, "machine_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_calyptia, machine_id),
+     "Custom machine_id to be used when registering agent"
+    },
 
     {
      FLB_CONFIG_MAP_STR, "store_path", NULL,
      0, FLB_TRUE, offsetof(struct flb_calyptia, store_path),
      ""
+    },
+
+    {
+     FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_calyptia, add_labels),
+     "Label to append to the generated metric."
     },
 
     /* EOF */

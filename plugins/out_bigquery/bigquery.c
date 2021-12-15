@@ -367,16 +367,40 @@ static int bigquery_format(const void *data, size_t bytes,
     /*
      * Pack root map (kind & rows):
      *
-     * {"kind": "bigquery#tableDataInsertAllRequest"
-     *  "rows": []
+     * {
+     *   "kind": "bigquery#tableDataInsertAllRequest",
+     *   "skipInvalidRows": boolean,
+     *   "ignoreUnknownValues": boolean,
+     *   "rows": []
+     * }
      */
-    msgpack_pack_map(&mp_pck, 2);
+    msgpack_pack_map(&mp_pck, 4);
 
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "kind", 4);
 
     msgpack_pack_str(&mp_pck, 34);
     msgpack_pack_str_body(&mp_pck, "bigquery#tableDataInsertAllRequest", 34);
+
+    msgpack_pack_str(&mp_pck, 15);
+    msgpack_pack_str_body(&mp_pck, "skipInvalidRows", 15);
+
+    if (ctx->skip_invalid_rows) {
+        msgpack_pack_true(&mp_pck);
+    }
+    else {
+        msgpack_pack_false(&mp_pck);
+    }
+
+    msgpack_pack_str(&mp_pck, 19);
+    msgpack_pack_str_body(&mp_pck, "ignoreUnknownValues", 19);
+
+    if (ctx->ignore_unknown_values) {
+        msgpack_pack_true(&mp_pck);
+    }
+    else {
+        msgpack_pack_false(&mp_pck);
+    }
 
     msgpack_pack_str(&mp_pck, 4);
     msgpack_pack_str_body(&mp_pck, "rows", 4);
@@ -422,8 +446,8 @@ static int bigquery_format(const void *data, size_t bytes,
     return 0;
 }
 
-static void cb_bigquery_flush(const void *data, size_t bytes,
-                              const char *tag, int tag_len,
+static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
                               void *out_context,
                               struct flb_config *config)
@@ -440,7 +464,7 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
 
-    flb_plg_trace(ctx->ins, "flushing bytes %zu", bytes);
+    flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -457,7 +481,8 @@ static void cb_bigquery_flush(const void *data, size_t bytes,
     }
 
     /* Reformat msgpack to bigquery JSON payload */
-    ret = bigquery_format(data, bytes, tag, tag_len,
+    ret = bigquery_format(event_chunk->data, event_chunk->size,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
                           &payload_buf, &payload_size, ctx);
     if (ret != 0) {
         flb_upstream_conn_release(u_conn);

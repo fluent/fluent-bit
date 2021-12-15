@@ -489,6 +489,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     msgpack_sbuffer_destroy(&file->mult_sbuf);
+    file->mult_sbuf.data = NULL;
     flb_time_zero(&file->mult_time);
 
     return 0;

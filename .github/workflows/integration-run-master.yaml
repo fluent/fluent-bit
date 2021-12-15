@@ -62,13 +62,13 @@ jobs:
         working-directory: ci/
 
   run-integration-gcp:
-    name: run-integration on GCP - k8s ${{ matrix.k8s-release }}
+    name: run integration tests on GCP - k8s ${{ matrix.k8s-release }}
     needs: publish-docker-images
     strategy:
       max-parallel: 3
       fail-fast: false
       matrix:
-        k8s-release: [ '1.19' ]#, '1.20' ] #, 1.19/stable, 1.18/stable ]
+        k8s-release: [ '1.21' ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

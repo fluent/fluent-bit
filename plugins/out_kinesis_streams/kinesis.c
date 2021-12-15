@@ -316,11 +316,11 @@ static struct flush *new_flush_buffer(const char *tag, int tag_len)
     return buf;
 }
 
-static void cb_kinesis_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
-                                struct flb_input_instance *i_ins,
-                                void *out_context,
-                                struct flb_config *config)
+static void cb_kinesis_flush(struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
 {
     struct flb_kinesis *ctx = out_context;
     int ret;
@@ -328,13 +328,15 @@ static void cb_kinesis_flush(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
-    buf = new_flush_buffer(tag, tag_len);
+    buf = new_flush_buffer(event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!buf) {
         flb_plg_error(ctx->ins, "Failed to construct flush buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = process_and_send_to_kinesis(ctx, buf, data, bytes);
+    ret = process_and_send_to_kinesis(ctx, buf,
+                                      event_chunk->data,
+                                      event_chunk->size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records to kinesis");
         kinesis_flush_destroy(buf);
@@ -452,7 +454,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "false",
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
      0, FLB_TRUE, offsetof(struct flb_kinesis, retry_requests),
      "Immediately retry failed requests to AWS services once. This option "
      "does not affect the normal Fluent Bit retry mechanism with backoff. "
