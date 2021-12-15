@@ -4,7 +4,7 @@ ARG STAGING_BASE=dokken/debian-10
 FROM dokken/debian-10 as official-install
 ARG RELEASE_URL
 RUN wget -qO - $RELEASE_URL/fluentbit.key | apt-key add -
-RUN echo "deb $RELEASE_URL/debian/buster buster" >> /etc/apt/sources.list
+RUN echo "deb $RELEASE_URL/debian/buster buster main" >> /etc/apt/sources.list
 RUN apt-get update && apt-get install -y td-agent-bit
 RUN systemctl enable td-agent-bit
 
