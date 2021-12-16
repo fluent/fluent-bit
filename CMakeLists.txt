@@ -205,6 +205,10 @@ option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
 
+if(FLB_IN_STORAGE_BACKLOG)
+  FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
+endif()
+
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
