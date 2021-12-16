@@ -1092,6 +1092,13 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
     size_t out_size;
     struct flb_input_chunk *ic = NULL;
 
+    if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
+        flb_plg_warn(in,
+                     "Tag set exceeds limit, truncating from %lu to %lu bytes",
+                     tag_len, FLB_INPUT_CHUNK_TAG_MAX);
+        tag_len = FLB_INPUT_CHUNK_TAG_MAX;
+    }
+
     if (in->event_type == FLB_INPUT_LOGS) {
         id = flb_hash_get(in->ht_log_chunks, tag, tag_len,
                           (void *) &ic, &out_size);
