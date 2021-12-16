@@ -497,7 +497,14 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+#ifdef FLB_HAVE_IN_STORAGE_BACKLOG
 extern int sb_segregate_chunks(struct flb_config *config);
+#else
+int sb_segregate_chunks(struct flb_config *config)
+{
+    return 0;
+}
+#endif
 
 int flb_engine_start(struct flb_config *config)
 {
