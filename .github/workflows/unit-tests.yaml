@@ -15,6 +15,8 @@ on:
       - master
       - 1.8
     types: [opened, edited, synchronize]
+  workflow_dispatch:
+
 jobs:
   run-unit-tests-amd64:
     name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }} unit tests run on AMD64
@@ -82,3 +84,14 @@ jobs:
           CC: gcc
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
+
+  # Required check looks at this so do not remove
+  run-all-unit-tests:
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    name: Unit tests (matrix)
+    needs: run-unit-tests-amd64
+    steps:
+      - name: Check build matrix status
+        if: ${{ needs.run-unit-tests-amd64.result != 'success' }}
+        run: exit 1
