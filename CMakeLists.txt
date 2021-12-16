@@ -260,6 +260,10 @@ if(FLB_DEV)
   set(FLB_TESTS_INTERNAL    On)
 endif()
 
+if(FLB_IN_STORAGE_BACKLOG)
+  FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
+endif()
+
 # SSL/TLS: add encryption support
 if(FLB_OUT_TD)
   set(FLB_TLS ON)
