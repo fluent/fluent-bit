@@ -547,14 +547,14 @@ static int elasticsearch_format(struct flb_config *config,
         out_buf_len = flb_sds_len(out_buf);
         if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0) {
             tmp_buf = out_buf;
-            out_buf = flb_sds_create_len(NULL, out_buf_len + sizeof(ES_BULK_UPDATE_OP_BODY) - 2);
-            out_buf_len = sprintf(out_buf, ES_BULK_UPDATE_OP_BODY, tmp_buf);
+            out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPDATE_OP_BODY) - 2);
+            out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPDATE_OP_BODY, tmp_buf);
             flb_sds_destroy(tmp_buf);
         }
         else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
             tmp_buf = out_buf;
-            out_buf = flb_sds_create_len(NULL, out_buf_len + sizeof(ES_BULK_UPSERT_OP_BODY) - 2);
-            out_buf_len = sprintf(out_buf, ES_BULK_UPSERT_OP_BODY, tmp_buf);
+            out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPSERT_OP_BODY) - 2);
+            out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPSERT_OP_BODY, tmp_buf);
             flb_sds_destroy(tmp_buf);
         }
 
