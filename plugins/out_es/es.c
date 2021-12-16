@@ -1078,7 +1078,7 @@ static struct flb_config_map config_map[] = {
      "records when retrying ES"
     },
     {
-     FLB_CONFIG_MAP_STR, "write_operation", "index",
+     FLB_CONFIG_MAP_STR, "write_operation", "create",
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, write_operation),
      "Operation to use to write in bulk requests"
     },
