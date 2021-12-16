@@ -42,11 +42,30 @@
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL  0
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
+#ifdef FLB_HAVE_IN_STORAGE_BACKLOG
+
 extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
                                                     size_t                      required_space);
 
 extern int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
                                          size_t                      required_space);
+
+
+#else
+
+ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
+                                             size_t                      required_space)
+{
+    return 0;
+}
+
+int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
+                                  size_t                      required_space)
+{
+    return 0;
+}
+
+#endif
 
 static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
                                        struct flb_input_chunk *old_ic,
