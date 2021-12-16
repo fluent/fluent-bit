@@ -66,6 +66,13 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "net.connect_timeout_log_error", "true",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout_log_error),
+     "On connection timeout, specify if it should log an error. When disabled, "
+     "the timeout is logged as a debug message"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "net.source_address", NULL,
      0, FLB_TRUE, offsetof(struct flb_net_setup, source_address),
      "Specify network address to bind for data traffic"
@@ -806,10 +813,19 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                 drop = FLB_TRUE;
 
                 if (!flb_upstream_is_shutting_down(u)) {
-                    flb_error("[upstream] connection #%i to %s:%i timed out after "
-                              "%i seconds",
-                              u_conn->fd,
-                              u->tcp_host, u->tcp_port, u->net.connect_timeout);
+
+                    if (u->net.connect_timeout_log_error) {
+                        flb_error("[upstream] connection #%i to %s:%i timed out after "
+                                  "%i seconds",
+                                  u_conn->fd,
+                                  u->tcp_host, u->tcp_port, u->net.connect_timeout);
+                    }
+                    else {
+                        flb_debug("[upstream] connection #%i to %s:%i timed out after "
+                                  "%i seconds",
+                                  u_conn->fd,
+                                  u->tcp_host, u->tcp_port, u->net.connect_timeout);
+                    }
                 }
             }
 
