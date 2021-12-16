@@ -313,10 +313,6 @@ static int elasticsearch_format(struct flb_config *config,
     msgpack_unpacked_destroy(&result);
     msgpack_unpacked_init(&result);
 
-    flb_sds_t write_op = strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0
-        ? FLB_ES_WRITE_OP_UPDATE
-        : ctx->write_operation;
-
     /* Copy logstash prefix if logstash format is enabled */
     if (ctx->logstash_format == FLB_TRUE) {
         memcpy(logstash_index, ctx->logstash_prefix, flb_sds_len(ctx->logstash_prefix));
@@ -340,14 +336,14 @@ static int elasticsearch_format(struct flb_config *config,
             index_len = snprintf(j_index,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT_WITHOUT_TYPE,
-                                 write_op,
+                                 ctx->es_action,
                                  es_index);
         }
         else {
             index_len = snprintf(j_index,
                                  ES_BULK_HEADER,
                                  ES_BULK_INDEX_FMT,
-                                 write_op,
+                                 ctx->es_action,
                                  es_index, ctx->type);
         }
     }
@@ -454,14 +450,14 @@ static int elasticsearch_format(struct flb_config *config,
                     index_len = snprintf(j_index,
                                          ES_BULK_HEADER,
                                          ES_BULK_INDEX_FMT_WITHOUT_TYPE,
-                                         write_op,
+                                         ctx->es_action,
                                          es_index);
                 }
                 else {
                     index_len = snprintf(j_index,
                                          ES_BULK_HEADER,
                                          ES_BULK_INDEX_FMT,
-                                         write_op,
+                                         ctx->es_action,
                                          es_index, ctx->type);
                 }
             }
@@ -506,14 +502,14 @@ static int elasticsearch_format(struct flb_config *config,
                 index_len = snprintf(j_index,
                                      ES_BULK_HEADER,
                                      ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
-                                     write_op,
+                                     ctx->es_action,
                                      es_index,  es_uuid);
             }
             else {
                 index_len = snprintf(j_index,
                                      ES_BULK_HEADER,
                                      ES_BULK_INDEX_FMT_ID,
-                                     write_op,
+                                     ctx->es_action,
                                      es_index, ctx->type, es_uuid);
             }
         }
@@ -524,14 +520,14 @@ static int elasticsearch_format(struct flb_config *config,
                     index_len = snprintf(j_index,
                                          ES_BULK_HEADER,
                                          ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
-                                         write_op,
+                                         ctx->es_action,
                                          es_index,  id_key_str);
                 }
                 else {
                     index_len = snprintf(j_index,
                                          ES_BULK_HEADER,
                                          ES_BULK_INDEX_FMT_ID,
-                                         write_op,
+                                         ctx->es_action,
                                          es_index, ctx->type, id_key_str);
                 }
                 flb_sds_destroy(id_key_str);

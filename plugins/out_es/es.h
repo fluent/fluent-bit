@@ -108,6 +108,8 @@ struct flb_elasticsearch {
 
     /* write operation */
     flb_sds_t write_operation;
+    /* write operation elasticsearch operation */
+    flb_sds_t es_action;
 
     /* id_key */
     flb_sds_t id_key;
