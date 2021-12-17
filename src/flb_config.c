@@ -115,6 +115,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, dns_resolver)},
 
+    {FLB_CONF_DNS_PREFERRED_ADDRESS_FAMILY,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_preferred_address_family)},
+
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
      FLB_CONF_TYPE_STR,
