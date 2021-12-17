@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Verify Dockerfiles
         uses: jbergstroem/hadolint-gh-action@v1
+        with:
+          dockerfile: "**/Dockerfile*"
 
   shellcheck-pr:
     runs-on: ubuntu-20.04
