@@ -9,8 +9,6 @@ RUN apt-get -qq update && \
                            libsasl2-2 libsasl2-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
-FROM builder
-
 ARG FLB_PREFIX
 ARG FLB_VERSION
 ARG FLB_SRC
