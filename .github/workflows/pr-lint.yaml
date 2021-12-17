@@ -7,42 +7,24 @@ jobs:
 
   hadolint-pr:
     runs-on: ubuntu-latest
-    name: Hadolint
+    name: Hadolint PR files
     steps:
       - uses: actions/checkout@v2
-      - name: Verify Dockerfiles
-        uses: jbergstroem/hadolint-gh-action@v1
-        with:
-          dockerfile: "**/Dockerfile*"
+      - uses: reviewdog/action-hadolint@v1
 
   shellcheck-pr:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     name: Shellcheck
     steps:
       - uses: actions/checkout@v2
-      # Pre-installed on ubuntu-2004 as well but using container to make it portable
-      # We could do it all in a single find command but ensuring that only exits at the end
-      # or on pipefail is not always simple/robust.
-      - name: Verify shell scripts
-        run: |
-          exit_code=0
-          docker pull koalaman/shellcheck:stable
-          while IFS= read -r -d '' file; do
-              echo "Shellcheck: .${file##"./"}"
-              if ! docker run -i --rm koalaman/shellcheck:stable - < "$file"; then
-                  exit_code=1
-              fi
-          done < <(find . -type f \( -name '*.sh' -o -name '*.bash' \) -print0)
-          exit $exit_code
-        shell: bash
+      - uses: ludeeus/action-shellcheck@master
 
   actionlint-pr:
     runs-on: ubuntu-latest
     name: Actionlint
     steps:
       - uses: actions/checkout@v2
-      - name: Check workflow files
-        run: |
+      - run: |
           echo "::add-matcher::.github/actionlint-matcher.json"
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
