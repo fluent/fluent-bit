@@ -108,6 +108,6 @@ flb_sds_t flb_sds_increase(flb_sds_t s, size_t len);
 flb_sds_t flb_sds_copy(flb_sds_t s, const char *str, int len);
 void flb_sds_destroy(flb_sds_t s);
 flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...);
-int flb_sds_snprintf_realloc(flb_sds_t *str, size_t size, const char *fmt, ...);
+int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...);
 
 #endif
