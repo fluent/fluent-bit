@@ -47,6 +47,12 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "net.dns.preferred_address_family", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_preferred_address_family),
+     "Select the preferred DNS result type (IPv4 or IPv6)"
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "net.keepalive", "true",
      0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive),
      "Enable or disable Keepalive support"
@@ -121,6 +127,13 @@ struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
         if (config->dns_resolver != NULL) {
             if (strcmp(upstream_net[config_index].name, "net.dns.resolver") == 0) {
                 upstream_net[config_index].def_value = config->dns_resolver;
+            }
+        }
+        if (config->dns_preferred_address_family != NULL) {
+            if (strcmp(upstream_net[config_index].name,
+                       "net.dns.preferred_address_family") == 0) {
+                upstream_net[config_index].def_value = \
+                    config->dns_preferred_address_family;
             }
         }
     }
