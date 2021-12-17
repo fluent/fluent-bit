@@ -409,10 +409,10 @@ void flb_sds_destroy(flb_sds_t s)
 }
 
 /*
- * flb_sds_snprintf_realloc is a wrapper of snprintf.
+ * flb_sds_snprintf is a wrapper of snprintf.
  * The difference is that this function can increase the buffer of flb_sds_t.
  */
-int flb_sds_snprintf_realloc(flb_sds_t *str, size_t size, const char *fmt, ...)
+int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
 {
     va_list va;
     flb_sds_t tmp;
