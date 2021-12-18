@@ -343,16 +343,16 @@ static int elasticsearch_format(struct flb_config *config,
                  ctx->index, &tm);
         es_index = index_formatted;
         if (ctx->suppress_type_name) {
-            index_len = flb_sds_snprintf_realloc(&j_index,
-                                                 flb_sds_alloc(j_index),
-                                                 ES_BULK_INDEX_FMT_WITHOUT_TYPE,
-                                                 es_index);
+            index_len = flb_sds_snprintf(&j_index,
+                                         flb_sds_alloc(j_index),
+                                         ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                         es_index);
         }
         else {
-            index_len = flb_sds_snprintf_realloc(&j_index,
-                                                 flb_sds_alloc(j_index),
-                                                 ES_BULK_INDEX_FMT,
-                                                 es_index, ctx->type);
+            index_len = flb_sds_snprintf(&j_index,
+                                         flb_sds_alloc(j_index),
+                                         ES_BULK_INDEX_FMT,
+                                         es_index, ctx->type);
         }
     }
 
@@ -455,16 +455,16 @@ static int elasticsearch_format(struct flb_config *config,
             es_index = logstash_index;
             if (ctx->generate_id == FLB_FALSE) {
                 if (ctx->suppress_type_name) {
-                    index_len = flb_sds_snprintf_realloc(&j_index,
-                                                         flb_sds_alloc(j_index),
-                                                         ES_BULK_INDEX_FMT_WITHOUT_TYPE,
-                                                         es_index);
+                    index_len = flb_sds_snprintf(&j_index,
+                                                 flb_sds_alloc(j_index),
+                                                 ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                                 es_index);
                 }
                 else {
-                    index_len = flb_sds_snprintf_realloc(&j_index,
-                                                         flb_sds_alloc(j_index),
-                                                         ES_BULK_INDEX_FMT,
-                                                         es_index, ctx->type);
+                    index_len = flb_sds_snprintf(&j_index,
+                                                 flb_sds_alloc(j_index),
+                                                 ES_BULK_INDEX_FMT,
+                                                 es_index, ctx->type);
                 }
             }
         }
@@ -506,32 +506,32 @@ static int elasticsearch_format(struct flb_config *config,
                      hash[0], hash[1], hash[2], hash[3],
                      hash[4], hash[5], hash[6], hash[7]);
             if (ctx->suppress_type_name) {
-                index_len = flb_sds_snprintf_realloc(&j_index,
-                                                     flb_sds_alloc(j_index),
-                                                     ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
-                                                     es_index,  es_uuid);
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                             es_index,  es_uuid);
             }
             else {
-                index_len = flb_sds_snprintf_realloc(&j_index,
-                                                     flb_sds_alloc(j_index),
-                                                     ES_BULK_INDEX_FMT_ID,
-                                                     es_index, ctx->type, es_uuid);
+                index_len = flb_sds_snprintf(&j_index,
+                                             flb_sds_alloc(j_index),
+                                             ES_BULK_INDEX_FMT_ID,
+                                             es_index, ctx->type, es_uuid);
             }
         }
         if (ctx->ra_id_key) {
             id_key_str = es_get_id_value(ctx ,&map);
             if (id_key_str) {
                 if (ctx->suppress_type_name) {
-                    index_len = flb_sds_snprintf_realloc(&j_index,
-                                                         flb_sds_alloc(j_index),
-                                                         ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
-                                                         es_index,  id_key_str);
+                    index_len = flb_sds_snprintf(&j_index,
+                                                 flb_sds_alloc(j_index),
+                                                 ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                                 es_index,  id_key_str);
                 }
                 else {
-                    index_len = flb_sds_snprintf_realloc(&j_index,
-                                                         flb_sds_alloc(j_index),
-                                                         ES_BULK_INDEX_FMT_ID,
-                                                         es_index, ctx->type, id_key_str);
+                    index_len = flb_sds_snprintf(&j_index,
+                                                 flb_sds_alloc(j_index),
+                                                 ES_BULK_INDEX_FMT_ID,
+                                                 es_index, ctx->type, id_key_str);
                 }
                 flb_sds_destroy(id_key_str);
                 id_key_str = NULL;
