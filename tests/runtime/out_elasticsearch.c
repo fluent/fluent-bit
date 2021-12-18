@@ -13,7 +13,7 @@ static void cb_check_index_type(void *ctx, int ffd,
 {
     char *p;
     char *out_js = res_data;
-    char *index_line = "{\"index\":{\"_index\":\"index_test\",\"_type\":\"type_test\"}";
+    char *index_line = ":{\"_index\":\"index_test\",\"_type\":\"type_test\"}";
 
     p = strstr(out_js, index_line);
     TEST_CHECK(p != NULL);
@@ -27,7 +27,7 @@ static void cb_check_logstash_format(void *ctx, int ffd,
 {
     char *p;
     char *out_js = res_data;
-    char *index_line = "{\"index\":{\"_index\":\"prefix-2015-11-24\",\"_type\":\"_doc\"}";
+    char *index_line = ":{\"_index\":\"prefix-2015-11-24\",\"_type\":\"_doc\"}";
 
     p = strstr(out_js, index_line);
     TEST_CHECK(p != NULL);
