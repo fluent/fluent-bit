@@ -259,8 +259,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             flb_es_conf_destroy(ctx);
             return NULL;
         }
-        if (strcasecmp(ctx->es_action, FLB_ES_WRITE_OP_UPDATE)
-            && !ctx->ra_id_key && ctx->generate_id != FLB_FALSE) {
+        if (strcasecmp(ctx->es_action, FLB_ES_WRITE_OP_UPDATE) == 0
+            && !ctx->ra_id_key && ctx->generate_id == FLB_FALSE) {
             flb_plg_error(ins, "Id_Key or Generate_Id must be set when Write_Operation update or upsert");
             flb_es_conf_destroy(ctx);
             return NULL;

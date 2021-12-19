@@ -264,6 +264,7 @@ void flb_test_write_operation_update()
     /* Override defaults of index and type */
     flb_output_set(ctx, out_ffd,
                    "Write_Operation", "Update",
+                   "Generate_Id", "True",
                    NULL);
 
     /* Enable test mode */
@@ -309,6 +310,7 @@ void flb_test_write_operation_upsert()
     /* Override defaults of index and type */
     flb_output_set(ctx, out_ffd,
                    "Write_Operation", "Upsert",
+                   "Generate_Id", "True",
                    NULL);
 
     /* Enable test mode */
