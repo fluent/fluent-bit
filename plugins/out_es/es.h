@@ -35,7 +35,6 @@
 #define FLB_ES_WRITE_OP_CREATE    "create"
 #define FLB_ES_WRITE_OP_UPDATE    "update"
 #define FLB_ES_WRITE_OP_UPSERT    "upsert"
-#define FLB_ES_DEFAULT_WRITE_OP   FLB_ES_WRITE_OP_INDEX
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */

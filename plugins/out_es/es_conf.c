@@ -425,6 +425,9 @@ int flb_es_conf_destroy(struct flb_elasticsearch *ctx)
         flb_ra_destroy(ctx->ra_id_key);
         ctx->ra_id_key = NULL;
     }
+    if (ctx->es_action) {
+        flb_free(ctx->es_action);
+    }
 
 #ifdef FLB_HAVE_AWS
     if (ctx->base_aws_provider) {
