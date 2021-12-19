@@ -32,7 +32,6 @@
  * value is passed to Chunk I/O.
  */
 #define FLB_INPUT_CHUNK_SIZE           262144  /* 256KB (hint) */
-
 /*
  * Defines a maximum size for a Chunk in the file system: note that despite
  * this is considered a limit, a Chunk size might get greater than this.
@@ -50,14 +49,18 @@
 #define FLB_INPUT_CHUNK_TYPE_LOG      0
 #define FLB_INPUT_CHUNK_TYPE_METRIC   1
 
+/* Max length for Tag */
+#define FLB_INPUT_CHUNK_TAG_MAX        (65535 - FLB_INPUT_CHUNK_META_HEADER)
+
 struct flb_input_chunk {
-    int event_type;                 /* chunk type: logs or metrics */
-    int busy;                       /* buffer is being flushed  */
-    int fs_backlog;                 /* chunk originated from fs backlog */
-    int sp_done;                    /* sp already processed this chunk */
+    int  event_type;                 /* chunk type: logs or metrics */
+    bool fs_counted;
+    int  busy;                       /* buffer is being flushed  */
+    int  fs_backlog;                 /* chunk originated from fs backlog */
+    int  sp_done;                    /* sp already processed this chunk */
 #ifdef FLB_HAVE_METRICS
-    int total_records;              /* total records in the chunk */
-    int added_records;              /* recently added records */
+    int  total_records;              /* total records in the chunk */
+    int  added_records;              /* recently added records */
 #endif
     void *chunk;                    /* context of struct cio_chunk */
     off_t stream_off;               /* stream offset */

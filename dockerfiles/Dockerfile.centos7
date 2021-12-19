@@ -17,6 +17,7 @@ WORKDIR /src/build
 
 RUN cmake3 -DCMAKE_INSTALL_PREFIX=/opt/td-agent-bit/ -DCMAKE_INSTALL_SYSCONFDIR=/etc/ \
            -DFLB_RELEASE=On -DFLB_TRACE=On -DFLB_TD=On \
+           -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On \
            -DFLB_SQLDB=On -DFLB_HTTP_SERVER=On \
            -DFLB_OUT_KAFKA=On \
            -DFLB_OUT_PGSQL=On ../

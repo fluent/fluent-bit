@@ -18,6 +18,7 @@ lib/monkey/include/monkey/mk_core/mk_core_info.h
 
 packaging/packages
 packaging/releases
+packaging/latest/
 workflow/
 *.key
 *.log

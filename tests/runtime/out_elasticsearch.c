@@ -662,8 +662,80 @@ void flb_test_div0()
     flb_destroy(ctx);
 }
 
+
+static void cb_check_long_index(void *ctx, int ffd,
+                                int res_ret, void *res_data, size_t res_size,
+                                void *data)
+{
+    char *p;
+    char *out_js = res_data;
+    char long_index[256] = {0};
+    int i;
+
+    for (i=0; i<sizeof(long_index)-1; i++) {
+        long_index[i] = '0' + (i%10);
+    }
+
+    p = strstr(out_js, &long_index[0]);
+    TEST_CHECK(p != NULL);
+    flb_free(res_data);
+}
+
+/* https://github.com/fluent/fluent-bit/issues/4311 */
+void flb_test_long_index()
+{
+    int ret;
+    int size = sizeof(JSON_ES) -1;
+    char long_index[256] = {0};
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int i;
+
+    for (i=0; i<sizeof(long_index)-1; i++) {
+        long_index[i] = '0' + (i%10);
+    }
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "generate_id", "true",
+                   "index", &long_index[0],
+                   NULL);
+
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_long_index,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *)JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"long_index"            , flb_test_long_index },
     {"div0_error"            , flb_test_div0 },
     {"write_operation_index" , flb_test_write_operation_index },
     {"write_operation_create", flb_test_write_operation_create },

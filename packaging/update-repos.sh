@@ -53,33 +53,30 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     CODENAME=${DEB_REPO##*/}
     echo "Updating $DEB_REPO for $CODENAME"
 
-    # Sign our packages
-    find "$REPO_DIR" -name "td-agent-bit*.deb" -exec debsigs --sign=origin -k "$GPG_KEY" {} \;
+    # We use Aptly to create repos with a local temporary directory as the root.
+    # Once complete, we then move these to the output directory for upload.
+    # Based on https://github.com/spotify/debify/blob/master/debify.sh
+    APTLY_REPO_NAME="debify-$CODENAME"
+    APTLY_ROOTDIR=$(mktemp -d)
+    APTLY_CONFIG=$(mktemp)
 
-    # Set up directory structure
-    mkdir -p "$REPO_DIR/dists/$CODENAME"
-    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit"
-    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers"
-    mkdir -p "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra"
-    mv "$REPO_DIR"/td-agent-bit*-headers-extra.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers-extra/"
-    mv "$REPO_DIR"/td-agent-bit*-headers.deb "$REPO_DIR/pool/main/t/td-agent-bit-headers/"
-    mv "$REPO_DIR"/td-agent-bit*.deb "$REPO_DIR/pool/main/t/td-agent-bit/"
+    cat << EOF > "$APTLY_CONFIG"
+{
+    "rootDir": "$APTLY_ROOTDIR/"
+}
+EOF
+    cat "$APTLY_CONFIG"
 
-    # All paths must be relative and using `dists/CODENAME` for the package info
-    pushd "$REPO_DIR"
-    apt-ftparchive packages . > "$REPO_DIR/dists/$CODENAME"/Packages
-    apt-ftparchive contents . > "$REPO_DIR/dists/$CODENAME"/Contents
-    popd
-    gzip -c -f "$REPO_DIR/dists/$CODENAME"/Packages > "$REPO_DIR/dists/$CODENAME"/Packages.gz
-    gzip -c -f "$REPO_DIR/dists/$CODENAME"/Contents > "$REPO_DIR/dists/$CODENAME"/Contents.gz
+    aptly -config="$APTLY_CONFIG" repo create \
+        -component="main" \
+        -distribution="$CODENAME" \
+        "$APTLY_REPO_NAME"
 
-    apt-ftparchive \
-        -o APT::FTPArchive::Release::Origin="Fluent Bit" \
-        -o APT::FTPArchive::Release::Suite="focal" \
-        -o APT::FTPArchive::Release::Codename="$CODENAME" \
-        -o APT::FTPArchive::Release::Version="$VERSION" \
-        -o APT::FTPArchive::Release::Architectures="amd64 arm64 armhf" \
-        -o APT::FTPArchive::Release::Components="main" \
-        release "$REPO_DIR/dists/$CODENAME" > "$REPO_DIR/dists/$CODENAME"/Release
-    gpg --yes --clearsign -o "$REPO_DIR/dists/$CODENAME"/InRelease --local-user "$GPG_KEY" --detach-sign "$REPO_DIR/dists/$CODENAME"/Release
+    aptly -config="$APTLY_CONFIG" repo add "$APTLY_REPO_NAME" "$REPO_DIR/"
+    aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
+    aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
+    mv "$APTLY_ROOTDIR"/public/* "$REPO_DIR"/
+
+    # Remove unnecessary files
+    rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
 done
