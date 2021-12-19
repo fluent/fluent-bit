@@ -45,6 +45,11 @@ static inline int flb_router_match_type(int in_event_type,
     return FLB_TRUE;
 }
 
+int flb_router_connect(struct flb_input_instance *in,
+                       struct flb_output_instance *out);
+int flb_router_connect_direct(struct flb_input_instance *in,
+                              struct flb_output_instance *out);
+
 int flb_router_match(const char *tag, int tag_len,
                      const char *match, void *match_regex);
 int flb_router_io_set(struct flb_config *config);

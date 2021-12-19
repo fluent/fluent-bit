@@ -279,6 +279,8 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
 
 int flb_ml_parsers_init(struct flb_config *ctx);
 
+void flb_ml_flush_pending_now(struct flb_ml *ml);
+
 void flb_ml_flush_parser_instance(struct flb_ml *ml,
                                   struct flb_ml_parser_ins *parser_i,
                                   uint64_t stream_id);
@@ -316,6 +318,10 @@ int flb_ml_init(struct flb_config *config);
 int flb_ml_exit(struct flb_config *config);
 
 int flb_ml_type_lookup(char *str);
+
+int flb_ml_flush_stdout(struct flb_ml_parser *parser,
+                        struct flb_ml_stream *mst,
+                        void *data, char *buf_data, size_t buf_size);
 
 #include "flb_ml_mode.h"
 

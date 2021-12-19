@@ -136,6 +136,12 @@ int mk_event_timeout_create(struct mk_event_loop *loop,
     return _mk_event_timeout_create(ctx, sec, nsec, data);
 }
 
+/* Disable timer */
+int mk_event_timeout_disable(struct mk_event_loop *loop, void *data)
+{
+    return mk_event_del(loop, (struct mk_event *) data);
+}
+
 /* Destroy timer */
 int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data)
 {

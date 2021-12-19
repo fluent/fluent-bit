@@ -15,3 +15,17 @@ init/fluent-bit.service
 lib/chunkio/include/chunkio/cio_version.h
 lib/monkey/monkey.service
 lib/monkey/include/monkey/mk_core/mk_core_info.h
+
+packaging/packages
+packaging/releases
+packaging/latest/
+workflow/
+*.key
+*.log
+
+# clangd files
+.cache/
+compile_commands.json
+
+workflow/
+.kitchen/

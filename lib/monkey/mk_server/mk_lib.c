@@ -32,6 +32,7 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_fifo.h>
 #include <monkey/mk_utils.h>
+#include <monkey/mk_tls.h>
 
 #define config_eq(a, b) strcasecmp(a, b)
 
@@ -51,7 +52,7 @@ mk_ctx_t *mk_create()
 {
     mk_ctx_t *ctx;
 
-    ctx = mk_mem_alloc(sizeof(mk_ctx_t));
+    ctx = mk_mem_alloc_z(sizeof(mk_ctx_t));
     if (!ctx) {
         return NULL;
     }
@@ -66,7 +67,8 @@ mk_ctx_t *mk_create()
      * for further communication between the caller (user) and HTTP end-point
      * callbacks.
      */
-    ctx->fifo = mk_fifo_create(&mk_server_fifo_key, ctx->server);
+    ctx->fifo = mk_fifo_create(NULL, ctx->server);
+    ctx->fifo->key = &mk_server_fifo_key;
 
     /*
      * FIFO: Set workers callback associated to the Monkey scheduler to prepare them
@@ -96,7 +98,7 @@ static inline int mk_lib_yield(mk_request_t *req)
         return -1;
     }
 
-    th = pthread_getspecific(mk_thread_key);
+    th = MK_TLS_GET(mk_thread);
     channel = req->session->channel;
 
     channel->thread = th;

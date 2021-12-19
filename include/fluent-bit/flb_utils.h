@@ -66,4 +66,8 @@ int flb_utils_url_split(const char *in_url, char **out_protocol,
 int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
                               char **out_username, char **out_password,
                               char **out_host, char **out_port);
+int flb_utils_read_file(char *path, char **out_buf, size_t *out_size);
+int flb_utils_uuid_v4_gen(char *buf);
+int flb_utils_get_machine_id(char **out_id, size_t *out_size);
+
 #endif

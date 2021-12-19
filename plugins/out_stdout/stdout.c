@@ -24,13 +24,11 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
+#include <fluent-bit/flb_metrics.h>
+
 #include <msgpack.h>
 #include "stdout.h"
 
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_encode_text.h>
-#include <cmetrics/cmt_decode_msgpack.h>
 
 static int cb_stdout_init(struct flb_output_instance *ins,
                           struct flb_config *config, void *data)
@@ -98,6 +96,7 @@ static int cb_stdout_init(struct flb_output_instance *ins,
     return 0;
 }
 
+#ifdef FLB_HAVE_METRICS
 static void print_metrics_text(struct flb_output_instance *ins,
                                const void *data, size_t bytes)
 {
@@ -124,10 +123,11 @@ static void print_metrics_text(struct flb_output_instance *ins,
 
     cmt_encode_text_destroy(text);
 }
+#endif
 
-static void cb_stdout_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
-                            struct flb_input_instance *ins,
+static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
+                            struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)
 {
@@ -140,15 +140,20 @@ static void cb_stdout_flush(const void *data, size_t bytes,
     struct flb_time tmp;
     msgpack_object *p;
 
+#ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
-    if (flb_input_event_type_is_metric(ins)) {
-        print_metrics_text(ctx->ins, (char *) data, bytes);
+    if (event_chunk->type == FLB_EVENT_TYPE_METRIC) {
+        print_metrics_text(ctx->ins, (char *)
+                           event_chunk->data,
+                           event_chunk->size);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
+#endif
 
     /* Assuming data is a log entry...*/
     if (ctx->out_format != FLB_PACK_JSON_FORMAT_NONE) {
-        json = flb_pack_msgpack_to_json_format(data, bytes,
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                               event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
                                                ctx->date_key);
@@ -165,17 +170,11 @@ static void cb_stdout_flush(const void *data, size_t bytes,
         fflush(stdout);
     }
     else {
-        /* A tag might not contain a NULL byte */
-        buf = flb_malloc(tag_len + 1);
-        if (!buf) {
-            flb_errno();
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-        memcpy(buf, tag, tag_len);
-        buf[tag_len] = '\0';
         msgpack_unpacked_init(&result);
-        while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
-            printf("[%zd] %s: [", cnt++, buf);
+        while (msgpack_unpack_next(&result,
+                                   event_chunk->data,
+                                   event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
+            printf("[%zd] %s: [", cnt++, event_chunk->tag);
             flb_time_pop_from_msgpack(&tmp, &result, &p);
             printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
             msgpack_object_print(stdout, *p);

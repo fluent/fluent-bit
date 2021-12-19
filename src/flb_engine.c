@@ -28,6 +28,7 @@
 
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_error.h>
@@ -35,6 +36,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_http_server.h>
@@ -43,7 +45,7 @@
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
-#include <cmetrics/cmetrics.h>
+#include <fluent-bit/flb_metrics.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -125,7 +127,8 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
     flb_upstream_conn_timeouts(&ctx->upstreams);
 }
 
-static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config)
+static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
+                                      struct flb_config *config)
 {
     int ret;
     int bytes;
@@ -136,6 +139,7 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     uint32_t type;
     uint32_t key;
     uint64_t val;
+    char *name;
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
@@ -187,15 +191,24 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
     if (flb_output_is_threaded(ins) == FLB_FALSE) {
         flb_output_flush_finished(config, out_id);
     }
+    name = (char *) flb_output_name(ins);
 
-    /* A thread has finished, delete it */
+    /* A task has finished, delete it */
     if (ret == FLB_OK) {
+        /* cmetrics */
+        cmt_counter_add(ins->cmt_proc_records, ts, task->event_chunk->total_events,
+                        1, (char *[]) {name});
 
-        /* Update metrics */
+        cmt_counter_add(ins->cmt_proc_bytes, ts, task->event_chunk->size,
+                        1, (char *[]) {name});
+
+        /* [OLD API] Update metrics */
 #ifdef FLB_HAVE_METRICS
         if (ins->metrics) {
-            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS, task->records, ins->metrics);
-            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES, task->size, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_RECORDS,
+                            task->event_chunk->total_events, ins->metrics);
+            flb_metrics_sum(FLB_METRIC_OUT_OK_BYTES,
+                            task->event_chunk->size, ins->metrics);
         }
 #endif
         /* Inform the user if a 'retry' succedeed */
@@ -221,8 +234,13 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
-    else if (ret == FLB_RETRY) {
+    else if (ret == FLB_RETRY && config->is_running && !config->is_shutting_down) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
+            /* cmetrics: output_dropped_records_total */
+            cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+                            1, (char *[]) {name});
+
+            /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
 #endif
@@ -245,6 +263,13 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
              * - No enough memory (unlikely)
              * - It reached the maximum number of re-tries
              */
+
+            /* cmetrics */
+            cmt_counter_inc(ins->cmt_retries_failed, ts, 1, (char *[]) {name});
+            cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+                            1, (char *[]) {name});
+
+            /* OLD metrics API */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY_FAILED, 1, ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
@@ -293,7 +318,12 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
                      flb_input_name(task->i_ins),
                      flb_output_name(ins), out_id);
 
-            /* Update the metrics since a new retry is coming */
+            /* cmetrics */
+            cmt_counter_inc(ins->cmt_retries, ts, 1, (char *[]) {name});
+            cmt_counter_add(ins->cmt_retried_records, ts, task->records,
+                            1, (char *[]) {name});
+
+            /* OLD metrics API: update the metrics since a new retry is coming */
 #ifdef FLB_HAVE_METRICS
             flb_metrics_sum(FLB_METRIC_OUT_RETRY, 1, ins->metrics);
             flb_metrics_sum(FLB_METRIC_OUT_RETRIED_RECORDS, task->records, ins->metrics);
@@ -301,6 +331,12 @@ static inline int handle_output_event(flb_pipefd_t fd, struct flb_config *config
         }
     }
     else if (ret == FLB_ERROR) {
+        /* cmetrics */
+        cmt_counter_inc(ins->cmt_errors, ts, 1, (char *[]) {name});
+        cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
+                        1, (char *[]) {name});
+
+        /* OLD API */
 #ifdef FLB_HAVE_METRICS
         flb_metrics_sum(FLB_METRIC_OUT_ERROR, 1, ins->metrics);
         flb_metrics_sum(FLB_METRIC_OUT_DROPPED_RECORDS, task->records, ins->metrics);
@@ -461,17 +497,25 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+extern int sb_segregate_chunks(struct flb_config *config);
+
 int flb_engine_start(struct flb_config *config)
 {
     int ret;
+    uint64_t ts;
     char tmp[16];
     struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_sched *sched;
+    struct flb_net_dns dns_ctx;
 
     /* Initialize the networking layer */
-    flb_net_init();
+    flb_net_lib_init();
+
+    flb_net_ctx_init(&dns_ctx);
+    flb_net_dns_ctx_init();
+    flb_net_dns_ctx_set(&dns_ctx);
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
@@ -512,6 +556,12 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
+    /* Initialize custom plugins */
+    ret = flb_custom_init_all(config);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Start the Storage engine */
     ret = flb_storage_create(config);
     if (ret == -1) {
@@ -533,6 +583,7 @@ int flb_engine_start(struct flb_config *config)
     /* Register the scheduler context */
     flb_sched_ctx_init();
     flb_sched_ctx_set(sched);
+
 
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
@@ -632,12 +683,25 @@ int flb_engine_start(struct flb_config *config)
     /* Signal that we have started */
     flb_engine_started(config);
 
+    ret = sb_segregate_chunks(config);
+
+    if (ret)
+    {
+        flb_error("[engine] could not segregate backlog chunks");
+        return -2;
+    }
+
     while (1) {
         mk_event_wait(evl);
         mk_event_foreach(event, evl) {
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == FLB_ENGINE_STOP) {
+                    if (config->grace_count == 0) {
+                        flb_warn("[engine] service will shutdown in max %u seconds",
+                                 config->grace);
+                    }
+
                     /*
                      * We are preparing to shutdown, we give a graceful time
                      * of 'config->grace' seconds to process any pending event.
@@ -645,18 +709,29 @@ int flb_engine_start(struct flb_config *config)
                     event = &config->event_shutdown;
                     event->mask = MK_EVENT_EMPTY;
                     event->status = MK_EVENT_NONE;
+
+                    /*
+                     * Configure a timer of 1 second, on expiration the code will
+                     * jump into the FLB_ENGINE_SHUTDOWN condition where it will
+                     * check if the grace period has finished, or if there are
+                     * any remaining tasks.
+                     *
+                     * If no tasks exists, there is no need to wait for the maximum
+                     * grace period.
+                     */
                     config->shutdown_fd = mk_event_timeout_create(evl,
-                                                                  config->grace,
+                                                                  1,
                                                                   0,
                                                                   event);
-                    flb_warn("[engine] service will stop in %u seconds", config->grace);
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
-                    flb_info("[engine] service stopped");
                     if (config->shutdown_fd > 0) {
                         mk_event_timeout_destroy(config->evl,
                                                  &config->event_shutdown);
                     }
+
+                    /* Increase the grace counter */
+                    config->grace_count++;
 
                     /*
                      * Grace period has finished, but we need to check if there is
@@ -666,13 +741,18 @@ int flb_engine_start(struct flb_config *config)
                      * wait again for the grace period and re-check again.
                      */
                     ret = flb_task_running_count(config);
-                    if (ret > 0) {
-                        flb_warn("[engine] shutdown delayed, grace period has "
-                                 "finished but some tasks are still running.");
-                        flb_task_running_print(config);
+                    if (ret > 0 && config->grace_count < config->grace) {
+                        if (config->grace_count == 1) {
+                            flb_task_running_print(config);
+                        }
                         flb_engine_exit(config);
                     }
                     else {
+                        if (ret > 0) {
+                            flb_task_running_print(config);
+                        }
+                        flb_info("[engine] service has stopped (%i pending tasks)",
+                                 ret);
                         ret = config->exit_status_code;
                         flb_engine_shutdown(config);
                         config = NULL;
@@ -703,16 +783,19 @@ int flb_engine_start(struct flb_config *config)
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
+                ts = cmt_time_now();
+
                 /*
                  * Event originated by an output plugin. likely a Task return
                  * status.
                  */
-                handle_output_event(event->fd, config);
+                handle_output_event(event->fd, ts, config);
             }
         }
 
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
+            flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
 
@@ -749,6 +832,7 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_filter_exit(config);
     flb_input_exit_all(config);
     flb_output_exit(config);
+    flb_custom_exit(config);
 
     /* Destroy the storage context */
     flb_storage_destroy(config);
@@ -775,6 +859,7 @@ int flb_engine_exit(struct flb_config *config)
     uint64_t val = FLB_ENGINE_EV_STOP;
 
     config->is_ingestion_active = FLB_FALSE;
+    config->is_shutting_down = FLB_TRUE;
 
     flb_input_pause_all(config);
 

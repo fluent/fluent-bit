@@ -25,4 +25,8 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
                      struct mk_http_session *session,
                      struct mk_http_request *request);
 
+int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
+                           struct mk_http_session *session,
+                           struct mk_http_request *request);
+
 #endif

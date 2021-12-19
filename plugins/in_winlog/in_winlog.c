@@ -244,6 +244,12 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct winlog_config, string_inserts),
       "Whether to include StringInserts in output records"
     },
+    {
+      FLB_CONFIG_MAP_BOOL, "use_ansi", "false",
+      0, FLB_TRUE, offsetof(struct winlog_config, use_ansi),
+      "Use ANSI encoding on eventlog messages"
+    },
+
     /* EOF */
     {0}
 };

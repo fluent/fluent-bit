@@ -216,7 +216,7 @@ int cio_stream_delete(struct cio_stream *st)
         if (!path) {
             cio_log_error(ctx,
                           "content from stream '%s' has been deleted, but the "
-                          "directory might still exists.");
+                          "directory might still exists.", path);
             return -1;
         }
 

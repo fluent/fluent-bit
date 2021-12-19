@@ -103,8 +103,8 @@ static int out_lib_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void out_lib_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void out_lib_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -125,11 +125,11 @@ static void out_lib_flush(const void *data, size_t bytes,
     struct flb_out_lib_config *ctx = out_context;
     (void) i_ins;
     (void) config;
-    (void) tag;
-    (void) tag_len;
 
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (ctx->max_records > 0 && count >= ctx->max_records) {
             break;
         }
@@ -145,7 +145,8 @@ static void out_lib_flush(const void *data, size_t bytes,
                 FLB_OUTPUT_RETURN(FLB_ERROR);
             }
 
-            memcpy(data_for_user, (char *) data + last_off, alloc_size);
+            memcpy(data_for_user,
+                   (char *) event_chunk->data + last_off, alloc_size);
             data_size = alloc_size;
             break;
         case FLB_OUT_LIB_FMT_JSON:

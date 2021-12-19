@@ -125,6 +125,7 @@ ssize_t flb_regex_do(struct flb_regex *r, const char *str, size_t slen,
 
     region = onig_region_new();
     if (!region) {
+        flb_errno();
         result->region = NULL;
         return -1;
     }

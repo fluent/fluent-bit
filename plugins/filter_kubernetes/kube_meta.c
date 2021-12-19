@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <sys/types.h>
@@ -109,7 +110,7 @@ static int get_token_with_command(const char *command,
     res = flb_calloc(1, FLB_KUBE_TOKEN_BUF_SIZE);
     if (!res) {
         flb_errno();
-        fclose(fp);
+        pclose(fp);
         return -1;
     }
     
@@ -120,7 +121,7 @@ static int get_token_with_command(const char *command,
             if (temp == NULL) {
                 flb_errno();
                 flb_free(res);
-                fclose(fp);
+                pclose(fp);
                 return -1;
             }
             res = temp;
@@ -131,11 +132,11 @@ static int get_token_with_command(const char *command,
 
     if (strlen(res) < 1) {
         flb_free(res);
-        fclose(fp);
+        pclose(fp);
         return -1;
     }
     
-    fclose(fp);
+    pclose(fp);
 
     *out_buf = res;
     *out_size = strlen(res);
@@ -229,6 +230,23 @@ static int refresh_token_if_needed(struct flb_kube *ctx)
     return 0;
 }
 
+static void expose_k8s_meta(struct flb_kube *ctx)
+{
+    char *tmp;
+    struct flb_env *env;
+
+    env = ctx->config->env;
+
+    flb_env_set(env, "k8s", "enabled");
+    flb_env_set(env, "k8s.namespace", ctx->namespace);
+    flb_env_set(env, "k8s.pod_name", ctx->podname);
+
+    tmp = (char *) flb_env_get(env, "NODE_NAME");
+    if (tmp) {
+        flb_env_set(env, "k8s.node_name", tmp);
+    }
+}
+
 /* Load local information from a POD context */
 static int get_local_pod_info(struct flb_kube *ctx)
 {
@@ -273,6 +291,7 @@ static int get_local_pod_info(struct flb_kube *ctx)
         return FLB_FALSE;
     }
 
+    expose_k8s_meta(ctx);
     return FLB_TRUE;
 }
 
@@ -833,6 +852,62 @@ static int search_item_in_items(struct flb_kube_meta *meta,
     return ret;
 }
 
+
+static int merge_meta_from_tag(struct flb_kube *ctx, struct flb_kube_meta *meta,
+                               char **out_buf, size_t *out_size)
+{
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    struct flb_mp_map_header mh;
+
+    /* Initialize output msgpack buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    flb_mp_map_header_init(&mh, &mp_pck);
+
+    if (meta->podname != NULL) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(&mp_pck, 8);
+        msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+        msgpack_pack_str(&mp_pck, meta->podname_len);
+        msgpack_pack_str_body(&mp_pck, meta->podname, meta->podname_len);
+    }
+
+    if (meta->namespace != NULL) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(&mp_pck, 14);
+        msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+        msgpack_pack_str(&mp_pck, meta->namespace_len);
+        msgpack_pack_str_body(&mp_pck, meta->namespace, meta->namespace_len);
+    }
+
+    if (meta->container_name != NULL) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(&mp_pck, 14);
+        msgpack_pack_str_body(&mp_pck, "container_name", 14);
+        msgpack_pack_str(&mp_pck, meta->container_name_len);
+        msgpack_pack_str_body(&mp_pck, meta->container_name,
+                              meta->container_name_len);
+    }
+    if (meta->docker_id != NULL) {
+        flb_mp_map_header_append(&mh);
+        msgpack_pack_str(&mp_pck, 9);
+        msgpack_pack_str_body(&mp_pck, "docker_id", 9);
+        msgpack_pack_str(&mp_pck, meta->docker_id_len);
+        msgpack_pack_str_body(&mp_pck, meta->docker_id,
+                              meta->docker_id_len);
+    }
+
+    flb_mp_map_header_end(&mh);
+
+    /* Set outgoing msgpack buffer */
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                       const char *api_buf, size_t api_size,
                       char **out_buf, size_t *out_size)
@@ -1191,6 +1266,7 @@ static inline int extract_meta(struct flb_kube *ctx,
         }
         kube_tag_str = tag + kube_tag_len;
         kube_tag_len = tag_len - kube_tag_len;
+
         n = flb_regex_do(ctx->regex, kube_tag_str, kube_tag_len, &result);
     }
 
@@ -1265,10 +1341,15 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     char *api_buf;
     size_t api_size;
 
-    if (ctx->use_kubelet) {
+    if (ctx->use_tag_for_meta) {
+        ret = merge_meta_from_tag(ctx, meta, out_buf, out_size);
+        return ret;
+    }
+    else if (ctx->use_kubelet) {
         ret = get_pods_from_kubelet(ctx, meta->namespace, meta->podname,
                                     &api_buf, &api_size);
-    } else {
+    }
+    else {
         ret = get_api_server_info(ctx, meta->namespace, meta->podname,
                                   &api_buf, &api_size);
     }
@@ -1366,12 +1447,17 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
         return 0;
     }
 
+    if (ctx->use_tag_for_meta) {
+        flb_plg_info(ctx->ins, "no network access required (OK)");
+        return 0;
+    }
+
     /* Init network */
     flb_kube_network_init(ctx, config);
 
     /* Gather local info */
     ret = get_local_pod_info(ctx);
-    if (ret == FLB_TRUE) {
+    if (ret == FLB_TRUE && !ctx->use_tag_for_meta) {
         flb_plg_info(ctx->ins, "local POD info OK");
 
         ret = wait_for_dns(ctx);

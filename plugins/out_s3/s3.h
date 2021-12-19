@@ -46,6 +46,10 @@
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
 
+#define COMPRESS_NONE  0
+#define COMPRESS_GZIP  1
+#define COMPRESS_ARROW 2
+
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
  * This saves us from scenarios where something goes wrong and an upload can
@@ -56,6 +60,18 @@
  * I can't think of a reason why a chunk could become unsendable.
  */
 #define MAX_UPLOAD_ERRORS 5
+
+struct upload_queue {
+    struct s3_file *upload_file;
+    struct multipart_upload *m_upload_file;
+    char *tag;
+    int tag_len;
+
+    int retry_counter;
+    time_t upload_time;
+
+    struct mk_list _head;
+};
 
 struct multipart_upload {
     flb_sds_t s3_key;
@@ -95,11 +111,16 @@ struct flb_s3 {
     char *endpoint;
     char *sts_endpoint;
     char *canned_acl;
-    char *compression;
     char *content_type;
+    char *log_key;
     int free_endpoint;
+    int retry_requests;
     int use_put_object;
     int send_content_md5;
+    int static_file_path;
+    int compression;
+    int port;
+    int insecure;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;
@@ -120,6 +141,7 @@ struct flb_s3 {
     struct flb_fstore *fs;
     struct flb_fstore_stream *stream_active;  /* default active stream */
     struct flb_fstore_stream *stream_upload;  /* multipart upload stream */
+    struct flb_fstore_stream *stream_metadata; /* s3 metadata stream */
 
     /*
      * used to track that unset buffers were found on startup that have not
@@ -131,13 +153,23 @@ struct flb_s3 {
 
     struct mk_list uploads;
 
+    int preserve_data_ordering;
+    int upload_queue_success;
+    struct mk_list upload_queue;
+
     size_t file_size;
     size_t upload_chunk_size;
     time_t upload_timeout;
+    time_t retry_time;
 
     int timer_created;
     int timer_ms;
     int key_fmt_has_uuid;
+
+    uint64_t seq_index;
+    int key_fmt_has_seq_index;
+    flb_sds_t metadata_dir;
+    flb_sds_t seq_index_file;
 
     struct flb_output_instance *ins;
 };

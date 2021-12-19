@@ -33,6 +33,8 @@ struct flb_in_fw_config {
     char *listen;                   /* Listen interface            */
     char *tcp_port;                 /* TCP Port                    */
 
+    flb_sds_t tag_prefix;           /* tag prefix                  */
+
     /* Unix Socket (TCP only) */
     char *unix_path;                /* Unix path for socket        */
 

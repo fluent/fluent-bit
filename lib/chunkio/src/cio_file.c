@@ -29,14 +29,17 @@
 #include <sys/mman.h>
 #include <limits.h>
 
-#include <chunkio/chunkio_compat.h>
+
 #include <chunkio/chunkio.h>
+#include <chunkio/chunkio_compat.h>
 #include <chunkio/cio_crc32.h>
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_file.h>
 #include <chunkio/cio_file_st.h>
 #include <chunkio/cio_log.h>
 #include <chunkio/cio_stream.h>
+#include <chunkio/cio_error.h>
+#include <chunkio/cio_utils.h>
 
 char cio_file_init_bytes[] =   {
     /* file type (2 bytes)    */
@@ -86,6 +89,14 @@ static void update_checksum(struct cio_file *cf,
                             unsigned char *data, size_t len)
 {
     crc_t crc;
+    crc_t tmp;
+
+    if (cf->crc_reset) {
+        cf->crc_cur = cio_crc32_init();
+        cio_file_calculate_checksum(cf, &tmp);
+        cf->crc_cur = tmp;
+        cf->crc_reset = CIO_FALSE;
+    }
 
     crc = cio_crc32_update(cf->crc_cur, data, len);
     memcpy(cf->map + 2, &crc, sizeof(crc));
@@ -173,12 +184,14 @@ static int cio_file_format_check(struct cio_chunk *ch,
         if ((cf->flags & CIO_OPEN) == 0) {
             cio_log_warn(ch->ctx,
                          "[cio file] cannot initialize chunk (read-only)");
+            cio_error_set(ch, CIO_ERR_PERMISSION);
             return -1;
         }
 
         /* at least we need 24 bytes as allocated space */
         if (cf->alloc_size < CIO_FILE_HEADER_MIN) {
             cio_log_warn(ch->ctx, "[cio file] cannot initialize chunk");
+            cio_error_set(ch, CIO_ERR_BAD_LAYOUT);
             return -1;
         }
 
@@ -195,6 +208,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         if (p[0] != CIO_FILE_ID_00 || p[1] != CIO_FILE_ID_01) {
             cio_log_debug(ch->ctx, "[cio file] invalid header at %s",
                           ch->name);
+            cio_error_set(ch, CIO_ERR_PERMISSION);
             return -1;
         }
 
@@ -215,6 +229,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
             if (memcmp(p, &crc_check, sizeof(crc_check)) != 0) {
                 cio_log_debug(ch->ctx, "[cio file] invalid crc32 at %s/%s",
                               ch->name, cf->path);
+                cio_error_set(ch, CIO_ERR_BAD_CHECKSUM);
                 return -1;
             }
             cf->crc_cur = crc;
@@ -320,6 +335,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     else if (fs_size == 0) {
         /* We can only prepare a file if it has been opened in RW mode */
         if ((cf->flags & CIO_OPEN_RW) == 0) {
+            cio_error_set(ch, CIO_ERR_PERMISSION);
             return CIO_CORRUPTED;
         }
 
@@ -363,6 +379,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
             cf->map = NULL;
             cf->data_size = 0;
             cf->alloc_size = 0;
+
             return CIO_CORRUPTED;
         }
         cf->data_size = content_size;
@@ -374,7 +391,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     }
 
     ret = cio_file_format_check(ch, cf, cf->flags);
-    if (ret == -1) {
+    if (ret != 0) {
         cio_log_error(ctx, "format check failed: %s/%s",
                       ch->st->name, ch->name);
         munmap(cf->map, cf->alloc_size);
@@ -508,6 +525,24 @@ static inline int open_and_up(struct cio_ctx *ctx)
 }
 
 /*
+ * Fetch the file size regardless of if we opened this file or not.
+ */
+size_t cio_file_real_size(struct cio_file *cf)
+{
+    int ret;
+    struct stat st;
+
+    /* Store the current real size */
+    ret = stat(cf->path, &st);
+    if (ret == -1) {
+        cio_errno();
+        return 0;
+    }
+
+    return st.st_size;
+}
+
+/*
  * Open or create a data file: the following behavior is expected depending
  * of the passed flags:
  *
@@ -522,12 +557,14 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
                                struct cio_chunk *ch,
                                int flags,
-                               size_t size, int *err)
+                               size_t size,
+                               int *err)
 {
     int psize;
     int ret;
     int len;
     char *path;
+    struct stat f_st;
     struct cio_file *cf;
 
     len = strlen(ch->name);
@@ -564,7 +601,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
 
     cf->fd = -1;
     cf->flags = flags;
-    cf->realloc_size = getpagesize() * 8;
+    cf->realloc_size = cio_getpagesize() * 8;
     cf->st_content = NULL;
     cf->crc_cur = cio_crc32_init();
     cf->path = path;
@@ -574,6 +611,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     /* Should we open and put this file up ? */
     ret = open_and_up(ctx);
     if (ret == CIO_FALSE) {
+        /* make sure to set the file size before to return */
+        ret = stat(cf->path, &f_st);
+        if (ret == 0) {
+            cf->fs_size = f_st.st_size;
+        }
+
         /* we reached our limit, let the file 'down' */
         return cf;
     }
@@ -647,6 +690,20 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
     if (ret == CIO_ERROR) {
         cio_log_error(ch->ctx, "[cio file] cannot map chunk: %s/%s",
                       ch->st->name, ch->name);
+    }
+
+    /*
+     * 'ret' can still be CIO_CORRUPTED or CIO_RETRY on those cases we
+     * close the file descriptor
+     */
+    if (ret == CIO_CORRUPTED || ret == CIO_RETRY) {
+        /*
+         * we just remove resources: close the recently opened file
+         * descriptor, we never delete the Chunk at this stage since
+         * the caller must take that action.
+         */
+        close(cf->fd);
+        cf->fd = -1;
     }
 
     return ret;
@@ -1056,11 +1113,22 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
          * fallocate() is not portable, Linux only.
          */
         ret = fallocate(cf->fd, 0, 0, new_size);
+        if (ret == EOPNOTSUPP) {
+            /* If fallocate fails with an EOPNOTSUPP try operation using
+             * posix_fallocate. Required since some filesystems do not support
+             * the fallocate operation e.g. ext3 and reiserfs.
+             */
+            ret = posix_fallocate(cf->fd, 0, new_size);
+        }
     }
     else
 #endif
     {
         ret = ftruncate(cf->fd, new_size);
+    }
+
+    if (!ret) {
+        cf->fs_size = new_size;
     }
 
     return ret;
@@ -1073,7 +1141,7 @@ char *cio_file_hash(struct cio_file *cf)
 
 void cio_file_hash_print(struct cio_file *cf)
 {
-    printf("crc cur=%lu\n", cf->crc_cur);
+    printf("crc cur=%ld\n", cf->crc_cur);
     printf("%08lx\n", (long unsigned int ) cf->crc_cur);
 }
 

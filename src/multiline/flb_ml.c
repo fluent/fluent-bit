@@ -63,6 +63,22 @@ static uint64_t time_ms_now()
     return ms;
 }
 
+
+int flb_ml_flush_stdout(struct flb_ml_parser *parser,
+                        struct flb_ml_stream *mst,
+                        void *data, char *buf_data, size_t buf_size)
+{
+    fprintf(stdout, "\n%s----- MULTILINE FLUSH (stream_id=%" PRIu64 ") -----%s\n",
+            ANSI_GREEN, mst->id, ANSI_RESET);
+
+    /* Print incoming flush buffer */
+    flb_pack_print(buf_data, buf_size);
+
+    fprintf(stdout, "%s----------- EOF -----------%s\n",
+            ANSI_GREEN, ANSI_RESET);
+    return 0;
+}
+
 int flb_ml_type_lookup(char *str)
 {
     int type = -1;
@@ -120,6 +136,14 @@ void flb_ml_flush_pending(struct flb_ml *ml, uint64_t now)
         parser_i = mk_list_entry(head, struct flb_ml_parser_ins, _head);
         flb_ml_flush_parser_instance(ml, parser_i, 0);
     }
+}
+
+void flb_ml_flush_pending_now(struct flb_ml *ml)
+{
+    uint64_t now;
+
+    now = time_ms_now();
+    flb_ml_flush_pending(ml, now);
 }
 
 static void cb_ml_flush_timer(struct flb_config *ctx, void *data)
@@ -415,9 +439,14 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     }
     else if (type == FLB_ML_TYPE_MAP) {
         full_map = obj;
-        if (!full_map) {
-            msgpack_unpacked_init(&result);
+        /*
+         * When full_map and buf is not NULL,
+         * we use 'buf' since buf is already processed from full_map at
+         * ml_append_try_parser_type_map.
+         */
+        if (!full_map || (buf != NULL && full_map != NULL)) {
             off = 0;
+            msgpack_unpacked_init(&result);
             ret = msgpack_unpack_next(&result, buf, size, &off);
             if (ret != MSGPACK_UNPACK_SUCCESS) {
                 return -1;
@@ -480,6 +509,93 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     return 0;
 }
 
+static int ml_append_try_parser_type_text(struct flb_ml_parser_ins *parser,
+                                          uint64_t stream_id,
+                                          int *type,
+                                          struct flb_time *tm, void *buf, size_t size,
+                                          msgpack_object *map,
+                                          void **out_buf, size_t *out_size, int *out_release,
+                                          struct flb_time *out_time)
+{
+    int ret;
+
+    if (parser->ml_parser->parser) {
+        /* Parse incoming content */
+        ret = flb_parser_do(parser->ml_parser->parser, (char *) buf, size,
+                            out_buf, out_size, out_time);
+        if (flb_time_to_double(out_time) == 0.0) {
+            flb_time_copy(out_time, tm);
+        }
+        if (ret >= 0) {
+            *out_release = FLB_TRUE;
+            *type = FLB_ML_TYPE_MAP;
+        }
+        else {
+            *out_buf = buf;
+            *out_size = size;
+            return -1;
+        }
+    }
+    else {
+        *out_buf = buf;
+        *out_size = size;
+    }
+    return 0;
+}
+
+static int ml_append_try_parser_type_map(struct flb_ml_parser_ins *parser,
+                                         uint64_t stream_id,
+                                         int *type,
+                                         struct flb_time *tm, void *buf, size_t size,
+                                         msgpack_object *map,
+                                         void **out_buf, size_t *out_size, int *out_release,
+                                         struct flb_time *out_time)
+{
+    int map_size;
+    int i;
+    int len;
+    msgpack_object key;
+    msgpack_object val;
+
+    if (map == NULL || map->type != MSGPACK_OBJECT_MAP) {
+        flb_error("%s:invalid map", __FUNCTION__);
+        return -1;
+    }
+
+    if (parser->ml_parser->parser) {
+        /* lookup key_content */
+
+        len = flb_sds_len(parser->key_content);
+        map_size = map->via.map.size;
+        for(i = 0; i < map_size; i++) {
+            key = map->via.map.ptr[i].key;
+            val = map->via.map.ptr[i].val;
+            if (key.type == MSGPACK_OBJECT_STR &&
+                parser->key_content &&
+                key.via.str.size == len &&
+                strncmp(key.via.str.ptr, parser->key_content, len) == 0) {
+                /* key_content found */
+                if (val.type == MSGPACK_OBJECT_STR) {
+                    /* try parse the value of key_content e*/
+                    return ml_append_try_parser_type_text(parser, stream_id, type,
+                                                          tm, (void*) val.via.str.ptr,
+                                                          val.via.str.size,
+                                                          map,
+                                                          out_buf, out_size, out_release,
+                                                          out_time);
+                } else {
+                    flb_error("%s: not string", __FUNCTION__);
+                    return -1;
+                }
+            }
+        }
+    }
+    else {
+        *out_buf = buf;
+        *out_size = size;
+    }
+    return 0;
+}
 
 static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
                                 uint64_t stream_id,
@@ -496,26 +612,32 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
 
     flb_time_zero(&out_time);
 
-    if (parser->ml_parser->parser && type == FLB_ML_TYPE_TEXT) {
-        /* Parse incoming content */
-        ret = flb_parser_do(parser->ml_parser->parser, (char *) buf, size,
-                            &out_buf, &out_size, &out_time);
-        if (ret >= 0) {
-            if (flb_time_to_double(&out_time) == 0.0) {
-                flb_time_copy(&out_time, tm);
-            }
-            release = FLB_TRUE;
-            type = FLB_ML_TYPE_MAP;
-        }
-        else {
-            out_buf = buf;
-            out_size = size;
+    switch (type) {
+    case FLB_ML_TYPE_TEXT:
+        ret = ml_append_try_parser_type_text(parser, stream_id, &type,
+                                             tm, buf, size, map,
+                                             &out_buf, &out_size, &release,
+                                             &out_time);
+        if (ret < 0) {
             return -1;
         }
-    }
-    else if (type == FLB_ML_TYPE_TEXT) {
-        out_buf = buf;
-        out_size = size;
+        break;
+    case FLB_ML_TYPE_MAP:
+        ret = ml_append_try_parser_type_map(parser, stream_id, &type,
+                                            tm, buf, size, map,
+                                            &out_buf, &out_size, &release,
+                                            &out_time);
+        if (ret < 0) {
+            return -1;
+        }
+        break;
+    case FLB_ML_TYPE_RECORD:
+        /* TODO */
+        break;
+
+    default:
+        flb_error("%s: unknown type=%d", type);
+        return -1;
     }
 
     if (flb_time_to_double(&out_time) == 0.0) {
@@ -597,7 +719,8 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
 
     mk_list_foreach(head_group, &group->parsers) {
             parser_i = mk_list_entry(head_group, struct flb_ml_parser_ins, _head);
-            if (lru_parser && parser_i == lru_parser) {
+            if (lru_parser && lru_parser == parser_i &&
+                lru_parser->last_stream_id == stream_id) {
                 continue;
             }
 
@@ -613,7 +736,6 @@ int flb_ml_append(struct flb_ml *ml, uint64_t stream_id,
             else {
                 parser_i = NULL;
             }
-
     }
 
     if (!processed) {
@@ -751,6 +873,7 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
 
         /* Append record content to group msgpack buffer */
         msgpack_pack_array(&st_group->mp_pck, 2);
+
         flb_time_append_to_msgpack(tm, &st_group->mp_pck, 0);
         msgpack_pack_object(&st_group->mp_pck, *obj);
 
@@ -897,6 +1020,11 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     /* init msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* if the group don't have a time set, use current time */
+    if (flb_time_to_double(&group->mp_time) == 0.0) {
+        flb_time_get(&group->mp_time);
+    }
 
     /* compose final record if we have a first line context */
     if (group->mp_sbuf.size > 0) {

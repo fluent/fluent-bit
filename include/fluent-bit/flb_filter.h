@@ -36,6 +36,9 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <msgpack.h>
 
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+
 #define FLB_FILTER_MODIFIED 1
 #define FLB_FILTER_NOTOUCH  2
 
@@ -78,6 +81,14 @@ struct flb_filter_instance {
     struct mk_list *config_map;    /* configuration map        */
 
     struct mk_list _head;          /* link to config->filters  */
+
+    /*
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                      /* parent context               */
+    struct cmt_counter *cmt_add_records;  /* m: filter_add_records_total  */
+    struct cmt_counter *cmt_drop_records; /* m: filter_drop_records_total */
 
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;   /* metrics                  */

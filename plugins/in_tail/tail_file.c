@@ -50,6 +50,91 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+static int record_append_custom_keys(struct flb_tail_file *file,
+                                     size_t processed_bytes,
+                                     char *in_data, size_t in_size,
+                                     char **out_data, size_t *out_size)
+{
+    int i;
+    int ok = MSGPACK_UNPACK_SUCCESS;
+    int len;
+    size_t off = 0;
+    size_t total;
+    msgpack_unpacked result;
+    msgpack_object time;
+    msgpack_object map;
+    msgpack_object k;
+    msgpack_object v;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    struct flb_mp_map_header mh;
+
+    /* init new buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Some extra content will be added... */
+    msgpack_unpacked_init(&result);
+    while ((msgpack_unpack_next(&result, in_data, in_size, &off) == ok)) {
+        time = result.data.via.array.ptr[0];
+        map = result.data.via.array.ptr[1];
+
+        msgpack_pack_array(&mp_pck, 2);
+        msgpack_pack_object(&mp_pck, time);
+
+        /* pack map */
+        flb_mp_map_header_init(&mh, &mp_pck);
+
+        /* append previous map keys */
+        for (i = 0; i < map.via.map.size; i++) {
+            k = map.via.map.ptr[i].key;
+            v = map.via.map.ptr[i].val;
+
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_object(&mp_pck, k);
+            msgpack_pack_object(&mp_pck, v);
+        }
+
+        /* path_key */
+        if (file->config->path_key) {
+            len = flb_sds_len(file->config->path_key);
+
+            flb_mp_map_header_append(&mh);
+
+            /* key */
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, file->config->path_key, len);
+
+            /* val */
+            msgpack_pack_str(&mp_pck, file->name_len);
+            msgpack_pack_str_body(&mp_pck, file->name, file->name_len);
+        }
+
+        /* offset_key */
+        if (file->config->offset_key) {
+            len = flb_sds_len(file->config->offset_key);
+
+            flb_mp_map_header_append(&mh);
+
+            /* key */
+            msgpack_pack_str(&mp_pck, len);
+            msgpack_pack_str_body(&mp_pck, file->config->offset_key, len);
+
+            /* val */
+            total = file->offset + processed_bytes;
+            msgpack_pack_uint64(&mp_pck, total);
+        }
+
+        /* finalize map */
+        flb_mp_map_header_end(&mh);
+    }
+
+    *out_data = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
                            const char *key, size_t key_len,
                            const char *val, size_t val_len, size_t val_uint64)
@@ -241,6 +326,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 
     while (data < end && (p = memchr(data, '\n', end - data))) {
         len = (p - data);
+        crlf = 0;
         if (file->skip_next == FLB_TRUE) {
             data += len + 1;
             processed_bytes += len + 1;
@@ -385,11 +471,45 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     if (lines > 0) {
         /* Append buffer content to a chunk */
         *bytes = processed_bytes;
-        flb_input_chunk_append_raw(ctx->ins,
-                                   file->tag_buf,
-                                   file->tag_len,
-                                   out_sbuf->data,
-                                   out_sbuf->size);
+
+        if (out_sbuf->size > 0) {
+            flb_input_chunk_append_raw(ctx->ins,
+                                       file->tag_buf,
+                                       file->tag_len,
+                                       out_sbuf->data,
+                                       out_sbuf->size);
+        }
+        else if (ctx->ml_ctx && file->mult_sbuf.size > 0) {
+            /* If no extra keys are needed, just enqueue the buffer */
+            if (file->config->path_key == NULL &&
+                file->config->offset_key == NULL) {
+                flb_input_chunk_append_raw(ctx->ins,
+                                           file->tag_buf,
+                                           file->tag_len,
+                                           file->mult_sbuf.data,
+                                           file->mult_sbuf.size);
+
+            }
+            else {
+                char *mult_buf = NULL;
+                size_t mult_size = 0;
+
+                /* adjust the records in a new buffer */
+                record_append_custom_keys(file,
+                                          processed_bytes,
+                                          file->mult_sbuf.data,
+                                          file->mult_sbuf.size,
+                                          &mult_buf, &mult_size);
+
+                flb_input_chunk_append_raw(ctx->ins,
+                                           file->tag_buf,
+                                           file->tag_len,
+                                           mult_buf,
+                                           mult_size);
+                flb_free(mult_buf);
+            }
+            file->mult_sbuf.size = 0;
+        }
     }
     else if (file->skip_next) {
         *bytes = file->buf_len;
@@ -649,17 +769,16 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
+
+/* Multiline flush callback: invoked every time some content is complete */
 static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
                              void *data, char *buf_data, size_t buf_size)
 {
     struct flb_tail_file *file = data;
 
-    flb_input_chunk_append_raw(file->config->ins,
-                               file->tag_buf,
-                               file->tag_len,
-                               buf_data,
-                               buf_size);
+    /* Enqueue the records in our file->multiline buffer */
+    msgpack_sbuffer_write(&file->mult_sbuf, buf_data, buf_size);
     return 0;
 }
 
@@ -669,11 +788,14 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     int fd;
     int ret;
     uint64_t stream_id;
+    uint64_t ts;
     size_t len;
     char *tag;
+    char *name;
     size_t tag_len;
     struct flb_tail_file *file;
     struct stat lst;
+    flb_sds_t inode_str;
 
     if (!S_ISREG(st->st_mode)) {
         return -1;
@@ -741,7 +863,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
+
+    /* multiline msgpack buffers */
     msgpack_sbuffer_init(&file->mult_sbuf);
+    msgpack_packer_init(&file->mult_pck, &file->mult_sbuf,
+                        msgpack_sbuffer_write);
+
+    /* docker mode */
     file->dmode_flush_timeout = 0;
     file->dmode_complete = true;
     file->dmode_buf = flb_sds_create_size(ctx->docker_mode == FLB_TRUE ? 65536 : 0);
@@ -755,18 +883,30 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     /* Multiline core mode */
     if (ctx->ml_ctx) {
+        /*
+         * Create inode str to get stream_id.
+         *
+         * If stream_id is created by filename,
+         * it will be same after file rotation and it causes invalid destruction.
+         * https://github.com/fluent/fluent-bit/issues/4190
+         *
+         */
+        inode_str = flb_sds_create_size(64);
+        flb_sds_printf(&inode_str, "%"PRIu64, file->inode);
         /* Create a stream for this file */
         ret = flb_ml_stream_create(ctx->ml_ctx,
-                                   file->name, file->name_len,
+                                   inode_str, flb_sds_len(inode_str),
                                    ml_flush_callback, file,
                                    &stream_id);
         if (ret != 0) {
             flb_plg_error(ctx->ins,
                           "could not create multiline stream for file: %s",
-                          file->name);
+                          inode_str);
+            flb_sds_destroy(inode_str);
             goto error;
         }
         file->ml_stream_id = stream_id;
+        flb_sds_destroy(inode_str);
     }
 
     /* Local buffer */
@@ -837,6 +977,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->pending_bytes = file->size - file->offset;
 
 #ifdef FLB_HAVE_METRICS
+    name = (char *) flb_input_name(ctx->ins);
+    ts = cmt_time_now();
+    cmt_counter_inc(ctx->cmt_files_opened, ts, 1, (char *[]) {name});
+
+    /* Old api */
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->ins->metrics);
 #endif
 
@@ -862,6 +1007,8 @@ error:
 
 void flb_tail_file_remove(struct flb_tail_file *file)
 {
+    uint64_t ts;
+    char *name;
     struct flb_tail_config *ctx;
 
     ctx = file->config;
@@ -887,6 +1034,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         mk_list_del(&file->_rotate_head);
     }
 
+    msgpack_sbuffer_destroy(&file->mult_sbuf);
+
     flb_sds_destroy(file->dmode_buf);
     flb_sds_destroy(file->dmode_lastline);
     mk_list_del(&file->_head);
@@ -905,6 +1054,11 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_free(file->real_name);
 
 #ifdef FLB_HAVE_METRICS
+    name = (char *) flb_input_name(ctx->ins);
+    ts = cmt_time_now();
+    cmt_counter_inc(ctx->cmt_files_closed, ts, 1, (char *[]) {name});
+
+    /* old api */
     flb_metrics_sum(FLB_TAIL_METRIC_F_CLOSED, 1, ctx->ins->metrics);
 #endif
 
@@ -1327,7 +1481,9 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
 int flb_tail_file_rotated(struct flb_tail_file *file)
 {
     int ret;
+    uint64_t ts;
     char *name;
+    char *i_name;
     char *tmp;
     struct stat st;
     struct flb_tail_config *ctx = file->config;
@@ -1362,6 +1518,11 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 #endif
 
 #ifdef FLB_HAVE_METRICS
+        i_name = (char *) flb_input_name(ctx->ins);
+        ts = cmt_time_now();
+        cmt_counter_inc(ctx->cmt_files_rotated, ts, 1, (char *[]) {i_name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_TAIL_METRIC_F_ROTATED,
                         1, file->config->ins->metrics);
 #endif

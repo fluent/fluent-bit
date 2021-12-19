@@ -55,6 +55,8 @@ struct cmt *cmt_create()
     mk_list_init(&cmt->histograms);
     mk_list_init(&cmt->untypeds);
 
+    cmt->log_level = CMT_LOG_ERROR;
+    
     return cmt;
 }
 

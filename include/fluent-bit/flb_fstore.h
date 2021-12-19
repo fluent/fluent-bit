@@ -81,6 +81,9 @@ int flb_fstore_file_content_copy(struct flb_fstore *fs,
                                  void **out_buf, size_t *out_size);
 
 int flb_fstore_file_append(struct flb_fstore_file *fsf, void *data, size_t size);
+struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
+                                            struct flb_fstore_stream *fs_stream,
+                                            char *name, size_t size);
 int flb_fstore_file_inactive(struct flb_fstore *fs,
                              struct flb_fstore_file *fsf);
 int flb_fstore_file_delete(struct flb_fstore *fs,

@@ -58,8 +58,8 @@ static int cb_exit_init(struct flb_output_instance *ins, struct flb_config *conf
     return 0;
 }
 
-static void cb_exit_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_exit_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)

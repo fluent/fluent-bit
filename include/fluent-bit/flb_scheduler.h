@@ -37,6 +37,8 @@
 #define FLB_SCHED_TIMER_CB_ONESHOT  3  /* one-shot callback timer  */
 #define FLB_SCHED_TIMER_CB_PERM     4  /* permanent callback timer */
 
+struct flb_sched;
+
 /*
  * A sched timer struct belongs to an event triggered by the scheduler. This
  * is a generic type and keeps two fields as a reference for further
@@ -50,6 +52,7 @@ struct flb_sched_timer {
     int active;
     int type;
     void *data;
+    struct flb_sched *sched;
 
     /*
      * Custom timer specific data:

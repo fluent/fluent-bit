@@ -27,6 +27,7 @@
  */
 
 #include <monkey/mk_api.h>
+#include <monkey/mk_stream.h>
 #include "dirlisting.h"
 
 #include <time.h>
@@ -664,7 +665,7 @@ void mk_dirhtml_cb_body_rows(struct mk_stream_input *in)
         if (req->chunked) {
             len = snprintf(tmp, sizeof(tmp), "%x\r\n",
                            (int) req->iov_footer->total_len);
-            mk_stream_in_cbuf(req->stream,
+            mk_stream_in_raw(req->stream,
                               NULL,
                               tmp, len,
                               NULL, NULL);
@@ -679,7 +680,7 @@ void mk_dirhtml_cb_body_rows(struct mk_stream_input *in)
                          req->iov_footer,
                          NULL, NULL);
         if (req->chunked) {
-            mk_stream_in_cbuf(req->stream,
+            mk_stream_in_raw(req->stream,
                               NULL,
                               "\r\n0\r\n\r\n", 7,
                               NULL, mk_dirhtml_cb_complete);
@@ -692,7 +693,7 @@ void mk_dirhtml_cb_body_rows(struct mk_stream_input *in)
     if (req->chunked) {
         len = snprintf(tmp, sizeof(tmp), "%x\r\n",
                        (int) req->iov_entry->total_len);
-        mk_stream_in_cbuf(req->stream,
+        mk_stream_in_raw(req->stream,
                           NULL,
                           tmp, len,
                           NULL, NULL);
@@ -708,7 +709,7 @@ void mk_dirhtml_cb_body_rows(struct mk_stream_input *in)
                      NULL, cb_ok);
 
     if (req->chunked) {
-        mk_stream_in_cbuf(req->stream,
+        mk_stream_in_raw(req->stream,
                           NULL,
                           "\r\n", 2,
                           mk_dirhtml_cb_chunk_body_rows, NULL);
@@ -839,7 +840,7 @@ static int mk_dirhtml_init(struct mk_plugin *plugin,
     if (request->chunked) {
         len = snprintf(tmp, sizeof(tmp), "%x\r\n",
                        (int) request->iov_header->total_len);
-        mk_stream_in_cbuf(request->stream,
+        mk_stream_in_raw(request->stream,
                           NULL,
                           tmp, len,
                           NULL, mk_dirhtml_cb_complete);
@@ -851,7 +852,7 @@ static int mk_dirhtml_init(struct mk_plugin *plugin,
                      NULL, cb_header_finish);
 
     if (request->chunked) {
-        mk_stream_in_cbuf(request->stream,
+        mk_stream_in_raw(request->stream,
                           NULL,
                           "\r\n", 2,
                           NULL, NULL);

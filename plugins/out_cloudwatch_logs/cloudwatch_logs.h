@@ -122,6 +122,9 @@ struct flb_cloudwatch {
     /* Should the plugin create the log group */
     int create_group;
 
+    /* Should requests to AWS services be retried */
+    int retry_requests;
+
     /* If set to a number greater than zero, and newly create log group's retention policy is set to this many days. */
     int log_retention_days;
 

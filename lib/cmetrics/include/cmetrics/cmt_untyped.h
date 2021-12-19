@@ -26,11 +26,12 @@
 struct cmt_untyped {
     struct cmt_opts opts;
     struct cmt_map *map;
+    struct cmt *cmt;
     struct mk_list _head;
 };
 
 struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,
-                                       char *namespace, char *subsystem,
+                                       char *ns, char *subsystem,
                                        char *name, char *help,
                                        int label_count, char **label_keys);
 

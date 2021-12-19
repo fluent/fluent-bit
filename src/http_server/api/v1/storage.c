@@ -151,16 +151,47 @@ static void cb_storage(mk_request_t *request, void *data)
     buf->users++;
 
     mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
     mk_http_send(request, buf->data, flb_sds_len(buf->data), NULL);
     mk_http_done(request);
 
     buf->users--;
 }
 
+static void hs_storage_metrics_key_destroy(void *data)
+{
+    struct mk_list *metrics_list = (struct mk_list*)data;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_hs_buf *entry;
+
+    if (metrics_list == NULL) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, metrics_list) {
+        entry = mk_list_entry(head, struct flb_hs_buf, _head);
+        if (entry != NULL) {
+            if (entry->raw_data != NULL) {
+                flb_free(entry->raw_data);
+                entry->raw_data = NULL;
+            }
+            if (entry->data) {
+                flb_sds_destroy(entry->data);
+                entry->data = NULL;
+            }
+            mk_list_del(&entry->_head);
+            flb_free(entry);
+        }
+    }
+
+    flb_free(metrics_list);
+}
+
 /* Perform registration */
 int api_v1_storage_metrics(struct flb_hs *hs)
 {
-    pthread_key_create(&hs_storage_metrics_key, NULL);
+    pthread_key_create(&hs_storage_metrics_key, hs_storage_metrics_key_destroy);
 
     /* Create a message queue */
     hs->qid_storage = mk_mq_create(hs->ctx, "/storage",

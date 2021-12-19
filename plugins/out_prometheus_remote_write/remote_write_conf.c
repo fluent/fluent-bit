@@ -27,6 +27,40 @@
 #include "remote_write.h"
 #include "remote_write_conf.h"
 
+static int config_add_labels(struct flb_output_instance *ins,
+                             struct prometheus_remote_write_context *ctx)
+{
+    struct mk_list *head;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *k = NULL;
+    struct flb_slist_entry *v = NULL;
+    struct flb_kv *kv;
+
+    if (!ctx->add_labels || mk_list_size(ctx->add_labels) == 0) {
+        return 0;
+    }
+
+    /* iterate all 'add_label' definitions */
+    flb_config_map_foreach(head, mv, ctx->add_labels) {
+        if (mk_list_size(mv->val.list) != 2) {
+            flb_plg_error(ins, "'add_label' expects a key and a value, "
+                          "e.g: 'add_label version 1.8.0'");
+            return -1;
+        }
+
+        k = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        v = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+
+        kv = flb_kv_item_create(&ctx->kv_labels, k->str, v->str);
+        if (!kv) {
+            flb_plg_error(ins, "could not append label %s=%s\n", k->str, v->str);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 struct prometheus_remote_write_context *flb_prometheus_remote_write_context_create(
     struct flb_output_instance *ins, struct flb_config *config)
 {
@@ -49,10 +83,17 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
         return NULL;
     }
     ctx->ins = ins;
+    mk_list_init(&ctx->kv_labels);
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_free(ctx);
+        return NULL;
+    }
+
+    /* Parse 'add_label' */
+    ret = config_add_labels(ins, ctx);
+    if (ret == -1) {
         return NULL;
     }
 
@@ -158,6 +199,8 @@ void flb_prometheus_remote_write_context_destroy(
     if (!ctx) {
         return;
     }
+
+    flb_kv_release(&ctx->kv_labels);
 
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);

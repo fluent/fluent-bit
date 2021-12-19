@@ -122,6 +122,10 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     int fd;
     struct mk_event *s_event;
 
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
+
     fd = event->fd;
 
     if (event->mask & MK_EVENT_READ) {
@@ -148,6 +152,9 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
     }
 
     ctx->events[fd] = NULL;
+
+    MK_EVENT_NEW(event);
+
     return 0;
 }
 

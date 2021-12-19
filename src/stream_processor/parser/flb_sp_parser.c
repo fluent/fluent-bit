@@ -320,7 +320,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func, const char *key_name)
 
 void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, const char *key_alias)
 {
-    cmd->alias = key_alias;
+    cmd->alias = (char *) key_alias;
 }
 
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source)

@@ -360,6 +360,14 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
         if (ctx->event_key) {
             /* Pack the value of a event key */
             ret = pack_event_key(ctx, &mp_pck, &tm, map, tag, tag_len);
+            if (ret != 0) {
+                /*
+                 * if pack_event_key fails due to missing content in the
+                 * record, we just warn the user and try to pack it
+                 * as a normal map.
+                 */
+                ret = pack_map(ctx, &mp_pck, &tm, map, tag, tag_len);
+            }
         }
         else {
             /* Pack as a map */
@@ -372,7 +380,7 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
             err = flb_msgpack_to_json_str(2048, &map);
             if (err) {
                 /* Print error and continue processing other records */
-                flb_plg_warn(ctx->ins, "could not process record: %s", err);
+                flb_plg_warn(ctx->ins, "could not process or pack record: %s", err);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 flb_free(err);
             }
@@ -418,8 +426,8 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
     return 0;
 }
 
-static void cb_splunk_flush(const void *data, size_t bytes,
-                            const char *tag, int tag_len,
+static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
+                            struct flb_output_flush *out_flush,
                             struct flb_input_instance *i_ins,
                             void *out_context,
                             struct flb_config *config)
@@ -445,7 +453,11 @@ static void cb_splunk_flush(const void *data, size_t bytes,
     }
 
     /* Convert binary logs into a JSON payload */
-    ret = splunk_format(data, bytes, (char *) tag, tag_len, &buf_data, &buf_size, ctx);
+    ret = splunk_format(event_chunk->data,
+                        event_chunk->size,
+                        (char *) event_chunk->tag,
+                        flb_sds_len(event_chunk->tag),
+                        &buf_data, &buf_size, ctx);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

@@ -1373,8 +1373,8 @@ static int pack_json_payload(int insert_id_extracted,
             continue;
         }
 
-        if (validate_key(kv->key, HTTPREQUEST_FIELD_IN_JSON,
-                         HTTP_REQUEST_KEY_SIZE)
+        if (validate_key(kv->key, ctx->http_request_key,
+                         ctx->http_request_key_size)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(http_request_extra_size > 0) {
@@ -2072,8 +2072,8 @@ static int stackdriver_format(struct flb_config *config,
     return 0;
 }
 
-static void cb_stackdriver_flush(const void *data, size_t bytes,
-                                 const char *tag, int tag_len,
+static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
+                                 struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins,
                                  void *out_context,
                                  struct flb_config *config)
@@ -2091,11 +2091,19 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     struct flb_stackdriver *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
+#ifdef FLB_HAVE_METRICS
+    char *name = (char *) flb_output_name(ctx->ins);
+    uint64_t ts = cmt_time_now();
+#endif
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
 #ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -2104,11 +2112,15 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     /* Reformat msgpack to stackdriver JSON payload */
     ret = stackdriver_format(config, i_ins,
                              ctx, NULL,
-                             tag, tag_len,
-                             data, bytes,
+                             event_chunk->tag, flb_sds_len(event_chunk->tag),
+                             event_chunk->data, event_chunk->size,
                              &out_buf, &out_size);
     if (ret != 0) {
 #ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
         flb_upstream_conn_release(u_conn);
@@ -2125,6 +2137,10 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(payload_buf);
 #ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -2164,6 +2180,8 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         }
         else if (c->resp.status >= 400 && c->resp.status < 500) {
             ret_code = FLB_ERROR;
+            flb_plg_warn(ctx->ins, "error\n%s",
+                c->resp.payload);
         }
         else {
             if (c->resp.payload_size > 0) {
@@ -2182,9 +2200,17 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     /* Update specific stackdriver metrics */
 #ifdef FLB_HAVE_METRICS
     if (ret_code == FLB_OK) {
+        cmt_counter_inc(ctx->cmt_successful_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
     }
     else {
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
     }
 #endif

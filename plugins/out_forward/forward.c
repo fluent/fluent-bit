@@ -1126,8 +1126,8 @@ static int flush_forward_compat_mode(struct flb_forward *ctx,
     return FLB_OK;
 }
 
-static void cb_forward_flush(const void *data, size_t bytes,
-                             const char *tag, int tag_len,
+static void cb_forward_flush(struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush,
                              struct flb_input_instance *i_ins,
                              void *out_context,
                              struct flb_config *config)
@@ -1152,7 +1152,8 @@ static void cb_forward_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_debug(ctx->ins, "request %lu bytes to flush", bytes);
+    flb_plg_debug(ctx->ins, "request %lu bytes to flush",
+                  event_chunk->size);
 
     /* Initialize packager */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -1172,8 +1173,9 @@ static void cb_forward_flush(const void *data, size_t bytes,
 
     /* Format the right payload and retrieve the 'forward mode' used */
     mode = flb_forward_format(config, i_ins, ctx, flush_ctx,
-                              tag, tag_len,
-                              data, bytes, &out_buf, &out_size);
+                              event_chunk->tag, flb_sds_len(event_chunk->tag),
+                              event_chunk->data, event_chunk->size,
+                              &out_buf, &out_size);
 
     /* Get a TCP connection instance */
     if (ctx->ha_mode == FLB_TRUE) {
@@ -1215,13 +1217,16 @@ static void cb_forward_flush(const void *data, size_t bytes,
         flb_free(out_buf);
     }
     else if (mode == MODE_FORWARD) {
-        ret = flush_forward_mode(ctx, fc, u_conn, tag, tag_len,
-                                 data, bytes,
+        ret = flush_forward_mode(ctx, fc, u_conn,
+                                 event_chunk->tag, flb_sds_len(event_chunk->tag),
+                                 event_chunk->data, event_chunk->size,
                                  out_buf, out_size);
         flb_free(out_buf);
     }
     else if (mode == MODE_FORWARD_COMPAT) {
-        ret = flush_forward_compat_mode(ctx, fc, u_conn, tag, tag_len,
+        ret = flush_forward_compat_mode(ctx, fc, u_conn,
+                                        event_chunk->tag,
+                                        flb_sds_len(event_chunk->tag),
                                         out_buf, out_size);
         flb_free(out_buf);
     }
@@ -1344,4 +1349,7 @@ struct flb_output_plugin out_forward_plugin = {
 
     /* Flags */
     .flags        = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+
+    /* Event types */
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS
 };

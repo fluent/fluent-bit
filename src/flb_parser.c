@@ -141,6 +141,7 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
 
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
+                                     int skip_empty,
                                      const char *time_fmt, const char *time_key,
                                      const char *time_offset,
                                      int time_keep,
@@ -187,14 +188,15 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     else if (strcasecmp(format, "json") == 0) {
         p->type = FLB_PARSER_JSON;
     }
-    else if (strcmp(format, "ltsv") == 0) {
+    else if (strcasecmp(format, "ltsv") == 0) {
         p->type = FLB_PARSER_LTSV;
     }
-    else if (strcmp(format, "logfmt") == 0) {
+    else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
+        mk_list_del(&p->_head);
         flb_free(p);
         return NULL;
     }
@@ -202,6 +204,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     if (p->type == FLB_PARSER_REGEX) {
         if (!p_regex) {
             flb_error("[parser:%s] Invalid regex pattern", name);
+            mk_list_del(&p->_head);
             flb_free(p);
             return NULL;
         }
@@ -209,10 +212,12 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
         regex = flb_regex_create(p_regex);
         if (!regex) {
             flb_error("[parser:%s] Invalid regex pattern %s", name, p_regex);
+            mk_list_del(&p->_head);
             flb_free(p);
             return NULL;
         }
         p->regex = regex;
+        p->skip_empty = skip_empty;
         p->p_regex = flb_strdup(p_regex);
     }
 
@@ -317,6 +322,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
 void flb_parser_destroy(struct flb_parser *parser)
 {
     int i = 0;
+
     if (parser->type == FLB_PARSER_REGEX) {
         flb_regex_destroy(parser->regex);
         flb_free(parser->p_regex);
@@ -457,6 +463,7 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
     flb_sds_t time_offset;
     flb_sds_t types_str;
     flb_sds_t tmp_str;
+    int skip_empty;
     int time_keep;
     int time_strict;
     int types_len;
@@ -502,6 +509,14 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
             flb_error("[parser] no parser 'regex' found for '%s' in file '%s", name, cfg);
             goto fconf_error;
         }
+        
+        /* Skip_Empty_Values */
+        skip_empty = FLB_TRUE;
+        tmp_str = get_parser_key("Skip_Empty_Values", config, section);
+        if (tmp_str) {
+            skip_empty = flb_utils_bool(tmp_str);
+            flb_sds_destroy(tmp_str);
+        }
 
         /* Time_Format */
         time_fmt = get_parser_key("Time_Format", config, section);
@@ -541,7 +556,7 @@ static int parser_conf_file(const char *cfg, struct mk_rconf *fconf,
         decoders = flb_parser_decoder_list_create(section);
 
         /* Create the parser context */
-        if (!flb_parser_create(name, format, regex,
+        if (!flb_parser_create(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
                                types, types_len, decoders, config)) {
             goto fconf_error;
@@ -867,8 +882,15 @@ struct flb_parser *flb_parser_get(const char *name, struct flb_config *config)
     struct mk_list *head;
     struct flb_parser *parser;
 
+    if (config == NULL || mk_list_size(&config->parsers) <= 0) {
+        return NULL;
+    }
+
     mk_list_foreach(head, &config->parsers) {
         parser = mk_list_entry(head, struct flb_parser, _head);
+        if (parser == NULL || parser->name == NULL) {
+            continue;
+        }
         if (strcmp(parser->name, name) == 0) {
             return parser;
         }

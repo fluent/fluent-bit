@@ -22,7 +22,7 @@
 #define CMT_DECODE_MSGPACK_H
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_mpack_utils.h>
+#include <cmetrics/cmt_mpack_utils_defs.h>
 
 #define CMT_DECODE_MSGPACK_SUCCESS                    CMT_MPACK_SUCCESS
 #define CMT_DECODE_MSGPACK_INSUFFICIENT_DATA          CMT_MPACK_INSUFFICIENT_DATA
@@ -44,6 +44,7 @@ struct cmt_msgpack_decode_context {
     struct cmt_map    *map;
     struct cmt_metric *metric;
     struct mk_list     unique_label_list;
+    int                static_labels_unpacked;
 };
 
 int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size, 

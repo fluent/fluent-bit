@@ -22,6 +22,5 @@
 
 /* Just a simple wrapper header to simplify xxhash inclusion */
 #define XXH_STATIC_LINKING_ONLY
-#include <xxhash.h>
-
+#include <xxh3.h>
 #endif

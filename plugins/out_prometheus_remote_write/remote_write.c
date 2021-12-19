@@ -20,10 +20,8 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_snappy.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_decode_msgpack.h>
-#include <cmetrics/cmt_encode_prometheus_remote_write.h>
+#include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "remote_write.h"
 #include "remote_write_conf.h"
@@ -194,55 +192,109 @@ static int cb_prom_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_prom_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void append_labels(struct prometheus_remote_write_context *ctx,
+                          struct cmt *cmt)
+{
+    struct flb_kv *kv;
+    struct mk_list *head;
+
+    mk_list_foreach(head, &ctx->kv_labels) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        cmt_label_add(cmt, kv->key, kv->val);
+    }
+}
+
+static void cb_prom_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
-    cmt_sds_t                               encoded_chunk;
-    int                                     result;
-    size_t                                  off;
-    struct cmt                             *cmt;
-    struct prometheus_remote_write_context *ctx;
+    int c = 0;
+    int ok;
+    int ret;
+    int result;
+    cmt_sds_t encoded_chunk;
+    flb_sds_t buf = NULL;
+    size_t diff = 0;
+    size_t off = 0;
+    struct cmt *cmt;
+    struct prometheus_remote_write_context *ctx = out_context;
 
-    off = 0;
+    /* Initialize vars */
     ctx = out_context;
+    ok = CMT_DECODE_MSGPACK_SUCCESS;
     result = FLB_OK;
 
-    while (result == FLB_OK) {
-        result = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
-
-        if (result == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA) {
-            result = FLB_OK;
-
-            /* We can't handle this case afterwards because there is an overlap in the
-             * constant values for the FLB_* and CMT_DECODE_MSGPACK_* groups.
-             */
-            break;
-        }
-        else if (result != CMT_DECODE_MSGPACK_SUCCESS) {
-            flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
-
-            result = FLB_ERROR;
-        }
-        else {
-            encoded_chunk = cmt_encode_prometheus_remote_write_create(cmt);
-
-            if (encoded_chunk == NULL) {
-                flb_plg_error(ctx->ins, "Error encoding context as prometheus remote write");
-
-                result = FLB_ERROR;
-            }
-            else {
-                result = http_post(ctx, encoded_chunk, flb_sds_len(encoded_chunk), tag, tag_len);
-
-                cmt_encode_text_destroy(encoded_chunk);
-            }
-
-            cmt_destroy(cmt);
-        }
+    /* Buffer to concatenate multiple metrics contexts */
+    buf = flb_sds_create_size(event_chunk->size);
+    if (!buf) {
+        flb_plg_error(ctx->ins, "could not allocate outgoing buffer");
+        FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    flb_plg_debug(ctx->ins, "cmetrics msgpack size: %lu",
+                  event_chunk->size);
+
+    /* Decode and encode every CMetric context */
+    diff = 0;
+    while ((ret = cmt_decode_msgpack_create(&cmt,
+                                            (char *) event_chunk->data,
+                                            event_chunk->size, &off)) == ok) {
+        /* append labels set by config */
+        append_labels(ctx, cmt);
+
+        /* Create a Prometheus Remote Write payload */
+        encoded_chunk = cmt_encode_prometheus_remote_write_create(cmt);
+        if (encoded_chunk == NULL) {
+            flb_plg_error(ctx->ins,
+                          "Error encoding context as prometheus remote write");
+            result = FLB_ERROR;
+            goto exit;
+        }
+
+        flb_plg_debug(ctx->ins, "cmetric_id=%i decoded %lu-%lu payload_size=%lu",
+                      c, diff, off, flb_sds_len(encoded_chunk));
+        c++;
+        diff = off;
+
+        /* concat buffer */
+        flb_sds_cat_safe(&buf, encoded_chunk, flb_sds_len(encoded_chunk));
+
+        /* release */
+        cmt_encode_prometheus_remote_write_destroy(encoded_chunk);
+        cmt_destroy(cmt);
+    }
+
+    if (ret == CMT_DECODE_MSGPACK_INSUFFICIENT_DATA && c > 0) {
+        flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
+        if (buf && flb_sds_len(buf) > 0) {
+            /* Send HTTP request */
+            result = http_post(ctx, buf, flb_sds_len(buf),
+                               event_chunk->tag,
+                               flb_sds_len(event_chunk->tag));
+
+            /* Debug http_post() result statuses */
+            if (result == FLB_OK) {
+                flb_plg_debug(ctx->ins, "http_post result FLB_OK");
+            }
+            else if (result == FLB_ERROR) {
+                flb_plg_debug(ctx->ins, "http_post result FLB_ERROR");
+            }
+            else if (result == FLB_RETRY) {
+                flb_plg_debug(ctx->ins, "http_post result FLB_RETRY");
+            }
+        }
+        flb_sds_destroy(buf);
+        buf = NULL;
+    }
+    else {
+        flb_plg_error(ctx->ins, "Error decoding msgpack encoded context");
+    }
+
+exit:
+    if (buf) {
+        flb_sds_destroy(buf);
+    }
     FLB_OUTPUT_RETURN(result);
 }
 
@@ -259,6 +311,13 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prometheus_remote_write_context,
+                                             add_labels),
+     "Adds a custom label to the metrics use format: 'add_label name value'"
+    },
+
     {
      FLB_CONFIG_MAP_STR, "proxy", NULL,
      0, FLB_FALSE, 0,

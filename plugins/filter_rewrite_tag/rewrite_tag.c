@@ -35,7 +35,6 @@
 static int emitter_create(struct flb_rewrite_tag *ctx)
 {
     int ret;
-    int coll_fd;
     struct flb_input_instance *ins;
 
     ret = flb_input_name_exists(ctx->emitter_name, ctx->config);
@@ -80,12 +79,6 @@ static int emitter_create(struct flb_rewrite_tag *ctx)
         flb_input_instance_destroy(ins);
         return -1;
     }
-
-    /* Retrieve the collector id registered on the in_emitter initialization */
-    coll_fd = in_emitter_get_collector_id(ins);
-
-    /* Initialize plugin collector (event callback) */
-    flb_input_collector_start(coll_fd, ins);
 
 #ifdef FLB_HAVE_METRICS
     /* Override Metrics title */
@@ -186,6 +179,25 @@ static int process_config(struct flb_rewrite_tag *ctx)
     return 0;
 }
 
+static int is_wildcard(char* match)
+{
+    size_t len;
+    size_t i;
+
+    if (match == NULL) {
+        return 0;
+    }
+    len = strlen(match);
+
+    /* '***' should be ignored. So we check every char. */
+    for (i=0; i<len; i++) {
+        if (match[i] != '*') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
                                struct flb_config *config,
                                void *data)
@@ -201,6 +213,9 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     if (!ctx) {
         flb_errno();
         return -1;
+    }
+    if (is_wildcard(ins->match)) {
+        flb_plg_warn(ins, "'Match' may cause infinite loop.");
     }
     ctx->ins = ins;
     ctx->config = config;
@@ -278,6 +293,12 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
 
     /* Register a metric to count the number of emitted records */
 #ifdef FLB_HAVE_METRICS
+    ctx->cmt_emitted = cmt_counter_create(ins->cmt,
+                                          "fluentbit", "filter", "emit_records_total",
+                                          "Total number of emitted records",
+                                          1, (char *[]) {"name"});
+
+    /* OLD api */
     flb_metrics_add(FLB_RTAG_METRIC_EMITTED,
                     "emit_records", ctx->ins->metrics);
 #endif
@@ -354,14 +375,22 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     int emitted = 0;
     size_t pre = 0;
     size_t off = 0;
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+#endif
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_object map;
     msgpack_object root;
     msgpack_unpacked result;
     struct flb_rewrite_tag *ctx = (struct flb_rewrite_tag *) filter_context;
-    (void) f_ins;
     (void) config;
+
+#ifdef FLB_HAVE_METRICS
+    ts = cmt_time_now();
+    name = (char *) flb_filter_name(f_ins);
+#endif
 
     /* Create temporal msgpack buffer */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -391,7 +420,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * - record with new tag was emitted and the rule says it must be preserved
          * - record was not emitted
          */
-        if ((ret == FLB_TRUE && keep == FLB_TRUE) || ret == FLB_FALSE) {
+        if (keep == FLB_TRUE) {
             msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
         }
 
@@ -406,6 +435,10 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     }
 #ifdef FLB_HAVE_METRICS
     else if (emitted > 0) {
+        cmt_counter_add(ctx->cmt_emitted, ts, emitted,
+                        1, (char *[]) {name});
+
+        /* OLD api */
         flb_metrics_sum(FLB_RTAG_METRIC_EMITTED, emitted, ctx->ins->metrics);
     }
 #endif

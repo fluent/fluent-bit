@@ -62,6 +62,9 @@ struct flb_bigquery {
     flb_sds_t dataset_id;
     flb_sds_t table_id;
 
+    int skip_invalid_rows;
+    int ignore_unknown_values;
+
     flb_sds_t uri;
 
     /* oauth2 context */

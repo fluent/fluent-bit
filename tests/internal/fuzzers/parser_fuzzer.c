@@ -148,7 +148,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     flb_utils_print_setup(fuzz_config);
 
     /* now call into the parser */
-    fuzz_parser = flb_parser_create("fuzzer", format, pregex,
+    fuzz_parser = flb_parser_create("fuzzer", format, pregex, FLB_TRUE,
             time_fmt, time_key, time_offset, time_keep, 0,
             types, types_len, list, fuzz_config);
 

@@ -225,7 +225,7 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     result->o = val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
 
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
@@ -275,7 +275,7 @@ int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
         ret = subkey_to_object(&val, subkeys, &o_key, &o_val);
         if (ret == 0) {
             *out_key = o_key;
@@ -311,7 +311,7 @@ int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
             return msgpack_object_strcmp(*out_val, str, len);
@@ -344,7 +344,7 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
             if (out_val->type != MSGPACK_OBJECT_STR) {

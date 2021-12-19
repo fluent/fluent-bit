@@ -18,6 +18,7 @@ set(src
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
+  flb_custom.c
   flb_input.c
   flb_input_chunk.c
   flb_input_metric.c
@@ -56,6 +57,8 @@ set(src
   flb_fstore.c
   flb_thread_pool.c
   flb_routes_mask.c
+  flb_typecast.c
+  flb_event.c
   )
 
 # Multiline subsystem
@@ -144,6 +147,7 @@ if(FLB_AWS)
     "aws/flb_aws_credentials.c"
     "aws/flb_aws_credentials_sts.c"
     "aws/flb_aws_credentials_ec2.c"
+    "aws/flb_aws_imds.c"
     "aws/flb_aws_credentials_http.c"
     "aws/flb_aws_credentials_profile.c"
     )
@@ -165,6 +169,7 @@ endif()
 if(FLB_LUAJIT)
   set(src
     ${src}
+    "flb_lua.c"
     "flb_luajit.c"
     )
 endif()

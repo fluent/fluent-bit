@@ -43,6 +43,18 @@
 extern struct flb_aws_error_reporter *error_reporter;
 #endif
 
+#ifdef FLB_HAVE_OPENSSL
+#include <openssl/rand.h>
+#endif
+
+/*
+ * The following block descriptor describes the private use unicode character range
+ * used for denoting invalid utf-8 fragments. Invalid fragment 0xCE would become
+ * utf-8 codepoint U+E0CE if FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR is set to
+ * E0 since U+E0CE = U+<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR><HEX_FRAGMENT>
+ */
+#define FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR 0xE0
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;
@@ -632,6 +644,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     int required;
     int len;
     int hex_bytes;
+    int is_valid;
+    int utf_sequence_number;
+    int utf_sequence_length;
     uint32_t codepoint;
     uint32_t state = 0;
     char tmp[16];
@@ -728,20 +743,102 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             i += (hex_bytes - 1);
         }
         else if (c > 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if (available - written < 6) {
-                return FLB_FALSE;
-            }
+            utf_sequence_length = flb_utf8_len(str + i);
 
-            if (i + hex_bytes > str_len) {
+            if (i + utf_sequence_length > str_len) {
                 break; /* skip truncated UTF-8 */
             }
-            for (b = 0; b < hex_bytes; b++) {
-                tmp[b] = str[i+b];
+
+            is_valid = FLB_TRUE;
+            for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length;
+                utf_sequence_number++) {
+                /* Leading characters must start with bits 11 */
+                if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
+                    /* Invalid unicode character. replace */
+                    flb_debug("[pack] unexpected UTF-8 leading byte, "
+                             "substituting character with replacement character");
+                    tmp[utf_sequence_number] = str[i];
+                    ++i; /* Consume invalid leading byte */
+                    utf_sequence_length = utf_sequence_number + 1;
+                    is_valid = FLB_FALSE;
+                    break;
+                }
+                /* Trailing characters must start with bits 10 */
+                else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
+                    /* Invalid unicode character. replace */
+                    flb_debug("[pack] unexpected UTF-8 continuation byte, "
+                             "substituting character with replacement character");
+                    /* This byte, i, is the start of the next unicode character */
+                    utf_sequence_length = utf_sequence_number;
+                    is_valid = FLB_FALSE;
+                    break;
+                }
+
+                tmp[utf_sequence_number] = str[i];
+                ++i;
             }
-            encoded_to_buf(p, tmp, hex_bytes);
-            p += hex_bytes;
-            i += (hex_bytes - 1);
+            --i;
+
+            if (is_valid) {
+                if (available - written < utf_sequence_length) {
+                    return FLB_FALSE;
+                }
+
+                encoded_to_buf(p, tmp, utf_sequence_length);
+                p += utf_sequence_length;
+            }
+            else {
+                if (available - written < utf_sequence_length * 3) {
+                    return FLB_FALSE;
+                }
+
+                /*
+                 * Utf-8 sequence is invalid. Map fragments to private use area
+                 * codepoints in range:
+                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
+                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF
+                 */
+                for (b = 0; b < utf_sequence_length; ++b) {
+                    /*
+                     * Utf-8 private block invalid hex mapping. Format unicode charpoint
+                     * in the following format:
+                     *
+                     *      +--------+--------+--------+
+                     *      |1110PPPP|10PPPPHH|10HHHHHH|
+                     *      +--------+--------+--------+
+                     *
+                     * Where:
+                     *   P is FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR bits (1 byte)
+                     *   H is Utf-8 fragment hex bits (1 byte)
+                     *   1 is bit 1
+                     *   0 is bit 0
+                     */
+
+                    /* unicode codepoint start */
+                    *p = 0xE0;
+
+                    /* print unicode private block header first 4 bits */
+                    *p |= FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4;
+                    ++p;
+
+                    /* unicode codepoint middle */
+                    *p = 0x80;
+
+                    /* print end of unicode private block header last 4 bits */
+                    *p |= ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f);
+
+                    /* print hex fragment first 2 bits */
+                    *p |= (tmp[b] >> 6) & 0x03;
+                    ++p;
+
+                    /* unicode codepoint middle */
+                    *p = 0x80;
+
+                    /* print hex fragment last 6 bits */
+                    *p |= tmp[b] & 0x3f;
+                    ++p;
+                }
+            }
         }
         else {
             *p++ = c;
@@ -994,4 +1091,193 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     }
 
     return 0;
+}
+
+
+char *flb_utils_get_os_name()
+{
+#ifdef _WIN64
+    return "win64";
+#elif _WIN32
+    return "win32";
+#elif __APPLE__ || __MACH__
+    return "macos";
+#elif __linux__
+    return "linux";
+#elif __FreeBSD__
+    return "freebsd";
+#elif __unix || __unix__
+    return "unix";
+#else
+    return "other";
+#endif
+}
+
+#ifdef FLB_HAVE_OPENSSL
+int flb_utils_uuid_v4_gen(char *buf)
+{
+    int ret;
+    union {
+        struct {
+            uint32_t time_low;
+            uint16_t time_mid;
+            uint16_t time_hi_and_version;
+            uint8_t  clk_seq_hi_res;
+            uint8_t  clk_seq_low;
+            uint8_t  node[6];
+        };
+        uint8_t __rnd[16];
+    } uuid;
+
+    ret = RAND_bytes(uuid.__rnd, sizeof(uuid));
+
+    uuid.clk_seq_hi_res = (uint8_t) ((uuid.clk_seq_hi_res & 0x3F) | 0x80);
+    uuid.time_hi_and_version = (uint16_t) ((uuid.time_hi_and_version & 0x0FFF) | 0x4000);
+
+    snprintf(buf, 38, "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+            uuid.time_low, uuid.time_mid, uuid.time_hi_and_version,
+            uuid.clk_seq_hi_res, uuid.clk_seq_low,
+            uuid.node[0], uuid.node[1], uuid.node[2],
+            uuid.node[3], uuid.node[4], uuid.node[5]);
+
+    if (ret == 1) {
+        return 0;
+    }
+
+    return -1;
+}
+#else
+int flb_utils_uuid_v4_gen(char *buf)
+{
+    snprintf(buf, 38, "ddad00f1-3806-46ab-88d1-277a8c863cd6");
+    return 0;
+}
+#endif
+
+int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
+{
+    int fd;
+    int ret;
+    size_t bytes;
+    struct stat st;
+    flb_sds_t buf;
+    FILE *fp;
+
+    fp = fopen(path, "rb");
+    if (!fp) {
+        return -1;
+    }
+    fd = fileno(fp);
+
+    ret = fstat(fd, &st);
+    if (ret == -1) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    buf = flb_calloc(1, st.st_size + 1);
+    if (!buf) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    bytes = fread(buf, st.st_size, 1, fp);
+    if (bytes < 1) {
+        flb_errno();
+        flb_free(buf);
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
+
+    *out_buf = buf;
+    *out_size = st.st_size;
+    return 0;
+}
+
+static int machine_id_read_and_sanitize(char *path,
+                                        char **out_buf, size_t *out_size)
+{
+    int ret;
+    size_t s;
+    char *p;
+    char *buf;
+    size_t bytes;
+
+    ret = flb_utils_read_file(path, &buf, &bytes);
+    if (ret != 0) {
+        return -1;
+    }
+
+    p = buf + bytes - 1;
+    while (*p == ' ' || *p == '\n') {
+        p--;
+    }
+
+    /* set new size */
+    s = p - buf + 1;
+
+    buf[s] = '\0';
+    *out_size = s;
+    *out_buf = buf;
+
+    return 0;
+}
+
+int flb_utils_get_machine_id(char **out_id, size_t *out_size)
+{
+    int ret;
+    char *id;
+    size_t bytes;
+    char *uuid;
+
+#ifdef __linux__
+    char *dbus_var = "/var/lib/dbus/machine-id";
+    char *dbus_etc = "/etc/machine-id";
+
+    /* dbus */
+    ret = machine_id_read_and_sanitize(dbus_var, &id, &bytes);
+    if (ret == 0) {
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+
+    /* etc */
+    ret = machine_id_read_and_sanitize(dbus_etc, &id, &bytes);
+    if (ret == 0) {
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || \
+      defined(__OpenBSD__) || defined(__DragonFly__)
+
+    char *hostid = "/etc/hostid";
+
+    /* hostid */
+    ret = machine_id_read_and_sanitize(hostid, &id, &bytes);
+    if (ret == 0) {
+        *out_id = id;
+        *out_size = bytes;
+        return 0;
+    }
+#endif
+
+    /* generate a random uuid */
+    uuid = flb_malloc(38);
+    if (!uuid) {
+        flb_errno();
+        return -1;
+    }
+    ret = flb_utils_uuid_v4_gen(uuid);
+    if (ret == 0) {
+        *out_id = uuid;
+        *out_size = strlen(uuid);
+        return 0;
+    }
+
+    return -1;
 }

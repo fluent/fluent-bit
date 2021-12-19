@@ -27,8 +27,7 @@
 #include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
-
-#include <mpack/mpack.h>
+#include <cmetrics/cmt_mpack_utils.h>
 
 static struct cmt_map_label *find_label_by_index(struct mk_list *label_list, size_t desired_index)
 {
@@ -54,7 +53,7 @@ static int unpack_opts_ns(mpack_reader_t *reader, size_t index, void *context)
 
     opts = (struct cmt_opts *) context;
 
-    return cmt_mpack_consume_string_tag(reader, &opts->namespace);
+    return cmt_mpack_consume_string_tag(reader, &opts->ns);
 }
 
 static int unpack_opts_ss(mpack_reader_t *reader, size_t index, void *context)
@@ -110,7 +109,7 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
          * later on.
          */
 
-        opts->fqname = cmt_sds_create_size(cmt_sds_len(opts->namespace) + \
+        opts->fqname = cmt_sds_create_size(cmt_sds_len(opts->ns) + \
                                            cmt_sds_len(opts->subsystem) + \
                                            cmt_sds_len(opts->name) + \
                                            4);
@@ -119,7 +118,7 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_opts *opts)
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
 
-        cmt_sds_cat(opts->fqname, opts->namespace, cmt_sds_len(opts->namespace));
+        cmt_sds_cat(opts->fqname, opts->ns, cmt_sds_len(opts->ns));
         cmt_sds_cat(opts->fqname, "_", 1);
 
         if (cmt_sds_len(opts->subsystem) > 0) {
@@ -220,20 +219,29 @@ static int unpack_label(mpack_reader_t *reader,
     return CMT_DECODE_MSGPACK_SUCCESS;
 }
 
-static int unpack_static_label(mpack_reader_t *reader,
-                               size_t index,
-                               struct mk_list *unique_label_list,
-                               struct mk_list *target_label_list)
+static int unpack_static_label(mpack_reader_t *reader, size_t index, void *context)
 {
-    int                   result;
-    uint64_t              label_index;
-    struct cmt_label     *new_static_label;
-    struct cmt_label     *last_static_label;
-    struct cmt_map_label *dictionary_entry;
+    struct mk_list                    *target_label_list;
+    struct mk_list                    *unique_label_list;
+    struct cmt_label                  *last_static_label;
+    struct cmt_map_label              *dictionary_entry;
+    struct cmt_label                  *new_static_label;
+    struct cmt_msgpack_decode_context *decode_context;
+    uint64_t                           label_index;
+    int                                result;
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (NULL == decode_context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    unique_label_list = &decode_context->unique_label_list;
+    target_label_list = &decode_context->cmt->static_labels->list;
 
     if (NULL == reader            ||
         NULL == unique_label_list ||
-        NULL == target_label_list ) {
+        NULL == target_label_list) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
 
@@ -241,6 +249,10 @@ static int unpack_static_label(mpack_reader_t *reader,
 
     if (CMT_DECODE_MSGPACK_SUCCESS != result) {
         return result;
+    }
+
+    if (decode_context->static_labels_unpacked) {
+        return CMT_DECODE_MSGPACK_SUCCESS;
     }
 
     dictionary_entry = find_label_by_index(unique_label_list, label_index);
@@ -512,18 +524,12 @@ static int unpack_meta_label_dictionary(mpack_reader_t *reader, size_t index, vo
 
 static int unpack_header_static_label(mpack_reader_t *reader, size_t index, void *context)
 {
-    struct cmt_msgpack_decode_context *decode_context;
-
     if (NULL == reader ||
         NULL == context) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
 
-    decode_context = (struct cmt_msgpack_decode_context *) context;
-
-    return unpack_static_label(reader, index,
-                               &decode_context->unique_label_list,
-                               &decode_context->cmt->static_labels->list);
+    return unpack_static_label(reader, index, context);
 }
 
 static int unpack_meta_label(mpack_reader_t *reader, size_t index, void *context)
@@ -638,6 +644,13 @@ static int unpack_basic_type(mpack_reader_t *reader, struct cmt *cmt, struct cmt
 
     decode_context.cmt = cmt;
     decode_context.map = *map;
+
+    if (mk_list_is_empty(&cmt->static_labels->list) == 0) {
+        decode_context.static_labels_unpacked = CMT_FALSE;
+    }
+    else {
+        decode_context.static_labels_unpacked = CMT_TRUE;
+    }
 
     mk_list_init(&decode_context.unique_label_list);
 

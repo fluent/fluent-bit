@@ -19,12 +19,25 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <monkey/mk_core.h>
 
 #ifdef FLB_HAVE_METRICS
-
 #ifndef FLB_METRICS_H
 #define FLB_METRICS_H
+
+/* CMetrics */
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
+#include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_influx.h>
+#include <cmetrics/cmt_encode_text.h>
+#include <cmetrics/cmt_encode_prometheus.h>
+#include <cmetrics/cmt_encode_prometheus_remote_write.h>
+#include <cmetrics/cmt_encode_msgpack.h>
 
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0
@@ -66,6 +79,7 @@ int flb_metrics_print(struct flb_metrics *metrics);
 int flb_metrics_dump_values(char **out_buf, size_t *out_size,
                             struct flb_metrics *me);
 int flb_metrics_destroy(struct flb_metrics *metrics);
+int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt);
 
 #endif
 #endif /* FLB_HAVE_METRICS */
