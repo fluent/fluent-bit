@@ -25,6 +25,17 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
+
+  # Called workflows cannot be nested
+  staging-test-images-integration-gcp:
+    name: run integration tests on GCP
+    # Wait for other tests to succeed
+    needs: staging-test-images
+    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
+    with:
+      image_name: ${{ inputs.registry }}/${{ inputs.image }}
+      image_tag: ${{ inputs.image-tag }}
+    secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}
       gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
