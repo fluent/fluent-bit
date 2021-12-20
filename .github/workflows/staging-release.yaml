@@ -43,10 +43,19 @@ jobs:
   staging-release-packages-s3:
     runs-on: ubuntu-18.04 # no createrepo on more recent runners
     environment: release
-    needs: staging-get-version
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+
+    - name: Get the version
+      id: get_version
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        VERSION=$(cat latest-version.txt)
+        echo ::set-output name=VERSION::$VERSION
+      shell: bash
+      env:
+        AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
 
     - name: Import GPG key for signing
       id: import_gpg
