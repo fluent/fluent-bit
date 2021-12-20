@@ -5,9 +5,9 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-major=`echo $1 | sed -e "s/^\([0-9]*\)\.[0-9]*\.[0-9]*/\1/"`
-minor=`echo $1 | sed -e "s/^[0-9]*\.\([0-9]*\)\.[0-9]*/\1/"`
-patch=`echo $1 | sed -e "s/^[0-9]*\.[0-9]*\.\([0-9]*\)/\1/"`
+major=$(echo "$1" | sed -e "s/^\([0-9]*\)\.[0-9]*\.[0-9]*/\1/")
+minor=$(echo "$1" | sed -e "s/^[0-9]*\.\([0-9]*\)\.[0-9]*/\1/")
+patch=$(echo "$1" | sed -e "s/^[0-9]*\.[0-9]*\.\([0-9]*\)/\1/")
 
 # Build version
 sed -i "s/FLB_VERSION_MAJOR  [0-9]/FLB_VERSION_MAJOR  $major/g" CMakeLists.txt
