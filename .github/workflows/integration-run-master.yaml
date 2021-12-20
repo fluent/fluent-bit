@@ -20,7 +20,7 @@ jobs:
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
-      
+
       - name: Download docker image from build artifacts
         uses: dawidd6/action-download-artifact@v2
         with:

@@ -20,7 +20,7 @@ jobs:
         with:
           images: fluentbitdev/fluent-bit
           tags: |
-            raw,x86_64-master-${{ matrix.tag }}
+            raw,x86_64-${{ matrix.tag }}
 
       - name: Build the staging image
         uses: docker/build-push-action@v2
@@ -30,5 +30,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          push: true
-          load: false
+          push: false
+          load: true
+
+      - name: Upload image
+        uses: ishworkh/docker-image-artifact-upload@v1
+        with:
+          image: "fluentbitdev/fluent-bit:x86_64-${{ matrix.tag }}"
