@@ -23,7 +23,18 @@ on:
         required: true
       cosign_key:
         required: false
-
+      terraform_api_token:
+        description: Terraform API Token
+        required: true
+      gcp_service_account_key:
+        description: The GCP service account we want to use provides this token.
+        required: true
+      grafana_username:
+        description: The Grafana (Cloud) username to deploy with.
+        required: true
+      grafana_password:
+        description: The Grafana (Cloud) credentials to deploy with.
+        required: true
 jobs:
   call-test-images-cosign-verify:
     name: Cosign verification of container image
@@ -187,3 +198,23 @@ jobs:
           REGISTRY: ${{ inputs.registry }}
           IMAGE_NAME: ${{ inputs.image }}
           IMAGE_TAG: ${{ inputs.image-tag }}
+
+  call-test-images-gcp-integration:
+    name: run integration tests on GCP
+    # Wait for other tests to succeed
+    needs: [ call-test-images-container-smoke, call-test-images-k8s-smoke ]
+    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
+    with:
+      image_name: ${{ inputs.registry }}/${{ inputs.image }}
+      image_tag: ${{ inputs.image-tag }}
+    secrets:
+      grafana_username: ${{ secrets.grafana_username }}
+      terraform_api_token: ${{ secrets.terraform_api_token }}
+      gcp_service_account_key: ${{ secrets.gcp_service_account_key }}
+      grafana_password: ${{ secrets.grafana_password }}
+
+  # TODO
+  # call-test-images-soak-test:
+  #   name: Soak test for any issues
+  #   needs: call-test-images-gcp-integration
+  #   uses: calyptia/fluent-bit-ci/.github/workflows/reusable-soak-test.yaml@main
