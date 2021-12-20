@@ -22,7 +22,7 @@ jobs:
         with:
           images: fluentbitdev/fluent-bit
           tags: |
-            raw,x86_64-master-pr-${{ env.pr }}
+            raw,x86_64-master-pr-${{ github.event.number }}
 
       - name: Build the staging image
         uses: docker/build-push-action@v2
@@ -38,4 +38,4 @@ jobs:
       - name: Upload image
         uses: ishworkh/docker-image-artifact-upload@v1
         with:
-          image: "fluentbitdev/fluent-bit:x86_64-master-pr-${{ env.pr }}"
+          image: fluentbitdev/fluent-bit:x86_64-master-pr-${{ github.event.number }}
