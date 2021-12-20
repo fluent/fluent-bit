@@ -25,6 +25,10 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
+      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
+      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
+      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
 
   staging-test-packages:
     name: Binary packages staging test
