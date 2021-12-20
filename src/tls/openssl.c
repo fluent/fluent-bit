@@ -69,6 +69,8 @@ static int tls_init(void)
     OPENSSL_add_all_algorithms_noconf();
     SSL_load_error_strings();
     SSL_library_init();
+#else
+    SSL_load_error_strings();
 #endif
     return 0;
 }
@@ -347,6 +349,7 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
                         void *buf, size_t len)
 {
     int ret;
+    char errbuf[256];
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
 
@@ -360,6 +363,8 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
             ret = FLB_TLS_WANT_READ;
         }
         else if (ret < 0) {
+            ERR_error_string(ret, errbuf);
+            flb_error("[tls] error: %s", errbuf);
             ret = -1;
         }
     }
@@ -372,6 +377,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
                          const void *data, size_t len)
 {
     int ret;
+    char errbuf[256];
     size_t total = 0;
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
@@ -391,6 +397,8 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
             ret = FLB_TLS_WANT_READ;
         }
         else {
+            ERR_error_string(ret, errbuf);
+            flb_error("[tls] error: %s", errbuf);
             ret = -1;
         }
     }
@@ -404,6 +412,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
 static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
 {
     int ret = 0;
+    char errbuf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
 
@@ -420,6 +429,15 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
             ret = SSL_get_error(session->ssl, ret);
+            // The SSL_ERROR_SYSCALL with errno value of 0 
+            // indicates unexpected EOF from the peer.
+            // This is fixed in OpenSSL 3.0.
+            if (ret == 0) {
+            	flb_error("[tls] error: unexpected EOF");
+            } else {
+                ERR_error_string(ret, errbuf);
+                flb_error("[tls] error: %s", errbuf);
+            }
             pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }
