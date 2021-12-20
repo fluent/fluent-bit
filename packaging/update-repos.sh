@@ -5,7 +5,7 @@ VERSION=${VERSION:-$1}
 # Where the base of all the repos is
 BASE_PATH=${BASE_PATH:-$2}
 
-RPM_REPO_PATHS=("amazonlinux/2" "centos/7")
+RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8")
 
 echo "RPM signing configuration"
 rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
@@ -27,7 +27,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
         echo "Setting up $BASE_PATH/$REPO_TYPE.repo"
         cat << EOF > "$BASE_PATH/$REPO_TYPE.repo"
 [Fluent-Bit]
-name=Fluent Bit Packages - $REPO_TYPE - \$basearch
+name=Fluent Bit Packages - $REPO_TYPE - \$releasever - \$basearch
 baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
 enabled=1
 gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
@@ -36,14 +36,12 @@ EOF
     fi
 done
 
-DEB_REPO_PATHS=( "debian/jessie"
+DEB_REPO_PATHS=( "debian/bullseye"
                  "debian/stretch"
                  "debian/buster"
                  "ubuntu/xenial"
                  "ubuntu/bionic"
                  "ubuntu/focal"
-                 "raspbian/jessie"
-                 "raspbian/stretch"
                  "raspbian/buster" )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do

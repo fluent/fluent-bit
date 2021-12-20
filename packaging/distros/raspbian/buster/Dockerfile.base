@@ -1,4 +1,4 @@
-FROM resin/rpi-raspbian:buster
+FROM balenalib/rpi-raspbian:buster
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get -qq update && \
