@@ -9,7 +9,6 @@ on:
       - 'docker_compose/**'
       - 'packaging/**'
       - '.gitignore'
-  workflow_dispatch:
 
 jobs:
   run-all-unit-tests:

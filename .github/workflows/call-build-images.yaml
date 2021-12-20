@@ -5,26 +5,34 @@ on:
   workflow_call:
     inputs:
       version:
+        description: The version of the Fluent Bit to build.
         type: string
         required: true
       registry:
+        description: The registry to push container images to.
         type: string
         required: true
       username:
+        description: The username for the registry.
         type: string
         required: true
       image:
+        description: The name of the container image to push to the registry.
         type: string
         required: true
       environment:
+        description: The Github environment to run this workflow on.
         type: string
         required: false
     secrets:
       token:
+        description: The Github token or similar to authenticate with for the registry.
         required: true
       cosign_private_key:
+        description: The optional Cosign key to use for signing the images.
         required: false
       cosign_private_key_password:
+        description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
   call-build-images-matrix:

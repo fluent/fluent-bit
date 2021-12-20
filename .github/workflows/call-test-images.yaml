@@ -4,24 +4,31 @@ on:
   workflow_call:
     inputs:
       registry:
+        description: The registry to pull the images to test from.
         type: string
         required: true
       username:
+        description: The username for authentication with the registry.
         type: string
         required: true
       image:
+        description: The name of the image to pull from the registry for testing.
         type: string
         required: true
       image-tag:
+        description: The tag of the image to pull from the registry for testing.
         type: string
         required: true
       environment:
+        description: The Github environment to run this workflow on.
         type: string
         required: false
     secrets:
       token:
+        description: The Github token or similar to authenticate with for the registry.
         required: true
       cosign_key:
+        description: The optional Cosign key to use for verifying the images.
         required: false
       terraform_api_token:
         description: Terraform API Token

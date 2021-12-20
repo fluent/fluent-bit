@@ -5,21 +5,28 @@ on:
   workflow_call:
     inputs:
       version:
+        description: The version of the Fluent Bit to build.
         type: string
         required: true
       environment:
+        description: The Github environment to run this workflow on.
         type: string
         required: false
     secrets:
       token:
+        description: The Github token or similar to authenticate with.
         required: true
       bucket:
+        description: The name of the S3 (US-East) bucket to push packages into.
         required: true
       access_key_id:
+        description: The S3 access key id for the bucket.
         required: true
       secret_access_key:
+        description: The S3 secret access key for the bucket.
         required: true
       gpg_private_key:
+        description: The GPG key to use for signing the packages.
         required: true
 
 jobs:
@@ -145,8 +152,6 @@ jobs:
     runs-on: ubuntu-18.04 # no createrepo otherwise
     environment: ${{ inputs.environment }}
     needs: call-build-packages
-    env:
-      release: ${{ needs.deploy-get-version.outputs.releaseTag }}
     steps:
       - name: Install dependencies
         run: |

@@ -4,12 +4,15 @@ on:
   workflow_call:
     inputs:
       environment:
+        description: The Github environment to run this workflow on.
         type: string
         required: false
     secrets:
-      bucket:
-        required: true
       token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to pull packages from.
         required: true
 
 jobs:
