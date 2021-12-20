@@ -146,8 +146,6 @@ jobs:
     runs-on: ubuntu-18.04 # no createrepo otherwise
     environment: ${{ inputs.environment }}
     needs: call-build-packages
-    env:
-      release: ${{ needs.deploy-get-version.outputs.releaseTag }}
     steps:
       - name: Install dependencies
         run: |

@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: ludeeus/action-shellcheck@master
         with:
-          ignore_paths: lib
+          ignore_paths: lib plugins tests
 
   actionlint-pr:
     runs-on: ubuntu-latest
