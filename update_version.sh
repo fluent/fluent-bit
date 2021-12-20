@@ -30,5 +30,5 @@ git commit -s -m "snap: bump to v$1" snap/snapcraft.yaml
 
 # Bitbake / Yocto
 sed -i "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$1\"/g" fluent-bit_*.*.*.bb
-git mv fluent-bit_*.*.*.bb fluent-bit_$1.bb
+git mv fluent-bit_*.*.*.bb "fluent-bit_$1.bb"
 git commit -a -s -m "bitbake: bump to v$1"
