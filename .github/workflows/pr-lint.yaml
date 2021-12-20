@@ -18,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: lib
 
   actionlint-pr:
     runs-on: ubuntu-latest
