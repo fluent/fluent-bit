@@ -18,20 +18,13 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   master-integration-test-build-complete:
-    name: Master - build complete
-    runs-on: ubuntu-latest
+    name: Master - annotate Grafana Cloud with commit ID now build complete
     needs: master-integration-test-build
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          repository: calyptia/fluent-bit-ci
-          path: ci
-      - run: |
-          ci/scripts/grafana-add-tag.sh
-        env:
-          GRAFANA_CLOUD_TOKEN: ${{ secrets.GRAFANA_CLOUD_TOKEN }}
-          COMMIT_ID: ${{ github.sha }}
-        working-directory: ci/
+    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-grafana-cloud-annotation.yaml@main
+    with:
+      ref: ${{ github.sha }}
+    secrets:
+      grafana_cloud_token: ${{ secrets.GRAFANA_CLOUD_TOKEN }}
 
   master-integration-test-run-integration-gcp:
     name: Master - integration test
