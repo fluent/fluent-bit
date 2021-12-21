@@ -32,6 +32,7 @@ on:
         required: true
 jobs:
   call-integration-image-build-container:
+    name: Integration test container image build
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:

@@ -5,6 +5,7 @@ on:
       - master
 jobs:
   master-integration-test-build:
+    name: Master - integration build
     uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
     with:
       ref: ${{ github.sha }}
@@ -17,6 +18,7 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   master-integration-test-build-complete:
+    name: Master - build complete
     runs-on: ubuntu-latest
     needs: master-integration-test-build
     steps:
@@ -32,6 +34,7 @@ jobs:
         working-directory: ci/
 
   master-integration-test-run-integration-gcp:
+    name: Master - integration test
     needs: master-integration-test-build
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
