@@ -103,7 +103,7 @@ jobs:
           DISTRO: ${{ matrix.distro }}
         shell: bash
 
-      - name: Push ${{ steps.get-target-info.outputs.target }} packages to S3
+      - name: Push packages to S3
         # Only upload for staging
         if: ${{ inputs.environment == 'staging' }}
         # Make sure not to do a --delete on sync as it will remove the other architecture

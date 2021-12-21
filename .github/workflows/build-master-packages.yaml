@@ -25,8 +25,7 @@ jobs:
 
   master-build-packages:
     needs: master-build-generate-matrix
-    # TODO: only to test, remove for merge
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@workflows_resolve_master_packaging
+    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: master
       branch: master
