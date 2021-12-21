@@ -49,8 +49,11 @@ struct flb_net_setup {
     /* dns mode : TCP or UDP */
     char *dns_mode;
 
-    /* dns reolver : LEGACY or ASYNC */
+    /* dns resolver : LEGACY or ASYNC */
     char *dns_resolver;
+
+    /* prioritize ipv4 results when trying to establish a connection*/
+    int   dns_prefer_ipv4;
 };
 
 /* Defines a host service and it properties */
