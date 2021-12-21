@@ -53,7 +53,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.image }}
+          images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.image-tag }}
 
@@ -72,7 +72,7 @@ jobs:
         id: meta-debug
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.image }}
+          images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.image-tag }}-debug
 
