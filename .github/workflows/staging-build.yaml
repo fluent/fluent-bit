@@ -95,7 +95,7 @@ jobs:
     uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
-      build_matrix: ${{ needs.staging-build-generate-matrix.outputs.matrix }}
+      build_matrix: ${{ needs.staging-build-generate-matrix.outputs.build-matrix }}
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}

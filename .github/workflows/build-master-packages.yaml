@@ -28,6 +28,6 @@ jobs:
     uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: master
-      build_matrix: ${{ needs.staging-build-generate-matrix.outputs.matrix }}
+      build_matrix: ${{ needs.master-build-generate-matrix.outputs.build-matrix }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
