@@ -67,11 +67,35 @@ jobs:
       cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
       cosign_private_key_password: ${{ secrets.COSIGN_PASSWORD }}
 
+  staging-build-generate-matrix:
+    name: Staging build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      # Set up the list of target to build so we can pass the JSON to the reusable job
+      - id: set-matrix
+        run: |
+          matrix=$((
+            echo '{ "distro" : ['
+            echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
+            echo '"centos/7", "centos/7.arm64v8", "centos/8", "centos/8.arm64v8",'
+            echo '"debian/stretch", "debian/stretch.arm64v8", "debian/buster", "debian/buster.arm64v8", "debian/bullseye", "debian/bullseye.arm64v8",'
+            echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8"'
+            echo '"raspbian/buster", "raspbian/bullseye"'
+            echo ']}'
+          ) | jq -c .)
+          echo $matrix
+          echo $matrix| jq .
+          echo "::set-output name=matrix::$matrix"
+        shell: bash
+
   staging-build-packages:
-    needs: staging-build-get-version
+    needs: [ staging-build-get-version, staging-build-generate-matrix ]
     uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
+      build_matrix: ${{ needs.staging-build-generate-matrix.outputs.matrix }}
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
