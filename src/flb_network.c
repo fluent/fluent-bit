@@ -104,6 +104,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
 {
     net->dns_mode = NULL;
     net->dns_resolver = NULL;
+    net->dns_prefer_ipv4 = FLB_FALSE;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -551,6 +552,67 @@ static void flb_net_free_translated_addrinfo(struct addrinfo *input)
             flb_free(current_record);
         }
     }
+}
+
+static void flb_net_append_addrinfo_entry(struct addrinfo **head,
+                                          struct addrinfo **tail,
+                                          struct addrinfo  *entry)
+{
+    if (*head == NULL) {
+        *head = entry;
+    }
+    else {
+        (*tail)->ai_next = entry;
+    }
+
+    *tail = entry;
+}
+
+static struct addrinfo *flb_net_sort_addrinfo_list(struct ares_addrinfo *input,
+                                                   int preferred_family)
+{
+    struct addrinfo *preferred_results_head;
+    struct addrinfo *remainder_results_head;
+    struct addrinfo *preferred_results_tail;
+    struct addrinfo *remainder_results_tail;
+    struct addrinfo *current_record;
+    struct addrinfo *next_record;
+
+    remainder_results_head = NULL;
+    preferred_results_head = NULL;
+    remainder_results_tail = NULL;
+    preferred_results_tail = NULL;
+    current_record = NULL;
+    next_record = NULL;
+
+    for (current_record = input ;
+         current_record != NULL ;
+         current_record = next_record) {
+        next_record = current_record->ai_next;
+        current_record->ai_next = NULL;
+
+        if (preferred_family == current_record->ai_family) {
+            flb_net_append_addrinfo_entry(&preferred_results_head,
+                                          &preferred_results_tail,
+                                          current_record);
+        }
+        else
+        {
+            flb_net_append_addrinfo_entry(&remainder_results_head,
+                                          &remainder_results_tail,
+                                          current_record);
+        }
+    }
+
+    if (preferred_results_tail != NULL) {
+        preferred_results_tail->ai_next = remainder_results_head;
+    }
+
+    if (preferred_results_head == NULL) {
+        return remainder_results_head;
+    }
+
+    return preferred_results_head;
 }
 
 static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *input)
@@ -1085,7 +1147,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     char _port[6];
     char address[41];
     struct addrinfo hints;
-    struct addrinfo *res, *rp;
+    struct addrinfo *sorted_res, *res, *rp;
 
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
@@ -1145,6 +1207,26 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         }
 
         return -1;
+    }
+
+    if (u_conn->u->net.dns_prefer_ipv4) {
+printf("PRIORITIZING IPv4\n");
+        sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
+
+        if (sorted_res == NULL) {
+            flb_debug("[net] error sorting getaddrinfo results");
+
+            if (use_async_dns) {
+                flb_net_free_translated_addrinfo(res);
+            }
+            else {
+                freeaddrinfo(res);
+            }
+
+            return -1;
+        }
+
+        res = sorted_res;
     }
 
     /*
