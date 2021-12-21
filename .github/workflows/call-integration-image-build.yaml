@@ -53,9 +53,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ image-name }}
+          images: ${{ inputs.image }}
           tags: |
-            raw,${{ image-tag }}
+            raw,${{ inputs.image-tag }}
 
       - name: Build the AMD64 image
         uses: docker/build-push-action@v2
@@ -72,9 +72,9 @@ jobs:
         id: meta-debug
         uses: docker/metadata-action@v3
         with:
-          images: ${{ image-name }}
+          images: ${{ inputs.image-name }}
           tags: |
-            raw,${{ image-tag }}-debug
+            raw,${{ inputs.image-tag }}-debug
 
       - name: Build the AMD64 development image
         uses: docker/build-push-action@v2
