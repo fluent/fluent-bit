@@ -77,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
-          path: packaging/packages/staging/
+          path: packaging/packages/
           if-no-files-found: error
 
       - name: Retrieve target info for repo creation
