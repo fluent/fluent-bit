@@ -72,7 +72,7 @@ jobs:
         id: meta-debug
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.image-name }}
+          images: ${{ inputs.image }}
           tags: |
             raw,${{ inputs.image-tag }}-debug
 
