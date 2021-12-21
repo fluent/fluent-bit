@@ -41,6 +41,7 @@ jobs:
         platforms: linux/amd64
         push: false
         load: false
+        target: test
 
     - name: Extract metadata from Github
       id: meta
@@ -61,3 +62,4 @@ jobs:
         platforms: linux/amd64, linux/arm64
         push: true
         load: false
+        target: production
