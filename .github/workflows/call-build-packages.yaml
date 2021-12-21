@@ -16,6 +16,10 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      branch:
+        description: The optional source code branch to use for building against.
+        type: string
+        required: false
     secrets:
       token:
         description: The Github token or similar to authenticate with.
@@ -61,9 +65,12 @@ jobs:
 
       - name: Build the ${{ matrix.distro }} artifacts
         run: |
-          ./build.sh -v "${{ inputs.version }}" -d "${{ matrix.distro }}"
+          ./build.sh
         env:
+          FLB_VERSION: ${{ inputs.version }}
+          FLB_DISTRO: ${{ matrix.distro }}
           FLB_OUT_DIR: staging
+          FLB_BRANCH: ${{ inputs.branch }}
         working-directory: packaging
 
       - name: Upload the ${{ matrix.distro }} artifacts
@@ -90,12 +97,13 @@ jobs:
                   exit 1
               fi
           fi
+          echo "$TARGET"
           echo ::set-output name=echo ::set-output name=target::$TARGET
         env:
           DISTRO: ${{ matrix.distro }}
         shell: bash
 
-      - name: Push packages to S3
+      - name: Push ${{ steps.get-target-info.outputs.target }} packages to S3
         # Only upload for staging
         if: ${{ inputs.environment == 'staging' }}
         # Make sure not to do a --delete on sync as it will remove the other architecture
