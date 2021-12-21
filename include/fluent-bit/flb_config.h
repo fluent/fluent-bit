@@ -189,6 +189,7 @@ struct flb_config {
     /* DNS */
     char *dns_mode;
     char *dns_resolver;
+    int   dns_prefer_ipv4;
 
     /* Chunk I/O Buffering */
     void *cio;
@@ -294,6 +295,7 @@ enum conf_type {
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
 #define FLB_CONF_DNS_RESOLVER          "dns.resolver"
+#define FLB_CONF_DNS_PREFER_IPV4       "dns.prefer_ipv4"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
