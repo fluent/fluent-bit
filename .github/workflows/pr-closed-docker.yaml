@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Delete image
-        uses: bots-house/ghcr-delete-image-action@v1
+        uses: bots-house/ghcr-delete-image-action@v1.0.1
         with:
           owner: fluent
           name: fluent-bit
