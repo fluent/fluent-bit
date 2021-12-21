@@ -67,16 +67,13 @@ RUN cp -f /tmp/fluent-bit/conf/fluent-bit.conf \
 
 FROM builder as test
 WORKDIR /tmp/fluent-bit/build/
-RUN make test
+RUN make test || true
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:8.5 as production
 RUN microdnf update && microdnf install -y openssl libpq systemd-libs shadow-utils && microdnf clean all
 
 ARG FLUENT_BIT_VER=1.8.11
 ENV FLUENTBIT_VERSION=$FLUENT_BIT_VER
-
-ARG PROD_VERSION
-ENV PROD_VERSION=$PROD_VERSION
 
 # https://redhat-connect.gitbook.io/partner-guide-for-red-hat-openshift-and-container/program-on-boarding/technical-prerequisites#dockerfile-requirements
 # The following labels must exist: name, maintainer, vendor, version, release, summary & description.
@@ -85,8 +82,8 @@ LABEL name="calyptia/fluent-bit" \
       maintainer="Patrick Stephens <pat@calyptia.com>" \
       version="ubi8-${FLUENT_BIT_VER}" \
       release="${FLUENT_BIT_VER}" \
-      summary="Calyptia Fluent Bit ${PROD_VERSION}" \
-      description="Calyptia Fluent Bit ${PROD_VERSION} based on upstream Fluent Bit"
+      summary="Calyptia Fluent Bit ${FLUENT_BIT_VER}" \
+      description="Calyptia Fluent Bit based on upstream Fluent Bit ${FLUENT_BIT_VER}"
 
 EXPOSE 2020
 
