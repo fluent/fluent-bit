@@ -1209,6 +1209,8 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         return -1;
     }
 
+    sorted_res = res;
+
     if (u_conn->u->net.dns_prefer_ipv4) {
         sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
 
@@ -1224,15 +1226,13 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
 
             return -1;
         }
-
-        res = sorted_res;
     }
 
     /*
      * Try to connect: on this iteration we try to connect to the first
      * available address.
      */
-    for (rp = res; rp != NULL; rp = rp->ai_next) {
+    for (rp = sorted_res; rp != NULL; rp = rp->ai_next) {
         if (u_conn->net_error > 0) {
             if (u_conn->net_error == ETIMEDOUT) {
                 flb_warn("[net] timeout detected between connection attempts");
