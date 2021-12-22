@@ -574,7 +574,7 @@ static void flb_net_append_addrinfo_entry(struct addrinfo **head,
     *tail = entry;
 }
 
-static struct addrinfo *flb_net_sort_addrinfo_list(struct ares_addrinfo *input,
+static struct addrinfo *flb_net_sort_addrinfo_list(struct addrinfo *input,
                                                    int preferred_family)
 {
     struct addrinfo *preferred_results_head;
