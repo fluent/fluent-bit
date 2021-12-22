@@ -1,10 +1,9 @@
-FROM debian:buster-slim as builder
+FROM debian:bullseye-slim as builder
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-master/
 ENV DEBIAN_FRONTEND noninteractive
 
 ADD . /source
 
-RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -51,15 +50,13 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-COPY --from=amd64/busybox:1.31.1 /bin/busybox /bin/busybox
-
+COPY --from=busybox:1.34.1 /bin/busybox /bin/busybox
 RUN chmod 555 /bin/busybox && \
     /bin/busybox --install -s /usr/local/bin
 
-FROM amd64/debian:buster-slim
-MAINTAINER Eduardo Silva <eduardo@treasure-data.com>
-LABEL Description="Fluent Bit docker image for testing branch master" Vendor="Fluent Organization" Version="1.1"
-RUN true
+FROM debian:bullseye-slim
+LABEL Description="Fluent Bit docker image" Vendor="Fluent Organization" Version="1.9.0" Author="Eduardo Silva <eduardo@calyptia.com>"
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     bash gdb valgrind build-essential

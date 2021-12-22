@@ -1,6 +1,10 @@
-FROM arm32v7/debian:bullseye-slim as builder
+ARG builder-base=debian:bullseye-slim
+ARG production-base=gcr.io/distroless/cc-debian11
 
-COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
+FROM ${builder-base} as builder
+
+COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/
+COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/
 
 # Fluent Bit version
 ENV FLB_MAJOR 1
@@ -31,8 +35,6 @@ RUN apt-get update && \
     postgresql-server-dev-all \
     flex \
     bison \
-    openssl \
-    && c_rehash \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
     && cd tmp/ && mkdir fluent-bit \
     && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
@@ -54,7 +56,6 @@ RUN cmake -DFLB_RELEASE=On \
 RUN make -j $(getconf _NPROCESSORS_ONLN)
 RUN install bin/fluent-bit /fluent-bit/bin/
 
-
 # Configuration files
 COPY conf/fluent-bit.conf \
      conf/parsers.conf \
@@ -66,9 +67,19 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM arm32v7/debian:bullseye-slim
+FROM builder as debug-builder
+COPY --from=busybox:1.34.1 /bin/busybox /bin/busybox
+RUN chmod 555 /bin/busybox && \
+    /bin/busybox --install -s /usr/local/bin
 
-COPY --from=builder /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
+FROM ${production-base} as production
+LABEL Description="Fluent Bit multi-architecture container image" \
+      Vendor="Fluent Organization" \
+      Version="1.9.0" \
+      Author="Eduardo Silva <eduardo@calyptia.com>"
+
+COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/
+COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -82,9 +93,31 @@ RUN apt-get update && \
       libatomic1
 
 COPY --from=builder /fluent-bit /fluent-bit
-RUN rm /usr/bin/qemu-arm-static
-#
+RUN rm -f /usr/bin/qemu-*-static
+
 EXPOSE 2020
 
 # Entry point
-CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
+CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+
+FROM production as debug
+LABEL Description="Fluent Bit multi-architecture debug container image" Vendor="Fluent Organization" Version="1.9.0" Author="Eduardo Silva <eduardo@calyptia.com>"
+
+COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/
+COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    bash gdb valgrind build-essential
+
+COPY --from=debug-builder /usr/local/bin/ /usr/local/bin/
+COPY --from=debug-builder /bin/busybox /bin/
+
+RUN rm -f /usr/bin/qemu-*-static
+
+EXPOSE 2020
+
+# Entry point
+ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
+CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
