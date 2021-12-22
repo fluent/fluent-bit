@@ -1,7 +1,7 @@
 ARG builder-base=debian:bullseye-slim
 ARG production-base=gcr.io/distroless/cc-debian11
 
-FROM ${builder-base} as builder
+FROM debian:bullseye-slim as builder
 
 COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/
@@ -72,7 +72,8 @@ COPY --from=busybox:1.34.1 /bin/busybox /bin/busybox
 RUN chmod 555 /bin/busybox && \
     /bin/busybox --install -s /usr/local/bin
 
-FROM ${production-base} as production
+# FROM gcr.io/distroless/cc-debian11 as production
+FROM debian:bullseye-slim as production
 LABEL Description="Fluent Bit multi-architecture container image" \
       Vendor="Fluent Organization" \
       Version="1.9.0" \
@@ -87,7 +88,7 @@ RUN apt-get update && \
       libsasl2-2 \
       pkg-config \
       libpq5 \
-      libsystemd \
+      libsystemd0 \
       zlib1g \
       ca-certificates \
       libatomic1
