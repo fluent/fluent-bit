@@ -670,7 +670,8 @@ static int config_set_properties(struct flb_upstream_node *node,
     }
 
 #ifdef FLB_HAVE_RECORD_ACCESSOR
-    if (fc->compress != COMPRESS_NONE && fc->ra_static == FLB_FALSE) {
+    if (fc->compress != COMPRESS_NONE &&
+        (fc->ra_tag && fc->ra_static == FLB_FALSE) ) {
         flb_plg_error(ctx->ins, "compress mode %s is incompatible with dynamic "
                       "tags", tmp);
         return -1;
