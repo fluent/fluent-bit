@@ -1,3 +1,13 @@
+# https://askubuntu.com/a/1369504
+# sudo add-apt-repository ppa:jacob/virtualisation #(for Ubuntu 20.04)
+# sudo apt-get update && sudo apt-get install qemu qemu-user qemu-user-static
+# https://stackoverflow.com/a/60667468
+# docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+# docker buildx rm builder
+# docker buildx create --name builder --use
+# docker buildx inspect --bootstrap
+# docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
+
 ARG builder-base=debian:bullseye-slim
 ARG production-base=gcr.io/distroless/cc-debian11
 
@@ -107,6 +117,7 @@ LABEL Description="Fluent Bit multi-architecture debug container image" Vendor="
 
 COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/
+ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
