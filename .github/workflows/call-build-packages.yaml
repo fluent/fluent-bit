@@ -43,7 +43,7 @@ jobs:
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix: ${{ fromJSON(inputs.build_matrix) }}
     steps:
       - name: Checkout code
