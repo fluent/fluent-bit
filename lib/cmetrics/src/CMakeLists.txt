@@ -23,6 +23,8 @@ set(src
   external/types.pb-c.c
   )
 
+message( "cmetrics: CMAKE_C_COMPILER_ID - ${CMAKE_C_COMPILER_ID}")
+
 if (${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
   set(PLATFORM_SPECIFIC_ATOMIC_MODULE cmt_atomic_clang.c)
 elseif (${CMAKE_C_COMPILER_ID} MATCHES "AppleClang")

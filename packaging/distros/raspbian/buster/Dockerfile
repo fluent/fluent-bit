@@ -1,4 +1,15 @@
-FROM flb-build-base-raspbian/buster
+# Use deprecated image as it pins dependencies to working ones.
+# Current balenalib/rpi-raspbian:buster triggers cmake failures for GNU C compiler detection
+FROM resin/rpi-raspbian:buster
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN apt-get -qq update && \
+    apt-get install -y -qq curl ca-certificates build-essential \
+                           cmake make bash sudo wget unzip dh-make \
+                           libsystemd-dev zlib1g-dev flex bison \
+                           libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
+                           libsasl2-2 libsasl2-dev && \
+    apt-get install -y -qq --reinstall lsb-base lsb-release
 
 ARG FLB_PREFIX
 ARG FLB_VERSION
