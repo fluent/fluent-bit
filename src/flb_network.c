@@ -568,7 +568,7 @@ static void flb_net_append_addrinfo_entry(struct addrinfo **head,
     *tail = entry;
 }
 
-static struct addrinfo *flb_net_sort_addrinfo_list(struct ares_addrinfo *input,
+static struct addrinfo *flb_net_sort_addrinfo_list(struct addrinfo *input,
                                                    int preferred_family)
 {
     struct addrinfo *preferred_results_head;
@@ -1210,7 +1210,6 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (u_conn->u->net.dns_prefer_ipv4) {
-printf("PRIORITIZING IPv4\n");
         sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
 
         if (sorted_res == NULL) {
