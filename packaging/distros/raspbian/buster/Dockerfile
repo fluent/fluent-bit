@@ -3,6 +3,8 @@
 FROM resin/rpi-raspbian:buster
 ENV DEBIAN_FRONTEND noninteractive
 
+# Builder image so dependencies can be latest, recommended and no need to wipe
+# hadolint ignore=DL3008,DL3015,DL3009
 RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential \
                            cmake make bash sudo wget unzip dh-make \
