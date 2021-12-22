@@ -121,14 +121,15 @@ jobs:
             raw,${{ inputs.version }}
             raw,latest
 
-      - name: Build the staging image
+      - name: Build the multi-arch images
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
+          file: ./dockerfiles/Dockerfile.multiarch
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64, linux/arm64, linux/arm/v7
+          target: production
           push: true
           load: false
           build-args: |
@@ -140,6 +141,28 @@ jobs:
           image-name: ${{ inputs.registry }}/multiarch/${{ inputs.image }}:${{ inputs.version }}
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
+
+      - id: debug-meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ inputs.registry }}/multiarch/${{ inputs.image }}
+          tags: |
+            raw,${{ inputs.version }}-debug
+            raw,latest-debug
+
+      - name: Build the debug multi-arch images
+        uses: docker/build-push-action@v2
+        with:
+          file: ./dockerfiles/Dockerfile.multiarch
+          context: .
+          tags: ${{ steps.debug-meta.outputs.tags }}
+          labels: ${{ steps.debug-meta.outputs.labels }}
+          platforms: linux/amd64, linux/arm64, linux/arm/v7
+          target: debug
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
 
   call-build-scan-images:
     name: Trivy + Dockle image scan
