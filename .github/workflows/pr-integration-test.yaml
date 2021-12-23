@@ -25,10 +25,38 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
+  pr-integration-test-image-smoke:
+    name: PR - test image is valid
+    needs: pr-integration-test-build
+    runs-on: ubuntu-latest
+    environment: integration
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Test the HTTP server is responding
+        timeout-minutes: 5
+        run: |
+          packaging/testing/smoke/container/container-smoke-test.sh
+        shell: bash
+        env:
+          CONTAINER_NAME: local-smoke-pr-${{ github.event.number }}
+          CONTAINER_ARCH: linux/amd64
+          REGISTRY: ghcr.io
+          IMAGE_NAME: ${{ github.repository }}
+          IMAGE_TAG: x86_64-master-pr-${{ github.event.number }}
+
   pr-integration-test-build-complete:
     name: PR - build complete
     runs-on: ubuntu-latest
-    needs: pr-integration-test-build
+    needs: pr-integration-test-image-smoke
     steps:
       - uses: actions-ecosystem/action-add-labels@v1
         name: Label the PR
@@ -54,7 +82,7 @@ jobs:
 
   pr-integration-test-run-integration-gcp:
     name: PR - GCP integration test
-    needs: pr-integration-test-build
+    needs: pr-integration-test-image-run
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}
