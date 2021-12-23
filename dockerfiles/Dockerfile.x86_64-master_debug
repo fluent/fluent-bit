@@ -1,3 +1,5 @@
+FROM busybox:1.34.1 as busybox
+FROM busybox:1.34.1 as busybox-include
 FROM debian:bullseye-slim as builder
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND noninteractive
@@ -53,9 +55,8 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-COPY --from=busybox:1.34.1 /bin/busybox /bin/busybox
-RUN chmod 555 /bin/busybox && \
-    /bin/busybox --install -s /usr/local/bin
+COPY --from=busybox-include --chmod=555 /bin/busybox /bin/busybox
+RUN /bin/busybox --install -s /usr/local/bin
 
 FROM debian:bullseye-slim
 LABEL description="Fluent Bit docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"

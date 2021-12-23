@@ -82,9 +82,9 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM busybox:1.34.1 as busybox
+FROM busybox:1.34.1 as busybox-include
 FROM builder as debug-builder
-COPY --from=busybox --chmod=555 /bin/busybox /bin/busybox
+COPY --from=busybox-include --chmod=555 /bin/busybox /bin/busybox
 RUN /bin/busybox --install -s /usr/local/bin
 
 # FROM gcr.io/distroless/cc-debian11 as production
