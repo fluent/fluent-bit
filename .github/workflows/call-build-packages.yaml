@@ -98,7 +98,7 @@ jobs:
               fi
           fi
           echo "$TARGET"
-          echo ::set-output name=echo ::set-output name=target::$TARGET
+          echo ::set-output name=target::$TARGET
         env:
           DISTRO: ${{ matrix.distro }}
         shell: bash
@@ -108,6 +108,10 @@ jobs:
         if: ${{ inputs.environment == 'staging' }}
         # Make sure not to do a --delete on sync as it will remove the other architecture
         run: |
+          if [ -z "${{ steps.get-target-info.outputs.target }}" ]; then
+            echo "Invalid (empty) target defined"
+            exit 1
+          fi
           if [ -n "${AWS_S3_ENDPOINT}" ]; then
             ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
           fi
@@ -119,8 +123,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_S3_BUCKET: ${{ secrets.bucket }}
-          # To use with Minio locally (or update to whatever endpoint you want)
-          # AWS_S3_ENDPOINT: http://localhost:9000
 
   call-build-packages-repo:
     name: Create repo metadata in S3
