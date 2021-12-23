@@ -8,4 +8,4 @@ jobs:
   sync-with-fluent-bit:
     runs-on: ubuntu-latest
     steps:
-      - uses: tgymnich/fork-sync@v1.4
+      - uses: tgymnich/fork-sync@v1.6.3
