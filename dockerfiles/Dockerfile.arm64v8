@@ -79,6 +79,7 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libz* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/libz* /lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libssl.so* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcrypto.so* /usr/lib/aarch64-linux-gnu/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libgcrypt.so* /usr/lib/aarch64-linux-gnu/
 
 # These below are all needed for systemd
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libsystemd* /usr/lib/aarch64-linux-gnu/

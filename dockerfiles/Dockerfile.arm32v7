@@ -83,6 +83,7 @@ RUN apt-get update && \
       zlib1g \
       ca-certificates \
       libatomic1 \
+      libgcrypt \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
