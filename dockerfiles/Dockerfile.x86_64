@@ -12,7 +12,7 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
 
 ENV DEBIAN_FRONTEND noninteractive
 
-WORKDIR /tmp/fluen-bit/
+WORKDIR /tmp/fluent-bit/
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -49,7 +49,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On ..
 
-RUN make -j $(getconf _NPROCESSORS_ONLN)
+RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
@@ -63,6 +63,7 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
+# hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian11
 LABEL description="Fluent Bit docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
 

@@ -14,8 +14,8 @@ ENV FLB_SOURCE $FLB_TARBALL
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
 
 ENV DEBIAN_FRONTEND noninteractive
-# hadolint ignore=DL3008
 WORKDIR /tmp/fluent-bit/
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
