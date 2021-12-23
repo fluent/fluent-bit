@@ -15,7 +15,7 @@ RUN apt-get update && \
     libssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev/buster-backports \
+    libsystemd-dev \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
