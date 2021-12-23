@@ -276,7 +276,7 @@ jobs:
       id-token: write
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
-    needs: call-build-push-manifests
+    needs: call-build-images-push-manifests
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@main
