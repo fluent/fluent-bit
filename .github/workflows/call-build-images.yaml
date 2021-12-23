@@ -50,8 +50,6 @@ jobs:
             suffix: arm32v7
           - arch: arm64
             suffix: arm64v8
-          # - arch: amd64
-          #   suffix: x86_64-debug
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -78,7 +76,7 @@ jobs:
           raw,${{ matrix.suffix }}-${{ inputs.version }}
           raw,${{ matrix.suffix }}-latest
 
-    - name: Build the staging image
+    - name: Build the ${{ matrix.suffix }} staging image
       uses: docker/build-push-action@v2
       with:
         file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
@@ -86,6 +84,47 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         platforms: linux/${{ matrix.arch }}
+        push: true
+        load: false
+        build-args: |
+          FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+
+  call-build-images-debug:
+    name: Build the single-arch debug image
+    runs-on: [ ubuntu-latest ]
+    environment: ${{ inputs.environment }}
+    needs: call-build-images-matrix
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@v1
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ secrets.token }}
+
+    - name: Extract metadata from Github
+      id: meta
+      uses: docker/metadata-action@v3
+      with:
+        images: ${{ inputs.registry }}/${{ inputs.image }}
+        tags: |
+          raw,x86_64-${{ inputs.version }}-debug
+          raw,x86_64-latest
+
+    - name: Build the debug staging image
+      uses: docker/build-push-action@v2
+      with:
+        file: ./dockerfiles/Dockerfile.x86_64-debug
+        context: .
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: linux/amd64
         push: true
         load: false
         build-args: |
@@ -116,7 +155,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.registry }}/multiarch/${{ inputs.image }}
+          images: ${{ inputs.registry }}/${{ inputs.image }}/multiarch
           tags: |
             raw,${{ inputs.version }}
             raw,latest
@@ -135,17 +174,10 @@ jobs:
           build-args: |
             FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
 
-      - name: Multi-arch - run Trivy and Dockle scans
-        uses: azure/container-scan@v0
-        with:
-          image-name: ${{ inputs.registry }}/multiarch/${{ inputs.image }}:${{ inputs.version }}
-          username: ${{ inputs.username }}
-          password: ${{ secrets.token }}
-
       - id: debug-meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.registry }}/multiarch/${{ inputs.image }}
+          images: ${{ inputs.registry }}/${{ inputs.image }}/multiarch
           tags: |
             raw,${{ inputs.version }}-debug
             raw,latest-debug
@@ -164,7 +196,14 @@ jobs:
           build-args: |
             FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
 
-  call-build-scan-images:
+      - name: Multi-arch - run Trivy and Dockle scans
+        uses: azure/container-scan@v0
+        with:
+          image-name: ${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+  call-build-images-scan:
     name: Trivy + Dockle image scan
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
@@ -184,14 +223,11 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
-  call-build-push-sign-images:
-    name: Deploy and sign multi-arch container image manifests
+  call-build-images-push-manifests:
+    name: Deploy multi-arch container image manifests
     permissions:
       contents: read
       packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
-      id-token: write
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
     needs: call-build-images-matrix
@@ -230,6 +266,18 @@ jobs:
         env:
           DOCKER_CLI_EXPERIMENTAL: enabled
 
+  call-build-images-sign:
+    name: Deploy and sign multi-arch container image manifests
+    permissions:
+      contents: read
+      packages: write
+      # This is used to complete the identity challenge
+      # with sigstore/fulcio when running outside of PRs.
+      id-token: write
+    runs-on: [ ubuntu-latest ]
+    environment: ${{ inputs.environment }}
+    needs: call-build-push-manifests
+    steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@main
 
@@ -247,9 +295,11 @@ jobs:
             -a "release=${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:latest" \
-            "${{ inputs.registry }}/multiarch/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/multiarch/${{ inputs.image }}:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:latest"
         shell: bash
+        # Ensure we move on to key-based signing as well
+        continue-on-error: true
         env:
           COSIGN_EXPERIMENTAL: "true"
 
@@ -266,8 +316,8 @@ jobs:
             -a "release=${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:latest" \
-            "${{ inputs.registry }}/multiarch/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/multiarch/${{ inputs.image }}:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:latest"
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
