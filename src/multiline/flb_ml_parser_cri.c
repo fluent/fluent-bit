@@ -73,7 +73,7 @@ struct flb_ml_parser *flb_ml_parser_cri(struct flb_config *config)
                                NULL);                /* parser name */
 
     if (!mlp) {
-        flb_error("[multiline] could not create 'docker mode'");
+        flb_error("[multiline] could not create 'cri mode'");
         return NULL;
     }
 
