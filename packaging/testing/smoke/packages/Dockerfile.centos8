@@ -4,10 +4,13 @@ ARG STAGING_BASE=dokken/centos-8
 FROM dokken/centos-8 as official-install
 ARG RELEASE_URL
 RUN rpm --import $RELEASE_URL/fluentbit.key
-RUN echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/centos/\$releasever/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo
-RUN yum update -y && yum install -y td-agent-bit
-RUN systemctl enable td-agent-bit
 
+# No official packages available yet
+# RUN echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/centos/\$releasever/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo
+# RUN yum update -y && yum install -y td-agent-bit
+# RUN systemctl enable td-agent-bit
+
+ENV SKIP_TEST=yes
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
@@ -23,6 +26,7 @@ RUN wget "$AWS_URL/centos.repo" -O /etc/yum.repos.d/staging.repo
 RUN yum update -y && yum install -y td-agent-bit
 RUN systemctl enable td-agent-bit
 
+ENV SKIP_TEST=no
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
