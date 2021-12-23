@@ -135,7 +135,7 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key)
     /* Map the rules (mandatory for regex rules) */
     ret = flb_ml_parser_init(mlp);
     if (ret != 0) {
-        flb_error("[multiline: python] error on mapping rules");
+        flb_error("[multiline: java] error on mapping rules");
         flb_ml_parser_destroy(mlp);
         return NULL;
     }
