@@ -53,7 +53,7 @@ struct flb_ml_parser *flb_ml_parser_go(struct flb_config *config, char *key)
                                NULL);                /* parser name */
 
     if (!mlp) {
-        flb_error("[multiline] could not create 'python mode'");
+        flb_error("[multiline] could not create 'go mode'");
         return NULL;
     }
 
