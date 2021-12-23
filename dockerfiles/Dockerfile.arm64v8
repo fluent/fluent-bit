@@ -1,6 +1,7 @@
-FROM --platform=linux/arm64 debian:bullseye-slim as builder
+FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu
+FROM arm64v8/debian:bullseye-slim as builder
 
-COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+COPY --from=qemu /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
 # Fluent Bit version
 ENV FLB_MAJOR 1
@@ -10,10 +11,12 @@ ENV FLB_VERSION 1.9.0
 
 ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
 ENV FLB_SOURCE $FLB_TARBALL
-RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-master/
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
 
 ENV DEBIAN_FRONTEND noninteractive
 
+WORKDIR /tmp/fluent-bit/
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -31,10 +34,10 @@ RUN apt-get update && \
     postgresql-server-dev-all \
     flex \
     bison \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && cd tmp/ && mkdir fluent-bit \
     && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
-    && cd fluent-bit/build/ \
     && rm -rf /tmp/fluent-bit/build/*
 
 WORKDIR /tmp/fluent-bit/build/
@@ -63,9 +66,8 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM --platform=linux/arm64 debian:buster-slim
-LABEL maintainer="Eduardo Silva <eduardo@treasure-data.com>"
-LABEL Description="Fluent Bit docker image" Vendor="Fluent Organization" Version="1.8"
+FROM arm64v8/debian:bullseye-slim
+LABEL description="Fluent Bit docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
 
 # Copy certificates
 COPY --from=builder /usr/share/ca-certificates/  /usr/share/ca-certificates/
