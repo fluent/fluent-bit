@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eux
+set -ex
 
 if [ "$SKIP_TEST" = "yes" ]; then
     echo "Skipping test"
