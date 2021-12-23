@@ -38,7 +38,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/* \
     && c_rehash \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
+    && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
     && rm -rf /tmp/fluent-bit/build/*
 
 WORKDIR /tmp/fluent-bit/build/
