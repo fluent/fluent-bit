@@ -173,7 +173,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
             ret = flb_parser_do(ctx->parser, ctx->buf, ctx->buf_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
                 pack_regex(&mp_sbuf, &mp_pck,

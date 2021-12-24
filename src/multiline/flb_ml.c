@@ -523,7 +523,7 @@ static int ml_append_try_parser_type_text(struct flb_ml_parser_ins *parser,
         /* Parse incoming content */
         ret = flb_parser_do(parser->ml_parser->parser, (char *) buf, size,
                             out_buf, out_size, out_time);
-        if (flb_time_to_double(out_time) == 0.0) {
+        if (flb_time_to_nanosec(out_time) == 0L) {
             flb_time_copy(out_time, tm);
         }
         if (ret >= 0) {
@@ -640,8 +640,8 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
         return -1;
     }
 
-    if (flb_time_to_double(&out_time) == 0.0) {
-        if (tm && flb_time_to_double(tm) != 0.0) {
+    if (flb_time_to_nanosec(&out_time) == 0L) {
+        if (tm && flb_time_to_nanosec(tm) != 0L) {
             flb_time_copy(&out_time, tm);
         }
         else {
@@ -1022,7 +1022,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* if the group don't have a time set, use current time */
-    if (flb_time_to_double(&group->mp_time) == 0.0) {
+    if (flb_time_to_nanosec(&group->mp_time) == 0L) {
         flb_time_get(&group->mp_time);
     }
 
