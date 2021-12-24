@@ -10,6 +10,8 @@ jobs:
     name: Hadolint
     steps:
       - uses: actions/checkout@v2
+        # Until https://github.com/reviewdog/action-hadolint/issues/35 is resolved
+      - run: rm -f packaging/testing/smoke/packages/Dockerfile.*
       - uses: reviewdog/action-hadolint@v1
         with:
           exclude: |
