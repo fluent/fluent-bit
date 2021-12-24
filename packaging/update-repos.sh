@@ -23,11 +23,14 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
 
     # Set up repo info
     if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
-        REPO_TYPE=${RPM_REPO%%/*}
+        # Create top-level file so replace path separator with dash
+        # centos/8 --> centos-8.repo
+        # This way we make sure not to have a mixed repo or overwrite files for each target.
+        REPO_TYPE=${RPM_REPO/\//-}
         echo "Setting up $BASE_PATH/$REPO_TYPE.repo"
         cat << EOF > "$BASE_PATH/$REPO_TYPE.repo"
 [Fluent-Bit]
-name=Fluent Bit Packages - $REPO_TYPE - \$releasever - \$basearch
+name=Fluent Bit Packages - $REPO_TYPE - \$basearch
 baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
 enabled=1
 gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
