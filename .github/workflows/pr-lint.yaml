@@ -13,7 +13,7 @@ jobs:
       - uses: reviewdog/action-hadolint@v1
         with:
           exclude: |
-            packaging/testing/smoke/packages/
+            packaging/testing/smoke/packages/Dockerfile.*
 
   shellcheck-pr:
     runs-on: ubuntu-latest
