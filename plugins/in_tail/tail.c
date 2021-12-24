@@ -628,6 +628,19 @@ static struct flb_config_map config_map[] = {
     },
 #endif
 
+#ifdef FLB_HAVE_UTF8_ENCODER
+    {
+     FLB_CONFIG_MAP_STR, "encoding", NULL,
+     0, FLB_FALSE, 0,
+     "specify the input encoding for converting to UTF-8",
+    },
+    {
+     FLB_CONFIG_MAP_STR, "encoding_replacement", NULL,
+     0, FLB_FALSE, 0,
+     "Replacement in case of decoding error (default: unicode replacement char)",
+    },
+#endif
+
     /* Multiline Options */
 #ifdef FLB_HAVE_PARSER
     {

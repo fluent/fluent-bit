@@ -33,6 +33,9 @@
 #ifdef FLB_HAVE_PARSER
 #include <fluent-bit/multiline/flb_ml.h>
 #endif
+#ifdef FLB_HAVE_UTF8_ENCODER
+#include <fluent-bit/flb_encoding.h>
+#endif
 
 
 /* Metrics */
@@ -102,6 +105,10 @@ struct flb_tail_config {
     sqlite3_stmt *stmt_delete_file;
     sqlite3_stmt *stmt_rotate_file;
     sqlite3_stmt *stmt_offset;
+#endif
+
+#ifdef FLB_HAVE_UTF8_ENCODER
+    struct flb_encoding *encoding;
 #endif
 
     /* Parser / Format */
