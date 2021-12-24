@@ -51,6 +51,20 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7l")
   set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -latomic")
 endif()
 
+if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  if (MSVC)
+    enable_language(RC)
+    # use English language (0x409) in resource compiler
+    set(rc_flags "/l0x409")
+    set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> ${rc_flags} <DEFINES> /fo <OBJECT> <SOURCE>")
+  endif()
+
+  configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.rc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/src/version.rc
+  @ONLY)
+endif()
+
 include(GNUInstallDirs)
 include(ExternalProject)
 include(cmake/FindJournald.cmake)
