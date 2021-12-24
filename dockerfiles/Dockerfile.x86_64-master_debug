@@ -1,4 +1,4 @@
-FROM busybox:1.34.1 as busybox-include
+FROM busybox:stable as busybox-include
 FROM debian:bullseye-slim as builder
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND noninteractive

@@ -1,3 +1,5 @@
+
+# To use this container you may need to do the following:
 # https://askubuntu.com/a/1369504
 # sudo add-apt-repository ppa:jacob/virtualisation #(for Ubuntu 20.04)
 # sudo apt-get update && sudo apt-get install qemu qemu-user qemu-user-static
@@ -8,10 +10,7 @@
 # docker buildx inspect --bootstrap
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
-ARG builder-base=debian:bullseye-slim
-ARG production-base=gcr.io/distroless/cc-debian11
-
-FROM busybox:1.34.1 as busybox-include
+FROM busybox:stable as busybox-include
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
 
