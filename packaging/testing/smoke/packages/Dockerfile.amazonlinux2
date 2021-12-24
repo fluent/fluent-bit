@@ -3,6 +3,9 @@ ARG STAGING_BASE=dokken/amazonlinux-2
 
 FROM dokken/amazonlinux-2 as official-install
 ARG RELEASE_URL
+# For echo flags
+SHELL ["/bin/bash", "-c"]
+# hadolint ignore=DL3032
 RUN rpm --import $RELEASE_URL/fluentbit.key && \
     echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/amazonlinux/2/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo && \
     yum update -y && yum install -y td-agent-bit && \
@@ -18,6 +21,7 @@ FROM ${STAGING_BASE} as staging-install
 ARG AWS_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
+# hadolint ignore=DL3032
 RUN rpm --import "$AWS_URL/fluentbit.key" && \
     wget -q "$AWS_URL/amazonlinux-2.repo" -O /etc/yum.repos.d/staging.repo && \
     yum update -y && yum install -y td-agent-bit && \
