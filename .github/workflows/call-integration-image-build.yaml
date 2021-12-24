@@ -87,3 +87,31 @@ jobs:
           platforms: linux/amd64
           push: true
           load: false
+
+  call-integration-image-build-smoke-test:
+    name: Integration test image is valid
+    needs: call-integration-image-build-container
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Test the HTTP server is responding
+        timeout-minutes: 5
+        run: |
+          packaging/testing/smoke/container/container-smoke-test.sh
+        shell: bash
+        env:
+          CONTAINER_NAME: local-smoke-${{ inputs.image-tag }}
+          CONTAINER_ARCH: linux/amd64
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
