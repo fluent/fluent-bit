@@ -170,6 +170,9 @@ static int collect_metrics(struct flb_me *me)
     if (ctx->http_server == FLB_TRUE) {
         /* v1 metrics (old) */
         flb_hs_push_pipeline_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+        if (ctx->health_check == FLB_TRUE) {
+            flb_hs_push_health_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+        }
     }
 #endif
     msgpack_sbuffer_destroy(&mp_sbuf);
