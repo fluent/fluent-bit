@@ -353,6 +353,12 @@ if(FLB_STREAM_PROCESSOR)
     )
 endif()
 
+if (MSVC)
+set(flb_rc_files
+  ${CMAKE_CURRENT_BINARY_DIR}/version.rc
+  )
+endif()
+
 # Shared Library
 if(FLB_SHARED_LIB)
   add_library(fluent-bit-shared SHARED ${src})
@@ -401,7 +407,7 @@ endif()
 if(FLB_BINARY)
   find_package (Threads)
   if (FLB_SYSTEM_WINDOWS)
-    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c)
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c ${flb_rc_files})
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
