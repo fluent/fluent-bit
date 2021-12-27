@@ -322,7 +322,7 @@ int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
         case mpack_type_ext:
             ext_len = mpack_tag_ext_length(&tag);
             if (ext_len != 8) {
-                flb_warn("expecting positive integer, got %" PRId64, i);
+                flb_warn("expecting ext_len is 8, got %" PRId64, ext_len);
                 return -1;
             }
             mpack_read_bytes(reader, extbuf, ext_len);
