@@ -30,7 +30,10 @@
 #include <fluent-bit/flb_time.h>
 #include <msgpack.h>
 
+#include "fluent-bit/flb_mem.h"
+#include "lua.h"
 #include "lua_config.h"
+#include "mpack/mpack.h"
 
 static int cb_lua_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
@@ -70,11 +73,191 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
+    /* Initialize packing buffer */
+    ctx->packbuf = flb_sds_create_size(1024);
+    if (!ctx->packbuf) {
+        flb_error("[filter_lua] failed to allocate packbuf");
+        return -1;
+    }
+
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
     return 0;
 }
+
+#ifdef FLB_FILTER_LUA_USE_MPACK
+
+static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_t count)
+{
+    struct lua_filter *ctx = writer->context;
+    flb_sds_cat_safe(&ctx->packbuf, buffer, count);
+}
+
+static int cb_lua_filter_mpack(const void *data, size_t bytes,
+                               const char *tag, int tag_len,
+                               void **out_buf, size_t *out_bytes,
+                               struct flb_filter_instance *f_ins,
+                               void *filter_context,
+                               struct flb_config *config)
+{
+    int ret;
+    struct flb_time t_orig;
+    struct flb_time t;
+    struct lua_filter *ctx = filter_context;
+    double ts = 0;
+    int l_code;
+    double l_timestamp;
+    char *outbuf;
+    char writebuf[1024];
+    mpack_writer_t writer;
+
+    flb_sds_len_set(ctx->packbuf, 0);
+    mpack_reader_t reader;
+    mpack_reader_init_data(&reader, data, bytes);
+
+    while (bytes > 0) {
+        /* Save record start */
+        const char *record_start = reader.data;
+        size_t record_size = 0;
+        /* Get timestamp */
+        if (flb_time_pop_from_mpack(&t, &reader)) {
+            /* failed to parse */
+            return FLB_FILTER_NOTOUCH;
+        }
+        t_orig = t;
+
+        /* Prepare function call, pass 3 arguments, expect 3 return values */
+        lua_getglobal(ctx->lua->state, ctx->call);
+        lua_pushstring(ctx->lua->state, tag);
+
+        /* Timestamp */
+        if (ctx->time_as_table == FLB_TRUE) {
+            flb_lua_pushtimetable(ctx->lua->state, &t);
+        }
+        else {
+            ts = flb_time_to_double(&t);
+            lua_pushnumber(ctx->lua->state, ts);
+        }
+
+        if (flb_lua_pushmpack(ctx->lua->state, &reader)) {
+            return FLB_FILTER_NOTOUCH;
+        }
+        record_size = reader.data - record_start;
+        bytes -= record_size;
+
+        if (ctx->protected_mode) {
+            ret = lua_pcall(ctx->lua->state, 3, 3, 0);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "error code %d: %s",
+                              ret, lua_tostring(ctx->lua->state, -1));
+                lua_pop(ctx->lua->state, 1);
+                return FLB_FILTER_NOTOUCH;
+            }
+        }
+        else {
+            lua_call(ctx->lua->state, 3, 3);
+        }
+
+        /* Returned values are on the stack in the following order:
+         *  -1: table/record
+         *  -2: timestamp
+         *  -3: code
+         *  since we will process code first, then timestamp then record,
+         *  we need to swap
+         *
+         * use lua_insert to put the table/record on the bottom */
+        lua_insert(ctx->lua->state, -3);
+         /* now swap timestamp with code */
+        lua_insert(ctx->lua->state, -2);
+
+        /* check code */
+        l_code = (int) lua_tointeger(ctx->lua->state, -1);
+        lua_pop(ctx->lua->state, 1);
+
+        if (l_code == -1) { /* Skip record */
+            lua_pop(ctx->lua->state, 2);
+            continue;
+        }
+        else if (l_code == 0) { /* Keep record, copy original to packbuf */
+            flb_sds_cat_safe(&ctx->packbuf, record_start, record_size);
+            lua_pop(ctx->lua->state, 2);
+            continue;
+        }
+        else if (l_code != 1 && l_code != 2) {/* Unexpected return code, keep original content */
+            flb_sds_cat_safe(&ctx->packbuf, record_start, record_size);
+            lua_pop(ctx->lua->state, 2);
+            flb_plg_error(ctx->ins, "unexpected Lua script return code %i, "
+                          "original record will be kept." , l_code);
+            continue;
+        }
+
+        /* process record timestamp */
+        l_timestamp = ts;
+        if (ctx->time_as_table == FLB_TRUE) {
+            if (lua_type(ctx->lua->state, -1) == LUA_TTABLE) {
+                /* Retrieve seconds */
+                lua_getfield(ctx->lua->state, -1, "sec");
+                t.tm.tv_sec = lua_tointeger(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 1);
+
+                /* Retrieve nanoseconds */
+                lua_getfield(ctx->lua->state, -1, "nsec");
+                t.tm.tv_nsec = lua_tointeger(ctx->lua->state, -1);
+                lua_pop(ctx->lua->state, 2);
+            }
+            else {
+                flb_plg_error(ctx->ins, "invalid lua timestamp type returned");
+                t = t_orig;
+            }
+        }
+        else {
+            l_timestamp = (double) lua_tonumber(ctx->lua->state, -1);
+            lua_pop(ctx->lua->state, 1);
+        }
+
+        if (l_code == 1) {
+            if (ctx->time_as_table == FLB_FALSE) {
+                flb_time_from_double(&t, l_timestamp);
+            }
+        }
+        else if (l_code == 2) {
+            /* Keep the timestamp */
+            t = t_orig;
+        }
+
+        /* process the record table */
+        /* initialize writer and set packbuf as context */
+        mpack_writer_init(&writer, writebuf, sizeof(writebuf));
+        mpack_writer_set_context(&writer, ctx);
+        mpack_writer_set_flush(&writer, mpack_buffer_flush);
+        /* write array tag */
+        mpack_write_tag(&writer, mpack_tag_array(2));
+        /* write timestamp: convert from double to Fluent Bit format */
+        flb_time_append_to_mpack(&writer, &t, 0);
+        /* write the lua table */
+        flb_lua_tompack(ctx->lua->state, &writer, 0, &ctx->l2cc);
+        lua_pop(ctx->lua->state, 1);
+        /* flush the writer */
+        mpack_writer_flush_message(&writer);
+        mpack_writer_destroy(&writer);
+    }
+
+    /* allocate outbuf that contains the modified chunks */
+    outbuf = flb_malloc(flb_sds_len(ctx->packbuf));
+    if (!outbuf) {
+        flb_plg_error(ctx->ins, "failed to allocate outbuf");
+        return FLB_FILTER_NOTOUCH;
+    }
+    memcpy(outbuf, ctx->packbuf, flb_sds_len(ctx->packbuf));
+    /* link new buffer */
+    *out_buf   = outbuf;
+    *out_bytes = flb_sds_len(ctx->packbuf);
+
+    return FLB_FILTER_MODIFIED;
+}
+
+#else
 
 static int pack_result (struct flb_time *ts, msgpack_packer *pck, msgpack_sbuffer *sbuf,
                         char *data, size_t bytes)
@@ -298,6 +481,9 @@ static int cb_lua_filter(const void *data, size_t bytes,
     return FLB_FILTER_MODIFIED;
 }
 
+
+#endif
+
 static int cb_lua_exit(void *data, struct flb_config *config)
 {
     struct lua_filter *ctx;
@@ -351,7 +537,11 @@ struct flb_filter_plugin filter_lua_plugin = {
     .name         = "lua",
     .description  = "Lua Scripting Filter",
     .cb_init      = cb_lua_init,
+#ifdef FLB_FILTER_LUA_USE_MPACK
+    .cb_filter    = cb_lua_filter_mpack,
+#else
     .cb_filter    = cb_lua_filter,
+#endif
     .cb_exit      = cb_lua_exit,
     .config_map   = config_map,
     .flags        = 0

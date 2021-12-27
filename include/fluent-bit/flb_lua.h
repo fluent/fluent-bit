@@ -50,10 +50,15 @@ struct flb_lua_l2c_config {
 
 void flb_lua_pushtimetable(lua_State *l, struct flb_time *tm);
 int flb_lua_is_valid_func(lua_State *l, flb_sds_t func);
+int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader);
 void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o);
 void flb_lua_tomsgpack(lua_State *l,
                        msgpack_packer *pck,
                        int index,
                        struct flb_lua_l2c_config *l2cc);
+void flb_lua_tompack(lua_State *l,
+                     mpack_writer_t *writer,
+                     int index,
+                     struct flb_lua_l2c_config *l2cc);
 
 #endif
