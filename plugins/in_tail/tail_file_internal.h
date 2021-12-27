@@ -60,6 +60,9 @@ struct flb_tail_file {
     int mult_firstline_append;  /* bool: mult firstline appendable ?     */
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
+
+
+    int mult_records;           /* multiline records counter mult_sbuf   */
     msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer              */
     msgpack_packer mult_pck;    /* temporary msgpack packer              */
     struct flb_time mult_time;  /* multiline time parsed from first line */
