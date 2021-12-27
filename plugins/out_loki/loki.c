@@ -193,6 +193,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_loki_kv_destroy(kv);
             return -1;
         }
+        /* remove record keys placed as stream labels via 'labels' and 'label_keys' */
         ret = flb_slist_add(&ctx->remove_keys_derived, key);
         if (ret < 0) {
             flb_loki_kv_destroy(kv);
