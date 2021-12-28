@@ -1027,11 +1027,11 @@ static int cb_loki_init(struct flb_output_instance *ins,
 }
 
 static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
+                                      int total_records,
                                       char *tag, int tag_len,
                                       const void *data, size_t bytes)
 {
     int mp_ok = MSGPACK_UNPACK_SUCCESS;
-    int total_records;
     size_t off = 0;
     flb_sds_t json;
     struct flb_time tms;
@@ -1058,9 +1058,6 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
      *   ]
      * }
      */
-
-    /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
 
     /* Initialize msgpack buffers */
     msgpack_unpacked_init(&result);
@@ -1169,6 +1166,7 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
 
     /* Format the data to the expected Newrelic Payload */
     payload = loki_compose_payload(ctx,
+                                   event_chunk->total_events,
                                    (char *) event_chunk->tag,
                                    flb_sds_len(event_chunk->tag),
                                    event_chunk->data, event_chunk->size);
@@ -1386,10 +1384,15 @@ static int cb_loki_format_test(struct flb_config *config,
                                const void *data, size_t bytes,
                                void **out_data, size_t *out_size)
 {
+    int total_records;
     flb_sds_t payload = NULL;
     struct flb_loki *ctx = plugin_context;
 
-    payload = loki_compose_payload(ctx, (char *) tag, tag_len, data, bytes);
+    /* Count number of records */
+    total_records = flb_mp_count(data, bytes);
+
+    payload = loki_compose_payload(ctx, total_records,
+                                   (char *) tag, tag_len, data, bytes);
     if (payload == NULL) {
         return -1;
     }
