@@ -829,12 +829,6 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     struct tm tm;
     struct flb_time tms;
 
-    /* Iterate the original buffer and perform adjustments */
-    records = flb_mp_count(data, bytes);
-    if (records <= 0) {
-        return NULL;
-    }
-
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
@@ -860,6 +854,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
      * ]
      */
     if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        records = flb_mp_count(data, bytes);
+        if (records <= 0) {
+            flb_sds_destroy(out_buf);
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+            return NULL;
+        }
         msgpack_pack_array(&tmp_pck, records);
     }
 
