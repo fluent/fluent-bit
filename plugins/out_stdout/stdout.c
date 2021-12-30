@@ -210,12 +210,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-    "Specifies the name of the date field in output."
+    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    "Specifies the name of the date field in output."
     },
 
     /* EOF */
