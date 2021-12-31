@@ -177,7 +177,8 @@ static struct flb_ml_stream *stream_create(uint64_t id,
                                                             void *cb_data,
                                                             char *buf_data,
                                                             size_t buf_size),
-                                           void *cb_data)
+                                           void *cb_data,
+                                           msgpack_packer *mp_pck)
 {
     int ret;
     struct flb_ml_stream *stream;
@@ -189,6 +190,9 @@ static struct flb_ml_stream *stream_create(uint64_t id,
     }
     stream->id = id;
     stream->parser = parser;
+
+    /* optional packer */
+    stream->mp_pck = mp_pck;
 
     /* Flush Callback and opaque data type */
     if (cb_flush) {
@@ -209,16 +213,17 @@ static struct flb_ml_stream *stream_create(uint64_t id,
     return stream;
 }
 
-int flb_ml_stream_create(struct flb_ml *ml,
-                         char *name,
-                         int name_len,
-                         int (*cb_flush) (struct flb_ml_parser *,
-                                          struct flb_ml_stream *,
-                                          void *cb_data,
-                                          char *buf_data,
-                                          size_t buf_size),
-                         void *cb_data,
-                         uint64_t *stream_id)
+static int ml_stream_create(struct flb_ml *ml,
+                            char *name,
+                            int name_len,
+                            int (*cb_flush) (struct flb_ml_parser *,
+                                             struct flb_ml_stream *,
+                                             void *cb_data,
+                                             char *buf_data,
+                                             size_t buf_size),
+                            void *cb_data,
+                            msgpack_packer *mp_pck,
+                            uint64_t *stream_id)
 {
     uint64_t id;
     struct mk_list *head;
@@ -250,7 +255,7 @@ int flb_ml_stream_create(struct flb_ml *ml,
             }
 
             /* Create the stream */
-            mst = stream_create(id, parser, cb_flush, cb_data);
+            mst = stream_create(id, parser, cb_flush, cb_data, mp_pck);
             if (!mst) {
                 flb_error("[multiline] could not create stream_id=%" PRIu64
                           "for stream '%s' on parser '%s'",
@@ -262,6 +267,31 @@ int flb_ml_stream_create(struct flb_ml *ml,
 
     *stream_id = id;
     return 0;
+}
+
+int flb_ml_stream_create(struct flb_ml *ml, char *name, int name_len,
+                        int (*cb_flush) (struct flb_ml_parser *,
+                                         struct flb_ml_stream *,
+                                         void *cb_data,
+                                         char *buf_data,
+                                         size_t buf_size),
+                        void *cb_data, uint64_t *stream_id)
+{
+    return ml_stream_create(ml, name, name_len, cb_flush, cb_data,
+                            NULL, stream_id);
+}
+
+int flb_ml_stream_create_with_packer(struct flb_ml *ml, char *name, int name_len,
+                                     int (*cb_flush) (struct flb_ml_parser *,
+                                                      struct flb_ml_stream *,
+                                                      void *cb_data,
+                                                      char *buf_data,
+                                                      size_t buf_size),
+                                    void *cb_data, msgpack_packer *mp_pck,
+                                    uint64_t *stream_id)
+{
+    return ml_stream_create(ml, name, name_len, cb_flush, cb_data,
+                            mp_pck, stream_id);
 }
 
 struct flb_ml_stream *flb_ml_stream_get(struct flb_ml_parser_ins *parser,
