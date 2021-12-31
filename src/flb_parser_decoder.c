@@ -43,6 +43,7 @@ static int decode_json(struct flb_parser_dec *dec,
     const char *p;
     size_t size;
     size_t len;
+    struct flb_pack_state state;
 
     p = in_buf;
     while (*p == ' ') p++;
@@ -54,7 +55,10 @@ static int decode_json(struct flb_parser_dec *dec,
         return -1;
     }
 
-    ret = flb_pack_json_recs(p, len, &buf, &size, &root_type, &records);
+    flb_pack_state_init(&state);
+    ret = flb_pack_json_recs(&state, p, len, &buf, &size, &root_type, &records);
+    flb_pack_state_reset(&state);
+
     if (ret != 0) {
         return -1;
     }
