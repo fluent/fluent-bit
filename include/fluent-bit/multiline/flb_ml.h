@@ -118,6 +118,17 @@ struct flb_ml_stream {
                      size_t buf_size);
     void *cb_data;
 
+    /*
+     * Packer: optional msgpack-c packer that user can set so the stream flusher
+     * will use the provider packer instead of creating a new one.
+     *
+     * Without a 'packer', the flush callback receives a new buffer with the
+     * data processed, by using the packer the multiline core writes to the
+     * packer and pass the flush callback a pointer to the new content added
+     * and it size.
+     */
+    msgpack_packer *mp_pck;
+
     struct flb_ml_stream_group *last_stream_group;
 
     /* reference to parent instance */
@@ -302,6 +313,15 @@ int flb_ml_stream_create(struct flb_ml *ml,
                                           size_t buf_size),
                          void *cb_data,
                          uint64_t *stream_id);
+
+int flb_ml_stream_create_with_packer(struct flb_ml *ml, char *name, int name_len,
+                                     int (*cb_flush) (struct flb_ml_parser *,
+                                                      struct flb_ml_stream *,
+                                                      void *cb_data,
+                                                      char *buf_data,
+                                                      size_t buf_size),
+                                    void *cb_data, msgpack_packer *mp_pck,
+                                    uint64_t *stream_id);
 
 int flb_ml_stream_destroy(struct flb_ml_stream *mst);
 
