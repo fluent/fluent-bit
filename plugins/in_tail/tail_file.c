@@ -789,7 +789,6 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
 
     /* Enqueue the records in our file->multiline buffer */
     file->mult_records++;
-    msgpack_sbuffer_write(&file->mult_sbuf, buf_data, buf_size);
 
     return 0;
 }
@@ -906,11 +905,13 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
          */
         inode_str = flb_sds_create_size(64);
         flb_sds_printf(&inode_str, "%"PRIu64, file->inode);
+
         /* Create a stream for this file */
-        ret = flb_ml_stream_create(ctx->ml_ctx,
-                                   inode_str, flb_sds_len(inode_str),
-                                   ml_flush_callback, file,
-                                   &stream_id);
+        ret = flb_ml_stream_create_with_packer(ctx->ml_ctx,
+                                               inode_str, flb_sds_len(inode_str),
+                                               ml_flush_callback, file,
+                                               &file->mult_pck,
+                                               &stream_id);
         if (ret != 0) {
             flb_plg_error(ctx->ins,
                           "could not create multiline stream for file: %s",
