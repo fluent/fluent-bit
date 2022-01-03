@@ -42,11 +42,30 @@
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL  0
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_GLOBAL 1
 
+#ifdef FLB_HAVE_IN_STORAGE_BACKLOG
+
 extern ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
                                                     size_t                      required_space);
 
 extern int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
                                          size_t                      required_space);
+
+
+#else
+
+ssize_t sb_get_releasable_output_queue_space(struct flb_output_instance *output_plugin,
+                                             size_t                      required_space)
+{
+    return 0;
+}
+
+int sb_release_output_queue_space(struct flb_output_instance *output_plugin,
+                                  size_t                      required_space)
+{
+    return 0;
+}
+
+#endif
 
 static int flb_input_chunk_safe_delete(struct flb_input_chunk *ic,
                                        struct flb_input_chunk *old_ic,
@@ -247,13 +266,6 @@ int flb_input_chunk_write(void *data, const char *buf, size_t len)
     ic = (struct flb_input_chunk *) data;
 
     ret = cio_chunk_write(ic->chunk, buf, len);
-#ifdef FLB_HAVE_METRICS
-    if (ret == CIO_OK) {
-        ic->added_records = flb_mp_count(buf, len);
-        ic->total_records += ic->added_records;
-    }
-#endif
-
     return ret;
 }
 
@@ -1346,9 +1358,10 @@ int flb_input_chunk_set_up(struct flb_input_chunk *ic)
 }
 
 /* Append a RAW MessagPack buffer to the input instance */
-int flb_input_chunk_append_raw(struct flb_input_instance *in,
-                               const char *tag, size_t tag_len,
-                               const void *buf, size_t buf_size)
+static int input_chunk_append_raw(struct flb_input_instance *in,
+                                  size_t n_records,
+                                  const char *tag, size_t tag_len,
+                                  const void *buf, size_t buf_size)
 {
     int ret;
     int set_down = FLB_FALSE;
@@ -1438,6 +1451,11 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
 
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
+    if (ret == CIO_OK) {
+        ic->added_records =  n_records;
+        ic->total_records += n_records;
+    }
+
     if (ic->total_records > 0) {
         /* timestamp */
         ts = cmt_time_now();
@@ -1563,6 +1581,24 @@ int flb_input_chunk_append_raw(struct flb_input_instance *in,
     flb_input_chunk_protect(in);
 
     return 0;
+}
+
+int flb_input_chunk_append_raw(struct flb_input_instance *in,
+                               const char *tag, size_t tag_len,
+                               const void *buf, size_t buf_size)
+{
+    size_t records;
+
+    records = flb_mp_count(buf, buf_size);
+    return input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
+}
+
+int flb_input_chunk_append_raw2(struct flb_input_instance *in,
+                                size_t records,
+                                const char *tag, size_t tag_len,
+                                const void *buf, size_t buf_size)
+{
+    return input_chunk_append_raw(in, records, tag, tag_len, buf, buf_size);
 }
 
 /* Retrieve a raw buffer from a dyntag node */

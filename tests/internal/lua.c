@@ -5,6 +5,7 @@
 #include <lua.h>
 
 #include "flb_tests_internal.h"
+#include "mpack/mpack.h"
 #include "msgpack/object.h"
 #include "msgpack/pack.h"
 #include "msgpack/sbuffer.h"
@@ -119,6 +120,30 @@ static void test_pushmsgpack()
     lua_close(l);
 }
 
+static void test_pushmpack()
+{
+    msgpack_packer pck;
+    msgpack_sbuffer sbuf;
+    mpack_reader_t reader;
+    lua_State *l = lua_setup(NULL);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_array(&pck, 3);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str_with_body(&pck, "key", 3);
+    msgpack_pack_str_with_body(&pck, "value", 5);
+    msgpack_pack_str_with_body(&pck, "msgpack-str", 11);
+    msgpack_pack_int(&pck, 4);
+
+    mpack_reader_init_data(&reader, sbuf.data, sbuf.size);
+    flb_lua_pushmpack(l, &reader);
+    check_equals(l, "{ [1] = { [key] = value } [2] = msgpack-str [3] = 4 }");
+
+    msgpack_sbuffer_destroy(&sbuf);
+    lua_close(l);
+}
+
 static void test_tomsgpack()
 {
     const char expected[] = "[{\"key\"=>\"value\"}, \"msgpack-str\", 4]";
@@ -150,10 +175,41 @@ static void test_tomsgpack()
     lua_close(l);
 }
 
+static void test_tompack()
+{
+    const char expected[] = "[{\"key\"=>\"value\"}, \"msgpack-str\", 4]";
+    char buf[256];
+    char printbuf[256];
+    mpack_writer_t writer;
+    msgpack_unpacked msg;
+    struct flb_lua_l2c_config l2cc;
+    lua_State *l = lua_setup("obj = {{['key']='value'},'msgpack-str',4}");
+
+    mpack_writer_init(&writer, buf, sizeof(buf));
+    mk_list_init(&l2cc.l2c_types);
+    l2cc.l2c_types_num = 0;
+
+    lua_getglobal(l, "obj");
+    flb_lua_tompack(l, &writer, 0, &l2cc);
+
+    msgpack_unpacked_init(&msg);
+    msgpack_unpack_next(&msg, writer.buffer, writer.current - writer.buffer, NULL);
+    msgpack_object_print_buffer(printbuf, sizeof(printbuf), msg.data);
+
+    TEST_CHECK(strcmp(printbuf, expected) == 0);
+    TEST_MSG("Expected: %s", expected);
+    TEST_MSG("Actual:   %s", buf);
+
+    msgpack_unpacked_destroy(&msg);
+    lua_close(l);
+}
+
 TEST_LIST = {
     { "lua_is_valid_func" , test_is_valid_func},
     { "lua_pushtimetable" , test_pushtimetable},
     { "lua_pushmsgpack" , test_pushmsgpack },
+    { "lua_pushmpack" , test_pushmpack },
     { "lua_tomsgpack" , test_tomsgpack },
+    { "lua_tompack" , test_tompack },
     { 0 }
 };

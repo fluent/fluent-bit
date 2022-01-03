@@ -38,6 +38,7 @@ struct lua_filter {
     struct flb_lua_l2c_config l2cc;   /* lua -> C config */
     struct flb_luajit *lua;           /* state context   */
     struct flb_filter_instance *ins;  /* filter instance */
+    flb_sds_t packbuf;                /* dynamic buffer used for mpack write */
 };
 
 struct lua_filter *lua_config_create(struct flb_filter_instance *ins,

@@ -274,7 +274,7 @@ static int in_de_collect(struct flb_input_instance *ins,
             parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
                                        &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
 

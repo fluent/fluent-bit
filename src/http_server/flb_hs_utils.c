@@ -41,7 +41,7 @@ int flb_hs_add_content_type_to_req(mk_request_t *request, int type)
                        FLB_HS_CONTENT_TYPE_PROMETHEUS_STR, FLB_HS_CONTENT_TYPE_PROMETHEUS_LEN);
         break;
     default:
-        flb_error("[%s] unknown type=%d", type);
+        flb_error("[%s] unknown type=%d", __FUNCTION__, type);
         return -1;
     }
 

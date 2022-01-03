@@ -59,7 +59,7 @@ int flb_json_tokenise(const char *js, size_t len,
         /* New size: add capacity for new 256 entries */
         new_size = old_size + (sizeof(jsmntok_t) * new_tokens);
 
-        tmp = flb_realloc_z(state->tokens, old_size, new_size);
+        tmp = flb_realloc(state->tokens, new_size);
         if (!tmp) {
             flb_errno();
             return -1;
@@ -299,7 +299,7 @@ int flb_pack_state_init(struct flb_pack_state *s)
     jsmn_init(&s->parser);
 
     size = sizeof(jsmntok_t) * tokens;
-    s->tokens = flb_calloc(1, size);
+    s->tokens = flb_malloc(size);
     if (!s->tokens) {
         flb_errno();
         return -1;
@@ -365,18 +365,13 @@ int flb_pack_json_state(const char *js, size_t len,
         int i;
         int found = 0;
 
-        for (i = 1; i < state->tokens_size; i++) {
+        for (i = 1; i < state->tokens_count; i++) {
             t = &state->tokens[i];
-
-            if (t->start < (state->tokens[i - 1]).start) {
-                break;
-            }
 
             if (t->parent == -1 && (t->end != 0)) {
                 found++;
                 delim = i;
             }
-
         }
 
         if (found > 0) {
@@ -834,12 +829,6 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     struct tm tm;
     struct flb_time tms;
 
-    /* Iterate the original buffer and perform adjustments */
-    records = flb_mp_count(data, bytes);
-    if (records <= 0) {
-        return NULL;
-    }
-
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
@@ -865,6 +854,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
      * ]
      */
     if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        records = flb_mp_count(data, bytes);
+        if (records <= 0) {
+            flb_sds_destroy(out_buf);
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+            return NULL;
+        }
         msgpack_pack_array(&tmp_pck, records);
     }
 

@@ -19,7 +19,7 @@ ARG AWS_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
 RUN rpm --import "$AWS_URL/fluentbit.key"
-RUN wget "$AWS_URL/centos.repo" -O /etc/yum.repos.d/staging.repo
+RUN wget "$AWS_URL/centos-7.repo" -O /etc/yum.repos.d/staging.repo
 RUN yum update -y && yum install -y td-agent-bit
 RUN systemctl enable td-agent-bit
 

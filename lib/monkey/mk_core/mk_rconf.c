@@ -373,6 +373,10 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
             continue;
         }
 
+        if (len - indent_len >= 3 && strncmp(buf + indent_len, "---", 3) == 0) {
+            continue;
+        }
+
         /* Get key and val */
         i = mk_string_char_search(buf + indent_len, ' ', len - indent_len);
         key = mk_string_copy_substr(buf + indent_len, 0, i);

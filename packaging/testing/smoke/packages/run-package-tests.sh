@@ -53,7 +53,7 @@ do
         --name "$CONTAINER_NAME" \
         "$CONTAINER_NAME"
 
-    docker exec -it "$CONTAINER_NAME" /test.sh
+    docker exec -t "$CONTAINER_NAME" /test.sh
 
     docker rm -f "$CONTAINER_NAME"
 done

@@ -50,6 +50,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
+/* Append custom keys and report the number of records processed */
 static int record_append_custom_keys(struct flb_tail_file *file,
                                      size_t processed_bytes,
                                      char *in_data, size_t in_size,
@@ -58,6 +59,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
     int i;
     int ok = MSGPACK_UNPACK_SUCCESS;
     int len;
+    int records = 0;
     size_t off = 0;
     size_t total;
     msgpack_unpacked result;
@@ -127,12 +129,15 @@ static int record_append_custom_keys(struct flb_tail_file *file,
 
         /* finalize map */
         flb_mp_map_header_end(&mh);
+
+        /* counter */
+        records++;
     }
 
     *out_data = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
-    return 0;
+    return records;
 }
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
@@ -288,6 +293,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
 {
     size_t len;
     int lines = 0;
+    int records = 0;
     int ret;
     size_t processed_bytes = 0;
     char *data;
@@ -403,7 +409,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             ret = flb_parser_do(ctx->parser, line, line_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
 
@@ -473,41 +479,45 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
 
         if (out_sbuf->size > 0) {
-            flb_input_chunk_append_raw(ctx->ins,
-                                       file->tag_buf,
-                                       file->tag_len,
-                                       out_sbuf->data,
-                                       out_sbuf->size);
+            flb_input_chunk_append_raw2(ctx->ins,
+                                        lines,
+                                        file->tag_buf,
+                                        file->tag_len,
+                                        out_sbuf->data,
+                                        out_sbuf->size);
         }
         else if (ctx->ml_ctx && file->mult_sbuf.size > 0) {
             /* If no extra keys are needed, just enqueue the buffer */
             if (file->config->path_key == NULL &&
                 file->config->offset_key == NULL) {
-                flb_input_chunk_append_raw(ctx->ins,
-                                           file->tag_buf,
-                                           file->tag_len,
-                                           file->mult_sbuf.data,
-                                           file->mult_sbuf.size);
 
+                flb_input_chunk_append_raw2(ctx->ins,
+                                            file->mult_records,
+                                            file->tag_buf,
+                                            file->tag_len,
+                                            file->mult_sbuf.data,
+                                            file->mult_sbuf.size);
             }
             else {
                 char *mult_buf = NULL;
                 size_t mult_size = 0;
 
                 /* adjust the records in a new buffer */
-                record_append_custom_keys(file,
-                                          processed_bytes,
-                                          file->mult_sbuf.data,
-                                          file->mult_sbuf.size,
-                                          &mult_buf, &mult_size);
+                records = record_append_custom_keys(file,
+                                                    processed_bytes,
+                                                    file->mult_sbuf.data,
+                                                    file->mult_sbuf.size,
+                                                    &mult_buf, &mult_size);
 
-                flb_input_chunk_append_raw(ctx->ins,
-                                           file->tag_buf,
-                                           file->tag_len,
-                                           mult_buf,
-                                           mult_size);
+                flb_input_chunk_append_raw2(ctx->ins,
+                                            records,
+                                            file->tag_buf,
+                                            file->tag_len,
+                                            mult_buf,
+                                            mult_size);
                 flb_free(mult_buf);
             }
+            file->mult_records = 0;
             file->mult_sbuf.size = 0;
         }
     }
@@ -778,7 +788,9 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     struct flb_tail_file *file = data;
 
     /* Enqueue the records in our file->multiline buffer */
+    file->mult_records++;
     msgpack_sbuffer_write(&file->mult_sbuf, buf_data, buf_size);
+
     return 0;
 }
 
@@ -865,6 +877,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_skipping = FLB_FALSE;
 
     /* multiline msgpack buffers */
+    file->mult_records = 0;
     msgpack_sbuffer_init(&file->mult_sbuf);
     msgpack_packer_init(&file->mult_pck, &file->mult_sbuf,
                         msgpack_sbuffer_write);

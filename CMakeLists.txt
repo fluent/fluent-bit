@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(fluent-bit)
 
 # Fluent Bit Version
@@ -201,9 +201,14 @@ option(FLB_FILTER_TYPE_CONVERTER "Enable type converter filter"     Yes)
 option(FLB_FILTER_MULTILINE   "Enable multiline filter"             Yes)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
+option(FLB_FILTER_LUA_USE_MPACK  "Enable mpack on the lua filter"   Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
+
+if(FLB_IN_STORAGE_BACKLOG)
+  FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
+endif()
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
@@ -382,6 +387,7 @@ option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
 
 # MPack
+add_definitions(-DMPACK_EXTENSIONS=1)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)

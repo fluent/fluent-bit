@@ -379,7 +379,7 @@ static int flush_callback(struct flb_ml_parser *parser,
 
     flb_time_pop_from_msgpack(&tm, &result, &map);
 
-    TEST_CHECK(flb_time_to_double(&tm) != 0.0);
+    TEST_CHECK(flb_time_to_nanosec(&tm) != 0L);
 
     exp = &res->out_records[res->current_record];
     len = strlen(res->key);

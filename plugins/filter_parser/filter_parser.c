@@ -282,7 +282,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                              * holder with the new value, otherwise keep the
                              * original.
                              */
-                            if (flb_time_to_double(&parsed_time) != 0.0) {
+                            if (flb_time_to_nanosec(&parsed_time) != 0L) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
 

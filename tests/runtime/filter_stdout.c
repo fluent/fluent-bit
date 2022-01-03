@@ -7,12 +7,35 @@
 
 /* Test functions */
 void flb_test_filter_stdout_json_multiple(void);
+void flb_test_filter_stdout_case_insensitive(void);
 
 /* Test list */
 TEST_LIST = {
     {"json_multiple", flb_test_filter_stdout_json_multiple },
+    {"case_insensitive_name", flb_test_filter_stdout_case_insensitive},
     {NULL, NULL}
 };
+
+/* 
+ * This test case is to check if fluent-bit allows case-insensitive plugin name.
+ * This test is not unique to filter_stdout, but we test here :) ,
+ */
+
+void flb_test_filter_stdout_case_insensitive(void)
+{
+    int filter_ffd;
+    char filter_name[] = "stDoUt";
+    flb_ctx_t *ctx;
+
+    ctx = flb_create();
+
+    filter_ffd = flb_filter(ctx, (char *) filter_name, NULL);
+    if(!TEST_CHECK(filter_ffd >= 0)) {
+        TEST_MSG("%s should be valid\n", filter_name);
+    }
+
+    flb_destroy(ctx);
+}
 
 void flb_test_filter_stdout_json_multiple(void)
 {
