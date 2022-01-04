@@ -20,7 +20,7 @@ Before we can approve your change; please submit the following in a comment:
 
 **Backporting**
 <!--
-PRs targeting the default master branch will go into the next major release.
+PRs targeting the default master branch will go into the next major release usually.
 If this PR should be backported to the current or earlier releases then please submit a PR for that particular branch.
 For example, to merge a change to the 1.8.X series then provide a PR for the 1.8 branch.
 -->
