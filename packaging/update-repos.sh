@@ -16,7 +16,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     [[ ! -d "$REPO_DIR" ]] && continue
 
     # Sign all RPMs created for this version
-    find "$REPO_DIR" -name "td-agent-bit-${VERSION}*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
+    find "$REPO_DIR" -name "*-bit-${VERSION}*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
 
     # Create full metadata for all RPMs in the directory
     createrepo -dvp "$REPO_DIR"
