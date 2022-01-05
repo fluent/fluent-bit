@@ -1,4 +1,4 @@
-name: Build master docker images for integration tests
+name: Build master container images and run integration tests
 on:
   push:
     branches:
