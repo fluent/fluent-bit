@@ -217,6 +217,11 @@ Despite the effort that took for you to create the contribution, that is not an 
 
 ## Release branches
 
+Fluent Bit follow this general branching strategy:
+
+* `master` is the next major version (not yet released)
+* `<major>` is the branch for an existing stable release
+
 Generally a PR will target the default `master` branch so the changes will go into the next major release.
 
 Once merged, this does not mean they will automatically go into the next minor release of the current series.
