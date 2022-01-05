@@ -51,7 +51,6 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 }
 
 static int record_append_custom_keys(struct flb_tail_file *file,
-                                     size_t processed_bytes,
                                      char *in_data, size_t in_size,
                                      char **out_data, size_t *out_size)
 {
@@ -68,6 +67,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     struct flb_mp_map_header mh;
+    struct flb_tail_config *ctx = file->config;
 
     /* init new buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -96,7 +96,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
         }
 
         /* path_key */
-        if (file->config->path_key) {
+        if (ctx->path_key) {
             len = flb_sds_len(file->config->path_key);
 
             flb_mp_map_header_append(&mh);
@@ -111,7 +111,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
         }
 
         /* offset_key */
-        if (file->config->offset_key) {
+        if (ctx->offset_key) {
             len = flb_sds_len(file->config->offset_key);
 
             flb_mp_map_header_append(&mh);
@@ -121,7 +121,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
             msgpack_pack_str_body(&mp_pck, file->config->offset_key, len);
 
             /* val */
-            total = file->offset + processed_bytes;
+            total = file->offset + file->last_processed_bytes;
             msgpack_pack_uint64(&mp_pck, total);
         }
 
@@ -318,6 +318,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     data = file->buf_data;
     end = data + file->buf_len;
 
+    /* reset last processed bytes */
+    file->last_processed_bytes = 0;
+
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
         data++;
@@ -463,8 +466,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         /* Adjust counters */
         data += len + 1;
         processed_bytes += len + 1;
-        file->parsed = 0;
         lines++;
+        file->parsed = 0;
+        file->last_processed_bytes += processed_bytes;
     }
     file->parsed = file->buf_len;
 
@@ -478,37 +482,6 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                        file->tag_len,
                                        out_sbuf->data,
                                        out_sbuf->size);
-        }
-        else if (ctx->ml_ctx && file->mult_sbuf.size > 0) {
-            /* If no extra keys are needed, just enqueue the buffer */
-            if (file->config->path_key == NULL &&
-                file->config->offset_key == NULL) {
-                flb_input_chunk_append_raw(ctx->ins,
-                                           file->tag_buf,
-                                           file->tag_len,
-                                           file->mult_sbuf.data,
-                                           file->mult_sbuf.size);
-
-            }
-            else {
-                char *mult_buf = NULL;
-                size_t mult_size = 0;
-
-                /* adjust the records in a new buffer */
-                record_append_custom_keys(file,
-                                          processed_bytes,
-                                          file->mult_sbuf.data,
-                                          file->mult_sbuf.size,
-                                          &mult_buf, &mult_size);
-
-                flb_input_chunk_append_raw(ctx->ins,
-                                           file->tag_buf,
-                                           file->tag_len,
-                                           mult_buf,
-                                           mult_size);
-                flb_free(mult_buf);
-            }
-            file->mult_sbuf.size = 0;
         }
     }
     else if (file->skip_next) {
@@ -775,10 +748,32 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
                              void *data, char *buf_data, size_t buf_size)
 {
+    size_t mult_size = 0;
+    char *mult_buf = NULL;
     struct flb_tail_file *file = data;
+    struct flb_tail_config *ctx = file->config;
 
-    /* Enqueue the records in our file->multiline buffer */
-    msgpack_sbuffer_write(&file->mult_sbuf, buf_data, buf_size);
+    if (ctx->path_key == NULL && ctx->offset_key == NULL) {
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   buf_data, buf_size);
+    }
+    else {
+        /* adjust the records in a new buffer */
+        record_append_custom_keys(file,
+                                  file->mult_sbuf.data,
+                                  file->mult_sbuf.size,
+                                  &mult_buf, &mult_size);
+
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   mult_buf,
+                                   mult_size);
+        flb_free(mult_buf);
+    }
+
     return 0;
 }
 
@@ -1213,7 +1208,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                           file->inode, file->name);
             return FLB_TAIL_ERROR;
         }
-
 
         /* Adjust the file offset and buffer */
         file->offset += processed_bytes;
