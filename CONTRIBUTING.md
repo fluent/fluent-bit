@@ -217,7 +217,7 @@ Despite the effort that took for you to create the contribution, that is not an 
 
 ## Release branches
 
-Fluent Bit follow this general branching strategy:
+Fluent Bit follows this general branching strategy:
 
 * `master` is the next major version (not yet released)
 * `<major>` is the branch for an existing stable release
