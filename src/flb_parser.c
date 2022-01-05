@@ -707,6 +707,7 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
     flb_sds_t parser;
     flb_sds_t tmp;
     int flush_timeout;
+    struct flb_parser *parser_ctx;
     struct mk_list *head;
     struct mk_rconf_section *section;
     struct flb_ml_parser *ml_parser;
@@ -781,10 +782,13 @@ static int multiline_parser_conf_file(const char *cfg, struct mk_rconf *fconf,
             flush_timeout = atoi(tmp);
         }
 
+        if (parser) {
+            parser_ctx = flb_parser_get(parser, config);
+        }
         ml_parser = flb_ml_parser_create(config, name, type, match_string,
                                          negate, flush_timeout, key_content,
                                          key_group, key_pattern,
-                                         NULL, parser);
+                                         parser_ctx, parser);
         if (!ml_parser) {
             goto fconf_error;
         }
