@@ -9,18 +9,6 @@ ARG BASE_BUILDER
 # Multiarch support
 FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
 
-# CMake configuration variables
-ARG CFLAGS="-std=gnu99"
-ARG CMAKE_INSTALL_PREFIX=/opt/td-agent-bit/
-ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
-ARG FLB_TD=On
-ARG FLB_RELEASE=On
-ARG FLB_TRACE=On
-ARG FLB_SQLDB=On
-ARG FLB_HTTP_SERVER=On
-ARG FLB_OUT_KAFKA=On
-ARG FLB_OUT_PGSQL=On
-
 # ubuntu/16.04 base image
 FROM ubuntu:16.04 as ubuntu-16.04-base
 ENV DEBIAN_FRONTEND noninteractive
@@ -109,6 +97,18 @@ COPY sources/$FLB_SRC /
 WORKDIR /tmp
 RUN if [ -z "$FLB_SRC" ] ; then wget -q -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
 
+# CMake configuration variables
+ARG CFLAGS="-std=gnu99"
+ARG CMAKE_INSTALL_PREFIX=/opt/td-agent-bit/
+ARG CMAKE_INSTALL_SYSCONFDIR=/etc/
+ARG FLB_TD=On
+ARG FLB_RELEASE=On
+ARG FLB_TRACE=On
+ARG FLB_SQLDB=On
+ARG FLB_HTTP_SERVER=On
+ARG FLB_OUT_KAFKA=On
+ARG FLB_OUT_PGSQL=On
+
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
@@ -123,4 +123,4 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           ../
 
 VOLUME [ "/output" ]
-CMD [ "make" "-j" "4" "&&" "cpack" "-G" "DEB" "&&" "cp" "*.deb" "/output/" ]
+CMD [ "/bin/bash", "-c", "make -j 4 && cpack -G DEB && cp *.deb /output/" ]
