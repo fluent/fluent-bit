@@ -21,10 +21,6 @@ RUN yum -y update && \
                    cmake3 && \
     yum clean all
 
-#TODO: confirm this deviation
-ARG FLB_OUT_PGSQL=On
-ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
-
 # amazonlinux/2.arm64v8 base image
 FROM arm64v8/amazonlinux:2 as amazonlinux-2.arm64v8-base
 
@@ -35,12 +31,9 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
+                   postgresql-devel postgresql-libs \
                    cmake3 && \
     yum clean all
-
-#TODO: confirm this deviation - add deps above if not
-ARG FLB_OUT_PGSQL=Off
-ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -70,8 +63,7 @@ ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
-#TODO: confirm this deviation
-# ARG FLB_OUT_PGSQL=On
+ARG FLB_OUT_PGSQL=On
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
