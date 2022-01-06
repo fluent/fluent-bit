@@ -1,5 +1,3 @@
-
-
 # Special Dockerfile to build all CentOS targets, the only difference is
 # the packages in the base image.
 # Set this to the base image to use in each case, so if we want to build for centos/7
@@ -14,6 +12,7 @@ FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
 # centos/7 base image
 FROM centos:7 as centos-7-base
 
+# hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
@@ -32,10 +31,12 @@ FROM arm64v8/centos:7 as centos-7.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+# hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib openssl openss-libs openssl-devel && \
+                   cyrus-sasl-lib openssl openss-libs openssl-devel \
+                   postgresql-libs postgresql-devel postgresql-server postgresql && \
     wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     rpm -ivh epel-release-latest-7.noarch.rpm && \
     yum install -y cmake3 && \
@@ -45,14 +46,15 @@ RUN yum -y update && \
 ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
-# centos/7 base image
+# centos/8 base image
 FROM centos:8 as centos-8-base
 
+# hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
-                   postgresql-libs postgresql-devel postgresql-server postgresql && \
-                   cyrus-sasl-lib openssl openssl-libs openssl-devel cmake && \
+                   postgresql-libs postgresql-devel postgresql-server postgresql \
+                   cyrus-sasl-lib openssl openssl-libs openssl-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -63,11 +65,12 @@ FROM arm64v8/centos:8 as centos-8.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+# hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
-                   postgresql-libs postgresql-devel postgresql-server postgresql && \
-                   cyrus-sasl-lib openssl openssl-libs openssl-devel cmake && \
+                   postgresql-libs postgresql-devel postgresql-server postgresql \
+                   cyrus-sasl-lib openssl openssl-libs openssl-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -103,6 +106,7 @@ ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
+# cmake3 exists in every image - cmake references the older cmake2 in centos 7
 RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
            -DFLB_RELEASE="$FLB_RELEASE" \
