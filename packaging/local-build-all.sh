@@ -27,16 +27,16 @@ echo "Cleaning any existing output"
 rm -rf "${PACKAGING_OUTPUT_DIR:?}/*"
 
 # We need a version of the source code to build
-FLUENT_BIT_VERSION=${FLUENT_BIT_VERSION:-1.8.11}
+FLB_VERSION=${FLB_VERSION:-1.8.11}
 
 # Iterate over each target and attempt to build it.
-# Verify that an RPM or DEB is created for the version specified.
+# Verify that an RPM or DEB is created.
 for DISTRO in "${TARGETS[@]}"
 do
     echo "$DISTRO"
-    FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" -v "$FLUENT_BIT_VERSION" "$@"
-    if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$FLUENT_BIT_VERSION/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-$FLUENT_BIT_VERSION*.rpm" -o -iname "*-bit-$FLUENT_BIT_VERSION*.deb" \) | head -n1) ]]; then
-        echo "Unable to find any $FLUENT_BIT_VERSION binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$FLUENT_BIT_VERSION/$PACKAGING_OUTPUT_DIR"
+    FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" -v "$FLB_VERSION" "$@"
+    if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$FLB_VERSION/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-*.rpm" -o -iname "*-bit-*.deb" \) | head -n1) ]]; then
+        echo "Unable to find any $FLB_VERSION binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$FLB_VERSION/$PACKAGING_OUTPUT_DIR"
         exit 1
     fi
 done

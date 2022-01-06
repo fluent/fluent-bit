@@ -82,18 +82,16 @@ mkdir -p "$IMAGE_CONTEXT_DIR/sources"
 
 # Set tarball as an argument (./build.sh VERSION DISTRO/CODENAME -t something.tar.gz)
 if [ -n "$FLB_TARGZ" ]; then
-    # Check if we have a local or URL tarball
+    # Check if we have a local tarball
     if [[ ! -f "$FLB_TARGZ" ]]; then
-        if curl --output /dev/null --silent --head --fail "$FLB_TARGZ"; then
-            echo "Unable to find tarball: $FLB_TARGZ"
-            exit 1
-        fi
+        echo "Unable to find tarball: $FLB_TARGZ"
+        exit 1
     fi
 
-    # Set build argument
-    FLB_ARG="$FLB_ARG --build-arg FLB_SRC=$FLB_TARGZ"
     # Copy tarball
     cp "$FLB_TARGZ" "$IMAGE_CONTEXT_DIR/sources/"
+    # Set build argument (ensure we strip off any path)
+    FLB_ARG="$FLB_ARG --build-arg FLB_SRC=$(basename "$FLB_TARGZ")"
 fi
 
 
