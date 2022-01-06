@@ -98,6 +98,11 @@ int flb_parser_json_do(struct flb_parser *parser,
                        void **out_buf, size_t *out_size,
                        struct flb_time *out_time);
 
+int flb_parser_docker_do(struct flb_parser *parser,
+                         const char *in_buf, size_t in_size,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
+
 int flb_parser_ltsv_do(struct flb_parser *parser,
                        const char *buf, size_t length,
                        void **out_buf, size_t *out_size,
@@ -121,6 +126,10 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
     if (parser->type == FLB_PARSER_REGEX) {
         flb_regex_destroy(parser->regex);
         flb_free(parser->p_regex);
+    }
+    else if (parser->type == FLB_PARSER_JSON ||
+             parser->type == FLB_PARSER_DOCKER) {
+        flb_pack_state_reset(&parser->json_state);
     }
 
     flb_free(parser->name);
@@ -188,6 +197,9 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     else if (strcasecmp(format, "json") == 0) {
         p->type = FLB_PARSER_JSON;
     }
+    else if (strcasecmp(format, "docker") == 0) {
+        p->type = FLB_PARSER_DOCKER;
+    }
     else if (strcasecmp(format, "ltsv") == 0) {
         p->type = FLB_PARSER_LTSV;
     }
@@ -220,7 +232,15 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
         p->skip_empty = skip_empty;
         p->p_regex = flb_strdup(p_regex);
     }
-
+    else if (p->type == FLB_PARSER_JSON || p->type == FLB_PARSER_DOCKER) {
+        ret = flb_pack_state_init(&p->json_state);
+        if (ret != 0) {
+            flb_error("[parser:%s] could not initialize state", name);
+            mk_list_del(&p->_head);
+            flb_free(p);
+            return NULL;
+        }
+    }
     p->name = flb_strdup(name);
 
     if (time_fmt) {
@@ -309,7 +329,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     }
 
     if (time_key) {
-        p->time_key = flb_strdup(time_key);
+        p->time_key = flb_sds_create(time_key);
     }
 
     p->time_keep = time_keep;
@@ -327,6 +347,9 @@ void flb_parser_destroy(struct flb_parser *parser)
         flb_regex_destroy(parser->regex);
         flb_free(parser->p_regex);
     }
+    else if (parser->type == FLB_PARSER_JSON || parser->type == FLB_PARSER_DOCKER) {
+        flb_pack_state_reset(&parser->json_state);
+    }
 
     flb_free(parser->name);
     if (parser->time_fmt) {
@@ -337,7 +360,7 @@ void flb_parser_destroy(struct flb_parser *parser)
         flb_free(parser->time_fmt_year);
     }
     if (parser->time_key) {
-        flb_free(parser->time_key);
+        flb_sds_destroy(parser->time_key);
     }
     if (parser->types_len != 0) {
         for (i=0; i<parser->types_len; i++){
@@ -902,7 +925,6 @@ struct flb_parser *flb_parser_get(const char *name, struct flb_config *config)
 int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
                   void **out_buf, size_t *out_size, struct flb_time *out_time)
 {
-
     if (parser->type == FLB_PARSER_REGEX) {
         return flb_parser_regex_do(parser, buf, length,
                                    out_buf, out_size, out_time);
@@ -910,6 +932,10 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     else if (parser->type == FLB_PARSER_JSON) {
         return flb_parser_json_do(parser, buf, length,
                                   out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_DOCKER) {
+        return flb_parser_docker_do(parser, buf, length,
+                                    out_buf, out_size, out_time);
     }
     else if (parser->type == FLB_PARSER_LTSV) {
         return flb_parser_ltsv_do(parser, buf, length,

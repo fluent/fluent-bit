@@ -28,7 +28,7 @@ static struct flb_parser *docker_parser_create(struct flb_config *config)
     struct flb_parser *p;
 
     p = flb_parser_create("_ml_json_docker",      /* parser name */
-                          "json",                 /* backend type */
+                          "docker",               /* backend type */
                           NULL,                   /* regex */
                           FLB_TRUE,               /* skip_empty */
                           "%Y-%m-%dT%H:%M:%S.%L", /* time format */
@@ -97,7 +97,7 @@ struct flb_ml_parser *flb_ml_parser_docker(struct flb_config *config)
                                FLB_FALSE,               /* negate         */
                                FLB_ML_FLUSH_TIMEOUT,    /* flush_ms  */
                                "log",                   /* key_content    */
-                               "stream",                /* key_group      */
+                               NULL /*"stream"*/,                /* key_group      */
                                NULL,                    /* key_pattern    */
                                parser,                  /* parser ctx     */
                                NULL);                   /* parser name    */

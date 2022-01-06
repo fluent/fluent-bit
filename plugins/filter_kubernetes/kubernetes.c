@@ -101,6 +101,7 @@ static int merge_log_handler(msgpack_object o,
     int root_type;
     int records = 0;
     char *tmp;
+    struct flb_pack_state state;
 
     /* Reset vars */
     *out_buf = NULL;
@@ -149,10 +150,14 @@ static int merge_log_handler(msgpack_object o,
             return MERGE_PARSED;
         }
     }
-    else { /* Default JSON parser */
-        ret = flb_pack_json_recs(ctx->unesc_buf, ctx->unesc_buf_len,
+    else {
+        /* Default JSON parser */
+        flb_pack_state_init(&state);
+        ret = flb_pack_json_recs(&state, ctx->unesc_buf, ctx->unesc_buf_len,
                                  (char **) out_buf, out_size, &root_type,
                                  &records);
+        flb_pack_state_reset(&state);
+
         if (ret == 0 && root_type != FLB_PACK_JSON_OBJECT) {
             flb_plg_debug(ctx->ins, "could not merge JSON, root_type=%i",
                       root_type);

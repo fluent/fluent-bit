@@ -26,12 +26,14 @@
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_pack.h>
 #include <msgpack.h>
 
-#define FLB_PARSER_REGEX 1
-#define FLB_PARSER_JSON  2
-#define FLB_PARSER_LTSV  3
-#define FLB_PARSER_LOGFMT 4
+#define FLB_PARSER_REGEX   1
+#define FLB_PARSER_JSON    2
+#define FLB_PARSER_DOCKER  3
+#define FLB_PARSER_LTSV    4
+#define FLB_PARSER_LOGFMT  5
 
 struct flb_parser_types {
     char *key;
@@ -47,7 +49,7 @@ struct flb_parser {
     int skip_empty;       /* skip empty regex matches */
     char *time_fmt;       /* time format */
     char *time_fmt_full;  /* original given time format */
-    char *time_key;       /* field name that contains the time */
+    flb_sds_t time_key;   /* field name that contains the time */
     int time_offset;      /* fixed UTC offset */
     int time_keep;        /* keep time field */
     int time_strict;      /* parse time field strictly */
@@ -62,7 +64,13 @@ struct flb_parser {
     int time_with_year;   /* do time_fmt consider a year (%Y) ? */
     char *time_fmt_year;
     int time_with_tz;     /* do time_fmt consider a timezone ?  */
+
+    /* backend: regex */
     struct flb_regex *regex;
+
+    /* backend: json */
+    struct flb_pack_state json_state;
+
     struct mk_list _head;
 };
 

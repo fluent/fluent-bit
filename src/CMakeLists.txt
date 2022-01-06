@@ -82,6 +82,7 @@ if(FLB_PARSER)
     flb_parser.c
     flb_parser_regex.c
     flb_parser_json.c
+    flb_parser_docker.c
     flb_parser_decoder.c
     flb_parser_ltsv.c
     flb_parser_logfmt.c

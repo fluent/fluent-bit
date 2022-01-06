@@ -387,7 +387,7 @@ static int get_key_id(msgpack_object *map, flb_sds_t key_name)
             continue;
         }
 
-        if (strncmp(key.via.str.ptr, key_name, len) == 0) {
+        if (memcmp(key.via.str.ptr, key_name, len) == 0) {
             found = FLB_TRUE;
             break;
         }
@@ -573,7 +573,7 @@ static int ml_append_try_parser_type_map(struct flb_ml_parser_ins *parser,
             if (key.type == MSGPACK_OBJECT_STR &&
                 parser->key_content &&
                 key.via.str.size == len &&
-                strncmp(key.via.str.ptr, parser->key_content, len) == 0) {
+                memcmp(key.via.str.ptr, parser->key_content, len) == 0) {
                 /* key_content found */
                 if (val.type == MSGPACK_OBJECT_STR) {
                     /* try parse the value of key_content e*/
@@ -583,7 +583,8 @@ static int ml_append_try_parser_type_map(struct flb_ml_parser_ins *parser,
                                                           map,
                                                           out_buf, out_size, out_release,
                                                           out_time);
-                } else {
+                }
+                else {
                     flb_error("%s: not string", __FUNCTION__);
                     return -1;
                 }
@@ -828,24 +829,23 @@ int flb_ml_append_object(struct flb_ml *ml, uint64_t stream_id,
     }
 
     mk_list_foreach(head_group, &group->parsers) {
-            parser_i = mk_list_entry(head_group, struct flb_ml_parser_ins, _head);
-            if (lru_parser && parser_i == lru_parser) {
-                continue;
-            }
+        parser_i = mk_list_entry(head_group, struct flb_ml_parser_ins, _head);
+        if (lru_parser && parser_i == lru_parser) {
+            continue;
+        }
 
-            ret = ml_append_try_parser(parser_i, stream_id, type,
-                                       tm, NULL, 0, obj);
-            if (ret == 0) {
-                group->lru_parser = parser_i;
-                group->lru_parser->last_stream_id = stream_id;
-                lru_parser = parser_i;
-                processed = FLB_TRUE;
-                break;
-            }
-            else {
-                parser_i = NULL;
-            }
-
+        ret = ml_append_try_parser(parser_i, stream_id, type,
+                                   tm, NULL, 0, obj);
+        if (ret == 0) {
+            group->lru_parser = parser_i;
+            group->lru_parser->last_stream_id = stream_id;
+            lru_parser = parser_i;
+            processed = FLB_TRUE;
+            break;
+        }
+        else {
+            parser_i = NULL;
+        }
     }
 
     if (!processed) {
@@ -1003,23 +1003,40 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
 {
     int i;
     int ret;
-    int size;
     int len;
+    size_t size;
+    size_t pre_size;
+    size_t pos_size;
     size_t off = 0;
+    char *data;
     msgpack_object map;
     msgpack_object k;
     msgpack_object v;
+    msgpack_packer tmp_pck;
     msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    msgpack_packer *mp_pck = mst->mp_pck;
     msgpack_unpacked result;
     struct flb_ml_parser_ins *parser_i = mst->parser;
 
     breakline_prepare(parser_i, group);
     len = flb_sds_len(group->buf);
 
-    /* init msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    /* return right away if no data exists */
+    if (group->mp_sbuf.size <= 0 && len <= 0) {
+        return 0;
+    }
+
+    if (!mst->mp_pck) {
+        /* If no packer was set, initialize local packer and buffer */
+        pre_size = 0;
+        mp_pck = &tmp_pck;
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    }
+    else {
+        /* a packer already exists, store the current size */
+        pre_size = ((msgpack_sbuffer *) mp_pck->data)->size;
+    }
 
     /* if the group don't have a time set, use current time */
     if (flb_time_to_nanosec(&group->mp_time) == 0L) {
@@ -1048,12 +1065,12 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
         }
 
         /* Take the first line keys and repack */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&group->mp_time, &mp_pck, 0);
+        msgpack_pack_array(mp_pck, 2);
+        flb_time_append_to_msgpack(&group->mp_time, mp_pck, 0);
 
         len = flb_sds_len(parser_i->key_content);
         size = map.via.map.size;
-        msgpack_pack_map(&mp_pck, size);
+        msgpack_pack_map(mp_pck, size);
 
         for (i = 0; i < size; i++) {
             k = map.via.map.ptr[i].key;
@@ -1066,20 +1083,20 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
             if (k.type == MSGPACK_OBJECT_STR &&
                 parser_i->key_content &&
                 k.via.str.size == len &&
-                strncmp(k.via.str.ptr, parser_i->key_content, len) == 0) {
+                memcmp(k.via.str.ptr, parser_i->key_content, len) == 0) {
 
                 /* key */
-                msgpack_pack_object(&mp_pck, k);
+                msgpack_pack_object(mp_pck, k);
 
                 /* value */
                 len = flb_sds_len(group->buf);
-                msgpack_pack_str(&mp_pck, len);
-                msgpack_pack_str_body(&mp_pck, group->buf, len);
+                msgpack_pack_str(mp_pck, len);
+                msgpack_pack_str_body(mp_pck, group->buf, len);
             }
             else {
                 /* key / val */
-                msgpack_pack_object(&mp_pck, k);
-                msgpack_pack_object(&mp_pck, v);
+                msgpack_pack_object(mp_pck, k);
+                msgpack_pack_object(mp_pck, v);
             }
         }
         msgpack_unpacked_destroy(&result);
@@ -1087,32 +1104,49 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     }
     else if (len > 0) {
         /* Pack raw content as Fluent Bit record */
-        msgpack_pack_array(&mp_pck, 2);
-        flb_time_append_to_msgpack(&group->mp_time, &mp_pck, 0);
-        msgpack_pack_map(&mp_pck, 1);
+        msgpack_pack_array(mp_pck, 2);
+        flb_time_append_to_msgpack(&group->mp_time, mp_pck, 0);
+        msgpack_pack_map(mp_pck, 1);
 
         /* key */
         if (parser_i->key_content) {
             len = flb_sds_len(parser_i->key_content);
-            msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, parser_i->key_content, len);
+            msgpack_pack_str(mp_pck, len);
+            msgpack_pack_str_body(mp_pck, parser_i->key_content, len);
         }
         else {
-            msgpack_pack_str(&mp_pck, 3);
-            msgpack_pack_str_body(&mp_pck, "log", 3);
+            msgpack_pack_str(mp_pck, 3);
+            msgpack_pack_str_body(mp_pck, "log", 3);
         }
 
         /* val */
         len = flb_sds_len(group->buf);
-        msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, group->buf, len);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, group->buf, len);
     }
 
-    if (mp_sbuf.size > 0) {
-        mst->cb_flush(ml_parser, mst, mst->cb_data, mp_sbuf.data, mp_sbuf.size);
+    /* final size of the buffer */
+    if (mst->mp_pck) {
+        pos_size = ((msgpack_sbuffer *) mp_pck->data)->size;
+        data = ((msgpack_sbuffer *) mp_pck->data)->data + pre_size;
+    }
+    else {
+        pos_size = mp_sbuf.size;
+        data = mp_sbuf.data;
+
+    }
+    size = pos_size - pre_size;
+
+    if (size > 0) {
+        mst->cb_flush(ml_parser, mst, mst->cb_data, data, size);
     }
 
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    /* destroy local sbuffer */
+    if (!mst->mp_pck) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+    }
+
+    /* reset group buf length */
     flb_sds_len_set(group->buf, 0);
 
     /* Update last flush time */

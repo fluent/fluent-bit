@@ -127,7 +127,6 @@ static inline int pack_string_token(struct flb_pack_state *state,
     }
     out_buf = state->buf_data;
 
-    /* Always decode any UTF-8 or special characters */
     out_len = flb_unescape_string_utf8(str, len, out_buf);
 
     /* Pack decoded text */
@@ -229,7 +228,8 @@ static char *tokens_to_msgpack(struct flb_pack_state *state,
  * This routine do not keep a state in the parser, do not use it for big
  * JSON messages.
  */
-static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
+static int pack_json_to_msgpack(struct flb_pack_state *state,
+                                const char *js, size_t len, char **buffer,
                                 size_t *size, int *root_type, int *records)
 {
     int ret = -1;
@@ -237,37 +237,33 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
     int out;
     int last;
     char *buf = NULL;
-    struct flb_pack_state state;
 
-    ret = flb_pack_state_init(&state);
-    if (ret != 0) {
-        return -1;
-    }
-    ret = flb_json_tokenise(js, len, &state);
+    assert(state != NULL);
+
+    ret = flb_json_tokenise(js, len, state);
     if (ret != 0) {
         ret = -1;
         goto flb_pack_json_end;
     }
 
-    if (state.tokens_count == 0) {
+    if (state->tokens_count == 0) {
         ret = -1;
         goto flb_pack_json_end;
     }
 
-    buf = tokens_to_msgpack(&state, js, &out, &last, &n_records);
+    buf = tokens_to_msgpack(state, js, &out, &last, &n_records);
     if (!buf) {
         ret = -1;
         goto flb_pack_json_end;
     }
 
-    *root_type = state.tokens[0].type;
+    *root_type = state->tokens[0].type;
     *size = out;
     *buffer = buf;
     *records = n_records;
     ret = 0;
 
  flb_pack_json_end:
-    flb_pack_state_reset(&state);
     return ret;
 }
 
@@ -275,19 +271,37 @@ static int pack_json_to_msgpack(const char *js, size_t len, char **buffer,
 int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size,
                   int *root_type)
 {
+    int ret;
     int records;
+    struct flb_pack_state state;
 
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, &records);
+    ret = flb_pack_state_init(&state);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = pack_json_to_msgpack(&state, js, len, buffer, size, root_type, &records);
+
+    /* cleanup state from the stack and free up memory */
+    flb_pack_state_reset(&state);
+
+    return ret;
 }
 
 /*
  * Pack unlimited serialized JSON messages into msgpack, finally it writes on
  * 'out_records' the number of messages.
  */
-int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
+int flb_pack_json_recs(struct flb_pack_state *json_state,
+                       const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records)
 {
-    return pack_json_to_msgpack(js, len, buffer, size, root_type, out_records);
+    int ret;
+
+    flb_pack_state_recycle(json_state);
+    ret = pack_json_to_msgpack(json_state, js, len, buffer, size,
+                               root_type, out_records);
+    return ret;
 }
 
 /* Initialize a JSON packer state */
@@ -331,6 +345,14 @@ void flb_pack_state_reset(struct flb_pack_state *s)
     flb_free(s->buf_data);
 }
 
+void flb_pack_state_recycle(struct flb_pack_state *s)
+{
+    jsmn_init(&s->parser);
+
+    s->tokens_count = 0;
+    s->last_byte    = 0;
+    s->buf_len      = 0;
+}
 
 /*
  * It parse a JSON string and convert it to MessagePack format. The main

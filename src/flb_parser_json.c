@@ -18,12 +18,10 @@
  *  limitations under the License.
  */
 
-#define _GNU_SOURCE
-#include <time.h>
-
-#include <fluent-bit/flb_parser.h>
-#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_parser_decoder.h>
 
 int flb_parser_json_do(struct flb_parser *parser,
@@ -32,10 +30,10 @@ int flb_parser_json_do(struct flb_parser *parser,
                        struct flb_time *out_time)
 {
     int i;
-    int skip;
+    int time_id = -1;
     int ret;
     int slen;
-    int root_type;
+    int root_type = -1;
     int records;
     double tmfrac = 0;
     char *mp_buf = NULL;
@@ -56,9 +54,13 @@ int flb_parser_json_do(struct flb_parser *parser,
     time_t time_lookup;
     struct tm tm = {0};
     struct flb_time *t;
+    struct flb_mp_map_header mh;
+
+    flb_pack_state_recycle(&parser->json_state);
 
     /* Convert incoming in_buf JSON message to message pack format */
-    ret = flb_pack_json_recs(in_buf, in_size, &mp_buf, &mp_size, &root_type,
+    ret = flb_pack_json_recs(&parser->json_state,
+                             in_buf, in_size, &mp_buf, &mp_size, &root_type,
                              &records);
     if (ret != 0) {
         return -1;
@@ -70,22 +72,14 @@ int flb_parser_json_do(struct flb_parser *parser,
     }
 
     /* Make sure object is a map */
-    msgpack_unpacked_init(&result);
-    if (msgpack_unpack_next(&result, mp_buf, mp_size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        map = result.data;
-        if (map.type != MSGPACK_OBJECT_MAP) {
-            flb_free(mp_buf);
-            msgpack_unpacked_destroy(&result);
-            return -1;
-        }
-    }
-    else {
-        if (mp_size > 0) {
-            flb_free(mp_buf);
-        }
-        msgpack_unpacked_destroy(&result);
+    if (root_type != FLB_PACK_JSON_OBJECT) {
+        flb_free(mp_buf);
         return -1;
     }
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_buf, mp_size, &off);
+    map = result.data;
 
     /* Export results (might change later) */
     tmp_out_buf = mp_buf;
@@ -99,7 +93,6 @@ int flb_parser_json_do(struct flb_parser *parser,
         if (ret == 0) {
             /* re-process the unpack context */
             off = 0;
-            msgpack_unpacked_destroy(&result);
             msgpack_unpacked_init(&result);
             msgpack_unpack_next(&result, tmp_out_buf, tmp_out_size, &off);
             map = result.data;
@@ -122,15 +115,15 @@ int flb_parser_json_do(struct flb_parser *parser,
 
     if (parser->time_key) {
         time_key = parser->time_key;
+        slen = flb_sds_len(parser->time_key);
     }
     else {
         time_key = "time";
+        slen = 4;
     }
-    slen = strlen(time_key);
 
     /* Lookup time field */
     map_size = map.via.map.size;
-    skip = map_size;
     for (i = 0; i < map_size; i++) {
         k = &map.via.map.ptr[i].key;
         v = &map.via.map.ptr[i].val;
@@ -153,14 +146,14 @@ int flb_parser_json_do(struct flb_parser *parser,
             return -1;
         }
 
-        if (strncmp(k->via.str.ptr, time_key, k->via.str.size) == 0) {
+        if (memcmp(k->via.str.ptr, time_key, k->via.str.size) == 0) {
             /* We found the key, break the loop and keep the index */
             if (parser->time_keep == FLB_FALSE) {
-                skip = i;
+                time_id = i;
                 break;
             }
             else {
-                skip = -1;
+                time_id = -1;
             }
             break;
         }
@@ -199,34 +192,35 @@ int flb_parser_json_do(struct flb_parser *parser,
         time_lookup = flb_parser_tm2time(&tm);
     }
 
-    /* Compose a new map without the time_key field */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    if (time_id >= 0 && parser->time_keep == FLB_FALSE) {
+        /* Compose a new map without the time_key field */
+        msgpack_sbuffer_init(&mp_sbuf);
+        msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    if (parser->time_keep == FLB_FALSE) {
-        msgpack_pack_map(&mp_pck, map_size - 1);
-    }
-    else {
-        msgpack_pack_map(&mp_pck, map_size);
-    }
+        flb_mp_map_header_init(&mh, &mp_pck);
 
-    for (i = 0; i < map_size; i++) {
-        if (i == skip) {
-            continue;
+        for (i = 0; i < map_size; i++) {
+            if (i == time_id) {
+                continue;
+            }
+
+            flb_mp_map_header_append(&mh);
+            msgpack_pack_object(&mp_pck, map.via.map.ptr[i].key);
+            msgpack_pack_object(&mp_pck, map.via.map.ptr[i].val);
         }
-        msgpack_pack_object(&mp_pck, map.via.map.ptr[i].key);
-        msgpack_pack_object(&mp_pck, map.via.map.ptr[i].val);
+        flb_mp_map_header_end(&mh);
+
+        /* Export the proper buffer */
+        flb_free(tmp_out_buf);
+        *out_buf = mp_sbuf.data;
+        *out_size = mp_sbuf.size;
     }
 
-    /* Export the proper buffer */
-    flb_free(tmp_out_buf);
-    *out_buf = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
+    msgpack_unpacked_destroy(&result);
 
     t = out_time;
     t->tm.tv_sec  = time_lookup;
     t->tm.tv_nsec = (tmfrac * 1000000000);
 
-    msgpack_unpacked_destroy(&result);
     return *out_size;
 }

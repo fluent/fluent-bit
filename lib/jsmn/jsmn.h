@@ -74,6 +74,7 @@ typedef struct jsmntok {
 #ifdef JSMN_PARENT_LINKS
   int parent;
 #endif
+  int escaped;
 } jsmntok_t;
 
 /**
@@ -196,7 +197,7 @@ static int jsmn_parse_string(jsmn_parser *parser, const char *js,
   jsmntok_t *token;
 
   int start = parser->pos;
-
+  int escaped = 0;
   parser->pos++;
 
   /* Skip starting quote */
@@ -213,6 +214,7 @@ static int jsmn_parse_string(jsmn_parser *parser, const char *js,
         parser->pos = start;
         return JSMN_ERROR_NOMEM;
       }
+      token->escaped = escaped;
       jsmn_fill_token(token, JSMN_STRING, start + 1, parser->pos);
 #ifdef JSMN_PARENT_LINKS
       token->parent = parser->toksuper;
@@ -223,6 +225,7 @@ static int jsmn_parse_string(jsmn_parser *parser, const char *js,
     /* Backslash: Quoted symbol expected */
     if (c == '\\' && parser->pos + 1 < len) {
       int i;
+      escaped = 1;
       parser->pos++;
       switch (js[parser->pos]) {
       /* Allowed escaped symbols */

@@ -26,22 +26,21 @@
 #include <string.h>
 #include <inttypes.h>
 
-static int octal_digit(char c)
+static inline int octal_digit(char c)
 {
     return (c >= '0' && c <= '7');
 }
 
-static int hex_digit(char c)
+static inline int hex_digit(char c)
 {
     return ((c >= '0' && c <= '9') ||
             (c >= 'A' && c <= 'F') ||
             (c >= 'a' && c <= 'f'));
 }
 
-static int u8_wc_toutf8(char *dest, uint32_t ch)
+static inline int u8_wc_toutf8(char *dest, uint32_t ch)
 {
     if (ch < 0x80) {
-        dest[0] = (char)ch;
         return 1;
     }
     if (ch < 0x800) {
@@ -67,7 +66,7 @@ static int u8_wc_toutf8(char *dest, uint32_t ch)
 
 /* assumes that src points to the character after a backslash
    returns number of input characters processed */
-static int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
+static inline int u8_read_escape_sequence(const char *str, int size, uint32_t *dest)
 {
     uint32_t ch;
     char digs[9]="\0\0\0\0\0\0\0\0";
@@ -199,12 +198,12 @@ int flb_unescape_string_utf8(const char *in_buf, int sz, char *out_buf)
             break;
         }
 
-        if (esc_out == 0) {
+        if (esc_out == 1) {
+            out_buf[count_out] = ch;
+        }
+        else if (esc_out == 0) {
             out_buf[count_out] = ch;
             esc_out = 1;
-        }
-        else if (esc_out == 1) {
-            out_buf[count_out] = (char) temp[0];
         }
         else {
             memcpy(&out_buf[count_out], temp, esc_out);
