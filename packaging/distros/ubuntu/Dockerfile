@@ -2,8 +2,8 @@
 # the packages in the base image.
 # Set this to the base image to use in each case, so if we want to build for ubuntu/20.04
 # we would set BASE_BUILDER=ubuntu-20.04-base.
-# Lookup the name to use below but should follow the '<distro>-base' convention.
 ARG BASE_BUILDER
+# Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
 # CMake configuration variables
