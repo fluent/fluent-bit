@@ -1,6 +1,8 @@
 # Special Dockerfile to build all Ubuntu targets, the only difference is
 # the packages in the base image.
-# Set this to the base image to use.
+# Set this to the base image to use in each case, so if we want to build for ubuntu/20.04
+# we would set BASE_BUILDER=ubuntu-20.04-base.
+# Lookup the name to use below but should follow the '<distro>-base' convention.
 ARG BASE_BUILDER
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
@@ -16,6 +18,7 @@ ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 
+# ubuntu/16.04 base image
 FROM ubuntu:16.04 as ubuntu-16.04-base
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -30,6 +33,7 @@ RUN apt-get -qq update && \
     apt-get -qq update && \
     apt-get install -y -qq --reinstall lsb-base lsb-release cmake
 
+# ubuntu/18.04 base image
 FROM ubuntu:18.04 as ubuntu-18.04-base
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -40,6 +44,7 @@ RUN apt-get -qq update && \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
+# ubuntu/18.04.arm64v8 base image
 FROM arm64v8/ubuntu:18.04 as ubuntu-18.04.arm64v8-base
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -52,6 +57,7 @@ RUN apt-get -qq update && \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
+# ubuntu/20.04 base image
 FROM ubuntu:20.04 as ubuntu-20.04-base
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -62,6 +68,7 @@ RUN apt-get -qq update && \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
+# ubuntu/20.04.arm64v8 base image
 FROM arm64v8/ubuntu:20.04 as ubuntu-20.04.arm64v8-base
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -74,6 +81,7 @@ RUN apt-get -qq update && \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
+# Common build for all distributions now
 FROM $BASE_BUILDER as builder
 ARG FLB_PREFIX
 ARG FLB_VERSION
