@@ -6,6 +6,9 @@ ARG BASE_BUILDER
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
 
+# Multiarch support
+FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
+
 # CMake configuration variables
 # Unused
 ARG CFLAGS
@@ -23,12 +26,15 @@ ARG FLB_OUT_KAFKA=On
 # amazonlinux/2 base image
 FROM amazonlinux:2
 
+# hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3
+                   cmake3 && \
+    yum clean all
+
 #TODO: confirm this deviation
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
@@ -36,18 +42,22 @@ ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 # amazonlinux/2.arm64v8 base image
 FROM arm64v8/amazonlinux:2
 
-COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
+COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
+# hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                   cmake3
+                   cmake3 && \
+    yum clean all
+
 #TODO: confirm this deviation - add deps above if not
 ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # Common build for all distributions now
+# hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
 ARG FLB_PREFIX
 ARG FLB_VERSION
@@ -61,20 +71,19 @@ ENV FLB_TARBALL http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERS
 COPY sources/$FLB_SRC /
 
 WORKDIR /tmp
-RUN if [ "x$FLB_SRC" = "x" ] ; then wget -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
+RUN if [ -z "$FLB_SRC" ] ; then wget -q -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
-RUN cmake -DCMAKE_INSTALL_PREFIX=$CMAKE_INSTALL_PREFIX \
-          -DCMAKE_INSTALL_SYSCONFDIR=$CMAKE_INSTALL_SYSCONFDIR \
-          -DFLB_RELEASE=$FLB_RELEASE \
-          -DFLB_TRACE=$FLB_TRACE \
-          -DFLB_TD=$FLB_TD \
-          -DFLB_SQLDB=$FLB_SQLDB \
-          -DFLB_HTTP_SERVER=$FLB_HTTP_SERVER \
-          -DFLB_OUT_KAFKA=$FLB_OUT_KAFKA \
-          -DFLB_OUT_PGSQL=$FLB_OUT_PGSQL \
+RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
+          -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
+          -DFLB_RELEASE="$FLB_RELEASE" \
+          -DFLB_TRACE="$FLB_TRACE" \
+          -DFLB_TD="$FLB_TD" \
+          -DFLB_SQLDB="$FLB_SQLDB" \
+          -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
+          -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
+          -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
           ../
 
-WORKDIR "/tmp/fluent-bit-${FLB_VERSION}/build/"
 VOLUME [ "/output" ]
-CMD make -j 4 && cpack3 -G RPM && cp *.rpm /output/
+CMD [ "make" "-j" "4" "&&" "cpack3" "-G" "RPM" "&&" "cp" "*.rpm" "/output/" ]
