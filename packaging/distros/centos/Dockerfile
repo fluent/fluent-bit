@@ -24,6 +24,9 @@ RUN yum -y update && \
     yum install -y cmake3 && \
     yum clean all
 
+ARG FLB_OUT_PGSQL=On
+ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+
 # centos/7.arm64v8 base image
 FROM arm64v8/centos:7 as centos-7.arm64v8-base
 
@@ -33,11 +36,14 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib openssl openss-libs openssl-devel && \
-                   postgresql-libs postgresql-devel postgresql-server postgresql && \
     wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     rpm -ivh epel-release-latest-7.noarch.rpm && \
     yum install -y cmake3 && \
     yum clean all
+
+# There are no postgresql libraries available for this target
+ARG FLB_OUT_PGSQL=Off
+ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # centos/7 base image
 FROM centos:8 as centos-8-base
@@ -48,6 +54,9 @@ RUN yum -y update && \
                    postgresql-libs postgresql-devel postgresql-server postgresql && \
                    cyrus-sasl-lib openssl openssl-libs openssl-devel cmake && \
     yum clean all
+
+ARG FLB_OUT_PGSQL=On
+ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # centos/8.arm64v8 base image
 FROM arm64v8/centos:8 as centos-8.arm64v8-base
@@ -60,6 +69,9 @@ RUN yum -y update && \
                    postgresql-libs postgresql-devel postgresql-server postgresql && \
                    cyrus-sasl-lib openssl openssl-libs openssl-devel cmake && \
     yum clean all
+
+ARG FLB_OUT_PGSQL=On
+ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -89,7 +101,6 @@ ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
-ARG FLB_OUT_PGSQL=On
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
