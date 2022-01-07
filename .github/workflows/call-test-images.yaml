@@ -181,7 +181,7 @@ jobs:
           version: v3.6.3
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v1
+        uses: azure/setup-kubectl@v2.0
 
       - name: Test the HTTP server is responding
         timeout-minutes: 2
