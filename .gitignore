@@ -29,3 +29,7 @@ compile_commands.json
 
 workflow/
 .kitchen/
+
+# vs files
+.vs/
+out/
