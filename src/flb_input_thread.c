@@ -33,7 +33,7 @@ static void *worker(void *arg)
 {
     struct flb_input_thread *it = arg;
     it->callback(it->write, it->data);
-    flb_pipe_close(it->write);
+    fclose(it->write_file);
     return NULL;
 }
 
