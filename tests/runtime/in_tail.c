@@ -503,9 +503,6 @@ void flb_test_in_tail_multiline_json_and_regex()
     int out_ffd;
     int n_expected;
     int t_expected;
-    va_list va;
-    char *key;
-    char *value;
     char *target;
     char path[PATH_MAX];
     struct tail_test_result result = {0};
