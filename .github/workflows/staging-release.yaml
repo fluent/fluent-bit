@@ -1,5 +1,5 @@
 ---
-name: Release from staging a particular version
+name: Release from staging
 
 on:
   workflow_dispatch:

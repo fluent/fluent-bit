@@ -18,6 +18,14 @@ Before we can approve your change; please submit the following in a comment:
 
 <!--  Doc PR (not required but highly recommended) -->
 
+**Backporting**
+<!--
+PRs targeting the default master branch will go into the next major release usually.
+If this PR should be backported to the current or earlier releases then please submit a PR for that particular branch.
+-->
+- [ ] Backport to latest stable release.
+
+<!--  Other release PR (not required but highly recommended for quick turnaround) -->
 ----
 
 Fluent Bit is licensed under Apache 2.0, by submitting this pull request I understand that this code will be released under the terms of that license.

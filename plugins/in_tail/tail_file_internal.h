@@ -84,6 +84,12 @@ struct flb_tail_file {
     char *buf_data;
 
     /*
+     * This value represent the number of bytes procesed by process_content()
+     * in the last iteration.
+     */
+    size_t last_processed_bytes;
+
+    /*
      * Long-lines handling: this flag is enabled when a previous line was
      * too long and the buffer did not contain a \n, so when reaching the
      * missing \n, skip that content and move forward.

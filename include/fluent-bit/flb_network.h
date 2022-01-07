@@ -40,6 +40,9 @@ struct flb_net_setup {
     /* max time in seconds to wait for a established connection */
     int connect_timeout;
 
+    /* connect timeout log error (default: true) */
+    int connect_timeout_log_error;
+
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
 
