@@ -1,6 +1,0 @@
-FROM centos:8
-
-RUN yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-                   wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib openssl openssl-libs openssl-devel cmake 

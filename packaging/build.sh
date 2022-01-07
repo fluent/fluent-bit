@@ -37,34 +37,6 @@ if [ -z "$FLB_BRANCH" ]; then
     FLB_PREFIX="v"
 fi
 
-if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
-    echo "Requested distro: $FLB_DISTRO"
-    echo "Mising directory: $SCRIPT_DIR/distros/$FLB_DISTRO"
-    exit 1
-fi
-
-# Validate 'Base Docker' image used to build the package
-FLB_BASE=flb-build-base-$FLB_DISTRO
-
-if [ -f "$SCRIPT_DIR/distros/$FLB_DISTRO/Dockerfile.base" ]; then
-    if [ -z "$(docker images -q "$FLB_BASE")" ]; then
-        # Base image not found, build it
-        echo "Base Docker image $FLB_BASE not found"
-        if ! docker build --no-cache \
-            -t "$FLB_BASE" \
-            -f "$SCRIPT_DIR/distros/$FLB_DISTRO/Dockerfile.base" \
-            "$SCRIPT_DIR/distros/$FLB_DISTRO"/
-        then
-            echo "Error building base docker image"
-            exit 1
-        fi
-    else
-        echo "Base Docker image $FLB_BASE found, using cached image"
-    fi
-else
-    echo "Using multistage builder"
-fi
-
 # Prepare output directory
 if [ -n "$FLB_OUT_DIR" ]; then
     out_dir=$FLB_OUT_DIR
@@ -80,42 +52,68 @@ echo "FLB_PREFIX  => $FLB_PREFIX"
 echo "FLB_VERSION => $FLB_VERSION"
 echo "FLB_DISTRO  => $FLB_DISTRO"
 echo "FLB_SRC     => $FLB_TARGZ"
+echo "FLB_OUT_DIR => $FLB_OUT_DIR"
 
 MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
-if [ -n "$(docker images -q "$MAIN_IMAGE")" ]; then
-    echo "Deleting OLD image $MAIN_IMAGE"
-    docker rmi -f "$MAIN_IMAGE"
+
+# We either have a specific Dockerfile in the distro directory or we have a generic multi-stage one for all
+# of the same OS type:
+# - ubuntu/Dockerfile
+# - ubuntu/18.04/Dockerfile
+# Use the specific one as an override for any special cases but try to keep the general multi-stage one.
+# For the multistage ones, we pass in the base image to use.
+#
+IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/$FLB_DISTRO"
+FLB_ARG=""
+if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
+    IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/${FLB_DISTRO%%/*}"
+    FLB_ARG="--build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
 fi
+
+if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
+    echo "Unable to find $IMAGE_CONTEXT_DIR/Dockerfile"
+    exit 1
+fi
+
+echo "IMAGE_CONTEXT_DIR => $IMAGE_CONTEXT_DIR"
+
+# Create sources directory if it does not exist
+mkdir -p "$IMAGE_CONTEXT_DIR/sources"
 
 # Set tarball as an argument (./build.sh VERSION DISTRO/CODENAME -t something.tar.gz)
-FLB_ARG=""
 if [ -n "$FLB_TARGZ" ]; then
-    # Check if we have a local or URL tarball
+    # Check if we have a local tarball
     if [[ ! -f "$FLB_TARGZ" ]]; then
-        if curl --output /dev/null --silent --head --fail "$FLB_TARGZ"; then
-            echo "Unable to find tarball: $FLB_TARGZ"
-            exit 1
-        fi
+        echo "Unable to find tarball: $FLB_TARGZ"
+        exit 1
     fi
 
-    # Create sources directory if it does not exist
-    if [ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO/sources" ]; then
-        mkdir "$SCRIPT_DIR/distros/$FLB_DISTRO/sources"
-    fi
-
-    # Set build argument and copy tarball
-    FLB_ARG="--build-arg FLB_SRC=$FLB_TARGZ"
-    cp "$FLB_TARGZ" "$SCRIPT_DIR/distros/$FLB_DISTRO/sources/"
+    # Copy tarball
+    cp "$FLB_TARGZ" "$IMAGE_CONTEXT_DIR/sources/"
+    # Set build argument (ensure we strip off any path)
+    FLB_ARG="$FLB_ARG --build-arg FLB_SRC=$(basename "$FLB_TARGZ")"
 fi
+
+
+# CMake configuration variables, override via environment rather than parameters
+CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-/opt/td-agent-bit/}
+FLB_TD=${FLB_TD:-On}
+
+echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
+echo "FLB_TD                => $FLB_TD"
+echo "FLB_ARG               => $FLB_ARG"
+
+export DOCKER_BUILDKIT=1
 
 # Build the main image - we do want word splitting
 # shellcheck disable=SC2086
 if ! docker build \
-    --no-cache \
+    --build-arg CMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
+    --build-arg FLB_TD="$FLB_TD" \
     --build-arg FLB_VERSION="$FLB_VERSION" \
     --build-arg FLB_PREFIX=$FLB_PREFIX \
     $FLB_ARG \
-    -t "$MAIN_IMAGE" "$SCRIPT_DIR/distros/$FLB_DISTRO"
+    -t "$MAIN_IMAGE" "$IMAGE_CONTEXT_DIR"
 then
     echo "Error building main docker image $MAIN_IMAGE"
     exit 1
@@ -123,17 +121,14 @@ fi
 
 # Compile and package
 if ! docker run \
-       -e FLB_PREFIX=$FLB_PREFIX \
-       -e FLB_VERSION="$FLB_VERSION" \
-       -e FLB_SRC="$FLB_TARGZ" \
-       -v "$volume":/output \
-       "$MAIN_IMAGE"
+    -v "$volume":/output \
+    "$MAIN_IMAGE"
 then
     echo "Could not compile on image $MAIN_IMAGE"
     exit 1
 fi
 
-# Delete temporal Build image
+# Delete image on success
 if [ -n "$(docker images -q "$MAIN_IMAGE")" ]; then
     docker rmi -f "$MAIN_IMAGE"
 fi
