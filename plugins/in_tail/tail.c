@@ -410,6 +410,7 @@ static int in_tail_exit(void *data, struct flb_config *config)
     struct flb_tail_config *ctx = data;
 
     flb_tail_file_remove_all(ctx);
+    flb_tail_fs_exit(ctx);
     flb_tail_config_destroy(ctx);
 
     return 0;
@@ -573,6 +574,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_tail_config, exit_on_eof),
      "exit Fluent Bit when reaching EOF on a monitored file."
     },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "skip_empty_lines", "false",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, skip_empty_lines),
+     "Allows to skip empty lines."
+    },
+
 #ifdef FLB_HAVE_INOTIFY
     {
      FLB_CONFIG_MAP_BOOL, "inotify_watcher", "true",
@@ -649,6 +657,12 @@ static struct flb_config_map config_map[] = {
      "Parser_2 ab2, Parser_N abN."
     },
 
+    /* Multiline Core Engine based API */
+    {
+     FLB_CONFIG_MAP_CLIST, "multiline.parser", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_tail_config, multiline_parsers),
+     "specify one or multiple multiline parsers: docker, cri, go, java, etc."
+    },
 #endif
 
     /* EOF */

@@ -175,7 +175,7 @@ int flb_tail_mult_process_first(time_t now,
     file->mult_firstline = FLB_TRUE;
 
     /* Validate obtained time, if not set, set the current time */
-    if (flb_time_to_double(out_time) == 0.0) {
+    if (flb_time_to_nanosec(out_time) == 0L) {
         flb_time_get(out_time);
     }
 
@@ -489,6 +489,7 @@ int flb_tail_mult_flush(msgpack_sbuffer *mp_sbuf, msgpack_packer *mp_pck,
     file->mult_keys = 0;
     file->mult_flush_timeout = 0;
     msgpack_sbuffer_destroy(&file->mult_sbuf);
+    file->mult_sbuf.data = NULL;
     flb_time_zero(&file->mult_time);
 
     return 0;

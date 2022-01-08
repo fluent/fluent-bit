@@ -35,6 +35,24 @@ FLB_TLS_DEFINE(struct mk_list, flb_upstream_list_key);
 /* Config map for Upstream networking setup */
 struct flb_config_map upstream_net[] = {
     {
+     FLB_CONFIG_MAP_STR, "net.dns.mode", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_mode),
+     "Select the primary DNS connection type (TCP or UDP)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "net.dns.resolver", NULL,
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_resolver),
+     "Select the primary DNS resolver type (LEGACY or ASYNC)"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "net.dns.prefer_ipv4", "false",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, dns_prefer_ipv4),
+     "Prioritize IPv4 DNS results when trying to establish a connection"
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "net.keepalive", "true",
      0, FLB_TRUE, offsetof(struct flb_net_setup, keepalive),
      "Enable or disable Keepalive support"
@@ -54,6 +72,13 @@ struct flb_config_map upstream_net[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "net.connect_timeout_log_error", "true",
+     0, FLB_TRUE, offsetof(struct flb_net_setup, connect_timeout_log_error),
+     "On connection timeout, specify if it should log an error. When disabled, "
+     "the timeout is logged as a debug message"
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "net.source_address", NULL,
      0, FLB_TRUE, offsetof(struct flb_net_setup, source_address),
      "Specify network address to bind for data traffic"
@@ -69,6 +94,9 @@ struct flb_config_map upstream_net[] = {
     /* EOF */
     {0}
 };
+
+int flb_upstream_needs_proxy(const char *host, const char *proxy,
+                             const char *no_proxy);
 
 /* Enable thread-safe mode for upstream connection */
 void flb_upstream_thread_safe(struct flb_upstream *u)
@@ -87,9 +115,37 @@ void flb_upstream_thread_safe(struct flb_upstream *u)
 
 struct mk_list *flb_upstream_get_config_map(struct flb_config *config)
 {
+    size_t          config_index;
     struct mk_list *config_map;
 
+    /* If a global dns mode was provided in the SERVICE category then we set it as
+     * the default value for net.dns_mode, that way the user can set a global value and
+     * override it on a per plugin basis, however, it's not because of this flexibility
+     * that it was done but because in order to be able to save the value in the
+     * flb_net_setup structure (and not lose it when flb_output_upstream_set overwrites
+     * the structure) we need to do it this way (or at least that's what I think)
+     */
+    for (config_index = 0 ; upstream_net[config_index].name != NULL ; config_index++) {
+        if (config->dns_mode != NULL) {
+            if (strcmp(upstream_net[config_index].name, "net.dns.mode") == 0) {
+                upstream_net[config_index].def_value = config->dns_mode;
+            }
+        }
+        if (config->dns_resolver != NULL) {
+            if (strcmp(upstream_net[config_index].name, "net.dns.resolver") == 0) {
+                upstream_net[config_index].def_value = config->dns_resolver;
+            }
+        }
+        if (config->dns_prefer_ipv4) {
+            if (strcmp(upstream_net[config_index].name,
+                       "net.dns.prefer_ipv4") == 0) {
+                upstream_net[config_index].def_value = "true";
+            }
+        }
+    }
+
     config_map = flb_config_map_create(config, upstream_net);
+
     return config_map;
 }
 
@@ -181,6 +237,7 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+    u->config = config;
 
     /* Set default networking setup values */
     flb_net_setup_init(&u->net);
@@ -226,7 +283,6 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     u->flags         |= FLB_IO_ASYNC;
     u->thread_safe    = FLB_FALSE;
 
-
     /* Initialize queues */
     flb_upstream_queue_init(&u->queue);
 
@@ -235,13 +291,15 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 #endif
 
     mk_list_add(&u->_head, &config->upstreams);
+
     return u;
 }
 
 /*
  * Checks whehter a destinate URL should be proxied.
  */
-int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no_proxy)
+int flb_upstream_needs_proxy(const char *host, const char *proxy,
+                             const char *no_proxy)
 {
     int ret;
     struct mk_list no_proxy_list;
@@ -275,7 +333,7 @@ int flb_upstream_needs_proxy(const char *host, const char *proxy, const char *no
     ret = FLB_TRUE;
     mk_list_foreach(head, &no_proxy_list) {
         e = mk_list_entry(head, struct flb_slist_entry, _head);
-         if (strcmp(host, e->str)) {
+         if (strcmp(host, e->str) == 0) {
             ret = FLB_FALSE;
             break;
         }
@@ -399,15 +457,19 @@ static int prepare_destroy_conn(struct flb_upstream_conn *u_conn)
 static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int locked = FLB_FALSE;
     struct flb_upstream *u = u_conn->u;
 
     if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
+        ret = pthread_mutex_trylock(&u->mutex_lists);
+        if (ret == 0) {
+            locked = FLB_TRUE;
+        }
     }
 
     ret = prepare_destroy_conn(u_conn);
 
-    if (u->thread_safe == FLB_TRUE) {
+    if (locked) {
         pthread_mutex_unlock(&u->mutex_lists);
     }
 
@@ -416,6 +478,11 @@ static inline int prepare_destroy_conn_safe(struct flb_upstream_conn *u_conn)
 
 static int destroy_conn(struct flb_upstream_conn *u_conn)
 {
+    /* Delay the destruction of busy connections */
+    if (u_conn->busy_flag) {
+        return 0;
+    }
+
 #ifdef FLB_HAVE_TLS
     if (u_conn->tls_session) {
         flb_tls_session_destroy(u_conn->tls, u_conn);
@@ -446,6 +513,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
     conn->u             = u;
     conn->fd            = -1;
     conn->net_error     = -1;
+    conn->busy_flag     = FLB_TRUE;
 
     /* retrieve the event loop */
     evl = flb_engine_evl_get();
@@ -495,6 +563,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
         flb_debug("[upstream] connection #%i failed to %s:%i",
                   conn->fd, u->tcp_host, u->tcp_port);
         prepare_destroy_conn_safe(conn);
+        conn->busy_flag = FLB_FALSE;
         return NULL;
     }
 
@@ -505,6 +574,7 @@ static struct flb_upstream_conn *create_conn(struct flb_upstream *u)
 
     /* Invalidate timeout for connection */
     conn->ts_connect_timeout = -1;
+    conn->busy_flag = FLB_FALSE;
 
     return conn;
 }
@@ -753,10 +823,22 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                 u_conn->ts_connect_timeout > 0 &&
                 u_conn->ts_connect_timeout <= now) {
                 drop = FLB_TRUE;
-                flb_error("[upstream] connection #%i to %s:%i timed out after "
-                          "%i seconds",
-                          u_conn->fd,
-                          u->tcp_host, u->tcp_port, u->net.connect_timeout);
+
+                if (!flb_upstream_is_shutting_down(u)) {
+
+                    if (u->net.connect_timeout_log_error) {
+                        flb_error("[upstream] connection #%i to %s:%i timed out after "
+                                  "%i seconds",
+                                  u_conn->fd,
+                                  u->tcp_host, u->tcp_port, u->net.connect_timeout);
+                    }
+                    else {
+                        flb_debug("[upstream] connection #%i to %s:%i timed out after "
+                                  "%i seconds",
+                                  u_conn->fd,
+                                  u->tcp_host, u->tcp_port, u->net.connect_timeout);
+                    }
+                }
             }
 
             if (drop == FLB_TRUE) {
@@ -766,9 +848,40 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
                  * waiting for I/O will receive the notification and trigger
                  * the error to it caller.
                  */
-                shutdown(u_conn->fd, SHUT_RDWR);
+                if (u_conn->fd != -1) {
+                    shutdown(u_conn->fd, SHUT_RDWR);
+                }
+
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
+
+                /*
+                 * If the connection has its coro field set it means it's waiting for a
+                 * FLB_ENGINE_EV_THREAD event which in some specific cases might never
+                 * arrive which would leave the coroutin eternally suspended and the
+                 * chunk it was trying to handle (in case of output related coroutines)
+                 * locked which (if repeated enough times) could lead to a system wide
+                 * lockup.
+                 *
+                 * Since we don't have a proper way to generate the required activity in
+                 * the socket to have the system organically resume the coroutine we need
+                 * to resume it ourselves.
+                 */
+                if (u_conn->event.type == FLB_ENGINE_EV_THREAD &&
+                    u_conn->coro != NULL) {
+                    MK_EVENT_NEW(&u_conn->event);
+
+                    flb_trace("[upstream] resuming timed out coroutine=%p", u_conn->coro);
+                    flb_coro_resume(u_conn->coro);
+
+                    if (u_conn->coro != NULL) {
+                        flb_trace("[upstream] the recently resumed coroutine=%p "
+                                  "did not clear the u_conn->coro field which could "
+                                  "cause issues, please correct the code." , u_conn->coro);
+
+                        u_conn->coro = NULL;
+                    }
+                }
             }
         }
 
@@ -776,7 +889,10 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
-                shutdown(u_conn->fd, SHUT_RDWR);
+                if (u_conn->fd != -1) {
+                    shutdown(u_conn->fd, SHUT_RDWR);
+                }
+
                 prepare_destroy_conn(u_conn);
                 flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
                           "(keepalive idle timeout)",
@@ -812,7 +928,7 @@ int flb_upstream_conn_pending_destroy(struct flb_upstream *u)
     }
 
     if (u->thread_safe == FLB_TRUE) {
-        pthread_mutex_lock(&u->mutex_lists);
+        pthread_mutex_unlock(&u->mutex_lists);
     }
 
     return 0;

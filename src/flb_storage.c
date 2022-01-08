@@ -247,7 +247,7 @@ static void cb_storage_metrics_collect(struct flb_config *ctx, void *data)
     metrics_append_input(&mp_pck, ctx, data);
 
 #ifdef FLB_HAVE_HTTP_SERVER
-    if (ctx->http_server == FLB_TRUE) {
+    if (ctx->http_server == FLB_TRUE && ctx->storage_metrics == FLB_TRUE) {
         flb_hs_push_storage_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
     }
 #endif
@@ -267,7 +267,7 @@ struct flb_storage_metrics *flb_storage_metrics_create(struct flb_config *ctx)
 
     ret = flb_sched_timer_cb_create(ctx->sched, FLB_SCHED_TIMER_CB_PERM, 5000,
                                     cb_storage_metrics_collect,
-                                    ctx->storage_metrics_ctx);
+                                    ctx->storage_metrics_ctx, NULL);
     if (ret == -1) {
         flb_error("[storage metrics] cannot create timer to collect metrics");
         flb_free(sm);

@@ -47,16 +47,34 @@
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
+#include <fluent-bit/flb_event.h>
+
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
 
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
 #endif
 
 /* Output plugin masks */
-#define FLB_OUTPUT_NET           32  /* output address may set host and port */
-#define FLB_OUTPUT_PLUGIN_CORE    0
-#define FLB_OUTPUT_PLUGIN_PROXY   1
-#define FLB_OUTPUT_NO_MULTIPLEX 512
+#define FLB_OUTPUT_NET            32  /* output address may set host and port */
+#define FLB_OUTPUT_PLUGIN_CORE     0
+#define FLB_OUTPUT_PLUGIN_PROXY    1
+#define FLB_OUTPUT_NO_MULTIPLEX  512
+#define FLB_OUTPUT_PRIVATE      1024
+
+
+/* Event type handlers */
+#define FLB_OUTPUT_LOGS        1
+#define FLB_OUTPUT_METRICS     2
+
+#define FLB_OUTPUT_FLUSH_COMPAT_OLD_18()                 \
+    const void *data   = event_chunk->data;              \
+    size_t     bytes   = event_chunk->size;              \
+    int        tag_len = flb_sds_len(event_chunk->tag);  \
+    const char *tag    = event_chunk->tag;
+
+struct flb_output_flush;
 
 /*
  * Tests callbacks
@@ -116,17 +134,25 @@ struct flb_test_out_formatter {
                      struct flb_config *,
                      /* plugin that ingested the records */
                      struct flb_input_instance *,
-                     void *,       /* plugin instance context */
-                     void *,       /* optional flush context */
-                     const char *, /* tag        */
-                     int,          /* tag length */
-                     const void *, /* incoming msgpack data */
-                     size_t,       /* incoming msgpack size */
-                     void **,      /* output buffer      */
-                     size_t *);    /* output buffer size */
+                     void *,         /* plugin instance context */
+                     void *,         /* optional flush context */
+                     const char *,   /* tag        */
+                     int,            /* tag length */
+                     const void *,   /* incoming msgpack data */
+                     size_t,         /* incoming msgpack size */
+                     void **,        /* output buffer      */
+                     size_t *);      /* output buffer size */
 };
 
 struct flb_output_plugin {
+    /*
+     * a 'mask' to define what kind of data the plugin can manage:
+     *
+     *  - FLB_OUTPUT_LOGS
+     *  - FLB_OUTPUT_METRICS
+     */
+    int event_type;
+
     /*
      * The type defines if this is a core-based plugin or it's handled by
      * some specific proxy.
@@ -168,8 +194,8 @@ struct flb_output_plugin {
     int (*cb_pre_run) (void *, struct flb_config *);
 
     /* Flush callback */
-    void (*cb_flush) (const void *, size_t,
-                      const char *, int,
+    void (*cb_flush) (struct flb_event_chunk *,
+                      struct flb_output_flush *,
                       struct flb_input_instance *,
                       void *,
                       struct flb_config *);
@@ -197,6 +223,14 @@ struct flb_output_plugin {
  */
 struct flb_output_instance {
     struct mk_event event;               /* events handler               */
+
+    /*
+     * a 'mask' to define what kind of data the plugin can manage:
+     *
+     *  - FLB_OUTPUT_LOGS
+     *  - FLB_OUTPUT_METRICS
+     */
+    int event_type;
     int id;                              /* instance id                  */
     int log_level;                       /* instance log level           */
     char name[32];                       /* numbered name (cpu -> cpu.0) */
@@ -287,6 +321,20 @@ struct flb_output_instance {
 
     struct mk_list _head;                /* link to config->inputs       */
 
+    /*
+     * CMetrics
+     * --------
+     */
+    struct cmt *cmt;                         /* parent context            */
+    struct cmt_counter *cmt_proc_records;    /* m: output_proc_records    */
+    struct cmt_counter *cmt_proc_bytes;      /* m: output_proc_bytes      */
+    struct cmt_counter *cmt_errors;          /* m: output_errors          */
+    struct cmt_counter *cmt_retries;         /* m: output_retries         */
+    struct cmt_counter *cmt_retries_failed;  /* m: output_retries_failed  */
+    struct cmt_counter *cmt_dropped_records; /* m: output_dropped_records */
+    struct cmt_counter *cmt_retried_records; /* m: output_retried_records */
+
+    /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
     struct flb_metrics *metrics;         /* metrics                      */
 #endif
@@ -302,6 +350,11 @@ struct flb_output_instance {
      */
     size_t fs_chunks_size;
 
+    /*
+     * Buffer counter: it counts the total of disk space (filesystem) awaiting to be
+     * loaded (in backlog)
+     */
+    size_t fs_backlog_chunks_size;
     /*
      * Buffer limit: optional limit set by configuration so this output instance
      * cannot buffer more than total_limit_size (bytes unit).
@@ -323,35 +376,42 @@ struct flb_output_instance {
     struct mk_list upstreams;
 
     /*
-     * co-routines
-     * -----------
-     * Every output flush() runs under a co-routine, upon creation the
-     * co-routine context is linked in the 'coros' linked list.
+     * flush context and co-routines
+     * -----------------------------
+     * Every invocation of flush() output callback runs under a co-routine, this
+     * co-routine context (struct flb_coro) is wrapped inside the structure
+     * 'flb_output_flush' which is added to the 'flush_list' linked list.
      *
      * In order to assign the coro 'id', we use the 'coro_id' incremental
      * counter to generate the next id. co-routine id's aims to be held
      * in 14 bits so the range goes from 0 to 16383.
      *
-     * When a coroutine needs to be destroyed, it moved out from 'coros'
-     * list and placed into 'coros_destroy', a cleanup function will
-     * run later to cleanup the coroutine context.
+     * When the 'flush context' needs to be destroyed, it's moved out from the
+     * 'flush_list' and placed into 'flush_list_destroy', a cleanup function will
+     * destroy the remaining resources.
      *
      * note on multi-threading mode
      * ----------------------------
-     * Every output instance in threaded mode has it own context which
-     * has similar fields like 'coro_id', 'coros', 'coros_destroy'.
+     * Every output instance in threaded mode has it own flush context which
+     * has similar fields like 'coro_id', 'flush_list' and 'flush_list_destroy'.
      *
      * On that mode, field fields are not used.
      */
-    int coro_id;
-    struct mk_list coros;
-    struct mk_list coros_destroy;
+    int flush_id;
+    struct mk_list flush_list;
+    struct mk_list flush_list_destroy;
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
 };
 
-struct flb_output_coro {
+/*
+ * [note] this has been renamed from flb_output_coro to flb_output_flush.
+ *
+ * This structure represents the context of a flush invocation with internal
+ * information about the output instance being called plus other internal details.
+ */
+struct flb_output_flush {
     int id;                            /* out-thread ID      */
     const void *buffer;                /* output buffer      */
     struct flb_task *task;             /* Parent flb_task    */
@@ -367,13 +427,13 @@ static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
 }
 
 /* When an output_thread is going to be destroyed, this callback is triggered */
-static FLB_INLINE void flb_output_coro_destroy(struct flb_output_coro *out_coro)
+static FLB_INLINE void flb_output_flush_destroy(struct flb_output_flush *out_flush)
 {
-    flb_debug("[out coro] cb_destroy coro_id=%i", out_coro->id);
+    flb_debug("[out flush] cb_destroy coro_id=%i", out_flush->id);
 
-    mk_list_del(&out_coro->_head);
-    flb_coro_destroy(out_coro->coro);
-    flb_free(out_coro);
+    mk_list_del(&out_flush->_head);
+    flb_coro_destroy(out_flush->coro);
+    flb_free(out_flush);
 }
 
 /*
@@ -382,33 +442,31 @@ static FLB_INLINE void flb_output_coro_destroy(struct flb_output_coro *out_coro)
  * it provide a workaround using a global structure as a middle entry-point
  * that achieve the same stuff.
  */
-struct flb_out_coro_params {
-    const void  *data;
-    size_t bytes;
-    const char *tag;
-    int tag_len;
-    struct flb_input_instance *i_ins;
-    void *out_context;
-    struct flb_config *config;
-    struct flb_output_plugin *out_plugin;
-    struct flb_coro *coro;
+struct flb_out_flush_params {
+    struct flb_event_chunk *event_chunk;        /* event chunk           */
+    struct flb_output_flush *out_flush;         /* output flush          */
+    struct flb_input_instance *i_ins;           /* input instance        */
+    struct flb_output_plugin *out_plugin;       /* output plugin context */
+    void *out_context;                          /* custom plugin context */
+    struct flb_config *config;                  /* Fluent Bit context    */
+    struct flb_coro *coro;                      /* coroutine context     */
 };
 
-extern FLB_TLS_DEFINE(struct flb_out_coro_params, out_coro_params);
+extern FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
-static FLB_INLINE void output_params_set(struct flb_coro *coro,
-                                         const void *data, size_t bytes,
-                                         const char *tag, int tag_len,
-                                         struct flb_input_instance *i_ins,
+static FLB_INLINE void output_params_set(struct flb_output_flush *out_flush,
+                                         struct flb_coro *coro,
+                                         struct flb_task *task,
                                          struct flb_output_plugin *out_plugin,
-                                         void *out_context, struct flb_config *config)
+                                         void *out_context,
+                                         struct flb_config *config)
 {
-    int s = sizeof(struct flb_out_coro_params);
-    struct flb_out_coro_params *params;
+    int s = sizeof(struct flb_out_flush_params);
+    struct flb_out_flush_params *params;
 
-    params = (struct flb_out_coro_params *) FLB_TLS_GET(out_coro_params);
+    params = (struct flb_out_flush_params *) FLB_TLS_GET(out_flush_params);
     if (!params) {
-        params = (struct flb_out_coro_params *) flb_malloc(s);
+        params = (struct flb_out_flush_params *) flb_malloc(s);
         if (!params) {
             flb_errno();
             return;
@@ -416,87 +474,72 @@ static FLB_INLINE void output_params_set(struct flb_coro *coro,
     }
 
     /* Callback parameters in order */
-    params->data        = data;
-    params->bytes       = bytes;
-    params->tag         = tag;
-    params->tag_len     = tag_len;
-    params->i_ins       = i_ins;
+    params->event_chunk = task->event_chunk;
+    params->out_flush   = out_flush;
+    params->i_ins       = task->i_ins;
     params->out_context = out_context;
     params->config      = config;
     params->out_plugin  = out_plugin;
     params->coro        = coro;
 
-    FLB_TLS_SET(out_coro_params, params);
+    FLB_TLS_SET(out_flush_params, params);
     co_switch(coro->callee);
 }
 
 static FLB_INLINE void output_pre_cb_flush(void)
 {
-    const void *data;
-    size_t bytes;
-    const char *tag;
-    int tag_len;
-    struct flb_input_instance *i_ins;
-    struct flb_output_plugin *out_p;
-    void *out_context;
-    struct flb_config *config;
     struct flb_coro *coro;
-    struct flb_out_coro_params *params;
+    struct flb_output_plugin *out_p;
+    struct flb_out_flush_params *params;
 
-    params = (struct flb_out_coro_params *) FLB_TLS_GET(out_coro_params);
+    params = (struct flb_out_flush_params *) FLB_TLS_GET(out_flush_params);
     if (!params) {
         flb_error("[output] no co-routines params defined, unexpected");
         return;
     }
-
-    data        = params->data;
-    bytes       = params->bytes;
-    tag         = params->tag;
-    tag_len     = params->tag_len;
-    i_ins       = params->i_ins;
-    out_p       = params->out_plugin;
-    out_context = params->out_context;
-    config      = params->config;
-    coro        = params->coro;
 
     /*
      * Until this point the th->callee already set the variables, so we
      * wait until the core wanted to resume so we really trigger the
      * output callback.
      */
+    coro = params->coro;
     co_switch(coro->caller);
 
     /* Continue, we will resume later */
-    out_p->cb_flush(data, bytes, tag, tag_len, i_ins, out_context, config);
+    out_p = params->out_plugin;
+    out_p->cb_flush(params->event_chunk,
+                    params->out_flush,
+                    params->i_ins,
+                    params->out_context,
+                    params->config);
 }
 
-void flb_output_coro_prepare_destroy(struct flb_output_coro *coro);
-int flb_output_coro_id_get(struct flb_output_instance *ins);
+void flb_output_flush_prepare_destroy(struct flb_output_flush *out_flush);
+int flb_output_flush_id_get(struct flb_output_instance *ins);
 
 static FLB_INLINE
-struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
-                                               struct flb_input_instance *i_ins,
-                                               struct flb_output_instance *o_ins,
-                                               struct flb_config *config,
-                                               const void *buf, size_t size,
-                                               const char *tag, int tag_len)
+struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
+                                                 struct flb_input_instance *i_ins,
+                                                 struct flb_output_instance *o_ins,
+                                                 struct flb_config *config)
 {
     size_t stack_size;
     struct flb_coro *coro;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins;
 
-    /* Custom output-thread info */
-    out_coro = (struct flb_output_coro *) flb_malloc(sizeof(struct flb_output_coro));
-    if (!out_coro) {
+    /* Custom output coroutine info */
+    out_flush = (struct flb_output_flush *) flb_calloc(1, sizeof(struct flb_output_flush));
+    if (!out_flush) {
         flb_errno();
         return NULL;
     }
 
     /* Create a new co-routine */
-    coro = flb_coro_create(out_coro);
+    coro = flb_coro_create(out_flush);
     if (!coro) {
-        flb_free(out_coro);
+        flb_free(out_flush);
         return NULL;
     }
 
@@ -504,16 +547,22 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
      * Each co-routine receives an 'id', the value is always incremental up to
      * 16383.
      */
-    out_coro->id     = flb_output_coro_id_get(o_ins);
-    out_coro->o_ins  = o_ins;
-    out_coro->task   = task;
-    out_coro->buffer = buf;
-    out_coro->config = config;
-    out_coro->coro   = coro;
+    out_flush->id     = flb_output_flush_id_get(o_ins);
+    out_flush->o_ins  = o_ins;
+    out_flush->task   = task;
+    out_flush->buffer = task->event_chunk->data;
+    out_flush->config = config;
+    out_flush->coro   = coro;
 
     coro->caller = co_active();
     coro->callee = co_create(config->coro_stack_size,
                              output_pre_cb_flush, &stack_size);
+
+    if (coro->callee == NULL) {
+        flb_coro_destroy(coro);
+        flb_free(out_flush);
+        return NULL;
+    }
 
 #ifdef FLB_HAVE_VALGRIND
     coro->valgrind_stack_id = \
@@ -523,25 +572,17 @@ struct flb_output_coro *flb_output_coro_create(struct flb_task *task,
     if (o_ins->is_threaded == FLB_TRUE) {
         th_ins = flb_output_thread_instance_get();
 
-        pthread_mutex_lock(&th_ins->coro_mutex);
-        mk_list_add(&out_coro->_head, &th_ins->coros);
-        pthread_mutex_unlock(&th_ins->coro_mutex);
+        pthread_mutex_lock(&th_ins->flush_mutex);
+        mk_list_add(&out_flush->_head, &th_ins->flush_list);
+        pthread_mutex_unlock(&th_ins->flush_mutex);
     }
     else {
-        mk_list_add(&out_coro->_head, &o_ins->coros);
+        mk_list_add(&out_flush->_head, &o_ins->flush_list);
     }
 
     /* Workaround for makecontext() */
-    output_params_set(coro,
-                      buf,
-                      size,
-                      tag,
-                      tag_len,
-                      i_ins,
-                      o_ins->p,
-                      o_ins->context,
-                      config);
-    return out_coro;
+    output_params_set(out_flush, coro, task, o_ins->p, o_ins->context, config);
+    return out_flush;
 }
 
 /*
@@ -558,13 +599,13 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     uint32_t set;
     uint64_t val;
     struct flb_task *task;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
     struct flb_output_instance *o_ins;
     struct flb_out_thread_instance *th_ins = NULL;
 
-    out_coro = (struct flb_output_coro *) co->data;
-    o_ins = out_coro->o_ins;
-    task = out_coro->task;
+    out_flush = (struct flb_output_flush *) co->data;
+    o_ins = out_flush->o_ins;
+    task = out_flush->task;
 
     /*
      * To compose the signal event the relevant info is:
@@ -591,7 +632,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
         pipe_fd = th_ins->ch_thread_events[1];
     }
     else {
-        pipe_fd = out_coro->o_ins->ch_events[1];
+        pipe_fd = out_flush->o_ins->ch_events[1];
     }
 
     /* Notify the event loop about our return status */
@@ -604,7 +645,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
      * Prepare the co-routine to be destroyed: real-destroy happens in the
      * event loop cleanup functions.
      */
-    flb_output_coro_prepare_destroy(out_coro);
+    flb_output_flush_prepare_destroy(out_flush);
 }
 
 /* return the number of co-routines running in the instance */
@@ -620,7 +661,7 @@ static inline int flb_output_coros_size(struct flb_output_instance *ins)
         size = flb_output_thread_pool_coros_size(ins);
     }
     else {
-        size = mk_list_size(&ins->coros);
+        size = mk_list_size(&ins->flush_list);
     }
 
     return size;
@@ -660,8 +701,12 @@ static inline int flb_output_config_map_set(struct flb_output_instance *ins,
     if (ins->net_config_map) {
         ret = flb_config_map_set(&ins->net_properties, ins->net_config_map,
                                  &ins->net_setup);
+        if (ret == -1) {
+            return -1;
+        }
     }
-    return ret;
+
+    return 0;
 }
 
 int flb_output_help(struct flb_output_instance *ins, void **out_buf, size_t *out_size);
@@ -671,7 +716,8 @@ struct flb_output_instance *flb_output_get_instance(struct flb_config *config,
 int flb_output_flush_finished(struct flb_config *config, int out_id);
 
 struct flb_output_instance *flb_output_new(struct flb_config *config,
-                                           const char *output, void *data);
+                                           const char *output, void *data,
+                                           int public_only);
 const char *flb_output_name(struct flb_output_instance *in);
 int flb_output_set_property(struct flb_output_instance *out,
                             const char *k, const char *v);

@@ -20,7 +20,11 @@
 #ifndef CHUNKIO_COMPAT_H
 #define CHUNKIO_COMPAT_H
 
+#include <chunkio/cio_info.h>
+
 #ifdef _WIN32
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <winsock2.h>
 #include <windows.h>
 #include <io.h>
@@ -64,12 +68,20 @@ static inline char* dirname(const char *path)
     return buf;
 }
 
-static inline int getpagesize(void)
+#ifndef CIO_HAVE_GETPAGESIZE
+static inline int cio_getpagesize(void)
 {
     SYSTEM_INFO system_info;
     GetSystemInfo(&system_info);
     return system_info.dwPageSize;
 }
+#else
+static inline int cio_getpagesize(void)
+{
+    return getpagesize();
+}
+#endif
+
 #else
 #include <unistd.h>
 #include <libgen.h>

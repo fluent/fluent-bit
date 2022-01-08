@@ -31,6 +31,11 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
 
+/* cmetrics */
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_text.h>
+
 #include <msgpack.h>
 #include <math.h>
 #include <jsmn/jsmn.h>
@@ -64,7 +69,7 @@ int flb_json_tokenise(const char *js, size_t len,
         /* New size: add capacity for new 256 entries */
         new_size = old_size + (sizeof(jsmntok_t) * new_tokens);
 
-        tmp = flb_realloc_z(state->tokens, old_size, new_size);
+        tmp = flb_realloc(state->tokens, new_size);
         if (!tmp) {
             flb_errno();
             return -1;
@@ -304,7 +309,7 @@ int flb_pack_state_init(struct flb_pack_state *s)
     jsmn_init(&s->parser);
 
     size = sizeof(jsmntok_t) * tokens;
-    s->tokens = flb_calloc(1, size);
+    s->tokens = flb_malloc(size);
     if (!s->tokens) {
         flb_errno();
         return -1;
@@ -370,18 +375,13 @@ int flb_pack_json_state(const char *js, size_t len,
         int i;
         int found = 0;
 
-        for (i = 1; i < state->tokens_size; i++) {
+        for (i = 1; i < state->tokens_count; i++) {
             t = &state->tokens[i];
-
-            if (t->start < (state->tokens[i - 1]).start) {
-                break;
-            }
 
             if (t->parent == -1 && (t->end != 0)) {
                 found++;
                 delim = i;
             }
-
         }
 
         if (found > 0) {
@@ -464,6 +464,32 @@ void flb_pack_print(const char *data, size_t bytes)
     msgpack_unpacked_destroy(&result);
 }
 
+void flb_pack_print_metrics(const char *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    cmt_sds_t text;
+    struct cmt *cmt = NULL;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_error("could not process metrics payload");
+        return;
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_text_create(cmt);
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    printf("%s", text);
+    fflush(stdout);
+
+    cmt_encode_text_destroy(text);
+
+}
 
 static inline int try_to_write(char *buf, int *off, size_t left,
                                const char *str, size_t str_len)
@@ -719,6 +745,7 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     ret = msgpack_unpack_next(&result, in_buf, in_size, &off);
     if (ret != MSGPACK_UNPACK_SUCCESS) {
         flb_sds_destroy(out_buf);
+        msgpack_unpacked_destroy(&result);
         return NULL;
     }
 
@@ -815,12 +842,6 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
     struct tm tm;
     struct flb_time tms;
 
-    /* Iterate the original buffer and perform adjustments */
-    records = flb_mp_count(data, bytes);
-    if (records <= 0) {
-        return NULL;
-    }
-
     /* For json lines and streams mode we need a pre-allocated buffer */
     if (json_format == FLB_PACK_JSON_FORMAT_LINES ||
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
@@ -846,6 +867,12 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
      * ]
      */
     if (json_format == FLB_PACK_JSON_FORMAT_JSON) {
+        records = flb_mp_count(data, bytes);
+        if (records <= 0) {
+            flb_sds_destroy(out_buf);
+            msgpack_sbuffer_destroy(&tmp_sbuf);
+            return NULL;
+        }
         msgpack_pack_array(&tmp_pck, records);
     }
 
@@ -943,8 +970,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             /* Encode current record into JSON in a temporary variable */
             out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size);
             if (!out_js) {
-                msgpack_sbuffer_destroy(&tmp_sbuf);
                 flb_sds_destroy(out_buf);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_unpacked_destroy(&result);
                 return NULL;
             }
 
@@ -954,9 +982,10 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
              */
             out_tmp = flb_sds_cat(out_buf, out_js, flb_sds_len(out_js));
             if (!out_tmp) {
-                msgpack_sbuffer_destroy(&tmp_sbuf);
                 flb_sds_destroy(out_js);
                 flb_sds_destroy(out_buf);
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                msgpack_unpacked_destroy(&result);
                 return NULL;
             }
 
@@ -972,8 +1001,9 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             if (json_format == FLB_PACK_JSON_FORMAT_LINES) {
                 out_tmp = flb_sds_cat(out_buf, "\n", 1);
                 if (!out_tmp) {
-                    msgpack_sbuffer_destroy(&tmp_sbuf);
                     flb_sds_destroy(out_buf);
+                    msgpack_sbuffer_destroy(&tmp_sbuf);
+                    msgpack_unpacked_destroy(&result);
                     return NULL;
                 }
                 if (out_tmp != out_buf) {
@@ -1087,7 +1117,9 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     }
 
     msgpack_unpacked_init(&result);
-    if ( (i=msgpack_unpack_next(&result, map_data, map_size, &off)) != MSGPACK_UNPACK_SUCCESS ){
+    if ((i=msgpack_unpack_next(&result, map_data, map_size, &off)) !=
+        MSGPACK_UNPACK_SUCCESS ) {
+        msgpack_unpacked_destroy(&result);
         return -1;
     }
     if (result.data.type != MSGPACK_OBJECT_MAP) {
@@ -1102,11 +1134,11 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
     msgpack_pack_map(&pck, map_num);
 
-    for(i=0; i<len; i++) {
+    for (i=0; i<len; i++) {
         msgpack_pack_object(&pck, result.data.via.map.ptr[i].key);
         msgpack_pack_object(&pck, result.data.via.map.ptr[i].val);
     }
-    for(i=0; i<kv_arr_len; i++){
+    for (i=0; i<kv_arr_len; i++){
         msgpack_pack_object(&pck, kv_arr[i]->key);
         msgpack_pack_object(&pck, kv_arr[i]->val);
     }

@@ -26,6 +26,7 @@
 #define CMT_COUNTER   0
 #define CMT_GAUGE     1
 #define CMT_HISTOGRAM 2
+#define CMT_UNTYPED   3
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,22 +34,33 @@
 #include <monkey/mk_core/mk_list.h>
 
 #include <cmetrics/cmt_info.h>
+#include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_math.h>
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_sds.h>
+#include <cmetrics/cmt_label.h>
+#include <cmetrics/cmt_version.h>
 
 struct cmt {
     /* logging */
     int log_level;
     void (*log_cb)(void *, int, const char *, int, const char *);
 
+    /* static labels */
+    struct cmt_labels *static_labels;
+
     /* Metrics list */
     struct mk_list counters;
     struct mk_list gauges;
+    struct mk_list untypeds;
     struct mk_list histograms;
 };
 
+void cmt_initialize();
+
 struct cmt *cmt_create();
 void cmt_destroy(struct cmt *cmt);
+int cmt_label_add(struct cmt *cmt, char *key, char *val);
+char *cmt_version();
 
 #endif

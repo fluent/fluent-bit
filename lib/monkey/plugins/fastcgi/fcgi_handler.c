@@ -19,6 +19,7 @@
 
 #include <monkey/mk_api.h>
 #include <monkey/mk_net.h>
+#include <monkey/mk_stream.h>
 
 #include "fastcgi.h"
 #include "fcgi_handler.h"
@@ -525,13 +526,13 @@ static char *getearliestbreak(const char buf[], const unsigned bufsize,
 
 static int fcgi_write(struct fcgi_handler *handler, char *buf, size_t len)
 {
-    mk_stream_in_cbuf(handler->stream,
+    mk_stream_in_raw(handler->stream,
                       NULL,
                       buf, len,
                       NULL, NULL);
 
     if (handler->headers_set == MK_TRUE) {
-        mk_stream_in_cbuf(handler->stream,
+        mk_stream_in_raw(handler->stream,
                           NULL,
                           "\r\n", 2,
                           NULL, NULL);
@@ -622,7 +623,7 @@ static int fcgi_response(struct fcgi_handler *handler, char *buf, size_t len)
 
     if (len == 0 && handler->chunked && handler->headers_set == MK_TRUE) {
         MK_TRACE("[fastcgi=%i] sending EOF", handler->server_fd);
-        mk_stream_in_cbuf(handler->stream,
+        mk_stream_in_raw(handler->stream,
                           NULL,
                           "0\r\n\r\n", 5,
                           NULL, NULL);
@@ -672,7 +673,7 @@ static int fcgi_response(struct fcgi_handler *handler, char *buf, size_t len)
 
     if (p_len > 0) {
         xlen = snprintf(tmp, 16, "%x\r\n", (unsigned int) p_len);
-        mk_stream_in_cbuf(handler->stream,
+        mk_stream_in_raw(handler->stream,
                           NULL,
                           tmp, xlen,
                           NULL, NULL);

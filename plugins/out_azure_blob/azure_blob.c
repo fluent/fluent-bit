@@ -260,11 +260,11 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
     /* Send HTTP request */
     ret = flb_http_do(c, &b_sent);
     flb_sds_destroy(uri);
-    flb_upstream_conn_release(u_conn);
 
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error sending append_blob");
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
@@ -281,10 +281,12 @@ static int create_blob(struct flb_azure_blob *ctx, char *name)
                           c->resp.status);
         }
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_RETRY;
     }
 
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
     return FLB_OK;
 }
 
@@ -334,8 +336,8 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     /* Validate http response */
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error requesting container creation");
-        flb_upstream_conn_release(u_conn);
         flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
         return FLB_FALSE;
     }
 
@@ -452,8 +454,8 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_azure_blob_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
+static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
+                                struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
                                 void *out_context,
                                 struct flb_config *config)
@@ -469,13 +471,19 @@ static void cb_azure_blob_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = send_blob(config, i_ins, ctx, (char *) tag,
-                    (char *) tag, tag_len, (char *) data, bytes);
+    ret = send_blob(config, i_ins, ctx,
+                    (char *) event_chunk->tag,  /* use tag as 'name' */
+                    (char *) event_chunk->tag, flb_sds_len(event_chunk->tag),
+                    (char *) event_chunk->data, event_chunk->size);
+
     if (ret == CREATE_BLOB) {
-        ret = create_blob(ctx, (char *) tag);
+        ret = create_blob(ctx, event_chunk->tag);
         if (ret == FLB_OK) {
-            ret = send_blob(config, i_ins, ctx, (char *) tag,
-                            (char *) tag, tag_len, (char *) data, bytes);
+            ret = send_blob(config, i_ins, ctx,
+                            (char *) event_chunk->tag,  /* use tag as 'name' */
+                            (char *) event_chunk->tag,
+                            flb_sds_len(event_chunk->tag),
+                            (char *) event_chunk->data, event_chunk->size);
         }
     }
 

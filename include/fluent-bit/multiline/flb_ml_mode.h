@@ -24,12 +24,6 @@
 struct flb_ml *flb_ml_mode_create(struct flb_config *config, char *mode,
                                   int flush_ms, char *key);
 
-/* Docker container mode */
-struct flb_ml *flb_ml_mode_docker(struct flb_config *config, int flush_ms);
-
-/* CRI container mode */
-struct flb_ml *flb_ml_mode_cri(struct flb_config *config, int flush_ms);
-
 /* Python language mode */
 struct flb_ml *flb_ml_mode_python(struct flb_config *config,
                                   int flush_ms, char *key);

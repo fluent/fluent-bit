@@ -55,6 +55,20 @@ static int send_response(struct http_conn *conn, int http_status, char *message)
                        "Content-Length: 0\r\n\r\n",
                        FLB_VERSION_STR);
     }
+    else if (http_status == 200) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 200 OK\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: 0\r\n\r\n",
+                       FLB_VERSION_STR);
+    }
+    else if (http_status == 204) {
+        flb_sds_printf(&out,
+                       "HTTP/1.1 204 No Content\r\n"
+                       "Server: Fluent Bit v%s\r\n"
+                       "Content-Length: 0\r\n\r\n",
+                       FLB_VERSION_STR);
+    }
     else if (http_status == 400) {
         flb_sds_printf(&out,
                        "HTTP/1.1 400 Forbidden\r\n"
@@ -428,6 +442,17 @@ int http_prot_handle(struct flb_http *ctx, struct http_conn *conn,
 
     ret = process_payload(ctx, conn, tag, session, request);
     flb_sds_destroy(tag);
-    send_response(conn, 201, NULL);
+    send_response(conn, ctx->successful_response_code, NULL);
     return ret;
+}
+
+/*
+ * Handle an incoming request which has resulted in an http parser error.
+ */
+int http_prot_handle_error(struct flb_http *ctx, struct http_conn *conn,
+                           struct mk_http_session *session,
+                           struct mk_http_request *request)
+{
+    send_response(conn, 400, "error: invalid request\n");
+    return -1;
 }

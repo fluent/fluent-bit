@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/multiline/flb_ml.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -83,6 +84,7 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HTTP_SERVER,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, http_server)},
+
     {FLB_CONF_STR_HTTP_LISTEN,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, http_listen)},
@@ -90,7 +92,36 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_HTTP_PORT,
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, http_port)},
+
+     {FLB_CONF_STR_HEALTH_CHECK,
+      FLB_CONF_TYPE_BOOL,
+      offsetof(struct flb_config, health_check)},
+
+    {FLB_CONF_STR_HC_ERRORS_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_errors_count)},
+
+    {FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, hc_retry_failure_count)},
+
+    {FLB_CONF_STR_HC_PERIOD,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, health_check_period)},
+
 #endif
+    /* DNS*/
+    {FLB_CONF_DNS_MODE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_mode)},
+
+    {FLB_CONF_DNS_RESOLVER,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_resolver)},
+
+    {FLB_CONF_DNS_PREFER_IPV4,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, dns_prefer_ipv4)},
 
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
@@ -116,6 +147,14 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_CORO_STACK_SIZE,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, coro_stack_size)},
+
+    /* Scheduler */
+    {FLB_CONF_STR_SCHED_CAP,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, sched_cap)},
+    {FLB_CONF_STR_SCHED_BASE,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, sched_base)},
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     {FLB_CONF_STR_STREAMS_FILE,
@@ -155,32 +194,46 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->grace_count  = 0;
     config->exit_status_code = 0;
 
     /* json */
     config->convert_nan_to_null = FLB_FALSE;
 
 #ifdef FLB_HAVE_HTTP_SERVER
-    config->http_ctx     = NULL;
-    config->http_server  = FLB_FALSE;
-    config->http_listen  = flb_strdup(FLB_CONFIG_HTTP_LISTEN);
-    config->http_port    = flb_strdup(FLB_CONFIG_HTTP_PORT);
+    config->http_ctx                     = NULL;
+    config->http_server                  = FLB_FALSE;
+    config->http_listen                  = flb_strdup(FLB_CONFIG_HTTP_LISTEN);
+    config->http_port                    = flb_strdup(FLB_CONFIG_HTTP_PORT);
+    config->health_check                 = FLB_FALSE;
+    config->hc_errors_count              = HC_ERRORS_COUNT_DEFAULT;
+    config->hc_retry_failure_count       = HC_RETRY_FAILURE_COUNTS_DEFAULT;
+    config->health_check_period          = HEALTH_CHECK_PERIOD;
 #endif
 
     config->http_proxy = getenv("HTTP_PROXY");
     if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
-        /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
-        config->http_proxy = NULL;
+        config->http_proxy = getenv("http_proxy");
+        if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
+            /* Proxy should not be set when `HTTP_PROXY` or `http_proxy` are set to "" */
+            config->http_proxy = NULL;
+        }
     }
     config->no_proxy = getenv("NO_PROXY");
     if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
-        /* NoProxy  should not be set when the `NO_PROXYY` is set to "" or there is no Proxy. */
-        config->no_proxy = NULL;
+        config->no_proxy = getenv("no_proxy");
+        if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
+            /* NoProxy  should not be set when `NO_PROXY` or `no_proxy` are set to "" or there is no Proxy. */
+            config->no_proxy = NULL;
+        }
     }
 
     config->cio          = NULL;
     config->storage_path = NULL;
     config->storage_input_plugin = NULL;
+
+    config->sched_cap  = FLB_SCHED_CAP;
+    config->sched_base = FLB_SCHED_BASE;
 
 #ifdef FLB_HAVE_SQLDB
     mk_list_init(&config->sqldb_list);
@@ -195,14 +248,22 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_CORO_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
+    if (config->coro_stack_size < getpagesize()) {
+        flb_info("[config] changing coro_stack_size from %u to %u bytes",
+                 config->coro_stack_size, getpagesize());
+        config->coro_stack_size = (unsigned int)getpagesize();
+    }
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
+    mk_list_init(&config->custom_plugins);
+    mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
     mk_list_init(&config->parser_plugins);
     mk_list_init(&config->filter_plugins);
     mk_list_init(&config->out_plugins);
+    mk_list_init(&config->customs);
     mk_list_init(&config->inputs);
     mk_list_init(&config->parsers);
     mk_list_init(&config->filters);
@@ -210,11 +271,16 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->proxies);
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
+    mk_list_init(&config->cmetrics);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
     /* Environment */
     config->env = flb_env_create();
+
+    /* Multiline core */
+    mk_list_init(&config->multiline_parsers);
+    flb_ml_init(config);
 
     /* Register static plugins */
     ret = flb_plugins_register(config);

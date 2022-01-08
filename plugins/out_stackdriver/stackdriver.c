@@ -812,9 +812,13 @@ static int is_tag_match_regex(struct flb_stackdriver *ctx,
     const char *tag_str_to_be_matcheds;
 
     tag_prefix_len = flb_sds_len(ctx->tag_prefix);
+    if (tag_len > tag_prefix_len &&
+        flb_sds_cmp(ctx->tag_prefix, tag, tag_prefix_len) != 0) {
+        return 0;
+    }
+
     tag_str_to_be_matcheds = tag + tag_prefix_len;
     len_to_be_matched = tag_len - tag_prefix_len;
-
     ret = flb_regex_match(ctx->regex,
                           (unsigned char *) tag_str_to_be_matcheds,
                           len_to_be_matched);
@@ -1369,8 +1373,8 @@ static int pack_json_payload(int insert_id_extracted,
             continue;
         }
 
-        if (validate_key(kv->key, HTTPREQUEST_FIELD_IN_JSON,
-                         HTTP_REQUEST_KEY_SIZE)
+        if (validate_key(kv->key, ctx->http_request_key,
+                         ctx->http_request_key_size)
             && kv->val.type == MSGPACK_OBJECT_MAP) {
 
             if(http_request_extra_size > 0) {
@@ -1428,13 +1432,10 @@ static int pack_json_payload(int insert_id_extracted,
         return ret;
 }
 
-static int stackdriver_format(struct flb_config *config,
-                              struct flb_input_instance *ins,
-                              void *plugin_context,
-                              void *flush_ctx,
-                              const char *tag, int tag_len,
-                              const void *data, size_t bytes,
-                              void **out_data, size_t *out_size)
+static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
+                                    int total_records,
+                                    const char *tag, int tag_len,
+                                    const void *data, size_t bytes)
 {
     int len;
     int ret;
@@ -1453,7 +1454,6 @@ static int stackdriver_format(struct flb_config *config,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
-    struct flb_stackdriver *ctx = plugin_context;
 
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
@@ -1502,7 +1502,7 @@ static int stackdriver_format(struct flb_config *config,
     timestamp_status tms_status;
 
     /* Count number of records */
-    array_size = flb_mp_count(data, bytes);
+    array_size = total_records;
 
     /*
      * Search each entry and validate insertId.
@@ -1526,8 +1526,7 @@ static int stackdriver_format(struct flb_config *config,
     msgpack_unpacked_destroy(&result);
 
     if (array_size == 0) {
-        *out_size = 0;
-        return -1;
+        return NULL;
     }
 
     /* Create temporal msgpack buffer */
@@ -1563,7 +1562,7 @@ static int stackdriver_format(struct flb_config *config,
         if (ret != 0) {
             flb_plg_error(ctx->ins, "fail to construct local_resource_id");
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return -1;
+            return NULL;
         }
     }
 
@@ -1658,7 +1657,7 @@ static int stackdriver_format(struct flb_config *config,
                 flb_plg_error(ctx->ins, "fail to extract resource labels "
                               "for k8s_container resource type");
                 msgpack_sbuffer_destroy(&mp_sbuf);
-                return -1;
+                return NULL;
             }
 
             msgpack_pack_map(&mp_pck, 6);
@@ -1711,7 +1710,7 @@ static int stackdriver_format(struct flb_config *config,
                 flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                               "log entry for k8s_node");
                 msgpack_sbuffer_destroy(&mp_sbuf);
-                return -1;
+                return NULL;
             }
 
             msgpack_pack_map(&mp_pck, 4);
@@ -1753,7 +1752,7 @@ static int stackdriver_format(struct flb_config *config,
                 flb_plg_error(ctx->ins, "fail to process local_resource_id from "
                               "log entry for k8s_pod");
                 msgpack_sbuffer_destroy(&mp_sbuf);
-                return -1;
+                return NULL;
             }
 
             msgpack_pack_map(&mp_pck, 5);
@@ -1792,7 +1791,7 @@ static int stackdriver_format(struct flb_config *config,
             flb_plg_error(ctx->ins, "unsupported resource type '%s'",
                           ctx->resource);
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return -1;
+            return NULL;
         }
     }
     msgpack_pack_str(&mp_pck, 7);
@@ -1908,7 +1907,7 @@ static int stackdriver_format(struct flb_config *config,
                 flb_sds_destroy(operation_producer);
                 msgpack_unpacked_destroy(&result);
                 msgpack_sbuffer_destroy(&mp_sbuf);
-                return -1;
+                return NULL;
             }
             entry_size += 1;
         }
@@ -2059,17 +2058,42 @@ static int stackdriver_format(struct flb_config *config,
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
         msgpack_unpacked_destroy(&result);
+        return NULL;
+    }
+
+    return out_buf;
+}
+
+static int stackdriver_format_test(struct flb_config *config,
+                                   struct flb_input_instance *ins,
+                                   void *plugin_context,
+                                   void *flush_ctx,
+                                   const char *tag, int tag_len,
+                                   const void *data, size_t bytes,
+                                   void **out_data, size_t *out_size)
+{
+    int total_records;
+    flb_sds_t payload = NULL;
+    struct flb_stackdriver *ctx = plugin_context;
+
+    /* Count number of records */
+    total_records = flb_mp_count(data, bytes);
+
+    payload = stackdriver_format(ctx, total_records,
+                                (char *) tag, tag_len, data, bytes);
+    if (payload == NULL) {
         return -1;
     }
 
-    *out_data = out_buf;
-    *out_size = flb_sds_len(out_buf);
+    *out_data = payload;
+    *out_size = flb_sds_len(payload);
 
     return 0;
+
 }
 
-static void cb_stackdriver_flush(const void *data, size_t bytes,
-                                 const char *tag, int tag_len,
+static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
+                                 struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins,
                                  void *out_context,
                                  struct flb_config *config)
@@ -2082,31 +2106,44 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
     flb_sds_t token;
     flb_sds_t payload_buf;
     size_t payload_size;
-    void *out_buf;
-    size_t out_size;
     struct flb_stackdriver *ctx = out_context;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
+#ifdef FLB_HAVE_METRICS
+    char *name = (char *) flb_output_name(ctx->ins);
+    uint64_t ts = cmt_time_now();
+#endif
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
+#ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+#endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     /* Reformat msgpack to stackdriver JSON payload */
-    ret = stackdriver_format(config, i_ins,
-                             ctx, NULL,
-                             tag, tag_len,
-                             data, bytes,
-                             &out_buf, &out_size);
-    if (ret != 0) {
+    payload_buf = stackdriver_format(ctx,
+                                     event_chunk->total_events,
+                                     event_chunk->tag, flb_sds_len(event_chunk->tag),
+                                     event_chunk->data, event_chunk->size);
+    if (!payload_buf) {
+#ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+#endif
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
-
-    payload_buf = (flb_sds_t) out_buf;
-    payload_size = out_size;
+    payload_size = flb_sds_len(payload_buf);
 
     /* Get or renew Token */
     token = get_google_token(ctx);
@@ -2114,6 +2151,13 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
         flb_sds_destroy(payload_buf);
+#ifdef FLB_HAVE_METRICS
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+#endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -2151,6 +2195,8 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
         }
         else if (c->resp.status >= 400 && c->resp.status < 500) {
             ret_code = FLB_ERROR;
+            flb_plg_warn(ctx->ins, "error\n%s",
+                c->resp.payload);
         }
         else {
             if (c->resp.payload_size > 0) {
@@ -2165,6 +2211,24 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
             ret_code = FLB_RETRY;
         }
     }
+
+    /* Update specific stackdriver metrics */
+#ifdef FLB_HAVE_METRICS
+    if (ret_code == FLB_OK) {
+        cmt_counter_inc(ctx->cmt_successful_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS, 1, ctx->ins->metrics);
+    }
+    else {
+        cmt_counter_inc(ctx->cmt_failed_requests,
+                        ts, 1, (char *[]) {name});
+
+        /* OLD api */
+        flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+    }
+#endif
 
     /* Cleanup */
     flb_sds_destroy(payload_buf);
@@ -2196,7 +2260,7 @@ struct flb_output_plugin out_stackdriver_plugin = {
     .cb_exit      = cb_stackdriver_exit,
 
     /* Test */
-    .test_formatter.callback = stackdriver_format,
+    .test_formatter.callback = stackdriver_format_test,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,

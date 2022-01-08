@@ -256,7 +256,7 @@ static int backoff_full_jitter(int base, int cap, int n)
 {
     int temp;
 
-    temp = xmin(cap, ipow(base * 2, n));
+    temp = xmin(cap, base * ipow(2, n));
     return random_uniform(base, temp);
 }
 
@@ -287,7 +287,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->event.mask = MK_EVENT_EMPTY;
 
     /* Get suggested wait_time for this request */
-    seconds = backoff_full_jitter(FLB_SCHED_BASE, FLB_SCHED_CAP, tries);
+    seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, tries);
     seconds += 1;
 
     /* Populare request */
@@ -434,7 +434,7 @@ int flb_sched_event_handler(struct flb_config *config, struct mk_event *event)
  */
 int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
                               void (*cb)(struct flb_config *, void *),
-                              void *data)
+                              void *data, struct flb_sched_timer **out_timer)
 {
     int fd;
     time_t sec;
@@ -481,17 +481,19 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
     event->type = FLB_ENGINE_EV_SCHED;
     timer->timer_fd = fd;
 
+    if (out_timer != NULL) {
+        *out_timer = timer;
+    }
+
     return 0;
 }
 
 /* Disable notifications, used before to destroy the context */
 int flb_sched_timer_cb_disable(struct flb_sched_timer *timer)
 {
-    int ret;
-
-    ret = mk_event_closesocket(timer->timer_fd);
+    mk_event_timeout_disable(timer->sched->evl, &timer->event);
     timer->timer_fd = -1;
-    return ret;
+    return 0;
 }
 
 int flb_sched_timer_cb_destroy(struct flb_sched_timer *timer)
@@ -621,6 +623,7 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 
     timer->timer_fd = -1;
     timer->config = sched->config;
+    timer->sched = sched;
     timer->data = NULL;
 
     /* Active timer (not invalidated) */
@@ -632,25 +635,26 @@ struct flb_sched_timer *flb_sched_timer_create(struct flb_sched *sched)
 
 void flb_sched_timer_invalidate(struct flb_sched_timer *timer)
 {
-    struct flb_sched *sched;
-
-    sched  = timer->config->sched;
+    mk_event_timeout_disable(timer->sched->evl, &timer->event);
 
     timer->active = FLB_FALSE;
+
     mk_list_del(&timer->_head);
-    mk_list_add(&timer->_head, &sched->timers_drop);
+    mk_list_add(&timer->_head, &timer->sched->timers_drop);
 }
 
 /* Destroy a timer context */
 int flb_sched_timer_destroy(struct flb_sched_timer *timer)
 {
-    mk_event_timeout_destroy(timer->config->evl, &timer->event);
+    mk_event_timeout_destroy(timer->sched->evl, &timer->event);
+
     if (timer->timer_fd > 0) {
         flb_sched_timer_cb_disable(timer);
     }
 
     mk_list_del(&timer->_head);
     flb_free(timer);
+
     return 0;
 }
 

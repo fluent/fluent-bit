@@ -1213,6 +1213,14 @@ int mk_http_error(int http_status, struct mk_http_session *cs,
     struct file_info finfo;
     struct mk_iov *iov;
 
+    /* This function requires monkey to be properly initialized which is not the case
+     * when it's just used to parse http requests in fluent-bit so we want it to ignore
+     * that case and let fluent-bit handle it.
+    */
+    if (server->workers == 0) {
+        return MK_EXIT_OK;
+    }
+
     mk_header_set_http_status(sr, http_status);
     mk_ptr_reset(&page);
 

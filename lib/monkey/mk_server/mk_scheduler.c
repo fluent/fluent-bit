@@ -47,11 +47,6 @@ extern struct mk_sched_handler mk_http2_handler;
 pthread_mutex_t mutex_worker_init = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex_worker_exit = PTHREAD_MUTEX_INITIALIZER;
 
-/* Thread initializator helpers (sched_launch_thread) */
-static int pth_init;
-static pthread_cond_t  pth_cond;
-static pthread_mutex_t pth_mutex;
-
 /*
  * Returns the worker id which should take a new incomming connection,
  * it returns the worker id with less active connections. Just used
@@ -265,16 +260,18 @@ static int mk_sched_register_thread(struct mk_server *server)
 {
     struct mk_sched_ctx *ctx = server->sched_ctx;
     struct mk_sched_worker *worker;
-    static int wid = 0;
 
     /*
-     * If this thread slept inside this section, some other thread may touch wid.
-     * So protect it with a mutex, only one thread may handle wid.
+     * If this thread slept inside this section, some other thread may touch
+     * server->worker_id.
+     * So protect it with a mutex, only one thread may handle server->worker_id.
+     *
+     * Note : Let's use the platform agnostic atomics we implemented in cmetrics here
+     * instead of a lock.
      */
-    worker = &ctx->workers[wid];
-    worker->idx = wid++;
+    worker = &ctx->workers[server->worker_id];
+    worker->idx = server->worker_id++;
     worker->tid = pthread_self();
-
 
 #if defined(__linux__)
     /*
@@ -352,6 +349,7 @@ void *mk_sched_launch_worker_loop(void *data)
         exit(EXIT_FAILURE);
     }
 
+
     sched->mem_pagesize = mk_utils_get_system_page_size();
 
     /*
@@ -401,10 +399,10 @@ void *mk_sched_launch_worker_loop(void *data)
     }
 
     /* Unlock the conditional initializator */
-    pthread_mutex_lock(&pth_mutex);
-    pth_init = MK_TRUE;
-    pthread_cond_signal(&pth_cond);
-    pthread_mutex_unlock(&pth_mutex);
+    pthread_mutex_lock(&server->pth_mutex);
+    server->pth_init = MK_TRUE;
+    pthread_cond_signal(&server->pth_cond);
+    pthread_mutex_unlock(&server->pth_mutex);
 
     /* Invoke custom worker-callbacks defined by the scheduler (lib) */
     mk_list_foreach(head, &server->sched_worker_callbacks) {
@@ -427,13 +425,13 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
     pthread_attr_t attr;
     struct mk_sched_thread_conf *thconf;
 
-    pth_init = MK_FALSE;
+    server->pth_init = MK_FALSE;
 
     /*
      * This lock is used for the 'pth_cond' conditional. Once the worker
      * thread is ready it will signal the condition.
      */
-    pthread_mutex_lock(&pth_mutex);
+    pthread_mutex_lock(&server->pth_mutex);
 
     /* Thread data */
     thconf = mk_mem_alloc_z(sizeof(struct mk_sched_thread_conf));
@@ -450,10 +448,11 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
     *tout = tid;
 
     /* Block until the child thread is ready */
-    while (!pth_init) {
-        pthread_cond_wait(&pth_cond, &pth_mutex);
+    while (!server->pth_init) {
+        pthread_cond_wait(&server->pth_cond, &server->pth_mutex);
     }
-    pthread_mutex_unlock(&pth_mutex);
+
+    pthread_mutex_unlock(&server->pth_mutex);
 
     return 0;
 }
@@ -484,15 +483,16 @@ int mk_sched_init(struct mk_server *server)
     memset(ctx->workers, '\0', size);
 
     /* Initialize helpers */
-    pthread_mutex_init(&pth_mutex, NULL);
-    pthread_cond_init(&pth_cond, NULL);
-    pth_init = MK_FALSE;
+    pthread_mutex_init(&server->pth_mutex, NULL);
+    pthread_cond_init(&server->pth_cond, NULL);
+    server->pth_init = MK_FALSE;
 
     /* Map context into server context */
     server->sched_ctx = ctx;
 
-    /* co-routing thread initialization */
-    mk_thread_prepare();
+    /* The mk_thread_prepare call was replaced by mk_http_thread_initialize_tls
+     * which is called earlier.
+     */
 
     return 0;
 }

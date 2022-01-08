@@ -138,6 +138,18 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     return s;
 }
 
+int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len)
+{
+    flb_sds_t tmp;
+
+    tmp = flb_sds_cat(*buf, str, len);
+    if (!tmp) {
+        return -1;
+    }
+    *buf = tmp;
+    return 0;
+}
+
 flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
                                        char *esc, size_t esc_size)
 {
@@ -288,7 +300,7 @@ flb_sds_t flb_sds_cat_utf8 (flb_sds_t *sds, const char *str, int str_len)
             cp = 0;
             for (b = 0; b < hex_bytes; b++) {
                 p = (const unsigned char *) str + i + b;
-                if (p >= (str + str_len)) {
+                if (p >= (unsigned char *) (str + str_len)) {
                     break;
                 }
                 ret = flb_utf8_decode(&state, &cp, *p);
@@ -394,4 +406,32 @@ void flb_sds_destroy(flb_sds_t s)
 
     head = FLB_SDS_HEADER(s);
     flb_free(head);
+}
+
+/*
+ * flb_sds_snprintf is a wrapper of snprintf.
+ * The difference is that this function can increase the buffer of flb_sds_t.
+ */
+int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
+{
+    va_list va;
+    flb_sds_t tmp;
+    int ret;
+
+ retry_snprintf:
+    va_start(va, fmt);
+    ret = vsnprintf(*str, size, fmt, va);
+    if (ret > size) {
+        tmp = flb_sds_increase(*str, ret-size);
+        if (tmp == NULL) {
+            return -1;
+        }
+        *str = tmp;
+        size = ret;
+        va_end(va);
+        goto retry_snprintf;
+    }
+    va_end(va);
+
+    return ret;
 }

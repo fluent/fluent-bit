@@ -65,6 +65,10 @@ static int azure_format(const void *in_buf, size_t in_bytes,
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     flb_sds_t record;
+    char time_formatted[32];
+    size_t s;
+    struct tm tms;
+    int len;
 
     /* Count number of items */
     array_size = flb_mp_count(in_buf, in_bytes);
@@ -81,7 +85,6 @@ static int azure_format(const void *in_buf, size_t in_bytes,
 
         /* Get timestamp */
         flb_time_pop_from_msgpack(&tm, &result, &obj);
-        t = flb_time_to_double(&tm);
 
         /* Create temporary msgpack buffer */
         msgpack_sbuffer_init(&tmp_sbuf);
@@ -95,9 +98,27 @@ static int azure_format(const void *in_buf, size_t in_bytes,
         /* Append the time key */
         msgpack_pack_str(&mp_pck, flb_sds_len(ctx->time_key));
         msgpack_pack_str_body(&mp_pck,
-                              ctx->time_key,
-                              flb_sds_len(ctx->time_key));
-        msgpack_pack_double(&mp_pck, t);
+                            ctx->time_key,
+                            flb_sds_len(ctx->time_key));
+
+        if (ctx->time_generated == FLB_TRUE) {
+            /* Append the time value as ISO 8601 */
+            gmtime_r(&tm.tm.tv_sec, &tms);
+            s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                            FLB_PACK_JSON_DATE_ISO8601_FMT, &tms);
+
+            len = snprintf(time_formatted + s,
+                            sizeof(time_formatted) - 1 - s,
+                            ".%03" PRIu64 "Z",
+                            (uint64_t) tm.tm.tv_nsec / 1000000);
+            s += len;
+            msgpack_pack_str(&mp_pck, s);
+            msgpack_pack_str_body(&mp_pck, time_formatted, s);
+        } else {
+            /* Append the time value as millis.nanos */
+            t = flb_time_to_double(&tm);
+            msgpack_pack_double(&mp_pck, t);
+        }
 
         /* Append original map k/v */
         for (i = 0; i < map_size; i++) {
@@ -206,6 +227,10 @@ static int build_headers(struct flb_http_client *c,
     flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
     flb_http_add_header(c, "x-ms-date", 9, rfc1123date,
                         flb_sds_len(rfc1123date));
+    if (ctx->time_generated == FLB_TRUE) {
+        /* Use time value as time-generated within azure */
+        flb_http_add_header(c, "time-generated-field", 20, ctx->time_key, flb_sds_len(ctx->time_key));
+    }
 
     size = 32 + flb_sds_len(ctx->customer_id) + olen;
     auth = flb_malloc(size);
@@ -229,8 +254,8 @@ static int build_headers(struct flb_http_client *c,
     return 0;
 }
 
-static void cb_azure_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_azure_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -253,7 +278,8 @@ static void cb_azure_flush(const void *data, size_t bytes,
     }
 
     /* Convert binary logs into a JSON payload */
-    ret = azure_format(data, bytes, &buf_data, &buf_size, ctx);
+    ret = azure_format(event_chunk->data, event_chunk->size,
+                       &buf_data, &buf_size, ctx);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

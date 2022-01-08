@@ -34,6 +34,9 @@
 #define FLB_CONFIG_FLUSH_SECS   5
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
+#define HC_ERRORS_COUNT_DEFAULT 5
+#define HC_RETRY_FAILURE_COUNTS_DEFAULT 5
+#define HEALTH_CHECK_PERIOD 60
 #define FLB_CONFIG_DEFAULT_TAG  "fluent_bit"
 
 /* Main struct to hold the configuration of the runtime service */
@@ -42,9 +45,11 @@ struct flb_config {
 
     int support_mode;         /* enterprise support mode ?      */
     int is_ingestion_active;  /* date ingestion active/allowed  */
+    int is_shutting_down;     /* is the service shutting down ? */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
-    int grace;                /* Grace on shutdown              */
+    int grace;                /* Maximum grace time on shutdown */
+    int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int convert_nan_to_null;  /* convert null to nan ?          */
 
@@ -84,16 +89,23 @@ struct flb_config {
     void *dso_plugins;
 
     /* Plugins references */
+    struct mk_list custom_plugins;
     struct mk_list in_plugins;
     struct mk_list parser_plugins;      /* not yet implemented */
     struct mk_list filter_plugins;
     struct mk_list out_plugins;
+
+    /* Custom instances */
+    struct mk_list customs;
 
     /* Inputs instances */
     struct mk_list inputs;
 
     /* Parsers instances */
     struct mk_list parsers;
+
+    /* Multiline core parser definitions */
+    struct mk_list multiline_parsers;
 
     /* Outputs instances */
     struct mk_list outputs;             /* list of output plugins   */
@@ -136,12 +148,22 @@ struct flb_config {
     void *metrics;
 #endif
 
+    /*
+     * CMetric lists: a linked list to keep a reference of every
+     * cmetric context created.
+     */
+    struct mk_list cmetrics;
+
     /* HTTP Server */
 #ifdef FLB_HAVE_HTTP_SERVER
-    int http_server;          /* HTTP Server running    */
-    char *http_port;          /* HTTP Port / TCP number */
-    char *http_listen;        /* Interface Address      */
-    void *http_ctx;           /* Monkey HTTP context    */
+    int http_server;                /* HTTP Server running    */
+    char *http_port;                /* HTTP Port / TCP number */
+    char *http_listen;              /* Interface Address      */
+    void *http_ctx;                 /* Monkey HTTP context    */
+    int health_check;               /* health check enable    */
+    int hc_errors_count;               /* health check error counts as unhealthy*/
+    int hc_retry_failure_count;        /* health check retry failures count as unhealthy*/
+    int health_check_period;           /* period by second for health status check */
 #endif
 
     /*
@@ -164,6 +186,11 @@ struct flb_config {
      * Note: only `,` is allowed as seperator between URLs.
      */
     char *no_proxy;
+
+    /* DNS */
+    char *dns_mode;
+    char *dns_resolver;
+    int   dns_prefer_ipv4;
 
     /* Chunk I/O Buffering */
     void *cio;
@@ -210,6 +237,8 @@ struct flb_config {
     uint16_t in_table_id[512];
 
     void *sched;
+    unsigned int sched_cap;
+    unsigned int sched_base;
 
     struct flb_task_map tasks_map[2048];
 
@@ -256,10 +285,19 @@ enum conf_type {
 
 /* FLB_HAVE_HTTP_SERVER */
 #ifdef FLB_HAVE_HTTP_SERVER
-#define FLB_CONF_STR_HTTP_SERVER     "HTTP_Server"
-#define FLB_CONF_STR_HTTP_LISTEN     "HTTP_Listen"
-#define FLB_CONF_STR_HTTP_PORT       "HTTP_Port"
+#define FLB_CONF_STR_HTTP_SERVER                            "HTTP_Server"
+#define FLB_CONF_STR_HTTP_LISTEN                            "HTTP_Listen"
+#define FLB_CONF_STR_HTTP_PORT                              "HTTP_Port"
+#define FLB_CONF_STR_HEALTH_CHECK                           "Health_Check"
+#define FLB_CONF_STR_HC_ERRORS_COUNT                        "HC_Errors_Count"
+#define FLB_CONF_STR_HC_RETRIES_FAILURE_COUNT               "HC_Retry_Failure_Count"
+#define FLB_CONF_STR_HC_PERIOD                              "HC_Period"
 #endif /* !FLB_HAVE_HTTP_SERVER */
+
+/* DNS */
+#define FLB_CONF_DNS_MODE              "dns.mode"
+#define FLB_CONF_DNS_RESOLVER          "dns.resolver"
+#define FLB_CONF_DNS_PREFER_IPV4       "dns.prefer_ipv4"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"
@@ -271,5 +309,9 @@ enum conf_type {
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"
+
+/* Scheduler */
+#define FLB_CONF_STR_SCHED_CAP        "scheduler.cap"
+#define FLB_CONF_STR_SCHED_BASE       "scheduler.base"
 
 #endif

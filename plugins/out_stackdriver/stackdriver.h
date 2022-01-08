@@ -21,12 +21,12 @@
 #ifndef FLB_OUT_STACKDRIVER_H
 #define FLB_OUT_STACKDRIVER_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_metrics.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
@@ -72,6 +72,12 @@
 #define STDERR "stderr"
 
 #define DEFAULT_TAG_REGEX "(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$"
+
+/* Metrics */
+#ifdef FLB_HAVE_METRICS
+#define FLB_STACKDRIVER_SUCCESSFUL_REQUESTS  1000   /* successful requests */
+#define FLB_STACKDRIVER_FAILED_REQUESTS      1001   /* failed requests */
+#endif
 
 struct flb_stackdriver {
     /* credentials */
@@ -125,10 +131,12 @@ struct flb_stackdriver {
     flb_sds_t severity_key;
     flb_sds_t trace_key;
     flb_sds_t log_name_key;
+    flb_sds_t http_request_key;
+    int http_request_key_size;
     bool autoformat_stackdriver_trace;
 
     flb_sds_t stackdriver_agent;
-    
+
     /* Regex context to parse tags */
     flb_sds_t custom_k8s_regex;
     struct flb_regex *regex;
@@ -144,6 +152,12 @@ struct flb_stackdriver {
 
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
+
+#ifdef FLB_HAVE_METRICS
+    /* metrics */
+    struct cmt_counter *cmt_successful_requests;
+    struct cmt_counter *cmt_failed_requests;
+#endif
 
     /* plugin instance */
     struct flb_output_instance *ins;

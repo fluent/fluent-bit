@@ -19,12 +19,25 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 #include <monkey/mk_core.h>
 
 #ifdef FLB_HAVE_METRICS
-
 #ifndef FLB_METRICS_H
 #define FLB_METRICS_H
+
+/* CMetrics */
+#include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_untyped.h>
+#include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_influx.h>
+#include <cmetrics/cmt_encode_text.h>
+#include <cmetrics/cmt_encode_prometheus.h>
+#include <cmetrics/cmt_encode_prometheus_remote_write.h>
+#include <cmetrics/cmt_encode_msgpack.h>
 
 /* Metrics IDs for general purpose (used by core and Plugins */
 #define FLB_METRIC_N_RECORDS   0
@@ -32,23 +45,26 @@
 #define FLB_METRIC_N_DROPPED   2
 #define FLB_METRIC_N_ADDED     3
 
-#define FLB_METRIC_OUT_OK_RECORDS     10
-#define FLB_METRIC_OUT_OK_BYTES       11
-#define FLB_METRIC_OUT_ERROR          12
-#define FLB_METRIC_OUT_RETRY          13
-#define FLB_METRIC_OUT_RETRY_FAILED   14
+/* Genaral output plugin metrics */
+#define FLB_METRIC_OUT_OK_RECORDS      10       /* proc_records   */
+#define FLB_METRIC_OUT_OK_BYTES        11       /* proc_bytes     */
+#define FLB_METRIC_OUT_ERROR           12       /* errors         */
+#define FLB_METRIC_OUT_RETRY           13       /* retries        */
+#define FLB_METRIC_OUT_RETRY_FAILED    14       /* retries_failed */
+#define FLB_METRIC_OUT_DROPPED_RECORDS 15       /* dropped_records_total */
+#define FLB_METRIC_OUT_RETRIED_RECORDS 16       /* retried_records_total */
 
 struct flb_metric {
     int id;
     int title_len;
-    char title[32];
+    char title[64];
     size_t val;
     struct mk_list _head;
 };
 
 struct flb_metrics {
     int title_len;         /* Title string length */
-    char title[32];        /* Title or id for this metrics context */
+    char title[64];        /* Title or id for this metrics context */
     int count;             /* Total count of metrics registered */
     struct mk_list list;   /* Head of metrics list */
 };
@@ -63,6 +79,7 @@ int flb_metrics_print(struct flb_metrics *metrics);
 int flb_metrics_dump_values(char **out_buf, size_t *out_size,
                             struct flb_metrics *me);
 int flb_metrics_destroy(struct flb_metrics *metrics);
+int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt);
 
 #endif
 #endif /* FLB_HAVE_METRICS */

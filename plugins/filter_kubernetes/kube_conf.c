@@ -44,6 +44,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     const char *url;
     const char *tmp;
     const char *p;
+    const char *cmd;
     struct flb_kube *ctx;
 
     ctx = flb_calloc(1, sizeof(struct flb_kube));
@@ -61,6 +62,16 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         return NULL;
     }
 
+    /* K8s Token Command */
+    cmd = flb_filter_get_property("kube_token_command", ins);
+    if (cmd) {
+        ctx->kube_token_command = cmd;
+    }
+    else {
+        ctx->kube_token_command = NULL;
+    }
+    ctx->kube_token_create = 0;  
+
     /* Merge Parser */
     tmp = flb_filter_get_property("merge_parser", ins);
     if (tmp) {
@@ -76,7 +87,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", ins);
 
-    if (ctx->use_kubelet) {
+    if (ctx->use_tag_for_meta) {
+        ctx->api_https = FLB_FALSE;
+    }
+    else if (ctx->use_kubelet) {
         ctx->api_host = flb_strdup(FLB_KUBELET_HOST);
         ctx->api_port = ctx->kubelet_port;
         ctx->api_https = FLB_TRUE;
@@ -128,9 +142,18 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
              ctx->api_https ? "https" : "http",
              ctx->api_host, ctx->api_port);
 
-    ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
-                                      FLB_HASH_TABLE_SIZE,
-                                      FLB_HASH_TABLE_SIZE);
+    if (ctx->kube_meta_cache_ttl > 0) {
+        ctx->hash_table = flb_hash_create_with_ttl(ctx->kube_meta_cache_ttl,
+                                                   FLB_HASH_EVICT_OLDER,
+                                                   FLB_HASH_TABLE_SIZE,
+                                                   FLB_HASH_TABLE_SIZE);
+    }
+    else {
+        ctx->hash_table = flb_hash_create(FLB_HASH_EVICT_RANDOM,
+                                          FLB_HASH_TABLE_SIZE,
+                                          FLB_HASH_TABLE_SIZE);
+    }
+    
     if (!ctx->hash_table) {
         flb_kube_conf_destroy(ctx);
         return NULL;
@@ -164,8 +187,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         }
     }
 
-    flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
-                 ctx->api_https, ctx->api_host, ctx->api_port);
+    if (!ctx->use_tag_for_meta) {
+        flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
+                     ctx->api_https, ctx->api_host, ctx->api_port);
+    }
     return ctx;
 }
 

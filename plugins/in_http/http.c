@@ -91,6 +91,14 @@ static int in_http_init(struct flb_input_instance *ins,
         return -1;
     }
 
+    if (ctx->successful_response_code != 200 &&
+        ctx->successful_response_code != 201 &&
+        ctx->successful_response_code != 204) {
+        flb_plg_error(ctx->ins, "%d is not supported response code. Use default 201",
+                      ctx->successful_response_code);
+        ctx->successful_response_code = 201;
+    }
+
     /* Set the socket non-blocking */
     flb_net_socket_nonblocking(ctx->server_fd);
 
@@ -140,6 +148,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_http, tag_key),
      ""
     },
+    {
+     FLB_CONFIG_MAP_INT, "successful_response_code", "201",
+     0, FLB_TRUE, offsetof(struct flb_http, successful_response_code),
+     "Set successful response code. 200, 201 and 204 are supported."
+    },
+
 
     /* EOF */
     {0}

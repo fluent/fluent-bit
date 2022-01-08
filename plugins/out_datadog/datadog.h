@@ -43,7 +43,7 @@
 struct flb_out_datadog {
 
     /* Proxy */
-    const char *proxy;
+    flb_sds_t proxy;
     char *proxy_host;
     int proxy_port;
 

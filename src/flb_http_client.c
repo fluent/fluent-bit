@@ -659,6 +659,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     case FLB_HTTP_CONNECT:
         str_method = "CONNECT";
         break;
+    case FLB_HTTP_PATCH:
+        str_method = "PATCH";
+        break;
     };
 
     buf = flb_calloc(1, FLB_HTTP_BUF_SIZE);
@@ -1128,6 +1131,7 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
         new_size = c->header_size + 2;
         tmp = flb_realloc(c->header_buf, new_size);
         if (!tmp) {
+            flb_errno();
             return -1;
         }
         c->header_buf  = tmp;
@@ -1148,7 +1152,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     }
 #endif
 
-    flb_debug("[http_client] header=%s", c->header_buf);
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,
@@ -1216,6 +1219,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
             ret = process_data(c);
             if (ret == FLB_HTTP_ERROR) {
+                flb_warn("[http_client] malformed HTTP response from %s:%i on "
+                         "connection #%i", c->u_conn->u->tcp_host,
+                         c->u_conn->u->tcp_port, c->u_conn->fd);
                 return -1;
             }
             else if (ret == FLB_HTTP_OK) {

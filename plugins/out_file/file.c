@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_metrics.h>
 #include <msgpack.h>
 
 #include <stdio.h>
@@ -121,6 +122,15 @@ static int cb_file_init(struct flb_output_instance *ins,
         }
         else if (!strcasecmp(tmp, "template")) {
             ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
+        }
+        else if (!strcasecmp(tmp, "out_file")) {
+            /* for explicit setting */
+            ctx->format = FLB_OUT_FILE_FMT_JSON;
+        }
+        else {
+            flb_plg_error(ctx->ins, "unknown format %s. abort.", tmp);
+            flb_free(ctx);
+            return -1;
         }
     }
 
@@ -318,9 +328,35 @@ static int plain_output(FILE *fp, msgpack_object *obj, size_t alloc_size)
     return 0;
 }
 
-static void cb_file_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
-                          struct flb_input_instance *i_ins,
+static void print_metrics_text(struct flb_output_instance *ins,
+                               FILE *fp,
+                               const void *data, size_t bytes)
+{
+    int ret;
+    size_t off = 0;
+    cmt_sds_t text;
+    struct cmt *cmt = NULL;
+
+    /* get cmetrics context */
+    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    if (ret != 0) {
+        flb_plg_error(ins, "could not process metrics payload");
+        return;
+    }
+
+    /* convert to text representation */
+    text = cmt_encode_text_create(cmt);
+
+    /* destroy cmt context */
+    cmt_destroy(cmt);
+
+    fprintf(fp, "%s", text);
+    cmt_encode_text_destroy(text);
+}
+
+static void cb_file_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
+                          struct flb_input_instance *ins,
                           void *out_context,
                           struct flb_config *config)
 {
@@ -334,12 +370,10 @@ static void cb_file_flush(const void *data, size_t bytes,
     size_t total;
     char out_file[PATH_MAX];
     char *buf;
-    char *tag_buf;
     long file_pos;
     msgpack_object *obj;
     struct flb_file_conf *ctx = out_context;
     struct flb_time tm;
-    (void) i_ins;
     (void) config;
 
     /* Set the right output file */
@@ -350,7 +384,7 @@ static void cb_file_flush(const void *data, size_t bytes,
         }
         else {
             snprintf(out_file, PATH_MAX - 1, "%s/%s",
-                     ctx->out_path, tag);
+                     ctx->out_path, event_chunk->tag);
         }
     }
     else {
@@ -358,7 +392,7 @@ static void cb_file_flush(const void *data, size_t bytes,
             snprintf(out_file, PATH_MAX - 1, "%s", ctx->out_file);
         }
         else {
-            snprintf(out_file, PATH_MAX - 1, "%s", tag);
+            snprintf(out_file, PATH_MAX - 1, "%s", event_chunk->tag);
         }
     }
 
@@ -376,14 +410,13 @@ static void cb_file_flush(const void *data, size_t bytes,
      */
     file_pos = ftell(fp);
 
-    tag_buf = flb_malloc(tag_len + 1);
-    if (!tag_buf) {
-        flb_errno();
+    /* Check if the event type is metrics, handle the payload differently */
+    if (event_chunk->type == FLB_INPUT_METRICS) {
+        print_metrics_text(ctx->ins, fp,
+                           event_chunk->data, event_chunk->size);
         fclose(fp);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        FLB_OUTPUT_RETURN(FLB_OK);
     }
-    memcpy(tag_buf, tag, tag_len);
-    tag_buf[tag_len] = '\0';
 
     /*
      * Msgpack output format used to create unit tests files, useful for
@@ -394,18 +427,17 @@ static void cb_file_flush(const void *data, size_t bytes,
         total = 0;
 
         do {
-            ret = fwrite((char *)data + off, 1, bytes - off, fp);
+            ret = fwrite((char *) event_chunk->data + off, 1,
+                         event_chunk->size - off, fp);
             if (ret < 0) {
                 flb_errno();
                 fclose(fp);
-                flb_free(tag_buf);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             total += ret;
-        } while (total < bytes);
+        } while (total < event_chunk->size);
 
         fclose(fp);
-        flb_free(tag_buf);
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
@@ -414,7 +446,9 @@ static void cb_file_flush(const void *data, size_t bytes,
      * of the map to use as a data point.
      */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         alloc_size = (off - last_off) + 128; /* JSON is larger than msgpack */
         last_off = off;
 
@@ -425,7 +459,7 @@ static void cb_file_flush(const void *data, size_t bytes,
             buf = flb_msgpack_to_json_str(alloc_size, obj);
             if (buf) {
                 fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                        tag_buf,
+                        event_chunk->tag,
                         tm.tm.tv_sec, tm.tm.tv_nsec,
                         buf);
                 flb_free(buf);
@@ -433,7 +467,6 @@ static void cb_file_flush(const void *data, size_t bytes,
             else {
                 msgpack_unpacked_destroy(&result);
                 fclose(fp);
-                flb_free(tag_buf);
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             break;
@@ -459,7 +492,6 @@ static void cb_file_flush(const void *data, size_t bytes,
         }
     }
 
-    flb_free(tag_buf);
     msgpack_unpacked_destroy(&result);
     fclose(fp);
 
@@ -535,6 +567,7 @@ struct flb_output_plugin out_file_plugin = {
     .cb_init      = cb_file_init,
     .cb_flush     = cb_file_flush,
     .cb_exit      = cb_file_exit,
-    .config_map   = config_map,
     .flags        = 0,
+    .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
+    .config_map   = config_map,
 };

@@ -1,13 +1,14 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(fluent-bit)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  8)
+set(FLB_VERSION_MINOR  9)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -43,6 +44,11 @@ if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__='\"$(subst ${CMAKE_SOURCE_DIR}/,,$(abspath $<))\"'")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
+endif()
+
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv7l")
+  set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -latomic")
+  set(CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS} -latomic")
 endif()
 
 include(GNUInstallDirs)
@@ -88,27 +94,31 @@ option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
-option(FLB_AWS                "Enable AWS support"            Yes)
+option(FLB_AWS                 "Enable AWS support"           Yes)
 option(FLB_STATIC_CONF         "Build binary using static configuration")
 option(FLB_STREAM_PROCESSOR    "Enable Stream Processor"      Yes)
 option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
+option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support" No)
+option(FLB_ARROW               "Build with Apache Arrow support"  No)
 
-# Metrics: Experimental Feature, disabled by default on 0.12 series
-# but enabled in the upcoming 0.13 release. Note that development
-# mode enable this feature.
-option(FLB_METRICS            "Enable metrics support"       No)
+# Native Metrics Support (cmetrics)
+option(FLB_METRICS            "Enable metrics support"       Yes)
 
 # Proxy Plugins
 option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 
-# Build-in Plugins
+# Built-in Custom Plugins
+option(FLB_CUSTOM_CALYPTIA    "Enable Calyptia Support"      Yes)
+
+# Built-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
 option(FLB_IN_DISK            "Enable Disk input plugin"            Yes)
 option(FLB_IN_DOCKER          "Enable Docker input plugin"          Yes)
 option(FLB_IN_DOCKER_EVENTS   "Enable Docker events input plugin"   Yes)
 option(FLB_IN_EXEC            "Enable Exec input plugin"            Yes)
+option(FLB_IN_FLUENTBIT_METRICS "Enable Fluent Bit metrics  plugin" Yes)
 option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
 option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
@@ -126,6 +136,7 @@ option(FLB_IN_HEAD            "Enable Head input plugin"            Yes)
 option(FLB_IN_PROC            "Enable Process input plugin"         Yes)
 option(FLB_IN_SYSTEMD         "Enable Systemd input plugin"         Yes)
 option(FLB_IN_DUMMY           "Enable Dummy input plugin"           Yes)
+option(FLB_IN_NGINX_EXPORTER_METRICS "Enable Nginx Metrics input plugin" Yes)
 option(FLB_IN_NETIF           "Enable NetworkIF input plugin"       Yes)
 option(FLB_IN_WINLOG          "Enable Windows Log input plugin"      No)
 option(FLB_IN_WINSTAT         "Enable Windows Stat input plugin"     No)
@@ -133,9 +144,11 @@ option(FLB_IN_COLLECTD        "Enable Collectd input plugin"        Yes)
 option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
 option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
 option(FLB_IN_EMITTER         "Enable emitter input plugin"         Yes)
+option(FLB_IN_NODE_EXPORTER_METRICS "Enable node exporter metrics input plugin" Yes)
 option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
 option(FLB_OUT_AZURE_BLOB     "Enable Azure output plugin"          Yes)
 option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
+option(FLB_OUT_CALYPTIA       "Enable Calyptia monitoring plugin"   Yes)
 option(FLB_OUT_COUNTER        "Enable Counter output plugin"        Yes)
 option(FLB_OUT_DATADOG        "Enable DataDog output plugin"        Yes)
 option(FLB_OUT_ES             "Enable Elasticsearch output plugin"  Yes)
@@ -152,6 +165,7 @@ option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
 option(FLB_OUT_TD             "Enable Treasure Data output plugin"  Yes)
 option(FLB_OUT_RETRY          "Enable Retry test output plugin"      No)
 option(FLB_OUT_PGSQL          "Enable PostgreSQL output plugin"      No)
+option(FLB_OUT_SKYWALKING     "Enable Apache SkyWalking output plugin" Yes)
 option(FLB_OUT_SLACK          "Enable Slack output plugin"          Yes)
 option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"         Yes)
 option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"    Yes)
@@ -168,10 +182,12 @@ option(FLB_OUT_CLOUDWATCH_LOGS "Enable AWS CloudWatch output plugin" Yes)
 option(FLB_OUT_KINESIS_FIREHOSE "Enable AWS Firehose output plugin" Yes)
 option(FLB_OUT_KINESIS_STREAMS "Enable AWS Kinesis output plugin" Yes)
 option(FLB_OUT_PROMETHEUS_EXPORTER "Enable Prometheus exporter plugin" Yes)
+option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin" Yes)
 option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
 option(FLB_OUT_WEBSOCKET      "Enable Websocket output plugin"      Yes)
 option(FLB_FILTER_ALTER_SIZE  "Enable alter_size filter"            Yes)
 option(FLB_FILTER_AWS         "Enable aws filter"                   Yes)
+option(FLB_FILTER_CHECKLIST   "Enable checklist filter"             Yes)
 option(FLB_FILTER_EXPECT      "Enable expect filter"                Yes)
 option(FLB_FILTER_GREP        "Enable grep filter"                  Yes)
 option(FLB_FILTER_MODIFY      "Enable modify filter"                Yes)
@@ -181,17 +197,24 @@ option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"            Yes)
 option(FLB_FILTER_REWRITE_TAG "Enable tag rewrite filter"           Yes)
 option(FLB_FILTER_THROTTLE    "Enable throttle filter"              Yes)
 option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
+option(FLB_FILTER_TYPE_CONVERTER "Enable type converter filter"     Yes)
+option(FLB_FILTER_MULTILINE   "Enable multiline filter"             Yes)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
+option(FLB_FILTER_LUA_USE_MPACK  "Enable mpack on the lua filter"   Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
+
+if(FLB_IN_STORAGE_BACKLOG)
+  FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
+endif()
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
 
 # Run ldconfig on package post-install
-option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" Yes)
+option(FLB_RUN_LDCONFIG "Enable execution of ldconfig after installation" No)
 
 # Enable all features
 if(FLB_ALL)
@@ -211,6 +234,7 @@ if(FLB_ALL)
   set(FLB_IN_DISK      1)
   set(FLB_IN_DUMMY     1)
   set(FLB_IN_NETIF     1)
+  set(FLB_IN_NGINX_STATUS 1)
   set(FLB_IN_EXEC      1)
 
   # Output plugins
@@ -303,7 +327,9 @@ if(FLB_COVERAGE)
 endif()
 
 # Enable Debug symbols if specified
-if(FLB_DEBUG)
+if(MSVC)
+  set(CMAKE_BUILD_TYPE None)  # Avoid flag conflicts (See CMakeList.txt:L18)
+elseif(FLB_DEBUG)
   set(CMAKE_BUILD_TYPE "Debug")
 elseif(FLB_RELEASE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -361,6 +387,7 @@ option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
 
 # MPack
+add_definitions(-DMPACK_EXTENSIONS=1)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
@@ -389,6 +416,9 @@ FLB_OPTION(BUILD_SHARED_LIBS "Build shared libs" OFF)
 set(XXHASH_BUILD_ENABLE_INLINE_API OFF)
 set(XXHASH_BUILD_XXHSUM OFF)
 add_subdirectory(${FLB_PATH_LIB_XXHASH}/cmake_unofficial EXCLUDE_FROM_ALL)
+
+# snappy
+add_subdirectory(${FLB_PATH_LIB_SNAPPY} EXCLUDE_FROM_ALL)
 
 # CMetrics
 add_subdirectory(${FLB_PATH_LIB_CMETRICS} EXCLUDE_FROM_ALL)
@@ -459,6 +489,22 @@ endif()
 # AWS
 if (FLB_AWS)
   FLB_DEFINITION(FLB_HAVE_AWS)
+
+  # Support for credential_process in the AWS config file is currently Linux-only.
+  # The current implementation might work for other Unix systems, but would require
+  # further testing to confirm.
+  # Spawning a sub-process in Windows is very different and will require its own
+  # implementation.
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    FLB_OPTION(FLB_HAVE_AWS_CREDENTIAL_PROCESS ON)
+    FLB_DEFINITION(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+  else()
+    FLB_OPTION(FLB_HAVE_AWS_CREDENTIAL_PROCESS OFF)
+  endif()
+endif()
+
+if (FLB_AWS_ERROR_REPORTER)
+  FLB_DEFINITION(FLB_HAVE_AWS_ERROR_REPORTER)
 endif()
 
 # Signv4
@@ -584,6 +630,21 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# check attribute alloc_size
+check_c_source_compiles("
+#include <stdlib.h>
+__attribute__ ((alloc_size(1, 2))) static void* f(size_t a, size_t b) {
+    return calloc(a, b);
+}
+int main() {
+    f(1, 2);
+    return 0;
+}
+" FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+if(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+  FLB_DEFINITION(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
@@ -648,10 +709,17 @@ endif()
 # =========================================
 if(FLB_BACKTRACE)
   FLB_DEFINITION(FLB_HAVE_LIBBACKTRACE)
+  if (CMAKE_OSX_SYSROOT)
+    # From macOS Mojave, /usr/include does not store C SDK headers.
+    # For libbacktrace building on macOS, we have to tell C headers where they are located.
+    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER} -isysroot ${CMAKE_OSX_SYSROOT}")
+  else()
+    set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
+  endif()
   ExternalProject_Add(backtrace
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
+    BUILD_COMMAND $(MAKE) CC=${DEPS_C_COMPILER}
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
@@ -691,6 +759,16 @@ endif()
 find_package(PostgreSQL)
 if(FLB_OUT_PGSQL AND (NOT PostgreSQL_FOUND))
    FLB_OPTION(FLB_OUT_PGSQL OFF)
+endif()
+
+# Arrow GLib
+# ==========
+find_package(PkgConfig)
+pkg_check_modules(ARROW_GLIB QUIET arrow-glib)
+if(FLB_ARROW AND ARROW_GLIB_FOUND)
+  FLB_DEFINITION(FLB_HAVE_ARROW)
+else()
+  set(FLB_ARROW OFF)
 endif()
 
 # Pthread Local Storage
@@ -736,6 +814,20 @@ if(FLB_INOTIFY)
   endif()
 endif()
 
+include(CheckSymbolExists)
+
+# Check for getentropy(3)
+check_symbol_exists(getentropy "unistd.h" HAVE_GETENTROPY)
+if(HAVE_GETENTROPY)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY)
+endif()
+
+# getentropy(3) is in sys/random.h on mac
+check_symbol_exists(getentropy "sys/random.h" HAVE_GETENTROPY_SYS_RANDOM)
+if(HAVE_GETENTROPY_SYS_RANDOM)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY_SYS_RANDOM)
+endif()
+
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h.in"
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_info.h"
@@ -755,16 +847,9 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(FLB_INSTALL_INCLUDEDIR "include")
 else()
   set(FLB_INSTALL_BINDIR ${CMAKE_INSTALL_FULL_BINDIR})
-  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+  set(FLB_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${FLB_OUT_NAME}")
   set(FLB_INSTALL_CONFDIR "${CMAKE_INSTALL_SYSCONFDIR}/${FLB_OUT_NAME}/")
   set(FLB_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_PREFIX}/include")
-  if(${CMAKE_INSTALL_PREFIX} MATCHES "/usr/local")
-    set(FLB_INSTALL_SYSTEMDUNITDIR "/lib/systemd/system/")
-    set(FLB_INSTALL_UPSTARTUNITDIR "/etc/init")
-  else()
-    set(FLB_INSTALL_SYSTEMDUNITDIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/")
-    set(FLB_INSTALL_UPSTARTUNITDIR "${CMAKE_INSTALL_PREFIX}/etc/init")
-  endif()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
@@ -795,10 +880,16 @@ endif()
 # ============================
 
 set(CPACK_PACKAGE_VERSION ${FLB_VERSION_STR})
-set(CPACK_PACKAGE_NAME "td-agent-bit")
+
+if(FLB_TD)
+  set(CPACK_PACKAGE_NAME "td-agent-bit")
+else()
+  set(CPACK_PACKAGE_NAME "fluent-bit")
+endif()
+
 set(CPACK_PACKAGE_RELEASE 1)
-set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@treasure-data.com>")
-set(CPACK_PACKAGE_VENDOR "Treasure Data")
+set(CPACK_PACKAGE_CONTACT "Eduardo Silva <eduardo@calyptia.com>")
+set(CPACK_PACKAGE_VENDOR "Calyptia Inc.")
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/")
 
@@ -865,7 +956,7 @@ set(CPACK_RPM_PACKAGE_RELEASE ${CPACK_PACKAGE_RELEASE})
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/cpack/description")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast data collector for Linux")
 set(CPACK_RPM_SPEC_MORE_DEFINE "%define ignore \#")
-set(CPACK_RPM_USER_FILELIST
+set(CPACK_RPM_RUNTIME_USER_FILELIST
   "%config(noreplace) /etc/${FLB_OUT_NAME}/${FLB_OUT_NAME}.conf"
   "%config(noreplace) /etc/${FLB_OUT_NAME}/parsers.conf"
   "%config(noreplace) /etc/${FLB_OUT_NAME}/plugins.conf"
@@ -891,7 +982,11 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 # CPack: Windows System
 if(CPACK_GENERATOR MATCHES "NSIS")
   set(CPACK_MONOLITHIC_INSTALL 1)
-  set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+  if(FLB_TD)
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
+  else()
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
+  endif()
 endif()
 
 include(CPack)

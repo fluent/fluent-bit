@@ -243,6 +243,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
     ctx->firehose_client->has_auth = FLB_TRUE;
     ctx->firehose_client->provider = ctx->aws_provider;
     ctx->firehose_client->region = (char *) ctx->region;
+    ctx->firehose_client->retry_requests = ctx->retry_requests;
     ctx->firehose_client->service = "firehose";
     ctx->firehose_client->port = 443;
     ctx->firehose_client->flags = 0;
@@ -305,11 +306,11 @@ struct flush *new_flush_buffer()
     return buf;
 }
 
-static void cb_firehose_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
-                                struct flb_input_instance *i_ins,
-                                void *out_context,
-                                struct flb_config *config)
+static void cb_firehose_flush(struct flb_event_chunk *event_chunk,
+                              struct flb_output_flush *out_flush,
+                              struct flb_input_instance *i_ins,
+                              void *out_context,
+                              struct flb_config *config)
 {
     struct flb_firehose *ctx = out_context;
     int ret;
@@ -323,14 +324,15 @@ static void cb_firehose_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = process_and_send_records(ctx, buf, data, bytes);
+    ret = process_and_send_records(ctx, buf,
+                                   event_chunk->data, event_chunk->size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records");
         flush_destroy(buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_info(ctx->ins, "Processed %d records, sent %d to %s",
+    flb_plg_debug(ctx->ins, "Processed %d records, sent %d to %s",
                  buf->records_processed, buf->records_sent, ctx->delivery_stream);
     flush_destroy(buf);
 
@@ -434,6 +436,16 @@ static struct flb_config_map config_map[] = {
      "that key will be sent to Firehose. For example, if you are using "
      "the Fluentd Docker log driver, you can specify `log_key log` and only "
      "the log message will be sent to Firehose."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
+     0, FLB_TRUE, offsetof(struct flb_firehose, retry_requests),
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     /* EOF */

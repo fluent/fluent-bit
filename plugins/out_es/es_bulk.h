@@ -25,10 +25,12 @@
 
 #define ES_BULK_CHUNK      4096  /* Size of buffer chunks    */
 #define ES_BULK_HEADER      165  /* ES Bulk API prefix line  */
-#define ES_BULK_INDEX_FMT    "{\"create\":{\"_index\":\"%s\",\"_type\":\"%s\"}}\n"
-#define ES_BULK_INDEX_FMT_ID "{\"create\":{\"_index\":\"%s\",\"_type\":\"%s\",\"_id\":\"%s\"}}\n"
-#define ES_BULK_INDEX_FMT_WITHOUT_TYPE  "{\"create\":{\"_index\":\"%s\"}}\n"
-#define ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE "{\"create\":{\"_index\":\"%s\",\"_id\":\"%s\"}}\n"
+#define ES_BULK_INDEX_FMT    "{\"%s\":{\"_index\":\"%s\",\"_type\":\"%s\"}}\n"
+#define ES_BULK_INDEX_FMT_ID "{\"%s\":{\"_index\":\"%s\",\"_type\":\"%s\",\"_id\":\"%s\"}}\n"
+#define ES_BULK_INDEX_FMT_WITHOUT_TYPE  "{\"%s\":{\"_index\":\"%s\"}}\n"
+#define ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE "{\"%s\":{\"_index\":\"%s\",\"_id\":\"%s\"}}\n"
+#define ES_BULK_UPDATE_OP_BODY "{\"doc\":%s}"
+#define ES_BULK_UPSERT_OP_BODY "{\"doc_as_upsert\":true,\"doc\":%s}"
 
 struct es_bulk {
     char *ptr;
@@ -36,9 +38,10 @@ struct es_bulk {
     uint32_t size;
 };
 
-struct es_bulk *es_bulk_create();
+struct es_bulk *es_bulk_create(size_t estimated_size);
 int es_bulk_append(struct es_bulk *bulk, char *index, int i_len,
-                   char *json, size_t j_len);
+                   char *json, size_t j_len,
+                   size_t whole_size, size_t curr_size);
 void es_bulk_destroy(struct es_bulk *bulk);
 
 #endif

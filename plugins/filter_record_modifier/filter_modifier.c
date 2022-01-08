@@ -249,6 +249,7 @@ static int make_bool_map(struct record_modifier_ctx *ctx, msgpack_object *map,
     return ret;
 }
 
+#define BOOL_MAP_LIMIT 65535
 static int cb_modifier_filter(const void *data, size_t bytes,
                               const char *tag, int tag_len,
                               void **out_buf, size_t *out_size,
@@ -262,7 +263,7 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     int i;
     int removed_map_num  = 0;
     int map_num          = 0;
-    bool_map_t bool_map[128];
+    bool_map_t *bool_map = NULL;
     (void) f_ins;
     (void) config;
     struct flb_time tm;
@@ -284,6 +285,11 @@ static int cb_modifier_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         map_num = 0;
         removed_map_num = 0;
+        if (bool_map != NULL) {
+            flb_free(bool_map);
+            bool_map = NULL;
+        }
+
         if (result.data.type != MSGPACK_OBJECT_ARRAY) {
             continue;
         }
@@ -293,6 +299,17 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         /* grep keys */
         if (obj->type == MSGPACK_OBJECT_MAP) {
             map_num = obj->via.map.size;
+            if (map_num > BOOL_MAP_LIMIT) {
+                flb_plg_error(ctx->ins, "The number of elements exceeds limit %d",
+                              BOOL_MAP_LIMIT);
+                return -1;
+            }
+            /* allocate map_num + guard byte */
+            bool_map = flb_calloc(map_num+1, sizeof(bool_map_t));
+            if (bool_map == NULL) {
+                flb_errno();
+                return -1;
+            }
             removed_map_num = make_bool_map(ctx, obj,
                                             bool_map, obj->via.map.size);
         }
@@ -320,6 +337,8 @@ static int cb_modifier_filter(const void *data, size_t bytes,
                 msgpack_pack_object(&tmp_pck, (kv+i)->val);
             }
         }
+        flb_free(bool_map);
+        bool_map = NULL;
 
         /* append record */
         if (ctx->records_num > 0) {
@@ -336,6 +355,9 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         }
     }
     msgpack_unpacked_destroy(&result);
+    if (bool_map != NULL) {
+        flb_free(bool_map);
+    }
 
     if (is_modified != FLB_TRUE) {
         /* Destroy the buffer to avoid more overhead */

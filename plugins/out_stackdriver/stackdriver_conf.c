@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_sds.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -168,11 +169,13 @@ static int read_credentials_file(const char *creds, struct flb_stackdriver *ctx)
 }
 
 struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *ins,
-                                              struct flb_config *config)
+                                                    struct flb_config *config)
 {
     int ret;
     const char *tmp;
     struct flb_stackdriver *ctx;
+    flb_sds_t http_request_key;
+    size_t http_request_key_size;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -319,6 +322,23 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
     }
 
+    tmp = flb_output_get_property("http_request_key", ins);
+    if (tmp) {
+        http_request_key = flb_sds_create(tmp);
+        http_request_key_size = flb_sds_len(http_request_key);
+        if (http_request_key_size < INT_MAX) {
+            ctx->http_request_key = http_request_key;
+            ctx->http_request_key_size = (int)http_request_key_size;
+        } 
+        else {
+            flb_plg_error(ctx->ins, "http_request_key is too long");
+        }
+    }
+    else {
+        ctx->http_request_key = flb_sds_create(HTTPREQUEST_FIELD_IN_JSON);
+        ctx->http_request_key_size = HTTP_REQUEST_KEY_SIZE;
+    }
+
     if (flb_sds_cmp(ctx->resource, "k8s_container",
                     flb_sds_len(ctx->resource)) == 0 ||
         flb_sds_cmp(ctx->resource, "k8s_node",
@@ -435,6 +455,31 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->custom_k8s_regex = flb_sds_create(tmp);
     }
 
+    /* Register metrics */
+#ifdef FLB_HAVE_METRICS
+    ctx->cmt_successful_requests = cmt_counter_create(ins->cmt,
+                                                      "fluentbit",
+                                                      "stackdriver",
+                                                      "successful_requests",
+                                                      "Total number of successful "
+                                                      "requests.",
+                                                      1, (char *[]) {"name"});
+
+    ctx->cmt_failed_requests = cmt_counter_create(ins->cmt,
+                                                  "fluentbit",
+                                                  "stackdriver",
+                                                  "failed_requests",
+                                                  "Total number of failed "
+                                                  "requests.",
+                                                  1, (char *[]) {"name"});
+
+    /* OLD api */
+    flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
+                    "stackdriver_successful_requests", ctx->ins->metrics);
+    flb_metrics_add(FLB_STACKDRIVER_FAILED_REQUESTS,
+                    "stackdriver_failed_requests", ctx->ins->metrics);
+#endif
+
     return ctx;
 }
 
@@ -481,6 +526,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->trace_key);
     flb_sds_destroy(ctx->log_name_key);
+    flb_sds_destroy(ctx->http_request_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
     flb_sds_destroy(ctx->custom_k8s_regex);
@@ -509,7 +555,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     if (ctx->regex) {
         flb_regex_destroy(ctx->regex);
     }
-    
+
     flb_free(ctx);
 
     return 0;

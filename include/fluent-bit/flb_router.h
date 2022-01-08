@@ -22,12 +22,33 @@
 #define FLB_ROUTER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 
 struct flb_router_path {
     struct flb_output_instance *ins;
     struct mk_list _head;
 };
+
+static inline int flb_router_match_type(int in_event_type,
+                                        struct flb_output_instance *ins)
+{
+    if (in_event_type == FLB_INPUT_LOGS &&
+        !(ins->event_type & FLB_OUTPUT_LOGS)) {
+        return FLB_FALSE;
+    }
+    else if (in_event_type == FLB_INPUT_METRICS &&
+             !(ins->event_type & FLB_OUTPUT_METRICS)) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+int flb_router_connect(struct flb_input_instance *in,
+                       struct flb_output_instance *out);
+int flb_router_connect_direct(struct flb_input_instance *in,
+                              struct flb_output_instance *out);
 
 int flb_router_match(const char *tag, int tag_len,
                      const char *match, void *match_regex);

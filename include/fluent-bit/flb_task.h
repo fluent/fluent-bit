@@ -73,23 +73,20 @@ struct flb_task_retry {
 
 /* A task takes a buffer and sync input and output instances to handle it */
 struct flb_task {
-    int id;                             /* task id                   */
-    uint64_t ref_id;                    /* external reference id     */
-    uint8_t status;                     /* new task or running ?     */
-    int users;                          /* number of users (threads) */
-    char *tag;                          /* record tag                */
-    int tag_len;                        /* tag length                */
-    const char *buf;                    /* buffer                    */
-    size_t size;                        /* buffer data size          */
-    void *ic;                           /* input chunk */
+    int id;                              /* task id                   */
+    uint64_t ref_id;                     /* external reference id     */
+    uint8_t status;                      /* new task or running ?     */
+    int users;                           /* number of users (threads) */
+    struct flb_event_chunk *event_chunk; /* event chunk context       */
+    void *ic;                            /* input chunk context       */
 #ifdef FLB_HAVE_METRICS
-    int records;                        /* numbers of records in 'buf'   */
+    int records;                         /* numbers of records in 'buf'   */
 #endif
-    struct mk_list routes;              /* routes to dispatch data       */
-    struct mk_list retries;             /* queued in-memory retries      */
-    struct mk_list _head;               /* link to input_instance        */
-    struct flb_input_instance *i_ins;   /* input instance                */
-    struct flb_config *config;          /* parent flb config             */
+    struct mk_list routes;               /* routes to dispatch data       */
+    struct mk_list retries;              /* queued in-memory retries      */
+    struct mk_list _head;                /* link to input_instance        */
+    struct flb_input_instance *i_ins;    /* input instance                */
+    struct flb_config *config;           /* parent flb config             */
 };
 
 int flb_task_running_count(struct flb_config *config);
@@ -99,7 +96,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
-                                 void *ic,
+                                 struct flb_input_chunk *ic,
                                  const char *tag_buf, int tag_len,
                                  struct flb_config *config,
                                  int *err);

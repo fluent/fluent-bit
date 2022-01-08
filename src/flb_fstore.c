@@ -169,6 +169,28 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     return fsf;
 }
 
+/* Lookup file on stream by using it name */
+struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
+                                            struct flb_fstore_stream *fs_stream,
+                                            char *name, size_t size)
+{
+    struct mk_list *head;
+    struct flb_fstore_file *fsf;
+
+    mk_list_foreach(head, &fs_stream->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        if (flb_sds_len(fsf->name) != size) {
+            continue;
+        }
+
+        if (strncmp(fsf->name, name, size) == 0) {
+            return fsf;
+        }
+    }
+
+    return NULL;
+}
+
 /*
  * Set a file to inactive mode. Inactive means just to remove the reference
  * from the list.

@@ -193,10 +193,10 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     struct mk_list *head;
     struct flb_task_retry *retry;
     struct flb_output_instance *o_ins;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
 
-    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(data);
-    o_ins = out_coro->o_ins;
+    out_flush = (struct flb_output_flush *) FLB_CORO_DATA(data);
+    o_ins = out_flush->o_ins;
 
     /* Delete 'retries' only associated with the output instance */
     mk_list_foreach(head, &task->retries) {
@@ -337,16 +337,20 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                  const char *buf,
                                  size_t size,
                                  struct flb_input_instance *i_ins,
-                                 void *ic,
+                                 struct flb_input_chunk *ic,
                                  const char *tag_buf, int tag_len,
                                  struct flb_config *config,
                                  int *err)
 {
     int count = 0;
+    int total_events = 0;
     struct flb_task *task;
+    struct flb_event_chunk *evc;
     struct flb_task_route *route;
+    struct flb_router_path *route_path;
     struct flb_output_instance *o_ins;
     struct flb_input_chunk *task_ic;
+    struct mk_list *i_head;
     struct mk_list *o_head;
 
     /* No error status */
@@ -359,25 +363,26 @@ struct flb_task *flb_task_create(uint64_t ref_id,
         return NULL;
     }
 
-    /* create a copy of the tag */
-    task->tag = flb_malloc(tag_len + 1);
-    if (!task->tag) {
-        flb_errno();
+#ifdef FLB_HAVE_METRICS
+    total_events = ((struct flb_input_chunk *) ic)->total_records;
+#endif
+
+    /* event chunk */
+    evc = flb_event_chunk_create(ic->event_type,
+                                 total_events,
+                                 (char *) tag_buf, tag_len,
+                                 (char *) buf, size);
+    if (!evc) {
         flb_free(task);
         *err = FLB_TRUE;
         return NULL;
     }
-    memcpy(task->tag, tag_buf, tag_len);
-    task->tag[tag_len] = '\0';
-    task->tag_len = tag_len;
-
+    task->event_chunk = evc;
     task_ic = (struct flb_input_chunk *) ic;
     task_ic->task = task;
 
     /* Keep track of origins */
     task->ref_id = ref_id;
-    task->buf    = buf;
-    task->size   = size;
     task->i_ins  = i_ins;
     task->ic     = ic;
     mk_list_add(&task->_head, &i_ins->tasks);
@@ -386,10 +391,36 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     task->records = ((struct flb_input_chunk *) ic)->total_records;
 #endif
 
+    /* Direct connects betweek input <> outputs (API based) */
+    if (mk_list_size(&i_ins->routes_direct) > 0) {
+        mk_list_foreach(i_head, &i_ins->routes_direct) {
+            route_path = mk_list_entry(i_head, struct flb_router_path, _head);
+            o_ins = route_path->ins;
+
+            route = flb_malloc(sizeof(struct flb_task_route));
+            if (!route) {
+                flb_errno();
+                task->event_chunk->data = NULL;
+                flb_task_destroy(task, FLB_TRUE);
+                return NULL;
+            }
+
+            route->out = o_ins;
+            mk_list_add(&route->_head, &task->routes);
+        }
+        flb_debug("[task] created direct task=%p id=%i OK", task, task->id);
+        return task;
+    }
+
     /* Find matching routes for the incoming task */
     mk_list_foreach(o_head, &config->outputs) {
         o_ins = mk_list_entry(o_head,
                               struct flb_output_instance, _head);
+
+        /* skip output plugins that don't handle proper event types */
+        if (!flb_router_match_type(ic->event_type, o_ins)) {
+            continue;
+        }
 
         if (flb_routes_mask_get_bit(task_ic->routes_mask, o_ins->id) != 0) {
             route = flb_malloc(sizeof(struct flb_task_route));
@@ -408,7 +439,7 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     if (count == 0) {
         flb_debug("[task] created task=%p id=%i without routes, dropping.",
                   task, task->id);
-        task->buf = NULL;
+        task->event_chunk->data = NULL;
         flb_task_destroy(task, FLB_TRUE);
         return NULL;
     }
@@ -449,6 +480,9 @@ void flb_task_destroy(struct flb_task *task, int del)
     }
 
     flb_input_chunk_set_limits(task->i_ins);
-    flb_free(task->tag);
+
+    if (task->event_chunk) {
+        flb_event_chunk_destroy(task->event_chunk);
+    }
     flb_free(task);
 }

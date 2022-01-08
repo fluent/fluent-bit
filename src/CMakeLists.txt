@@ -18,8 +18,10 @@ set(src
   flb_pipe.c
   flb_meta.c
   flb_kernel.c
+  flb_custom.c
   flb_input.c
   flb_input_chunk.c
+  flb_input_metric.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -48,12 +50,15 @@ set(src
   flb_random.c
   flb_plugin.c
   flb_gzip.c
+  flb_snappy.c
   flb_http_client.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
   flb_thread_pool.c
   flb_routes_mask.c
+  flb_typecast.c
+  flb_event.c
   )
 
 # Multiline subsystem
@@ -137,18 +142,34 @@ endif()
 if(FLB_AWS)
   set(src
     ${src}
+    "aws/flb_aws_credentials_log.h"
     "aws/flb_aws_util.c"
     "aws/flb_aws_credentials.c"
     "aws/flb_aws_credentials_sts.c"
     "aws/flb_aws_credentials_ec2.c"
+    "aws/flb_aws_imds.c"
     "aws/flb_aws_credentials_http.c"
     "aws/flb_aws_credentials_profile.c"
+    )
+  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
+    set(src
+      ${src}
+      "aws/flb_aws_credentials_process.c"
+      )
+  endif()
+endif()
+
+if (FLB_AWS_ERROR_REPORTER)
+  set(src
+    ${src}
+    "aws/flb_aws_error_reporter.c"
     )
 endif()
 
 if(FLB_LUAJIT)
   set(src
     ${src}
+    "flb_lua.c"
     "flb_luajit.c"
     )
 endif()
@@ -292,11 +313,13 @@ set(FLB_DEPS
   chunkio-static
   miniz
   xxhash
+  cmetrics-static
   ${FLB_PLUGINS}
   ${FLB_PROXY_PLUGINS}
   ${extra_libs}
   mbedtls
   c-ares
+  snappy-c
   )
 
 if(OPENSSL_FOUND)
@@ -328,6 +351,12 @@ if(FLB_STREAM_PROCESSOR)
     ${FLB_DEPS}
     flb-sp
     )
+endif()
+
+if (MSVC)
+set(flb_rc_files
+  ${CMAKE_CURRENT_BINARY_DIR}/version.rc
+  )
 endif()
 
 # Shared Library
@@ -378,7 +407,7 @@ endif()
 if(FLB_BINARY)
   find_package (Threads)
   if (FLB_SYSTEM_WINDOWS)
-    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c)
+    add_executable(fluent-bit-bin fluent-bit.c flb_dump.c win32/winsvc.c ${flb_rc_files})
   else()
     add_executable(fluent-bit-bin fluent-bit.c flb_dump.c)
   endif()
@@ -425,7 +454,7 @@ if(FLB_BINARY)
       "${PROJECT_SOURCE_DIR}/init/systemd.in"
       ${FLB_SYSTEMD_SCRIPT}
       )
-    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION ${FLB_INSTALL_SYSTEMDUNITDIR})
+    install(FILES ${FLB_SYSTEMD_SCRIPT} COMPONENT binary DESTINATION /lib/systemd/system)
     install(DIRECTORY DESTINATION ${FLB_INSTALL_CONFDIR} COMPONENT binary)
   elseif(IS_DIRECTORY /usr/share/upstart)
     set(FLB_UPSTART_SCRIPT "${PROJECT_SOURCE_DIR}/init/${FLB_OUT_NAME}.conf")
@@ -433,7 +462,7 @@ if(FLB_BINARY)
       "${PROJECT_SOURCE_DIR}/init/upstart.in"
       ${FLB_UPSTART_SCRIPT}
       )
-    install(FILES ${FLB_UPSTART_SCRIPT} COMPONENT binary DESTINATION ${FLB_INSTALL_UPSTARTUNITDIR})
+    install(FILES ${FLB_UPSTART_SCRIPT} COMPONENT binary DESTINATION /etc/init)
     install(DIRECTORY DESTINATION COMPONENT binary ${FLB_INSTALL_CONFDIR})
   else()
     # FIXME: should we support Sysv init script ?

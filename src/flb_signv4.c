@@ -414,24 +414,27 @@ static flb_sds_t url_params_format(char *params)
     for (i = 0; i < items; i++) {
         kv = (struct flb_kv *) arr[i];
         if (i + 1 < items) {
-            tmp = flb_sds_printf(&buf, "%s=%s&",
-                                 kv->key, kv->val);
-        }
-        else if (kv->val == NULL) {
-            /*
-             * special/edge case- last query param has a null value
-             * This happens in the S3 CreateMultipartUpload request
-             */
-            tmp = flb_sds_printf(&buf, "%s=",
-                                 kv->key);
-        }
+            if (kv->val == NULL) {
+                tmp = flb_sds_printf(&buf, "%s=&",
+                                     kv->key);
+            }
+            else {
+                tmp = flb_sds_printf(&buf, "%s=%s&",
+                                     kv->key, kv->val);
+            }
+        } 
         else {
-            tmp = flb_sds_printf(&buf, "%s=%s",
-                                 kv->key, kv->val);
+            if (kv->val == NULL) {
+                tmp = flb_sds_printf(&buf, "%s=",
+                                     kv->key);
+            }
+            else {
+                tmp = flb_sds_printf(&buf, "%s=%s",
+                                     kv->key, kv->val);
+            }
         }
         if (!tmp) {
             flb_error("[signv4] error allocating value");
-
         }
         buf = tmp;
     }

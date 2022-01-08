@@ -58,6 +58,9 @@ struct flb_kafka_rest {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+    /* Avro http header*/
+    int avro_http_header;
 };
 
 

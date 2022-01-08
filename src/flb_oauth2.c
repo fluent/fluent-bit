@@ -398,6 +398,7 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
             flb_info("[oauth2] access token from '%s:%s' retrieved",
                      ctx->host, ctx->port);
             flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
             ctx->issued = time(NULL);
             ctx->expires = ctx->issued + ctx->expires_in;
             return ctx->access_token;
@@ -405,6 +406,8 @@ char *flb_oauth2_token_get(struct flb_oauth2 *ctx)
     }
 
     flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
     return NULL;
 }
 

@@ -40,6 +40,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_version.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
@@ -64,6 +65,7 @@ extern void win32_started(void);
 
 flb_ctx_t *ctx;
 struct flb_config *config;
+volatile sig_atomic_t exit_signal = 0;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
 struct flb_stacktrace flb_st;
@@ -72,9 +74,10 @@ struct flb_stacktrace flb_st;
 #define FLB_HELP_TEXT   0
 #define FLB_HELP_JSON   1
 
-#define PLUGIN_INPUT    0
-#define PLUGIN_OUTPUT   1
-#define PLUGIN_FILTER   2
+#define PLUGIN_CUSTOM   0
+#define PLUGIN_INPUT    1
+#define PLUGIN_OUTPUT   2
+#define PLUGIN_FILTER   3
 
 #define print_opt(a, b)      printf("  %-24s%s\n", a, b)
 #define print_opt_i(a, b, c) printf("  %-24s%s (default: %i)\n", a, b, c)
@@ -172,7 +175,7 @@ static void flb_help(int rc, struct flb_config *config)
     printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
     mk_list_foreach(head, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (strcmp(out->name, "lib") == 0) {
+        if (strcmp(out->name, "lib") == 0 || (out->flags & FLB_OUTPUT_PRIVATE)) {
             /* useless..., just skip it. */
             continue;
         }
@@ -461,7 +464,12 @@ static void flb_help_plugin(int rc, int format,
     write (STDERR_FILENO, #X ")\n", sizeof(#X ")\n")-1); \
     break;
 
-static void flb_signal_handler(int signal)
+static void flb_signal_handler_break_loop(int signal)
+{
+    exit_signal = signal;
+}
+
+static void flb_signal_exit(int signal)
 {
     int len;
     char ts[32];
@@ -494,8 +502,10 @@ static void flb_signal_handler(int signal)
     };
 
     /* Signal handlers */
+    /* SIGSEGV is not handled here to preserve stacktrace */
     switch (signal) {
     case SIGINT:
+    case SIGTERM:
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGQUIT:
     case SIGHUP:
@@ -503,35 +513,101 @@ static void flb_signal_handler(int signal)
         flb_stop(ctx);
         flb_destroy(ctx);
         _exit(EXIT_SUCCESS);
-    case SIGTERM:
-        flb_stop(ctx);
-        flb_destroy(ctx);
-        _exit(EXIT_SUCCESS);
-     case SIGSEGV:
+    default:
+        break;
+    }
+}
+
+static void flb_signal_handler(int signal)
+{
+    int len;
+    char ts[32];
+    char s[] = "[engine] caught signal (";
+    time_t now;
+    struct tm *cur;
+
+    now = time(NULL);
+    cur = localtime(&now);
+    len = snprintf(ts, sizeof(ts) - 1, "[%i/%02i/%02i %02i:%02i:%02i] ",
+                   cur->tm_year + 1900,
+                   cur->tm_mon + 1,
+                   cur->tm_mday,
+                   cur->tm_hour,
+                   cur->tm_min,
+                   cur->tm_sec);
+
+    /* write signal number */
+    write(STDERR_FILENO, ts, len);
+    write(STDERR_FILENO, s, sizeof(s) - 1);
+    switch (signal) {
+        flb_print_signal(SIGINT);
+#ifndef FLB_SYSTEM_WINDOWS
+        flb_print_signal(SIGQUIT);
+        flb_print_signal(SIGHUP);
+        flb_print_signal(SIGCONT);
+#endif
+        flb_print_signal(SIGTERM);
+        flb_print_signal(SIGSEGV);
+        flb_print_signal(SIGFPE);
+    };
+
+    switch(signal) {
+    case SIGSEGV:
+    case SIGFPE:
 #ifdef FLB_HAVE_LIBBACKTRACE
+        /* To preserve stacktrace */
         flb_stacktrace_print(&flb_st);
 #endif
         abort();
 #ifndef FLB_SYSTEM_WINDOWS
     case SIGCONT:
         flb_dump(ctx->config);
-        break;
 #endif
-    default:
-        break;
     }
 }
 
 static void flb_signal_init()
 {
-    signal(SIGINT,  &flb_signal_handler);
+    signal(SIGINT,  &flb_signal_handler_break_loop);
 #ifndef FLB_SYSTEM_WINDOWS
-    signal(SIGQUIT, &flb_signal_handler);
-    signal(SIGHUP,  &flb_signal_handler);
+    signal(SIGQUIT, &flb_signal_handler_break_loop);
+    signal(SIGHUP,  &flb_signal_handler_break_loop);
     signal(SIGCONT, &flb_signal_handler);
 #endif
-    signal(SIGTERM, &flb_signal_handler);
+    signal(SIGTERM, &flb_signal_handler_break_loop);
     signal(SIGSEGV, &flb_signal_handler);
+    signal(SIGFPE,  &flb_signal_handler);
+}
+
+static int custom_set_property(struct flb_custom_instance *in, char *kv)
+{
+    int ret;
+    int len;
+    int sep;
+    char *key;
+    char *value;
+
+    len = strlen(kv);
+    sep = mk_string_char_search(kv, '=', len);
+    if (sep == -1) {
+        return -1;
+    }
+
+    key = mk_string_copy_substr(kv, 0, sep);
+    value = kv + sep + 1;
+
+    if (!key) {
+        return -1;
+    }
+
+    ret = flb_custom_set_property(in, key, value);
+    if (ret == -1) {
+        fprintf(stderr, "[error] setting up '%s' plugin property '%s'\n",
+                in->p->name, key);
+    }
+
+    mk_mem_free(key);
+    return ret;
 }
 
 static int input_set_property(struct flb_input_instance *in, char *kv)
@@ -657,6 +733,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
     struct mk_rconf *fconf = NULL;
     struct mk_rconf_entry *entry;
     struct mk_rconf_section *section;
+    struct flb_custom_instance *custom;
     struct flb_input_instance *in;
     struct flb_output_instance *out;
     struct flb_filter_instance *filter;
@@ -685,6 +762,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
         section = mk_list_entry(head, struct mk_rconf_section, _head);
 
         if (strcasecmp(section->name, "SERVICE") == 0 ||
+            strcasecmp(section->name, "CUSTOM") == 0 ||
             strcasecmp(section->name, "INPUT") == 0 ||
             strcasecmp(section->name, "FILTER") == 0 ||
             strcasecmp(section->name, "OUTPUT") == 0) {
@@ -694,11 +772,12 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
 
         /* Extra sanity checks */
-        if (strcasecmp(section->name, "PARSER") == 0) {
+        if (strcasecmp(section->name, "PARSER") == 0 ||
+            strcasecmp(section->name, "MULTILINE_PARSER") == 0) {
             fprintf(stderr,
-                    "Section [PARSER] is not valid in the main "
-                    "configuration file. It belongs to \n"
-                    "the Parsers_File configuration files.\n");
+                    "Sections [MULTILINE_PARSER] and [PARSER] are not valid in "
+                    "the main configuration file. It belongs to \n"
+                    "the 'parsers_file' configuration files.\n");
         }
         else {
             fprintf(stderr,
@@ -719,6 +798,49 @@ static int flb_service_conf(struct flb_config *config, char *file)
         }
     }
 
+    /* Read all [CUSTOM] sections */
+    mk_list_foreach(head, &fconf->sections) {
+        section = mk_list_entry(head, struct mk_rconf_section, _head);
+        if (strcasecmp(section->name, "CUSTOM") != 0) {
+            continue;
+        }
+
+        /* Get the input plugin name */
+        name = s_get_key(section, "name", MK_RCONF_STR);
+        if (!name) {
+            flb_service_conf_err(section, "name");
+            goto flb_service_conf_end;
+        }
+
+        flb_debug("[service] loading custom plugin: %s", name);
+
+        /* Create an instace of the plugin */
+        tmp = flb_env_var_translate(config->env, name);
+        custom = flb_custom_new(config, tmp, NULL);
+        mk_mem_free(name);
+        if (!custom) {
+            fprintf(stderr, "Custom plugin '%s' cannot be loaded\n", tmp);
+            flb_sds_destroy(tmp);
+            goto flb_service_conf_end;
+        }
+        flb_sds_destroy(tmp);
+
+        /* Iterate other properties */
+        mk_list_foreach(h_prop, &section->entries) {
+            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
+            if (strcasecmp(entry->key, "name") == 0) {
+                continue;
+            }
+
+            /* Set the property */
+            ret = flb_custom_set_property(custom, entry->key, entry->val);
+            if (ret == -1) {
+                fprintf(stderr, "Error setting up %s plugin property '%s'\n",
+                        custom->name, entry->key);
+                goto flb_service_conf_end;
+            }
+        }
+    }
 
     /* Read all [INPUT] sections */
     mk_list_foreach(head, &fconf->sections) {
@@ -780,7 +902,7 @@ static int flb_service_conf(struct flb_config *config, char *file)
 
         /* Create an instace of the plugin */
         tmp = flb_env_var_translate(config->env, name);
-        out = flb_output_new(config, tmp, NULL);
+        out = flb_output_new(config, tmp, NULL, FLB_TRUE);
         mk_mem_free(name);
         if (!out) {
             fprintf(stderr, "Output plugin '%s' cannot be loaded\n", tmp);
@@ -854,6 +976,7 @@ int flb_main(int argc, char **argv)
 
     /* local variables to handle config options */
     char *cfg_file = NULL;
+    struct flb_custom_instance *custom = NULL;
     struct flb_input_instance *in = NULL;
     struct flb_output_instance *out = NULL;
     struct flb_filter_instance *filter = NULL;
@@ -874,6 +997,7 @@ int flb_main(int argc, char **argv)
         { "http",            no_argument      , NULL, 'H' },
         { "log_file",        required_argument, NULL, 'l' },
         { "port",            required_argument, NULL, 'P' },
+        { "custom",          required_argument, NULL, 'C' },
         { "input",           required_argument, NULL, 'i' },
         { "match",           required_argument, NULL, 'm' },
         { "output",          required_argument, NULL, 'o' },
@@ -920,7 +1044,7 @@ int flb_main(int argc, char **argv)
 
     /* Parse the command line options */
     while ((opt = getopt_long(argc, argv,
-                              "b:c:dDf:i:m:o:R:F:p:e:"
+                              "b:c:dDf:C:i:m:o:R:F:p:e:"
                               "t:T:l:vw:qVhJL:HP:s:S",
                               long_opts, NULL)) != -1) {
 
@@ -948,6 +1072,13 @@ int flb_main(int argc, char **argv)
         case 'f':
             config->flush = atof(optarg);
             break;
+        case 'C':
+            custom = flb_custom_new(config, optarg, NULL);
+            if (!custom) {
+                flb_utils_error(FLB_ERR_CUSTOM_INVALID);
+            }
+            last_plugin = PLUGIN_CUSTOM;
+            break;
         case 'i':
             in = flb_input_new(config, optarg, NULL, FLB_TRUE);
             if (!in) {
@@ -964,7 +1095,7 @@ int flb_main(int argc, char **argv)
             }
             break;
         case 'o':
-            out = flb_output_new(config, optarg, NULL);
+            out = flb_output_new(config, optarg, NULL, FLB_TRUE);
             if (!out) {
                 flb_utils_error(FLB_ERR_OUTPUT_INVALID);
             }
@@ -1000,6 +1131,9 @@ int flb_main(int argc, char **argv)
             }
             else if (last_plugin == PLUGIN_FILTER) {
                 filter_set_property(filter, optarg);
+            }
+            else if (last_plugin == PLUGIN_CUSTOM) {
+                custom_set_property(custom, optarg);
             }
             break;
         case 't':
@@ -1121,18 +1255,6 @@ int flb_main(int argc, char **argv)
         flb_utils_error(FLB_ERR_CFG_FLUSH);
     }
 
-    /* Inputs */
-    ret = flb_input_check(config);
-    if (ret == -1 && config->support_mode == FLB_FALSE) {
-        flb_utils_error(FLB_ERR_INPUT_UNDEF);
-    }
-
-    /* Outputs */
-    ret = flb_output_check(config);
-    if (ret == -1 && config->support_mode == FLB_FALSE) {
-        flb_utils_error(FLB_ERR_OUTPUT_UNDEF);
-    }
-
     /* debug or trace */
     if (config->verbose >= FLB_LOG_DEBUG) {
         flb_utils_print_setup(config);
@@ -1160,8 +1282,15 @@ int flb_main(int argc, char **argv)
         return ret;
     }
 
-    flb_loop(ctx);
+    while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
+        sleep(1);
+    }
+    if (exit_signal) {
+        flb_signal_exit(exit_signal);
+    }
+    ret = config->exit_status_code;
     flb_destroy(ctx);
+
 
     return ret;
 }

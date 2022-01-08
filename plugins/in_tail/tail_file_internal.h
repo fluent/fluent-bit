@@ -26,6 +26,10 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 
+#ifdef FLB_HAVE_PARSER
+#include <fluent-bit/multiline/flb_ml.h>
+#endif
+
 #include "tail.h"
 #include "tail_config.h"
 
@@ -56,8 +60,11 @@ struct flb_tail_file {
     int mult_firstline_append;  /* bool: mult firstline appendable ?     */
     int mult_skipping;          /* skipping because ignode_older than ?  */
     int mult_keys;              /* total number of buffered keys         */
-    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer               */
-    msgpack_packer mult_pck;    /* temporary msgpack packer               */
+
+
+    int mult_records;           /* multiline records counter mult_sbuf   */
+    msgpack_sbuffer mult_sbuf;  /* temporary msgpack buffer              */
+    msgpack_packer mult_pck;    /* temporary msgpack packer              */
     struct flb_time mult_time;  /* multiline time parsed from first line */
 
     /* docker mode */
@@ -67,11 +74,20 @@ struct flb_tail_file {
     bool dmode_complete;        /* buffer contains completed log         */
     bool dmode_firstline;       /* dmode mult firstline found ?          */
 
+    /* multiline engine: file stream_id */
+    uint64_t ml_stream_id;
+
     /* buffering */
     size_t parsed;
     size_t buf_len;
     size_t buf_size;
     char *buf_data;
+
+    /*
+     * This value represent the number of bytes procesed by process_content()
+     * in the last iteration.
+     */
+    size_t last_processed_bytes;
 
     /*
      * Long-lines handling: this flag is enabled when a previous line was

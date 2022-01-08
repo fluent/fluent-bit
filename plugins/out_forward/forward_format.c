@@ -44,6 +44,8 @@ int flb_forward_format_append_tag(struct flb_forward *ctx,
 #ifdef FLB_HAVE_RECORD_ACCESSOR
     flb_sds_t tmp;
     msgpack_object m;
+    
+    memset(&m, 0, sizeof(m));
 
     if (!fc->ra_tag) {
         msgpack_pack_str(mp_pck, tag_len);
@@ -253,6 +255,48 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
 }
 #endif
 
+static int flb_forward_format_metrics_mode(struct flb_forward *ctx,
+                                           struct flb_forward_config *fc,
+                                           struct flb_forward_flush *ff,
+                                           const char *tag, int tag_len,
+                                           const void *data, size_t bytes,
+                                           void **out_buf, size_t *out_size)
+{
+    msgpack_packer   mp_pck;
+    msgpack_sbuffer  mp_sbuf;
+    struct flb_time tm;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 3);
+
+    if (fc->tag) {
+        msgpack_pack_str(&mp_pck, flb_sds_len(fc->tag));
+        msgpack_pack_str_body(&mp_pck, fc->tag, flb_sds_len(fc->tag));
+    }
+    else {
+        msgpack_pack_str(&mp_pck, tag_len);
+        msgpack_pack_str_body(&mp_pck, tag, tag_len);
+    }
+
+    /* timestamp */
+    flb_time_get(&tm);
+    flb_time_append_to_msgpack(&tm, &mp_pck, 0);
+
+    /* metrics */
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str(&mp_pck, 8);
+    msgpack_pack_str_body(&mp_pck, "cmetrics", 8);
+    msgpack_pack_bin(&mp_pck, bytes);
+    msgpack_pack_bin_body(&mp_pck, data, bytes);
+
+    *out_buf  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
 /*
  * Forward Protocol: Forward Mode
  * ------------------------------
@@ -380,7 +424,7 @@ int flb_forward_format(struct flb_config *config,
                        const void *data, size_t bytes,
                        void **out_buf, size_t *out_size)
 {
-    int ret;
+    int ret = 0;
     int mode = MODE_FORWARD;
     struct flb_upstream_node *node = NULL;
     struct flb_forward_config *fc;
@@ -397,6 +441,19 @@ int flb_forward_format(struct flb_config *config,
     if (!fc) {
         flb_plg_error(ctx->ins, "cannot get an Upstream single or HA node");
         return -1;
+    }
+
+    /* metric handling */
+    if (flb_input_event_type_is_metric(ins)) {
+        ret = flb_forward_format_metrics_mode(ctx, fc, ff,
+                                              tag, tag_len,
+                                              data, bytes,
+                                              out_buf, out_size);
+        if (ret != 0) {
+            return -1;
+        }
+
+        return MODE_MESSAGE;
     }
 
 #ifdef FLB_HAVE_RECORD_ACCESSOR

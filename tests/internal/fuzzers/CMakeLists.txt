@@ -1,6 +1,7 @@
 set(UNIT_TESTS_FILES
   engine_fuzzer.c
   config_fuzzer.c
+  config_random_fuzzer.c
   signv4_fuzzer.c
   flb_json_fuzzer.c
   parser_fuzzer.c
@@ -9,6 +10,7 @@ set(UNIT_TESTS_FILES
   parse_ltsv_fuzzer.c
   msgpack_parse_fuzzer.c
   msgpack_to_gelf_fuzzer.c
+  multiline_fuzzer.c
   pack_json_state_fuzzer.c
   http_fuzzer.c
   strp_fuzzer.c

@@ -20,11 +20,13 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output_thread.h>
 #include <fluent-bit/flb_thread_pool.h>
 
+static pthread_once_t local_thread_instance_init = PTHREAD_ONCE_INIT;
 FLB_TLS_DEFINE(struct flb_out_thread_instance, local_thread_instance);
 
 void flb_output_thread_instance_init()
@@ -92,7 +94,7 @@ static inline int handle_output_event(struct flb_config *config,
      * Notify the parent event loop the return status, just forward the same
      * 64 bits value.
      */
-    ret = write(ch_parent, &val, sizeof(val));
+    ret = flb_pipe_w(ch_parent, &val, sizeof(val));
     if (ret == -1) {
         flb_errno();
         return -1;
@@ -176,9 +178,10 @@ static void output_thread(void *data)
     struct flb_task *task;
     struct flb_upstream_conn *u_conn;
     struct flb_output_instance *ins;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins = data;
-    struct flb_out_coro_params *params;
+    struct flb_out_flush_params *params;
+    struct flb_net_dns dns_ctx;
 
     /* Register thread instance */
     flb_output_thread_instance_set(th_ins);
@@ -187,6 +190,9 @@ static void output_thread(void *data)
     thread_id = th_ins->th->id;
 
     flb_coro_thread_init();
+
+    flb_net_ctx_init(&dns_ctx);
+    flb_net_dns_ctx_set(&dns_ctx);
 
     /*
      * Expose the event loop to the I/O interfaces: since we are in a separate
@@ -214,7 +220,7 @@ static void output_thread(void *data)
      */
     ret = flb_sched_timer_cb_create(sched,
                                     FLB_SCHED_TIMER_CB_PERM,
-                                    1500, cb_thread_sched_timer, ins);
+                                    1500, cb_thread_sched_timer, ins, NULL);
     if (ret == -1) {
         flb_plg_error(ins, "could not schedule permanent callback");
         return;
@@ -278,17 +284,14 @@ static void output_thread(void *data)
                 }
 
                 /* Start the co-routine with the flush callback */
-                out_coro = flb_output_coro_create(task,
-                                                  task->i_ins,
-                                                  th_ins->ins,
-                                                  th_ins->config,
-                                                  task->buf, task->size,
-                                                  task->tag,
-                                                  task->tag_len);
-                if (!out_coro) {
+                out_flush = flb_output_flush_create(task,
+                                                    task->i_ins,
+                                                    th_ins->ins,
+                                                    th_ins->config);
+                if (!out_flush) {
                     continue;
                 }
-                flb_coro_resume(out_coro->coro);
+                flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
@@ -319,11 +322,14 @@ static void output_thread(void *data)
             }
         }
 
+        flb_net_dns_lookup_context_cleanup(&dns_ctx);
+
         /* Destroy upstream connections from the 'pending destroy list' */
         flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
+        flb_sched_timer_cleanup(sched);
 
         /* Check if we should stop the event loop */
-        if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
+        if (stopping == FLB_TRUE && mk_list_size(&th_ins->flush_list) == 0) {
             /*
              * If there are no busy network connections (and no coroutines) its
              * safe to stop it.
@@ -350,7 +356,7 @@ static void output_thread(void *data)
     mk_event_loop_destroy(th_ins->evl);
 
     flb_sched_destroy(sched);
-    params = FLB_TLS_GET(out_coro_params);
+    params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
@@ -376,7 +382,9 @@ int flb_output_thread_pool_flush(struct flb_task *task,
 
     flb_plg_debug(out_ins, "task_id=%i assigned to thread #%i",
                   task->id, th->id);
-    n = write(th_ins->ch_parent_events[1], &task, sizeof(struct flb_task *));
+
+    n = flb_pipe_w(th_ins->ch_parent_events[1], &task, sizeof(struct flb_task*));
+
     if (n == -1) {
         flb_errno();
         return -1;
@@ -407,7 +415,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
      * Initialize thread-local-storage, every worker thread has it owns
      * context with relevant info populated inside the thread.
      */
-    flb_output_thread_instance_init();
+    pthread_once(&local_thread_instance_init, flb_output_thread_instance_init);
 
     /* Create workers */
     for (i = 0; i < ins->tp_workers; i++) {
@@ -416,12 +424,14 @@ int flb_output_thread_pool_create(struct flb_config *config,
             flb_errno();
             continue;
         }
+        memset(th_ins, 0, sizeof(struct flb_out_thread_instance));
+
         th_ins->config = config;
         th_ins->ins = ins;
-        th_ins->coro_id = 0;
-        mk_list_init(&th_ins->coros);
-        mk_list_init(&th_ins->coros_destroy);
-        pthread_mutex_init(&th_ins->coro_mutex, NULL);
+        th_ins->flush_id = 0;
+        mk_list_init(&th_ins->flush_list);
+        mk_list_init(&th_ins->flush_list_destroy);
+        pthread_mutex_init(&th_ins->flush_mutex, NULL);
         mk_list_init(&th_ins->upstreams);
 
         upstream_thread_create(th_ins, ins);
@@ -487,9 +497,9 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 
         th_ins = th->params.data;
 
-        pthread_mutex_lock(&th_ins->coro_mutex);
-        n = mk_list_size(&th_ins->coros);
-        pthread_mutex_unlock(&th_ins->coro_mutex);
+        pthread_mutex_lock(&th_ins->flush_mutex);
+        n = mk_list_size(&th_ins->flush_list);
+        pthread_mutex_unlock(&th_ins->flush_mutex);
 
         size += n;
     }
@@ -518,7 +528,7 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
         }
 
         th_ins = th->params.data;
-        n = write(th_ins->ch_parent_events[1], &stop, sizeof(stop));
+        n = flb_pipe_w(th_ins->ch_parent_events[1], &stop, sizeof(stop));
         if (n < 0) {
             flb_errno();
             flb_plg_error(th_ins->ins, "could not signal worker thread");
