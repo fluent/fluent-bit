@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_config.h>
 
 #include <msgpack.h>
 
@@ -61,6 +62,7 @@ struct flb_pack_state {
     size_t buf_len;       /* temporary buffer length    */
 };
 
+int flb_pack_init(struct flb_config *config);
 int flb_json_tokenise(const char *js, size_t len, struct flb_pack_state *state);
 
 
@@ -68,7 +70,6 @@ int flb_pack_json(const char *js, size_t len, char **buffer, size_t *size, int *
 int flb_pack_json_recs(const char *js, size_t len, char **buffer, size_t *size,
                        int *root_type, int *out_records);
 
-int flb_pack_set_null_as_nan(int b);
 int flb_pack_state_init(struct flb_pack_state *s);
 void flb_pack_state_reset(struct flb_pack_state *s);
 

@@ -44,7 +44,7 @@
 
 static int convert_nan_to_null = FLB_FALSE;
 
-int flb_pack_set_null_as_nan(int b) {
+static int flb_pack_set_null_as_nan(int b) {
     if (b == FLB_TRUE || b == FLB_FALSE) {
         convert_nan_to_null = b;
     }
@@ -1156,4 +1156,16 @@ int flb_msgpack_expand_map(char *map_data, size_t map_size,
     msgpack_sbuffer_destroy(&sbuf);
 
     return 0;
+}
+
+int flb_pack_init(struct flb_config *config)
+{
+    int ret;
+
+    if (config == NULL) {
+        return -1;
+    }
+    ret = flb_pack_set_null_as_nan(config->convert_nan_to_null);
+
+    return ret;
 }
