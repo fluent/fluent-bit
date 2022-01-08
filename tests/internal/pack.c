@@ -632,10 +632,13 @@ void test_json_pack_nan()
     int ret;
     char json_str[128] = {0};
     char *p = NULL;
+    struct flb_config config;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     msgpack_object obj;
     msgpack_zone mempool;
+
+    config.convert_nan_to_null = FLB_TRUE;
 
     // initialize msgpack
     msgpack_sbuffer_init(&mp_sbuf);
@@ -657,7 +660,7 @@ void test_json_pack_nan()
 
     // convert. nan -> null
     memset(&json_str[0], 0, sizeof(json_str));
-    flb_pack_set_null_as_nan(FLB_TRUE);
+    flb_pack_init(&config);
     ret = flb_msgpack_to_json(&json_str[0], sizeof(json_str), &obj);
     TEST_CHECK(ret >= 0);
 
@@ -667,7 +670,8 @@ void test_json_pack_nan()
     }
 
     // clear setting
-    flb_pack_set_null_as_nan(FLB_FALSE);
+    config.convert_nan_to_null = FLB_FALSE;
+    flb_pack_init(&config);
 }
 
 
