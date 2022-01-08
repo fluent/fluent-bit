@@ -323,6 +323,9 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
 
     mk_list_foreach(head, &ctx->rules) {
         rule = mk_list_entry(head, struct rewrite_rule, _head);
+        if (rule) {
+            *keep = rule->keep_record;
+        }
         ret = flb_ra_regex_match(rule->ra_key, map, rule->regex, &result);
         if (ret < 0) { /* no match */
             rule = NULL;
@@ -359,7 +362,7 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
         return FLB_FALSE;
     }
 
-    *keep = rule->keep_record;
+
     return FLB_TRUE;
 }
 
