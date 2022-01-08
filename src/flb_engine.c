@@ -520,11 +520,11 @@ int flb_engine_start(struct flb_config *config)
 
     /* Initialize the networking layer */
     flb_net_lib_init();
-    flb_pack_set_null_as_nan(config->convert_nan_to_null);
-
     flb_net_ctx_init(&dns_ctx);
     flb_net_dns_ctx_init();
     flb_net_dns_ctx_set(&dns_ctx);
+
+    flb_pack_init(config);
 
     /* Create the event loop and set it in the global configuration */
     evl = mk_event_loop_create(256);
