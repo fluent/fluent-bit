@@ -53,6 +53,9 @@ struct flb_tail_config {
     size_t buf_chunk_size;     /* allocation chunks        */
     size_t buf_max_size;       /* max size of a buffer     */
 
+    /* Static files processor */
+    size_t static_batch_size;
+
     /* Collectors */
     int coll_fd_static;
     int coll_fd_scan;
