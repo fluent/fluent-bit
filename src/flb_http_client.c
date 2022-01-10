@@ -1138,39 +1138,39 @@ int flb_http_proxy_auth(struct flb_http_client *c,
 
 int flb_http_bearer_auth(struct flb_http_client *c, const char *token)
 {
-    int ret;
-    int len_t;
-    int len_h = 8; /* length of "Bearer " plus null terminator */
-    char *h;
+    flb_sds_t header_buffer;
+    flb_sds_t header_line;
+    int       result;
 
-    if (token) {
-        len_t = strlen(token);
+    result = -1;
+
+    if (token == NULL) {
+        token = "";
+
+        /* Shouldn't we log this and return instead of sending
+         * a malformed value?
+         */
     }
-    else {
-        len_t = 0;
-    }
 
-    len_h += len_t;
+    header_buffer = flb_sds_create_size(strlen(token) + 64);
 
-    h = flb_malloc(len_h);
-    if (!h) {
-        flb_errno();
+    if (header_buffer == NULL) {
         return -1;
     }
 
-    memcpy(h, "Bearer ", 7);
-    if(len_t && token) {
-        memcpy(h + 7, token, len_t);
+    header_line = flb_sds_printf(&header_buffer, "Bearer %s", token);
+
+    if (header_line != NULL) {
+        result = flb_http_add_header(c,
+                                     FLB_HTTP_HEADER_AUTH,
+                                     strlen(FLB_HTTP_HEADER_AUTH),
+                                     header_line,
+                                     flb_sds_len(header_line));
     }
-    h[len_h - 1] = '\0';
-    
-    ret = flb_http_add_header(c,
-                              FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
-                              h, len_h);
 
-    flb_free(h);
+    flb_sds_destroy(header_buffer);
 
-    return ret;
+    return result;
 }
 
 
