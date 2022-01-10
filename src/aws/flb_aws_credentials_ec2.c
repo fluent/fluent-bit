@@ -248,7 +248,10 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
         return NULL;
     }
 
-    upstream->net.connect_timeout = FLB_AWS_CREDENTIAL_NET_TIMEOUT;
+    /* IMDSv2 token request will timeout if hops = 1 and running within container */
+    upstream->net.connect_timeout = FLB_AWS_IMDS_TIMEOUT;
+    upstream->net.io_timeout = FLB_AWS_IMDS_TIMEOUT;
+    upstream->net.keepalive = FLB_FALSE; /* On timeout, the connection is broken */
 
     implementation->client = generator->create();
     if (!implementation->client) {

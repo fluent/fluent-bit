@@ -40,6 +40,9 @@ struct flb_net_setup {
     /* max time in seconds to wait for a established connection */
     int connect_timeout;
 
+    /* max time in seconds to wait for blocking io calls */
+    int io_timeout;
+
     /* connect timeout log error (default: true) */
     int connect_timeout_log_error;
 

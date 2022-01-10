@@ -312,6 +312,14 @@ static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
 
     ret = recv(u_conn->fd, buf, len, 0);
     if (ret == -1) {
+        ret = FLB_WOULDBLOCK();
+        if (ret) {
+            /* timeout caused error */
+            flb_warn("[net] sync io_read #%i timeout after %i seconds from: "
+                    "%s:%i",
+                    u_conn->fd, u_conn->u->net.io_timeout,
+                    u_conn->u->tcp_host, u_conn->u->tcp_port);
+        }
         return -1;
     }
 
