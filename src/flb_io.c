@@ -130,6 +130,8 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
         coro = flb_coro_get();
         ret = flb_io_net_connect(u_conn, coro);
         if (ret == -1) {
+            /* Shouldn't we have a prepare_destroy_conn_safe call here? */
+
             return -1;
         }
     }

@@ -260,6 +260,23 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     return 0;
 }
 
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask)
+{
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    event->mask = mask;
+
+    ctx->events[loop->n_events].udata = event;
+
+    loop->n_events++;
+
+    return 0;
+}
+
 static inline int _mk_event_wait(struct mk_event_loop *loop)
 {
     struct mk_event_ctx *ctx = loop->data;
