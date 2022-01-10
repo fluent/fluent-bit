@@ -1547,9 +1547,11 @@ static void cb_loki_flush(struct flb_event_chunk *event_chunk,
     /* User Agent */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
-    /* Basic Auth headers */
-    if (ctx->http_user && ctx->http_passwd) {
+    /* Auth headers */
+    if (ctx->http_user && ctx->http_passwd) { /* Basic */
         flb_http_basic_auth(c, ctx->http_user, ctx->http_passwd);
+    } else if (ctx->bearer_token) { /* Bearer token */
+        flb_http_bearer_auth(c, ctx->bearer_token);
     }
 
     /* Add Content-Type header */
@@ -1741,6 +1743,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_passwd", "",
      0, FLB_TRUE, offsetof(struct flb_loki, http_passwd),
      "Set HTTP auth password"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "bearer_token", NULL,
+     0, FLB_TRUE, offsetof(struct flb_loki, bearer_token),
+     "Set bearer token auth"
     },
 
     /* EOF */
