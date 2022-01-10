@@ -50,7 +50,7 @@ static void proxy_cb_flush(struct flb_event_chunk *event_chunk,
 
 
 #ifdef FLB_HAVE_PROXY_GO
-    if (ctx->proxy->proxy == FLB_PROXY_GOLANG) {
+    if (ctx->proxy->def->proxy == FLB_PROXY_GOLANG) {
         flb_trace("[GO] entering go_flush()");
         ret = proxy_go_flush(ctx,
                              event_chunk->data,
@@ -69,26 +69,16 @@ static void proxy_cb_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(ret);
 }
 
-
+static void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy);
 static int flb_proxy_cb_exit(void *data, struct flb_config *config)
 {
     struct flb_output_plugin *instance = data;
     struct flb_plugin_proxy *proxy = (instance->proxy);
-    struct flbgo_output_plugin *plugin;
-    void *inst;
 
-    inst = proxy->data;
-
-    plugin = (struct flbgo_output_plugin *) inst;
-    flb_debug("[GO] running exit callback");
-
-    if (plugin->cb_exit_ctx) {
-        return plugin->cb_exit_ctx(plugin->context->remote_context);
+    if (proxy->def->proxy == FLB_PROXY_GOLANG) {
+        proxy_go_destroy(proxy->data);
     }
-    else if (plugin->cb_exit) {
-        return plugin->cb_exit();
-    }
-
+    flb_plugin_proxy_destroy(proxy);
     return 0;
 }
 
@@ -108,8 +98,8 @@ static int flb_proxy_register_output(struct flb_plugin_proxy *proxy,
     out->type  = FLB_OUTPUT_PLUGIN_PROXY;
     out->proxy = proxy;
     out->flags = def->flags;
-    out->name  = flb_strdup(def->name);
-    out->description = flb_strdup(def->description);
+    out->name  = def->name;
+    out->description = def->description;
     mk_list_add(&out->_head, &config->out_plugins);
 
     /*
@@ -140,10 +130,13 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
 {
     int ret;
     int (*cb_register)(struct flb_plugin_proxy_def *);
-    struct flb_plugin_proxy_def *def;
+    struct flb_plugin_proxy_def *def = proxy->def;
 
     /* Lookup the registration callback */
     cb_register = flb_plugin_proxy_symbol(proxy, "FLBPluginRegister");
+    if (!cb_register) {
+        return -1;
+    }
 
     /*
      * Create a temporary definition used for registration. This definition
@@ -153,10 +146,6 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
      * - plugin name
      * - plugin description
      */
-    def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
-    if (!def) {
-        return -1;
-    }
 
     /* Do the registration */
     ret = cb_register(def);
@@ -181,7 +170,6 @@ int flb_plugin_proxy_register(struct flb_plugin_proxy *proxy,
          * real link to the 'output' interface
          */
         if (def->type == FLB_PROXY_OUTPUT_PLUGIN) {
-            proxy->proxy = def->proxy;
             flb_proxy_register_output(proxy, def, config);
         }
     }
@@ -199,14 +187,14 @@ int flb_plugin_proxy_init(struct flb_plugin_proxy *proxy,
     proxy->instance = o_ins;
 
     /* Based on 'proxy', use the proper handler */
-    if (proxy->proxy == FLB_PROXY_GOLANG) {
+    if (proxy->def->proxy == FLB_PROXY_GOLANG) {
 #ifdef FLB_HAVE_PROXY_GO
         ret = proxy_go_init(proxy);
 #endif
     }
     else {
         fprintf(stderr, "[proxy] unrecognized proxy handler %i\n",
-                proxy->proxy);
+                proxy->def->proxy);
     }
 
     return ret;
@@ -242,8 +230,17 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
         return NULL;
     }
 
+    proxy->def = flb_malloc(sizeof(struct flb_plugin_proxy_def));
+    if (!proxy->def) {
+        flb_errno();
+        dlclose(handle);
+        flb_api_destroy(proxy->api);
+        flb_free(proxy);
+        return NULL;
+    }
+
     /* Set fields and add it to the list */
-    proxy->type        = type;
+    proxy->def->type        = type;
     proxy->dso_handler = handle;
     proxy->data        = NULL;
     mk_list_add(&proxy->_head, &config->proxies);
@@ -254,9 +251,17 @@ struct flb_plugin_proxy *flb_plugin_proxy_create(const char *dso_path, int type,
     return proxy;
 }
 
-void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
+static void flb_plugin_proxy_destroy(struct flb_plugin_proxy *proxy)
 {
     /* cleanup */
+    void (*cb_unregister)(struct flb_plugin_proxy_def *def);
+
+    cb_unregister = flb_plugin_proxy_symbol(proxy, "FLBPluginUnregister");
+    if (cb_unregister != NULL) {
+        cb_unregister(proxy->def);
+    }
+    flb_free(proxy->def);
+    flb_api_destroy(proxy->api);
     dlclose(proxy->dso_handler);
     mk_list_del(&proxy->_head);
     flb_free(proxy);

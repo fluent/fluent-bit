@@ -111,6 +111,14 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, dns_mode)},
 
+    {FLB_CONF_DNS_RESOLVER,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_resolver)},
+
+    {FLB_CONF_DNS_PREFER_IPV4,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, dns_prefer_ipv4)},
+
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
      FLB_CONF_TYPE_STR,
@@ -182,6 +190,7 @@ struct flb_config *flb_config_init()
     config->kernel       = flb_kernel_info();
     config->verbose      = 3;
     config->grace        = 5;
+    config->grace_count  = 0;
     config->exit_status_code = 0;
 
 #ifdef FLB_HAVE_HTTP_SERVER
@@ -197,13 +206,19 @@ struct flb_config *flb_config_init()
 
     config->http_proxy = getenv("HTTP_PROXY");
     if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
-        /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
-        config->http_proxy = NULL;
+        config->http_proxy = getenv("http_proxy");
+        if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
+            /* Proxy should not be set when `HTTP_PROXY` or `http_proxy` are set to "" */
+            config->http_proxy = NULL;
+        }
     }
     config->no_proxy = getenv("NO_PROXY");
     if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
-        /* NoProxy  should not be set when the `NO_PROXYY` is set to "" or there is no Proxy. */
-        config->no_proxy = NULL;
+        config->no_proxy = getenv("no_proxy");
+        if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
+            /* NoProxy  should not be set when `NO_PROXY` or `no_proxy` are set to "" or there is no Proxy. */
+            config->no_proxy = NULL;
+        }
     }
 
     config->cio          = NULL;
@@ -226,7 +241,12 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_CORO_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
+    if (config->coro_stack_size < getpagesize()) {
+        flb_info("[config] changing coro_stack_size from %u to %u bytes",
+                 config->coro_stack_size, getpagesize());
+        config->coro_stack_size = (unsigned int)getpagesize();
+    }
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);

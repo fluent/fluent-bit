@@ -214,3 +214,16 @@ When we review your code submission, they must follow our coding style, the code
 If your code needs some improvement, someone of the reviewers or core developers will write a comment in your Pull Request, so please take in count the suggestion there, otherwise your request will never be merged.
 
 Despite the effort that took for you to create the contribution, that is not an indication that the code have to be merged into upstream, everything will be reviewed and must be aligned as the code base.
+
+## Release branches
+
+Fluent Bit follows this general branching strategy:
+
+* `master` is the next major version (not yet released)
+* `<major>` is the branch for an existing stable release
+
+Generally a PR will target the default `master` branch so the changes will go into the next major release.
+
+Once merged, this does not mean they will automatically go into the next minor release of the current series.
+
+A particular set of changes might want to be applied to the current or previous releases so please also submit a PR targeting the branch for the particular release series you want or think it should be applied to, e.g. if a change should go into a 1.8.X release then target the `1.8` branch.

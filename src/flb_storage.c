@@ -247,7 +247,7 @@ static void cb_storage_metrics_collect(struct flb_config *ctx, void *data)
     metrics_append_input(&mp_pck, ctx, data);
 
 #ifdef FLB_HAVE_HTTP_SERVER
-    if (ctx->http_server == FLB_TRUE) {
+    if (ctx->http_server == FLB_TRUE && ctx->storage_metrics == FLB_TRUE) {
         flb_hs_push_storage_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
     }
 #endif

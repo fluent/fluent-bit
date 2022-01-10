@@ -31,8 +31,6 @@
 #include <fluent-bit/flb_http_server.h>
 #include <msgpack.h>
 
-#define PROMETHEUS_HEADER "text/plain; version=0.0.4"
-
 #define null_check(x) do { if (!x) { goto error; } else {sds = x;} } while (0)
 
 pthread_key_t hs_metrics_key;
@@ -515,9 +513,7 @@ void cb_metrics_prometheus(mk_request_t *request, void *data)
     buf->users--;
 
     mk_http_status(request, 200);
-    mk_http_header(request,
-                   "Content-Type", 12,
-                   PROMETHEUS_HEADER, sizeof(PROMETHEUS_HEADER) - 1);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_PROMETHEUS);
     mk_http_send(request, sds, flb_sds_len(sds), NULL);
     for (i = 0; i < num_metrics; i++) {
       flb_sds_destroy(metrics_arr[i]);
@@ -558,6 +554,7 @@ static void cb_metrics(mk_request_t *request, void *data)
     buf->users++;
 
     mk_http_status(request, 200);
+    flb_hs_add_content_type_to_req(request, FLB_HS_CONTENT_TYPE_JSON);
     mk_http_send(request, buf->data, flb_sds_len(buf->data), NULL);
     mk_http_done(request);
 

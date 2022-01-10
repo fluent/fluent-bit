@@ -193,11 +193,8 @@ static void in_fw_pause(void *data, struct flb_config *config)
 
 static int in_fw_exit(void *data, struct flb_config *config)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
     (void) *config;
     struct flb_in_fw_config *ctx = data;
-    struct fw_conn *conn;
 
     if (!ctx) {
         return 0;
@@ -210,6 +207,11 @@ static int in_fw_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_STR, "tag_prefix", NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, tag_prefix),
+    "Prefix incoming tag with the defined value."
+   },
    {
     FLB_CONFIG_MAP_STR, "unix_path", NULL,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_path),

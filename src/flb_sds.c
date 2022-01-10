@@ -407,3 +407,31 @@ void flb_sds_destroy(flb_sds_t s)
     head = FLB_SDS_HEADER(s);
     flb_free(head);
 }
+
+/*
+ * flb_sds_snprintf is a wrapper of snprintf.
+ * The difference is that this function can increase the buffer of flb_sds_t.
+ */
+int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
+{
+    va_list va;
+    flb_sds_t tmp;
+    int ret;
+
+ retry_snprintf:
+    va_start(va, fmt);
+    ret = vsnprintf(*str, size, fmt, va);
+    if (ret > size) {
+        tmp = flb_sds_increase(*str, ret-size);
+        if (tmp == NULL) {
+            return -1;
+        }
+        *str = tmp;
+        size = ret;
+        va_end(va);
+        goto retry_snprintf;
+    }
+    va_end(va);
+
+    return ret;
+}

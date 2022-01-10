@@ -35,6 +35,7 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
     p = flb_parser_create("_ml_cri",               /* parser name */
                           "regex",                 /* backend type */
                           FLB_ML_CRI_REGEX,        /* regex */
+                          FLB_FALSE,               /* skip_empty */
                           FLB_ML_CRI_TIME,         /* time format */
                           "time",                  /* time key */
                           NULL,                    /* time offset */
@@ -72,7 +73,7 @@ struct flb_ml_parser *flb_ml_parser_cri(struct flb_config *config)
                                NULL);                /* parser name */
 
     if (!mlp) {
-        flb_error("[multiline] could not create 'docker mode'");
+        flb_error("[multiline] could not create 'cri mode'");
         return NULL;
     }
 

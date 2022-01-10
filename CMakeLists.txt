@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(fluent-bit)
 
 # Fluent Bit Version
@@ -8,6 +8,7 @@ set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -164,6 +165,7 @@ option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
 option(FLB_OUT_TD             "Enable Treasure Data output plugin"  Yes)
 option(FLB_OUT_RETRY          "Enable Retry test output plugin"      No)
 option(FLB_OUT_PGSQL          "Enable PostgreSQL output plugin"      No)
+option(FLB_OUT_SKYWALKING     "Enable Apache SkyWalking output plugin" Yes)
 option(FLB_OUT_SLACK          "Enable Slack output plugin"          Yes)
 option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"         Yes)
 option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"    Yes)
@@ -195,12 +197,18 @@ option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"            Yes)
 option(FLB_FILTER_REWRITE_TAG "Enable tag rewrite filter"           Yes)
 option(FLB_FILTER_THROTTLE    "Enable throttle filter"              Yes)
 option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
+option(FLB_FILTER_TYPE_CONVERTER "Enable type converter filter"     Yes)
 option(FLB_FILTER_MULTILINE   "Enable multiline filter"             Yes)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
+option(FLB_FILTER_LUA_USE_MPACK  "Enable mpack on the lua filter"   Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
+
+if(FLB_IN_STORAGE_BACKLOG)
+  FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
+endif()
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
@@ -379,6 +387,7 @@ option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
 
 # MPack
+add_definitions(-DMPACK_EXTENSIONS=1)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
@@ -803,6 +812,20 @@ if(FLB_INOTIFY)
   if(FLB_HAVE_INOTIFY)
     FLB_DEFINITION(FLB_HAVE_INOTIFY)
   endif()
+endif()
+
+include(CheckSymbolExists)
+
+# Check for getentropy(3)
+check_symbol_exists(getentropy "unistd.h" HAVE_GETENTROPY)
+if(HAVE_GETENTROPY)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY)
+endif()
+
+# getentropy(3) is in sys/random.h on mac
+check_symbol_exists(getentropy "sys/random.h" HAVE_GETENTROPY_SYS_RANDOM)
+if(HAVE_GETENTROPY_SYS_RANDOM)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY_SYS_RANDOM)
 endif()
 
 configure_file(

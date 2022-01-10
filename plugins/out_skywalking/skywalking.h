@@ -18,13 +18,25 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_IN_NS_CONFIG_H
-#define FLB_IN_NS_CONFIG_H
+#ifndef FLB_OUT_SKYWALKING_H
+#define FLB_OUT_SKYWALKING_H
 
-#include "nginx_status.h"
+#include <fluent-bit/flb_output_plugin.h>
 
-struct flb_in_nss_config *nss_config_init(struct flb_input_instance *ins,
-                                        struct flb_config *config);
-int nss_config_destroy(struct nginx_ctx *config);
+struct flb_output_sw {
+  /* Configured by user */
+  flb_sds_t auth_token;
+  flb_sds_t svc_name;
+  flb_sds_t svc_inst_name;
+
+  /* Upstream log collector context */
+  struct flb_upstream *u;
+
+  /* Output plugin instance */
+  struct flb_output_instance *ins;
+
+  flb_sds_t http_scheme;
+  flb_sds_t uri;
+};
 
 #endif

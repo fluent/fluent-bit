@@ -324,8 +324,7 @@ int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
     /* get hostname */
     ret = gethostname(hostname, sizeof(hostname) - 1);
     if (ret == -1) {
-        strncpy(hostname, "unknown", 7);
-        hostname[7] = '\0';
+        strcpy(hostname, "unknown");
     }
 
     /* Attach metrics to cmetrics context */

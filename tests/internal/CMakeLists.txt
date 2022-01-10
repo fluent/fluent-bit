@@ -21,6 +21,7 @@ set(UNIT_TESTS_FILES
   input_chunk.c
   flb_time.c
   multiline.c
+  typecast.c
   )
 
 if (NOT WIN32)
@@ -95,6 +96,13 @@ if(FLB_AWS_ERROR_REPORTER)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     error_reporter.c
+    )
+endif()
+
+if(FLB_LUAJIT)
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    lua.c
     )
 endif()
 

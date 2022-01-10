@@ -1,0 +1,121 @@
+---
+name: Release from staging
+
+on:
+  workflow_dispatch:
+
+jobs:
+  staging-release-packages-server:
+    runs-on: ubuntu-latest
+    environment: release
+    # Just sync everything to the release server
+    steps:
+    - name: Hashed known hosts value
+      id: known_hosts
+      run: |
+          OUTPUT=$(ssh-keyscan -H ${{ secrets.FLUENTBITIO_HOST }})
+          echo ::set-output name=OUTPUT::$OUTPUT
+
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.FLUENTBITIO_SSHKEY }}
+        known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+    - name: Sync packages from staging on S3
+      run: |
+        rm -rf ./releases/
+        mkdir -p ./releases/
+
+        if [ -n "${AWS_S3_ENDPOINT}" ]; then
+          ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+        fi
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}" ./releases/ --no-progress ${ENDPOINT}
+
+        rsync -avz ./releases/ $USERNAME@$HOST:/home/$USERNAME/apt
+      env:
+        HOST: ${{ secrets.FLUENTBITIO_HOST }}
+        USERNAME: ${{ secrets.FLUENTBITIO_USERNAME }}
+        KEY: ${{ secrets.FLUENTBITIO_SSHKEY }}
+      shell: bash
+      working-directory: packaging
+
+  staging-release-packages-s3:
+    runs-on: ubuntu-18.04 # no createrepo on more recent runners
+    environment: release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Get the version
+      id: get_version
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        VERSION=$(cat latest-version.txt)
+        echo ::set-output name=VERSION::$VERSION
+      shell: bash
+      env:
+        AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
+
+    - name: Import GPG key for signing
+      id: import_gpg
+      uses: crazy-max/ghaction-import-gpg@v4
+      with:
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+
+    - name: GPG set up RPM keys for signing
+      run: |
+        KEYFILE=$(mktemp)
+        gpg --export -a "${{ steps.import_gpg.outputs.name }}" > $KEYFILE
+        rpm --import $KEYFILE
+        rm -f $KEYFILE
+
+    - name: Sync packages from staging on S3
+      # Download the current release bucket
+      # Add everything from staging
+      # Sign and set up metadata for it all
+      # Upload to release bucket
+      run: |
+        rm -rf ./releases/
+        mkdir -p ./releases/
+        if [ -n "${AWS_S3_ENDPOINT}" ]; then
+          ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+        fi
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" ./releases/ --no-progress ${ENDPOINT}
+        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}" ./releases/ --no-progress ${ENDPOINT}
+        VERSION=$(cat ./releases/latest-version.txt)
+
+        sudo apt-get install debsigs createrepo
+        ./update-repos.sh "$VERSION" ./releases/
+        aws s3 sync ./releases/ "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" --follow-symlinks --no-progress ${ENDPOINT}
+      env:
+        GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+        AWS_REGION: "us-east-1"
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        # To use with Minio locally
+        # AWS_S3_ENDPOINT: http://localhost:9000
+      shell: bash
+      working-directory: packaging
+
+  staging-release-images:
+    runs-on: ubuntu-latest
+    environment: release
+    # Use skopeo to do all the work - run the container to keep it easy to use.
+    steps:
+      - name: Sync container images from staging to release
+        run: |
+          docker run --rm quay.io/skopeo/stable:latest \
+            sync --all \
+            --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
+            --dest-creds ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }} \
+            --src docker --dest docker \
+            ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
+            ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
+        env:
+          STAGING_REGISTRY: ghcr.io
+          STAGING_IMAGE_NAME: ${{ github.repository }}
+
+          # docker.io/fluent/fluent-bit
+          RELEASE_REGISTRY: docker.io
+          RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}
