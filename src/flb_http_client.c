@@ -1136,6 +1136,43 @@ int flb_http_proxy_auth(struct flb_http_client *c,
     return flb_http_add_auth_header(c, user, passwd, FLB_HTTP_HEADER_PROXY_AUTH);
 }
 
+int flb_http_bearer_auth(struct flb_http_client *c, const char *token)
+{
+    int ret;
+    int len_t;
+    int len_h = 8; /* length of "Bearer " plus null terminator */
+    char *h;
+
+    if (token) {
+        len_t = strlen(token);
+    }
+    else {
+        len_t = 0;
+    }
+
+    len_h += len_t;
+
+    h = flb_malloc(len_h);
+    if (!h) {
+        flb_errno();
+        return -1;
+    }
+
+    memcpy(h, "Bearer ", 7);
+    if(len_t && token) {
+        memcpy(h + 7, token, len_t);
+    }
+    h[len_h - 1] = '\0';
+    
+    ret = flb_http_add_header(c,
+                              FLB_HTTP_HEADER_AUTH, strlen(FLB_HTTP_HEADER_AUTH),
+                              h, len_h);
+
+    flb_free(h);
+
+    return ret;
+}
+
 
 int flb_http_do(struct flb_http_client *c, size_t *bytes)
 {
