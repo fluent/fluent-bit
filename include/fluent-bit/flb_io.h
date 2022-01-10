@@ -48,5 +48,7 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
 int flb_io_net_write(struct flb_upstream_conn *u, const void *data,
                      size_t len, size_t *out_len);
 ssize_t flb_io_net_read(struct flb_upstream_conn *u, void *buf, size_t len);
+int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len);
+ssize_t flb_io_fd_read(int fd, void *buf, size_t len);
 
 #endif
