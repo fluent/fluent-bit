@@ -151,6 +151,9 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
             flb_splunk_conf_destroy(ctx);
             return NULL;
         }
+        if (size < 4 *1024) {
+            size = 4 * 1024;
+        }
         ctx->buffer_size = size;
     }
 
