@@ -379,6 +379,7 @@ static int cb_geoip2_filter(const void *data, size_t bytes,
                             void *context,
                             struct flb_config *config)
 {
+    (void) i_ins;
     struct geoip2_ctx *ctx = context;
     size_t off = 0;
     int map_num = 0;
