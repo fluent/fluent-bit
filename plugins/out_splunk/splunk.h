@@ -107,6 +107,9 @@ struct flb_splunk {
     /* HTTP Client Setup */
     size_t buffer_size;
 
+    /* HTTP: Debug bad requests (HTTP status 400) to stdout */
+    int http_debug_bad_request;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
