@@ -90,6 +90,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
 {
     int ret;
     int io_flags = 0;
+    size_t size;
     flb_sds_t t;
     const char *tmp;
     struct flb_upstream *upstream;
@@ -138,6 +139,20 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
 
     /* Set manual Index and Type */
     ctx->u = upstream;
+
+    tmp = flb_output_get_property("http_buffer_size", ins);
+    if (!tmp) {
+        ctx->buffer_size = 0;
+    }
+    else {
+        size = flb_utils_size_to_bytes(tmp);
+        if (size == -1) {
+            flb_plg_error(ctx->ins, "invalid 'buffer_size' value");
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+        ctx->buffer_size = size;
+    }
 
     /* Compress (gzip) */
     tmp = flb_output_get_property("compress", ins);
