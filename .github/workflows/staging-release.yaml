@@ -1,57 +1,21 @@
 ---
 name: Release from staging
 
+# This is only expected to be invoked on-demand by a specific user.
 on:
   workflow_dispatch:
 
 jobs:
 
-  staging-release-packages-server:
-    name: fluentbit.io - upload packages
-    runs-on: ubuntu-18.04 # failures with AWS client on latest
-    environment: release
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
-    - name: Setup runner
-      run: |
-        sudo apt-get install rsync
-      shell: bash
-
-    - name: Hashed known hosts value
-      id: known_hosts
-      run: |
-          OUTPUT=$(ssh-keyscan -H ${{ secrets.FLUENTBITIO_HOST }})
-          echo ::set-output name=OUTPUT::$OUTPUT
-
-    - name: Install SSH Key
-      uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.FLUENTBITIO_SSHKEY }}
-        known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
-
-    - name: Sync packages from staging on S3
-      run: |
-        mkdir -p packaging/releases
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}" packaging/releases/ --no-progress
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      shell: bash
-
-    - name: Upload to build server
-      run: |
-        ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
-        rsync -avz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
-      env:
-        HOST: ${{ secrets.FLUENTBITIO_HOST }}
-        USERNAME: ${{ secrets.FLUENTBITIO_USERNAME }}
-      shell: bash
-
+  # 1. Take packages from the staging bucket
+  # 2. Sign them with the release GPG key
+  # 3. Also take existing release packages from the release bucket.
+  # 4. Create a full repo configuration using the existing releases as well.
+  # 5. Upload to release bucket.
+  # Note we could resign all packages as well potentially if we wanted to update the key.
   staging-release-packages-s3:
     name: S3 - create release
-    runs-on: ubuntu-18.04 # no createrepo on more recent runners
+    runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
     environment: release
     steps:
     - name: Checkout code
@@ -104,4 +68,58 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      shell: bash
+
+  # We have two options here:
+  # 1. Sync the signed packages direct from the release bucket.
+  # 2. Sync the staged packages from the staging bucket, resign on the server.
+  #
+  # Option 1 may involve more transfer fees as the release bucket grows but is
+  # simpler plus tests the whole pipeline.
+  # The assumption being we would remove this step eventually anyway.
+  staging-release-packages-server:
+    name: fluentbit.io - upload packages
+    runs-on: ubuntu-18.04 # failures with AWS client on latest
+    environment: release
+    # Not required if using the staging bucket
+    needs: staging-release-packages-s3
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Setup runner
+      run: |
+        sudo apt-get install rsync
+      shell: bash
+
+    - name: Hashed known hosts value
+      id: known_hosts
+      run: |
+          OUTPUT=$(ssh-keyscan -H ${{ secrets.FLUENTBITIO_HOST }})
+          echo ::set-output name=OUTPUT::$OUTPUT
+
+    - name: Install SSH Key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.FLUENTBITIO_SSHKEY }}
+        known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+    - name: Sync packages from staging on S3
+      run: |
+        mkdir -p packaging/releases
+        aws s3 sync "s3://$BUCKET" packaging/releases/ --no-progress
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        # Replace with staging bucket if required later
+        BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+      shell: bash
+
+    - name: Upload to build server
+      run: |
+        ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
+        rsync -avz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
+      env:
+        HOST: ${{ secrets.FLUENTBITIO_HOST }}
+        USERNAME: ${{ secrets.FLUENTBITIO_USERNAME }}
       shell: bash
