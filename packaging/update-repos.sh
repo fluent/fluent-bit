@@ -76,8 +76,7 @@ EOF
     aptly -config="$APTLY_CONFIG" repo add "$APTLY_REPO_NAME" "$REPO_DIR/"
     aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
     aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
-    mv "$APTLY_ROOTDIR"/public/* "$REPO_DIR"/
-
+    rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
     # Remove unnecessary files
     rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
 done
