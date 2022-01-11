@@ -49,7 +49,6 @@ static int cb_splunk_init(struct flb_output_instance *ins,
      * it debugging callbacks.
      */
     flb_output_set_http_debug_callbacks(ins);
-
     return 0;
 }
 
@@ -436,6 +435,7 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     int compressed = FLB_FALSE;
     size_t b_sent;
     flb_sds_t buf_data;
+    size_t resp_size;
     size_t buf_size;
     char *endpoint;
     struct flb_splunk *ctx = out_context;
@@ -494,7 +494,22 @@ static void cb_splunk_flush(struct flb_event_chunk *event_chunk,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, endpoint,
                         payload_buf, payload_size, NULL, 0, NULL, 0);
-    flb_http_buffer_size(c, ctx->buffer_size);
+
+    /* HTTP Response buffer size, honor value set by the user */
+    if (ctx->buffer_size > 0) {
+        flb_http_buffer_size(c, ctx->buffer_size);
+    }
+    else {
+        /*
+         * If no value was set, we try to accomodate by using our post
+         * payload size * 1.5, on that way we make room for large responses
+         * if something goes wrong, so we don't get a partial response.
+         */
+        resp_size = payload_size * 1.5;
+        flb_http_buffer_size(c, resp_size);
+    }
+
+    /* HTTP Client */
     flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
 
     /* Try to use http_user and http_passwd if not, fallback to auth_header */
@@ -597,8 +612,8 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_SIZE, "http_buffer_size", FLB_SPLUNK_DEFAULT_HTTP_MAX,
-     0, FLB_TRUE, offsetof(struct flb_splunk, buffer_size),
+     FLB_CONFIG_MAP_SIZE, "http_buffer_size", NULL,
+     0, FLB_FALSE, 0,
      "Specify the buffer size used to read the response from the Splunk HTTP "
      "service. This option is useful for debugging purposes where is required to read "
      "full responses, note that response size grows depending of the number of records "
