@@ -425,6 +425,85 @@ static inline int splunk_format(const void *in_buf, size_t in_bytes,
     return 0;
 }
 
+static void debug_request_response(struct flb_splunk *ctx,
+                                   struct flb_http_client *c)
+{
+    int ret;
+    int uncompressed = FLB_FALSE;
+    time_t now;
+    void *tmp_buf = NULL;
+    size_t tmp_size;
+    size_t req_size;
+    char *req_buf = NULL;
+    struct tm result;
+    struct tm *current;
+    unsigned char *ptr;
+    flb_sds_t req_headers = NULL;
+    flb_sds_t req_body = NULL;
+
+    if (c->body_len > 3) {
+        ptr = (unsigned char *) c->body_buf;
+        if (ptr[0] == 0x1F && ptr[1] == 0x8B && ptr[2] == 0x08) {
+            /* uncompress payload */
+            ret = flb_gzip_uncompress((void *) c->body_buf, c->body_len,
+                                      &tmp_buf, &tmp_size);
+            if (ret == -1) {
+                fprintf(stdout, "[out_splunk] could not uncompress data\n");
+            }
+            else {
+                req_buf = (char *) tmp_buf;
+                req_size = tmp_size;
+                uncompressed = FLB_TRUE;
+            }
+        }
+        else {
+            req_buf = (char *) c->body_buf;
+            req_size = c->body_len;
+        }
+
+        /* create a safe buffer */
+        if (req_buf) {
+            req_body = flb_sds_create_len(req_buf, req_size);
+        }
+    }
+
+    req_headers = flb_sds_create_len(c->header_buf, c->header_len);
+
+    if (c->resp.data)
+    now = time(NULL);
+    current = localtime_r(&now, &result);
+
+    fprintf(stdout,
+            "[%i/%02i/%02i %02i:%02i:%02i] "
+            "[out_splunk] debug HTTP 400 (bad request)\n"
+            ">>> request\n"
+            "%s%s\n\n"
+            "<<< response\n"
+            "%s\n\n",
+
+            current->tm_year + 1900,
+            current->tm_mon + 1,
+            current->tm_mday,
+            current->tm_hour,
+            current->tm_min,
+            current->tm_sec,
+
+            req_headers,
+            req_body,
+            c->resp.data);
+
+    if (uncompressed) {
+        flb_free(tmp_buf);
+    }
+
+    if (req_headers) {
+        flb_sds_destroy(req_headers);
+    }
+    if (req_body) {
+        flb_sds_destroy(req_body);
+    }
+}
+
 static void cb_splunk_flush(const void *data, size_t bytes,
                             const char *tag, int tag_len,
                             struct flb_input_instance *i_ins,
@@ -502,6 +581,9 @@ static void cb_splunk_flush(const void *data, size_t bytes,
          * if something goes wrong, so we don't get a partial response.
          */
         resp_size = payload_size * 1.5;
+        if (resp_size < 4096) {
+            resp_size = 4096;
+        }
         flb_http_buffer_size(c, resp_size);
     }
 
@@ -556,6 +638,11 @@ static void cb_splunk_flush(const void *data, size_t bytes,
              */
             ret = (c->resp.status < 400 || c->resp.status >= 500) ?
                 FLB_RETRY : FLB_ERROR;
+
+
+            if (c->resp.status == 400 && ctx->http_debug_bad_request) {
+                debug_request_response(ctx, c);
+            }
         }
         else {
             ret = FLB_OK;
@@ -615,6 +702,14 @@ static struct flb_config_map config_map[] = {
      "full responses, note that response size grows depending of the number of records "
      "inserted. To set an unlimited amount of memory set this value to 'false', "
      "otherwise the value must be according to the Unit Size specification"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "http_debug_bad_request", "false",
+     0, FLB_TRUE, offsetof(struct flb_splunk, http_debug_bad_request),
+     "If the HTTP server response code is 400 (bad request) and this flag is "
+     "enabled, it will print the full HTTP request and response to the stdout "
+     "interface. This feature is available for debugging purposes."
     },
 
     {
