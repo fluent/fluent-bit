@@ -25,7 +25,7 @@
 #include <string.h>
 #include "flb_tests_internal.h"
 
-#define ELAPSED_TIME_LIMIT 15
+#define ELAPSED_TIME_LIMIT 28
 
 void flb_test_timeout_coroutine_recovery()
 {
@@ -40,7 +40,7 @@ void flb_test_timeout_coroutine_recovery()
     ctx = flb_create();
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
-                                    "Grace", "20",
+                                    "Grace", "30",
                                     NULL) == 0);
 
     ret = flb_service_set(ctx,
