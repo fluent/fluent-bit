@@ -25,7 +25,7 @@
 #include <string.h>
 #include "flb_tests_internal.h"
 
-#define ELAPSED_TIME_LIMIT 28
+#define ELAPSED_TIME_LIMIT 9
 
 void flb_test_timeout_coroutine_recovery()
 {
@@ -40,7 +40,7 @@ void flb_test_timeout_coroutine_recovery()
     ctx = flb_create();
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
-                                    "Grace", "30",
+                                    "Grace", "10",
                                     NULL) == 0);
 
     ret = flb_service_set(ctx,
@@ -61,7 +61,7 @@ void flb_test_timeout_coroutine_recovery()
     TEST_CHECK(output_instance_id >= 0);
     TEST_CHECK(flb_output_set(ctx, output_instance_id,
                               "match", "*",
-                              "retry_limit", "1",
+                              "retry_limit", "no_retries",
                               "host", "128.1.1.1",
                               "port", "65534",
                               "net.keepalive", "off",
@@ -73,9 +73,9 @@ void flb_test_timeout_coroutine_recovery()
     ret = flb_start(ctx);
     TEST_CHECK_(ret == 0, "starting engine");
 
-    start_time = time(NULL);
-
     sleep(10);
+
+    start_time = time(NULL);
 
     ret = flb_stop(ctx);
     TEST_CHECK_(ret == 0, "stopping engine");
