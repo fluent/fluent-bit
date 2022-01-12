@@ -8,7 +8,7 @@
 #endif
 
 #if defined(__clang__) || defined(__GNUC__)
-  #if defined(_WIN32)
+  #if defined(_WIN64) || defined(_WIN32)
     #include "fiber.c"
   #elif defined(__i386__)
     #include "x86.c"
@@ -24,7 +24,7 @@
     #include "sjlj.c"
   #endif
 #elif defined(_MSC_VER)
-  #if defined(_WIN32)
+  #if defined(_WIN64) || defined(_WIN32)
     #include "fiber.c"
   #elif defined(_M_IX86)
     #include "x86.c"
