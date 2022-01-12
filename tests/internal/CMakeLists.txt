@@ -22,6 +22,7 @@ set(UNIT_TESTS_FILES
   flb_time.c
   multiline.c
   typecast.c
+  timeout.c
   )
 
 if (NOT WIN32)
