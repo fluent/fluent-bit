@@ -848,7 +848,7 @@ static struct flb_config_map config_map[] = {
      "kubelet port to connect with when using kubelet"
     },
     {
-     FLB_CONFIG_MAP_INT, "kube_token_ttl", "60",
+     FLB_CONFIG_MAP_INT, "kube_token_ttl", "600",
      0, FLB_TRUE, offsetof(struct flb_kube, kube_token_ttl),
      "kubelet token ttl"
     },
