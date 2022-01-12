@@ -1,20 +1,19 @@
 ---
-name: Release from staging
+name: Remove a published release [WARNING]
 
 # This is only expected to be invoked on-demand by a specific user.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        description: The version to remove from release.
+        type: string
 
 jobs:
 
-  # 1. Take packages from the staging bucket
-  # 2. Sign them with the release GPG key
-  # 3. Also take existing release packages from the release bucket.
-  # 4. Create a full repo configuration using the existing releases as well.
-  # 5. Upload to release bucket.
-  # Note we could resign all packages as well potentially if we wanted to update the key.
-  staging-release-packages-s3:
-    name: S3 - create release
+  remove-release-packages-s3:
+    name: S3 - remove release
     runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
     environment: release
     steps:
@@ -32,16 +31,10 @@ jobs:
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
 
-    # Download the current release bucket
-    # Add everything from staging
-    # Sign and set up metadata for it all
-    # Upload to release bucket
-
-    - name: Sync packages from buckets on S3
+    - name: Sync packages from bucket on S3
       run: |
         mkdir -p packaging/releases
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE }}" packaging/releases/ --no-progress
-        aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}" packaging/releases/ --no-progress
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -53,12 +46,9 @@ jobs:
         rpm --import packaging/releases/fluentbit.key
       shell: bash
 
-    - name: Update repo info and remove any staging details
+    - name: Remove versions and update repo info
       run: |
-        rm -f packaging/releases/*.repo
-        VERSION=$(cat packaging/releases/latest-version.txt)
-        packaging/update-repos.sh "$VERSION" packaging/releases/
-        rm -f packaging/releases/latest-version.txt
+        packaging/remove-version.sh "$VERSION" packaging/releases/
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
@@ -72,17 +62,11 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       shell: bash
 
-  # We have two options here:
-  # 1. Sync the signed packages direct from the release bucket.
-  # 2. Sync the staged packages from the staging bucket, resign on the server.
-  #
-  # Option 1 may involve more transfer fees as the release bucket grows but is
-  # simpler plus tests the whole pipeline.
-  # The assumption being we would remove this step eventually anyway.
-  staging-release-packages-server:
-    name: fluentbit.io - upload packages
-    # Not required if using the staging bucket
-    needs: staging-release-packages-s3
+  # This removes the package from the set sync'd to the server but some manual work is required on the server
+  # to republish it without the packages.
+  remove-release-packages-server:
+    name: fluentbit.io - remove packages
+    needs: remove-release-packages-s3
     runs-on: ubuntu-18.04 # failures with AWS client on latest
     environment: release
     steps:
