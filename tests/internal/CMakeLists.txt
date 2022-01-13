@@ -21,6 +21,7 @@ set(UNIT_TESTS_FILES
   input_chunk.c
   flb_time.c
   multiline.c
+  timeout.c
   )
 
 if (NOT WIN32)
