@@ -7,7 +7,7 @@ jobs:
 
   hadolint-pr:
     runs-on: ubuntu-latest
-    name: Hadolint
+    name: PR - Hadolint
     steps:
       - uses: actions/checkout@v2
         # Ignores do not work: https://github.com/reviewdog/action-hadolint/issues/35 is resolved
@@ -18,7 +18,7 @@ jobs:
 
   shellcheck-pr:
     runs-on: ubuntu-latest
-    name: Shellcheck
+    name: PR - Shellcheck
     steps:
       - uses: actions/checkout@v2
       - uses: ludeeus/action-shellcheck@master
@@ -27,7 +27,7 @@ jobs:
 
   actionlint-pr:
     runs-on: ubuntu-latest
-    name: Actionlint
+    name: PR - Actionlint
     steps:
       - uses: actions/checkout@v2
       - run: |
