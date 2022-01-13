@@ -62,8 +62,8 @@ void flb_test_timeout_coroutine_recovery()
     TEST_CHECK(flb_output_set(ctx, output_instance_id,
                               "match", "*",
                               "retry_limit", "no_retries",
-                              "host", "128.1.1.1",
-                              "port", "65534",
+                              "host", "35.243.247.233",
+                              "port", "54321",
                               "net.keepalive", "off",
                               "net.connect_timeout", "5s",
                               NULL) == 0);
