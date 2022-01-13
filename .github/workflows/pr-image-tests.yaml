@@ -6,7 +6,7 @@ on:
 
 jobs:
     pr-get-latest-tag:
-      name: PR get latest tag for source build
+      name: PR - get latest tag for source build
       runs-on: ubuntu-latest
       environment: pr
       outputs:
@@ -26,6 +26,7 @@ jobs:
             flags: 'g'
 
     pr-image-tests-build-images:
+      name: PR - build images
       uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
       needs: pr-get-latest-tag
       with:
@@ -38,8 +39,8 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
     pr-image-tests-smoke-test-images:
-      name: Multi-arch images smoke tests
-      needs: pr-image-tests-build-images
+      name: PR - smoke test images
+      needs: [pr-get-latest-tag, pr-image-tests-build-images]
       uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
       with:
         registry: ghcr.io
