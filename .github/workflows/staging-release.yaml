@@ -100,9 +100,12 @@ jobs:
   staging-release-images:
     runs-on: ubuntu-latest
     environment: release
-    # Use skopeo to do all the work - run the container to keep it easy to use.
+    env:
+      STAGING_REGISTRY: ghcr.io
+      STAGING_IMAGE_NAME: ${{ github.repository }}/staging
+# Use skopeo to do all the work - run the container to keep it easy to use.
     steps:
-      - name: Sync container images from staging to release
+      - name: Sync container images from staging to DockerHub
         run: |
           docker run --rm quay.io/skopeo/stable:latest \
             sync --all \
@@ -112,9 +115,19 @@ jobs:
             ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
             ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
         env:
-          STAGING_REGISTRY: ghcr.io
-          STAGING_IMAGE_NAME: ${{ github.repository }}
-
           # docker.io/fluent/fluent-bit
           RELEASE_REGISTRY: docker.io
           RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+
+      - name: Sync container images from staging to release
+        run: |
+          docker run --rm quay.io/skopeo/stable:latest \
+            sync --all \
+            --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
+            --dest-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
+            --src docker --dest docker \
+            ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
+            ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
+        env:
+          RELEASE_REGISTRY: ghcr.io
+          RELEASE_IMAGE_NAME: ${{ github.repository }}
