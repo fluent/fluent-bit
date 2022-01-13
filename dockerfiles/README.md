@@ -1,59 +1,53 @@
 # Fluent Bit Docker Image
 
-[Fluent Bit](https://fluentbit.io) container images are available on Docker Hub ready for production usage. Our stable images are based in [Distroless](https://github.com/GoogleContainerTools/distroless) focusing on security containing just the Fluent Bit binary, minimal system libraries and basic configuration.
+[Fluent Bit](https://fluentbit.io) container images are available on Docker Hub ready for production usage.
 
-Optionally, we provide debug images which contains Busybox that can be used to troubleshoot or testing purposes.
+The stable AMD64 images are based on [Distroless](https://github.com/GoogleContainerTools/distroless) focusing on security containing just the Fluent Bit binary, minimal system libraries and basic configuration.
 
-For a detailed list of Tags and versions available, please refer to the the official documentation:
+Optionally, we provide debug images which contain Busybox that can be used to troubleshoot or testing purposes.
 
-https://docs.fluentbit.io/manual/installation/docker
+There are also images for ARM32 and ARM64 architectures but no debug version.
 
+For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/docker
 
+## Build and test
 
-## 1. Checkout Branch
-
-Fluent Bit Dockerfiles are located in separated branches with proper tags:
-
-| Branch | Tags Available                                               |
-| ------ | ------------------------------------------------------------ |
-| 1.2    | 1.2, 1.2-debug, 1.2.0, 1.2.0-debug, 1.2.1, 1.2.1-debug |
-| 1.1    | 1.1, 1.1-debug, 1.1.0, 1.1.0-debug, 1.1.1, 1.1.1-debug, 1.1.2, 1.1.2-debug, 1.1.3, 1.1.3-debug |
-| 1.0    | 1.0, 1.0-debug, 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.3-debug, 1.0.4, 1.0.4-debug, 1.0.5, 1.0.5-debug, 1.0.6, 1.0.6-debug |
-| 0.14   | 0.14, 0.14.0, 0.14.1, 0.14.2, 0.14.3, 0.14.4, 0.14.5, 0.14.6, 0.14.7, 0.14.8, 0.14.9 |
-| 0.13   | 0.13, 0.13.0, 0.13.1, 0.13.2, 0.13.3, 0.13.4, 0.13.5, 0.13.6, 0.13.7, 0.13.8 |
-| 0.12   | 0.12, 0.12.19, 0.12.18, 0.12.17, 0.12.16, 0.12.15, 0.12.14, 0.12.13, 0.12.12, 0.12.11, 0.12.10, 0.12.9, 0.12.8, 0.12.7, 0.12.6, 0.12.5, 0.12.4, 0.12.3, 0.12.2, 0.12.1, 0.12.0 |
-
-## 2. Build image
-
-Use `docker build` command to build the image. This example names the image "fluent-bit:latest":
-
+1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
+2. Build the container image using the appropriate Dockerfile in this directory.
 ```
-$ docker build -t fluent/fluent-bit:1.2 ./
+$ docker build -t fluent/fluent-bit -f ./dockerfiles/Dockerfile.x86_64 ./dockerfiles
+```
+3. Test the container.
+```
+$ docker run --rm -it fluent/fluent-bit:latest
 ```
 
-## 3. Test it
-
-Once the image is built, it's ready to run:
+By default, the configuration uses the CPU input plugin and the stdout output plugin which means you should see regular output in the log showing the CPU loading.
 
 ```
-docker run -p 127.0.0.1:24224:24224 fluent/fluent-bit:latest
+Fluent Bit v1.8.11
+* Copyright (C) 2019-2021 The Fluent Bit Authors
+* Copyright (C) 2015-2018 Treasure Data
+* Fluent Bit is a CNCF sub-project under the umbrella of Fluentd
+* https://fluentbit.io
+
+[2022/01/13 14:48:44] [ info] [engine] started (pid=1)
+[2022/01/13 14:48:44] [ info] [storage] version=1.1.5, initializing...
+[2022/01/13 14:48:44] [ info] [storage] in-memory
+[2022/01/13 14:48:44] [ info] [storage] normal synchronization mode, checksum disabled, max_chunks_up=128
+[2022/01/13 14:48:44] [ info] [cmetrics] version=0.2.2
+[2022/01/13 14:48:44] [ info] [sp] stream processor started
+[0] cpu.local: [1642085324.503383520, {"cpu_p"=>0.437500, "user_p"=>0.250000, "system_p"=>0.187500, "cpu0.p_cpu"=>0.000000, "cpu0.p_user"=>0.000000, "cpu0.p_system"=>0.000000, "cpu1.p_cpu"=>0.000000, "cpu1.p_user"=>0.000000, "cpu1.p_system"=>0.000000, "cpu2.p_cpu"=>1.000000, "cpu2.p_user"=>1.000000, "cpu2.p_system"=>0.000000, "cpu3.p_cpu"=>1.000000, "cpu3.p_user"=>1.000000, "cpu3.p_system"=>0.000000, "cpu4.p_cpu"=>1.000000, "cpu4.p_user"=>1.000000, "cpu4.p_system"=>0.000000, "cpu5.p_cpu"=>1.000000, "cpu5.p_user"=>0.000000, "cpu5.p_system"=>1.000000, "cpu6.p_cpu"=>0.000000, "cpu6.p_user"=>0.000000, "cpu6.p_system"=>0.000000, "cpu7.p_cpu"=>0.000000, "cpu7.p_user"=>0.000000, "cpu7.p_system"=>0.000000, "cpu8.p_cpu"=>2.000000, "cpu8.p_user"=>1.000000, "cpu8.p_system"=>1.000000, "cpu9.p_cpu"=>1.000000, "cpu9.p_user"=>1.000000, "cpu9.p_system"=>0.000000, "cpu10.p_cpu"=>0.000000, "cpu10.p_user"=>0.000000, "cpu10.p_system"=>0.000000, "cpu11.p_cpu"=>0.000000, "cpu11.p_user"=>0.000000, "cpu11.p_system"=>0.000000, "cpu12.p_cpu"=>0.000000, "cpu12.p_user"=>0.000000, "cpu12.p_system"=>0.000000, "cpu13.p_cpu"=>0.000000, "cpu13.p_user"=>0.000000, "cpu13.p_system"=>0.000000, "cpu14.p_cpu"=>2.000000, "cpu14.p_user"=>1.000000, "cpu14.p_system"=>1.000000, "cpu15.p_cpu"=>0.000000, "cpu15.p_user"=>0.000000, "cpu15.p_system"=>0.000000}]
 ```
 
-By default, the configuration set a listener on TCP port 24224 through Forward protocol and prints to the standard output interface each message. So this can be used to forward Docker log messages from one container to the Fluent Bit image, e.g:
+## ghcr.io topology
 
-```
-$ docker run --log-driver=fluentd -t ubuntu echo "Testing a log message"
-```
-
-
-On Fluent Bit container will print to stdout something like this:
-
-```
-Fluent Bit v1.2.x
-Copyright (C) Treasure Data
-
-[0] docker.31c94ceb86ca: [1487548735, {"container_id"=>"31c94ceb86cae7055564eb4d65cd2e2897addd252fe6b86cd11bddd70a871c08", "container_name"=>"/admiring_shannon", "source"=>"stdout","}]og"=>"Testing a log message
-```
+Containers are "staged" prior to release in the following ways to `ghcr.io`:
+* `ghcr.io/fluent/fluent-bit` - official releases, identical to DockerHub
+* `ghcr.io/fluent/fluent-bit/staging` - all architectures staging images used for testing prior to release
+* `ghcr.io/fluent/fluent-bit/master` - x86_64/AMD64 only images built on each push to master, used for integration tests
+* `ghcr.io/fluent/fluent-bit/pr-X` - x86_64/AMD64 only PR images where `X` is the PR number
+* `ghcr.io/fluent/fluent-bit/multiarch` - developer preview multi-arch images built from `Dockerfile.multiarch`
 
 ## Contact
 
