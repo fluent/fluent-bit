@@ -45,7 +45,7 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         image: ${{ github.repository }}/pr-${{ github.event.number }}
-        image-tag: latest
+        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
         environment: pr
       secrets:
         token: ${{ secrets.GITHUB_TOKEN }}
