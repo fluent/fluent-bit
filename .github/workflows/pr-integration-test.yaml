@@ -19,8 +19,8 @@ jobs:
       ref: ${{ github.event.pull_request.head.sha }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
-      image-tag: x86_64-master-pr-${{ github.event.number }}
+      image: ${{ github.repository }}/pr-${{ github.event.number }}
+      image-tag: x86_64
       environment: integration
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -42,7 +42,7 @@ jobs:
           docker pull $IMAGE
           docker save --output /tmp/pr-image.tar $IMAGE
         env:
-          IMAGE: ghcr.io/${{ github.repository }}:x86_64-master-pr-${{ github.event.pull_request.number }}
+          IMAGE: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}:x86_64
         shell: bash
 
       - name: Upload artifact
@@ -57,8 +57,8 @@ jobs:
     needs: pr-integration-test-build
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
-      image_name: ghcr.io/${{ github.repository }}
-      image_tag: x86_64-master-pr-${{ github.event.pull_request.number }}
+      image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+      image_tag: x86_64
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}

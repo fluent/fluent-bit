@@ -60,7 +60,7 @@ jobs:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
+      image: ${{ github.repository }}/staging
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
