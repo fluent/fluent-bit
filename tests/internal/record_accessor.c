@@ -469,9 +469,74 @@ void cb_dash_key()
     msgpack_unpacked_destroy(&result);
 }
 
+void cb_dot_and_slash_key()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON message */
+    json = "{\"root.with/symbols\": \"something\"}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter */
+    fmt = flb_sds_create("$root.with/symbols");
+    if (!TEST_CHECK(fmt != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    fmt_out = "something";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     { "keys"         , cb_keys},
     { "dash_key"     , cb_dash_key},
+    { "dot_slash_key", cb_dot_and_slash_key},
     { "translate"    , cb_translate},
     { "translate_tag", cb_translate_tag},
     { "dots_subkeys" , cb_dots_subkeys},
