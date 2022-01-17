@@ -24,13 +24,13 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_compat.h>
+
 #include <monkey/mk_core.h>
 
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
-
 #ifndef _MSC_VER
 #include <glob.h>
 #endif
