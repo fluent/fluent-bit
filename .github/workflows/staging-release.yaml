@@ -113,6 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         release-image: [ "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}", "ghcr.io/${{ github.repository }}" ]
+        tag: [ "${{ inputs.version }}", "latest", "${{ inputs.version }}-debug", "latest-debug" ]
         include:
           - release-image: "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}"
             release-creds: "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}"
@@ -120,22 +121,47 @@ jobs:
           - release-image: "ghcr.io/${{ github.repository }}"
             release-creds: "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Promote container images from staging to release if no GPG key
+        if: ${{ ! secrets.GPG_PRIVATE_KEY }}
+        run: |
+          skopeo \
+              copy \
+              --all \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
+          RELEASE_IMAGE_NAME: ${{ matrix.release-image }}
+          RELEASE_CREDS: ${{ matrix.release-creds }}
+          VERSION: ${{ inputs.version }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
 
       - name: Import GPG key for signing
+        if: ${{ secrets.GPG_PRIVATE_KEY }}
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v4
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
 
-      - name: Sync release container images from staging to release
+      - name: Promote and sign container images from staging to release
+        if: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          packaging/skopeo-sync.sh
+          skopeo \
+              copy \
+              --all --remove-signatures \
+              --sign-by "$GPG_KEY" \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
           RELEASE_IMAGE_NAME: ${{ matrix.release-image }}
           RELEASE_CREDS: ${{ matrix.release-creds }}
           GPG_KEY: ${{ steps.import_gpg.outputs.name }}
           VERSION: ${{ inputs.version }}
+          TAG: ${{ matrix.tag }}
         shell: bash

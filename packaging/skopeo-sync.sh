@@ -22,7 +22,7 @@ for TAG in "${TAGS_TO_SYNC[@]}" ; do
     # Use the skopeo image as it is not available until Ubuntu 20.10
     if [[ -z "$GPG_KEY" ]]; then
         docker run --rm  \
-        quay.io/skopeo/stable:latest \
+            quay.io/skopeo/stable:latest \
             copy \
             --all \
             --src-no-creds \
