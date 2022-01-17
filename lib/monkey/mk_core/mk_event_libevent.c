@@ -243,7 +243,8 @@ static void cb_timeout(evutil_socket_t fd, short flags, void *data)
     uint64_t val = 1;
     struct ev_map *ev_map = data;
 
-    ret = send(ev_map->pipe[1], &val, sizeof(uint64_t), 0);
+    ret = send(ev_map->pipe[1], (char *) &val, sizeof(uint64_t), 0);
+
     if (ret == -1) {
         if (evutil_socket_geterror(fd) != ERR(ECONNABORTED)) {
             perror("write");
@@ -345,6 +346,36 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     return 0;
 }
 
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask,
+                                   int prevent_duplication)
+{
+    size_t               index;
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    if (prevent_duplication) {
+        for (index = 0 ; index < loop->n_events ; index++) {
+            if (ctx->fired[index].data == event) {
+                return 0;
+            }
+        }
+    }
+
+    event->mask = mask;
+
+    ctx->fired[ctx->fired_count].fd = event->fd;
+    ctx->fired[ctx->fired_count].mask = mask;
+    ctx->fired[ctx->fired_count].data = event;
+
+    ctx->fired_count++;
+    loop->n_events++;
+
+    return 0;
+}
+
 static inline int _mk_event_wait(struct mk_event_loop *loop)
 {
     struct mk_event_ctx *ctx = loop->data;
@@ -354,6 +385,7 @@ static inline int _mk_event_wait(struct mk_event_loop *loop)
      * is populated, so we reset the counter every time this function
      * is called.
      */
+
     ctx->fired_count = 0;
     event_base_loop(ctx->base, EVLOOP_ONCE);
     loop->n_events = ctx->fired_count;
