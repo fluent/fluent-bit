@@ -61,6 +61,19 @@ set(src
   flb_event.c
   )
 
+# Config format
+set(src
+  ${src}
+  config_format/flb_config_format.c
+  config_format/flb_cf_fluentbit.c
+)
+if(FLB_HAVE_LIBYAML)
+  set(src
+    ${src}
+    config_format/flb_cf_yaml.c
+    )
+endif()
+
 # Multiline subsystem
 add_subdirectory(multiline)
 set(src
@@ -327,6 +340,14 @@ if(OPENSSL_FOUND)
     ${FLB_DEPS}
     OpenSSL::SSL
     )
+endif()
+
+# libyaml
+if(FLB_HAVE_LIBYAML)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  yaml
+  )
 endif()
 
 # UTF8 Encoding
