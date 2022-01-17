@@ -26,7 +26,7 @@
 #include <fluent-bit/flb_avro.h>
 #endif
 
-#include "rdkafka.h"
+#include <fluent-bit/flb_kafka.h>
 
 #define FLB_KAFKA_FMT_JSON            0
 #define FLB_KAFKA_FMT_MSGP            1
@@ -34,8 +34,6 @@
 #ifdef FLB_HAVE_AVRO_ENCODER
 #define FLB_KAFKA_FMT_AVRO            3
 #endif
-#define FLB_KAFKA_BROKERS             "127.0.0.1"
-#define FLB_KAFKA_TOPIC               "fluent-bit"
 #define FLB_KAFKA_TS_KEY              "@timestamp"
 #define FLB_KAFKA_QUEUE_FULL_RETRIES  10
 
@@ -61,9 +59,9 @@ struct flb_kafka_topic {
 };
 
 struct flb_out_kafka {
+    struct flb_kafka kafka;
     /* Config Parameters */
     int format;
-    char *brokers;
 
     /* Optional topic key for routing */
     int topic_key_len;
@@ -102,7 +100,6 @@ struct flb_out_kafka {
     int queue_full_retries;
 
     /* Internal */
-    rd_kafka_t *producer;
     rd_kafka_conf_t *conf;
 
     /* Plugin instance */
@@ -122,8 +119,8 @@ struct flb_out_kafka {
 
 };
 
-struct flb_out_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                        struct flb_config *config);
-int flb_kafka_conf_destroy(struct flb_out_kafka *ctx);
+struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
+                                           struct flb_config *config);
+int flb_out_kafka_destroy(struct flb_out_kafka *ctx);
 
 #endif

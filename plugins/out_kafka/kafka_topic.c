@@ -30,7 +30,7 @@ struct flb_kafka_topic *flb_kafka_topic_create(char *name,
     rd_kafka_topic_t *tp;
     struct flb_kafka_topic *topic;
 
-    tp = rd_kafka_topic_new(ctx->producer, name, NULL);
+    tp = rd_kafka_topic_new(ctx->kafka.rk, name, NULL);
     if (!tp) {
         flb_plg_error(ctx->ins, "failed to create topic: %s",
                       rd_kafka_err2str(rd_kafka_last_error()));

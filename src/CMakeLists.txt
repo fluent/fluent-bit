@@ -190,6 +190,13 @@ if(FLB_LUAJIT)
     )
 endif()
 
+if(FLB_OUT_KAFKA)
+  set(src
+    ${src}
+    "flb_kafka.c"
+    )
+endif()
+
 # Link to libco
 set(extra_libs
   ${extra_libs}

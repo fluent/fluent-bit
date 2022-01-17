@@ -73,7 +73,7 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     struct flb_out_kafka *ctx;
 
     /* Configuration */
-    ctx = flb_kafka_conf_create(ins, config);
+    ctx = flb_out_kafka_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "failed to initialize");
         return -1;
@@ -420,7 +420,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * issue a full retry of the data chunk.
              */
             flb_time_sleep(1000);
-            rd_kafka_poll(ctx->producer, 0);
+            rd_kafka_poll(ctx->kafka.rk, 0);
 
             /* Issue a re-try */
             queue_full_retries++;
@@ -433,7 +433,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     ctx->blocked = FLB_FALSE;
 
-    rd_kafka_poll(ctx->producer, 0);
+    rd_kafka_poll(ctx->kafka.rk, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
         flb_sds_destroy(s);
     }
@@ -499,7 +499,7 @@ static int cb_kafka_exit(void *data, struct flb_config *config)
 {
     struct flb_out_kafka *ctx = data;
 
-    flb_kafka_conf_destroy(ctx);
+    flb_out_kafka_destroy(ctx);
     return 0;
 }
 
