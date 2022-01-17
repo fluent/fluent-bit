@@ -728,6 +728,15 @@ if(FLB_BACKTRACE)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
 endif()
 
+if(FLB_OUT_KAFKA)
+    FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
+    FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
+    FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
+    FLB_OPTION(ENABLE_LZ4_EXT         Off)
+
+    add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
+endif()
+
 # Onigmo (Regex Engine)
 # =====================
 if(FLB_REGEX)
