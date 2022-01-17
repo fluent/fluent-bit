@@ -630,6 +630,17 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# libyaml support
+check_c_source_compiles("
+  #include <yaml.h>
+  int main() {
+    yaml_parser_t parser;
+    return 0;
+  }" FLB_HAVE_LIBYAML)
+if(FLB_HAVE_LIBYAML)
+  FLB_DEFINITION(FLB_HAVE_LIBYAML)
+endif()
+
 # check attribute alloc_size
 check_c_source_compiles("
 #include <stdlib.h>
