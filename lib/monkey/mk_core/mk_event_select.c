@@ -26,6 +26,18 @@
 #include <mk_core/mk_event.h>
 #include <time.h>
 
+/* I could be wrong but i think the whole way in which
+ * this module handles the event array seems to be flawed
+ * because it's addressed by the file descriptor, which in
+ * some cases could cause an out of bounds write of a non
+ * controllable QWORD (ie. line 117)
+ *
+ * I'll leave it for the moment but I think we might want
+ * to come back to it and refactor it to just use the event
+ * array as a list (at most implementing a hash table like
+ * addressing mechanism to make it faster)
+ */
+
 struct fd_timer {
     int    fd;
     int    run;
@@ -295,6 +307,33 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
 
     *r_fd = fd[0];
     *w_fd = fd[1];
+
+    return 0;
+}
+
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask,
+                                   int prevent_duplication)
+{
+    size_t               index;
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    if (prevent_duplication) {
+        for (index = 0 ; index < loop->n_events ; index++) {
+            if (ctx->fired[index]->fd == event->fd) {
+                return 0;
+            }
+        }
+    }
+
+    event->mask = mask;
+
+    ctx->fired[loop->n_events] = event;
+
+    loop->n_events++;
 
     return 0;
 }

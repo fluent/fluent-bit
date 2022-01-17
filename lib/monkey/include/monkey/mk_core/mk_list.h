@@ -76,10 +76,10 @@ static inline void mk_list_add_after(struct mk_list *_new,
     }
 
     next = prev->next;
-    next->prev = prev;
     _new->next = next;
     _new->prev = prev;
     prev->next = _new;
+    next->prev = _new;
 }
 
 static inline void __mk_list_del(struct mk_list *prev, struct mk_list *next)
