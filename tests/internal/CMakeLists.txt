@@ -24,6 +24,20 @@ set(UNIT_TESTS_FILES
   typecast.c
   )
 
+# Config format
+set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    config_format.c
+    config_format_fluentbit.c
+)
+
+if(FLB_HAVE_LIBYAML)
+  set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      config_format_yaml.c
+      )
+endif()
+
 if (NOT WIN32)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
