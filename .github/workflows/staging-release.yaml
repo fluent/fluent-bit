@@ -106,14 +106,19 @@ jobs:
         server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
         server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}
 
+  # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
+  # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
     runs-on: ubuntu-latest
     environment: release
     strategy:
       fail-fast: false
       matrix:
+        # All the release registries we support and the tags we want to release
         release-image: [ "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}", "ghcr.io/${{ github.repository }}" ]
         tag: [ "${{ inputs.version }}", "latest", "${{ inputs.version }}-debug", "latest-debug" ]
+
+        # Attach credentials to each registry
         include:
           - release-image: "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}"
             release-creds: "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}"
