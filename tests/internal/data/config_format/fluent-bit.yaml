@@ -1,0 +1,40 @@
+service:
+    flush:       1
+    log_level:   info
+    http_server: on
+
+customs:
+    calyptia:
+        api_key: abcdefg
+
+inputs:
+    tail:
+        path: "/var/log/containers/*.log"
+        parser: docker
+
+    tail:
+        path: "/var/log/messages"
+        parser: syslog
+
+    forward:
+        listen: 0.0.0.0
+
+filters:
+    grep:
+        exclude: $kubernetes['labels']['app'] myapp
+
+outputs:
+    stdout:
+        match: "*"
+        retry_limit: false
+
+    http:
+        match: "*"
+        host: 192.168.3.2
+        port: 9444
+        tls: on
+        tls.verify: off
+        retry_limit: false
+
+unknown:
+    a: b
