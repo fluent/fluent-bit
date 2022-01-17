@@ -4,7 +4,11 @@ name: Release from staging
 # This is only expected to be invoked on-demand by a specific user.
 on:
   workflow_dispatch:
-
+    inputs:
+      version:
+        type: string
+        description: The version we want to release from staging.
+        required: true
 jobs:
 
   # 1. Take packages from the staging bucket
@@ -56,12 +60,16 @@ jobs:
     - name: Update repo info and remove any staging details
       run: |
         rm -f packaging/releases/*.repo
-        VERSION=$(cat packaging/releases/latest-version.txt)
+        LATEST_VERSION=$(cat packaging/releases/latest-version.txt)
+        if [[ "$LATEST_VERSION" != "$VERSION" ]];
+          echo "$LATEST_VERSION != $VERSION"
+        fi
         packaging/update-repos.sh "$VERSION" packaging/releases/
         rm -f packaging/releases/latest-version.txt
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+        VERSION: ${{ inputs.version }}
       shell: bash
 
     - name: Sync to release bucket on S3
@@ -88,6 +96,7 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+
     - uses: ./.github/actions/release-server-sync
       with:
         bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
@@ -100,34 +109,33 @@ jobs:
   staging-release-images:
     runs-on: ubuntu-latest
     environment: release
-    env:
-      STAGING_REGISTRY: ghcr.io
-      STAGING_IMAGE_NAME: ${{ github.repository }}/staging
-# Use skopeo to do all the work - run the container to keep it easy to use.
-    steps:
-      - name: Sync container images from staging to DockerHub
-        run: |
-          docker run --rm quay.io/skopeo/stable:latest \
-            sync --all \
-            --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
-            --dest-creds ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }} \
-            --src docker --dest docker \
-            ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
-            ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
-        env:
-          # docker.io/fluent/fluent-bit
-          RELEASE_REGISTRY: docker.io
-          RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+    strategy:
+      fail-fast: false
+      matrix:
+        release-image: [ "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}", "ghcr.io/${{ github.repository }}" ]
+        include:
+          - release-image: "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}"
+            release-creds: "${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}"
 
-      - name: Sync container images from staging to release
+          - release-image: "ghcr.io/${{ github.repository }}"
+            release-creds: "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Import GPG key for signing
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v4
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Sync release container images from staging to release
         run: |
-          docker run --rm quay.io/skopeo/stable:latest \
-            sync --all \
-            --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
-            --dest-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
-            --src docker --dest docker \
-            ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
-            ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
+          packaging/skopeo-sync.sh
         env:
-          RELEASE_REGISTRY: ghcr.io
-          RELEASE_IMAGE_NAME: ${{ github.repository }}
+          STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
+          RELEASE_IMAGE_NAME: ${{ matrix.release-image }}
+          RELEASE_CREDS: ${{ matrix.release-creds }}
+          GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
