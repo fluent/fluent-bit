@@ -27,8 +27,8 @@
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
 
-struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                        struct flb_config *config)
+struct flb_out_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
+                                            struct flb_config *config)
 {
     int ret;
     const char *tmp;
@@ -36,11 +36,11 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     struct mk_list *head;
     struct mk_list *topics;
     struct flb_split_entry *entry;
-    struct flb_kafka *ctx;
+    struct flb_out_kafka *ctx;
     struct flb_kv *kv;
 
     /* Configuration context */
-    ctx = flb_calloc(1, sizeof(struct flb_kafka));
+    ctx = flb_calloc(1, sizeof(struct flb_out_kafka));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -288,7 +288,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     return ctx;
 }
 
-int flb_kafka_conf_destroy(struct flb_kafka *ctx)
+int flb_kafka_conf_destroy(struct flb_out_kafka *ctx)
 {
     if (!ctx) {
         return 0;

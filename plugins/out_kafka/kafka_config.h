@@ -60,7 +60,7 @@ struct flb_kafka_topic {
     struct mk_list _head;
 };
 
-struct flb_kafka {
+struct flb_out_kafka {
     /* Config Parameters */
     int format;
     char *brokers;
@@ -122,8 +122,8 @@ struct flb_kafka {
 
 };
 
-struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
+struct flb_out_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
                                         struct flb_config *config);
-int flb_kafka_conf_destroy(struct flb_kafka *ctx);
+int flb_kafka_conf_destroy(struct flb_out_kafka *ctx);
 
 #endif
