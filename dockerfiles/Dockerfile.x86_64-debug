@@ -1,4 +1,3 @@
-FROM busybox:stable as busybox-include
 FROM amd64/debian:bullseye-slim as builder
 
 # Fluent Bit version
@@ -85,9 +84,6 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /fluent-bit /fluent-bit
-
-COPY --from=busybox-include --chmod=555 /bin/busybox /bin/busybox
-RUN /bin/busybox --install -s /usr/local/bin
 
 EXPOSE 2020
 
