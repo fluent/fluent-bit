@@ -110,6 +110,7 @@ struct flb_s3 {
     char *compression;
     char *content_type;
     char *log_key;
+    char *external_id;
     int free_endpoint;
     int retry_requests;
     int use_put_object;
