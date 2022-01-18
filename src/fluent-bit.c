@@ -53,6 +53,8 @@
 #include <fluent-bit/flb_help.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_config_format.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -692,12 +694,6 @@ static int filter_set_property(struct flb_filter_instance *filter, char *kv)
     return ret;
 }
 
-static void flb_service_conf_err(struct mk_rconf_section *section, char *key)
-{
-    fprintf(stderr, "Invalid configuration value at %s.%s\n",
-            section->name, key);
-}
-
 static int flb_service_conf_path_set(struct flb_config *config, char *file)
 {
     char *end;
@@ -723,247 +719,201 @@ static int flb_service_conf_path_set(struct flb_config *config, char *file)
     return 0;
 }
 
-static int flb_service_conf(struct flb_config *config, char *file)
+static int service_configure_plugin(struct flb_config *config,
+                                    struct flb_cf *cf, enum section_type type)
 {
-    int ret = -1;
+    int ret;
     char *tmp;
     char *name;
+    char *s_type;
+    struct mk_list *list;
     struct mk_list *head;
     struct mk_list *h_prop;
-    struct mk_rconf *fconf = NULL;
-    struct mk_rconf_entry *entry;
-    struct mk_rconf_section *section;
-    struct flb_custom_instance *custom;
-    struct flb_input_instance *in;
-    struct flb_output_instance *out;
-    struct flb_filter_instance *filter;
+    struct flb_kv *kv;
+    struct flb_cf_section *s;
+    void *ins;
 
-#ifdef FLB_HAVE_STATIC_CONF
-    fconf = flb_config_static_open(file);
-#else
-    fconf = mk_rconf_open(file);
-#endif
-
-    if (!fconf) {
+    if (type == FLB_CF_CUSTOM) {
+        s_type = "custom";
+        list = &cf->customs;
+    }
+    else if (type == FLB_CF_INPUT) {
+        s_type = "input";
+        list = &cf->inputs;
+    }
+    else if (type == FLB_CF_FILTER) {
+        s_type = "filter";
+        list = &cf->filters;
+    }
+    else if (type == FLB_CF_OUTPUT) {
+        s_type = "output";
+        list = &cf->outputs;
+    }
+    else {
         return -1;
     }
 
-    /* Process all meta commands */
-    mk_list_foreach(head, &fconf->metas) {
-        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
-        flb_meta_run(config, entry->key, entry->val);
+    mk_list_foreach(head, list) {
+        s = mk_list_entry(head, struct flb_cf_section, _head_section);
+        name = flb_cf_section_property_get(cf, s, "name");
+        if (!name) {
+            flb_error("[config] section '%s' is missing the 'name' property",
+                      s_type);
+            return -1;
+        }
+
+        /* translate the variable */
+        tmp = flb_env_var_translate(config->env, name);
+
+        /* create an instance of the plugin */
+        ins = NULL;
+        if (type == FLB_CF_CUSTOM) {
+            ins = flb_custom_new(config, tmp, NULL);
+        }
+        else if (type == FLB_CF_INPUT) {
+            ins = flb_input_new(config, tmp, NULL, FLB_TRUE);
+        }
+        else if (type == FLB_CF_FILTER) {
+            ins = flb_filter_new(config, tmp, NULL);
+        }
+        else if (type == FLB_CF_OUTPUT) {
+            ins = flb_output_new(config, tmp, NULL, FLB_TRUE);
+        }
+        flb_sds_destroy(tmp);
+
+        /* validate the instance creation */
+        if (!ins) {
+            flb_error("[config] section '%s' tried to instance a plugin name "
+                      "that don't exists");
+            return -1;
+        }
+
+        /*
+         * iterate section properties and populate instance by using specific
+         * api function.
+         */
+        mk_list_foreach(h_prop, &s->properties) {
+            kv = mk_list_entry(h_prop, struct flb_kv, _head);
+            if (strcasecmp(kv->key, "name") == 0) {
+                continue;
+            }
+
+            ret = -1;
+            if (type == FLB_CF_CUSTOM) {
+                ret = flb_custom_set_property(ins, kv->key, kv->val);
+            }
+            else if (type == FLB_CF_INPUT) {
+                ret = flb_input_set_property(ins, kv->key, kv->val);
+            }
+            else if (type == FLB_CF_FILTER) {
+                ret = flb_filter_set_property(ins, kv->key, kv->val);
+            }
+            else if (type == FLB_CF_OUTPUT) {
+                ret = flb_output_set_property(ins, kv->key, kv->val);
+            }
+
+            if (ret == -1) {
+                flb_error("[config] could not configure property '%s' on "
+                          "%s plugin with section name '%s'",
+                          kv->key, s_type, name);
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int service_configure(struct flb_config *config, char *file)
+{
+    int ret = -1;
+    struct flb_cf *cf = NULL;
+    struct flb_cf_section *s;
+    struct flb_kv *kv;
+    struct mk_list *head;
+
+#ifdef FLB_HAVE_STATIC_CONF
+    /* DISABLED/FIXME fconf = flb_config_static_open(file); */
+#else
+    cf = flb_cf_create_from_file(file);
+#endif
+
+    if (!cf) {
+        return -1;
     }
 
     /* Set configuration root path */
     flb_service_conf_path_set(config, file);
 
-    /* Validate sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
+    /* Process all meta commands */
+    mk_list_foreach(head, &cf->metas) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        flb_meta_run(config, kv->key, kv->val);
+    }
 
-        if (strcasecmp(section->name, "SERVICE") == 0 ||
-            strcasecmp(section->name, "CUSTOM") == 0 ||
-            strcasecmp(section->name, "INPUT") == 0 ||
-            strcasecmp(section->name, "FILTER") == 0 ||
-            strcasecmp(section->name, "OUTPUT") == 0) {
+    /* Validate sections */
+    mk_list_foreach(head, &cf->sections) {
+        s = mk_list_entry(head, struct flb_cf_section, _head);
+
+        if (strcasecmp(s->name, "service") == 0 ||
+            strcasecmp(s->name, "custom") == 0 ||
+            strcasecmp(s->name, "input") == 0 ||
+            strcasecmp(s->name, "filter") == 0 ||
+            strcasecmp(s->name, "output") == 0) {
 
             /* continue on valid sections */
             continue;
         }
 
         /* Extra sanity checks */
-        if (strcasecmp(section->name, "PARSER") == 0 ||
-            strcasecmp(section->name, "MULTILINE_PARSER") == 0) {
+        if (strcasecmp(s->name, "parser") == 0 ||
+            strcasecmp(s->name, "multiline_parser") == 0) {
             fprintf(stderr,
-                    "Sections [MULTILINE_PARSER] and [PARSER] are not valid in "
+                    "Sections 'multiline_parser' and 'parser' are not valid in "
                     "the main configuration file. It belongs to \n"
                     "the 'parsers_file' configuration files.\n");
         }
         else {
             fprintf(stderr,
-                    "Error: unexpected section [%s] in the main "
-                    "configuration file.\n", section->name);
+                    "Error: unexpected section '%s' in the main "
+                    "configuration file.\n", s->name);
         }
         exit(EXIT_FAILURE);
     }
 
-    /* Read main [SERVICE] section */
-    section = mk_rconf_section_get(fconf, "SERVICE");
-    if (section) {
+    /* Read main 'service' section */
+    s = cf->service;
+    if (!s) {
         /* Iterate properties */
-        mk_list_foreach(h_prop, &section->entries) {
-            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
-            /* Set the property */
-            flb_config_set_property(config, entry->key, entry->val);
+        mk_list_foreach(head, &s->properties) {
+            kv = mk_list_entry(head, struct flb_kv, _head);
+            flb_config_set_property(config, kv->key, kv->val);
         }
     }
 
-    /* Read all [CUSTOM] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "CUSTOM") != 0) {
-            continue;
-        }
-
-        /* Get the input plugin name */
-        name = s_get_key(section, "name", MK_RCONF_STR);
-        if (!name) {
-            flb_service_conf_err(section, "name");
-            goto flb_service_conf_end;
-        }
-
-        flb_debug("[service] loading custom plugin: %s", name);
-
-        /* Create an instace of the plugin */
-        tmp = flb_env_var_translate(config->env, name);
-        custom = flb_custom_new(config, tmp, NULL);
-        mk_mem_free(name);
-        if (!custom) {
-            fprintf(stderr, "Custom plugin '%s' cannot be loaded\n", tmp);
-            flb_sds_destroy(tmp);
-            goto flb_service_conf_end;
-        }
-        flb_sds_destroy(tmp);
-
-        /* Iterate other properties */
-        mk_list_foreach(h_prop, &section->entries) {
-            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
-            if (strcasecmp(entry->key, "name") == 0) {
-                continue;
-            }
-
-            /* Set the property */
-            ret = flb_custom_set_property(custom, entry->key, entry->val);
-            if (ret == -1) {
-                fprintf(stderr, "Error setting up %s plugin property '%s'\n",
-                        custom->name, entry->key);
-                goto flb_service_conf_end;
-            }
-        }
+    ret = service_configure_plugin(config, cf, FLB_CF_CUSTOM);
+    if (ret == -1) {
+        goto error;
     }
 
-    /* Read all [INPUT] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "INPUT") != 0) {
-            continue;
-        }
-
-        /* Get the input plugin name */
-        name = s_get_key(section, "Name", MK_RCONF_STR);
-        if (!name) {
-            flb_service_conf_err(section, "Name");
-            goto flb_service_conf_end;
-        }
-
-        flb_debug("[service] loading input: %s", name);
-
-        /* Create an instace of the plugin */
-        tmp = flb_env_var_translate(config->env, name);
-        in = flb_input_new(config, tmp, NULL, FLB_TRUE);
-        mk_mem_free(name);
-        if (!in) {
-            fprintf(stderr, "Input plugin '%s' cannot be loaded\n", tmp);
-            flb_sds_destroy(tmp);
-            goto flb_service_conf_end;
-        }
-        flb_sds_destroy(tmp);
-
-        /* Iterate other properties */
-        mk_list_foreach(h_prop, &section->entries) {
-            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
-            if (strcasecmp(entry->key, "Name") == 0) {
-                continue;
-            }
-
-            /* Set the property */
-            ret = flb_input_set_property(in, entry->key, entry->val);
-            if (ret == -1) {
-                fprintf(stderr, "Error setting up %s plugin property '%s'\n",
-                        in->name, entry->key);
-                goto flb_service_conf_end;
-            }
-        }
+    ret = service_configure_plugin(config, cf, FLB_CF_INPUT);
+    if (ret == -1) {
+        goto error;
+    }
+    ret = service_configure_plugin(config, cf, FLB_CF_FILTER);
+    if (ret == -1) {
+        goto error;
+    }
+    ret = service_configure_plugin(config, cf, FLB_CF_OUTPUT);
+    if (ret == -1) {
+        goto error;
     }
 
-    /* Read all [OUTPUT] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "OUTPUT") != 0) {
-            continue;
-        }
+    flb_cf_destroy(cf);
+    return 0;
 
-        /* Get the output plugin name */
-        name = s_get_key(section, "Name", MK_RCONF_STR);
-        if (!name) {
-            flb_service_conf_err(section, "Name");
-            goto flb_service_conf_end;
-        }
-
-        /* Create an instace of the plugin */
-        tmp = flb_env_var_translate(config->env, name);
-        out = flb_output_new(config, tmp, NULL, FLB_TRUE);
-        mk_mem_free(name);
-        if (!out) {
-            fprintf(stderr, "Output plugin '%s' cannot be loaded\n", tmp);
-            flb_sds_destroy(tmp);
-            goto flb_service_conf_end;
-        }
-        flb_sds_destroy(tmp);
-
-        /* Iterate other properties */
-        mk_list_foreach(h_prop, &section->entries) {
-            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
-            if (strcasecmp(entry->key, "Name") == 0) {
-                continue;
-            }
-
-            /* Set the property */
-            flb_output_set_property(out, entry->key, entry->val);
-        }
-    }
-
-    /* Read all [FILTER] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "FILTER") != 0) {
-            continue;
-        }
-        /* Get the filter plugin name */
-        name = s_get_key(section, "Name", MK_RCONF_STR);
-        if (!name) {
-            flb_service_conf_err(section, "Name");
-            goto flb_service_conf_end;
-        }
-        /* Create an instace of the plugin */
-        tmp = flb_env_var_translate(config->env, name);
-        filter = flb_filter_new(config, tmp, NULL);
-        flb_sds_destroy(tmp);
-        mk_mem_free(name);
-        if (!filter) {
-            flb_service_conf_err(section, "Name");
-            goto flb_service_conf_end;
-        }
-
-        /* Iterate other properties */
-        mk_list_foreach(h_prop, &section->entries) {
-            entry = mk_list_entry(h_prop, struct mk_rconf_entry, _head);
-            if (strcasecmp(entry->key, "Name") == 0) {
-                continue;
-            }
-
-            /* Set the property */
-            flb_filter_set_property(filter, entry->key, entry->val);
-        }
-    }
-
-    ret = 0;
-
-flb_service_conf_end:
-    if (fconf != NULL) {
-        mk_rconf_free(fconf);
-    }
-    return ret;
+error:
+    flb_cf_destroy(cf);
+    return -1;
 }
 
 int flb_main(int argc, char **argv)
@@ -1232,7 +1182,7 @@ int flb_main(int argc, char **argv)
         }
 
         /* Load the service configuration file */
-        ret = flb_service_conf(config, cfg_file);
+        ret = service_configure(config, cfg_file);
         if (ret != 0) {
             flb_utils_error(FLB_ERR_CFG_FILE_STOP);
         }
