@@ -70,7 +70,7 @@ void flb_cf_destroy(struct flb_cf *cf)
     flb_free(cf);
 }
 
-static int get_section_type(char *name)
+static enum section_type get_section_type(char *name)
 {
     if (strcasecmp(name, "SERVICE") == 0) {
         return FLB_CF_SERVICE;
@@ -126,6 +126,13 @@ struct flb_kv *flb_cf_property_add(struct flb_cf *cf,
     }
 
     return kv;
+}
+
+char *flb_cf_section_property_get(struct flb_cf *cf, struct flb_cf_section *s,
+                                  char *key)
+{
+    (void) cf;
+    return flb_kv_get_key_value(key, &s->properties);
 }
 
 struct flb_kv *flb_cf_meta_create(struct flb_cf *cf, char *meta, int len)
@@ -379,7 +386,7 @@ static void dump_section(struct flb_cf_section *s)
 
 static void dump_section_list(struct mk_list *list)
 {
-       struct mk_list *head;
+    struct mk_list *head;
     struct flb_cf_section *s;
 
     mk_list_foreach(head, list) {
@@ -392,3 +399,37 @@ void flb_cf_dump(struct flb_cf *cf)
 {
     dump_section_list(&cf->sections);
 }
+
+struct flb_cf *flb_cf_create_from_file(char *file)
+{
+    int format = FLB_CF_FLUENTBIT;
+    char *ptr;
+    struct flb_cf *cf;
+
+    ptr = strrchr(file, '.');
+    if (!ptr) {
+        format = FLB_CF_FLUENTBIT;
+    }
+    else {
+        if (strcasecmp(ptr, ".conf") == 0) {
+            format = FLB_CF_FLUENTBIT;
+        }
+#ifdef FLB_HAVE_LIBYAML
+        else if (strcasecmp(ptr, ".yaml") == 0) {
+            format = FLB_CF_YAML;
+        }
+#endif
+    }
+
+    if (format == FLB_CF_FLUENTBIT) {
+        cf = flb_cf_fluentbit_create(file, NULL, 0);
+    }
+#ifdef FLB_HAVE_LIBYAML
+    else if (format == FLB_CF_YAML) {
+        cf = flb_cf_yaml_create(file, NULL, 0);
+    }
+#endif
+
+    return cf;
+ }
+
