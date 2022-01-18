@@ -118,7 +118,7 @@ EXPOSE 2020
 
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
 FROM production as debug
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -146,4 +146,4 @@ EXPOSE 2020
 
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
