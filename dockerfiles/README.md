@@ -10,6 +10,39 @@ There are also images for ARM32 and ARM64 architectures but no debug version.
 
 For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/docker
 
+## Multiple architecture support
+
+A good introduction to the available approaches is here: https://www.docker.com/blog/multi-arch-build-and-images-the-simple-way/
+
+To build for multiple architectures the [QEMU tooling](https://www.qemu.org/) can be used with the [BuildKit extension for Docker](https://docs.docker.com/buildx/working-with-buildx).
+
+With QEMU set up and buildkit support, you can build all targets in one simple call.
+
+To set up for Ubuntu 20.04 development PC as an example:
+
+1. Add QEMU: https://askubuntu.com/a/1369504
+```
+sudo add-apt-repository ppa:jacob/virtualisation
+sudo apt-get update && sudo apt-get install qemu qemu-user qemu-user-static
+```
+2. Install buildkit: https://docs.docker.com/buildx/working-with-buildx/#install
+```
+wget https://github.com/docker/buildx/releases/download/v0.7.1/buildx-v0.7.1.linux-amd64
+mv buildx-v0.7.1.linux-amd64 ~/.docker/cli-plugins/docker-buildx
+chmod a+x ~/.docker/cli-plugins/docker-buildx
+```
+3. Configure and use: https://stackoverflow.com/a/60667468
+```
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+docker buildx rm builder
+docker buildx create --name builder --use
+docker buildx inspect --bootstrap
+```
+4. Build Fluent Bit from the root of the Git repo:
+```
+docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
+```
+
 ## Build and test
 
 1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
