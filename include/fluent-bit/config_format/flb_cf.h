@@ -38,8 +38,15 @@
 /* meta commands: handled as key value pairs */
 #define flb_cf_meta flb_kv
 
+enum cf_file_format {
+    FLB_CF_FLUENTBIT,
+#ifdef FLB_HAVE_LIBYAML
+    FLB_CF_YAML
+#endif
+};
+
 enum section_type {
-    FLB_CF_SERVICE,               /* [SERVICE]           */
+    FLB_CF_SERVICE = 0,           /* [SERVICE]           */
     FLB_CF_PARSER,                /* [PARSER]            */
     FLB_CF_MULTILINE_PARSER,      /* [MULTILINE_PARSER]  */
     FLB_CF_CUSTOM,                /* [CUSTOM]            */
@@ -97,12 +104,17 @@ struct flb_cf {
 
 
 struct flb_cf *flb_cf_create();
+struct flb_cf *flb_cf_create_from_file(char *file);
+
 void flb_cf_destroy(struct flb_cf *cf);
 
 void flb_cf_dump(struct flb_cf *cf);
 
 /* metas */
 struct flb_kv *flb_cf_meta_create(struct flb_cf *cf, char *meta, int len);
+
+#define flb_cf_foreach_meta(cf) \
+
 
 void flb_cf_meta_destroy(struct flb_cf *cf, struct flb_cf_meta *meta);
 void flb_cf_meta_destroy_all(struct flb_cf *cf);
@@ -122,4 +134,9 @@ struct flb_kv *flb_cf_property_add(struct flb_cf *cf,
                                    struct mk_list *kv_list,
                                    char *k_buf, size_t k_len,
                                    char *v_buf, size_t v_len);
+
+
+char *flb_cf_section_property_get(struct flb_cf *cf, struct flb_cf_section *s,
+                                  char *key);
+
 #endif
