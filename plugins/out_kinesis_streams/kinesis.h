@@ -89,6 +89,7 @@ struct flb_kinesis {
     const char *region;
     const char *role_arn;
     const char *log_key;
+    const char *external_id;
     int retry_requests;
     char *sts_endpoint;
     int custom_endpoint;
