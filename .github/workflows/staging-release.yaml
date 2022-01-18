@@ -61,13 +61,13 @@ jobs:
       run: |
         rm -f packaging/releases/*.repo
         LATEST_VERSION=$(cat packaging/releases/latest-version.txt)
-        [[ "$LATEST_VERSION" != "$VERSION" ]] && echo "$LATEST_VERSION != $VERSION"
+        [[ "$LATEST_VERSION" != "$VERSION" ]] && echo "Latest version mismatch: $LATEST_VERSION != $VERSION"
         packaging/update-repos.sh "$VERSION" packaging/releases/
         rm -f packaging/releases/latest-version.txt
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
-        VERSION: ${{ inputs.version }}
+        VERSION: ${{ github.event.inputs.version }}
       shell: bash
 
     - name: Sync to release bucket on S3
