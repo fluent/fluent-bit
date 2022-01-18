@@ -197,9 +197,13 @@ jobs:
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
             "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}" \
+            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}-debug" \
             "ghcr.io/${{ github.repository }}:latest" \
+            "ghcr.io/${{ github.repository }}:latest-debug" \
             "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest"
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}-debug" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest-debug"
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
@@ -218,9 +222,13 @@ jobs:
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
             "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}" \
+            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}-debug" \
             "ghcr.io/${{ github.repository }}:latest" \
+            "ghcr.io/${{ github.repository }}:latest-debug" \
             "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest"
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}-debug" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest-debug"
         shell: bash
         env:
           COSIGN_EXPERIMENTAL: "true"
