@@ -102,6 +102,21 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
     return 0;
 }
 
+/* Inject an event */
+int mk_event_inject(struct mk_event_loop *loop, struct mk_event *event,
+                    int flags, int prevent_duplication)
+{
+    int result;
+
+    if (loop->n_events + 1 >= loop->size) {
+        return -1;
+    }
+
+    _mk_event_inject(loop, event, flags, prevent_duplication);
+
+    return 0;
+}
+
 /* Remove an event */
 int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
 {
