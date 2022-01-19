@@ -10,7 +10,6 @@
 # docker buildx inspect --bootstrap
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
-FROM busybox:stable as busybox-include
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
 
@@ -82,10 +81,6 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM builder as debug-builder
-COPY --from=busybox-include --chmod=555 /bin/busybox /bin/busybox
-RUN /bin/busybox --install -s /usr/local/bin
-
 # FROM gcr.io/distroless/cc-debian11 as production
 FROM debian:bullseye-slim as production
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -118,7 +113,7 @@ EXPOSE 2020
 
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
 FROM production as debug
 LABEL description="Fluent Bit multi-architecture container image" \
@@ -137,13 +132,10 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=debug-builder /usr/local/bin/ /usr/local/bin/
-COPY --from=debug-builder /bin/busybox /bin/
-
 RUN rm -f /usr/bin/qemu-*-static
 
 EXPOSE 2020
 
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]

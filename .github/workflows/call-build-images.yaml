@@ -115,7 +115,8 @@ jobs:
         images: ${{ inputs.registry }}/${{ inputs.image }}
         tags: |
           raw,x86_64-${{ inputs.version }}-debug
-          raw,x86_64-latest
+          raw,{{ inputs.version }}-debug
+          raw,latest-debug
 
     - name: Build the debug staging image
       uses: docker/build-push-action@v2

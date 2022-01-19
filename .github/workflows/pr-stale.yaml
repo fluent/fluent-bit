@@ -5,6 +5,7 @@ on:
 
 jobs:
   stale:
+    name: PR - mark stale
     runs-on: ubuntu-latest
     steps:
       - uses: actions/stale@v3

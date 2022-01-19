@@ -15,9 +15,12 @@ configuration:
   - Release
   
 skip_commits:
-  message: /workflows/
   files:
     - '.github/**'
+    - 'packaging/**'
+    - './dockerfiles/**'
+    - '**/*.md'
+    - '**/*.sh'
 
 install:
   - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison

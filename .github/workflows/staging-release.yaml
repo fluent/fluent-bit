@@ -4,7 +4,11 @@ name: Release from staging
 # This is only expected to be invoked on-demand by a specific user.
 on:
   workflow_dispatch:
-
+    inputs:
+      version:
+        type: string
+        description: The version we want to release from staging.
+        required: true
 jobs:
 
   # 1. Take packages from the staging bucket
@@ -56,12 +60,14 @@ jobs:
     - name: Update repo info and remove any staging details
       run: |
         rm -f packaging/releases/*.repo
-        VERSION=$(cat packaging/releases/latest-version.txt)
+        LATEST_VERSION=$(cat packaging/releases/latest-version.txt)
+        [[ "$LATEST_VERSION" != "$VERSION" ]] && echo "Latest version mismatch: $LATEST_VERSION != $VERSION"
         packaging/update-repos.sh "$VERSION" packaging/releases/
         rm -f packaging/releases/latest-version.txt
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+        VERSION: ${{ github.event.inputs.version }}
       shell: bash
 
     - name: Sync to release bucket on S3
@@ -88,6 +94,7 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+
     - uses: ./.github/actions/release-server-sync
       with:
         bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
@@ -97,24 +104,131 @@ jobs:
         server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
         server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}
 
+  # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
+  # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
     runs-on: ubuntu-latest
     environment: release
-    # Use skopeo to do all the work - run the container to keep it easy to use.
+    env:
+      STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
+    strategy:
+      fail-fast: false
+      matrix:
+        # All the explicit tags we want to release
+        tag: [ "${{ github.event.inputs.version }}", "latest", "${{ github.event.inputs.version }}-debug", "latest-debug" ]
     steps:
-      - name: Sync container images from staging to release
+      # Primarily because the skopeo errors are hard to parse and non-obvious
+      - name: Check the image exists
         run: |
-          docker run --rm quay.io/skopeo/stable:latest \
-            sync --all \
-            --src-creds ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} \
-            --dest-creds ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }} \
-            --src docker --dest docker \
-            ${{ env.STAGING_REGISTRY }}/${{ env.STAGING_IMAGE_NAME }} \
-            ${{ env.RELEASE_REGISTRY }}//${{ env.RELEASE_IMAGE_NAME }}
+          docker pull "$STAGING_IMAGE_NAME:$TAG"
         env:
-          STAGING_REGISTRY: ghcr.io
-          STAGING_IMAGE_NAME: ${{ github.repository }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
 
-          # docker.io/fluent/fluent-bit
-          RELEASE_REGISTRY: docker.io
-          RELEASE_IMAGE_NAME: ${{ secrets.DOCKERHUB_ORGANIZATION }}
+      # Use the container to prevent any rootless issues and we do not need to use GPG signing as DockerHub does not support it.
+      - name: Promote container images from staging to Dockerhub
+        run: |
+          docker run --rm  \
+            quay.io/skopeo/stable:latest \
+            copy \
+              --all \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+      - name: Promote container images from staging to GHCR.io
+        run: |
+          docker run --rm  \
+            quay.io/skopeo/stable:latest \
+            copy \
+              --all \
+              --src-no-creds \
+              --dest-creds "$RELEASE_CREDS" \
+              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$RELEASE_IMAGE_NAME:$TAG"
+        env:
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
+  staging-release-images-sign:
+    name: Sign container image manifests
+    permissions:
+      contents: read
+      packages: write
+      # This is used to complete the identity challenge
+      # with sigstore/fulcio when running outside of PRs.
+      id-token: write
+    runs-on: ubuntu-latest
+    environment: release
+    needs: staging-release-images
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cosign with a key
+        # Only run if we have a key defined
+        if: ${{ env.COSIGN_PRIVATE_KEY }}
+        # The key needs to cope with newlines
+        run: |
+          echo -e "${COSIGN_PRIVATE_KEY}" > /tmp/my_cosign.key
+          cosign sign --key /tmp/my_cosign.key --recursive \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "release=${{ github.event.inputs.version }}" \
+            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}" \
+            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}-debug" \
+            "ghcr.io/${{ github.repository }}:latest" \
+            "ghcr.io/${{ github.repository }}:latest-debug" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}-debug" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest-debug"
+          rm -f /tmp/my_cosign.key
+        shell: bash
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
+          COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
+
+      - name: Cosign keyless signing using Rektor public transparency log
+        # This step uses the identity token to provision an ephemeral certificate
+        # against the sigstore community Fulcio instance, and records it to the
+        # sigstore community Rekor transparency log.
+        #
+        # We use recursive signing on the manifest to cover all the images.
+        run: |
+          cosign sign --recursive \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "release=${{ github.event.inputs.version }}" \
+            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}" \
+            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}-debug" \
+            "ghcr.io/${{ github.repository }}:latest" \
+            "ghcr.io/${{ github.repository }}:latest-debug" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}-debug" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest" \
+            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest-debug"
+        shell: bash
+        env:
+          COSIGN_EXPERIMENTAL: "true"
