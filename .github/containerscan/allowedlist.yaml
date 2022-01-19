@@ -18,6 +18,8 @@ general:
     - CVE-2020-16156
     - CVE-2021-33560
     - CVE-2021-43618
+    - CVE-2022-23218
+    - CVE-2022-23219
   bestPracticeViolations:
     # Fatal
     - DKL-DI-0005 # Clear apt-get caches
