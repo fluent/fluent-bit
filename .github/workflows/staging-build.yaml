@@ -14,6 +14,11 @@ on:
         description: Version of Fluent Bit to build
         required: true
         default: 1.8.11
+
+# We do not want a new staging build to run whilst we are releasing the current staging build.
+# We also do not want multiples to run for the same version.
+concurrency: staging-build-release
+
 jobs:
 
   # This job copes with the variable approach of either being triggered by a tag,

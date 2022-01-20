@@ -9,6 +9,11 @@ on:
         type: string
         description: The version we want to release from staging.
         required: true
+
+# We do not want a new staging build to run whilst we are releasing the current staging build.
+# We also do not want multiples to run for the same version.
+concurrency: staging-build-release
+
 jobs:
 
   # 1. Take packages from the staging bucket
