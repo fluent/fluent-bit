@@ -1,0 +1,5 @@
+{ "name": "kafka", "type": "message bus" }
+{ "name": "fluent-bit", "type": "log processor" }
+{ "name": "kubernetes", "type": "container orchestration system" }
+{ "name": "docker", "type": "container platform" }
+{ "name": "ansible", "type": "software provisioning, configuration management, and application-deployment tool" }
