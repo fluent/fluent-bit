@@ -258,10 +258,9 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
 
     /* restrict to only one SERVICE section */
     if (type == FLB_CF_SERVICE && cf->service) {
-        flb_cf_error_set(cf, FLB_CF_ERROR_SERVICE_EXISTS);
         flb_sds_destroy(s->name);
         flb_free(s);
-        return NULL;
+        return cf->service;
     }
 
     if (type == FLB_CF_SERVICE && !cf->service) {
