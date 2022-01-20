@@ -44,9 +44,9 @@ void test_api()
 	kv = flb_cf_property_add(cf, &service->properties, "   ", 3, "", 0);
 	TEST_CHECK(kv == NULL);
 
-	/* try to add another 'SERVICE' section, it should fail */
+	/* try to add another 'SERVICE' section, it should return the same one */
 	s_tmp = flb_cf_section_create(cf, "SERVICE", 7);
-	TEST_CHECK(s_tmp == NULL);
+	TEST_CHECK(s_tmp == service);
 
 	/* add a valid section */
 	s_tmp = flb_cf_section_create(cf, "INPUT", 5);
