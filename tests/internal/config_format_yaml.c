@@ -14,7 +14,7 @@ void test_basic()
 {
 	struct flb_cf *cf;
 
-    cf = flb_cf_yaml_create(FLB_000, NULL, 0);
+    cf = flb_cf_yaml_create(NULL, FLB_000, NULL, 0);
     TEST_CHECK(cf != NULL);
     if (!cf) {
         exit(EXIT_FAILURE);
