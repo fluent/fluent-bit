@@ -421,30 +421,53 @@ static void help_format_text(void *help_buf, size_t help_size)
 
 static void flb_help_plugin(int rc, int format,
                             struct flb_config *config, int type,
-                            struct flb_input_instance *in,
-                            struct flb_filter_instance *filter,
-                            struct flb_output_instance *out)
-
-
+                            struct flb_cf *cf,
+                            struct flb_cf_section *s)
 {
-    struct flb_config_map *m = NULL;
     struct flb_config_map *opt = NULL;
     void *help_buf;
     size_t help_size;
+    char *name;
+    struct flb_input_instance *i = NULL;
+    struct flb_filter_instance *f = NULL;
+    struct flb_output_instance *o = NULL;
 
     flb_banner();
 
+    name = flb_cf_section_property_get(cf, s, "name");
+    if (!name) {
+        exit(EXIT_FAILURE);
+    }
+
     if (type == PLUGIN_INPUT) {
-        opt = in->p->config_map;
-        flb_help_input(in, &help_buf, &help_size);
+        i = flb_input_new(config, name, 0, FLB_TRUE);
+        if (!i) {
+            fprintf(stderr, "invalid input plugin '%s'", name);
+            return;
+        }
+        opt = i->p->config_map;
+        flb_help_input(i, &help_buf, &help_size);
+        flb_input_instance_destroy(i);
     }
     else if (type == PLUGIN_FILTER) {
-        opt = filter->p->config_map;
-        flb_help_filter(filter, &help_buf, &help_size);
+        f = flb_filter_new(config, name, 0);
+        if (!f) {
+            fprintf(stderr, "invalid filter plugin '%s'", name);
+            return;
+        }
+        opt = f->p->config_map;
+        flb_help_filter(f, &help_buf, &help_size);
+        flb_filter_instance_destroy(f);
     }
     else if (type == PLUGIN_OUTPUT) {
-        opt = m = out->p->config_map;
-        flb_help_output(out, &help_buf, &help_size);
+        o = flb_output_new(config, name, 0, FLB_TRUE);
+        if (!o) {
+            fprintf(stderr, "invalid output plugin '%s'", name);
+            return;
+        }
+        opt = o->p->config_map;
+        flb_help_output(o, &help_buf, &help_size);
+        flb_output_instance_destroy(o);
     }
 
     if (!opt) {
@@ -457,8 +480,8 @@ static void flb_help_plugin(int rc, int format,
     else if (format == FLB_HELP_JSON) {
         help_format_json(help_buf, help_size);
     }
-    flb_free(help_buf);
 
+    flb_free(help_buf);
     exit(rc);
 }
 
@@ -581,13 +604,13 @@ static void flb_signal_init()
     signal(SIGFPE,  &flb_signal_handler);
 }
 
-static int custom_set_property(struct flb_custom_instance *in, char *kv)
+static int set_property(struct flb_cf *cf, struct flb_cf_section *s, char *kv)
 {
-    int ret;
     int len;
     int sep;
     char *key;
     char *value;
+    struct flb_kv *tmp;
 
     len = strlen(kv);
     sep = mk_string_char_search(kv, '=', len);
@@ -602,96 +625,13 @@ static int custom_set_property(struct flb_custom_instance *in, char *kv)
         return -1;
     }
 
-    ret = flb_custom_set_property(in, key, value);
-    if (ret == -1) {
-        fprintf(stderr, "[error] setting up '%s' plugin property '%s'\n",
-                in->p->name, key);
+    tmp = flb_cf_property_add(cf, &s->properties, key, 0, value, 0);
+    if (!tmp) {
+        fprintf(stderr, "[error] setting up section '%s' plugin property '%s'\n",
+                s->name, key);
     }
-
     mk_mem_free(key);
-    return ret;
-}
-
-static int input_set_property(struct flb_input_instance *in, char *kv)
-{
-    int ret;
-    int len;
-    int sep;
-    char *key;
-    char *value;
-
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
-    }
-
-    key = mk_string_copy_substr(kv, 0, sep);
-    value = kv + sep + 1;
-
-    if (!key) {
-        return -1;
-    }
-
-    ret = flb_input_set_property(in, key, value);
-    if (ret == -1) {
-        fprintf(stderr, "[error] setting up '%s' plugin property '%s'\n",
-                in->p->name, key);
-    }
-
-    mk_mem_free(key);
-    return ret;
-}
-
-static int output_set_property(struct flb_output_instance *out, char *kv)
-{
-    int ret;
-    int len;
-    int sep;
-    char *key;
-    char *value;
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
-    }
-
-    key = mk_string_copy_substr(kv, 0, sep);
-    value = kv + sep + 1;
-
-    if (!key) {
-        return -1;
-    }
-
-    ret = flb_output_set_property(out, key, value);
-    mk_mem_free(key);
-    return ret;
-}
-
-static int filter_set_property(struct flb_filter_instance *filter, char *kv)
-{
-    int ret;
-    int len;
-    int sep;
-    char *key;
-    char *value;
-
-    len = strlen(kv);
-    sep = mk_string_char_search(kv, '=', len);
-    if (sep == -1) {
-        return -1;
-    }
-
-    key = mk_string_copy_substr(kv, 0, sep);
-    value = kv + sep + 1;
-
-    if (!key) {
-        return -1;
-    }
-
-    ret = flb_filter_set_property(filter, key, value);
-    mk_mem_free(key);
-    return ret;
+    return 0;
 }
 
 static int flb_service_conf_path_set(struct flb_config *config, char *file)
@@ -784,7 +724,7 @@ static int service_configure_plugin(struct flb_config *config,
         /* validate the instance creation */
         if (!ins) {
             flb_error("[config] section '%s' tried to instance a plugin name "
-                      "that don't exists");
+                      "that don't exists", name);
             return -1;
         }
 
@@ -823,10 +763,9 @@ static int service_configure_plugin(struct flb_config *config,
     return 0;
 }
 
-static int service_configure(struct flb_config *config, char *file)
+static int service_configure(struct flb_cf *cf, struct flb_config *config, char *file)
 {
     int ret = -1;
-    struct flb_cf *cf = NULL;
     struct flb_cf_section *s;
     struct flb_kv *kv;
     struct mk_list *head;
@@ -834,15 +773,15 @@ static int service_configure(struct flb_config *config, char *file)
 #ifdef FLB_HAVE_STATIC_CONF
     /* DISABLED/FIXME fconf = flb_config_static_open(file); */
 #else
-    cf = flb_cf_create_from_file(file);
+    if (file) {
+        cf = flb_cf_create_from_file(cf, file);
+    }
 #endif
 
-    if (!cf) {
-        return -1;
-    }
-
     /* Set configuration root path */
-    flb_service_conf_path_set(config, file);
+    if (file) {
+        flb_service_conf_path_set(config, file);
+    }
 
     /* Process all meta commands */
     mk_list_foreach(head, &cf->metas) {
@@ -882,7 +821,7 @@ static int service_configure(struct flb_config *config, char *file)
 
     /* Read main 'service' section */
     s = cf->service;
-    if (!s) {
+    if (s) {
         /* Iterate properties */
         mk_list_foreach(head, &s->properties) {
             kv = mk_list_entry(head, struct flb_kv, _head);
@@ -908,11 +847,9 @@ static int service_configure(struct flb_config *config, char *file)
         goto error;
     }
 
-    flb_cf_destroy(cf);
     return 0;
 
 error:
-    flb_cf_destroy(cf);
     return -1;
 }
 
@@ -926,10 +863,11 @@ int flb_main(int argc, char **argv)
 
     /* local variables to handle config options */
     char *cfg_file = NULL;
-    struct flb_custom_instance *custom = NULL;
-    struct flb_input_instance *in = NULL;
-    struct flb_output_instance *out = NULL;
-    struct flb_filter_instance *filter = NULL;
+
+    /* config format context */
+    struct flb_cf *cf;
+    struct flb_cf_section *service;
+    struct flb_cf_section *s;
 
 #ifdef FLB_HAVE_LIBBACKTRACE
     flb_stacktrace_init(argv[0], &flb_st);
@@ -990,6 +928,17 @@ int flb_main(int argc, char **argv)
     }
     config = ctx->config;
 
+    /* Initialize config_format context */
+    cf = flb_cf_create();
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+    service = flb_cf_section_create(cf, "service", 0);
+    if (!service) {
+        flb_cf_destroy(cf);
+        exit(EXIT_FAILURE);
+    }
+
 #ifndef FLB_HAVE_STATIC_CONF
 
     /* Parse the command line options */
@@ -1000,13 +949,16 @@ int flb_main(int argc, char **argv)
 
         switch (opt) {
         case 'b':
-            config->storage_path = flb_strdup(optarg);
+            flb_cf_property_add(cf, &service->properties,
+                                "storage.path", 0, optarg, 0);
             break;
         case 'c':
             cfg_file = flb_strdup(optarg);
             break;
 #ifdef FLB_HAVE_FORK
         case 'd':
+            flb_cf_property_add(cf, &service->properties,
+                                "daemon", 0, "on", 0);
             config->daemon = FLB_TRUE;
             break;
 #endif
@@ -1020,35 +972,36 @@ int flb_main(int argc, char **argv)
             }
             break;
         case 'f':
-            config->flush = atof(optarg);
+            flb_cf_property_add(cf, &service->properties,
+                                "flush", 0, optarg, 0);
             break;
         case 'C':
-            custom = flb_custom_new(config, optarg, NULL);
-            if (!custom) {
+            s = flb_cf_section_create(cf, "custom", 0);
+            if (!s) {
                 flb_utils_error(FLB_ERR_CUSTOM_INVALID);
             }
+            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_CUSTOM;
             break;
         case 'i':
-            in = flb_input_new(config, optarg, NULL, FLB_TRUE);
-            if (!in) {
+            s = flb_cf_section_create(cf, "input", 0);
+            if (!s) {
                 flb_utils_error(FLB_ERR_INPUT_INVALID);
             }
+            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_INPUT;
             break;
         case 'm':
-            if (last_plugin == PLUGIN_FILTER) {
-                flb_filter_set_property(filter, "match", optarg);
-            }
-            else if (last_plugin == PLUGIN_OUTPUT) {
-                flb_output_set_property(out, "match", optarg);
+            if (last_plugin == PLUGIN_FILTER || last_plugin == PLUGIN_OUTPUT) {
+                flb_cf_property_add(cf, &s->properties, "match", 0, optarg, 0);
             }
             break;
         case 'o':
-            out = flb_output_new(config, optarg, NULL, FLB_TRUE);
-            if (!out) {
+            s = flb_cf_section_create(cf, "output", 0);
+            if (!s) {
                 flb_utils_error(FLB_ERR_OUTPUT_INVALID);
             }
+            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_OUTPUT;
             break;
 #ifdef FLB_HAVE_PARSER
@@ -1060,35 +1013,25 @@ int flb_main(int argc, char **argv)
             break;
 #endif
         case 'F':
-            filter = flb_filter_new(config, optarg, NULL);
-            if (!filter) {
+            s = flb_cf_section_create(cf, "filter", 0);
+            if (!s) {
                 flb_utils_error(FLB_ERR_FILTER_INVALID);
             }
+            flb_cf_property_add(cf, &s->properties, "name", 0, optarg, 0);
             last_plugin = PLUGIN_FILTER;
             break;
         case 'l':
-            config->log_file = flb_strdup(optarg);
+            flb_cf_property_add(cf, &service->properties,
+                                "log_file", 0, optarg, 0);
             break;
         case 'p':
-            if (last_plugin == PLUGIN_INPUT) {
-                ret = input_set_property(in, optarg);
-                if (ret != 0) {
-                    exit(EXIT_FAILURE);
-                }
-            }
-            else if (last_plugin == PLUGIN_OUTPUT) {
-                output_set_property(out, optarg);
-            }
-            else if (last_plugin == PLUGIN_FILTER) {
-                filter_set_property(filter, optarg);
-            }
-            else if (last_plugin == PLUGIN_CUSTOM) {
-                custom_set_property(custom, optarg);
+            if (s) {
+                set_property(cf, s, optarg);
             }
             break;
         case 't':
-            if (in) {
-                flb_input_set_property(in, "tag", optarg);
+            if (s) {
+                flb_cf_property_add(cf, &s->properties, "tag", 0, optarg, 0);
             }
             break;
 #ifdef FLB_HAVE_STREAM_PROCESSOR
@@ -1103,7 +1046,7 @@ int flb_main(int argc, char **argv)
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_TEXT,
                                 config,
-                                last_plugin, in, filter, out);
+                                last_plugin, cf, s);
             }
             break;
         case 'J':
@@ -1112,12 +1055,12 @@ int flb_main(int argc, char **argv)
             }
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
-                                last_plugin, in, filter, out);
+                                last_plugin, cf, s);
             }
             break;
 #ifdef FLB_HAVE_HTTP_SERVER
         case 'H':
-            config->http_server = FLB_TRUE;
+            flb_cf_property_add(cf, &service->properties, "http_server", 0, "on", 0);
             break;
         case 'L':
             if (config->http_listen) {
@@ -1178,15 +1121,15 @@ int flb_main(int argc, char **argv)
 #ifndef FLB_HAVE_STATIC_CONF
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
+            flb_free(cfg_file);
             flb_utils_error(FLB_ERR_CFG_FILE);
         }
+    }
 
-        /* Load the service configuration file */
-        ret = service_configure(config, cfg_file);
-        if (ret != 0) {
-            flb_utils_error(FLB_ERR_CFG_FILE_STOP);
-        }
-        flb_free(cfg_file);
+    /* Load the service configuration file */
+    ret = service_configure(cf, config, cfg_file);
+    if (ret != 0) {
+        flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
 #else
     ret = flb_service_conf(config, "fluent-bit.conf");
@@ -1194,6 +1137,7 @@ int flb_main(int argc, char **argv)
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
 #endif
+
 
     /* Check co-routine stack size */
     if (config->coro_stack_size < getpagesize()) {
@@ -1240,7 +1184,6 @@ int flb_main(int argc, char **argv)
     }
     ret = config->exit_status_code;
     flb_destroy(ctx);
-
 
     return ret;
 }
