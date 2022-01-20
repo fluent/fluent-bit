@@ -474,6 +474,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
 
                 /* Create new section */
                 current = flb_cf_section_create(cf, buf + 1, end - 1);
+                if (!current) {
+                    continue;
+                }
                 n_keys = 0;
                 continue;
             }
