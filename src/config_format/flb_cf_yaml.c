@@ -477,14 +477,16 @@ done:
     return code;
 }
 
-struct flb_cf *flb_cf_yaml_create(char *file_path, char *buf, size_t size)
+struct flb_cf *flb_cf_yaml_create(struct flb_cf *cf, char *file_path,
+                                  char *buf, size_t size)
 {
     int ret;
-    struct flb_cf *cf;
 
-    cf = flb_cf_create();
     if (!cf) {
-        return NULL;
+        cf = flb_cf_create();
+        if (!cf) {
+            return NULL;
+        }
     }
 
     ret = read_config(cf, NULL, file_path);
