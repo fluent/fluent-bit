@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - master
+
+concurrency: integration-test
+
 jobs:
   master-integration-test-build:
     name: Master - integration build

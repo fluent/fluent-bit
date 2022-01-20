@@ -9,6 +9,9 @@ on:
       - edited
       - reopened
       - synchronize
+
+concurrency: integration-test
+
 jobs:
   pr-integration-test-build:
     name: PR - GCP build
