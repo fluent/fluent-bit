@@ -14,7 +14,7 @@ void test_basic()
 {
 	struct flb_cf *cf;
 
-    cf = flb_cf_fluentbit_create(FLB_000, NULL, 0);
+    cf = flb_cf_fluentbit_create(NULL, FLB_000, NULL, 0);
     TEST_CHECK(cf != NULL);
 
     /* Total number of sections */
