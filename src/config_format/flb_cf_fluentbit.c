@@ -249,11 +249,10 @@ static int local_init(struct local_ctx *ctx, char *file)
 
     /* lookup path ending and truncate */
     end = strrchr(path, '/');
-    if (!end) {
-        return -1;
+    if (end) {
+        end++;
+        *end = '\0';
     }
-    end++;
-    *end = '\0';
 
     if (file) {
         ctx->file = flb_sds_create(file);
