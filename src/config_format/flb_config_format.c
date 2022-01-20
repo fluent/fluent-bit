@@ -105,6 +105,13 @@ struct flb_kv *flb_cf_property_add(struct flb_cf *cf,
     int ret;
     struct flb_kv *kv;
 
+    if (k_len == 0) {
+        k_len = strlen(k_buf);
+    }
+    if (v_len == 0) {
+        v_len = strlen(v_buf);
+    }
+
     kv = flb_kv_item_create_len(kv_list, k_buf, k_len, v_buf, v_len);
     if (!kv) {
         return NULL;
@@ -400,11 +407,10 @@ void flb_cf_dump(struct flb_cf *cf)
     dump_section_list(&cf->sections);
 }
 
-struct flb_cf *flb_cf_create_from_file(char *file)
+struct flb_cf *flb_cf_create_from_file(struct flb_cf *cf, char *file)
 {
     int format = FLB_CF_FLUENTBIT;
     char *ptr;
-    struct flb_cf *cf;
 
     ptr = strrchr(file, '.');
     if (!ptr) {
@@ -422,11 +428,11 @@ struct flb_cf *flb_cf_create_from_file(char *file)
     }
 
     if (format == FLB_CF_FLUENTBIT) {
-        cf = flb_cf_fluentbit_create(file, NULL, 0);
+        cf = flb_cf_fluentbit_create(cf, file, NULL, 0);
     }
 #ifdef FLB_HAVE_LIBYAML
     else if (format == FLB_CF_YAML) {
-        cf = flb_cf_yaml_create(file, NULL, 0);
+        cf = flb_cf_yaml_create(cf, file, NULL, 0);
     }
 #endif
 

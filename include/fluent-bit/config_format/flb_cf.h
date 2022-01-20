@@ -104,7 +104,7 @@ struct flb_cf {
 
 
 struct flb_cf *flb_cf_create();
-struct flb_cf *flb_cf_create_from_file(char *file);
+struct flb_cf *flb_cf_create_from_file(struct flb_cf *cf, char *file);
 
 void flb_cf_destroy(struct flb_cf *cf);
 
