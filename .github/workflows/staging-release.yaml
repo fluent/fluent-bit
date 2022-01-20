@@ -137,6 +137,7 @@ jobs:
             quay.io/skopeo/stable:latest \
             copy \
               --all \
+              --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
               "docker://$STAGING_IMAGE_NAME:$TAG" \
@@ -153,6 +154,7 @@ jobs:
             quay.io/skopeo/stable:latest \
             copy \
               --all \
+              --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
               "docker://$STAGING_IMAGE_NAME:$TAG" \
