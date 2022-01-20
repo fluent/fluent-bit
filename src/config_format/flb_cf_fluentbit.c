@@ -574,15 +574,17 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
     return 0;
 }
 
-struct flb_cf *flb_cf_fluentbit_create(char *file_path, char *buf, size_t size)
+struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
+                                       char *file_path, char *buf, size_t size)
 {
     int ret;
-    struct flb_cf *cf;
     struct local_ctx ctx;
 
-    cf = flb_cf_create();
     if (!cf) {
-        return NULL;
+        cf = flb_cf_create();
+        if (!cf) {
+            return NULL;
+        }
     }
 
     local_init(&ctx, file_path);
@@ -594,7 +596,6 @@ struct flb_cf *flb_cf_fluentbit_create(char *file_path, char *buf, size_t size)
     if (ret == -1) {
         exit(28);
     }
-
 
     return cf;
 }
