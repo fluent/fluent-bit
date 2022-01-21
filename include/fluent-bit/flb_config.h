@@ -69,6 +69,9 @@ struct flb_config {
 
     struct mk_rconf *file;
 
+    /* main configuration */
+    struct flb_cf *cf_main;
+
     flb_sds_t program_name;      /* argv[0] */
 
     /*
