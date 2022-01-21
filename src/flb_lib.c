@@ -704,7 +704,15 @@ int flb_stop(flb_ctx_t *ctx)
     int ret;
     pthread_t tid;
 
+    tid = ctx->config->worker;
+
     if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        /*
+         * There is a chance the worker thread is still active while
+         * the service exited for some reason (plugin action). Always
+         * wait and double check that the child thread is not running.
+         */
+        pthread_join(tid, NULL);
         return 0;
     }
 
@@ -718,9 +726,11 @@ int flb_stop(flb_ctx_t *ctx)
 
     flb_debug("[lib] sending STOP signal to the engine");
 
-    tid = ctx->config->worker;
     flb_engine_exit(ctx->config);
     ret = pthread_join(tid, NULL);
+    if (ret != 0) {
+        flb_errno();
+    }
     flb_debug("[lib] Fluent Bit engine stopped");
 
     return ret;
