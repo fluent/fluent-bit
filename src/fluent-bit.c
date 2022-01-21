@@ -927,17 +927,8 @@ int flb_main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
     config = ctx->config;
-
-    /* Initialize config_format context */
-    cf = flb_cf_create();
-    if (!cf) {
-        exit(EXIT_FAILURE);
-    }
-    service = flb_cf_section_create(cf, "service", 0);
-    if (!service) {
-        flb_cf_destroy(cf);
-        exit(EXIT_FAILURE);
-    }
+    cf = config->cf_main;
+    service = cf->service;
 
 #ifndef FLB_HAVE_STATIC_CONF
 
@@ -1128,6 +1119,8 @@ int flb_main(int argc, char **argv)
 
     /* Load the service configuration file */
     ret = service_configure(cf, config, cfg_file);
+    flb_free(cfg_file);
+
     if (ret != 0) {
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
@@ -1179,10 +1172,13 @@ int flb_main(int argc, char **argv)
     while (ctx->status == FLB_LIB_OK && exit_signal == 0) {
         sleep(1);
     }
+
     if (exit_signal) {
         flb_signal_exit(exit_signal);
     }
     ret = config->exit_status_code;
+
+    flb_stop(ctx);
     flb_destroy(ctx);
 
     return ret;
