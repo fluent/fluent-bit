@@ -198,6 +198,9 @@ struct flb_config *flb_config_init()
     }
     config->cf_main = cf;
 
+    /* config_format for parsers */
+    config->cf_parsers = flb_cf_create();
+
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
     config->daemon       = FLB_FALSE;
@@ -460,7 +463,12 @@ void flb_config_exit(struct flb_config *config)
 
     flb_plugins_unregister(config);
 
-    flb_cf_destroy(config->cf_main);
+    if (config->cf_main) {
+        flb_cf_destroy(config->cf_main);
+    }
+    if (config->cf_parsers) {
+        flb_cf_destroy(config->cf_parsers);
+    }
     flb_free(config);
 }
 
