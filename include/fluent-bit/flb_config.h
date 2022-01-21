@@ -71,6 +71,7 @@ struct flb_config {
 
     /* main configuration */
     struct flb_cf *cf_main;
+    struct flb_cf *cf_parsers;
 
     flb_sds_t program_name;      /* argv[0] */
 
