@@ -173,6 +173,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
 
     if ( configure(ctx, f_ins) < 0 ){
         delete_list(ctx);
+        flb_free(ctx);
         return -1;
     }
 
