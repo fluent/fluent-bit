@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
@@ -166,6 +167,8 @@ struct flb_config *flb_config_init()
 {
     int ret;
     struct flb_config *config;
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -182,6 +185,18 @@ struct flb_config *flb_config_init()
 
     /* Is the engine (event loop) actively running ? */
     config->is_running = FLB_TRUE;
+
+    /* Initialize config_format context */
+    cf = flb_cf_create();
+    if (!cf) {
+        return NULL;
+    }
+    section = flb_cf_section_create(cf, "service", 0);
+    if (!section) {
+        flb_cf_destroy(cf);
+        return NULL;
+    }
+    config->cf_main = cf;
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
@@ -444,6 +459,8 @@ void flb_config_exit(struct flb_config *config)
     }
 
     flb_plugins_unregister(config);
+
+    flb_cf_destroy(config->cf_main);
     flb_free(config);
 }
 
