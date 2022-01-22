@@ -842,15 +842,9 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
 
             if (drop == FLB_TRUE) {
-                /*
-                 * Shutdown the connection, this is the safest way to indicate
-                 * that the socket cannot longer work and any co-routine on
-                 * waiting for I/O will receive the notification and trigger
-                 * the error to it caller.
-                 */
-                if (u_conn->fd != -1) {
-                    shutdown(u_conn->fd, SHUT_RDWR);
-                }
+                mk_event_inject(u_conn->evl, &u_conn->event,
+                                MK_EVENT_READ | MK_EVENT_WRITE,
+                                FLB_TRUE);
 
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
@@ -861,9 +855,9 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
         mk_list_foreach_safe(u_head, tmp, &uq->av_queue) {
             u_conn = mk_list_entry(u_head, struct flb_upstream_conn, _head);
             if ((now - u_conn->ts_available) >= u->net.keepalive_idle_timeout) {
-                mk_event_inject(u_conn->evl, &u_conn->event,
-                                MK_EVENT_READ | MK_EVENT_WRITE,
-                                FLB_TRUE);
+                if (u_conn->fd != -1) {
+                    shutdown(u_conn->fd, SHUT_RDWR);
+                }
 
                 prepare_destroy_conn(u_conn);
                 flb_debug("[upstream] drop keepalive connection #%i to %s:%i "
