@@ -1990,8 +1990,9 @@ static void mpi_montred( mbedtls_mpi *A, const mbedtls_mpi *N,
 static int mpi_select( mbedtls_mpi *R, const mbedtls_mpi *T, size_t T_size, size_t idx )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
+    size_t i;
 
-    for( size_t i = 0; i < T_size; i++ )
+    for(i = 0; i < T_size; i++ )
     {
         MBEDTLS_MPI_CHK( mbedtls_mpi_safe_cond_assign( R, &T[i],
                         (unsigned char) mbedtls_ct_size_bool_eq( i, idx ) ) );
