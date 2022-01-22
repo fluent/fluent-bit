@@ -353,13 +353,17 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    ERR_clear_error();
     ret = SSL_read(session->ssl, buf, len);
     if (ret <= 0) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
-        else if (ret < 0) {
+        else if (ret == SSL_ERROR_WANT_WRITE) {
+            ret = FLB_TLS_WANT_WRITE;
+        }
+        else {
             ret = -1;
         }
     }
@@ -379,6 +383,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    ERR_clear_error();
     ret = SSL_write(session->ssl,
                     (unsigned char *) data + total,
                     len - total);
@@ -414,6 +419,7 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
         SSL_set_tlsext_host_name(session->ssl, tls->vhost);
     }
 
+    ERR_clear_error();
     ret = SSL_connect(session->ssl);
     if (ret != 1) {
         ret = SSL_get_error(session->ssl, ret);
