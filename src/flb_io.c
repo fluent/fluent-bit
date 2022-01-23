@@ -317,14 +317,9 @@ static ssize_t fd_io_read(int fd, void *buf, size_t len);
 static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
                            void *buf, size_t len)
 {
-    return fd_io_read(u_conn->fd, buf, len);
-}
-
-static ssize_t fd_io_read(int fd, void *buf, size_t len)
-{
     int ret;
 
-    ret = recv(fd, buf, len, 0);
+    ret = fd_io_read(u_conn->fd, buf, len);
     if (ret == -1) {
         ret = FLB_WOULDBLOCK();
         if (ret) {
@@ -334,6 +329,18 @@ static ssize_t fd_io_read(int fd, void *buf, size_t len)
                     u_conn->fd, u_conn->u->net.io_timeout,
                     u_conn->u->tcp_host, u_conn->u->tcp_port);
         }
+        return -1;
+    }
+
+    return ret;
+}
+
+static ssize_t fd_io_read(int fd, void *buf, size_t len)
+{
+    int ret;
+
+    ret = recv(fd, buf, len, 0);
+    if (ret == -1) {
         return -1;
     }
 
