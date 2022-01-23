@@ -381,6 +381,7 @@ int fw_prot_process(struct fw_conn *conn)
             stag_len = tag.via.str.size;
 
             /* Copy the tag to the new buffer, prefix it if required */
+            flb_sds_len_set(out_tag, 0); /* clear out_tag before using */
             if (ctx->tag_prefix) {
                 flb_sds_cat_safe(&out_tag,
                                  ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));
