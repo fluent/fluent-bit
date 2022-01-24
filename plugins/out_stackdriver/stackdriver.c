@@ -1458,6 +1458,7 @@ static int stackdriver_format(struct flb_config *config,
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
     struct flb_stackdriver *ctx = plugin_context;
+    struct flb_mp_map_header mh;
 
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
@@ -1504,7 +1505,6 @@ static int stackdriver_format(struct flb_config *config,
     struct tm tm;
     struct flb_time tms;
     timestamp_status tms_status;
-
     /* Count number of records */
     array_size = flb_mp_count(data, bytes);
 
@@ -1583,10 +1583,11 @@ static int stackdriver_format(struct flb_config *config,
                                   ctx->project_id, flb_sds_len(ctx->project_id));
         }
         else if (ctx->is_generic_resource_type) {
-            if (strcmp(ctx->resource, "generic_node") == 0) {
-                /* generic_node has fields project_id, location, namespace, node_id */
-                msgpack_pack_map(&mp_pck, 4);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
+            if (strcmp(ctx->resource, "generic_node") == 0 && ctx->node_id) {
+                /* generic_node has fields project_id, location, namespace, node_id */
+                flb_mp_map_header_append(&mh);
                 msgpack_pack_str(&mp_pck, 7);
                 msgpack_pack_str_body(&mp_pck, "node_id", 7);
                 msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_id));
@@ -1595,59 +1596,84 @@ static int stackdriver_format(struct flb_config *config,
             }
             else {
                  /* generic_task has fields project_id, location, namespace, job, task_id */
-                msgpack_pack_map(&mp_pck, 5);
+                if (ctx->job) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 3);
+                    msgpack_pack_str_body(&mp_pck, "job", 3);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->job));
+                    msgpack_pack_str_body(&mp_pck,
+                                          ctx->job, flb_sds_len(ctx->job));
+                }
 
-                msgpack_pack_str(&mp_pck, 3);
-                msgpack_pack_str_body(&mp_pck, "job", 3);
-                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->job));
-                msgpack_pack_str_body(&mp_pck,
-                                      ctx->job, flb_sds_len(ctx->job));
-
-                msgpack_pack_str(&mp_pck, 7);
-                msgpack_pack_str_body(&mp_pck, "task_id", 7);
-                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->task_id));
-                msgpack_pack_str_body(&mp_pck,
-                                      ctx->task_id, flb_sds_len(ctx->task_id));
+                if (ctx->task_id) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 7);
+                    msgpack_pack_str_body(&mp_pck, "task_id", 7);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->task_id));
+                    msgpack_pack_str_body(&mp_pck,
+                                          ctx->task_id, flb_sds_len(ctx->task_id));
+                }
             }
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->location, flb_sds_len(ctx->location));
+            if (ctx->location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->location, flb_sds_len(ctx->location));
+            }
 
-            msgpack_pack_str(&mp_pck, 9);
-            msgpack_pack_str_body(&mp_pck, "namespace", 9);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->namespace_id, flb_sds_len(ctx->namespace_id));
+            if (ctx->namespace_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 9);
+                msgpack_pack_str_body(&mp_pck, "namespace", 9);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->namespace_id, flb_sds_len(ctx->namespace_id));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, "gce_instance") == 0) {
             /* gce_instance resource has fields project_id, zone, instance_id */
-            msgpack_pack_map(&mp_pck, 3);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 4);
-            msgpack_pack_str_body(&mp_pck, "zone", 4);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-            msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+            if (ctx->zone) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 4);
+                msgpack_pack_str_body(&mp_pck, "zone", 4);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+                msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+            }
 
-            msgpack_pack_str(&mp_pck, 11);
-            msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->instance_id, flb_sds_len(ctx->instance_id));
+            if (ctx->instance_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 11);
+                msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->instance_id, flb_sds_len(ctx->instance_id));
+            }
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, K8S_CONTAINER) == 0) {
             /* k8s_container resource has fields project_id, location, cluster_name,
@@ -1665,43 +1691,66 @@ static int stackdriver_format(struct flb_config *config,
                 return -1;
             }
 
-            msgpack_pack_map(&mp_pck, 6);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+            if (ctx->cluster_location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_location,
+                                      flb_sds_len(ctx->cluster_location));
+            }
 
-            msgpack_pack_str(&mp_pck, 12);
-            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            if (ctx->cluster_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 12);
+                msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 14);
-            msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->namespace_name, flb_sds_len(ctx->namespace_name));
+            if (ctx->namespace_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 14);
+                msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->namespace_name,
+                                      flb_sds_len(ctx->namespace_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->pod_name, flb_sds_len(ctx->pod_name));
+            if (ctx->pod_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->pod_name, flb_sds_len(ctx->pod_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 14);
-            msgpack_pack_str_body(&mp_pck, "container_name", 14);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->container_name, flb_sds_len(ctx->container_name));
+            if (ctx->container_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 14);
+                msgpack_pack_str_body(&mp_pck, "container_name", 14);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->container_name,
+                                      flb_sds_len(ctx->container_name));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, K8S_NODE) == 0) {
             /* k8s_node resource has fields project_id, location, cluster_name, node_name
@@ -1718,31 +1767,46 @@ static int stackdriver_format(struct flb_config *config,
                 return -1;
             }
 
-            msgpack_pack_map(&mp_pck, 4);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+            if (ctx->cluster_location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_location,
+                                      flb_sds_len(ctx->cluster_location));
+            }
 
-            msgpack_pack_str(&mp_pck, 12);
-            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            if (ctx->cluster_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 12);
+                msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 9);
-            msgpack_pack_str_body(&mp_pck, "node_name", 9);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->node_name, flb_sds_len(ctx->node_name));
+            if (ctx->node_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 9);
+                msgpack_pack_str_body(&mp_pck, "node_name", 9);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->node_name, flb_sds_len(ctx->node_name));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, K8S_POD) == 0) {
             /* k8s_pod resource has fields project_id, location, cluster_name,
@@ -1760,37 +1824,56 @@ static int stackdriver_format(struct flb_config *config,
                 return -1;
             }
 
-            msgpack_pack_map(&mp_pck, 5);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+            if (ctx->cluster_location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_location,
+                                      flb_sds_len(ctx->cluster_location));
+            }
 
-            msgpack_pack_str(&mp_pck, 12);
-            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            if (ctx->cluster_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 12);
+                msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 14);
-            msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->namespace_name, flb_sds_len(ctx->namespace_name));
+            if (ctx->namespace_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 14);
+                msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->namespace_name,
+                                      flb_sds_len(ctx->namespace_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->pod_name, flb_sds_len(ctx->pod_name));
+            if (ctx->pod_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->pod_name, flb_sds_len(ctx->pod_name));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else {
             flb_plg_error(ctx->ins, "unsupported resource type '%s'",
