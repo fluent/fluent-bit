@@ -417,7 +417,8 @@ void mbedtls_ct_memcpy_if_eq( unsigned char *dest,
     const unsigned char mask = (unsigned char) mbedtls_ct_size_mask( equal );
 
     /* dest[i] = c1 == c2 ? src[i] : dest[i] */
-    for( size_t i = 0; i < len; i++ )
+    size_t i;
+    for( i = 0; i < len; i++ )
         dest[i] = ( src[i] & mask ) | ( dest[i] & ~mask );
 }
 
