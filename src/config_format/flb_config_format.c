@@ -139,7 +139,7 @@ char *flb_cf_section_property_get(struct flb_cf *cf, struct flb_cf_section *s,
                                   char *key)
 {
     (void) cf;
-    return flb_kv_get_key_value(key, &s->properties);
+    return (char *) flb_kv_get_key_value(key, &s->properties);
 }
 
 struct flb_kv *flb_cf_meta_create(struct flb_cf *cf, char *meta, int len)
@@ -296,6 +296,22 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     return s;
 }
 
+/* returns the first match of a section that it name matches 'name' parameter */
+struct flb_cf_section *flb_cf_section_get_by_name(struct flb_cf *cf, char *name)
+{
+    struct mk_list *head;
+    struct flb_cf_section *s;
+
+    mk_list_foreach(head, &cf->sections) {
+        s = mk_list_entry(head, struct flb_cf_section, _head);
+        if (strcasecmp(s->name, name) == 0) {
+            return s;
+        }
+    }
+
+    return NULL;
+}
+
 void flb_cf_section_destroy(struct flb_cf *cf, struct flb_cf_section *s)
 {
     struct mk_list *tmp;
@@ -420,7 +436,7 @@ struct flb_cf *flb_cf_create_from_file(struct flb_cf *cf, char *file)
             format = FLB_CF_FLUENTBIT;
         }
 #ifdef FLB_HAVE_LIBYAML
-        else if (strcasecmp(ptr, ".yaml") == 0) {
+        else if (strcasecmp(ptr, ".yaml") == 0 || strcasecmp(ptr, ".yml") == 0) {
             format = FLB_CF_YAML;
         }
 #endif
