@@ -48,3 +48,29 @@ jobs:
       env:
         PACKAGE_TEST: ${{ matrix.distro }}
         RELEASE_URL: https://packages.fluentbit.io
+
+  call-test-windows-packaging:
+    name: Windows package tests
+    runs-on: windows-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Get the version
+      id: get_version
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        VERSION=$(cat latest-version.txt)
+        echo ::set-output name=VERSION::$VERSION
+      shell: bash
+
+    - name: Download package locally
+      run: |
+        Invoke-WebRequest -Uri $SOURCE -OutFile C:\temp\fluent-bit.exe
+      shell: powershell
+      env:
+        SOURCE: https://fluentbit.io/releases/1.8/td-agent-bit-1.8.11-win64.exe
+
+    - name: Install package locally
