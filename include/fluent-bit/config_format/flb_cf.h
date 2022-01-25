@@ -126,6 +126,7 @@ void flb_cf_group_destroy(struct flb_cf_group *g);
 
 /* sections */
 struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int len);
+struct flb_cf_section *flb_cf_section_get_by_name(struct flb_cf *cf, char *name);
 void flb_cf_section_destroy(struct flb_cf *cf, struct flb_cf_section *s);
 void flb_cf_section_destroy_all(struct flb_cf *cf);
 
