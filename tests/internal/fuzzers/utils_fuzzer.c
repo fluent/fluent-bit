@@ -37,6 +37,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     }
 
+    flb_malloc_p = 0;
+
     /* Prepare a general null-terminated string */
     char *null_terminated = (char*)malloc(size+1);
     null_terminated[size] = '\0';

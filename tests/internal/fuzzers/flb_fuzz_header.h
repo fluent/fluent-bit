@@ -28,6 +28,9 @@ char *get_null_terminated(size_t size, const uint8_t **data,
                           size_t *total_data_size)
 {
   char *tmp = flb_malloc(size+1);
+  if (tmp == NULL) {
+    tmp = malloc(size+1);
+  }
   memcpy(tmp, *data, size);
   tmp[size] = '\0';
 
