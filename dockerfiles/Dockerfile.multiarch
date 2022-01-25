@@ -86,7 +86,15 @@ FROM debian:bullseye-slim as production
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
       version="1.9.0" \
-      author="Eduardo Silva <eduardo@calyptia.com>"
+      author="Eduardo Silva <eduardo@calyptia.com>" \
+      org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
