@@ -434,9 +434,8 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
             ret = SSL_get_error(session->ssl, ret);
-            // The SSL_ERROR_SYSCALL with errno value of 0 
-            // indicates unexpected EOF from the peer.
-            // This is fixed in OpenSSL 3.0.
+            // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
+            //  EOF from the peer. This is fixed in OpenSSL 3.0.
             if (ret == 0) {
             	flb_error("[tls] error: unexpected EOF");
             } else {
