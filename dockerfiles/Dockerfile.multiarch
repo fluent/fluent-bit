@@ -101,8 +101,10 @@ RUN apt-get update && \
         libatomic1 \
         libgcrypt20 && \
     mkdir -p /dpkg && \
-    for deb in *.deb; do dpkg --extract $deb /dpkg || exit 10; done
+    for deb in *.deb; do dpkg --extract "$deb" /dpkg || exit 10; done
 
+# We want latest at time of build
+# hadolint ignore=DL3008
 FROM gcr.io/distroless/cc-debian11 as production
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
