@@ -81,30 +81,36 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-# FROM gcr.io/distroless/cc-debian11 as production
-FROM debian:bullseye-slim as production
+# Simple example of how to properly extract packages for reuse in distroless
+# Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
+FROM debian:bullseye-slim as deb-extractor
+COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
+COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
+
+# We download all debs locally then extract them into a directory we can use as the root for distroless
+WORKDIR /tmp
+RUN apt-get update && \
+    apt-get download \
+        libssl1.1 \
+        libsasl2-2 \
+        pkg-config \
+        libpq5 \
+        libsystemd0 \
+        zlib1g \
+        ca-certificates \
+        libatomic1 \
+        libgcrypt20 && \
+    mkdir -p /dpkg && \
+    for deb in *.deb; do dpkg --extract $deb /dpkg || exit 10; done
+
+FROM gcr.io/distroless/cc-debian11 as production
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
       version="1.9.0" \
       author="Eduardo Silva <eduardo@calyptia.com>"
 
-COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
-COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
-
-# hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      libssl1.1 \
-      libsasl2-2 \
-      pkg-config \
-      libpq5 \
-      libsystemd0 \
-      zlib1g \
-      ca-certificates \
-      libatomic1 \
-      libgcrypt20 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Copy the libraries from the extractor stage into root
+COPY --from=deb-extractor /dpkg /
 
 COPY --from=builder /fluent-bit /fluent-bit
 RUN rm -f /usr/bin/qemu-*-static
@@ -115,7 +121,7 @@ EXPOSE 2020
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
-FROM production as debug
+FROM debian:bullseye-slim as debug
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
       version="1.9.0" \
@@ -128,7 +134,16 @@ ENV DEBIAN_FRONTEND noninteractive
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    bash gdb valgrind build-essential \
+        libssl1.1 \
+        libsasl2-2 \
+        pkg-config \
+        libpq5 \
+        libsystemd0 \
+        zlib1g \
+        ca-certificates \
+        libatomic1 \
+        libgcrypt20 \
+        bash gdb valgrind build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -136,6 +151,5 @@ RUN rm -f /usr/bin/qemu-*-static
 
 EXPOSE 2020
 
-# Entry point
-ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
+# No entry point so we can just shell in
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
