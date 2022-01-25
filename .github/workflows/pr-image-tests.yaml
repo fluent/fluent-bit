@@ -50,3 +50,16 @@ jobs:
         environment: pr
       secrets:
         token: ${{ secrets.GITHUB_TOKEN }}
+
+    pr-image-tests-smoke-test-multiarch-images:
+      name: PR - multiarch smoke test images
+      needs: [pr-get-latest-tag, pr-image-tests-build-images]
+      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        image: ${{ github.repository }}/pr-${{ github.event.number }}/multiarch
+        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
+        environment: pr
+      secrets:
+        token: ${{ secrets.GITHUB_TOKEN }}
