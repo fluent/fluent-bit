@@ -104,7 +104,7 @@ RUN apt-get update && \
     for deb in *.deb; do dpkg --extract "$deb" /dpkg || exit 10; done
 
 # We want latest at time of build
-# hadolint ignore=DL3008
+# hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian11 as production
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
