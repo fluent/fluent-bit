@@ -123,7 +123,6 @@ LABEL description="Fluent Bit multi-architecture container image" \
 COPY --from=deb-extractor /dpkg /
 
 COPY --from=builder /fluent-bit /fluent-bit
-RUN rm -f /usr/bin/qemu-*-static
 
 EXPOSE 2020
 
