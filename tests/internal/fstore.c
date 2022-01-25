@@ -64,7 +64,7 @@ void cb_all()
     ret = stat(FSF_STORE_PATH "/abc/example.txt", &st_data);
     TEST_CHECK(ret == 0);
 
-    ret = flb_fstore_file_append(fsf, "fluent-bit\n", 11);
+    ret = flb_fstore_file_append(fs, fsf, "fluent-bit\n", 11);
     TEST_CHECK(ret == 0);
 
     ret = flb_fstore_file_content_copy(fs, fsf, &out_buf, &out_size);
