@@ -69,7 +69,17 @@ COPY conf/fluent-bit.conf \
      /fluent-bit/etc/
 
 FROM arm32v7/debian:bullseye-slim
-LABEL description="Fluent Bit docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# Keep old labels for backwards compatibility with any tooling using them
+LABEL description="Fluent Bit container image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 COPY --from=builder /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
 # hadolint ignore=DL3008

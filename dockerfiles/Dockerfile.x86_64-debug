@@ -65,7 +65,17 @@ COPY conf/fluent-bit.conf \
 
 # hadolint ignore=DL3006
 FROM debian:bullseye-slim
-LABEL description="Fluent Bit debug docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# Keep old labels for backwards compatibility with any tooling using them
+LABEL description="Fluent Bit container debug image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -87,6 +97,5 @@ COPY --from=builder /fluent-bit /fluent-bit
 
 EXPOSE 2020
 
-# Entry point
-ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
+# No entry point as want to shell in
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
