@@ -168,6 +168,7 @@ static void *tls_context_create(int verify, int debug,
     int ret;
     SSL_CTX *ssl_ctx;
     struct tls_context *ctx;
+    char err_buf[256];
 
     /*
      * Init library ? based in the documentation on OpenSSL >= 1.1.0 is not longer
@@ -214,20 +215,18 @@ static void *tls_context_create(int verify, int debug,
     if (ca_path) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
         if (ret != 1) {
-            flb_error("[tls] ca_path'%s' %lu: %s",
-                      ca_path,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] ca_path '%s' %lu: %s",
+                      ca_path, ERR_get_error(), err_buf);
             goto error;
         }
     }
     else if (ca_file) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, ca_file, NULL);
         if (ret != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] ca_file '%s' %lu: %s",
-                      ca_file,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+                      ca_file, ERR_get_error(), err_buf);
             goto error;
         }
     }
@@ -238,11 +237,10 @@ static void *tls_context_create(int verify, int debug,
     /* crt_file */
     if (crt_file) {
         ret = SSL_CTX_use_certificate_chain_file(ssl_ctx, crt_file);
-		if (ret != 1) {
+        if (ret != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] crt_file '%s' %lu: %s",
-                      crt_file,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+                      crt_file, ERR_get_error(), err_buf);
             goto error;
         }
     }
@@ -256,10 +254,9 @@ static void *tls_context_create(int verify, int debug,
         ret = SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file,
                                           SSL_FILETYPE_PEM);
         if (ret != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] key_file '%s' %lu: %s",
-                      key_file,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+                      crt_file, ERR_get_error(), err_buf);
         }
 
         /* Make sure the key and certificate file match */
@@ -349,7 +346,7 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
                         void *buf, size_t len)
 {
     int ret;
-    char errbuf[256];
+    char err_buf[256];
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
 
@@ -367,8 +364,8 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
             ret = FLB_TLS_WANT_WRITE;
         }
         else if (ret < 0) {
-            ERR_error_string(ret, errbuf);
-            flb_error("[tls] error: %s", errbuf);
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] error: %s", err_buf);
         }
         else {
             ret = -1;
@@ -383,7 +380,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
                          const void *data, size_t len)
 {
     int ret;
-    char errbuf[256];
+    char err_buf[256];
     size_t total = 0;
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
@@ -404,8 +401,8 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
             ret = FLB_TLS_WANT_READ;
         }
         else {
-            ERR_error_string(ret, errbuf);
-            flb_error("[tls] error: %s", errbuf);
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] error: %s", err_buf);
             ret = -1;
         }
     }
@@ -419,7 +416,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
 static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
 {
     int ret = 0;
-    char errbuf[256];
+    char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
 
@@ -443,8 +440,8 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
             if (ret == 0) {
             	flb_error("[tls] error: unexpected EOF");
             } else {
-                ERR_error_string(ret, errbuf);
-                flb_error("[tls] error: %s", errbuf);
+                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] error: %s", err_buf);
             }
             pthread_mutex_unlock(&ctx->mutex);
             return -1;
