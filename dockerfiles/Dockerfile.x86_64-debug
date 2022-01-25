@@ -97,6 +97,5 @@ COPY --from=builder /fluent-bit /fluent-bit
 
 EXPOSE 2020
 
-# Entry point
-ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
+# No entry point as want to shell in
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
