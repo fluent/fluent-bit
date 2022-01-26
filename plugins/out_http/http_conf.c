@@ -147,6 +147,11 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         if (strcasecmp(tmp, "gelf") == 0) {
             ctx->out_format = FLB_HTTP_OUT_GELF;
         }
+#ifdef FLB_HAVE_AVRO_ENCODER
+        else if (strcasecmp(tmp, "avro") == 0) {
+            ctx->out_format = FLB_HTTP_OUT_AVRO;
+        }
+#endif
         else {
             ret = flb_pack_to_json_format_type(tmp);
             if (ret == -1) {
@@ -158,6 +163,14 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             }
         }
     }
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    /* Config AVRO */
+    tmp = flb_output_get_property("avro_schema", ins);
+    if (tmp) {
+        ctx->avro_schema = flb_sds_create(tmp);
+    }
+#endif
 
     /* Date key */
     ctx->date_key = ctx->json_date_key;
@@ -212,6 +225,11 @@ void flb_http_conf_destroy(struct flb_out_http *ctx)
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
     }
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    // avro
+    flb_sds_destroy(ctx->avro_schema);
+#endif
 
     flb_free(ctx->proxy_host);
     flb_free(ctx->uri);

@@ -34,6 +34,7 @@
 #include <assert.h>
 #include <errno.h>
 
+#include "avro/io.h"
 #include "http.h"
 #include "http_conf.h"
 
@@ -302,6 +303,108 @@ static int http_gelf(struct flb_out_http *ctx,
     return ret;
 }
 
+
+static int msgpack_to_avro(struct flb_out_http *ctx,
+                           msgpack_object *root, 
+                           char *out_buf, size_t *out_size)
+{
+    avro_writer_t awriter;
+    size_t schema_json_len = flb_sds_len(ctx->avro_schema);
+    avro_value_t aobject;
+    avro_value_iface_t  *aclass = NULL;
+    avro_schema_t aschema;
+
+    aclass = flb_avro_init(&aobject, (char *)ctx->avro_schema,
+            schema_json_len, &aschema);
+
+    if (!aclass) {
+        flb_error("Failed init avro:%s:n", avro_strerror());
+        return -1;
+    }
+
+    if (flb_msgpack_to_avro(&aobject, root) != FLB_TRUE) {
+        flb_errno();
+        flb_error("Failed msgpack to avro\n");
+        avro_value_decref(&aobject);
+        avro_value_iface_decref(aclass);
+        avro_schema_decref(aschema);
+        return -1;
+    }
+
+    awriter = avro_writer_memory(out_buf, *out_size);
+    if (awriter == NULL) {
+        flb_error("Unable to init avro writer\n");
+        avro_value_decref(&aobject);
+        avro_value_iface_decref(aclass);
+        avro_schema_decref(aschema);
+        return -1;
+    }
+
+    if (avro_value_write(awriter, &aobject)) {
+        flb_error("Unable to write avro value to memory buffer\nMessage: %s\n", avro_strerror());
+        avro_writer_free(awriter);
+        avro_value_decref(&aobject);
+        avro_value_iface_decref(aclass);
+        avro_schema_decref(aschema);
+        return -1;
+    }
+
+    avro_writer_flush(awriter);
+    *out_size = avro_writer_tell(awriter);
+    // by here the entire object should be fully serialized into the sds buffer
+    avro_writer_free(awriter);
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+ 
+    return 0;
+}
+
+static int http_avro(struct flb_out_http *ctx,
+                     const char *data, uint64_t bytes,
+                     const char *tag, int tag_len)
+{
+    char avro_buf[4096];
+    size_t avro_buf_size = sizeof(avro_buf);
+    msgpack_unpacked result;
+    size_t off = 0;
+    size_t size = 0;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object *obj;
+    struct flb_time tm;
+    int ret;
+
+    size = bytes * 1.5;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, data, bytes, &off) ==
+           MSGPACK_UNPACK_SUCCESS) {
+
+        if (result.data.type != MSGPACK_OBJECT_ARRAY) {
+            continue;
+        }
+
+        root = result.data;
+        if (root.via.array.size != 2) {
+            continue;
+        }
+
+        flb_time_pop_from_msgpack(&tm, &result, &obj);
+        map = root.via.array.ptr[1];
+
+        if (msgpack_to_avro(ctx, &map, avro_buf, &avro_buf_size)) {
+            msgpack_unpacked_destroy(&result);
+            return FLB_ERROR;
+        }
+    }
+
+    ret = http_post(ctx, avro_buf, avro_buf_size, tag, tag_len);
+    msgpack_unpacked_destroy(&result);
+
+    return ret;
+}
+
 static void cb_http_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -333,6 +436,13 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
                         event_chunk->data, event_chunk->size,
                         event_chunk->tag, flb_sds_len(event_chunk->tag));
     }
+#ifdef FLB_HAVE_AVRO_ENCODER
+    else if (ctx->out_format == FLB_HTTP_OUT_AVRO) {
+        ret = http_avro(ctx,
+                        event_chunk->data, event_chunk->size,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag));
+    }
+#endif
     else {
         ret = http_post(ctx,
                         event_chunk->data, event_chunk->size,
@@ -439,7 +549,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
      "Specify the key to use for the 'level' in gelf format"
     },
-
+    {
+     FLB_CONFIG_MAP_STR, "avro_schema", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, avro_schema),
+     "Specify the AVRO schema for use in the avro format"
+    },
     /* EOF */
     {0}
 };

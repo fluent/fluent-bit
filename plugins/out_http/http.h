@@ -16,12 +16,18 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-
 #ifndef FLB_OUT_HTTP_H
 #define FLB_OUT_HTTP_H
 
+#ifdef FLB_HAVE_AVRO_ENCODER
+#include <fluent-bit/flb_avro.h>
+#endif
+
 #define FLB_HTTP_OUT_MSGPACK        FLB_PACK_JSON_FORMAT_NONE
 #define FLB_HTTP_OUT_GELF           20
+#ifdef FLB_HAVE_AVRO_ENCODER
+# define FLB_HTTP_OUT_AVRO          21
+#endif
 
 #define FLB_HTTP_CONTENT_TYPE   "Content-Type"
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
@@ -72,6 +78,10 @@ struct flb_out_http {
 
     /* Plugin instance */
     struct flb_output_instance *ins;
+
+#ifdef FLB_HAVE_AVRO_ENCODER
+    flb_sds_t avro_schema;
+#endif
 };
 
 #endif
