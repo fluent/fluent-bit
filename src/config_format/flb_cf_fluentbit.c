@@ -41,7 +41,12 @@
 #define PATH_MAX MAX_PATH
 #endif
 
-#define FLB_CF_BUF_SIZE   4096
+#define FLB_CF_BUF_SIZE     4096
+
+/* indent checker return codes */
+#define INDENT_ERROR          -1
+#define INDENT_OK              0
+#define INDENT_GROUP_CONTENT   1
 
 /* Included file by configuration */
 struct local_file {
@@ -308,11 +313,15 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     return FLB_FALSE;
 }
 
-static int check_indent(const char *line, const char *indent)
+static int check_indent(const char *line, const char *indent, int *out_level)
 {
+    int extra = 0;
+    int level = 0;
+
     while (*line == *indent && *indent) {
         line++;
         indent++;
+        level++;
     }
 
     if (*indent != '\0') {
@@ -322,15 +331,27 @@ static int check_indent(const char *line, const char *indent)
         else {
             flb_error("[config] indentation level is too low");
         }
-        return -1;
+        return INDENT_ERROR;;
     }
 
     if (isblank(*line)) {
-        flb_error("[config] Extra indentation level found");
+        /* check if we have a 'group' key/value line */
+        while (isblank(*line)) {
+            line++;
+            extra++;
+        }
+
+        if (extra == level) {
+            *out_level = level + extra;
+            return INDENT_GROUP_CONTENT;
+        }
+
+        flb_error("[config] extra indentation level found");
         return -1;
     }
 
-    return 0;
+    *out_level = level;
+    return INDENT_OK;
 }
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
@@ -338,12 +359,14 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
     int i;
     int len;
     int ret;
+    int end;
+    int level;
     int line = 0;
     int indent_len = -1;
     int n_keys = 0;
-    char *key;
+    char *key = NULL;
     int key_len;
-    char *val;
+    char *val = NULL;
     int val_len;
     char *buf;
     char tmp[PATH_MAX];
@@ -352,7 +375,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
     struct stat st;
     struct local_file *file;
     struct flb_cf_meta *meta;
-    struct flb_cf_section *current = NULL;
+    struct flb_cf_section *current_section = NULL;
+    struct flb_cf_group *current_group = NULL;
+
     struct flb_kv *kv;
     FILE *f;
 
@@ -460,23 +485,25 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
 
         /* Section definition */
         if (buf[0] == '[') {
-            int end = -1;
+            current_group = NULL;
+
             end = char_search(buf, ']', len);
             if (end > 0) {
                 /*
                  * Before to add a new section, lets check the previous
                  * one have at least one key set
                  */
-                if (current && n_keys == 0) {
+                if (current_section && n_keys == 0) {
                     config_warn(cfg_file, line,
                                 "previous section did not have keys");
                 }
 
                 /* Create new section */
-                current = flb_cf_section_create(cf, buf + 1, end - 1);
-                if (!current) {
+                current_section = flb_cf_section_create(cf, buf + 1, end - 1);
+                if (!current_section) {
                     continue;
                 }
+                current_group = NULL;
                 n_keys = 0;
                 continue;
             }
@@ -503,46 +530,95 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
         }
 
         /* Validate indentation level */
-        if (check_indent(buf, indent) < 0) {
-            config_error(cfg_file, line, "Invalid indentation level");
-            flb_sds_destroy(key);
-            flb_sds_destroy(val);
+        ret = check_indent(buf, indent, &level);
+        if (ret == INDENT_ERROR) {
+            config_error(cfg_file, line, "invalid indentation level");
             return -1;
+        }
+        else {
+            if (ret == INDENT_OK && current_group) {
+                current_group = NULL;
+            }
+            indent_len = level;
         }
 
         if (buf[indent_len] == '#' || indent_len == len) {
             continue;
         }
 
-        if (len - indent_len >= 3 && strncmp(buf + indent_len, "---", 3) == 0) {
-            continue;
-        }
-
-        /* Get the separator */
+        /* get the key value separator */
         i = char_search(buf + indent_len, ' ', len - indent_len);
 
         /* key */
         key = buf + indent_len;
         key_len = i;
 
+        if (!key || i < 0) {
+            config_error(cfg_file, line, "undefined key");
+            flb_free(buf);
+            return -1;
+        }
+
+        /* Check possible start of a group */
+        if (key[0] == '[') {
+            end = char_search(key, ']', len - indent_len);
+            if (end == -1) {
+                config_error(cfg_file, line, "expected a valid group name: [..]");
+                flb_free(buf);
+                return -1;
+            }
+
+            if (!current_section) {
+                config_warn(cfg_file, line,
+                            "current group don't have a parent section");
+                flb_free(buf);
+                return -1;
+            }
+
+            /* check if a previous group exists with one key */
+            if (current_group && n_keys == 0) {
+                config_warn(cfg_file, line, "previous group did not have keys");
+                flb_free(buf);
+                return -1;
+            }
+
+            /* Create new group */
+            current_group = flb_cf_group_create(cf, current_section,
+                                                key + 1, end - 1);
+            if (!current_group) {
+                continue;
+            }
+            n_keys = 0;
+
+            /* continue processing since we need key/value pairs */
+            continue;
+        }
+
         /* val */
         val = buf + indent_len + i + 1;
         val_len = len - indent_len - i - 1;
 
         if (!key || !val || i < 0) {
-            config_error(cfg_file, line, "Each key must have a value");
+            config_error(cfg_file, line, "each key must have a value");
             return -1;
         }
 
         if (val_len == 0) {
-            config_error(cfg_file, line, "Key has an empty value");
+            config_error(cfg_file, line, "key has an empty value");
             return -1;
         }
 
-        /* Register entry: key and val are copied as duplicated */
-        kv = flb_cf_property_add(cf, &current->properties,
-                                 key, key_len,
-                                 val, val_len);
+        /* register entry: key and val are copied as duplicated */
+        if (current_group) {
+            kv = flb_cf_property_add(cf, &current_group->properties,
+                                     key, key_len,
+                                     val, val_len);
+        }
+        else {
+            kv = flb_cf_property_add(cf, &current_section->properties,
+                                     key, key_len,
+                                     val, val_len);
+        }
         if (!kv) {
             config_error(cfg_file, line, "could not allocate key value pair");
             return -1;
@@ -596,7 +672,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
     local_exit(&ctx);
 
     if (ret == -1) {
-        exit(28);
+        flb_cf_destroy(cf);
     }
 
     return cf;
