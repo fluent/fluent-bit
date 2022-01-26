@@ -12,7 +12,10 @@
 /* data/config_format/fluent-bit.yaml */
 void test_basic()
 {
-	struct flb_cf *cf;
+    struct mk_list *head;
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct flb_cf_group *g;
 
     cf = flb_cf_yaml_create(NULL, FLB_000, NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -39,9 +42,18 @@ void test_basic()
     TEST_CHECK(mk_list_size(&cf->outputs) == 2);
     TEST_CHECK(mk_list_size(&cf->others) == 1);
 
+    /* groups */
+    s = flb_cf_section_get_by_name(cf, "input");
+    TEST_CHECK(s != NULL);
+    TEST_CHECK(mk_list_size(&s->groups) == 2);
+
+    mk_list_foreach(head, &s->groups) {
+        g = mk_list_entry(head, struct flb_cf_group, _head);
+        TEST_CHECK(mk_list_size(&g->properties) == 2);
+    }
+
     printf("\n");
     flb_cf_dump(cf);
-
     flb_cf_destroy(cf);
 
 
