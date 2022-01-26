@@ -12,7 +12,10 @@
 /* data/config_format/fluent-bit.conf */
 void test_basic()
 {
+    struct mk_list *head;
 	struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct flb_cf_group *g;
 
     cf = flb_cf_fluentbit_create(NULL, FLB_000, NULL, 0);
     TEST_CHECK(cf != NULL);
@@ -22,7 +25,9 @@ void test_basic()
 
 	/* SERVICE check */
     TEST_CHECK(cf->service != NULL);
-    TEST_CHECK(mk_list_size(&cf->service->properties) == 3);
+    if (cf->service) {
+        TEST_CHECK(mk_list_size(&cf->service->properties) == 3);
+    }
 
     /* Meta commands */
     TEST_CHECK(mk_list_size(&cf->metas) == 2);
@@ -35,6 +40,16 @@ void test_basic()
     TEST_CHECK(mk_list_size(&cf->filters) == 1);
     TEST_CHECK(mk_list_size(&cf->outputs) == 1);
     TEST_CHECK(mk_list_size(&cf->others) == 1);
+
+    /* groups */
+    s = flb_cf_section_get_by_name(cf, "input");
+    TEST_CHECK(s != NULL);
+    TEST_CHECK(mk_list_size(&s->groups) == 2);
+
+    mk_list_foreach(head, &s->groups) {
+        g = mk_list_entry(head, struct flb_cf_group, _head);
+        TEST_CHECK(mk_list_size(&g->properties) == 2);
+    }
 
     printf("\n");
     flb_cf_dump(cf);
