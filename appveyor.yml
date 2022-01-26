@@ -13,7 +13,7 @@ environment:
 
 configuration:
   - Release
-  
+
 skip_commits:
   files:
     - '.github/**'
@@ -38,8 +38,13 @@ build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
   - cpack
+  - cpack -DFLB_TD=On
 
 artifacts:
+  - path: build/fluent-bit-*.exe
+    name: fluent-bit-installer
+  - path: build/fluent-bit-*.zip
+    name: fluent-bit-zip
   - path: build/td-agent-bit-*.exe
     name: td-agent-bit
   - path: build/td-agent-bit-*.zip
