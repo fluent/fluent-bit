@@ -389,20 +389,43 @@ static char *section_type_str(int type)
 static void dump_section(struct flb_cf_section *s)
 {
     struct mk_list *head;
+    struct mk_list *p_head;
     struct flb_kv *kv;
+    struct flb_cf_group *g;
 
     printf("> section:\n  name: %s\n  type: %s\n",
            s->name, section_type_str(s->type));
 
     if (mk_list_size(&s->properties) > 0) {
         printf("  properties:\n");
-        mk_list_foreach(head, &s->properties) {
-            kv = mk_list_entry(head, struct flb_kv, _head);
+        mk_list_foreach(p_head, &s->properties) {
+            kv = mk_list_entry(p_head, struct flb_kv, _head);
             printf("    - %-15s: %s\n", kv->key, kv->val);
         }
     }
     else {
         printf("  properties: NONE\n");
+    }
+
+    if (mk_list_size(&s->groups) <= 0) {
+        printf("  groups    : NONE\n");
+        return;
+    }
+
+    mk_list_foreach(head, &s->groups) {
+        g = mk_list_entry(head, struct flb_cf_group, _head);
+        printf("    > group:\n      name: %s\n", g->name);
+
+        if (mk_list_size(&g->properties) > 0) {
+            printf("      properties:\n");
+            mk_list_foreach(p_head, &g->properties) {
+                kv = mk_list_entry(p_head, struct flb_kv, _head);
+                printf("        - %-11s: %s\n", kv->key, kv->val);
+            }
+        }
+        else {
+            printf("      properties: NONE\n");
+        }
     }
 }
 
