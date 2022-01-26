@@ -51,49 +51,19 @@ jobs:
       secrets:
         token: ${{ secrets.GITHUB_TOKEN }}
 
-    pr-image-tests-smoke-test-multiarch-images:
-      name: PR - multiarch smoke test images
-      needs: [pr-get-latest-tag, pr-image-tests-build-images]
-      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        image: ${{ github.repository }}/pr-${{ github.event.number }}/multiarch
-        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
-        environment: pr
-      secrets:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
     pr-image-tests-classic-docker-build:
       name: PR - Classic docker build test
-      needs: pr-get-latest-tag
       runs-on: ubuntu-latest
       environment: pr
-      strategy:
-        # A failure on one is probably shared
-        fail-fast: true
-        matrix:
-          arch: [ amd64, arm64, arm/v7 ]
-          include:
-            - arch: amd64
-              suffix: x86_64
-            - arch: arm/v7
-              suffix: arm32v7
-            - arch: arm64
-              suffix: arm64v8
       steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-
-      - name: Build the ${{ matrix.suffix }} classic build test image
+      - name: Classic docker build
         # We only want to confirm it builds with classic mode, nothing else
         run: |
-          docker build --platform=linux/${{ matrix.arch }} --build-arg FLB_TARBALL="$FLB_TARBALL" -f ./dockerfiles/Dockerfile.${{ matrix.suffix }} ./dockerfiles/
+          docker build .
         env:
           # Ensure we disable buildkit
           DOCKER_BUILDKIT: 0
-          FLB_TARBALL: https://github.com/fluent/fluent-bit/archive/v${{ needs.pr-get-latest-tag.outputs.latest_tag }}.tar.gz
         shell: bash
