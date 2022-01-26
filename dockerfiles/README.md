@@ -40,7 +40,7 @@ docker buildx inspect --bootstrap
 ```
 4. Build Fluent Bit from the root of the Git repo:
 ```
-docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
+docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" --target=production -f ./dockerfiles/Dockerfile.multiarch .
 ```
 
 ## Build and test
@@ -48,7 +48,7 @@ docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./docke
 1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
 2. Build the container image using the appropriate Dockerfile in this directory.
 ```
-$ docker build -t fluent/fluent-bit -f ./dockerfiles/Dockerfile.x86_64 ./dockerfiles
+$ docker build -t fluent/fluent-bit --target=production -f ./dockerfiles/Dockerfile.multiarch .
 ```
 3. Test the container.
 ```
@@ -80,7 +80,6 @@ Containers are "staged" prior to release in the following ways to `ghcr.io`:
 * `ghcr.io/fluent/fluent-bit/staging` - all architectures staging images used for testing prior to release
 * `ghcr.io/fluent/fluent-bit/master` - x86_64/AMD64 only images built on each push to master, used for integration tests
 * `ghcr.io/fluent/fluent-bit/pr-X` - x86_64/AMD64 only PR images where `X` is the PR number
-* `ghcr.io/fluent/fluent-bit/multiarch` - developer preview multi-arch images built from `Dockerfile.multiarch`
 
 ## Windows
 

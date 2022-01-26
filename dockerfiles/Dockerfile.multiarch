@@ -24,13 +24,10 @@ ENV FLB_MINOR 9
 ENV FLB_PATCH 0
 ENV FLB_VERSION 1.9.0
 
-ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
-ENV FLB_SOURCE $FLB_TARBALL
-RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
-
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 ENV DEBIAN_FRONTEND noninteractive
 
-WORKDIR /tmp/fluent-bit/
+WORKDIR /source
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -50,12 +47,12 @@ RUN apt-get update && \
     flex \
     bison \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
-    && rm -rf /tmp/fluent-bit/build/*
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /tmp/fluent-bit/build/
+# Copy source code
+COPY . .
+
+WORKDIR /source/build/
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
@@ -67,6 +64,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On ..
 
+# Make and install separately as builder image anyway
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
 
