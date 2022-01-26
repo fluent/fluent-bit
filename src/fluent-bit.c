@@ -771,12 +771,16 @@ static int service_configure(struct flb_cf *cf, struct flb_config *config, char 
     struct mk_list *head;
 
 #ifdef FLB_HAVE_STATIC_CONF
-    /* DISABLED/FIXME fconf = flb_config_static_open(file); */
+        cf = flb_config_static_open(file);
 #else
     if (file) {
         cf = flb_cf_create_from_file(cf, file);
     }
 #endif
+
+    if (!cf) {
+        return -1;
+    }
 
     /* Set configuration root path */
     if (file) {
@@ -1125,7 +1129,7 @@ int flb_main(int argc, char **argv)
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
 #else
-    ret = flb_service_conf(config, "fluent-bit.conf");
+    ret = service_configure(NULL, config, "fluent-bit.conf");
     if (ret != 0) {
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
