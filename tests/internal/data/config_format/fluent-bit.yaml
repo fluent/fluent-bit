@@ -11,6 +11,12 @@ inputs:
     tail:
         path: "/var/log/containers/*.log"
         parser: docker
+        group1:
+            key1: aa
+            key2: bb
+        group2:
+            key3: cc
+            key4: dd
 
     tail:
         path: "/var/log/messages"
