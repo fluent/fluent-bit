@@ -468,17 +468,19 @@ if(FLB_BINARY)
     # FIXME: should we support Sysv init script ?
   endif()
 
-  install(FILES
-    "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
-    DESTINATION ${FLB_INSTALL_CONFDIR}
-    COMPONENT binary
-    RENAME "${FLB_OUT_NAME}.conf")
-
-  install(FILES
-    "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
-    DESTINATION ${FLB_INSTALL_CONFDIR}
-    COMPONENT binary
-    RENAME "${FLB_OUT_NAME}-win32.conf")
+  if(FLB_SYSTEM_WINDOWS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  else()
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"
