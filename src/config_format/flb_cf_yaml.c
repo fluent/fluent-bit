@@ -59,6 +59,9 @@ enum state {
     STATE_PLUGIN_KEY,
     STATE_PLUGIN_VAL,
 
+    STATE_GROUP_KEY,
+    STATE_GROUP_VAL,
+
     STATE_STOP            /* end state */
 };
 
@@ -78,6 +81,9 @@ struct parser_state {
 
     /* active section */
     struct flb_cf_section *cf_section;
+
+    /* active group */
+    struct flb_cf_group *cf_group;
 
     /* internal variables for checks */
     int service_set;
@@ -412,12 +418,57 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             flb_sds_destroy(s->key);
             flb_sds_destroy(s->val);
             break;
+        case YAML_MAPPING_START_EVENT: /* start a new group */
+            s->state = STATE_GROUP_KEY;
+            s->cf_group = flb_cf_group_create(cf, s->cf_section,
+                                              s->key, flb_sds_len(s->key));
+            flb_sds_destroy(s->key);
+            if (!s->cf_group) {
+                return YAML_FAILURE;
+            }
+            break;
         default:
             yaml_error_event(s, event);
             return YAML_FAILURE;
         }
         break;
 
+    case STATE_GROUP_KEY:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            s->state = STATE_GROUP_VAL;
+            value = (char *) event->data.scalar.value;
+            s->key = flb_sds_create(value);
+            break;
+        case YAML_MAPPING_END_EVENT:
+            s->cf_group = NULL;
+            s->state = STATE_PLUGIN_KEY;
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_GROUP_VAL:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            s->state = STATE_GROUP_KEY;
+            value = (char *) event->data.scalar.value;
+            s->val = flb_sds_create(value);
+
+            /* register key/value pair as a property */
+            flb_cf_property_add(cf, &s->cf_group->properties,
+                                s->key, flb_sds_len(s->key),
+                                s->val, flb_sds_len(s->val));
+            flb_sds_destroy(s->key);
+            flb_sds_destroy(s->val);
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
 
     case STATE_STOP:
         break;
