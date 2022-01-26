@@ -853,20 +853,20 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
 
     cf = flb_cf_create_from_file(config->cf_parsers, cfg);
 #else
-    //DISABLED/FIXME fconf = flb_config_static_open(file);
+    cf = flb_config_static_open(file);
 #endif
 
     if (!cf) {
         return -1;
     }
 
-    /* process [PARSER]'s sections */
+    /* process 'parser' sections */
     ret = parser_conf_file(cfg, cf, config);
     if (ret == -1) {
         return -1;
     }
 
-    /* processs [MULTILINE_PARSER]'s sections */
+    /* processs 'multiline_parser' sections */
     ret = multiline_parser_conf_file(cfg, cf, config);
     if (ret == -1) {
         return -1;
