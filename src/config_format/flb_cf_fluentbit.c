@@ -70,7 +70,8 @@ struct local_ctx {
     struct mk_list sections;
 };
 
-static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file);
+static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file,
+                       char *buf, size_t size);
 
 /* Raise a configuration schema error */
 static void config_error(const char *path, int line, const char *msg)
@@ -100,6 +101,37 @@ static int char_search(const char *string, int c, int len)
     }
 
     return -1;
+}
+
+/*
+ * Helper function to simulate a fgets(2) but instead of using a real file stream
+ * uses the data buffer provided.
+ */
+static int static_fgets(char *out, size_t size, const char *data, size_t *off)
+{
+    size_t len;
+    const char *start = data + *off;
+    char *end;
+
+    end = strchr(start, '\n');
+
+    if (!end || *off >= size) {
+        len = size - *off - 1;
+        memcpy(out, start, len);
+        out[len] = '\0';
+        *off += len + 1;
+        return 0;
+    }
+
+    len = end - start;
+    if (len >= size) {
+        len = size - 1;
+    }
+    memcpy(out, start, len);
+    out[len] = '\0';
+    *off += len + 1;
+
+    return 1;
 }
 
 #ifndef _WIN32
@@ -140,7 +172,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path
     }
 
     for (i = 0; i < glb.gl_pathc; i++) {
-        ret = read_config(cf, ctx, glb.gl_pathv[i]);
+        ret = read_config(cf, ctx, glb.gl_pathv[i], NULL, 0);
         if (ret < 0) {
             break;
         }
@@ -237,9 +269,11 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path)
 
 static int local_init(struct local_ctx *ctx, char *file)
 {
-    char *p;
     char *end;
-    char path[PATH_MAX + 1];
+    char path[PATH_MAX + 1] = {0};
+
+#ifndef FLB_HAVE_STATIC_CONF
+    char *p;
 
     if (file) {
 #ifdef _MSC_VER
@@ -251,6 +285,7 @@ static int local_init(struct local_ctx *ctx, char *file)
             return -1;
         }
     }
+#endif
 
     /* lookup path ending and truncate */
     end = strrchr(path, '/');
@@ -354,7 +389,8 @@ static int check_indent(const char *line, const char *indent, int *out_level)
     return INDENT_OK;
 }
 
-static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
+static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
+                       char *cfg_file, char *in_data, size_t in_size)
 {
     int i;
     int len;
@@ -382,6 +418,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
     FILE *f;
 
     /* Check if the path exists (relative cases for included files) */
+#ifndef FLB_HAVE_STATIC_CONF
     if (ctx->level >= 0) {
         ret = stat(cfg_file, &st);
         if (ret == -1 && errno == ENOENT) {
@@ -396,6 +433,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
             }
         }
     }
+#endif
 
     /* Check this file have not been included before */
     ret = is_file_included(ctx, cfg_file);
@@ -405,11 +443,13 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
     }
     ctx->level++;
 
+#ifndef FLB_HAVE_STATIC_CONF
     /* Open configuration file */
     if ((f = fopen(cfg_file, "r")) == NULL) {
         flb_warn("[config] I cannot open %s file", cfg_file);
         return -1;
     }
+#endif
 
     /* Allocate temporal buffer to read file content */
     buf = flb_malloc(FLB_CF_BUF_SIZE);
@@ -418,8 +458,17 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
         return -1;
     }
 
-    /* looking for configuration directives */
+#ifdef FLB_HAVE_STATIC_CONF
+    /*
+     * a static configuration comes from a buffer, so we use the static_fgets()
+     * workaround to retrieve the lines.
+     */
+    size_t off = 0;
+    while (static_fgets(buf, FLB_CF_BUF_SIZE, in_data, &off)) {
+#else
+    /* normal mode, read lines into a buffer */
     while (fgets(buf, FLB_CF_BUF_SIZE, f)) {
+#endif
         len = strlen(buf);
         if (len > 0 && buf[len - 1] == '\n') {
             buf[--len] = 0;
@@ -427,6 +476,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
                 buf[--len] = 0;
             }
         }
+#ifndef FLB_HAVE_STATIC_CONF
         else {
             /*
              * If we don't find a break line, validate if we got an EOF or not. No EOF
@@ -439,6 +489,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
                 return -1;
             }
         }
+#endif
 
         /* Line number */
         line++;
@@ -457,7 +508,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
                 ret = read_glob(cf, ctx, buf + 9);
             }
             else {
-                ret = read_config(cf, ctx, buf + 9);
+                ret = read_config(cf, ctx, buf + 9, NULL, 0);
             }
             if (ret == -1) {
                 ctx->level--;
@@ -632,7 +683,10 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx, char *cfg_file)
         /* No key, no warning */
     }
 
+#ifndef FLB_HAVE_STATIC_CONF
     fclose(f);
+#endif
+
     if (indent) {
         flb_sds_destroy(indent);
     }
@@ -656,6 +710,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
                                        char *file_path, char *buf, size_t size)
 {
     int ret;
+    int created = FLB_FALSE;
     struct local_ctx ctx;
 
     if (!cf) {
@@ -663,15 +718,22 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         if (!cf) {
             return NULL;
         }
+        created = FLB_TRUE;
     }
 
-    local_init(&ctx, file_path);
+    ret = local_init(&ctx, file_path);
+    if (ret != 0) {
+        if (cf && created) {
+            flb_cf_destroy(cf);
+        }
+        return NULL;
+    }
 
-    ret = read_config(cf, &ctx, file_path);
+    ret = read_config(cf, &ctx, file_path, buf, size);
 
     local_exit(&ctx);
 
-    if (ret == -1) {
+    if (ret == -1 && created) {
         flb_cf_destroy(cf);
     }
 
