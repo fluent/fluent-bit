@@ -462,6 +462,10 @@ struct flb_cf *flb_cf_create_from_file(struct flb_cf *cf, char *file)
     int format = FLB_CF_FLUENTBIT;
     char *ptr;
 
+    if (!file) {
+        return NULL;
+    }
+
     ptr = strrchr(file, '.');
     if (!ptr) {
         format = FLB_CF_FLUENTBIT;
