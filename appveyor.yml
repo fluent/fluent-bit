@@ -38,6 +38,7 @@ build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
   - cpack
+  - cpack -DFLB_TD=On
 
 artifacts:
   - path: build/td-agent-bit-*.exe
