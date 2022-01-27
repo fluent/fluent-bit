@@ -33,10 +33,9 @@
  *   include/fluent-bit/conf/flb_static_conf.h
  *
  */
-struct flb_cf *flb_config_static_open(struct flb_config *config, const char *file)
+struct flb_cf *flb_config_static_open(const char *file)
 {
     int i;
-    int ret;
     const char *k = NULL;
     const char *v = NULL;
     struct flb_cf *cf;
@@ -60,11 +59,6 @@ struct flb_cf *flb_config_static_open(struct flb_config *config, const char *fil
     if (!cf) {
         return NULL;
     }
-
-    if (config->cf_main) {
-        flb_cf_destroy(config->cf_main);
-    }
-    config->cf_main = cf;
 
     return cf;
 }
