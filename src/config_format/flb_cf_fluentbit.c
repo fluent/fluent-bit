@@ -512,11 +512,13 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             }
             if (ret == -1) {
                 ctx->level--;
-                fclose(f);
                 if (indent) {
                     flb_sds_destroy(indent);
                 }
                 flb_free(buf);
+#ifndef FLB_HAVE_STATIC_CONF
+                fclose(f);
+#endif
                 return -1;
             }
             continue;
@@ -524,11 +526,13 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         else if (buf[0] == '@' && len > 3) {
             meta = flb_cf_meta_create(cf, buf, len);
             if (!meta) {
-                fclose(f);
                 if (indent) {
                     flb_sds_destroy(indent);
                 }
                 flb_free(buf);
+#ifndef FLB_HAVE_STATIC_CONF
+                fclose(f);
+#endif
                 return -1;
             }
             continue;

@@ -70,27 +70,31 @@ void flb_cf_destroy(struct flb_cf *cf)
     flb_free(cf);
 }
 
-static enum section_type get_section_type(char *name)
+static enum section_type get_section_type(char *name, int len)
 {
-    if (strcasecmp(name, "SERVICE") == 0) {
+    if (strncasecmp(name, "SERVICE", len) == 0) {
         return FLB_CF_SERVICE;
     }
-    else if (strcasecmp(name, "PARSER") == 0) {
+    else if (strncasecmp(name, "PARSER", len) == 0) {
         return FLB_CF_PARSER;
     }
-    else if (strcasecmp(name, "MULTILINE_PARSER") == 0) {
+    else if (strncasecmp(name, "MULTILINE_PARSER", len) == 0) {
         return FLB_CF_MULTILINE_PARSER;
     }
-    else if (strcasecmp(name, "CUSTOM") == 0 || strcasecmp(name, "CUSTOMS") == 0) {
+    else if (strncasecmp(name, "CUSTOM", len) == 0 ||
+             strncasecmp(name, "CUSTOMS", len) == 0) {
         return FLB_CF_CUSTOM;
     }
-    else if (strcasecmp(name, "INPUT") == 0 || strcasecmp(name, "INPUTS") == 0) {
+    else if (strncasecmp(name, "INPUT", len) == 0 ||
+             strncasecmp(name, "INPUTS", len) == 0) {
         return FLB_CF_INPUT;
     }
-    else if (strcasecmp(name, "FILTER") == 0 || strcasecmp(name, "FILTERS") == 0) {
+    else if (strncasecmp(name, "FILTER", len) == 0 ||
+             strncasecmp(name, "FILTERS", len) == 0) {
         return FLB_CF_FILTER;
     }
-    else if (strcasecmp(name, "OUTPUT") == 0 || strcasecmp(name, "OUTPUT") == 0) {
+    else if (strncasecmp(name, "OUTPUT", len) == 0 ||
+             strncasecmp(name, "OUTPUTS", len) == 0) {
         return FLB_CF_OUTPUT;
     }
 
@@ -229,6 +233,23 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     int type;
     struct flb_cf_section *s;
 
+    if (!name) {
+        return NULL;
+    }
+
+    /* determinate type by name */
+    if (len <= 0) {
+        len = strlen(name);
+    }
+
+    /* get the section type */
+    type = get_section_type(name, len);
+
+    /* check if 'service' already exists */
+    if (type == FLB_CF_SERVICE && cf->service) {
+        return cf->service;
+    }
+
     /* section context */
     s = flb_malloc(sizeof(struct flb_cf_section));
     if (!s) {
@@ -240,28 +261,13 @@ struct flb_cf_section *flb_cf_section_create(struct flb_cf *cf, char *name, int 
     flb_kv_init(&s->properties);
     mk_list_init(&s->groups);
 
-    /* determinate type by name */
-    if (len <= 0) {
-        len = strlen(name);
-    }
-
     /* create a NULL terminated name */
     s->name = flb_sds_create_len(name, len);
     if (!s->name) {
         flb_free(s);
         return NULL;
     }
-
-    /* get the section type */
-    type = get_section_type(s->name);
     s->type = type;
-
-    /* restrict to only one SERVICE section */
-    if (type == FLB_CF_SERVICE && cf->service) {
-        flb_sds_destroy(s->name);
-        flb_free(s);
-        return cf->service;
-    }
 
     if (type == FLB_CF_SERVICE && !cf->service) {
         cf->service = s;
@@ -320,6 +326,7 @@ void flb_cf_section_destroy(struct flb_cf *cf, struct flb_cf_section *s)
 
     if (s->name) {
         flb_sds_destroy(s->name);
+        s->name = NULL;
     }
     flb_kv_release(&s->properties);
 
@@ -335,6 +342,7 @@ void flb_cf_section_destroy(struct flb_cf *cf, struct flb_cf_section *s)
     if (s->type != FLB_CF_SERVICE) {
         mk_list_del(&s->_head_section);
     }
+
     flb_free(s);
 }
 
