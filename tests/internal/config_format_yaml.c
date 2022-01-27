@@ -24,11 +24,10 @@ void test_basic()
     }
 
     /* Total number of sections */
-    TEST_CHECK(mk_list_size(&cf->sections) == 9);
+    TEST_CHECK(mk_list_size(&cf->sections) == 10);
 
 	/* SERVICE check */
     TEST_CHECK(cf->service != NULL);
-
     if (cf->service) {
         TEST_CHECK(mk_list_size(&cf->service->properties) == 3);
     }
@@ -37,7 +36,7 @@ void test_basic()
     TEST_CHECK(mk_list_size(&cf->parsers) == 0);
     TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
     TEST_CHECK(mk_list_size(&cf->customs) == 1);
-    TEST_CHECK(mk_list_size(&cf->inputs) == 3);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 4);
     TEST_CHECK(mk_list_size(&cf->filters) == 1);
     TEST_CHECK(mk_list_size(&cf->outputs) == 2);
     TEST_CHECK(mk_list_size(&cf->others) == 1);
@@ -45,7 +44,7 @@ void test_basic()
     /* groups */
     s = flb_cf_section_get_by_name(cf, "input");
     TEST_CHECK(s != NULL);
-    TEST_CHECK(mk_list_size(&s->groups) == 2);
+    TEST_CHECK(mk_list_size(&s->groups) == 1);
 
     mk_list_foreach(head, &s->groups) {
         g = mk_list_entry(head, struct flb_cf_group, _head);
