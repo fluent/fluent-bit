@@ -763,7 +763,8 @@ static int service_configure_plugin(struct flb_config *config,
     return 0;
 }
 
-static int service_configure(struct flb_cf *cf, struct flb_config *config, char *file)
+static struct flb_cf *service_configure(struct flb_cf *cf,
+                                        struct flb_config *config, char *file)
 {
     int ret = -1;
     struct flb_cf_section *s;
@@ -779,8 +780,10 @@ static int service_configure(struct flb_cf *cf, struct flb_config *config, char 
 #endif
 
     if (!cf) {
-        return -1;
+        return NULL;
     }
+
+    config->cf_main = cf;
 
     /* Set configuration root path */
     if (file) {
@@ -851,10 +854,10 @@ static int service_configure(struct flb_cf *cf, struct flb_config *config, char 
         goto error;
     }
 
-    return 0;
+    return cf;
 
 error:
-    return -1;
+    return NULL;
 }
 
 int flb_main(int argc, char **argv)
@@ -870,6 +873,7 @@ int flb_main(int argc, char **argv)
 
     /* config format context */
     struct flb_cf *cf;
+    struct flb_cf *tmp;
     struct flb_cf_section *service;
     struct flb_cf_section *s;
 
@@ -1114,6 +1118,7 @@ int flb_main(int argc, char **argv)
 
     /* Validate config file */
 #ifndef FLB_HAVE_STATIC_CONF
+
     if (cfg_file) {
         if (access(cfg_file, R_OK) != 0) {
             flb_free(cfg_file);
@@ -1122,17 +1127,21 @@ int flb_main(int argc, char **argv)
     }
 
     /* Load the service configuration file */
-    ret = service_configure(cf, config, cfg_file);
+    tmp = service_configure(cf, config, cfg_file);
     flb_free(cfg_file);
-
-    if (ret != 0) {
+    if (!tmp) {
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
 #else
-    ret = service_configure(NULL, config, "fluent-bit.conf");
-    if (ret != 0) {
+    tmp = service_configure(cf, config, "fluent-bit.conf");
+    if (!tmp) {
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
+
+    /* destroy previous context and override */
+    flb_cf_destroy(cf);
+    config->cf_main = tmp;
+    cf = tmp;
 #endif
 
 
