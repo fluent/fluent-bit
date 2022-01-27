@@ -790,6 +790,17 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
         flb_service_conf_path_set(config, file);
     }
 
+    /* Process config environment vars */
+    mk_list_foreach(head, &cf->env) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        ret = flb_env_set(config->env, kv->key, kv->val);
+        if (ret == -1) {
+            fprintf(stderr, "could not set config environment variable '%s'\n",
+                    kv->key);
+            exit(EXIT_FAILURE);
+        }
+    }
+
     /* Process all meta commands */
     mk_list_foreach(head, &cf->metas) {
         kv = mk_list_entry(head, struct flb_kv, _head);
@@ -800,7 +811,8 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
     mk_list_foreach(head, &cf->sections) {
         s = mk_list_entry(head, struct flb_cf_section, _head);
 
-        if (strcasecmp(s->name, "service") == 0 ||
+        if (strcasecmp(s->name, "env") == 0 ||
+            strcasecmp(s->name, "service") == 0 ||
             strcasecmp(s->name, "custom") == 0 ||
             strcasecmp(s->name, "input") == 0 ||
             strcasecmp(s->name, "filter") == 0 ||
@@ -817,13 +829,8 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
                     "Sections 'multiline_parser' and 'parser' are not valid in "
                     "the main configuration file. It belongs to \n"
                     "the 'parsers_file' configuration files.\n");
+            exit(EXIT_FAILURE);
         }
-        else {
-            fprintf(stderr,
-                    "Error: unexpected section '%s' in the main "
-                    "configuration file.\n", s->name);
-        }
-        exit(EXIT_FAILURE);
     }
 
     /* Read main 'service' section */
