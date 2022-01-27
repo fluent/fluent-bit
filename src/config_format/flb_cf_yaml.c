@@ -29,6 +29,7 @@
 #include <yaml.h>
 
 enum section {
+    SECTION_ENV,
     SECTION_SERVICE,
     SECTION_CUSTOM,
     SECTION_INPUT,
@@ -62,6 +63,10 @@ enum state {
     STATE_GROUP_KEY,
     STATE_GROUP_VAL,
 
+    /* environment variables */
+    STATE_ENV,
+
+
     STATE_STOP            /* end state */
 };
 
@@ -86,6 +91,7 @@ struct parser_state {
     struct flb_cf_group *cf_group;
 
     /* internal variables for checks */
+    int env_set;
     int service_set;
     int customs_set;
     int inputs_set;
@@ -144,6 +150,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
     int len;
     int ret;
     char *value;
+    struct mk_list *list;
     struct flb_kv *kv;
 
     switch (s->state) {
@@ -192,7 +199,12 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
         switch (event->type) {
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
-            if (strcasecmp(value, "service") == 0) {
+            if (strcasecmp(value, "env") == 0) {
+                s->state = STATE_ENV;
+                s->section = SECTION_ENV;
+                s->env_set = 1;
+            }
+            else if (strcasecmp(value, "service") == 0) {
                 if (s->service_set) {
                     yaml_error_definition(s, event, value);
                     return YAML_FAILURE;
@@ -263,6 +275,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
         break;
 
     /* service or others */
+    case STATE_ENV:
     case STATE_SERVICE:
     case STATE_OTHER:
         switch(event->type) {
@@ -301,8 +314,16 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             value = (char *) event->data.scalar.value;
             s->val = flb_sds_create(value);
 
+            /* Check if the incoming k/v pair set a config environment variable */
+            if (s->section == SECTION_ENV) {
+                list = &cf->env;
+            }
+            else {
+                list = &s->cf_section->properties;
+            }
+
             /* register key/value pair as a property */
-            kv = flb_cf_property_add(cf, &s->cf_section->properties,
+            kv = flb_cf_property_add(cf, list /*&s->cf_section->properties*/,
                                      s->key, flb_sds_len(s->key),
                                      s->val, flb_sds_len(s->val));
             if (!kv) {

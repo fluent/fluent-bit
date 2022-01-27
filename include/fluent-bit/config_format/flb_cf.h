@@ -77,7 +77,10 @@ struct flb_cf {
     /* global service */
     struct flb_cf_section *service;
 
-    /* meta commands */
+    /* config environment variables (env section, availble on YAML) */
+    struct mk_list env;
+
+    /* meta commands (used by fluentbit classic mode) */
     struct mk_list metas;
 
     /* parsers */
