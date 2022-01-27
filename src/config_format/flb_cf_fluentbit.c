@@ -513,6 +513,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                 ctx->level--;
                 if (indent) {
                     flb_sds_destroy(indent);
+                    indent = NULL;
                 }
                 goto error;
             }
@@ -677,6 +678,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
     if (indent) {
         flb_sds_destroy(indent);
+        indent = NULL;
     }
     flb_free(buf);
 
