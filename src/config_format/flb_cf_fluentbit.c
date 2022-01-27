@@ -647,12 +647,13 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         }
 
         /* register entry: key and val are copied as duplicated */
+        kv = NULL;
         if (current_group) {
             kv = flb_cf_property_add(cf, &current_group->properties,
                                      key, key_len,
                                      val, val_len);
         }
-        else {
+        else if (current_section) {
             kv = flb_cf_property_add(cf, &current_section->properties,
                                      key, key_len,
                                      val, val_len);
