@@ -256,7 +256,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path)
 
         ret = stat(buf, &st);
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
-            if (read_config(cf, ctx, buf) < 0) {
+            if (read_config(cf, ctx, buf, NULL, 0) < 0) {
                 return -1;
             }
         }
