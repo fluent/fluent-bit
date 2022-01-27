@@ -191,12 +191,13 @@ struct flb_config *flb_config_init()
     if (!cf) {
         return NULL;
     }
+    config->cf_main = cf;
+
     section = flb_cf_section_create(cf, "service", 0);
     if (!section) {
         flb_cf_destroy(cf);
         return NULL;
     }
-    config->cf_main = cf;
 
     /* config_format for parsers */
     config->cf_parsers = flb_cf_create();
@@ -384,7 +385,8 @@ void flb_config_exit(struct flb_config *config)
                 mk_event_timeout_destroy(config->evl, &collector->event);
                 mk_event_closesocket(collector->fd_timer);
             }
-        } else {
+        }
+        else {
             mk_event_del(config->evl, &collector->event);
         }
 
