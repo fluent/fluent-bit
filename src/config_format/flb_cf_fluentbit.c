@@ -415,7 +415,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     struct flb_cf_group *current_group = NULL;
 
     struct flb_kv *kv;
-    FILE *f;
+    FILE *f = NULL;
 
     /* Check if the path exists (relative cases for included files) */
 #ifndef FLB_HAVE_STATIC_CONF
@@ -455,7 +455,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     buf = flb_malloc(FLB_CF_BUF_SIZE);
     if (!buf) {
         flb_errno();
-        return -1;
+        goto error;
     }
 
 #ifdef FLB_HAVE_STATIC_CONF
@@ -485,8 +485,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
              */
             if (!feof(f)) {
                 config_error(cfg_file, line, "length of content has exceeded limit");
-                flb_free(buf);
-                return -1;
+                goto error;
             }
         }
 #endif
@@ -515,25 +514,14 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                 if (indent) {
                     flb_sds_destroy(indent);
                 }
-                flb_free(buf);
-#ifndef FLB_HAVE_STATIC_CONF
-                fclose(f);
-#endif
-                return -1;
+                goto error;
             }
             continue;
         }
         else if (buf[0] == '@' && len > 3) {
             meta = flb_cf_meta_create(cf, buf, len);
             if (!meta) {
-                if (indent) {
-                    flb_sds_destroy(indent);
-                }
-                flb_free(buf);
-#ifndef FLB_HAVE_STATIC_CONF
-                fclose(f);
-#endif
-                return -1;
+                goto error;
             }
             continue;
         }
@@ -564,8 +552,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             }
             else {
                 config_error(cfg_file, line, "bad header definition");
-                flb_free(buf);
-                return -1;
+                goto error;
             }
         }
 
@@ -588,7 +575,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         ret = check_indent(buf, indent, &level);
         if (ret == INDENT_ERROR) {
             config_error(cfg_file, line, "invalid indentation level");
-            return -1;
+            goto error;
         }
         else {
             if (ret == INDENT_OK && current_group) {
@@ -610,8 +597,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
         if (!key || i < 0) {
             config_error(cfg_file, line, "undefined key");
-            flb_free(buf);
-            return -1;
+            goto error;
         }
 
         /* Check possible start of a group */
@@ -619,22 +605,19 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
             end = char_search(key, ']', len - indent_len);
             if (end == -1) {
                 config_error(cfg_file, line, "expected a valid group name: [..]");
-                flb_free(buf);
-                return -1;
+                goto error;
             }
 
             if (!current_section) {
                 config_warn(cfg_file, line,
                             "current group don't have a parent section");
-                flb_free(buf);
-                return -1;
+                goto error;
             }
 
             /* check if a previous group exists with one key */
             if (current_group && n_keys == 0) {
                 config_warn(cfg_file, line, "previous group did not have keys");
-                flb_free(buf);
-                return -1;
+                goto error;
             }
 
             /* Create new group */
@@ -655,12 +638,12 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
         if (!key || !val || i < 0) {
             config_error(cfg_file, line, "each key must have a value");
-            return -1;
+            goto error;
         }
 
         if (val_len == 0) {
             config_error(cfg_file, line, "key has an empty value");
-            return -1;
+            goto error;
         }
 
         /* register entry: key and val are copied as duplicated */
@@ -676,7 +659,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         }
         if (!kv) {
             config_error(cfg_file, line, "could not allocate key value pair");
-            return -1;
+            goto error;
         }
 
         /* Free temporary key and val */
@@ -687,9 +670,9 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         /* No key, no warning */
     }
 
-#ifndef FLB_HAVE_STATIC_CONF
-    fclose(f);
-#endif
+    if (f) {
+        fclose(f);
+    }
 
     if (indent) {
         flb_sds_destroy(indent);
@@ -701,13 +684,23 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     if (!file) {
         flb_errno();
         ctx->level--;
-        return -1;
+        goto error;
     }
     file->path = flb_sds_create(cfg_file);
     mk_list_add(&file->_head, &ctx->includes);
     ctx->level--;
 
     return 0;
+
+error:
+    if (f) {
+        fclose(f);
+    }
+    if (indent) {
+        flb_sds_destroy(indent);
+    }
+    flb_free(buf);
+    return -1;
 }
 
 struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
