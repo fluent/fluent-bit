@@ -7,44 +7,54 @@ service:
     log_level:   info
     http_server: on
 
-customs:
-    calyptia:
-        api_key: abcdefg
+pipeline:
+    inputs:
+        dummy:
+            samples: 1
+            tag: dummy_tag
+            group1:
+                key1: aa
+                key2: bb
 
-inputs:
-    tail:
-        path: "/var/log/containers/*.log"
-        parser: docker
-        group1:
-            key1: aa
-            key2: bb
-        group2:
-            key3: cc
-            key4: dd
+pipeline:
+    customs:
+        calyptia:
+            api_key: abcdefg
 
-    tail:
-        path: "/var/log/messages"
-        parser: syslog
+    inputs:
+        tail:
+            path: "/var/log/containers/*.log"
+            parser: docker
+            group1:
+                key1: aa
+                key2: bb
+            group2:
+                key3: cc
+                key4: dd
 
-    forward:
-        listen: 0.0.0.0
+        tail:
+            path: "/var/log/messages"
+            parser: syslog
 
-filters:
-    grep:
-        exclude: $kubernetes['labels']['app'] myapp
+        forward:
+            listen: 0.0.0.0
 
-outputs:
-    stdout:
-        match: "*"
-        retry_limit: false
+    filters:
+        grep:
+            exclude: $kubernetes['labels']['app'] myapp
 
-    http:
-        match: "*"
-        host: 192.168.3.2
-        port: 9444
-        tls: on
-        tls.verify: off
-        retry_limit: false
+    outputs:
+        stdout:
+            match: "*"
+            retry_limit: false
+
+        http:
+            match: "*"
+            host: 192.168.3.2
+            port: 9444
+            tls: on
+            tls.verify: off
+            retry_limit: false
 
 unknown:
     a: b
