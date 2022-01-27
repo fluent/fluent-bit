@@ -31,6 +31,7 @@
 enum section {
     SECTION_ENV,
     SECTION_SERVICE,
+    SECTION_PIPELINE,
     SECTION_CUSTOM,
     SECTION_INPUT,
     SECTION_FILTER,
@@ -39,21 +40,23 @@ enum section {
 };
 
 enum state {
-    STATE_START,          /* start state */
-    STATE_STREAM,         /* start/end stream */
-    STATE_DOCUMENT,       /* start/end document */
+    STATE_START,           /* start state */
+    STATE_STREAM,          /* start/end stream */
+    STATE_DOCUMENT,        /* start/end document */
 
-    STATE_SECTION,        /* top level */
+    STATE_SECTION,         /* top level */
     STATE_SECTION_KEY,
     STATE_SECTION_VAL,
 
-    STATE_SERVICE,        /* service section */
-    STATE_OTHER,          /* service section */
+    STATE_SERVICE,         /* service section */
+    STATE_OTHER,           /* service section */
 
-    STATE_PLUGIN_CUSTOM,  /* custom plugins section */
-    STATE_PLUGIN_INPUT,   /* input plugins section */
-    STATE_PLUGIN_FILTER,  /* filter plugins section */
-    STATE_PLUGIN_OUTPUT,  /* output plugins section */
+    STATE_PIPELINE,        /* pipeline groups customs inputs, filters and outputs */
+
+    STATE_PLUGIN_CUSTOM,   /* custom plugins section */
+    STATE_PLUGIN_INPUT,    /* input plugins section */
+    STATE_PLUGIN_FILTER,   /* filter plugins section */
+    STATE_PLUGIN_OUTPUT,   /* output plugins section */
 
     STATE_PLUGIN_TYPE,
     STATE_PLUGIN_KEY_VALUE_PAIR,
@@ -90,13 +93,7 @@ struct parser_state {
     /* active group */
     struct flb_cf_group *cf_group;
 
-    /* internal variables for checks */
-    int env_set;
     int service_set;
-    int customs_set;
-    int inputs_set;
-    int filters_set;
-    int outputs_set;
 };
 
 /* yaml_* functions return 1 on success and 0 on failure. */
@@ -140,6 +137,16 @@ static void yaml_error_definition(struct parser_state *s, yaml_event_t *event,
 {
     flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
               "duplicated definition of '%s'",
+              s->file, event->start_mark.line + 1, event->start_mark.column,
+              value);
+}
+
+static void yaml_error_plugin_category(struct parser_state *s, yaml_event_t *event,
+                                       char *value)
+{
+    flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
+              "the pipeline component '%s' is not valid. Try one of these values: "
+              "customs, inputs, filters or outputs.",
               s->file, event->start_mark.line + 1, event->start_mark.column,
               value);
 }
@@ -193,16 +200,53 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
         }
         break;
 
+    case STATE_PIPELINE:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            value = (char *)event->data.scalar.value;
+            if (strcasecmp(value, "customs") == 0) {
+                s->state = STATE_PLUGIN_CUSTOM;
+                s->section = SECTION_CUSTOM;
+            }
+            else if (strcasecmp(value, "inputs") == 0) {
+                s->state = STATE_PLUGIN_INPUT;
+                s->section = SECTION_INPUT;
+            }
+            else if (strcasecmp(value, "filters") == 0) {
+                s->state = STATE_PLUGIN_FILTER;
+                s->section = SECTION_FILTER;
+            }
+            else if (strcasecmp(value, "outputs") == 0) {
+                s->state = STATE_PLUGIN_OUTPUT;
+                s->section = SECTION_OUTPUT;
+            }
+            else {
+                yaml_error_plugin_category(s, event, value);
+                return YAML_FAILURE;
+            }
+            break;
+        case YAML_MAPPING_START_EVENT:
+            break;
+        case YAML_MAPPING_END_EVENT:
+            s->state = STATE_SECTION;
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
     case STATE_SECTION:
         s->section = SECTION_OTHER;
-
         switch (event->type) {
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
             if (strcasecmp(value, "env") == 0) {
                 s->state = STATE_ENV;
                 s->section = SECTION_ENV;
-                s->env_set = 1;
+            }
+            else if (strcasecmp(value, "pipeline") == 0) {
+                s->state = STATE_PIPELINE;
+                s->section = SECTION_PIPELINE;
             }
             else if (strcasecmp(value, "service") == 0) {
                 if (s->service_set) {
@@ -216,42 +260,6 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
                 if (!s->cf_section) {
                     return YAML_FAILURE;
                 }
-            }
-            else if (strcasecmp(value, "customs") == 0) {
-                if (s->customs_set) {
-                    yaml_error_definition(s, event, value);
-                    return YAML_FAILURE;
-                }
-                s->state = STATE_PLUGIN_CUSTOM;
-                s->section = SECTION_CUSTOM;
-                s->customs_set = 1;
-            }
-            else if (strcasecmp(value, "inputs") == 0) {
-                if (s->inputs_set) {
-                    yaml_error_definition(s, event, value);
-                    return YAML_FAILURE;
-                }
-                s->state = STATE_PLUGIN_INPUT;
-                s->section = SECTION_INPUT;
-                s->inputs_set = 1;
-            }
-            else if (strcasecmp(value, "filters") == 0) {
-                if (s->filters_set) {
-                    yaml_error_definition(s, event, value);
-                    return YAML_FAILURE;
-                }
-                s->state = STATE_PLUGIN_FILTER;
-                s->section = SECTION_FILTER;
-                s->filters_set = 1;
-            }
-            else if (strcasecmp(value, "outputs") == 0) {
-                if (s->outputs_set) {
-                    yaml_error_definition(s, event, value);
-                    return YAML_FAILURE;
-                }
-                s->state = STATE_PLUGIN_OUTPUT;
-                s->section = SECTION_OUTPUT;
-                s->outputs_set = 1;
             }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
@@ -384,7 +392,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_PLUGIN_KEY_VALUE_PAIR;
             break;
         case YAML_MAPPING_END_EVENT:
-            s->state = STATE_SECTION;
+            s->state = STATE_PIPELINE;
             break;
         default:
             yaml_error_event(s, event);
