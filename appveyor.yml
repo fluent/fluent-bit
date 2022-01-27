@@ -13,12 +13,12 @@ environment:
 
 configuration:
   - Release
-  
+
 skip_commits:
   files:
-    - '.github/**'
-    - 'packaging/**'
-    - './dockerfiles/**'
+    - '.github/**/*'
+    - 'packaging/**/*'
+    - 'dockerfiles/**/*'
     - '**/*.md'
     - '**/*.sh'
 
@@ -44,3 +44,7 @@ artifacts:
     name: td-agent-bit
   - path: build/td-agent-bit-*.zip
     name: td-agent-bit-zip
+  - path: build/fluent-bit-*.exe
+    name: fluent-bit-installer
+  - path: build/fluent-bit-*.zip
+    name: fluent-bit-zip
