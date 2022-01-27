@@ -39,6 +39,9 @@ struct flb_cf *flb_cf_create()
         return NULL;
     }
 
+    /* env vars */
+    mk_list_init(&ctx->env);
+
     /* meta commands */
     mk_list_init(&ctx->metas);
 
@@ -65,6 +68,7 @@ struct flb_cf *flb_cf_create()
 
 void flb_cf_destroy(struct flb_cf *cf)
 {
+    flb_kv_release(&cf->env);
     flb_kv_release(&cf->metas);
     flb_cf_section_destroy_all(cf);
     flb_free(cf);
