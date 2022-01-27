@@ -1,5 +1,9 @@
+# environment variable definition
+env:
+    flush_interval: 1
+
 service:
-    flush:       1
+    flush:       ${flush_interval}
     log_level:   info
     http_server: on
 
