@@ -259,7 +259,7 @@ int flb_config_set_program_name(struct flb_config *config, char *name);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
-struct flb_cf *flb_config_static_open(struct flb_config *config, const char *file);
+struct flb_cf *flb_config_static_open(const char *file);
 #endif
 
 struct flb_service_config {
