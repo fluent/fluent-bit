@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_upstream_conn.h>
 
 #ifdef FLB_HAVE_TLS
 #include <mbedtls/entropy.h>
@@ -62,6 +63,8 @@ struct flb_forward_config {
     int empty_shared_key;        /* use an empty string as shared key */
     int require_ack_response;    /* Require acknowledge for "chunk" */
     int send_options;            /* send options in messages */
+    flb_sds_t unix_path;         /* unix socket path */
+    int       unix_fd;
 
     const char *username;
     const char *password;
@@ -77,7 +80,9 @@ struct flb_forward_config {
     struct flb_record_accessor *ra_tag; /* Tag Record accessor */
     int ra_static;                      /* Is the record accessor static ? */
 #endif
-
+    int (*io_write)(struct flb_upstream_conn* conn, int fd, const void* data,
+                        size_t len, size_t *out_len);
+    int (*io_read)(struct flb_upstream_conn* conn, int fd, void* buf, size_t len);
     struct mk_list _head;     /* Link to list flb_forward->configs */
 };
 
