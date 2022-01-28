@@ -32,6 +32,11 @@
 #include "forward.h"
 #include "forward_format.h"
 
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/socket.h>
+#include <sys/un.h>
+#endif
+
 #define SECURED_BY "Fluent Bit"
 
 #ifdef FLB_HAVE_TLS
@@ -46,6 +51,18 @@ void _secure_forward_tls_error(struct flb_forward *ctx,
 
     mbedtls_strerror(ret, err_buf, sizeof(err_buf));
     flb_plg_error(ctx->ins, "flb_io_tls.c:%i %s", line, err_buf);
+}
+
+static int io_net_write(struct flb_upstream_conn *conn, int unused_fd,
+                        const void* data, size_t len, size_t *out_len)
+{
+    return flb_io_net_write(conn, data, len, out_len);
+}
+
+static int io_net_read(struct flb_upstream_conn *conn, int unused_fd,
+                       void* buf, size_t len)
+{
+    return flb_io_net_read(conn, buf, len);
 }
 
 static int secure_forward_init(struct flb_forward *ctx,
@@ -92,6 +109,7 @@ static inline void print_msgpack_status(struct flb_forward *ctx,
 /* Read a secure forward msgpack message */
 static int secure_forward_read(struct flb_forward *ctx,
                                struct flb_upstream_conn *u_conn,
+                               struct flb_forward_config *fc,
                                char *buf, size_t size, size_t *out_len)
 {
     int ret;
@@ -108,7 +126,7 @@ static int secure_forward_read(struct flb_forward *ctx,
         }
 
         /* Read the message */
-        ret = flb_io_net_read(u_conn, buf + buf_off, size - buf_off);
+        ret = fc->io_read(u_conn, fc->unix_fd, buf + buf_off, size - buf_off);
         if (ret <= 0) {
             goto error;
         }
@@ -279,7 +297,7 @@ static int secure_forward_ping(struct flb_upstream_conn *u_conn,
         msgpack_pack_str_body(&mp_pck, "", 0);
     }
 
-    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
+    ret = fc->io_write(u_conn, fc->unix_fd, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     flb_plg_debug(ctx->ins, "PING sent: ret=%i bytes sent=%lu", ret, bytes_sent);
 
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -357,7 +375,7 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     msgpack_object o;
 
     /* Wait for server HELO */
-    ret = secure_forward_read(ctx, u_conn, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ctx, u_conn, fc, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "handshake error expecting HELO");
         return -1;
@@ -405,7 +423,7 @@ static int secure_forward_handshake(struct flb_upstream_conn *u_conn,
     }
 
     /* Expect a PONG */
-    ret = secure_forward_read(ctx, u_conn, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ctx, u_conn, fc, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "handshake error expecting HELO");
         msgpack_unpacked_destroy(&result);
@@ -444,7 +462,7 @@ static int forward_read_ack(struct flb_forward *ctx,
     flb_plg_trace(ctx->ins, "wait ACK (%.*s)", chunk_len, chunk);
 
     /* Wait for server ACK */
-    ret = secure_forward_read(ctx, u_conn, buf, sizeof(buf) - 1, &out_len);
+    ret = secure_forward_read(ctx, u_conn, fc, buf, sizeof(buf) - 1, &out_len);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot get ack");
         return -1;
@@ -511,6 +529,11 @@ static int forward_read_ack(struct flb_forward *ctx,
 static int forward_config_init(struct flb_forward_config *fc,
                                struct flb_forward *ctx)
 {
+    if (fc->io_read == NULL || fc->io_write == NULL) {
+        flb_plg_error(ctx->ins, "io_read/io_write is NULL");
+        return -1;
+    }
+
 #ifdef FLB_HAVE_TLS
     /* Initialize Secure Forward mode */
     if (fc->secured == FLB_TRUE) {
@@ -723,7 +746,10 @@ static int forward_config_ha(const char *upstream_file,
             flb_plg_error(ctx->ins, "failed config allocation");
             continue;
         }
+        fc->unix_fd = -1;
         fc->secured = FLB_FALSE;
+        fc->io_write = io_net_write;
+        fc->io_read  = io_net_read;
 
         /* Is TLS enabled ? */
         if (node->tls_enabled == FLB_TRUE) {
@@ -750,6 +776,53 @@ static int forward_config_ha(const char *upstream_file,
 
     return 0;
 }
+#ifdef FLB_HAVE_UNIX_SOCKET
+static int forward_unix_create(struct flb_forward_config *config,
+                               struct flb_forward *ctx)
+{
+    flb_sockfd_t fd = -1;
+    struct sockaddr_un address;
+
+    if (sizeof(address.sun_path) <= flb_sds_len(config->unix_path)) {
+        flb_plg_error(ctx->ins, "unix_path is too long");
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(struct sockaddr_un));
+
+    fd = flb_net_socket_create(AF_UNIX, FLB_TRUE);
+    if (fd < 0) {
+        flb_plg_error(ctx->ins, "flb_net_socket_create error");
+        return -1;
+    }
+    config->unix_fd = fd;
+
+    address.sun_family = AF_UNIX;
+    strncpy(address.sun_path, config->unix_path, flb_sds_len(config->unix_path));
+
+    if(connect(fd, (const struct sockaddr*) &address, sizeof(address)) < 0) {
+        flb_errno();
+        close(fd);
+        return -1;
+    }
+
+    flb_net_socket_nonblocking(config->unix_fd);
+
+    return 0;
+}
+
+static int io_unix_write(struct flb_upstream_conn *unused, int fd, const void* data,
+                         size_t len, size_t *out_len)
+{
+    return flb_io_fd_write(fd, data, len, out_len);
+}
+
+static int io_unix_read(struct flb_upstream_conn *unused, int fd, void* buf,size_t len)
+{
+    return flb_io_fd_read(fd, buf, len);
+}
+
+#endif
 
 static int forward_config_simple(struct flb_forward *ctx,
                                  struct flb_output_instance *ins,
@@ -769,7 +842,10 @@ static int forward_config_simple(struct flb_forward *ctx,
         flb_errno();
         return -1;
     }
+    fc->unix_fd = -1;
     fc->secured = FLB_FALSE;
+    fc->io_write = NULL;
+    fc->io_read  = NULL;
 
     /* Set default values */
     ret = flb_output_config_map_set(ins, fc);
@@ -795,19 +871,38 @@ static int forward_config_simple(struct flb_forward *ctx,
         io_flags |= FLB_IO_IPV6;
     }
 
-    /* Prepare an upstream handler */
-    upstream = flb_upstream_create(config,
-                                   ins->host.name,
-                                   ins->host.port,
-                                   io_flags, ins->tls);
-    if (!upstream) {
+    if (fc->unix_path) {
+#ifdef FLB_HAVE_UNIX_SOCKET
+        if(forward_unix_create(fc, ctx) < 0) {
+            flb_free(fc);
+            flb_free(ctx);
+            return -1;
+        }
+        fc->io_write = io_unix_write;
+        fc->io_read  = io_unix_read;
+#else
+        flb_plg_error(ctx->ins, "unix_path is not supported");
         flb_free(fc);
         flb_free(ctx);
         return -1;
+#endif /* FLB_HAVE_UNIX_SOCKET */
     }
-    ctx->u = upstream;
-    flb_output_upstream_set(ctx->u, ins);
-
+    else {
+        /* Prepare an upstream handler */
+        upstream = flb_upstream_create(config,
+                                       ins->host.name,
+                                       ins->host.port,
+                                       io_flags, ins->tls);
+        if (!upstream) {
+            flb_free(fc);
+            flb_free(ctx);
+            return -1;
+        }
+        fc->io_write = io_net_write;
+        fc->io_read  = io_net_read;
+        ctx->u = upstream;
+        flb_output_upstream_set(ctx->u, ins);
+    }
     /* Read properties into 'fc' context */
     config_set_properties(NULL, fc, ctx);
 
@@ -901,7 +996,7 @@ static int flush_message_mode(struct flb_forward *ctx,
             rec_size = off - pre;
 
             /* write single message */
-            ret = flb_io_net_write(u_conn,
+            ret = fc->io_write(u_conn,fc->unix_fd,
                                    buf + pre, rec_size, &sent);
             pre = off;
 
@@ -936,7 +1031,7 @@ static int flush_message_mode(struct flb_forward *ctx,
     }
 
     /* Normal data write */
-    ret = flb_io_net_write(u_conn, buf, size, &sent);
+    ret = fc->io_write(u_conn, fc->unix_fd, buf, size, &sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "message_mode: error sending data");
         return FLB_RETRY;
@@ -1003,7 +1098,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
     }
 
     /* Write message header */
-    ret = flb_io_net_write(u_conn, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
+    ret = fc->io_write(u_conn, fc->unix_fd, mp_sbuf.data, mp_sbuf.size, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward header");
         msgpack_sbuffer_destroy(&mp_sbuf);
@@ -1015,7 +1110,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     /* Write entries */
-    ret = flb_io_net_write(u_conn, final_data, final_bytes, &bytes_sent);
+    ret = fc->io_write(u_conn, fc->unix_fd, final_data, final_bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward entries");
         if (fc->compress == COMPRESS_GZIP) {
@@ -1030,7 +1125,7 @@ static int flush_forward_mode(struct flb_forward *ctx,
 
     /* Write options */
     if (fc->send_options == FLB_TRUE) {
-        ret = flb_io_net_write(u_conn, opts_buf, opts_size, &bytes_sent);
+        ret = fc->io_write(u_conn, fc->unix_fd, opts_buf, opts_size, &bytes_sent);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "could not write forward options");
             return FLB_RETRY;
@@ -1087,7 +1182,7 @@ static int flush_forward_compat_mode(struct flb_forward *ctx,
     msgpack_unpacked result;
 
     /* Write message header */
-    ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+    ret = fc->io_write(u_conn, fc->unix_fd, data, bytes, &bytes_sent);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not write forward compat mode records");
         return FLB_RETRY;
@@ -1141,7 +1236,7 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
     size_t out_size = 0;
     struct flb_forward *ctx = out_context;
     struct flb_forward_config *fc = NULL;
-    struct flb_upstream_conn *u_conn;
+    struct flb_upstream_conn *u_conn = NULL;
     struct flb_upstream_node *node = NULL;
     struct flb_forward_flush *flush_ctx;
     (void) i_ins;
@@ -1178,21 +1273,23 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
                               &out_buf, &out_size);
 
     /* Get a TCP connection instance */
-    if (ctx->ha_mode == FLB_TRUE) {
-        u_conn = flb_upstream_conn_get(node->u);
-    }
-    else {
-        u_conn = flb_upstream_conn_get(ctx->u);
-    }
-
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "no upstream connections available");
-        msgpack_sbuffer_destroy(&mp_sbuf);
-        if (fc->time_as_integer == FLB_TRUE) {
-            flb_free(tmp_buf);
+    if (fc->unix_path == NULL) {
+        if (ctx->ha_mode == FLB_TRUE) {
+            u_conn = flb_upstream_conn_get(node->u);
         }
-        flb_free(flush_ctx);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        else {
+            u_conn = flb_upstream_conn_get(ctx->u);
+        }
+
+        if (!u_conn) {
+            flb_plg_error(ctx->ins, "no upstream connections available");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            if (fc->time_as_integer == FLB_TRUE) {
+                flb_free(tmp_buf);
+            }
+            flb_free(flush_ctx);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
     }
 
     /*
@@ -1202,7 +1299,9 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
         ret = secure_forward_handshake(u_conn, fc, ctx);
         flb_plg_debug(ctx->ins, "handshake status = %i", ret);
         if (ret == -1) {
-            flb_upstream_conn_release(u_conn);
+            if (u_conn) {
+                flb_upstream_conn_release(u_conn);
+            }
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (fc->time_as_integer == FLB_TRUE) {
                 flb_free(tmp_buf);
@@ -1231,7 +1330,9 @@ static void cb_forward_flush(struct flb_event_chunk *event_chunk,
         flb_free(out_buf);
     }
 
-    flb_upstream_conn_release(u_conn);
+    if (u_conn) {
+        flb_upstream_conn_release(u_conn);
+    }
     flb_free(flush_ctx);
     FLB_OUTPUT_RETURN(ret);
 }
@@ -1251,6 +1352,9 @@ static int cb_forward_exit(void *data, struct flb_config *config)
     /* Destroy forward_config contexts */
     mk_list_foreach_safe(head, tmp, &ctx->configs) {
         fc = mk_list_entry(head, struct flb_forward_config, _head);
+        if (fc->unix_path && fc->unix_fd > 0) {
+            close(fc->unix_fd);
+        }
         mk_list_del(&fc->_head);
         forward_config_destroy(fc);
     }
@@ -1265,6 +1369,7 @@ static int cb_forward_exit(void *data, struct flb_config *config)
             flb_upstream_destroy(ctx->u);
         }
     }
+
     flb_free(ctx);
 
     return 0;
@@ -1310,6 +1415,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "password", "",
      0, FLB_TRUE, offsetof(struct flb_forward_config, password),
      "Password for authentication"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "unix_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_forward_config, unix_path),
+     "Path to unix socket. It is ignored when 'upstream' property is set"
     },
     {
      FLB_CONFIG_MAP_STR, "upstream", NULL,
