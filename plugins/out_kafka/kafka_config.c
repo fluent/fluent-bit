@@ -61,7 +61,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     ret = rd_kafka_conf_set(ctx->conf, "client.id", "fluent-bit",
                             errstr, sizeof(errstr));
     if (ret != RD_KAFKA_CONF_OK) {
-        flb_plg_error(ctx->ins, "cannot configure client.id");
+        flb_plg_error(ctx->ins, "cannot configure client.id: %s", errstr);
     }
 
     /* Config: Brokers */
@@ -93,8 +93,8 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
             ret = rd_kafka_conf_set(ctx->conf, kv->key + 8, kv->val,
                                     errstr, sizeof(errstr));
             if (ret != RD_KAFKA_CONF_OK) {
-                flb_plg_error(ctx->ins, "cannot configure '%s' property",
-                              kv->key + 8);
+                flb_plg_error(ctx->ins, "cannot configure '%s' property: %s",
+                              kv->key + 8, errstr);
             }
         }
     }
