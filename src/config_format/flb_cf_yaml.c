@@ -53,10 +53,14 @@ enum state {
 
     STATE_PIPELINE,        /* pipeline groups customs inputs, filters and outputs */
 
-    STATE_PLUGIN_CUSTOM,   /* custom plugins section */
     STATE_PLUGIN_INPUT,    /* input plugins section */
     STATE_PLUGIN_FILTER,   /* filter plugins section */
     STATE_PLUGIN_OUTPUT,   /* output plugins section */
+
+    STATE_CUSTOM,                  /* custom plugins */
+    STATE_CUSTOM_KEY_VALUE_PAIR,
+    STATE_CUSTOM_KEY,
+    STATE_CUSTOM_VAL,
 
     STATE_PLUGIN_TYPE,
     STATE_PLUGIN_KEY_VALUE_PAIR,
@@ -104,10 +108,7 @@ enum status {
 
 static int add_section_type(struct flb_cf *cf, struct parser_state *s)
 {
-    if (s->section == SECTION_CUSTOM) {
-        s->cf_section = flb_cf_section_create(cf, "CUSTOM", 0);
-    }
-    else if (s->section == SECTION_INPUT) {
+    if (s->section == SECTION_INPUT) {
         s->cf_section = flb_cf_section_create(cf, "INPUT", 0);
     }
     else if (s->section == SECTION_FILTER) {
@@ -200,15 +201,115 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
         }
         break;
 
+    /*
+     * 'customs'
+     *  --------
+     */
+    case STATE_CUSTOM:
+        switch (event->type) {
+        case YAML_SCALAR_EVENT:
+            value = (char *)event->data.scalar.value;
+            len = strlen(value);
+            if (len == 0) {
+                yaml_error_event(s, event);
+                return YAML_FAILURE;
+            }
+
+            /* create the 'customs' section */
+            s->cf_section = flb_cf_section_create(cf, "customs", 0);
+            if (!s->cf_section) {
+                return YAML_FAILURE;
+            }
+
+            /* value is the 'custom plugin name', create a section instance */
+            kv = flb_cf_property_add(cf, &s->cf_section->properties,
+                                     "name", 4,
+                                     value, len);
+            if (!kv) {
+                return YAML_FAILURE;
+            }
+
+            /* next state are key value pairs for the custom plugin*/
+            s->state = STATE_CUSTOM_KEY_VALUE_PAIR;
+            break;
+        case YAML_MAPPING_START_EVENT:
+            break;
+        case YAML_MAPPING_END_EVENT:
+            s->state = STATE_SECTION;
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
+    case STATE_CUSTOM_KEY_VALUE_PAIR:
+        switch(event->type) {
+        case YAML_MAPPING_START_EVENT:
+            s->state = STATE_CUSTOM_KEY;
+            break;
+        case YAML_MAPPING_END_EVENT:
+            s->state = STATE_CUSTOM;
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_CUSTOM_KEY:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            s->state = STATE_CUSTOM_VAL;
+            value = (char *) event->data.scalar.value;
+            s->key = flb_sds_create(value);
+            break;
+        case YAML_MAPPING_START_EVENT:
+            s->state = STATE_CUSTOM;
+            break;
+        case YAML_MAPPING_END_EVENT:
+            s->state = STATE_CUSTOM;
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_CUSTOM_VAL:
+        switch(event->type) {
+        case YAML_SCALAR_EVENT:
+            s->state = STATE_CUSTOM_KEY;
+            value = (char *) event->data.scalar.value;
+            s->val = flb_sds_create(value);
+
+            /* register key/value pair as a property */
+            flb_cf_property_add(cf, &s->cf_section->properties,
+                                s->key, flb_sds_len(s->key),
+                                s->val, flb_sds_len(s->val));
+            flb_sds_destroy(s->key);
+            flb_sds_destroy(s->val);
+            break;
+        case YAML_MAPPING_START_EVENT: /* start a new group */
+            s->state = STATE_GROUP_KEY;
+            s->cf_group = flb_cf_group_create(cf, s->cf_section,
+                                              s->key, flb_sds_len(s->key));
+            flb_sds_destroy(s->key);
+            if (!s->cf_group) {
+                return YAML_FAILURE;
+            }
+            break;
+        default:
+            yaml_error_event(s, event);
+            return YAML_FAILURE;
+        }
+        break;
+    /* end of 'customs' */
+
     case STATE_PIPELINE:
         switch (event->type) {
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
-            if (strcasecmp(value, "customs") == 0) {
-                s->state = STATE_PLUGIN_CUSTOM;
-                s->section = SECTION_CUSTOM;
-            }
-            else if (strcasecmp(value, "inputs") == 0) {
+            if (strcasecmp(value, "inputs") == 0) {
                 s->state = STATE_PLUGIN_INPUT;
                 s->section = SECTION_INPUT;
             }
@@ -235,6 +336,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             return YAML_FAILURE;
         }
         break;
+
     case STATE_SECTION:
         s->section = SECTION_OTHER;
         switch (event->type) {
@@ -260,6 +362,10 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
                 if (!s->cf_section) {
                     return YAML_FAILURE;
                 }
+            }
+            else if (strcasecmp(value, "customs") == 0) {
+                s->state = STATE_CUSTOM;
+                s->section = SECTION_CUSTOM;
             }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
@@ -329,9 +435,8 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             else {
                 list = &s->cf_section->properties;
             }
-
             /* register key/value pair as a property */
-            kv = flb_cf_property_add(cf, list /*&s->cf_section->properties*/,
+            kv = flb_cf_property_add(cf, list,
                                      s->key, flb_sds_len(s->key),
                                      s->val, flb_sds_len(s->val));
             if (!kv) {
@@ -347,7 +452,6 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
         break;
 
     /* Plugin types */
-    case STATE_PLUGIN_CUSTOM:
     case STATE_PLUGIN_INPUT:
     case STATE_PLUGIN_FILTER:
     case STATE_PLUGIN_OUTPUT:
