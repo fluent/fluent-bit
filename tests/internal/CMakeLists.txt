@@ -20,6 +20,7 @@ set(UNIT_TESTS_FILES
   mp.c
   input_chunk.c
   flb_time.c
+  file.c
   multiline.c
   typecast.c
   timeout.c
