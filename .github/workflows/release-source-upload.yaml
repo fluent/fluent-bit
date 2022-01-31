@@ -9,6 +9,7 @@ jobs:
   upload-source-artefact:
     name: Upload source code to packaging server
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - name: Hashed known hosts value
         id: known_hosts
