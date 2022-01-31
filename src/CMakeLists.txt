@@ -61,6 +61,19 @@ set(src
   flb_event.c
   )
 
+# Config format
+set(src
+  ${src}
+  config_format/flb_config_format.c
+  config_format/flb_cf_fluentbit.c
+)
+if(FLB_HAVE_LIBYAML)
+  set(src
+    ${src}
+    config_format/flb_cf_yaml.c
+    )
+endif()
+
 # Multiline subsystem
 add_subdirectory(multiline)
 set(src
@@ -329,6 +342,14 @@ if(OPENSSL_FOUND)
     )
 endif()
 
+# libyaml
+if(FLB_HAVE_LIBYAML)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  yaml
+  )
+endif()
+
 # UTF8 Encoding
 if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
@@ -468,17 +489,19 @@ if(FLB_BINARY)
     # FIXME: should we support Sysv init script ?
   endif()
 
-  install(FILES
-    "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
-    DESTINATION ${FLB_INSTALL_CONFDIR}
-    COMPONENT binary
-    RENAME "${FLB_OUT_NAME}.conf")
-
-  install(FILES
-    "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
-    DESTINATION ${FLB_INSTALL_CONFDIR}
-    COMPONENT binary
-    RENAME "${FLB_OUT_NAME}-win32.conf")
+  if(FLB_SYSTEM_WINDOWS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  else()
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"

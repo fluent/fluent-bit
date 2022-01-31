@@ -11,6 +11,7 @@ on:
       - 'docker_compose/**'
       - 'packaging/**'
       - '.gitignore'
+      - 'appveyor.yml'
     branches:
       - master
       - 1.8

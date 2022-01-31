@@ -29,7 +29,9 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utf8.h>
+
 #include <stdarg.h>
+#include <ctype.h>
 
 static flb_sds_t sds_alloc(size_t size)
 {
@@ -136,6 +138,67 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     s[head->len] = '\0';
 
     return s;
+}
+
+
+/*
+ * remove empty spaces on left/right from sds buffer 's' and return the new length
+ * of the content.
+ */
+int flb_sds_trim(flb_sds_t s)
+{
+    unsigned int i;
+    unsigned int len;
+    char *left = 0, *right = 0;
+    char *buf;
+
+    if (!s) {
+        return -1;
+    }
+
+    len = flb_sds_len(s);
+    if (len == 0) {
+        return 0;
+    }
+
+    buf = s;
+    left = buf;
+
+    /* left spaces */
+    while (left) {
+        if (isspace(*left)) {
+            left++;
+        }
+        else {
+            break;
+        }
+    }
+
+    right = buf + (len - 1);
+    /* Validate right v/s left */
+    if (right < left) {
+        buf[0] = '\0';
+        return -1;
+    }
+
+    /* Move back */
+    while (right != buf){
+        if (isspace(*right)) {
+            right--;
+        }
+        else {
+            break;
+        }
+    }
+
+    len = (right - left) + 1;
+    for (i=0; i<len; i++) {
+        buf[i] = (char) left[i];
+    }
+    buf[i] = '\0';
+    flb_sds_len_set(buf, i);
+
+    return i;
 }
 
 int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len)

@@ -69,6 +69,10 @@ struct flb_config {
 
     struct mk_rconf *file;
 
+    /* main configuration */
+    struct flb_cf *cf_main;
+    struct flb_cf *cf_parsers;
+
     flb_sds_t program_name;      /* argv[0] */
 
     /*
@@ -255,7 +259,7 @@ int flb_config_set_program_name(struct flb_config *config, char *name);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
-struct mk_rconf *flb_config_static_open(const char *file);
+struct flb_cf *flb_config_static_open(const char *file);
 #endif
 
 struct flb_service_config {
