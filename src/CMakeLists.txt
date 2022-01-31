@@ -9,6 +9,7 @@ set(src
   flb_lib.c
   flb_log.c
   flb_env.c
+  flb_file.c
   flb_uri.c
   flb_hash.c
   flb_help.c
