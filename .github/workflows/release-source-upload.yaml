@@ -1,0 +1,38 @@
+---
+name: Upload source for release to fluentbit.io
+
+on:
+  release:
+    # Only run when a release is pushed out
+    types: [released]
+jobs:
+  upload-source-artefact:
+    name: Upload source code to packaging server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hashed known hosts value
+        id: known_hosts
+        run: |
+          OUTPUT=$(ssh-keyscan -H ${{ secrets.FLUENTBITIO_HOST }})
+          echo ::set-output name=OUTPUT::$OUTPUT
+        shell: bash
+
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.FLUENTBITIO_SSHKEY }}
+          known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+      - name: Grab source on server
+        # This puts it in the top-level releases directory, the docs indicate directories per
+        # major version, i.e. 1.8/fluent-bit-v1.8.12.tar.gz. However this seems simpler. We can
+        # update the docs once in use or have a final step set up a symlink or move.
+        run: |
+          ssh $USERNAME@$HOST wget --no-clobber \
+            -O /var/www/fluentbit-website/releases/fluent-bit-$VERSION.tar.gz \
+            https://github.com/fluent/fluent-bit/archive/refs/tags/v$VERSION.tar.gz
+        env:
+          HOST: ${{ secrets.FLUENTBITIO_HOST }}
+          USERNAME: ${{ secrets.FLUENTBITIO_USERNAME }}
+          VERSION: ${{ github.ref }}
+        shell: bash
