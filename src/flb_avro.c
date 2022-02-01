@@ -17,7 +17,12 @@
  *  limitations under the License.
  */
 
+#include "avro/legacy.h"
+#include "avro/src/avro/basics.h"
+#include "avro/src/avro/errors.h"
+#include "avro/value.h"
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -27,14 +32,6 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_avro.h>
-
-static inline int do_avro(bool call, const char *msg) {
-    if (call) {
-            flb_error("%s:\n  %s\n", msg, avro_strerror());
-            return FLB_FALSE;
-    }
-    return FLB_TRUE;
-}
 
 avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t json_len, avro_schema_t *aschema)
 {
@@ -61,173 +58,129 @@ avro_value_iface_t  *flb_avro_init(avro_value_t *aobject, char *json, size_t jso
     return aclass;
 }
 
+// Conversion between msgpack numeric types and avro numeric types is tricky:
+// There are 3 possible msgpack numeric union fields (f64/i64/u64) and 4 avro
+// types.
+//
+// With avro we have to call the correct `avro_value_set_{type}` function
+// based on the schema and pass the correct msgpack union value.
+//
+// To avoid having to create multiple setters, we use a macro to set any msgpack
+// numeric value into the correct avro slot.
+#define SET_AVRO_NUMBER(avro_val, msgpack_val, ret)             \
+    switch (avro_value_get_type(avro_val)) {                    \
+        case AVRO_INT32:                                        \
+            ret = avro_value_set_int(avro_val, msgpack_val);    \
+            break;                                              \
+        case AVRO_INT64:                                        \
+            ret = avro_value_set_long(avro_val, msgpack_val);   \
+            break;                                              \
+        case AVRO_FLOAT:                                        \
+            ret = avro_value_set_float(avro_val, msgpack_val);  \
+            break;                                              \
+        default:                                                \
+            ret = avro_value_set_double(avro_val, msgpack_val); \
+            break;                                              \
+    }
+
 int msgpack2avro(avro_value_t *val, msgpack_object *o)
 {
-    int ret = FLB_FALSE;
-    flb_debug("in msgpack2avro\n");
+    avro_value_t element;
+    avro_type_t type;
+    msgpack_object key;
+    flb_sds_t cstr;
+    int ret;
+    int i;
 
     assert(val != NULL);
     assert(o != NULL);
 
     switch(o->type) {
     case MSGPACK_OBJECT_NIL:
-        flb_debug("got a nil:\n");
-        ret = do_avro(avro_value_set_null(val), "failed on nil");
+        ret = avro_value_set_null(val);
         break;
 
     case MSGPACK_OBJECT_BOOLEAN:
-        flb_debug("got a bool:%s:\n", (o->via.boolean ? "true" : "false"));
-        ret = do_avro(avro_value_set_boolean(val, o->via.boolean), "failed on bool");
+        ret = avro_value_set_boolean(val, o->via.boolean);
         break;
 
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        //  for reference src/objectc.c +/msgpack_pack_object
-#if defined(PRIu64)
-        // msgpack_pack_fix_uint64
-        flb_debug("got a posint: %" PRIu64 "\n", o->via.u64);
-        ret = do_avro(avro_value_set_int(val, o->via.u64), "failed on posint");
-#else
-        if (o.via.u64 > ULONG_MAX)
-            flb_warn("over \"%lu\"", ULONG_MAX);
-            ret = do_avro(avro_value_set_int(val, ULONG_MAX), "failed on posint");
-        else
-            flb_debug("got a posint: %lu\n", (unsigned long)o->via.u64);
-            ret = do_avro(avro_value_set_int(val, o->via.u64), "failed on posint");
-#endif
-
+        SET_AVRO_NUMBER(val, o->via.u64, ret);
         break;
 
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-#if defined(PRIi64)
-        flb_debug("got a negint: %" PRIi64 "\n", o->via.i64);
-        ret = do_avro(avro_value_set_int(val, o->via.i64), "failed on negint");
-#else
-        if (o->via.i64 > LONG_MAX)
-            flb_warn("over +\"%ld\"", LONG_MAX);
-            ret = do_avro(avro_value_set_int(val, LONG_MAX), "failed on negint");
-        else if (o->via.i64 < LONG_MIN)
-            flb_warn("under -\"%ld\"", LONG_MIN);
-            ret = do_avro(avro_value_set_int(val, LONG_MIN), "failed on negint");
-        else
-            flb_debug("got a negint: %ld\n", (signed long)o->via.i64);
-            ret = do_avro(avro_value_set_int(val, o->via.i64), "failed on negint");
-#endif
+        SET_AVRO_NUMBER(val, o->via.i64, ret);
         break;
 
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
-        flb_debug("got a float: %f\n", o->via.f64);
-        ret = do_avro(avro_value_set_float(val, o->via.f64), "failed on float");
+        SET_AVRO_NUMBER(val, o->via.f64, ret);
         break;
 
     case MSGPACK_OBJECT_STR: 
-        {
-            flb_debug("got a string: \"");
-
-            if (flb_log_check(FLB_LOG_DEBUG))
-                fwrite(o->via.str.ptr, o->via.str.size, 1, stderr);
-            flb_debug("\"\n");
-
-            flb_debug("setting string:%.*s:\n", o->via.str.size, o->via.str.ptr);
-            flb_sds_t cstr = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
-            ret = do_avro(avro_value_set_string_len(val, cstr, flb_sds_len(cstr) + 1), "failed on string");
-            flb_sds_destroy(cstr);
-            flb_debug("set string\n");
-        }
+        cstr = flb_sds_create_len(o->via.str.ptr, o->via.str.size);
+        ret = avro_value_set_string_len(val, cstr, o->via.str.size + 1);
+        flb_sds_destroy(cstr);
         break;
 
     case MSGPACK_OBJECT_BIN:
-        flb_debug("got a binary\n");
-        ret = do_avro(avro_value_set_bytes(val, (void *)o->via.bin.ptr, o->via.bin.size), "failed on bin");
+        ret = avro_value_set_bytes(val, (void *)o->via.bin.ptr, o->via.bin.size);
         break;
 
     case MSGPACK_OBJECT_EXT:
-#if defined(PRIi8)
-        flb_debug("got an ext: %" PRIi8 ")", o->via.ext.type);
-#else
-        flb_debug("got an ext: %d)", (int)o->via.ext.type);
-#endif
-        ret = do_avro(avro_value_set_bytes(val, (void *)o->via.bin.ptr, o->via.bin.size), "failed on ext");
+        ret = avro_value_set_bytes(val, (void *)o->via.ext.ptr, o->via.ext.size);
         break;
 
     case MSGPACK_OBJECT_ARRAY: 
-        {
-
-            flb_debug("got a array:size:%u:\n", o->via.array.size);
-            if(o->via.array.size != 0) {
-                msgpack_object* p = o->via.array.ptr;
-                msgpack_object* const pend = o->via.array.ptr + o->via.array.size;
-                int i = 0;
-                for(; p < pend; ++p) {
-                    avro_value_t  element;
-                    flb_debug("processing array\n");
-                    if (
-                        !do_avro(avro_value_append(val, &element, NULL), "Cannot append to array") ||
-                        !do_avro(avro_value_get_by_index(val, i++, &element, NULL), "Cannot get element")) {
-                        goto msg2avro_end;
-                    }
-                    ret = flb_msgpack_to_avro(&element, p);
-                }
+        for (i = 0; i < o->via.array.size; i++) {
+            ret = avro_value_append(val, &element, NULL);
+            if (ret) {
+                flb_error("failed to append to avro array: %s", avro_strerror());
+                break;
             }
-        } 
+            ret = msgpack2avro(&element, o->via.array.ptr + i);
+            if (ret) {
+                break;
+            }
+        }
         break;
 
     case MSGPACK_OBJECT_MAP:
-        flb_debug("got a map\n");
-        if(o->via.map.size != 0) {
-            msgpack_object_kv* p = o->via.map.ptr;
-            msgpack_object_kv* const pend = o->via.map.ptr + o->via.map.size;
-            for(; p < pend; ++p) {
-                avro_value_t  element;
-                if (p->key.type != MSGPACK_OBJECT_STR) {
-                    flb_debug("the key of in a map must be string.\n");
-                    continue;
-                }
-                flb_sds_t key = flb_sds_create_len(p->key.via.str.ptr, p->key.via.str.size);
-                flb_debug("got key:%s:\n", key);
-
-                if (val == NULL) {
-                    flb_debug("got a null val\n");
-                    flb_sds_destroy(key);
-                    continue;
-                }
-                // this does not always return 0 for succcess
-                if (avro_value_add(val, key, &element, NULL, NULL) != 0) {
-                    flb_debug("avro_value_add:key:%s:avro error:%s:\n", key, avro_strerror());
-                }
-                flb_debug("added\n");
-
-                flb_debug("calling avro_value_get_by_name\n");
-                if (!do_avro(avro_value_get_by_name(val, key, &element, NULL), "Cannot get field")) {
-                    flb_sds_destroy(key);
-                    goto msg2avro_end;
-                }
-                flb_debug("called avro_value_get_by_index\n");
-
-                ret = flb_msgpack_to_avro(&element, &p->val);
-
-                flb_sds_destroy(key);
+        type = avro_value_get_type(val);
+        for (i = 0; i < o->via.map.size; i++) {
+            key = o->via.map.ptr[i].key;
+            if (key.type != MSGPACK_OBJECT_STR) {
+                flb_error("the key of in a map must be string for avro");
+                ret = -1;
+                break;
             }
+            cstr = flb_sds_create_len(key.via.str.ptr, key.via.str.size);
+            if (type == AVRO_MAP) {
+                ret = avro_value_add(val, cstr, &element, NULL, NULL);
+            } else if (type == AVRO_RECORD) {
+                ret = avro_value_get_by_name(val, cstr, &element, NULL);
+            } else {
+                ret = -1;
+                flb_error("unexpected avro type to convert from msgpack: %d", type);
+            }
+            if (ret) {
+                flb_error("failed to access avro map/record key \"%s\": %s", cstr, avro_strerror());
+                flb_sds_destroy(cstr);
+                break;
+            }
+            flb_sds_destroy(cstr);
+
+            ret = msgpack2avro(&element, &o->via.map.ptr[i].val);
         }
         break;
 
     default:
-        // FIXME
-#if defined(PRIu64)
-        flb_warn(" #<UNKNOWN %i %" PRIu64 ">\n", o->type, o->via.u64);
-#else
-        if (o.via.u64 > ULONG_MAX)
-           flb_warn(" #<UNKNOWN %i over 4294967295>", o->type);
-        else
-            flb_warn(" #<UNKNOWN %i %lu>", o.type, (unsigned long)o->via.u64);
-#endif
-        // noop
+        flb_error("invalid msgpack type %d", o->type);
+        ret = -1;
         break;
     }
 
-msg2avro_end:
     return ret;
-
 }
 
 /**
@@ -256,9 +209,7 @@ int flb_msgpack_to_avro(avro_value_t *val, msgpack_object *o)
         return ret;
     }
 
-    ret = msgpack2avro(val, o);
-
-    return ret;
+    return msgpack2avro(val, o);
 }
 
 bool flb_msgpack_raw_to_avro_sds(const void *in_buf, size_t in_size, struct flb_avro_fields *ctx, char *out_buff, size_t *out_size)

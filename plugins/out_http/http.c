@@ -322,7 +322,7 @@ static int msgpack_to_avro(struct flb_out_http *ctx,
         return -1;
     }
 
-    if (flb_msgpack_to_avro(&aobject, root) != FLB_TRUE) {
+    if (flb_msgpack_to_avro(&aobject, root)) {
         flb_errno();
         flb_error("Failed msgpack to avro\n");
         avro_value_decref(&aobject);
