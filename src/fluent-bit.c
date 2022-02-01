@@ -112,9 +112,7 @@ static void flb_banner()
             "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
 #endif
 
-    fprintf(stderr, "* %sCopyright (C) 2019-2021 The Fluent Bit Authors%s\n",
-            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
-    fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
+    fprintf(stderr, "* %sCopyright (C) 2015-2021 The Fluent Bit Authors%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
     fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
             "umbrella of Fluentd\n");
