@@ -23,12 +23,26 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
-#include <monkey/mk_core.h>
+#include <fluent-bit/flb_slist.h>
 
 #include <yaml.h>
 
+#include <ctype.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#ifndef _MSC_VER
+#include <glob.h>
+#endif
+
+#ifdef _WIN32
+#include <Windows.h>
+#include <strsafe.h>
+#define PATH_MAX MAX_PATH
+#endif
+
 enum section {
     SECTION_ENV,
+    SECTION_INCLUDE,
     SECTION_SERVICE,
     SECTION_PIPELINE,
     SECTION_CUSTOM,
@@ -47,8 +61,9 @@ enum state {
     STATE_SECTION_KEY,
     STATE_SECTION_VAL,
 
-    STATE_SERVICE,         /* service section */
-    STATE_OTHER,           /* service section */
+    STATE_SERVICE,         /* 'service' section */
+    STATE_INCLUDE,         /* 'includes' section */
+    STATE_OTHER,           /* any other unknown section */
 
     STATE_PIPELINE,        /* pipeline groups customs inputs, filters and outputs */
 
@@ -77,9 +92,6 @@ enum state {
 };
 
 struct parser_state {
-    /* file path */
-    flb_sds_t file;
-
     /* tokens state */
     enum state state;
 
@@ -96,6 +108,20 @@ struct parser_state {
     /* active group */
     struct flb_cf_group *cf_group;
 
+    /* file */
+    flb_sds_t file;                /* file name */
+    flb_sds_t root_path;           /* file root path */
+
+    /* caller file */
+    flb_sds_t caller_file;         /* caller file name */
+    flb_sds_t caller_root_path;    /* caller file root path */
+};
+
+struct local_ctx {
+    int level;                     /* inclusion level */
+
+    struct mk_list includes;
+
     int service_set;
 };
 
@@ -104,6 +130,9 @@ enum status {
     YAML_SUCCESS = 1,
     YAML_FAILURE = 0
 };
+
+static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
+                       char *caller_file, char *cfg_file);
 
 static int add_section_type(struct flb_cf *cf, struct parser_state *s)
 {
@@ -124,16 +153,29 @@ static int add_section_type(struct flb_cf *cf, struct parser_state *s)
     return 0;
 }
 
-static void yaml_error_event(struct parser_state *s, yaml_event_t *event)
+static char *get_last_included_file(struct local_ctx *ctx)
 {
+    struct flb_slist_entry *e;
+
+    e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
+    return e->str;
+}
+
+static void yaml_error_event(struct local_ctx *ctx, struct parser_state *s,
+                             yaml_event_t *event)
+{
+    struct flb_slist_entry *e;
+
+    e = mk_list_entry_last(&ctx->includes, struct flb_slist_entry, _head);
+
     flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
               "unexpected event %d in state %d.",
-              s->file, event->start_mark.line + 1, event->start_mark.column,
+              e->str, event->start_mark.line + 1, event->start_mark.column,
               event->type, s->state);
 }
 
-static void yaml_error_definition(struct parser_state *s, yaml_event_t *event,
-                                  char *value)
+static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *s,
+                                  yaml_event_t *event, char *value)
 {
     flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
               "duplicated definition of '%s'",
@@ -141,8 +183,8 @@ static void yaml_error_definition(struct parser_state *s, yaml_event_t *event,
               value);
 }
 
-static void yaml_error_plugin_category(struct parser_state *s, yaml_event_t *event,
-                                       char *value)
+static void yaml_error_plugin_category(struct local_ctx *ctx, struct parser_state *s,
+                                       yaml_event_t *event, char *value)
 {
     flb_error("[config] YAML error found in file \"%s\", line %i, column %i: "
               "the pipeline component '%s' is not valid. Try one of these values: "
@@ -151,14 +193,164 @@ static void yaml_error_plugin_category(struct parser_state *s, yaml_event_t *eve
               value);
 }
 
-static int consume_event(struct flb_cf *cf, struct parser_state *s,
-                         yaml_event_t *event)
+static int is_file_included(struct local_ctx *ctx, const char *path)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *e;
+
+    mk_list_foreach(head, &ctx->includes) {
+        e = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (strcmp(e->str, path) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+#ifndef _WIN32
+static int read_glob(struct flb_cf *cf, struct local_ctx *ctx,
+                     struct parser_state *state, const char *path)
+{
+    int ret = -1;
+    glob_t glb;
+    char tmp[PATH_MAX];
+
+    const char *glb_path;
+    size_t i;
+    int ret_glb = -1;
+
+    if (state->root_path && path[0] != '/') {
+        snprintf(tmp, PATH_MAX, "%s/%s", state->root_path, path);
+        glb_path = tmp;
+    }
+    else {
+        glb_path = path;
+    }
+
+    ret_glb = glob(glb_path, GLOB_NOSORT, NULL, &glb);
+    if (ret_glb != 0) {
+        switch(ret_glb){
+        case GLOB_NOSPACE:
+            flb_warn("[%s] glob: [%s] no space", __FUNCTION__, glb_path);
+            break;
+        case GLOB_NOMATCH:
+            flb_warn("[%s] glob: [%s] no match", __FUNCTION__, glb_path);
+            break;
+        case GLOB_ABORTED:
+            flb_warn("[%s] glob: [%s] aborted", __FUNCTION__, glb_path);
+            break;
+        default:
+            flb_warn("[%s] glob: [%s] other error", __FUNCTION__, glb_path);
+        }
+        return ret;
+    }
+
+    for (i = 0; i < glb.gl_pathc; i++) {
+        ret = read_config(cf, ctx, state->file, glb.gl_pathv[i]);
+        if (ret < 0) {
+            break;
+        }
+    }
+
+    globfree(&glb);
+    return ret;
+}
+#else
+static int read_glob(struct flb_cf *cf, struct parser_state *ctx, const char *path)
+{
+    char *star, *p0, *p1;
+    char pattern[MAX_PATH];
+    char buf[MAX_PATH];
+    int ret;
+    struct stat st;
+    HANDLE h;
+    WIN32_FIND_DATA data;
+
+    if (strlen(path) > MAX_PATH - 1) {
+        return -1;
+    }
+
+    star = strchr(path, '*');
+    if (star == NULL) {
+        return -1;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *            0<-----|
+     */
+    p0 = star;
+    while (path <= p0 && *p0 != '\\') {
+        p0--;
+    }
+
+    /*
+     * C:\data\tmp\input_*.conf
+     *                   |---->1
+     */
+    p1 = star;
+    while (*p1 && *p1 != '\\') {
+        p1++;
+    }
+
+    memcpy(pattern, path, (p1 - path));
+    pattern[p1 - path] = '\0';
+
+    h = FindFirstFileA(pattern, &data);
+    if (h == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    do {
+        /* Ignore the current and parent dirs */
+        if (!strcmp(".", data.cFileName) || !strcmp("..", data.cFileName)) {
+            continue;
+        }
+
+        /* Avoid an infinite loop */
+        if (strchr(data.cFileName, '*')) {
+            continue;
+        }
+
+        /* Create a path (prefix + filename + suffix) */
+        memcpy(buf, path, p0 - path + 1);
+        buf[p0 - path + 1] = '\0';
+
+        if (FAILED(StringCchCatA(buf, MAX_PATH, data.cFileName))) {
+            continue;
+        }
+        if (FAILED(StringCchCatA(buf, MAX_PATH, p1))) {
+            continue;
+        }
+
+        if (strchr(p1, '*')) {
+            read_glob(cf, ctx, buf); /* recursive */
+            continue;
+        }
+
+        ret = stat(buf, &st);
+        if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
+            if (read_config(cf, ctx, buf) < 0) {
+                return -1;
+            }
+        }
+    } while (FindNextFileA(h, &data) != 0);
+
+    FindClose(h);
+    return 0;
+}
+#endif
+
+static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
+                         struct parser_state *s, yaml_event_t *event)
 {
     int len;
     int ret;
     char *value;
     struct mk_list *list;
     struct flb_kv *kv;
+    char *last_included = get_last_included_file(ctx);
 
     switch (s->state) {
     case STATE_START:
@@ -167,7 +359,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_STREAM;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -181,7 +373,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_STOP;  /* all done */
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -195,7 +387,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_STREAM;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -210,7 +402,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             value = (char *)event->data.scalar.value;
             len = strlen(value);
             if (len == 0) {
-                yaml_error_event(s, event);
+                yaml_error_event(ctx, s, event);
                 return YAML_FAILURE;
             }
 
@@ -237,7 +429,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_SECTION;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -250,7 +442,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_CUSTOM;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -269,7 +461,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_CUSTOM;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -298,11 +490,46 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             }
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
     /* end of 'customs' */
+
+    /*
+     * 'includes'
+     *  --------
+     */
+    case STATE_INCLUDE:
+        switch (event->type) {
+        case YAML_SEQUENCE_START_EVENT:
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            s->state = STATE_SECTION;
+            break;
+        case YAML_SCALAR_EVENT:
+            value = (char *) event->data.scalar.value;
+            flb_debug("[config yaml] including: %s", value);
+            if (strchr(value, '*') != NULL) {
+                ret = read_glob(cf, ctx, s, value);
+            }
+            else {
+                ret = read_config(cf, ctx, s->file, value);
+            }
+            if (ret == -1) {
+                flb_error("[config]  including file '%s' at %s:%i",
+                          value,
+                          last_included, event->start_mark.line + 1);
+                return YAML_FAILURE;
+            }
+            ctx->level++;
+            break;
+        default:
+            yaml_error_event(ctx, s, event);
+            return YAML_FAILURE;
+        }
+        break;
+    /* end of 'includes' */
 
     case STATE_PIPELINE:
         switch (event->type) {
@@ -321,7 +548,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
                 s->section = SECTION_OUTPUT;
             }
             else {
-                yaml_error_plugin_category(s, event, value);
+                yaml_error_plugin_category(ctx, s, event, value);
                 return YAML_FAILURE;
             }
             break;
@@ -331,7 +558,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_SECTION;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -350,21 +577,25 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
                 s->section = SECTION_PIPELINE;
             }
             else if (strcasecmp(value, "service") == 0) {
-                if (s->service_set) {
-                    yaml_error_definition(s, event, value);
+                if (ctx->service_set) {
+                    yaml_error_definition(ctx, s, event, value);
                     return YAML_FAILURE;
                 }
                 s->state = STATE_SERVICE;
                 s->section = SECTION_SERVICE;
-                s->service_set = 1;
                 s->cf_section = flb_cf_section_create(cf, value, 0);
                 if (!s->cf_section) {
                     return YAML_FAILURE;
                 }
+                ctx->service_set = 1;
             }
             else if (strcasecmp(value, "customs") == 0) {
                 s->state = STATE_CUSTOM;
                 s->section = SECTION_CUSTOM;
+            }
+            else if (strcasecmp(value, "includes") == 0) {
+                s->state = STATE_INCLUDE;
+                s->section = SECTION_INCLUDE;
             }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
@@ -382,7 +613,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_STREAM;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -399,7 +630,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_SECTION;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -415,7 +646,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_SECTION;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -445,7 +676,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             flb_sds_destroy(s->val);
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -465,7 +696,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_SECTION;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -498,7 +729,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_PIPELINE;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -512,7 +743,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_PLUGIN_TYPE;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -531,7 +762,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_PLUGIN_TYPE;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -560,7 +791,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             }
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -577,7 +808,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             s->state = STATE_PLUGIN_KEY;
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -597,7 +828,7 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
             flb_sds_destroy(s->val);
             break;
         default:
-            yaml_error_event(s, event);
+            yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
         }
         break;
@@ -609,27 +840,150 @@ static int consume_event(struct flb_cf *cf, struct parser_state *s,
     return YAML_SUCCESS;
 }
 
-static int read_config(struct flb_cf *cf, void  *ctx, char *cfg_file)
+static char *get_real_path(char *file, char *path, size_t size)
 {
-    int code = 0;
+    int len;
+    char *p;
+    char *end;
+
+#ifdef _MSC_VER
+    p = _fullpath(path, file, size);
+#else
+    p = realpath(file, path);
+#endif
+
+    if (!p) {
+        len = strlen(file);
+        if (len > size) {
+            return NULL;
+        }
+        memcpy(path, file, len);
+        path[len] = '\0';
+    }
+
+    /* lookup path ending and truncate */
+    end = strrchr(path, '/');
+    if (end) {
+        end++;
+        *end = '\0';
+    }
+
+    return path;
+}
+
+static void state_destroy(struct parser_state *s)
+{
+    if (s->caller_file) {
+        flb_sds_destroy(s->caller_file);
+    }
+    if (s->caller_root_path) {
+        flb_sds_destroy(s->caller_root_path);
+    }
+
+    if (s->file) {
+        flb_sds_destroy(s->file);
+    }
+
+    if (s->root_path) {
+        flb_sds_destroy(s->root_path);
+    }
+    flb_free(s);
+}
+
+static struct parser_state *state_create(char *caller_file, char *file)
+{
+    int ret;
+    char *p;
+    char file_path[PATH_MAX + 1] = {0};
+    char caller_path[PATH_MAX + 1] = {0};
+    struct parser_state *s;
+    struct stat st;
+
+    if (!file) {
+        return NULL;
+    }
+
+    /* allocate context */
+    s = flb_calloc(1, sizeof(struct parser_state));
+    if (!s) {
+        flb_errno();
+        return NULL;
+    }
+
+    /* resolve real path for caller file and target file */
+#ifndef FLB_HAVE_STATIC_CONF
+    if (caller_file) {
+        p = get_real_path(caller_file, caller_path, PATH_MAX + 1);
+        if (!p) {
+            state_destroy(s);
+            return NULL;
+        }
+        s->caller_file = flb_sds_create(caller_file);
+        s->caller_root_path = flb_sds_create(caller_path);
+    }
+    else {
+        s->caller_file = flb_sds_create(s->file);
+        s->caller_root_path = flb_sds_create(s->root_path);
+    }
+
+    /* check if the file exists */
+    ret = stat(file, &st);
+    if (ret == 0) {
+        p = get_real_path(file, file_path, PATH_MAX + 1);
+        s->file = flb_sds_create(file);
+        s->root_path = flb_sds_create(file_path);
+    }
+    else if (errno == ENOENT && caller_file && s->caller_root_path != NULL) {
+        snprintf(file_path, PATH_MAX, "%s/%s", s->caller_root_path, file);
+        s->file = flb_sds_create(file_path);
+    }
+#endif
+
+    return s;
+}
+
+static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
+                       char *caller_file, char *cfg_file)
+{
+    int ret;
     int status;
-    struct parser_state state;
+    int code = 0;
+    char *file;
+    struct parser_state *state;
     yaml_parser_t parser;
     yaml_event_t event;
     FILE *fh;
 
-    fh = fopen(cfg_file, "r");
-    if (!fh) {
-        flb_errno();
+    state = state_create(caller_file, cfg_file);
+    if (!state) {
+        return -1;
+    }
+    file = state->file;
+
+    /* check if this file has been included before */
+    ret = is_file_included(ctx, file);
+    if (ret) {
+        flb_error("[config] file '%s' is already included", file);
+        state_destroy(state);
         return -1;
     }
 
-    memset(&state, '\0', sizeof(state));
-    state.file = flb_sds_create(cfg_file);
-    if (!state.file) {
-        fclose(fh);
+    fh = fopen(file, "r");
+    if (!fh) {
+        flb_errno();
+        state_destroy(state);
         return -1;
     }
+
+    /* add file to the list of included files */
+    ret = flb_slist_add(&ctx->includes, file);
+    if (ret == -1) {
+        flb_error("[config] could not register file %s", file);
+        fclose(fh);
+        state_destroy(state);
+        return -1;
+    }
+    ctx->level++;
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_file(&parser, fh);
@@ -637,33 +991,78 @@ static int read_config(struct flb_cf *cf, void  *ctx, char *cfg_file)
     do {
         status = yaml_parser_parse(&parser, &event);
         if (status == YAML_FAILURE) {
-            flb_error("[config] invalid YAML format");
+            flb_error("[config] invalid YAML format in file %s", file);
             code = -1;
             goto done;
         }
-        status = consume_event(cf, &state, &event);
+        status = consume_event(cf, ctx, state, &event);
         if (status == YAML_FAILURE) {
             code = -1;
             goto done;
         }
         yaml_event_delete(&event);
-    } while (state.state != STATE_STOP);
+    } while (state->state != STATE_STOP);
 
 done:
     if (code == -1) {
         yaml_event_delete(&event);
     }
-    flb_sds_destroy(state.file);
+
     yaml_parser_delete(&parser);
+    state_destroy(state);
+
     fclose(fh);
+    ctx->level--;
 
     return code;
+}
+
+static int local_init(struct local_ctx *ctx, char *file)
+{
+    char *end;
+    char path[PATH_MAX + 1] = {0};
+
+    /* reset the state */
+    memset(ctx, '\0', sizeof(struct local_ctx));
+
+#ifndef FLB_HAVE_STATIC_CONF
+    char *p;
+
+    if (file) {
+#ifdef _MSC_VER
+        p = _fullpath(path, file, PATH_MAX + 1);
+#else
+        p = realpath(file, path);
+#endif
+        if (!p) {
+            return -1;
+        }
+    }
+#endif
+
+    /* lookup path ending and truncate */
+    end = strrchr(path, '/');
+    if (end) {
+        end++;
+        *end = '\0';
+    }
+
+    ctx->level = 0;
+    flb_slist_create(&ctx->includes);
+
+    return 0;
+}
+
+static void local_exit(struct local_ctx *ctx)
+{
+    flb_slist_destroy(&ctx->includes);
 }
 
 struct flb_cf *flb_cf_yaml_create(struct flb_cf *cf, char *file_path,
                                   char *buf, size_t size)
 {
     int ret;
+    struct local_ctx ctx;
 
     if (!cf) {
         cf = flb_cf_create();
@@ -672,11 +1071,21 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *cf, char *file_path,
         }
     }
 
-    ret = read_config(cf, NULL, file_path);
+    /* initialize the parser state */
+    ret = local_init(&ctx, file_path);
     if (ret == -1) {
         flb_cf_destroy(cf);
         return NULL;
     }
 
+    /* process the entry poing config file */
+    ret = read_config(cf, &ctx, NULL, file_path);
+    if (ret == -1) {
+        flb_cf_destroy(cf);
+        local_exit(&ctx);
+        return NULL;
+    }
+
+    local_exit(&ctx);
     return cf;
 }
