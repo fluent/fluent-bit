@@ -1,0 +1,142 @@
+name: PR package tests
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-package-test:
+    name: Windows package tests
+    runs-on: windows-latest
+    environment: pr
+    env:
+      APPVEYOR_URL: https://ci.appveyor.com/project/fluent/fluent-bit-2e87g/artifacts/build
+      # TODO: retrieve this programmatically
+      VERSION: "1.9.0"
+    steps:
+    - name: Info
+      run: $PSVersionTable.PSVersion
+      shell: pwsh
+
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Download PR packages locally
+      if: github.event_name == 'pull_request'
+      run: |
+        Invoke-WebRequest -Uri $Env:EXE_SOURCE -OutFile fluent-bit-installer.exe
+        Invoke-WebRequest -Uri $Env:ZIP_SOURCE -OutFile fluent-bit.zip
+      shell: pwsh
+      env:
+        EXE_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.exe?pr=true&branch=pr-${{ github.event.pull_request.number }}
+        ZIP_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.zip?pr=true&branch=pr-${{ github.event.pull_request.number }}
+
+    - name: Download master packages locally
+      if: github.event_name != 'pull_request'
+      run: |
+        Invoke-WebRequest -Uri $Env:EXE_SOURCE -OutFile fluent-bit-installer.exe
+        Invoke-WebRequest -Uri $Env:ZIP_SOURCE -OutFile fluent-bit.zip
+      shell: pwsh
+      env:
+        EXE_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.exe?branch=master
+        ZIP_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.zip?branch=master
+
+    - name: Extract zip locally to test
+      # Will end up in .\fluent-bit\td-agent-bit-<version>-win64\
+      run: |
+        Expand-Archive -PassThru -Force -Path "fluent-bit.zip"
+      shell: pwsh
+
+    - name: Run zip version with simple config
+      timeout-minutes: 1
+      run: |
+        $fluentbit=Start-Process -PassThru -NoNewWindow -FilePath "bin\fluent-bit.exe" -ArgumentList "-i", "dummy", "-o", "stdout"
+        Start-Sleep -s 15
+        if ($fluentbit.HasExited) {
+          Write-Host "Fluent Bit exited prematurely"
+          exit 1
+        }
+        Stop-Process -Force -InputObject $fluentbit
+        Get-Process | Where-Object {$_.HasExited}
+        Write-Host "Fluent Bit exited correctly"
+      shell: pwsh
+      working-directory: fluent-bit\fluent-bit-${{ env.VERSION }}-win64
+
+    - name: Run executable installer
+      timeout-minutes: 5
+      # Silent install accepting all defaults
+      run: |
+        Start-Process -NoNewWindow -FilePath "fluent-bit-installer.exe" -ArgumentList "/S", "/D=C:\fluent-bit"
+      shell: pwsh
+
+    - name: Verify installation
+      timeout-minutes: 1
+      run: |
+        Test-Path -Path "C:\fluent-bit\bin\fluent-bit.exe"
+        Test-Path -Path "C:\fluent-bit\conf\fluent-bit.conf"
+        Test-Path -Path "C:\fluent-bit\conf\parsers.conf"
+        Test-Path -Path "C:\fluent-bit\conf\plugins.conf"
+      shell: pwsh
+
+    # - name: Patch config
+    #   # Default config prior to 1.9 is for Linux so will fail
+    #   # Only for 1.8 or earlier
+    #   run: |
+    #     Invoke-WebRequest -Uri https://raw.githubusercontent.com/fluent/fluent-bit/master/conf/fluent-bit-win32.conf -OutFile "conf\fluent-bit.conf"
+    #     Invoke-WebRequest -Uri https://raw.githubusercontent.com/fluent/fluent-bit/master/conf/fluent-bit-win32.conf -OutFile "C:\fluent-bit\conf\fluent-bit.conf"
+    #   shell: pwsh
+    #   working-directory: fluent-bit\fluent-bit-${{ env.VERSION }}-win64
+
+    - name: Run zip version with default config
+      timeout-minutes: 1
+      run: |
+        $fluentbit=Start-Process -PassThru -NoNewWindow -FilePath "bin\fluent-bit.exe" -ArgumentList "-c", "conf\fluent-bit.conf"
+        Start-Sleep -s 15
+        if ($fluentbit.HasExited) {
+          Write-Host "Fluent Bit exited prematurely"
+          exit 1
+        }
+        Stop-Process -Force -InputObject $fluentbit
+        Get-Process | Where-Object {$_.HasExited}
+        Write-Host "Fluent Bit exited correctly"
+      shell: pwsh
+      working-directory: fluent-bit\fluent-bit-${{ env.VERSION }}-win64
+
+    - name: Run the installed version with default config
+      timeout-minutes: 1
+      run: |
+        $fluentbit=Start-Process -PassThru -NoNewWindow -FilePath "bin\fluent-bit.exe" -ArgumentList "-c", "conf\fluent-bit.conf"
+        Start-Sleep -s 15
+        if ($fluentbit.HasExited) {
+          Write-Host "Fluent Bit exited prematurely"
+          exit 1
+        }
+        Stop-Process -Force -InputObject $fluentbit
+        Get-Process | Where-Object {$_.HasExited}
+        Write-Host "Fluent Bit exited correctly"
+      shell: pwsh
+      working-directory: C:\fluent-bit
+
+    - name: Create a Fluent Bit service
+      timeout-minutes: 1
+      run: |
+        New-Service fluent-bit -BinaryPathName "C:\fluent-bit\bin\fluent-bit.exe -c C:\fluent-bit\conf\fluent-bit.conf" -StartupType Manual
+      shell: pwsh
+
+    - name: Verify we have the new service
+      run: |
+        Get-Service -Name fluent-bit
+      shell: pwsh
+
+    - name: Start the service and check it runs
+      timeout-minutes: 2
+      run: |
+        Start-Service fluent-bit
+        Start-Sleep -s 60
+        $service = Get-Service -Name fluent-bit
+        if( $service.Status -ne 'Running' ) {
+          Write-Host 'Service is not Running'
+          exit 1
+        }
+        Write-Host 'Service is Running'
+      shell: pwsh
+
