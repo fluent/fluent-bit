@@ -7,7 +7,7 @@
 
 #include "flb_tests_internal.h"
 
-#define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/fluent-bit.conf"
+#define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/classic/fluent-bit.conf"
 
 /* data/config_format/fluent-bit.conf */
 void test_basic()
