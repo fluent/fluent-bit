@@ -91,14 +91,27 @@ struct flb_stacktrace flb_st;
 
 static void flb_version()
 {
+#ifdef FLB_NIGHTLY_BUILD
+    printf("Fluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!\n",
+           FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD));
+#else
     printf("Fluent Bit v%s\n", FLB_VERSION_STR);
+#endif
+
     exit(EXIT_SUCCESS);
 }
 
 static void flb_banner()
 {
-    fprintf(stderr, "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR,
-            ANSI_RESET);
+#ifdef FLB_NIGHTLY_BUILD
+    fprintf(stderr,
+            "%sFluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!"
+            "%s\n", ANSI_BOLD, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), ANSI_RESET);
+#else
+    fprintf(stderr,
+            "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+#endif
+
     fprintf(stderr, "* %sCopyright (C) 2019-2021 The Fluent Bit Authors%s\n",
             ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
     fprintf(stderr, "* %sCopyright (C) 2015-2018 Treasure Data%s\n",
