@@ -7,7 +7,7 @@
 
 #include "flb_tests_internal.h"
 
-#define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/fluent-bit.yaml"
+#define FLB_000 FLB_TESTS_DATA_PATH "/data/config_format/yaml/fluent-bit.yaml"
 
 /* data/config_format/fluent-bit.yaml */
 void test_basic()
@@ -24,7 +24,7 @@ void test_basic()
     }
 
     /* Total number of sections */
-    TEST_CHECK(mk_list_size(&cf->sections) == 10);
+    TEST_CHECK(mk_list_size(&cf->sections) == 8);
 
 	/* SERVICE check */
     TEST_CHECK(cf->service != NULL);
@@ -36,7 +36,7 @@ void test_basic()
     TEST_CHECK(mk_list_size(&cf->parsers) == 0);
     TEST_CHECK(mk_list_size(&cf->multiline_parsers) == 0);
     TEST_CHECK(mk_list_size(&cf->customs) == 1);
-    TEST_CHECK(mk_list_size(&cf->inputs) == 4);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 2);
     TEST_CHECK(mk_list_size(&cf->filters) == 1);
     TEST_CHECK(mk_list_size(&cf->outputs) == 2);
     TEST_CHECK(mk_list_size(&cf->others) == 1);
