@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_file.h>
 
 #include "http.h"
 #include "http_conf.h"
@@ -166,9 +167,14 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     /* Config AVRO */
-    tmp = flb_output_get_property("avro_schema", ins);
-    if (tmp) {
-        ctx->avro_schema = flb_sds_create(tmp);
+    tmp = flb_output_get_property("avro_schema_path", ins);
+    if (ctx->out_format == FLB_HTTP_OUT_AVRO && tmp) {
+        ctx->avro_schema = flb_file_read(tmp);
+        if (!ctx->avro_schema) {
+            flb_plg_error(ctx->ins, "cannot read '%s'", tmp);
+            flb_free(ctx);
+            return NULL;
+        }
     }
 #endif
 

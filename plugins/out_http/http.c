@@ -550,9 +550,9 @@ static struct flb_config_map config_map[] = {
      "Specify the key to use for the 'level' in gelf format"
     },
     {
-     FLB_CONFIG_MAP_STR, "avro_schema", NULL,
-     0, FLB_TRUE, offsetof(struct flb_out_http, avro_schema),
-     "Specify the AVRO schema for use in the avro format"
+     FLB_CONFIG_MAP_STR, "avro_schema_path", NULL,
+     0, FLB_TRUE, 0,
+     "Specify path to file containing AVRO schema for use in the avro format"
     },
     /* EOF */
     {0}
