@@ -10,7 +10,7 @@ echo "You will be prompted for your password by sudo."
 # Determine package type to install: https://unix.stackexchange.com/a/6348
 # OS used by all - for Debs it must be Ubuntu or Debian
 # CODENAME only used for Debs
-if [[ -f /etc/os-release ]]; then
+if [ -f /etc/os-release ]; then
     # shellcheck source=/dev/null
     source /etc/os-release
     OS=$( echo "${ID}" | tr '[:upper:]' '[:lower:]')
