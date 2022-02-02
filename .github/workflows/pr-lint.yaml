@@ -35,3 +35,9 @@ jobs:
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color -shellcheck=
         shell: bash
+
+  # Special lint to handle reusable workflows requiring an explicit branch.
+  # We cannot just reference the current/default but have to make sure it is `master`.
+  reusable-workflow_lint-pr:
+    runs-on: ubuntu-latest
+    name: PR - Reusable workflow linting
