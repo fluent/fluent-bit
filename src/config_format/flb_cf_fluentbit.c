@@ -287,7 +287,12 @@ static int local_init(struct local_ctx *ctx, char *file)
 #endif
 
     /* lookup path ending and truncate */
+#ifdef _MSC_VER
+    end = strrchr(path, '\\');
+#else
     end = strrchr(path, '/');
+#endif
+
     if (end) {
         end++;
         *end = '\0';
