@@ -9,18 +9,14 @@ echo "You will be prompted for your password by sudo."
 
 # Determine package type to install: https://unix.stackexchange.com/a/6348
 # OS used by all
-# VER only used for RPMs
 # CODENAME only used for Debs
 if lsb_release &>/dev/null; then
     OS=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
-    VER=$(lsb_release -rs | tr '[:upper:]' '[:lower:]')
     CODENAME=$(lsb_release -cs)
 elif [[ -f /etc/os-release ]]; then
     # shellcheck source=/dev/null
     source /etc/os-release
     OS=$( echo "${NAME// /}" | tr '[:upper:]' '[:lower:]')
-    # Only want a number
-    VER=$( echo "${VERSION_ID%.*}" | tr '[:upper:]' '[:lower:]')
     CODENAME=$( echo "${VERSION_CODENAME}" | tr '[:upper:]' '[:lower:]')
 else
     OS=$(uname -s)
@@ -33,12 +29,12 @@ sudo -k
 # Will require sudo
 case ${OS} in
     amazonlinux)
-        sudo sh <<SCRIPT
+        sudo sh <<'SCRIPT'
 rpm --import https://packages.fluentbit.io/fluentbit.key
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 [fluent-bit]
 name = Fluent Bit
-baseurl = https://packages.fluentbit.io/amazonlinux/${VER}/\$basearch/
+baseurl = https://packages.fluentbit.io/amazonlinux/\$releasever/\$basearch/
 gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
@@ -47,12 +43,12 @@ yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
     centos|centoslinux|redhatenterpriselinuxserver)
-        sudo sh <<SCRIPT
+        sudo sh <<'SCRIPT'
 rpm --import https://packages.fluentbit.io/fluentbit.key
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 [fluent-bit]
 name = Fluent Bit
-baseurl = https://packages.fluentbit.io/centos/${VER}/\$basearch/
+baseurl = https://packages.fluentbit.io/centos/\$releasever/\$basearch/
 gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
