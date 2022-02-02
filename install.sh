@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -e
 
 echo "================================"
 echo " Fluent Bit Installation Script "
