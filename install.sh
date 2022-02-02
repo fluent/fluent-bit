@@ -11,8 +11,9 @@ echo "You will be prompted for your password by sudo."
 # OS used by all - for Debs it must be Ubuntu or Debian
 # CODENAME only used for Debs
 if [ -f /etc/os-release ]; then
+    # Debian uses Dash which does not support source
     # shellcheck source=/dev/null
-    source /etc/os-release
+    . /etc/os-release
     OS=$( echo "${ID}" | tr '[:upper:]' '[:lower:]')
     CODENAME=$( echo "${VERSION_CODENAME}" | tr '[:upper:]' '[:lower:]')
 elif lsb_release &>/dev/null; then
