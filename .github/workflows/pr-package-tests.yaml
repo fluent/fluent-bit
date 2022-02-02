@@ -19,19 +19,13 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Download PR packages locally
-      if: github.event_name == 'pull_request'
-      run: |
-        . .\packaging\appveyor-download.ps1
-        Get-AppVeyorArtifacts fluent fluent-bit -Token ${{ secrets.APPVEYOR_TOKEN }} -Flat -Branch pr-${{ github.event.pull_request.number }}
-      shell: pwsh
-
     - name: Download master packages locally
-      if: github.event_name != 'pull_request'
       run: |
         . .\packaging\appveyor-download.ps1
-        Get-AppVeyorArtifacts fluent fluent-bit -Token ${{ secrets.APPVEYOR_TOKEN }} -Flat -Branch master
+        Get-AppVeyorArtifacts ${{ github.actor }} fluent-bit -Token ${{ secrets.APPVEYOR_TOKEN }} -Flat -Branch master -Job $Env:JOB_NAME
       shell: pwsh
+      env:
+        JOB_NAME: "Platform: x64"
 
     - name: Provide some debug on the downloads
       run: |

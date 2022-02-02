@@ -43,8 +43,7 @@ function Get-AppVeyorArtifacts
     $projectURI = "$apiUrl/projects/$account/$project"
     if ($Branch) {$projectURI = $projectURI + "/branch/$Branch"}
 
-    $projectObject = Invoke-RestMethod -Method Get -Uri $projectURI `
-                                       -Headers $headers @proxyArgs
+    $projectObject = Invoke-RestMethod -Method Get -Uri $projectURI -Headers $headers @proxyArgs
 
     if (-not $projectObject.build.jobs) {throw "No jobs found for this project or the project and/or account name was incorrectly specified"}
 
@@ -53,14 +52,20 @@ function Get-AppVeyorArtifacts
     }
 
     if ($JobName) {
-        $jobid = ($projectObject.build.jobs | Where-Object name -eq "$JobName" | Select-Object -first 1).jobid
-        if (-not $jobId) {throw "Unable to find a job named $JobName within the latest specified build. Did you spell it correctly?"}
+        $job = ($projectObject.build.jobs | Where-Object name -eq "$JobName" | Select-Object -first 1)
+        if (-not $job) {throw "Unable to find a job named $JobName within the latest specified build. Did you spell it correctly?"}
     } else {
-        $jobid = $projectObject.build.jobs[0].jobid
+        $job = $projectObject.build.jobs[0]
     }
 
-    $artifacts = Invoke-RestMethod -Method Get -Uri "$apiUrl/buildjobs/$jobId/artifacts" `
-                                   -Headers $headers @proxyArgs
+    $jobid = $job.jobid
+    $jobname = $job.name
+    Write-Host "Using job ID, name: $jobid, $jobname"
+
+    $artifacts = Invoke-RestMethod -Method Get -Uri "$apiUrl/buildjobs/$jobId/artifacts" -Headers $headers @proxyArgs
+
+    if (-not $artifacts) {throw "No artifacts found for this build"}
+
     $artifacts `
     | ? { $psCmdlet.ShouldProcess($_.fileName) } `
     | % {
@@ -76,7 +81,7 @@ function Get-AppVeyorArtifacts
         $localArtifactPath = Join-Path $path $localArtifactPath
 
         $artifactUrl = "$apiUrl/buildjobs/$jobId/artifacts/$($_.fileName)"
-        Write-Verbose "Downloading $artifactUrl to $localArtifactPath"
+        Write-Host "Downloading $artifactUrl to $localArtifactPath"
 
         Invoke-RestMethod -Method Get -Uri $artifactUrl -OutFile $localArtifactPath -Headers $headers @proxyArgs
 
