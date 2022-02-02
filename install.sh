@@ -8,6 +8,9 @@ echo "This script requires superuser access to install packages."
 echo "You will be prompted for your password by sudo."
 
 # Determine package type to install: https://unix.stackexchange.com/a/6348
+# OS used by all
+# VER only used for RPMs
+# CODENAME only used for Debs
 if lsb_release &>/dev/null; then
     OS=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
     VER=$(lsb_release -rs | tr '[:upper:]' '[:lower:]')
@@ -16,7 +19,8 @@ elif [[ -f /etc/os-release ]]; then
     # shellcheck source=/dev/null
     source /etc/os-release
     OS=$( echo "${NAME// /}" | tr '[:upper:]' '[:lower:]')
-    VER=$( echo "${VERSION%.*}" | tr '[:upper:]' '[:lower:]')
+    # Only want a number
+    VER=$( echo "${VERSION_ID%.*}" | tr '[:upper:]' '[:lower:]')
     CODENAME=$( echo "${VERSION_CODENAME}" | tr '[:upper:]' '[:lower:]')
 else
     OS=$(uname -s)
@@ -34,7 +38,7 @@ rpm --import https://packages.fluentbit.io/fluentbit.key
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 [fluent-bit]
 name = Fluent Bit
-baseurl = https://packages.fluentbit.io/amazonlinux/2/\$basearch/
+baseurl = https://packages.fluentbit.io/amazonlinux/${VER}/\$basearch/
 gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
