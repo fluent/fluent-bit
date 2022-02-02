@@ -200,7 +200,7 @@ jobs:
       - name: Trivy - multi-arch
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}'
+          image-ref: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -210,7 +210,7 @@ jobs:
       - name: Dockle - multi-arch
         uses: hands-lab/dockle-action@v1
         with:
-          image: '${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}'
+          image: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
           exit-code: '1'
           exit-level: WARN
 
