@@ -115,7 +115,7 @@ jobs:
       - name: Trivy and Dockle scans
         uses: azure/container-scan@v0
         with:
-          image-name: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}
+          registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
