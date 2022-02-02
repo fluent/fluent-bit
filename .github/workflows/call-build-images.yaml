@@ -245,8 +245,7 @@ jobs:
         uses: hands-lab/dockle-action@v1
         with:
           image: '${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}'
-          exit-code: '1'
-          exit-level: WARN
+          exit-code: '0'
 
   call-build-images-push-manifests:
     name: Deploy multi-arch container image manifests
