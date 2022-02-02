@@ -863,7 +863,12 @@ static char *get_real_path(char *file, char *path, size_t size)
     }
 
     /* lookup path ending and truncate */
+#ifdef _MSC_VER
+    end = strrchr(path, '\\');
+#else
     end = strrchr(path, '/');
+#endif
+
     if (end) {
         end++;
         *end = '\0';
