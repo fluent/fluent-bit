@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 echo "================================"
@@ -8,16 +8,16 @@ echo "This script requires superuser access to install packages."
 echo "You will be prompted for your password by sudo."
 
 # Determine package type to install: https://unix.stackexchange.com/a/6348
-# OS used by all
+# OS used by all - for Debs it must be Ubuntu or Debian
 # CODENAME only used for Debs
-if lsb_release &>/dev/null; then
-    OS=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
-    CODENAME=$(lsb_release -cs)
-elif [[ -f /etc/os-release ]]; then
+if [[ -f /etc/os-release ]]; then
     # shellcheck source=/dev/null
     source /etc/os-release
-    OS=$( echo "${NAME// /}" | tr '[:upper:]' '[:lower:]')
+    OS=$( echo "${ID}" | tr '[:upper:]' '[:lower:]')
     CODENAME=$( echo "${VERSION_CODENAME}" | tr '[:upper:]' '[:lower:]')
+elif lsb_release &>/dev/null; then
+    OS=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
+    CODENAME=$(lsb_release -cs)
 else
     OS=$(uname -s)
 fi
@@ -28,7 +28,7 @@ sudo -k
 # Now set up repos and install dependent on OS, version, etc.
 # Will require sudo
 case ${OS} in
-    amazonlinux)
+    amzn|amazonlinux)
         sudo sh <<'SCRIPT'
 rpm --import https://packages.fluentbit.io/fluentbit.key
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
@@ -42,7 +42,7 @@ EOF
 yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
-    centos|centoslinux|redhatenterpriselinuxserver)
+    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora)
         sudo sh <<'SCRIPT'
 rpm --import https://packages.fluentbit.io/fluentbit.key
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
