@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - dockerfiles/*
+      - .github/workflows/*-images.yaml
 
 jobs:
     pr-get-latest-tag:
