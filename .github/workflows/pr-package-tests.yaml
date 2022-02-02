@@ -9,7 +9,6 @@ jobs:
     runs-on: windows-latest
     environment: pr
     env:
-      APPVEYOR_URL: https://ci.appveyor.com/project/fluent/fluent-bit-2e87g/artifacts/build
       # TODO: retrieve this programmatically
       VERSION: "1.9.0"
     steps:
@@ -23,22 +22,16 @@ jobs:
     - name: Download PR packages locally
       if: github.event_name == 'pull_request'
       run: |
-        Invoke-WebRequest -Uri $Env:EXE_SOURCE -OutFile fluent-bit-installer.exe
-        Invoke-WebRequest -Uri $Env:ZIP_SOURCE -OutFile fluent-bit.zip
+        . .\packaging\appveyor-download.ps1
+        Get-AppVeyorArtifacts fluent fluent-bit -Token ${{ secrets.APPVEYOR_TOKEN }} -Flat -Branch pr-${{ github.event.pull_request.number }}
       shell: pwsh
-      env:
-        EXE_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.exe?pr=true&branch=pr-${{ github.event.pull_request.number }}
-        ZIP_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.zip?pr=true&branch=pr-${{ github.event.pull_request.number }}
 
     - name: Download master packages locally
       if: github.event_name != 'pull_request'
       run: |
-        Invoke-WebRequest -Uri $Env:EXE_SOURCE -OutFile fluent-bit-installer.exe
-        Invoke-WebRequest -Uri $Env:ZIP_SOURCE -OutFile fluent-bit.zip
+        . .\packaging\appveyor-download.ps1
+        Get-AppVeyorArtifacts fluent fluent-bit -Token ${{ secrets.APPVEYOR_TOKEN }} -Flat -Branch master
       shell: pwsh
-      env:
-        EXE_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.exe?branch=master
-        ZIP_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.zip?branch=master
 
     - name: Provide some debug on the downloads
       run: |
