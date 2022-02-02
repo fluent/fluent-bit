@@ -40,6 +40,13 @@ jobs:
         EXE_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.exe?branch=master
         ZIP_SOURCE: ${{ env.APPVEYOR_URL }}/fluent-bit-${{ env.VERSION }}-win64.zip?branch=master
 
+    - name: Provide some debug on the downloads
+      run: |
+        Get-ChildItem .
+        Get-FileHash fluent-bit-installer.exe -Algorithm MD5
+        Get-FileHash fluent-bit.zip -Algorithm MD5
+      shell: pwsh
+
     - name: Extract zip locally to test
       # Will end up in .\fluent-bit\td-agent-bit-<version>-win64\
       run: |
