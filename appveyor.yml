@@ -49,7 +49,7 @@ artifacts:
     name: td-agent-bit
   - path: build/td-agent-bit-*.zip
     name: td-agent-bit-zip
-  - path: build/fluent-bit-*.exe
-    name: fluent-bit-installer
-  - path: build/fluent-bit-*.zip
-    name: fluent-bit-zip
+
+# on successful build trigger the Github Action workflow to test it
+on_success:
+  - ps: packaging/trigger-windows-ci.ps1

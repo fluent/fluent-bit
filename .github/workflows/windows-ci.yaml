@@ -1,7 +1,48 @@
-name: PR package tests
+name: Windows CI tests
 on:
-  pull_request:
+  # Bit of a bodge to just run after master jobs that take long enough for a Windows build to complete
+  workflow_run:
+    workflows: ['Deploy to staging', 'Build packages for master']
+    types:
+      - completed
   workflow_dispatch:
+    inputs:
+      job-number:
+        description: The Appveyor job number
+        type: string
+        required: true
+      build-number:
+        description: The Appveyor build number
+        type: string
+        required: true
+      url:
+        description: The full URL to the build.
+        type: string
+        required: true
+      title:
+        description: Commit title
+        type: string
+        required: true
+      description:
+        description: Commit message
+        type: string
+        required: true
+      commit:
+        description: The commit ID.
+        type: string
+        required: true
+      branch:
+        description: The branch for the commit.
+        type: string
+        required: true
+      pull-request:
+        description: The PR number.
+        type: string
+        required: false
+      pull-request-title:
+        description: The PR title.
+        type: string
+        required: false
 
 jobs:
   windows-package-test:
@@ -22,7 +63,10 @@ jobs:
     - name: Download master packages locally
       run: |
         . .\packaging\appveyor-download.ps1
-        Get-AppVeyorArtifacts ${{ secrets.APPVEYOR_ACCOUNT }} fluent-bit -Token ${{ secrets.APPVEYOR_TOKEN }} -Flat -Branch master -Job $Env:JOB_NAME
+        Get-AppVeyorArtifacts fluent `
+          ${{ secrets.APPVEYOR_ACCOUNT }} `
+          -Token ${{ secrets.APPVEYOR_TOKEN }} `
+          -Flat -Branch master -Job $Env:JOB_NAME
       shell: pwsh
       env:
         JOB_NAME: "Platform: x64"
