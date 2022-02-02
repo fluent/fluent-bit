@@ -28,7 +28,8 @@ jobs:
 
     pr-image-tests-build-images:
       name: PR - build images
-      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+      # TODO: revert before merge, only for test
+      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@workflows_switch_to_trivy_action
       needs: pr-get-latest-tag
       with:
         version: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
