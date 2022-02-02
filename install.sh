@@ -43,7 +43,7 @@ gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
 EOF
-yum -y install fluent-bit
+yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
     centos|centoslinux|redhatenterpriselinuxserver)
@@ -57,7 +57,7 @@ gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
 EOF
-yum -y install fluent-bit
+yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
     ubuntu|debian)
@@ -71,7 +71,7 @@ cat > /etc/apt/sources.list.d/fluent-bit.list <<EOF
 deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/${OS}/${CODENAME} ${CODENAME} main
 EOF
 apt-get -y update
-apt-get -y install fluent-bit
+apt-get -y install fluent-bit || apt-get -y install td-agent-bit
 SCRIPT
     ;;
     *)
