@@ -26,12 +26,12 @@ jobs:
       with:
         arch: x64
 
-    - name: Build both packages
+    - name: Build Fluent Bit packages
       run: |
-        cd build
-        cpack --help
-        cpack -G "NSIS, ZIP"
-        cpack -DFLB_TD=On -G "NSIS, ZIP"
+        cmake -G "NMake Makefiles" ../
+        cmake --build .
+        cpack
+      working-directory: build
 
     - name: Upload build packages
       uses: actions/upload-artifact@v2
@@ -40,8 +40,6 @@ jobs:
         path: |
           build/fluent-bit-*.exe
           build/fluent-bit-*.zip
-          build/td-agent-bit-*.exe
-          build/td-agent-bit-*.zip
         if-no-files-found: error
         retention-days: 5
 
@@ -58,16 +56,10 @@ jobs:
       with:
         name: windows-packages
 
-    - name: Extract downloaded packages
-      # Will end up in .\fluent-bit\td-agent-bit-<version>-win64\
-      run: |
-        Expand-Archive -PassThru -Force -Path "fluent-bit.zip"
-      shell: pwsh
-
     - name: Extract zip locally to test
       # Will end up in .\fluent-bit\td-agent-bit-<version>-win64\
       run: |
-        Expand-Archive -PassThru -Force -Path "fluent-bit.zip"
+        Expand-Archive -PassThru -Force -Path "fluent-bit-${{ env.VERSION }}-win64.zip"
       shell: pwsh
 
     - name: Run zip version with simple config
@@ -89,7 +81,7 @@ jobs:
       timeout-minutes: 5
       # Silent install accepting all defaults
       run: |
-        Start-Process -NoNewWindow -FilePath "fluent-bit-installer.exe" -ArgumentList "/S", "/D=C:\fluent-bit"
+        Start-Process -NoNewWindow -FilePath "fluent-bit-${{ env.VERSION }}-win64.exe" -ArgumentList "/S", "/D=C:\fluent-bit"
       shell: pwsh
 
     - name: Verify installation
@@ -100,15 +92,6 @@ jobs:
         Test-Path -Path "C:\fluent-bit\conf\parsers.conf"
         Test-Path -Path "C:\fluent-bit\conf\plugins.conf"
       shell: pwsh
-
-    # - name: Patch config
-    #   # Default config prior to 1.9 is for Linux so will fail
-    #   # Only for 1.8 or earlier
-    #   run: |
-    #     Invoke-WebRequest -Uri https://raw.githubusercontent.com/fluent/fluent-bit/master/conf/fluent-bit-win32.conf -OutFile "conf\fluent-bit.conf"
-    #     Invoke-WebRequest -Uri https://raw.githubusercontent.com/fluent/fluent-bit/master/conf/fluent-bit-win32.conf -OutFile "C:\fluent-bit\conf\fluent-bit.conf"
-    #   shell: pwsh
-    #   working-directory: fluent-bit\fluent-bit-${{ env.VERSION }}-win64
 
     - name: Run zip version with default config
       timeout-minutes: 1
