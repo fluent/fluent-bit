@@ -29,8 +29,9 @@ jobs:
     - name: Build both packages
       run: |
         cd build
-        cpack
-        cpack -DFLB_TD=On
+        cpack --help
+        cpack -G "NSIS, ZIP"
+        cpack -DFLB_TD=On -G "NSIS, ZIP"
 
     - name: Upload build packages
       uses: actions/upload-artifact@v2
