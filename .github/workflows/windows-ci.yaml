@@ -65,6 +65,16 @@ jobs:
         Expand-Archive -PassThru -Force -Path "fluent-bit-${{ env.VERSION }}-win64.zip"
       shell: pwsh
 
+    - name: Verify extraction
+      timeout-minutes: 1
+      run: |
+        Test-Path -Path "bin\fluent-bit.exe"
+        Test-Path -Path "conf\fluent-bit.conf"
+        Test-Path -Path "conf\parsers.conf"
+        Test-Path -Path "conf\plugins.conf"
+      shell: pwsh
+      working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64
+
     - name: Run zip version with simple config
       timeout-minutes: 1
       run: |
@@ -92,6 +102,15 @@ jobs:
         Stop-Process -Force -InputObject $fluentbit
         Get-Process | Where-Object {$_.HasExited}
         Write-Host "Fluent Bit exited correctly"
+      shell: pwsh
+      working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64
+
+    - name: Debug on failure
+      if: failure()
+      run: |
+        find
+        ls -l bin/
+        cat conf/fluent-bit.conf
       shell: pwsh
       working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64
 
