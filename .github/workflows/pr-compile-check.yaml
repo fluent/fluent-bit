@@ -7,7 +7,6 @@ on:
       - '**.c'
     types:
       - opened
-      - edited
       - reopened
       - synchronize
   workflow_dispatch:
