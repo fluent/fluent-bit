@@ -77,7 +77,8 @@ jobs:
 
     - name: Run zip version with simple check on binary
       timeout-minutes: 1
-      run: fluent-bit.exe --version
+      run: .\fluent-bit.exe --version
+      shell: cmd
       working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64\bin
 
     - name: Run zip version with simple config
