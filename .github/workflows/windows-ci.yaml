@@ -21,10 +21,10 @@ jobs:
         WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
       shell: pwsh
 
-- name: Set up Visual Studio shell
-  uses: egor-tensin/vs-shell@v2
-  with:
-    arch: x64
+    - name: Set up Visual Studio shell
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
 
     - name: Build both packages
       run: |
