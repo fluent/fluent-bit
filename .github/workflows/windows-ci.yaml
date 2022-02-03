@@ -1,81 +1,61 @@
-name: Windows CI tests
+name: Windows CI
 on:
-  # Bit of a bodge to just run after master jobs that take long enough for a Windows build to complete
-  workflow_run:
-    workflows: ['Deploy to staging', 'Build packages for master']
-    types:
-      - completed
   workflow_dispatch:
-    inputs:
-      job-number:
-        description: The Appveyor job number
-        type: string
-        required: true
-      build-number:
-        description: The Appveyor build number
-        type: string
-        required: true
-      url:
-        description: The full URL to the build.
-        type: string
-        required: true
-      title:
-        description: Commit title
-        type: string
-        required: true
-      description:
-        description: Commit message
-        type: string
-        required: true
-      commit:
-        description: The commit ID.
-        type: string
-        required: true
-      branch:
-        description: The branch for the commit.
-        type: string
-        required: true
-      pull-request:
-        description: The PR number.
-        type: string
-        required: false
-      pull-request-title:
-        description: The PR title.
-        type: string
-        required: false
+  pull_request:
 
 jobs:
-  windows-package-test:
-    name: Windows package tests
+  windows-build:
     runs-on: windows-latest
-    environment: pr
-    env:
-      # TODO: retrieve this programmatically
-      VERSION: "1.9.0"
     steps:
-    - name: Info
-      run: $PSVersionTable.PSVersion
-      shell: pwsh
-
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Download master packages locally
+    - name: Get dependencies
       run: |
-        . .\packaging\appveyor-download.ps1
-        Get-AppVeyorArtifacts fluent `
-          ${{ secrets.APPVEYOR_ACCOUNT }} `
-          -Token ${{ secrets.APPVEYOR_TOKEN }} `
-          -Flat -Branch master -Job $Env:JOB_NAME
-      shell: pwsh
+        Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
+        Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+        Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+        Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+        echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
       env:
-        JOB_NAME: "Platform: x64"
+        WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+      shell: pwsh
 
-    - name: Provide some debug on the downloads
+    - name: Build both packages
       run: |
-        Get-ChildItem .
-        Get-FileHash fluent-bit-installer.exe -Algorithm MD5
-        Get-FileHash fluent-bit.zip -Algorithm MD5
+        cd build
+        cpack
+        cpack -DFLB_TD=On
+
+    - name: Upload build packages
+      uses: actions/upload-artifact@v2
+      with:
+        name: windows-packages
+        path: |
+          build/fluent-bit-*.exe
+          build/fluent-bit-*.zip
+          build/td-agent-bit-*.exe
+          build/td-agent-bit-*.zip
+        if-no-files-found: error
+        retention-days: 5
+
+  windows-package-test:
+    name: Windows package tests
+    needs: windows-build
+    runs-on: windows-latest
+    env:
+      # TODO: retrieve this programmatically from the artefact name when we download it
+      VERSION: "1.9.0"
+    steps:
+    - name: Download packages
+      uses: actions/download-artifact@v2
+      with:
+        name: windows-packages
+
+    - name: Extract downloaded packages
+      # Will end up in .\fluent-bit\td-agent-bit-<version>-win64\
+      run: |
+        Expand-Archive -PassThru -Force -Path "fluent-bit.zip"
       shell: pwsh
 
     - name: Extract zip locally to test
