@@ -24,8 +24,6 @@
 
 #define FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME "Content-Type"
 #define FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL    "application/x-protobuf"
-#define FLB_OPENTELEMETRY_VERSION_HEADER_NAME      "X-Prometheus-Remote-Write-Version"
-#define FLB_OPENTELEMETRY_VERSION_LITERAL          "0.1.0"
 
 /* Plugin context */
 struct opentelemetry_context {
