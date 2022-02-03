@@ -34,6 +34,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_SHARED_LIB=Off \
           -DFLB_EXAMPLES=Off \
           -DFLB_HTTP_SERVER=On \
+          -DFLB_IN_EXEC=Off \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On ..
