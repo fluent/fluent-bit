@@ -24,6 +24,12 @@
 #include <fluent-bit/flb_sds.h>
 
 #include <stdio.h>
+#include <sys/stat.h>
+
+int flb_file_read_config(const char *path, const char *conf_path)
+{
+    return -1;
+}
 
 flb_sds_t flb_file_read(const char *path)
 {

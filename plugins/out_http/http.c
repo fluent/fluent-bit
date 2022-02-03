@@ -35,6 +35,7 @@
 #include <errno.h>
 
 #include "avro/io.h"
+#include "avro/value.h"
 #include "http.h"
 #include "http_conf.h"
 
@@ -303,9 +304,17 @@ static int http_gelf(struct flb_out_http *ctx,
     return ret;
 }
 
+static int pack_date_to_avro(struct flb_out_http *ctx,
+                             struct flb_time *tm,
+                             avro_value_t *record)
+{
+    return 0;
+}
+
 
 static int msgpack_to_avro(struct flb_out_http *ctx,
-                           msgpack_object *root, 
+                           struct flb_time *tm,
+                           msgpack_object *root,
                            char *out_buf, size_t *out_size)
 {
     avro_writer_t awriter;
@@ -319,6 +328,14 @@ static int msgpack_to_avro(struct flb_out_http *ctx,
 
     if (!aclass) {
         flb_error("Failed init avro:%s:n", avro_strerror());
+        return -1;
+    }
+
+    if (pack_date_to_avro(ctx, tm, &aobject)) {
+        flb_error("Failed pack date into avro record\n");
+        avro_value_decref(&aobject);
+        avro_value_iface_decref(aclass);
+        avro_schema_decref(aschema);
         return -1;
     }
 
@@ -393,7 +410,7 @@ static int http_avro(struct flb_out_http *ctx,
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         map = root.via.array.ptr[1];
 
-        if (msgpack_to_avro(ctx, &map, avro_buf, &avro_buf_size)) {
+        if (msgpack_to_avro(ctx, &tm, &map, avro_buf, &avro_buf_size)) {
             msgpack_unpacked_destroy(&result);
             return FLB_ERROR;
         }

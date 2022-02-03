@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_sds.h>
 
+int flb_file_resolve_path(const char *path, const char *relative_to);
 flb_sds_t flb_file_read(const char *path);
 // TODO int flb_file_write(const char *path, flb_sds_t contents);
 
