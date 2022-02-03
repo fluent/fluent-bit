@@ -75,10 +75,15 @@ jobs:
       shell: pwsh
       working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64
 
+    - name: Run zip version with simple check on binary
+      timeout-minutes: 1
+      run: fluent-bit.exe --version
+      working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64\bin
+
     - name: Run zip version with simple config
       timeout-minutes: 1
       run: |
-        $fluentbit=Start-Process -PassThru -NoNewWindow -FilePath "bin\fluent-bit.exe" -ArgumentList "-i", "dummy", "-o", "stdout"
+        $fluentbit=Start-Process -Verbose -PassThru -NoNewWindow -FilePath "fluent-bit.exe" -ArgumentList "-i", "dummy", "-o", "stdout"
         Start-Sleep -s 15
         if ($fluentbit.HasExited) {
           Write-Host "Fluent Bit exited prematurely"
@@ -88,7 +93,7 @@ jobs:
         Get-Process | Where-Object {$_.HasExited}
         Write-Host "Fluent Bit exited correctly"
       shell: pwsh
-      working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64
+      working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64\bin
 
     - name: Run zip version with default config
       timeout-minutes: 1
@@ -108,7 +113,6 @@ jobs:
     - name: Debug on failure
       if: failure()
       run: |
-        find
         ls -l bin/
         cat conf/fluent-bit.conf
       shell: pwsh
