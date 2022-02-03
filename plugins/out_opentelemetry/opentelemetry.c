@@ -33,8 +33,6 @@ static int http_post(struct opentelemetry_context *ctx,
     int ret;
     int out_ret = FLB_OK;
     size_t b_sent;
-    void *payload_buf = NULL;
-    size_t payload_size = 0;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn;
     struct flb_http_client *c;
@@ -52,21 +50,9 @@ static int http_post(struct opentelemetry_context *ctx,
         return FLB_RETRY;
     }
 
-    /* Map payload */
-    ret = flb_snappy_compress((void *) body, body_len,
-                              &payload_buf, &payload_size);
-    if (ret != 0) {
-        flb_upstream_conn_release(u_conn);
-
-        flb_plg_error(ctx->ins,
-                      "cannot compress payload, aborting");
-
-        return FLB_ERROR;
-    }
-
     /* Create HTTP client context */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
-                        payload_buf, payload_size,
+                        body, body_len,
                         ctx->host, ctx->port,
                         ctx->proxy, 0);
 
@@ -90,12 +76,6 @@ static int http_post(struct opentelemetry_context *ctx,
                         sizeof(FLB_OPENTELEMETRY_CONTENT_TYPE_HEADER_NAME) - 1,
                         FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL,
                         sizeof(FLB_OPENTELEMETRY_MIME_PROTOBUF_LITERAL) - 1);
-
-    flb_http_add_header(c,
-                        FLB_OPENTELEMETRY_VERSION_HEADER_NAME,
-                        sizeof(FLB_OPENTELEMETRY_VERSION_HEADER_NAME) - 1,
-                        FLB_OPENTELEMETRY_VERSION_LITERAL,
-                        sizeof(FLB_OPENTELEMETRY_VERSION_LITERAL) - 1);
 
     /* Basic Auth headers */
     if (ctx->http_user && ctx->http_passwd) {
@@ -157,14 +137,6 @@ static int http_post(struct opentelemetry_context *ctx,
         flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
                       ctx->host, ctx->port, ret);
         out_ret = FLB_RETRY;
-    }
-
-    /*
-     * If the payload buffer is different than incoming records in body, means
-     * we generated a different payload and must be freed.
-     */
-    if (payload_buf != body) {
-        flb_free(payload_buf);
     }
 
     /* Destroy HTTP client context */
@@ -243,11 +215,11 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
         /* append labels set by config */
         append_labels(ctx, cmt);
 
-        /* Create a Prometheus Remote Write payload */
+        /* Create a OpenTelemetry payload */
         encoded_chunk = cmt_encode_opentelemetry_create(cmt);
         if (encoded_chunk == NULL) {
             flb_plg_error(ctx->ins,
-                          "Error encoding context as prometheus remote write");
+                          "Error encoding context as opentelemetry");
             result = FLB_ERROR;
             goto exit;
         }
