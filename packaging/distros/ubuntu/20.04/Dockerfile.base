@@ -1,9 +1,0 @@
-FROM ubuntu:20.04
-ENV DEBIAN_FRONTEND noninteractive
-
-RUN apt-get -qq update && \
-    apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
-    cmake make bash sudo wget unzip nano vim valgrind dh-make flex bison \
-    libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release

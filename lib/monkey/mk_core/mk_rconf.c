@@ -257,7 +257,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     /* looking for configuration directives */
     while (fgets(buf, MK_RCONF_KV_SIZE, f)) {
         len = strlen(buf);
-        if (buf[len - 1] == '\n') {
+        if (len > 0 && buf[len - 1] == '\n') {
             buf[--len] = 0;
             if (len && buf[len - 1] == '\r') {
                 buf[--len] = 0;

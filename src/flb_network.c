@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -109,6 +108,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
     net->connect_timeout = 10;
+    net->io_timeout = 0; /* Infinite time */
     net->source_address = NULL;
 }
 
@@ -218,6 +218,27 @@ int flb_net_socket_blocking(flb_sockfd_t fd)
     if (ioctlsocket(fd, FIONBIO, &off) != 0) {
 #else
     if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK) == -1) {
+#endif
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_net_socket_set_rcvtimeout(flb_sockfd_t fd, int timeout_in_seconds)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    /* WINDOWS */
+    DWORD timeout = timeout_in_seconds * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout)
+        == -1) {
+#else
+    /* LINUX and MAC OS X */
+    struct timeval tv;
+    tv.tv_sec = timeout_in_seconds;
+    tv.tv_usec = 0;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) == -1) {
 #endif
         flb_errno();
         return -1;
@@ -460,6 +481,12 @@ static int net_connect_async(int fd,
     ret = mk_event_del(u_conn->evl, &u_conn->event);
     if (ret == -1) {
         flb_error("[io] connect event handler error");
+        return -1;
+    }
+
+    if (u_conn->net_error == ETIMEDOUT) {
+        flb_debug("[net] TCP connection timed out: %s:%i",
+                  u->tcp_host, u->tcp_port);
         return -1;
     }
 
@@ -1271,6 +1298,9 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         /* Disable Nagle's algorithm */
         flb_net_socket_tcp_nodelay(fd);
 
+        /* Set receive timeout */
+        flb_net_socket_set_rcvtimeout(fd, u_conn->u->net.io_timeout);
+
         if (u_conn) {
             u_conn->fd = fd;
             u_conn->event.fd = fd;
@@ -1286,6 +1316,17 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         else {
             ret = net_connect_sync(fd, rp->ai_addr, rp->ai_addrlen,
                                    (char *) host, port, connect_timeout);
+        }
+
+        if (u_conn->net_error == ETIMEDOUT) {
+            /* flb_upstream_conn_timeouts called prepare_destroy_conn which
+             * closed the file descriptor and removed it from the event so
+             * we can safely ignore it.
+             */
+
+            fd = -1;
+
+            break;
         }
 
         if (ret == -1) {

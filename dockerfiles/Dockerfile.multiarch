@@ -10,7 +10,6 @@
 # docker buildx inspect --bootstrap
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
-FROM busybox:stable as busybox-include
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
 
@@ -64,6 +63,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_SHARED_LIB=Off \
           -DFLB_EXAMPLES=Off \
           -DFLB_HTTP_SERVER=On \
+          -DFLB_IN_EXEC=Off \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On ..
@@ -82,45 +82,76 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM builder as debug-builder
-COPY --from=busybox-include --chmod=555 /bin/busybox /bin/busybox
-RUN /bin/busybox --install -s /usr/local/bin
-
-# FROM gcr.io/distroless/cc-debian11 as production
-FROM debian:bullseye-slim as production
-LABEL description="Fluent Bit multi-architecture container image" \
-      vendor="Fluent Organization" \
-      version="1.9.0" \
-      author="Eduardo Silva <eduardo@calyptia.com>"
-
+# Simple example of how to properly extract packages for reuse in distroless
+# Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
+FROM debian:bullseye-slim as deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
-# hadolint ignore=DL3008
+# We download all debs locally then extract them into a directory we can use as the root for distroless
+WORKDIR /tmp
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      libssl1.1 \
-      libsasl2-2 \
-      pkg-config \
-      libpq5 \
-      libsystemd0 \
-      zlib1g \
-      ca-certificates \
-      libatomic1 \
-      libgcrypt20 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get download \
+        libssl1.1 \
+        libsasl2-2 \
+        pkg-config \
+        libpq5 \
+        libsystemd0 \
+        zlib1g \
+        ca-certificates \
+        libatomic1 \
+        libgcrypt20 \
+        libzstd1 \
+        liblz4-1 \
+        libgssapi-krb5-2 \
+        libldap-2.4-2 \
+        libgpg-error0 \
+        libkrb5-3 \
+        libk5crypto3 \
+        libcom-err2 \
+        libkrb5support0 \
+        libgnutls30 \
+        libkeyutils1 \
+        libp11-kit0 \
+        libidn2-0 \
+        libunistring2 \
+        libtasn1-6 \
+        libnettle8 \
+        libhogweed6 \
+        libgmp10 \
+        libffi7 \
+        liblzma5 && \
+    mkdir -p /dpkg && \
+    for deb in *.deb; do dpkg --extract "$deb" /dpkg || exit 10; done
+
+# We want latest at time of build
+# hadolint ignore=DL3006
+FROM gcr.io/distroless/cc-debian11 as production
+LABEL description="Fluent Bit multi-architecture container image" \
+      vendor="Fluent Organization" \
+      version="1.9.0" \
+      author="Eduardo Silva <eduardo@calyptia.com>" \
+      org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
+
+# Copy the libraries from the extractor stage into root
+COPY --from=deb-extractor /dpkg /
 
 COPY --from=builder /fluent-bit /fluent-bit
-RUN rm -f /usr/bin/qemu-*-static
 
 EXPOSE 2020
 
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
-FROM production as debug
+FROM debian:bullseye-slim as debug
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
       version="1.9.0" \
@@ -133,17 +164,23 @@ ENV DEBIAN_FRONTEND noninteractive
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    bash gdb valgrind build-essential \
+        libssl1.1 \
+        libsasl2-2 \
+        pkg-config \
+        libpq5 \
+        libsystemd0 \
+        zlib1g \
+        ca-certificates \
+        libatomic1 \
+        libgcrypt20 \
+        bash gdb valgrind build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=debug-builder /usr/local/bin/ /usr/local/bin/
-COPY --from=debug-builder /bin/busybox /bin/
-
 RUN rm -f /usr/bin/qemu-*-static
+COPY --from=builder /fluent-bit /fluent-bit
 
 EXPOSE 2020
 
-# Entry point
-ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
-CMD ["-c", "/fluent-bit/etc/fluent-bit.conf"]
+# No entry point so we can just shell in
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]

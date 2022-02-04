@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,6 +30,10 @@
 #define FLB_ES_DEFAULT_TIME_KEYF  "%Y-%m-%dT%H:%M:%S"
 #define FLB_ES_DEFAULT_TAG_KEY    "flb-key"
 #define FLB_ES_DEFAULT_HTTP_MAX   "512k"
+#define FLB_ES_WRITE_OP_INDEX     "index"
+#define FLB_ES_WRITE_OP_CREATE    "create"
+#define FLB_ES_WRITE_OP_UPDATE    "update"
+#define FLB_ES_WRITE_OP_UPSERT    "upsert"
 
 struct flb_elasticsearch {
     /* Elasticsearch index (database) and type (table) */
@@ -101,10 +104,15 @@ struct flb_elasticsearch {
     int time_key_nanos;
 
 
+    /* write operation */
+    flb_sds_t write_operation;
+    /* write operation elasticsearch operation */
+    flb_sds_t es_action;
+
     /* id_key */
     flb_sds_t id_key;
     struct flb_record_accessor *ra_id_key;
-    
+
     /* include_tag_key */
     int include_tag_key;
     flb_sds_t tag_key;

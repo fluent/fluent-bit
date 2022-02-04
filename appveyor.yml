@@ -13,11 +13,14 @@ environment:
 
 configuration:
   - Release
-  
+
 skip_commits:
-  message: /workflows/
   files:
-    - '.github/**'
+    - '.github/**/*'
+    - 'packaging/**/*'
+    - 'dockerfiles/**/*'
+    - '**/*.md'
+    - '**/*.sh'
 
 install:
   - ps: Invoke-WebRequest -O winflexbison.zip $env:winflexbison
@@ -35,9 +38,14 @@ build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
   - cpack
+  - cpack -DFLB_TD=On
 
 artifacts:
   - path: build/td-agent-bit-*.exe
     name: td-agent-bit
   - path: build/td-agent-bit-*.zip
     name: td-agent-bit-zip
+  - path: build/fluent-bit-*.exe
+    name: fluent-bit-installer
+  - path: build/fluent-bit-*.zip
+    name: fluent-bit-zip

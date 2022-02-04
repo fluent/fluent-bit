@@ -206,6 +206,10 @@ option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
 
+if(DEFINED FLB_NIGHTLY_BUILD)
+  FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
+endif()
+
 if(FLB_IN_STORAGE_BACKLOG)
   FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
 endif()
@@ -630,6 +634,17 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# libyaml support
+check_c_source_compiles("
+  #include <yaml.h>
+  int main() {
+    yaml_parser_t parser;
+    return 0;
+  }" FLB_HAVE_LIBYAML)
+if(FLB_HAVE_LIBYAML)
+  FLB_DEFINITION(FLB_HAVE_LIBYAML)
+endif()
+
 # check attribute alloc_size
 check_c_source_compiles("
 #include <stdlib.h>
@@ -726,6 +741,15 @@ if(FLB_BACKTRACE)
   set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
   add_dependencies(libbacktrace backtrace)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+endif()
+
+if(FLB_OUT_KAFKA)
+    FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
+    FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
+    FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
+    FLB_OPTION(ENABLE_LZ4_EXT         Off)
+
+    add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
 endif()
 
 # Onigmo (Regex Engine)

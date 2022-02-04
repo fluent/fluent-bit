@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -68,6 +67,10 @@ struct flb_config {
     struct mk_event_loop *ch_evl;
 
     struct mk_rconf *file;
+
+    /* main configuration */
+    struct flb_cf *cf_main;
+    struct flb_cf *cf_parsers;
 
     flb_sds_t program_name;      /* argv[0] */
 
@@ -255,7 +258,7 @@ int flb_config_set_program_name(struct flb_config *config, char *name);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
-struct mk_rconf *flb_config_static_open(const char *file);
+struct flb_cf *flb_config_static_open(const char *file);
 #endif
 
 struct flb_service_config {

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -82,6 +81,12 @@ struct flb_tail_file {
     size_t buf_len;
     size_t buf_size;
     char *buf_data;
+
+    /*
+     * This value represent the number of bytes procesed by process_content()
+     * in the last iteration.
+     */
+    size_t last_processed_bytes;
 
     /*
      * Long-lines handling: this flag is enabled when a previous line was

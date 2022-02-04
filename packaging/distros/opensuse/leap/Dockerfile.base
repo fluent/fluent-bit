@@ -1,7 +1,0 @@
-FROM opensuse/leap:latest
-
-RUN zypper -n update && \
-    zypper -n install curl ca-certificates gcc gcc-c++ systemd-devel cmake make\
-    bash sudo wget unzip nano vim valgrind dh-make flex bison rpmbuild \
-    postgresql postgresql-devel \
-    cyrus-sasl-devel cyrus-sasl openssl-1_1 libopenssl1_1 libopenssl-1_1-devel

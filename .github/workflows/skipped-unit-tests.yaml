@@ -9,6 +9,8 @@ on:
       - 'docker_compose/**'
       - 'packaging/**'
       - '.gitignore'
+      - 'appveyor.yml'
+      - '**.sh'
 
 jobs:
   run-all-unit-tests:

@@ -45,6 +45,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_SHARED_LIB=Off \
           -DFLB_EXAMPLES=Off \
           -DFLB_HTTP_SERVER=On \
+          -DFLB_IN_EXEC=Off \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On ..
@@ -65,7 +66,17 @@ COPY conf/fluent-bit.conf \
 
 # hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian11
-LABEL description="Fluent Bit docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# Keep old labels for backwards compatibility with any tooling using them
+LABEL description="Fluent Bit container image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 # Copy certificates
 COPY --from=builder /usr/share/ca-certificates/  /usr/share/ca-certificates/
@@ -77,14 +88,13 @@ COPY --from=builder /usr/lib/x86_64-linux-gnu/libz* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/libz* /lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libssl.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libcrypto.so* /usr/lib/x86_64-linux-gnu/
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libgcrypt.so* /usr/lib/x86_64-linux-gnu/
 
 # These below are all needed for systemd
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libsystemd* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/libselinux.so* /lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/liblzma.so* /lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/liblz4.so* /usr/lib/x86_64-linux-gnu/
-COPY --from=builder /lib/x86_64-linux-gnu/libgcrypt.so* /lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libgcrypt.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/libpcre.so* /lib/x86_64-linux-gnu/
 COPY --from=builder /lib/x86_64-linux-gnu/libgpg-error.so* /lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libpq.so* /usr/lib/x86_64-linux-gnu/

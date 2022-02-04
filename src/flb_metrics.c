@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -324,8 +323,7 @@ int flb_metrics_fluentbit_add(struct flb_config *ctx, struct cmt *cmt)
     /* get hostname */
     ret = gethostname(hostname, sizeof(hostname) - 1);
     if (ret == -1) {
-        strncpy(hostname, "unknown", 7);
-        hostname[7] = '\0';
+        strcpy(hostname, "unknown");
     }
 
     /* Attach metrics to cmetrics context */

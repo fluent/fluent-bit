@@ -115,7 +115,8 @@ jobs:
         images: ${{ inputs.registry }}/${{ inputs.image }}
         tags: |
           raw,x86_64-${{ inputs.version }}-debug
-          raw,x86_64-latest
+          raw,${{ inputs.version }}-debug
+          raw,latest-debug
 
     - name: Build the debug staging image
       uses: docker/build-push-action@v2
@@ -196,12 +197,22 @@ jobs:
           build-args: |
             FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
 
-      - name: Multi-arch - run Trivy and Dockle scans
-        uses: azure/container-scan@v0
+      - name: Trivy - multi-arch
+        uses: aquasecurity/trivy-action@master
         with:
-          image-name: ${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}
-          username: ${{ inputs.username }}
-          password: ${{ secrets.token }}
+          image-ref: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Dockle - multi-arch
+        uses: hands-lab/dockle-action@v1
+        with:
+          image: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
+          exit-code: '1'
+          exit-level: WARN
 
   call-build-images-scan:
     name: Trivy + Dockle image scan
@@ -213,15 +224,28 @@ jobs:
       matrix:
         suffix: [ x86_64, arm32v7, arm64v8 ]
     steps:
-      - name: Checkout code for ignore list
-        uses: actions/checkout@v2
-
-      - name: Single arch - run Trivy and Dockle scans
-        uses: azure/container-scan@v0
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
         with:
-          image-name: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}
+          registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
+
+      - name: Trivy - single arch
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Dockle - single arch
+        uses: hands-lab/dockle-action@v1
+        with:
+          image: '${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}'
+          exit-code: '0'
 
   call-build-images-push-manifests:
     name: Deploy multi-arch container image manifests

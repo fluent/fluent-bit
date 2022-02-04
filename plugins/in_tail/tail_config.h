@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -52,6 +51,9 @@ struct flb_tail_config {
     /* Buffer Config */
     size_t buf_chunk_size;     /* allocation chunks        */
     size_t buf_max_size;       /* max size of a buffer     */
+
+    /* Static files processor */
+    size_t static_batch_size;
 
     /* Collectors */
     int coll_fd_static;

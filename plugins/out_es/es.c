@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -260,6 +259,8 @@ static int elasticsearch_format(struct flb_config *config,
     char index_formatted[256];
     char es_uuid[37];
     flb_sds_t out_buf;
+    size_t out_buf_len = 0;
+    flb_sds_t tmp_buf;
     flb_sds_t id_key_str = NULL;
     msgpack_unpacked result;
     msgpack_object root;
@@ -346,12 +347,14 @@ static int elasticsearch_format(struct flb_config *config,
             index_len = flb_sds_snprintf(&j_index,
                                          flb_sds_alloc(j_index),
                                          ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                         ctx->es_action,
                                          es_index);
         }
         else {
             index_len = flb_sds_snprintf(&j_index,
                                          flb_sds_alloc(j_index),
                                          ES_BULK_INDEX_FMT,
+                                         ctx->es_action,
                                          es_index, ctx->type);
         }
     }
@@ -458,12 +461,14 @@ static int elasticsearch_format(struct flb_config *config,
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_WITHOUT_TYPE,
+                                                 ctx->es_action,
                                                  es_index);
                 }
                 else {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT,
+                                                 ctx->es_action,
                                                  es_index, ctx->type);
                 }
             }
@@ -509,12 +514,14 @@ static int elasticsearch_format(struct flb_config *config,
                 index_len = flb_sds_snprintf(&j_index,
                                              flb_sds_alloc(j_index),
                                              ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                             ctx->es_action,
                                              es_index,  es_uuid);
             }
             else {
                 index_len = flb_sds_snprintf(&j_index,
                                              flb_sds_alloc(j_index),
                                              ES_BULK_INDEX_FMT_ID,
+                                             ctx->es_action,
                                              es_index, ctx->type, es_uuid);
             }
         }
@@ -525,12 +532,14 @@ static int elasticsearch_format(struct flb_config *config,
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_ID_WITHOUT_TYPE,
+                                                 ctx->es_action,
                                                  es_index,  id_key_str);
                 }
                 else {
                     index_len = flb_sds_snprintf(&j_index,
                                                  flb_sds_alloc(j_index),
                                                  ES_BULK_INDEX_FMT_ID,
+                                                 ctx->es_action,
                                                  es_index, ctx->type, id_key_str);
                 }
                 flb_sds_destroy(id_key_str);
@@ -548,10 +557,25 @@ static int elasticsearch_format(struct flb_config *config,
             return -1;
         }
 
+        out_buf_len = flb_sds_len(out_buf);
+        if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPDATE) == 0) {
+            tmp_buf = out_buf;
+            out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPDATE_OP_BODY) - 2);
+            out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPDATE_OP_BODY, tmp_buf);
+            flb_sds_destroy(tmp_buf);
+        }
+        else if (strcasecmp(ctx->write_operation, FLB_ES_WRITE_OP_UPSERT) == 0) {
+            tmp_buf = out_buf;
+            out_buf = flb_sds_create_len(NULL, out_buf_len = out_buf_len + sizeof(ES_BULK_UPSERT_OP_BODY) - 2);
+            out_buf_len = snprintf(out_buf, out_buf_len, ES_BULK_UPSERT_OP_BODY, tmp_buf);
+            flb_sds_destroy(tmp_buf);
+        }
+
         ret = es_bulk_append(bulk, j_index, index_len,
-                             out_buf, flb_sds_len(out_buf),
+                             out_buf, out_buf_len,
                              bytes, off_prev);
         flb_sds_destroy(out_buf);
+
         off_prev = off;
         if (ret == -1) {
             /* We likely ran out of memory, abort here */
@@ -1066,6 +1090,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_elasticsearch, generate_id),
      "When enabled, generate _id for outgoing records. This prevents duplicate "
      "records when retrying ES"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "write_operation", "create",
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, write_operation),
+     "Operation to use to write in bulk requests"
     },
     {
      FLB_CONFIG_MAP_STR, "id_key", NULL,

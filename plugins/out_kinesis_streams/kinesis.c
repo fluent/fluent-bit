@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -212,7 +211,7 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
         ctx->aws_provider = flb_sts_provider_create(config,
                                                     ctx->sts_tls,
                                                     ctx->base_aws_provider,
-                                                    NULL,
+                                                    (char *) ctx->external_id,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
@@ -441,6 +440,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
      0, FLB_TRUE, offsetof(struct flb_kinesis, sts_endpoint),
     "Custom endpoint for the STS API."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kinesis, external_id),
+     "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
     },
 
     {
