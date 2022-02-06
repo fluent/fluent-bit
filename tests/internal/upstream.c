@@ -23,8 +23,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_pthread.h>
 #include <monkey/mk_lib.h>
-#include <pthread.h>
 #include <time.h>
 #include "flb_tests_internal.h"
 
