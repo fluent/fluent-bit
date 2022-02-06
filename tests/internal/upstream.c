@@ -318,6 +318,7 @@ void test_upstream_http_get()
 
 struct thread_arg{
     struct flb_upstream *upstream;
+    struct flb_config *config;
     int interval_nsec;
     pthread_mutex_t *mutex;
 };
@@ -328,6 +329,9 @@ void *http_get_thread(void *args)
     struct thread_arg *t_arg = (struct thread_arg*)args;
     int ret;
     struct timespec tm;
+
+    flb_engine_evl_init();
+    flb_engine_evl_set(t_arg->config->evl);
 
     tm.tv_sec = 0;
     tm.tv_nsec = t_arg->interval_nsec;
@@ -379,6 +383,7 @@ void test_upstream_keepalive_multi_thread()
         return;
     }
     t_arg.upstream = u_ctx->upstream;
+    t_arg.config   = u_ctx->config;
     t_arg.interval_nsec = 500 * 1000; /* 500 usec */
     t_arg.mutex = &test_mutex;
 
@@ -418,9 +423,6 @@ TEST_LIST = {
     { "upstream_create_destroy"         , test_upstream_create_destroy},
     { "upstream_create_keepalive"       , test_upstream_create_keepalive},
     { "upstream_http_get"               , test_upstream_http_get},
-    /* 
-     * This test case causes SIGSEGV.
     { "upstream_keepalive_multi_thread" , test_upstream_keepalive_multi_thread},
-    */
     { NULL, NULL }
 };
