@@ -35,6 +35,7 @@
 struct flb_hash_entry {
     time_t created;
     uint64_t hits;
+    uint64_t hash;
     char *key;
     size_t key_len;
     void *val;
@@ -70,6 +71,8 @@ int flb_hash_add(struct flb_hash *ht,
 int flb_hash_get(struct flb_hash *ht,
                  const char *key, int key_len,
                  void **out_buf, size_t *out_size);
+
+int flb_hash_exists(struct flb_hash *ht, uint64_t hash);
 int flb_hash_get_by_id(struct flb_hash *ht, int id,
                        const char *key,
                        const char **out_buf, size_t *out_size);
