@@ -279,6 +279,7 @@ static int in_stdin_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
+    memset(ctx, 0, sizeof(struct flb_in_stdin_config));
 
     /* Initialize stdin config */
     ret = in_stdin_config_init(ctx, in, config);
