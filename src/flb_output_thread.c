@@ -352,13 +352,13 @@ static void output_thread(void *data)
     upstream_thread_destroy(th_ins);
     flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
     flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
-    mk_event_loop_destroy(th_ins->evl);
 
     flb_sched_destroy(sched);
     params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
+    mk_event_loop_destroy(th_ins->evl);
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
