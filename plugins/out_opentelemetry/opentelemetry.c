@@ -148,9 +148,9 @@ static int http_post(struct opentelemetry_context *ctx,
     return out_ret;
 }
 
-static int cb_prom_init(struct flb_output_instance *ins,
-                        struct flb_config *config,
-                        void *data)
+static int cb_opentelemetry_init(struct flb_output_instance *ins,
+                                 struct flb_config *config,
+                                 void *data)
 {
     struct opentelemetry_context *ctx;
 
@@ -176,10 +176,10 @@ static void append_labels(struct opentelemetry_context *ctx,
     }
 }
 
-static void cb_prom_flush(struct flb_event_chunk *event_chunk,
-                          struct flb_output_flush *out_flush,
-                          struct flb_input_instance *ins, void *out_context,
-                          struct flb_config *config)
+static void cb_opentelemetry_flush(struct flb_event_chunk *event_chunk,
+                                   struct flb_output_flush *out_flush,
+                                   struct flb_input_instance *ins, void *out_context,
+                                   struct flb_config *config)
 {
     int c = 0;
     int ok;
@@ -270,7 +270,7 @@ exit:
     FLB_OUTPUT_RETURN(result);
 }
 
-static int cb_prom_exit(void *data, struct flb_config *config)
+static int cb_opentelemetry_exit(void *data, struct flb_config *config)
 {
     struct opentelemetry_context *ctx;
 
@@ -328,9 +328,9 @@ static struct flb_config_map config_map[] = {
 struct flb_output_plugin out_opentelemetry_plugin = {
     .name        = "opentelemetry",
     .description = "OpenTelemetry",
-    .cb_init     = cb_prom_init,
-    .cb_flush    = cb_prom_flush,
-    .cb_exit     = cb_prom_exit,
+    .cb_init     = cb_opentelemetry_init,
+    .cb_flush    = cb_opentelemetry_flush,
+    .cb_exit     = cb_opentelemetry_exit,
     .config_map  = config_map,
     .event_type  = FLB_OUTPUT_METRICS,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
