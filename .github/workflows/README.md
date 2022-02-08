@@ -31,6 +31,7 @@
 * AWS_S3_BUCKET_STAGING
 * AWS_S3_BUCKET_RELEASE
 * GPG_PRIVATE_KEY
+* GPG_PRIVATE_KEY_PASSPHRASE
 
 These are only required for Cosign of the container images, will be skipped if not present:
 * COSIGN_PUBLIC_KEY

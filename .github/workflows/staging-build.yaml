@@ -108,3 +108,4 @@ jobs:
       access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+      gpg_private_key_passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
