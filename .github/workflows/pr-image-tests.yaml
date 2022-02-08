@@ -1,11 +1,24 @@
 name: Build and run image tests for all architectures
 on:
-  pull_request:
-    paths:
-      - dockerfiles/*
-      - .github/workflows/*-images.yaml
+  # We cannot trigger just on PRs as these do not have write permissions to GHCR from forks.
+  # See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+  # Workflows also only run on the default branch.
+  workflow_run:
+    workflows: ["PR trigger image workflow"]
+    types:
+      - completed
 
 jobs:
+    pr-set-pending-status:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: Sibz/github-status-action@v1
+          with:
+            authToken: ${{secrets.GITHUB_TOKEN}}
+            context: 'PR image tests'
+            state: 'pending'
+            sha: ${{ github.event.workflow_run.head_sha }}
+
     pr-get-latest-tag:
       name: PR - get latest tag for source build
       runs-on: ubuntu-latest
@@ -98,3 +111,23 @@ jobs:
           DOCKER_BUILDKIT: 0
           FLB_TARBALL: https://github.com/fluent/fluent-bit/archive/v${{ needs.pr-get-latest-tag.outputs.latest_tag }}.tar.gz
         shell: bash
+
+    pr-set-final-status:
+      runs-on: ubuntu-latest
+      needs:
+        - pr-set-pending-status
+        - pr-image-tests-build-images
+        - pr-image-tests-build-images
+        - pr-image-tests-smoke-test-images
+        - pr-image-tests-smoke-test-multiarch-images
+        - pr-image-tests-classic-docker-build
+      if: always()
+      steps:
+        - uses: technote-space/workflow-conclusion-action@v2
+
+        - uses: Sibz/github-status-action@v1
+          with:
+            authToken: ${{secrets.GITHUB_TOKEN}}
+            context: 'PR image tests'
+            state: ${{ env.WORKFLOW_CONCLUSION }}
+            sha: ${{ github.event.workflow_run.head_sha }}
