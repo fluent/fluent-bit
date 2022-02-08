@@ -90,7 +90,9 @@ void add_http_request_field(struct http_request_field *http_request,
  *  If the httpRequest field exists, return TRUE and store the subfields.
  *  If there are extra subfields, count the number.
  */
-int extract_http_request(struct http_request_field *http_request, 
+int extract_http_request(struct http_request_field *http_request,
+                         flb_sds_t http_request_key,
+                         int http_request_key_size,
                          msgpack_object *obj, int *extra_subfields);
 
 /*
