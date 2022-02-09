@@ -1,12 +1,18 @@
 name: Build and run image tests for all architectures
 on:
-  pull_request:
-    paths:
-      - dockerfiles/*
-      - .github/workflows/*-images.yaml
+  # We cannot trigger just on PRs as these do not have write permissions to GHCR from forks.
+  # See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+  # Instead we use the label to gate running this.
+  pull_request_target:
+    types:
+      - labeled
+      - opened
+      - reopened
+      - synchronize
 
 jobs:
     pr-get-latest-tag:
+      if: contains(github.event.pull_request.labels.*.name, 'ok-container-test')
       name: PR - get latest tag for source build
       runs-on: ubuntu-latest
       environment: pr
@@ -68,3 +74,18 @@ jobs:
           # Ensure we disable buildkit
           DOCKER_BUILDKIT: 0
         shell: bash
+
+    pr-image-tests-post-label:
+      name: PR - image tests complete
+      runs-on: ubuntu-latest
+      needs:
+        - pr-image-tests-smoke-test-multiarch-images
+        - pr-image-tests-classic-docker-build
+      steps:
+        - uses: actions-ecosystem/action-add-labels@v1
+          name: Label the PR
+          with:
+            labels: ci/container-test-ok
+            github_token: ${{ secrets.GITHUB_TOKEN }}
+            number: ${{ github.event.pull_request.number }}
+            repo: fluent/fluent-bit
