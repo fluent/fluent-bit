@@ -61,11 +61,12 @@ jobs:
       - name: Build the AMD64 image
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.x86_64-master
+          file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
+          target: production
           push: true
           load: false
 
@@ -77,13 +78,14 @@ jobs:
           tags: |
             raw,${{ inputs.image-tag }}-debug
 
-      - name: Build the AMD64 development image
+      - name: Build the AMD64 debug image
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.x86_64-master_debug
+          file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.meta-debug.outputs.tags }}
           labels: ${{ steps.meta-debug.outputs.labels }}
+          target: debug
           platforms: linux/amd64
           push: true
           load: false
@@ -96,6 +98,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v1
