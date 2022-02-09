@@ -487,6 +487,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                   "requests.",
                                                   1, (char *[]) {"name"});
 
+    ctx->cmt_requests_total = cmt_counter_create(ins->cmt,
+                                                 "fluentbit",
+                                                 "stackdriver",
+                                                 "requests_total",
+                                                 "Total number of requests.",
+                                                  1, (char *[]) {"status"});
+
     /* OLD api */
     flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
                     "stackdriver_successful_requests", ctx->ins->metrics);
