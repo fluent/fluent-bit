@@ -17,13 +17,14 @@ jobs:
     name: PR - GCP build
     # We only need to test this once as the rest are chained from it.
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
-    uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
+    # DO NOT MERGE - revert to main, which will fail
+    uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@default_multiarch_containers_2
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/pr-${{ github.event.number }}
-      image-tag: x86_64
+      image-tag: ${{ github.event.pull_request.head.ref }}
       environment: integration
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -45,7 +46,7 @@ jobs:
           docker pull $IMAGE
           docker save --output /tmp/pr-image.tar $IMAGE
         env:
-          IMAGE: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}:x86_64
+          IMAGE: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}:${{ github.event.pull_request.head.ref }}
         shell: bash
 
       - name: Upload artifact
@@ -61,7 +62,7 @@ jobs:
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
-      image_tag: x86_64
+      image_tag: ${{ github.event.pull_request.head.ref }}
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}

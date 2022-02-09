@@ -11,33 +11,21 @@ on:
       - synchronize
 
 jobs:
-    pr-get-latest-tag:
+    pr-check-label:
       if: contains(github.event.pull_request.labels.*.name, 'ok-container-test')
-      name: PR - get latest tag for source build
+      name: PR - prevent run without label
       runs-on: ubuntu-latest
       environment: pr
-      outputs:
-        latest_tag: ${{ steps.formatted_version.outputs.replaced }}
       steps:
-        - uses: actions/checkout@v2
-        - uses: actions-ecosystem/action-get-latest-tag@v1
-          id: get-latest-tag
-          with:
-            semver_only: true
-        - uses: frabert/replace-string-action@v2.0
-          id: formatted_version
-          with:
-            pattern: '[v]*(.*)$'
-            string: ${{ steps.get-latest-tag.outputs.tag }}
-            replace-with: '$1'
-            flags: 'g'
+        - run: echo "Proceed"
 
     pr-image-tests-build-images:
       name: PR - build images
-      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
-      needs: pr-get-latest-tag
+      # DO NOT MERGE - revert to main, which will fail
+      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@default_multiarch_containers_2
+      needs: pr-check-label
       with:
-        version: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
+        version: ${{ github.event.pull_request.head.ref }}
         registry: ghcr.io
         username: ${{ github.actor }}
         image: ${{ github.repository }}/pr-${{ github.event.number }}
@@ -47,33 +35,21 @@ jobs:
 
     pr-image-tests-smoke-test-images:
       name: PR - smoke test images
-      needs: [pr-get-latest-tag, pr-image-tests-build-images]
-      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
+      needs: [pr-check-label, pr-image-tests-build-images]
+      # DO NOT MERGE - revert to main, which will fail
+      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@default_multiarch_containers_2
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         image: ${{ github.repository }}/pr-${{ github.event.number }}
-        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
-        environment: pr
-      secrets:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    pr-image-tests-smoke-test-multiarch-images:
-      name: PR - multiarch smoke test images
-      needs: [pr-get-latest-tag, pr-image-tests-build-images]
-      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        image: ${{ github.repository }}/pr-${{ github.event.number }}/multiarch
-        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
+        image-tag: ${{ github.event.pull_request.head.ref }}
         environment: pr
       secrets:
         token: ${{ secrets.GITHUB_TOKEN }}
 
     pr-image-tests-classic-docker-build:
       name: PR - Classic docker build test
-      needs: pr-get-latest-tag
+      needs: pr-check-label
       runs-on: ubuntu-latest
       environment: pr
       steps:
@@ -93,7 +69,7 @@ jobs:
       name: PR - image tests complete
       runs-on: ubuntu-latest
       needs:
-        - pr-image-tests-smoke-test-multiarch-images
+        - pr-image-tests-smoke-test-images
         - pr-image-tests-classic-docker-build
       steps:
         - uses: actions-ecosystem/action-add-labels@v1
