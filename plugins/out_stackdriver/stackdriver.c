@@ -2155,6 +2155,18 @@ static int stackdriver_format(struct flb_config *config,
     return 0;
 }
 
+#ifdef FLB_HAVE_METRICS
+void update_http_metrics(struct flb_stackdriver *ctx, uint64_t ts, int http_status)
+{
+    char tmp[32];
+
+    /* convert status to string format */
+    snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
+
+    cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+}
+#endif
+
 static void cb_stackdriver_flush(const void *data, size_t bytes,
                                  const char *tag, int tag_len,
                                  struct flb_input_instance *i_ins,
@@ -2295,6 +2307,11 @@ static void cb_stackdriver_flush(const void *data, size_t bytes,
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+    }
+
+    /* Update metrics counter by using labels/http status code */
+    if (ret == 0) {
+        update_http_metrics(ctx, ts, c->resp.status);
     }
 #endif
 

@@ -157,6 +157,7 @@ struct flb_stackdriver {
     /* metrics */
     struct cmt_counter *cmt_successful_requests;
     struct cmt_counter *cmt_failed_requests;
+    struct cmt_counter *cmt_requests_total;
 #endif
 
     /* plugin instance */
