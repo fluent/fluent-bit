@@ -14,6 +14,10 @@ on:
         description: Version of Fluent Bit to build
         required: true
         default: 1.8.12
+      target:
+        description: Only build a specific target
+        required: false
+        default: ""
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -90,6 +94,13 @@ jobs:
             echo '"raspbian/buster", "raspbian/bullseye"'
             echo ']}'
           ) | jq -c .)
+          if [ -z "${{ github.event.inputs.target || '' }}" ]; then
+            matrix=$((
+              echo '{ "distro" : ['
+              echo '"${{ github.event.inputs.target }}"'
+              echo ']}'
+            ) | jq -c .)
+          fi
           echo $matrix
           echo $matrix| jq .
           echo "::set-output name=matrix::$matrix"

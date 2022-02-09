@@ -49,6 +49,10 @@ ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 # centos/8 base image
 FROM centos:8 as centos-8-base
 
+# CentOS is now EOL so have to use the vault repos
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
+    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
