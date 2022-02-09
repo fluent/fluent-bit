@@ -94,7 +94,8 @@ jobs:
             echo '"raspbian/buster", "raspbian/bullseye"'
             echo ']}'
           ) | jq -c .)
-          if [ -z "${{ github.event.inputs.target || '' }}" ]; then
+          if [ -n "${{ github.event.inputs.target || '' }}" ]; then
+            echo "Overriding matrix to build: ${{ github.event.inputs.target }}"
             matrix=$((
               echo '{ "distro" : ['
               echo '"${{ github.event.inputs.target }}"'
