@@ -64,7 +64,8 @@ jobs:
 
   staging-build-images:
     needs: staging-build-get-version
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    # DO NOT MERGE - revert to main, which will fail
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@default_multiarch_containers_2
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       registry: ghcr.io
