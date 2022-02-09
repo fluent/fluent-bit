@@ -9,6 +9,16 @@ on:
         type: string
         description: The version we want to release from staging.
         required: true
+      docker-image:
+        type: string
+        description: Optionally override the image name to push to on Docker Hub.
+        default: fluent/fluent-bit
+        required: false
+      github-image:
+        type: string
+        description: Optionally override the image name to push to on Github Container Registry.
+        default: fluent/fluent-bit
+        required: false
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -144,7 +154,7 @@ jobs:
               "docker://$STAGING_IMAGE_NAME:$TAG" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
-          RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
+          RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
           RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -161,7 +171,7 @@ jobs:
               "docker://$STAGING_IMAGE_NAME:$TAG" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
-          RELEASE_IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
           RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -177,6 +187,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     needs: staging-release-images
+    env:
+      DH_RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
+      GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@main
@@ -204,14 +217,14 @@ jobs:
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
-            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}" \
-            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}-debug" \
-            "ghcr.io/${{ github.repository }}:latest" \
-            "ghcr.io/${{ github.repository }}:latest-debug" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}-debug" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest-debug"
+            "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
+            "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
+            "$GHCR_RELEASE_IMAGE_NAME:latest" \
+            "$GHCR_RELEASE_IMAGE_NAME:latest-debug" \
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
+            "$DH_RELEASE_IMAGE_NAME:latest" \
+            "$DH_RELEASE_IMAGE_NAME:latest-debug"
           rm -f /tmp/my_cosign.key
         shell: bash
         env:
@@ -229,14 +242,14 @@ jobs:
             -a "repo=${{ github.repository }}" \
             -a "workflow=${{ github.workflow }}" \
             -a "release=${{ github.event.inputs.version }}" \
-            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}" \
-            "ghcr.io/${{ github.repository }}:${{ github.event.inputs.version }}-debug" \
-            "ghcr.io/${{ github.repository }}:latest" \
-            "ghcr.io/${{ github.repository }}:latest-debug" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:${{ github.event.inputs.version }}-debug" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest" \
-            "docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}:latest-debug"
+            "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
+            "$GHCR_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
+            "$GHCR_RELEASE_IMAGE_NAME:latest" \
+            "$GHCR_RELEASE_IMAGE_NAME:latest-debug" \
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}" \
+            "$DH_RELEASE_IMAGE_NAME:${{ github.event.inputs.version }}-debug" \
+            "$DH_RELEASE_IMAGE_NAME:latest" \
+            "$DH_RELEASE_IMAGE_NAME:latest-debug"
         shell: bash
         env:
           COSIGN_EXPERIMENTAL: "true"
