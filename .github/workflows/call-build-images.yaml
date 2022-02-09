@@ -35,7 +35,7 @@ on:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
-  call-build-images-multiarch:
+  call-build-images:
     name: Multiarch container images to GHCR
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
