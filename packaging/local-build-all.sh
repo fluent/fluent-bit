@@ -27,7 +27,7 @@ echo "Cleaning any existing output"
 rm -rf "${PACKAGING_OUTPUT_DIR:?}/*"
 
 # We need a version of the source code to build
-FLB_VERSION=${FLB_VERSION:-1.8.11}
+FLB_VERSION=${FLB_VERSION:-1.8.12}
 
 # Iterate over each target and attempt to build it.
 # Verify that an RPM or DEB is created.
