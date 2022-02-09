@@ -30,6 +30,7 @@ jobs:
       uses: crazy-max/ghaction-import-gpg@v4
       with:
         gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
 
     - name: Sync packages from bucket on S3
       run: |

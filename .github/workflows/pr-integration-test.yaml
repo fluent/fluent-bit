@@ -1,12 +1,12 @@
 name: Build and run integration tests for PR
 on:
-  pull_request:
+  # We need write token for upload to GHCR and we are protecting with labels too.
+  pull_request_target:
     branches:
       - master
     types:
       - labeled
       - opened
-      - edited
       - reopened
       - synchronize
 
