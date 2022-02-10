@@ -105,9 +105,9 @@ else
     fi
 fi
 
-# The FLB_NIGHTLY_BUILD must not be empty so set to the current date and time if not defined
+# The FLB_NIGHTLY_BUILD must not be empty so set to version if not defined
 if [[ -z "$FLB_NIGHTLY_BUILD" ]]; then
-    FLB_NIGHTLY_BUILD="$(date '+%Y-%m-%d-%H_%M_%S')"
+    FLB_NIGHTLY_BUILD="$FLB_VERSION"
 fi
 
 # CMake configuration variables, override via environment rather than parameters
