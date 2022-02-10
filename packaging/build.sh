@@ -30,7 +30,7 @@ if [ -z "$FLB_VERSION" ] || [ -z "$FLB_DISTRO" ]; then
     echo "$@"
     echo "Usage: build.sh  -v VERSION  -d DISTRO"
     echo "                 ^               ^    "
-    echo "                 | 1.3.0         | ubuntu/18.04"
+    echo "                 | 1.9.0         | ubuntu/20.04"
     exit 1
 fi
 
@@ -52,12 +52,11 @@ volume="$SCRIPT_DIR/packages/$FLB_DISTRO/$FLB_VERSION/$out_dir/"
 mkdir -p "$volume"
 
 # Info
-echo "FLB_PREFIX        => $FLB_PREFIX"
-echo "FLB_VERSION       => $FLB_VERSION"
-echo "FLB_DISTRO        => $FLB_DISTRO"
-echo "FLB_SRC           => $FLB_TARGZ"
-echo "FLB_OUT_DIR       => $FLB_OUT_DIR"
-echo "FLB_NIGHTLY_BUILD => $FLB_NIGHTLY_BUILD"
+echo "FLB_PREFIX            => $FLB_PREFIX"
+echo "FLB_VERSION           => $FLB_VERSION"
+echo "FLB_DISTRO            => $FLB_DISTRO"
+echo "FLB_SRC               => $FLB_TARGZ"
+echo "FLB_OUT_DIR           => $FLB_OUT_DIR"
 
 MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
 
@@ -80,7 +79,7 @@ if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
     exit 1
 fi
 
-echo "IMAGE_CONTEXT_DIR => $IMAGE_CONTEXT_DIR"
+echo "IMAGE_CONTEXT_DIR     => $IMAGE_CONTEXT_DIR"
 
 # Create sources directory if it does not exist
 mkdir -p "$IMAGE_CONTEXT_DIR/sources"
@@ -118,6 +117,7 @@ FLB_TD=${FLB_TD:-On}
 echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
 echo "FLB_TD                => $FLB_TD"
 echo "FLB_ARG               => $FLB_ARG"
+echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
 
 export DOCKER_BUILDKIT=1
 
