@@ -32,7 +32,6 @@ jobs:
   staging-build-get-version:
     name: Get version to build
     runs-on: ubuntu-latest
-    environment: staging
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
     steps:
