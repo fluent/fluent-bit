@@ -106,6 +106,10 @@ else
     fi
 fi
 
+# The FLB_NIGHTLY_BUILD must not be empty so set to the current date and time if not defined
+if [[ -z "$FLB_NIGHTLY_BUILD" ]]; then
+    FLB_NIGHTLY_BUILD="$(date '+%Y-%m-%d-%H_%M_%S')"
+fi
 
 # CMake configuration variables, override via environment rather than parameters
 CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-/opt/td-agent-bit/}

@@ -66,7 +66,7 @@ jobs:
 
       - name: Get current date
         id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+        run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
 
   staging-build-images:
     needs: staging-build-get-version
