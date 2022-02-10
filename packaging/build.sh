@@ -11,6 +11,7 @@ FLB_VERSION=${FLB_VERSION:-}
 FLB_DISTRO=${FLB_DISTRO:-}
 FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_TARGZ=${FLB_TARGZ:-}
+FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
 
 while getopts "v:d:b:t:o:" option
 do
@@ -34,7 +35,10 @@ if [ -z "$FLB_VERSION" ] || [ -z "$FLB_DISTRO" ]; then
 fi
 
 if [ -z "$FLB_BRANCH" ]; then
-    FLB_PREFIX="v"
+    # The standard tags have a v prefix but we may want to build others
+    if curl -sL --output /dev/null --head --fail "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
+        FLB_PREFIX="v"
+    fi
 fi
 
 # Prepare output directory
@@ -48,11 +52,12 @@ volume="$SCRIPT_DIR/packages/$FLB_DISTRO/$FLB_VERSION/$out_dir/"
 mkdir -p "$volume"
 
 # Info
-echo "FLB_PREFIX  => $FLB_PREFIX"
-echo "FLB_VERSION => $FLB_VERSION"
-echo "FLB_DISTRO  => $FLB_DISTRO"
-echo "FLB_SRC     => $FLB_TARGZ"
-echo "FLB_OUT_DIR => $FLB_OUT_DIR"
+echo "FLB_PREFIX        => $FLB_PREFIX"
+echo "FLB_VERSION       => $FLB_VERSION"
+echo "FLB_DISTRO        => $FLB_DISTRO"
+echo "FLB_SRC           => $FLB_TARGZ"
+echo "FLB_OUT_DIR       => $FLB_OUT_DIR"
+echo "FLB_NIGHTLY_BUILD => $FLB_NIGHTLY_BUILD"
 
 MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
 
@@ -92,6 +97,13 @@ if [ -n "$FLB_TARGZ" ]; then
     cp "$FLB_TARGZ" "$IMAGE_CONTEXT_DIR/sources/"
     # Set build argument (ensure we strip off any path)
     FLB_ARG="$FLB_ARG --build-arg FLB_SRC=$(basename "$FLB_TARGZ")"
+else
+    # Check we have a valid remote source URL
+    FLB_SOURCE_URL="http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip"
+    if ! curl -sL --output /dev/null --head --fail "$FLB_SOURCE_URL" ; then
+        echo "Unable to download source from URL:$FLB_SOURCE_URL "
+        exit 1
+    fi
 fi
 
 
@@ -111,7 +123,8 @@ if ! docker build \
     --build-arg CMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     --build-arg FLB_TD="$FLB_TD" \
     --build-arg FLB_VERSION="$FLB_VERSION" \
-    --build-arg FLB_PREFIX=$FLB_PREFIX \
+    --build-arg FLB_PREFIX="$FLB_PREFIX" \
+    --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     $FLB_ARG \
     -t "$MAIN_IMAGE" "$IMAGE_CONTEXT_DIR"
 then
