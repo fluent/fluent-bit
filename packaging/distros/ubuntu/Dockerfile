@@ -58,6 +58,7 @@ RUN apt-get -qq update && \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
+    software-properties-common \
     apt-transport-https ca-certificates && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
          gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
