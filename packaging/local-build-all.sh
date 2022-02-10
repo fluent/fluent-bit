@@ -16,7 +16,7 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Ensure this is updated for new targets
 declare -a TARGETS=("centos/7" "centos/7.arm64v8" "centos/8" "centos/8.arm64v8"
-"debian/stretch" "debian/stretch.arm64v8" "debian/buster" "debian/buster.arm64v8" "debian/bullseye" "debian/bullseye.arm64v8"
+"debian/buster" "debian/buster.arm64v8" "debian/bullseye" "debian/bullseye.arm64v8"
 "raspbian/buster" "raspbian/bullseye"
 "ubuntu/16.04" "ubuntu/18.04" "ubuntu/18.04.arm64v8" "ubuntu/20.04" "ubuntu/20.04.arm64v8"
 )

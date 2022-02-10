@@ -20,6 +20,7 @@ RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev cmake \
     make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all software-properties-common \
+    software-properties-common \
     apt-transport-https ca-certificates && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
          gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -36,8 +37,14 @@ RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
+    software-properties-common \
+    apt-transport-https ca-certificates && \
+    wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
+         gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
+         apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
+    apt-get -qq update && \
+    apt-get install -y -qq --reinstall lsb-base lsb-release cmake
 
 # ubuntu/18.04.arm64v8 base image
 FROM arm64v8/ubuntu:18.04 as ubuntu-18.04.arm64v8-base
@@ -50,8 +57,13 @@ RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
+    apt-transport-https ca-certificates && \
+    wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
+         gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
+         apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
+    apt-get -qq update && \
+    apt-get install -y -qq --reinstall lsb-base lsb-release cmake
 
 # ubuntu/20.04 base image
 FROM ubuntu:20.04 as ubuntu-20.04-base
