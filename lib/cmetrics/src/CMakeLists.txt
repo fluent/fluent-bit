@@ -11,6 +11,7 @@ set(src
   cmt_cat.c
   cmt_sds.c
   cmetrics.c
+  cmt_encode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c
   cmt_encode_text.c
@@ -21,6 +22,10 @@ set(src
   external/protobuf-c.c
   external/remote.pb-c.c
   external/types.pb-c.c
+  external/opentelemetry_common.pb-c.c
+  external/opentelemetry_metrics.pb-c.c
+  external/opentelemetry_resource.pb-c.c
+  external/opentelemetry_metrics_service.pb-c.c
   )
 
 message( "cmetrics: CMAKE_C_COMPILER_ID - ${CMAKE_C_COMPILER_ID}")
