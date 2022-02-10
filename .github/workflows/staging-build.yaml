@@ -70,6 +70,7 @@ jobs:
 
   staging-build-images:
     needs: staging-build-get-version
+    if: github.event.inputs.target != ''
     uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@ci_staging_updates #DO NOT MERGE UNTIL SWITCH to 'master'
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
