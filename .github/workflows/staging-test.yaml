@@ -17,8 +17,7 @@ jobs:
     # Workflow run always triggers on completion regardless of status
     # This prevents us from running if build fails.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    # DO NOT MERGE - revert to main, which will fail
-    uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@default_multiarch_containers_2
+    uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
     with:
       registry: ghcr.io
       username: ${{ github.actor }}

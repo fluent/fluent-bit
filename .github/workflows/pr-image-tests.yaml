@@ -24,8 +24,7 @@ jobs:
 
     pr-image-tests-build-images:
       name: PR - build images
-      # DO NOT MERGE - revert to main, which will fail
-      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@default_multiarch_containers_2
+      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
       needs: pr-check-label
       with:
         version: ${{ github.event.pull_request.head.ref }}
@@ -39,8 +38,7 @@ jobs:
     pr-image-tests-smoke-test-images:
       name: PR - smoke test images
       needs: [pr-check-label, pr-image-tests-build-images]
-      # DO NOT MERGE - revert to main, which will fail
-      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@default_multiarch_containers_2
+      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
       with:
         registry: ghcr.io
         username: ${{ github.actor }}

@@ -17,8 +17,7 @@ jobs:
     name: PR - GCP build
     # We only need to test this once as the rest are chained from it.
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
-    # DO NOT MERGE - revert to main, which will fail
-    uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@default_multiarch_containers_2
+    uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
     with:
       ref: ${{ github.event.pull_request.head.sha }}
       registry: ghcr.io
