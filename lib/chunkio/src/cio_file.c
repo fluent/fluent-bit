@@ -358,6 +358,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
         cio_log_debug(ctx, "%s:%s adjusting size OK", ch->st->name, ch->name);
     }
+    cf->alloc_size = size;
 
     /* Map the file */
     size = ROUND_UP(size, ctx->page_size);
@@ -368,7 +369,6 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         cio_log_error(ctx, "cannot mmap/read chunk '%s'", cf->path);
         return CIO_ERROR;
     }
-    cf->alloc_size = size;
 
     /* check content data size */
     if (fs_size > 0) {
