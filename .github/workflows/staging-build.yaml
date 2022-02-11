@@ -70,7 +70,7 @@ jobs:
 
   staging-build-images:
     needs: staging-build-get-version
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@ci_staging_updates #DO NOT MERGE UNTIL SWITCH to 'master'
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       registry: ghcr.io
@@ -116,7 +116,7 @@ jobs:
 
   staging-build-packages:
     needs: [ staging-build-get-version, staging-build-generate-matrix ]
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@ci_staging_updates #DO NOT MERGE UNTIL SWITCH to 'master'
+    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       build_matrix: ${{ needs.staging-build-generate-matrix.outputs.build-matrix }}
