@@ -142,6 +142,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artefacts
+        continue-on-error: true
         uses: actions/download-artifact@v2
         with:
           path: artifacts/
@@ -154,6 +155,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull containers as well (single arch only)
+        # May not be any/valid so ignore errors
+        continue-on-error: true
         run: |
           docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}
           docker save --output container-${{ needs.staging-build-get-version.outputs.version }}.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}
@@ -168,10 +171,11 @@ jobs:
         shell: bash
 
       - name: Unstable release on push to master to make it easier to download
+        # Ignore failures here as we still want to trigger testing
+        continue-on-error: true
         uses: pyTooling/Actions/releaser@r0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'unstable'
-          rm: true
           files: |
             artifacts/**/*
