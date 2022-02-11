@@ -31,8 +31,8 @@ ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
 RUN rpm --import "$AWS_URL/fluentbit.key"
 RUN wget "$AWS_URL/centos-8.repo" -O /etc/yum.repos.d/staging.repo
-RUN yum update -y && yum install -y td-agent-bit
-RUN systemctl enable td-agent-bit
+RUN yum update -y && yum install -y fluent-bit
+RUN systemctl enable fluent-bit
 
 ENV SKIP_TEST=no
 COPY ./test.sh /test.sh
