@@ -152,9 +152,9 @@ jobs:
         # This then means it is overwritten on release upload.
         # https://github.com/actions/download-artifact#download-all-artifacts
         #
-        # We essentially flatten a directory structure by replacing separators with dashes:
+        # We essentially flatten a directory structure:
         # artifacts/packages-master-debian-buster/debian/buster/master/staging/fluent-bit_1.9.0_amd64.deb ==>
-        # artifacts/packages-master-debian-buster-debian-buster-master-staging-fluent-bit_1.9.0_amd64.deb
+        # artifacts/packages-master-debian-buster-fluent-bit_1.9.0_amd64.deb
         #
         # This guarantees no duplicates even if it is quite verbose.
         # We can look to remove some of the common strings as well later.
@@ -162,9 +162,9 @@ jobs:
           while IFS= read -r -d '' file; do
               # Strip off artifacts directory
               tempfile=${file#artifacts/*}
-              # Replace all slashes
-              outputfile=${tempfile//\//-}
-              mv -i "$file" "artifacts/${outputfile}"
+              # Concatenate the first directory (before /) and filename (after last /) together.
+              outputfile="artifacts/${tempfile%%/*}-${tempfile##*/}"
+              mv -f "$file" "$outputfile"
           done < <(find artifacts/ -type f \( -iname '*.rpm' -o -iname '*.deb' \) -print0)
         shell: bash
 
