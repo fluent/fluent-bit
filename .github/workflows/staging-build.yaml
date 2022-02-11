@@ -198,5 +198,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'unstable'
+          rm: true
           files: |
             artifacts/**/*
