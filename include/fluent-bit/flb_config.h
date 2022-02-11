@@ -59,10 +59,12 @@ struct flb_config {
     time_t init_time;      /* Time when Fluent Bit started   */
 
     /* Used in library mode */
-    pthread_t worker;            /* worker tid */
-    flb_pipefd_t ch_data[2];     /* pipe to communicate caller with worker */
-    flb_pipefd_t ch_manager[2];  /* channel to administrate fluent bit     */
-    flb_pipefd_t ch_notif[2];    /* channel to receive notifications       */
+    pthread_t worker;               /* worker tid */
+    flb_pipefd_t ch_data[2];        /* pipe to communicate caller with worker */
+    flb_pipefd_t ch_manager[2];     /* channel to administrate fluent bit     */
+    flb_pipefd_t ch_notif[2];       /* channel to receive notifications       */
+
+    flb_pipefd_t ch_self_events[2]; /* channel to recieve thread tasks        */
 
     /* Channel event loop (just for ch_notif) */
     struct mk_event_loop *ch_evl;
@@ -80,6 +82,7 @@ struct flb_config {
     /* Event */
     struct mk_event event_flush;
     struct mk_event event_shutdown;
+    struct mk_event event_thread_init;  /* event to initiate thread in engine */
 
     /* Collectors */
     struct mk_list collectors;
@@ -113,6 +116,8 @@ struct flb_config {
     struct mk_list filters;
 
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
+
+    struct flb_bucket_queue *evl_bktq;   /* bucket queue for evl track event priority */
 
     /* Proxies */
     struct mk_list proxies;

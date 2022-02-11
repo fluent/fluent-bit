@@ -423,6 +423,7 @@ static int net_connect_async(int fd,
                        fd,
                        FLB_ENGINE_EV_THREAD,
                        MK_EVENT_WRITE, &u_conn->event);
+    u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
     if (ret == -1) {
         /*
          * If we failed here there no much that we can do, just
@@ -827,6 +828,7 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
 
     result = mk_event_add(lookup_context->event_loop, sockfd, FLB_ENGINE_EV_CUSTOM,
                           event_mask, &lookup_context->response_event);
+    lookup_context->response_event.priority = FLB_ENGINE_PRIORITY_DNS;
     if (result) {
         flb_socket_close(sockfd);
 

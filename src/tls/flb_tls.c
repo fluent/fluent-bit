@@ -103,6 +103,7 @@ static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
                            mask, &u_conn->event);
+        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             flb_error("[io_tls] error changing mask to %i", mask);
             return -1;
@@ -373,6 +374,7 @@ int flb_tls_session_create(struct flb_tls *tls,
                            u_conn->event.fd,
                            FLB_ENGINE_EV_THREAD,
                            flag, &u_conn->event);
+        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             goto error;
         }

@@ -36,6 +36,7 @@
 #define FLB_ENGINE_EV_SCHED_FRAME   (FLB_ENGINE_EV_SCHED + 4096)
 #define FLB_ENGINE_EV_OUTPUT        8192
 #define FLB_ENGINE_EV_THREAD_OUTPUT 16384
+#define FLB_ENGINE_EV_THREAD_ENGINE 32768
 
 /* Engine events: all engine events set the left 32 bits to '1' */
 #define FLB_ENGINE_EV_STARTED   FLB_BITS_U64_SET(1, 1) /* Engine started    */
@@ -52,6 +53,27 @@
 /* Engine signals: Task, it only refer to the type */
 #define FLB_ENGINE_TASK         2
 #define FLB_ENGINE_IN_THREAD    3
+
+/* Engine priority queue configuration */
+#define FLB_ENGINE_LOOP_MAX_ITER        10 /* Max events processed per round */
+
+/* Engine event priorities: min value prioritized */
+#define FLB_ENGINE_PRIORITY_DEFAULT     MK_EVENT_PRIORITY_DEFAULT
+#define FLB_ENGINE_PRIORITY_COUNT       8
+#define FLB_ENGINE_PRIORITY_TOP         0
+#define FLB_ENGINE_PRIORITY_BOTTOM      (FLB_ENGINE_PRIORITY_COUNT - 1)
+#define FLB_ENGINE_PRIORITY_NETWORK     1
+
+#define FLB_ENGINE_PRIORITY_CB_SCHED    FLB_ENGINE_PRIORITY_TOP
+#define FLB_ENGINE_PRIORITY_CB_TIMER    FLB_ENGINE_PRIORITY_TOP
+#define FLB_ENGINE_PRIORITY_SHUTDOWN    FLB_ENGINE_PRIORITY_TOP
+#define FLB_ENGINE_PRIORITY_FLUSH       FLB_ENGINE_PRIORITY_TOP
+
+#define FLB_ENGINE_PRIORITY_DNS         FLB_ENGINE_PRIORITY_NETWORK
+#define FLB_ENGINE_PRIORITY_CONNECT     FLB_ENGINE_PRIORITY_NETWORK
+#define FLB_ENGINE_PRIORITY_SEND_RECV   FLB_ENGINE_PRIORITY_NETWORK
+
+#define FLB_ENGINE_PRIORITY_THREAD      FLB_ENGINE_PRIORITY_DEFAULT
 
 int flb_engine_start(struct flb_config *config);
 int flb_engine_failed(struct flb_config *config);

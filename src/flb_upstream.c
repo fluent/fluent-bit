@@ -762,6 +762,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         ret = mk_event_add(conn->evl, conn->fd,
                            FLB_ENGINE_EV_CUSTOM,
                            MK_EVENT_CLOSE, &conn->event);
+        conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             /* We failed the registration, for safety just destroy the connection */
             flb_debug("[upstream] KA connection #%i to %s:%i could not be "

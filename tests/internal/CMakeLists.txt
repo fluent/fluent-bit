@@ -23,6 +23,7 @@ set(UNIT_TESTS_FILES
   multiline.c
   timeout.c
   base64.c
+  bucket_queue.c
   )
 
 if (NOT WIN32)

@@ -195,7 +195,7 @@ int flb_output_task_flush(struct flb_task *task,
         }
     }
     else {
-        /* Direct co-routine handling */
+        /* Queue co-routine handling */
         out_coro = flb_output_coro_create(task,
                                           task->i_ins,
                                           out_ins,
@@ -208,7 +208,12 @@ int flb_output_task_flush(struct flb_task *task,
         }
 
         flb_task_users_inc(task);
-        flb_coro_resume(out_coro->coro);
+        ret = flb_pipe_w(config->ch_self_events[1], &out_coro,
+                        sizeof(struct flb_output_coro*));
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
     }
 
     return 0;

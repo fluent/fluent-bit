@@ -210,6 +210,7 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
                                MK_EVENT_WRITE, &u_conn->event);
+            u_conn->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -269,6 +270,7 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
                                MK_EVENT_WRITE, &u_conn->event);
+            u_conn->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
@@ -319,6 +321,7 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
                                MK_EVENT_READ, &u_conn->event);
+            u_conn->event.priority = FLB_ENGINE_PRIORITY_SEND_RECV;
             if (ret == -1) {
                 /*
                  * If we failed here there no much that we can do, just
