@@ -66,7 +66,8 @@ struct cmt_counter *cmt_counter_create(struct cmt *cmt,
     }
 
     /* Create the map */
-    counter->map = cmt_map_create(CMT_COUNTER, &counter->opts, label_count, label_keys);
+    counter->map = cmt_map_create(CMT_COUNTER, &counter->opts, label_count, label_keys,
+                                  (void *) counter);
     if (!counter->map) {
         cmt_log_error(cmt, "unable to allocate map for counter");
         cmt_counter_destroy(counter);

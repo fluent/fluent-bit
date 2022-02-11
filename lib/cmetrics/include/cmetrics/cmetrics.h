@@ -28,6 +28,10 @@
 #define CMT_HISTOGRAM 2
 #define CMT_UNTYPED   3
 
+#define CMT_AGGREGATION_TYPE_UNSPECIFIED 0
+#define CMT_AGGREGATION_TYPE_DELTA       1
+#define CMT_AGGREGATION_TYPE_CUMULATIVE  2
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
