@@ -5,7 +5,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version of the Fluent Bit to build.
+        description: The version of Fluent Bit to build.
         type: string
         required: true
       registry:
@@ -24,6 +24,10 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -35,10 +39,35 @@ on:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
+
+  # We need version without the 'v' prefix but this is required for the source tarball
+  call-build-images-get-tarball:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      url: ${{ steps.get_tarball.outputs.TARBALL }}
+    steps:
+      - name: Get the source tarball to use
+        id: get_tarball
+        # Determine the tarball to use, tags with 'v' are the main one to cope with
+        run: |
+          if curl -L --output /dev/null --silent --head --fail "https://github.com/fluent/fluent-bit/tarball/$VERSION"; then
+            echo ::set-output name=TARBALL::https://github.com/fluent/fluent-bit/tarball/$VERSION
+          elif curl -L --output /dev/null --silent --head --fail "https://github.com/fluent/fluent-bit/tarball/v$VERSION"; then
+            echo ::set-output name=TARBALL::https://github.com/fluent/fluent-bit/tarball/v$VERSION
+          else
+            echo "Unable to get source for $VERSION"
+            exit 1
+          fi
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+
   call-build-images-matrix:
     name: ${{ matrix.arch }} container image stage to GHCR
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
+    needs: call-build-images-get-tarball
     strategy:
       fail-fast: false
       matrix:
@@ -87,13 +116,16 @@ jobs:
         push: true
         load: false
         build-args: |
-          FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+          FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
+          FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
   call-build-images-debug:
     name: Build the single-arch debug image
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
-    needs: call-build-images-matrix
+    needs:
+      - call-build-images-get-tarball
+      - call-build-images-matrix
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -129,12 +161,14 @@ jobs:
         push: true
         load: false
         build-args: |
-          FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+          FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
+          FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
   call-build-images-multiarch:
     name: Multiarch container images stage to GHCR
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
+    needs: call-build-images-get-tarball
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -173,7 +207,8 @@ jobs:
           push: true
           load: false
           build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+            FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
       - id: debug-meta
         uses: docker/metadata-action@v3
@@ -195,7 +230,8 @@ jobs:
           push: true
           load: false
           build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+            FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
       - name: Trivy - multi-arch
         uses: aquasecurity/trivy-action@master

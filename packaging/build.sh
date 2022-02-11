@@ -11,6 +11,7 @@ FLB_VERSION=${FLB_VERSION:-}
 FLB_DISTRO=${FLB_DISTRO:-}
 FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_TARGZ=${FLB_TARGZ:-}
+FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
 
 while getopts "v:d:b:t:o:" option
 do
@@ -29,12 +30,15 @@ if [ -z "$FLB_VERSION" ] || [ -z "$FLB_DISTRO" ]; then
     echo "$@"
     echo "Usage: build.sh  -v VERSION  -d DISTRO"
     echo "                 ^               ^    "
-    echo "                 | 1.3.0         | ubuntu/18.04"
+    echo "                 | 1.9.0         | ubuntu/20.04"
     exit 1
 fi
 
 if [ -z "$FLB_BRANCH" ]; then
-    FLB_PREFIX="v"
+    # The standard tags have a v prefix but we may want to build others
+    if curl -sL --output /dev/null --head --fail "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
+        FLB_PREFIX="v"
+    fi
 fi
 
 # Prepare output directory
@@ -48,11 +52,11 @@ volume="$SCRIPT_DIR/packages/$FLB_DISTRO/$FLB_VERSION/$out_dir/"
 mkdir -p "$volume"
 
 # Info
-echo "FLB_PREFIX  => $FLB_PREFIX"
-echo "FLB_VERSION => $FLB_VERSION"
-echo "FLB_DISTRO  => $FLB_DISTRO"
-echo "FLB_SRC     => $FLB_TARGZ"
-echo "FLB_OUT_DIR => $FLB_OUT_DIR"
+echo "FLB_PREFIX            => $FLB_PREFIX"
+echo "FLB_VERSION           => $FLB_VERSION"
+echo "FLB_DISTRO            => $FLB_DISTRO"
+echo "FLB_SRC               => $FLB_TARGZ"
+echo "FLB_OUT_DIR           => $FLB_OUT_DIR"
 
 MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
 
@@ -75,7 +79,7 @@ if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
     exit 1
 fi
 
-echo "IMAGE_CONTEXT_DIR => $IMAGE_CONTEXT_DIR"
+echo "IMAGE_CONTEXT_DIR     => $IMAGE_CONTEXT_DIR"
 
 # Create sources directory if it does not exist
 mkdir -p "$IMAGE_CONTEXT_DIR/sources"
@@ -92,8 +96,19 @@ if [ -n "$FLB_TARGZ" ]; then
     cp "$FLB_TARGZ" "$IMAGE_CONTEXT_DIR/sources/"
     # Set build argument (ensure we strip off any path)
     FLB_ARG="$FLB_ARG --build-arg FLB_SRC=$(basename "$FLB_TARGZ")"
+else
+    # Check we have a valid remote source URL
+    FLB_SOURCE_URL="http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip"
+    if ! curl -sL --output /dev/null --head --fail "$FLB_SOURCE_URL" ; then
+        echo "Unable to download source from URL:$FLB_SOURCE_URL "
+        exit 1
+    fi
 fi
 
+# The FLB_NIGHTLY_BUILD must not be empty so set to version if not defined
+if [[ -z "$FLB_NIGHTLY_BUILD" ]]; then
+    FLB_NIGHTLY_BUILD="$FLB_VERSION"
+fi
 
 # CMake configuration variables, override via environment rather than parameters
 CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-/opt/td-agent-bit/}
@@ -102,6 +117,7 @@ FLB_TD=${FLB_TD:-On}
 echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
 echo "FLB_TD                => $FLB_TD"
 echo "FLB_ARG               => $FLB_ARG"
+echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
 
 export DOCKER_BUILDKIT=1
 
@@ -111,7 +127,8 @@ if ! docker build \
     --build-arg CMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     --build-arg FLB_TD="$FLB_TD" \
     --build-arg FLB_VERSION="$FLB_VERSION" \
-    --build-arg FLB_PREFIX=$FLB_PREFIX \
+    --build-arg FLB_PREFIX="$FLB_PREFIX" \
+    --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     $FLB_ARG \
     -t "$MAIN_IMAGE" "$IMAGE_CONTEXT_DIR"
 then

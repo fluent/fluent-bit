@@ -5,6 +5,7 @@ FROM dokken/centos-7 as official-install
 ARG RELEASE_URL
 RUN rpm --import $RELEASE_URL/fluentbit.key
 RUN echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/centos/7/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo
+# hadolint ignore=DL3032
 RUN yum update -y && yum install -y td-agent-bit
 RUN systemctl enable td-agent-bit
 
@@ -20,8 +21,9 @@ ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
 RUN rpm --import "$AWS_URL/fluentbit.key"
 RUN wget "$AWS_URL/centos-7.repo" -O /etc/yum.repos.d/staging.repo
-RUN yum update -y && yum install -y td-agent-bit
-RUN systemctl enable td-agent-bit
+# hadolint ignore=DL3032
+RUN yum update -y && yum install -y fluent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
