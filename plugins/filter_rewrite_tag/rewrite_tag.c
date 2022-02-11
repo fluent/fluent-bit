@@ -312,13 +312,18 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
  */
 static int process_record(const char *tag, int tag_len, msgpack_object map,
                           const void *buf, size_t buf_size, int *keep,
-                          struct flb_rewrite_tag *ctx)
+                          struct flb_rewrite_tag *ctx, int *matched)
 {
     int ret;
     flb_sds_t out_tag;
     struct mk_list *head;
     struct rewrite_rule *rule = NULL;
     struct flb_regex_search result = {0};
+
+    if (matched == NULL) {
+        return FLB_FALSE;
+    }
+    *matched = FLB_FALSE;
 
     mk_list_foreach(head, &ctx->rules) {
         rule = mk_list_entry(head, struct rewrite_rule, _head);
@@ -338,6 +343,7 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
     if (!rule) {
         return FLB_FALSE;
     }
+    *matched = FLB_TRUE;
 
     /* Compose new tag */
     out_tag = flb_ra_translate(rule->ra_tag, (char *) tag, tag_len, map, &result);
@@ -361,7 +367,6 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
         return FLB_FALSE;
     }
 
-
     return FLB_TRUE;
 }
 
@@ -372,9 +377,10 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
                                  void *filter_context,
                                  struct flb_config *config)
 {
-    int ret;
     int keep;
-    int emitted = 0;
+    int emitted_num = 0;
+    int is_matched = FLB_FALSE;
+    int is_emitted = FLB_FALSE;
     size_t pre = 0;
     size_t off = 0;
 #ifdef FLB_HAVE_METRICS
@@ -402,7 +408,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         root = result.data;
         map = root.via.array.ptr[1];
-
+        is_matched = FLB_FALSE;
         /*
          * Process the record according the defined rules. If it returns FLB_TRUE means
          * the record was emitter with a different tag.
@@ -410,10 +416,10 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * If a record was emitted, the variable 'keep' will define if the record must
          * be preserved or not.
          */
-        ret = process_record(tag, tag_len, map, (char *) data + pre, off - pre, &keep, ctx);
-        if (ret == FLB_TRUE) {
+        is_emitted = process_record(tag, tag_len, map, (char *) data + pre, off - pre, &keep, ctx, &is_matched);
+        if (is_emitted == FLB_TRUE) {
             /* A record with the new tag was emitted */
-            emitted++;
+            emitted_num++;
         }
 
         /*
@@ -422,7 +428,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * - record with new tag was emitted and the rule says it must be preserved
          * - record was not emitted
          */
-        if (keep == FLB_TRUE) {
+        if (keep == FLB_TRUE || is_matched != FLB_TRUE) {
             msgpack_sbuffer_write(&mp_sbuf, (char *) data + pre, off - pre);
         }
 
@@ -431,17 +437,17 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     }
     msgpack_unpacked_destroy(&result);
 
-    if (emitted == 0) {
+    if (emitted_num == 0) {
         msgpack_sbuffer_destroy(&mp_sbuf);
         return FLB_FILTER_NOTOUCH;
     }
 #ifdef FLB_HAVE_METRICS
-    else if (emitted > 0) {
-        cmt_counter_add(ctx->cmt_emitted, ts, emitted,
+    else if (emitted_num > 0) {
+        cmt_counter_add(ctx->cmt_emitted, ts, emitted_num,
                         1, (char *[]) {name});
 
         /* OLD api */
-        flb_metrics_sum(FLB_RTAG_METRIC_EMITTED, emitted, ctx->ins->metrics);
+        flb_metrics_sum(FLB_RTAG_METRIC_EMITTED, emitted_num, ctx->ins->metrics);
     }
 #endif
 
