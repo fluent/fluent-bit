@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_kv.h>
 #include "flb_fuzz_header.h"
 
 /* A sample of configurations */

@@ -1,0 +1,82 @@
+name: Build and run integration tests for PR
+on:
+  # We need write token for upload to GHCR and we are protecting with labels too.
+  pull_request_target:
+    branches:
+      - master
+    types:
+      - labeled
+      - opened
+      - reopened
+      - synchronize
+
+concurrency: integration-test
+
+jobs:
+  pr-integration-test-build:
+    name: PR - GCP build
+    # We only need to test this once as the rest are chained from it.
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
+    uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/pr-${{ github.event.number }}
+      image-tag: x86_64
+      environment: integration
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  pr-integration-test-build-complete:
+    name: PR - GCP build complete
+    runs-on: ubuntu-latest
+    needs: pr-integration-test-build
+    steps:
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-docker-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+
+      - name: Upload the image just in case as an artefact
+        run: |
+          docker pull $IMAGE
+          docker save --output /tmp/pr-image.tar $IMAGE
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}:x86_64
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: pr-${{ github.event.pull_request.number }}-image
+          path: /tmp/pr-image.tar
+          if-no-files-found: error
+
+  pr-integration-test-run-integration-gcp:
+    name: PR - GCP integration test
+    needs: pr-integration-test-build
+    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
+    with:
+      image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+      image_tag: x86_64
+    secrets:
+      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
+      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
+      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+
+  pr-integration-test-run-integration-post-label:
+    name: PR - GCP test complete
+    runs-on: ubuntu-latest
+    needs: pr-integration-test-run-integration-gcp
+    steps:
+      - uses: actions-ecosystem/action-add-labels@v1
+        name: Label the PR
+        with:
+          labels: ci/integration-test-gcp-ok
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ github.event.pull_request.number }}
+          repo: fluent/fluent-bit

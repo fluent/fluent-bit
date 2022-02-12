@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -99,6 +98,7 @@ static inline int flb_sds_casecmp(flb_sds_t s, const char *str, int len)
 flb_sds_t flb_sds_create(const char *str);
 flb_sds_t flb_sds_create_len(const char *str, int len);
 flb_sds_t flb_sds_create_size(size_t size);
+int flb_sds_trim(flb_sds_t s);
 flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len);
 flb_sds_t flb_sds_cat_esc(flb_sds_t s, const char *str, int len,
                                        char *esc, size_t esc_size);

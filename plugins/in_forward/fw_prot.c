@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -381,6 +380,7 @@ int fw_prot_process(struct fw_conn *conn)
             stag_len = tag.via.str.size;
 
             /* Copy the tag to the new buffer, prefix it if required */
+            flb_sds_len_set(out_tag, 0); /* clear out_tag before using */
             if (ctx->tag_prefix) {
                 flb_sds_cat_safe(&out_tag,
                                  ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));

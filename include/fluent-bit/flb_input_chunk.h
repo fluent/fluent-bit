@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -85,6 +84,11 @@ int flb_input_chunk_append_obj(struct flb_input_instance *in,
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size);
+int flb_input_chunk_append_raw2(struct flb_input_instance *in,
+                                size_t records,
+                                const char *tag, size_t tag_len,
+                                const void *buf, size_t buf_size);
+
 const void *flb_input_chunk_flush(struct flb_input_chunk *ic, size_t *size);
 int flb_input_chunk_release_lock(struct flb_input_chunk *ic);
 flb_sds_t flb_input_chunk_get_name(struct flb_input_chunk *ic);

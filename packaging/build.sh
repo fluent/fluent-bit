@@ -1,11 +1,19 @@
-#!/bin/sh
+#!/bin/bash
+set -eu
 
-FLB_BRANCH=""
-FLB_PREFIX=""
-FLB_VERSION=""
-FLB_DISTRO=""
+# Never rely on PWD so we can invoke from anywhere
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-while getopts "v:d:b:t:" option
+# Allow us to specify in the caller or pass variables
+FLB_BRANCH=${FLB_BRANCH:-}
+FLB_PREFIX=${FLB_PREFIX:-}
+FLB_VERSION=${FLB_VERSION:-}
+FLB_DISTRO=${FLB_DISTRO:-}
+FLB_OUT_DIR=${FLB_OUT_DIR:-}
+FLB_TARGZ=${FLB_TARGZ:-}
+FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
+
+while getopts "v:d:b:t:o:" option
 do
         case "${option}"
         in
@@ -14,103 +22,132 @@ do
             b) FLB_BRANCH=${OPTARG};;
             t) FLB_TARGZ=${OPTARG};;
             o) FLB_OUT_DIR=${OPTARG};;
+            *) echo "Unknown option";;
         esac
 done
 
-if [ -z $FLB_VERSION ] || [ -z $FLB_DISTRO ]; then
+if [ -z "$FLB_VERSION" ] || [ -z "$FLB_DISTRO" ]; then
     echo "$@"
     echo "Usage: build.sh  -v VERSION  -d DISTRO"
     echo "                 ^               ^    "
-    echo "                 | 1.3.0         | ubuntu/18.04"
+    echo "                 | 1.9.0         | ubuntu/20.04"
     exit 1
 fi
 
-if [ -z $FLB_BRANCH ]; then
-    FLB_PREFIX="v"
-fi
-
-# Validate 'Base Docker' image used to build the package
-FLB_BASE=flb-build-base-$FLB_DISTRO
-
-if [ -z $(docker images -q $FLB_BASE) ]; then
-    # Base image not found, build it
-    echo "Base Docker image $FLB_BASE not found"
-    docker build --no-cache \
-           -t "$FLB_BASE" \
-           -f "$PWD/distros/$FLB_DISTRO/Dockerfile.base" \
-           distros/$FLB_DISTRO/
-    ret=$?
-    if (test $ret -ne 0); then
-	echo "Error building base docker image"
-	exit $ret
+if [ -z "$FLB_BRANCH" ]; then
+    # The standard tags have a v prefix but we may want to build others
+    if curl -sL --output /dev/null --head --fail "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
+        FLB_PREFIX="v"
     fi
-else
-    echo "Base Docker image $FLB_BASE found, using cached image"
 fi
 
 # Prepare output directory
 if [ -n "$FLB_OUT_DIR" ]; then
     out_dir=$FLB_OUT_DIR
 else
-    out_dir=`date '+%Y-%m-%d-%H_%M_%S'`
+    out_dir=$(date '+%Y-%m-%d-%H_%M_%S')
 fi
 
-volume=`pwd`/packages/$FLB_DISTRO/$FLB_VERSION/$out_dir/
-sources=`pwd`/distros/$FLB_DISTRO/sources/
-mkdir -p $volume
+volume="$SCRIPT_DIR/packages/$FLB_DISTRO/$FLB_VERSION/$out_dir/"
+mkdir -p "$volume"
 
 # Info
-echo "FLB_PREFIX  =>" $FLB_PREFIX
-echo "FLB_VERSION =>" $FLB_VERSION
-echo "FLB_DISTRO  =>" $FLB_DISTRO
-echo "FLB_SRC     =>" $FLB_TARGZ
+echo "FLB_PREFIX            => $FLB_PREFIX"
+echo "FLB_VERSION           => $FLB_VERSION"
+echo "FLB_DISTRO            => $FLB_DISTRO"
+echo "FLB_SRC               => $FLB_TARGZ"
+echo "FLB_OUT_DIR           => $FLB_OUT_DIR"
 
-if [ ! -z $(docker images -q flb-$FLB_VERSION-$FLB_DISTRO) ]; then
-    echo "Deleting OLD image flb-$FLB_VERSION-$FLB_DISTRO"
-    docker rmi -f flb-$FLB_VERSION-$FLB_DISTRO
+MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
+
+# We either have a specific Dockerfile in the distro directory or we have a generic multi-stage one for all
+# of the same OS type:
+# - ubuntu/Dockerfile
+# - ubuntu/18.04/Dockerfile
+# Use the specific one as an override for any special cases but try to keep the general multi-stage one.
+# For the multistage ones, we pass in the base image to use.
+#
+IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/$FLB_DISTRO"
+FLB_ARG=""
+if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
+    IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/${FLB_DISTRO%%/*}"
+    FLB_ARG="--build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
 fi
+
+if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
+    echo "Unable to find $IMAGE_CONTEXT_DIR/Dockerfile"
+    exit 1
+fi
+
+echo "IMAGE_CONTEXT_DIR     => $IMAGE_CONTEXT_DIR"
+
+# Create sources directory if it does not exist
+mkdir -p "$IMAGE_CONTEXT_DIR/sources"
 
 # Set tarball as an argument (./build.sh VERSION DISTRO/CODENAME -t something.tar.gz)
-if [ ! -z "$FLB_TARGZ" ]; then
-    # Create sources directory if it don't exists
-    if [ ! -d "distros/$FLB_DISTRO/sources" ]; then
-        mkdir "distros/$FLB_DISTRO/sources"
+if [ -n "$FLB_TARGZ" ]; then
+    # Check if we have a local tarball
+    if [[ ! -f "$FLB_TARGZ" ]]; then
+        echo "Unable to find tarball: $FLB_TARGZ"
+        exit 1
     fi
 
-    # Set build argument and copy tarball
-    FLB_ARG="--build-arg FLB_SRC=$FLB_TARGZ"
-    cp $FLB_TARGZ "distros/$FLB_DISTRO/sources/"
+    # Copy tarball
+    cp "$FLB_TARGZ" "$IMAGE_CONTEXT_DIR/sources/"
+    # Set build argument (ensure we strip off any path)
+    FLB_ARG="$FLB_ARG --build-arg FLB_SRC=$(basename "$FLB_TARGZ")"
+else
+    # Check we have a valid remote source URL
+    FLB_SOURCE_URL="http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip"
+    if ! curl -sL --output /dev/null --head --fail "$FLB_SOURCE_URL" ; then
+        echo "Unable to download source from URL:$FLB_SOURCE_URL "
+        exit 1
+    fi
 fi
 
-# Build the image
-docker build \
-       --no-cache \
-       --build-arg FLB_VERSION=$FLB_VERSION \
-       --build-arg FLB_PREFIX=$FLB_PREFIX \
-       $FLB_ARG \
-       -t "flb-$FLB_VERSION-$FLB_DISTRO" "distros/$FLB_DISTRO"
-ret=$?
-if (test $ret -ne 0); then
-    echo "Error building base docker image flb-$FLB_VERSION-$FLB_DISTRO"
-    exit $ret
+# The FLB_NIGHTLY_BUILD must not be empty so set to version if not defined
+if [[ -z "$FLB_NIGHTLY_BUILD" ]]; then
+    FLB_NIGHTLY_BUILD="$FLB_VERSION"
+fi
+
+# CMake configuration variables, override via environment rather than parameters
+CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-/opt/td-agent-bit/}
+FLB_TD=${FLB_TD:-On}
+
+echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
+echo "FLB_TD                => $FLB_TD"
+echo "FLB_ARG               => $FLB_ARG"
+echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
+
+export DOCKER_BUILDKIT=1
+
+# Build the main image - we do want word splitting
+# shellcheck disable=SC2086
+if ! docker build \
+    --build-arg CMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
+    --build-arg FLB_TD="$FLB_TD" \
+    --build-arg FLB_VERSION="$FLB_VERSION" \
+    --build-arg FLB_PREFIX="$FLB_PREFIX" \
+    --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+    $FLB_ARG \
+    -t "$MAIN_IMAGE" "$IMAGE_CONTEXT_DIR"
+then
+    echo "Error building main docker image $MAIN_IMAGE"
+    exit 1
 fi
 
 # Compile and package
-docker run \
-       -e FLB_PREFIX=$FLB_PREFIX \
-       -e FLB_VERSION=$FLB_VERSION \
-       -e FLB_SRC=$FLB_TARGZ \
-       -v $volume:/output \
-       "flb-$FLB_VERSION-$FLB_DISTRO"
-ret=$?
-if (test $ret -ne 0); then
-    echo "Could not compile on image flb-$FLB_VERSION-$FLB_DISTRO"
-    exit $ret
+if ! docker run \
+    -v "$volume":/output \
+    "$MAIN_IMAGE"
+then
+    echo "Could not compile on image $MAIN_IMAGE"
+    exit 1
 fi
 
-# Delete temporal Build image
-if [ ! -z $(docker images -q flb-$FLB_VERSION-$FLB_DISTRO) ]; then
-    docker rmi -f flb-$FLB_VERSION-$FLB_DISTRO
+# Delete image on success
+if [ -n "$(docker images -q "$MAIN_IMAGE")" ]; then
+    docker rmi -f "$MAIN_IMAGE"
 fi
 
 echo

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -353,13 +352,13 @@ static void output_thread(void *data)
     upstream_thread_destroy(th_ins);
     flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
     flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
-    mk_event_loop_destroy(th_ins->evl);
 
     flb_sched_destroy(sched);
     params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
+    mk_event_loop_destroy(th_ins->evl);
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }

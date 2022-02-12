@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,9 +27,10 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_base64.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <mbedtls/base64.h>
+
 #include <mbedtls/md5.h>
 #include <msgpack.h>
 
@@ -493,7 +493,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     int async_flags;
     int len;
     char *role_arn = NULL;
-    char *external_id = NULL;
     char *session_name;
     const char *tmp;
     struct flb_s3 *ctx = NULL;
@@ -795,10 +794,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         /* Use the STS Provider */
         ctx->base_provider = ctx->provider;
         role_arn = (char *) tmp;
-        tmp = flb_output_get_property("external_id", ins);
-        if (tmp) {
-            external_id = (char *) tmp;
-        }
 
         /* STS provider needs yet another separate TLS instance */
         ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
@@ -826,7 +821,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->provider = flb_sts_provider_create(config,
                                                 ctx->sts_provider_tls,
                                                 ctx->base_provider,
-                                                external_id,
+                                                ctx->external_id,
                                                 role_arn,
                                                 session_name,
                                                 ctx->region,
@@ -1441,7 +1436,7 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
         return ret;
     }
 
-    ret = mbedtls_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
                                 sizeof(md5_bin));
     if (ret != 0) {
         return ret;
@@ -2389,6 +2384,13 @@ static struct flb_config_map config_map[] = {
      "By default, the whole log record will be sent to S3. "
      "If you specify a key name with this option, then only the value of "
      "that key will be sent to S3."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, external_id),
+     "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
     },
 
     {

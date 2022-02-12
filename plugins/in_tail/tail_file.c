@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -45,19 +44,72 @@
 #include "win32.h"
 #endif
 
+#include <xxhash.h>
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
 }
 
+static uint64_t stat_get_st_dev(struct stat *st)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    /* do you want to contribute with a way to extract volume serial number ? */
+    return 0;
+#else
+    return st->st_dev;
+#endif
+}
+
+static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
+                             uint64_t *out_hash)
+{
+    int len;
+    uint64_t st_dev;
+    char tmp[64];
+
+    st_dev = stat_get_st_dev(st);
+
+    len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
+                   st_dev, st->st_ino);
+
+    *out_hash = XXH3_64bits(tmp, len);
+    return 0;
+}
+
+static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
+                            flb_sds_t *key)
+{
+    uint64_t st_dev;
+    flb_sds_t tmp;
+    flb_sds_t buf;
+
+    buf = flb_sds_create_size(64);
+    if (!buf) {
+        return -1;
+    }
+
+    st_dev = stat_get_st_dev(st);
+    tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
+                         st_dev, st->st_ino);
+    if (!tmp) {
+        flb_sds_destroy(buf);
+        return -1;
+    }
+
+    *key = buf;
+    return 0;
+}
+
+/* Append custom keys and report the number of records processed */
 static int record_append_custom_keys(struct flb_tail_file *file,
-                                     size_t processed_bytes,
                                      char *in_data, size_t in_size,
                                      char **out_data, size_t *out_size)
 {
     int i;
     int ok = MSGPACK_UNPACK_SUCCESS;
     int len;
+    int records = 0;
     size_t off = 0;
     size_t total;
     msgpack_unpacked result;
@@ -68,6 +120,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     struct flb_mp_map_header mh;
+    struct flb_tail_config *ctx = file->config;
 
     /* init new buffers */
     msgpack_sbuffer_init(&mp_sbuf);
@@ -96,7 +149,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
         }
 
         /* path_key */
-        if (file->config->path_key) {
+        if (ctx->path_key) {
             len = flb_sds_len(file->config->path_key);
 
             flb_mp_map_header_append(&mh);
@@ -111,7 +164,7 @@ static int record_append_custom_keys(struct flb_tail_file *file,
         }
 
         /* offset_key */
-        if (file->config->offset_key) {
+        if (ctx->offset_key) {
             len = flb_sds_len(file->config->offset_key);
 
             flb_mp_map_header_append(&mh);
@@ -121,18 +174,21 @@ static int record_append_custom_keys(struct flb_tail_file *file,
             msgpack_pack_str_body(&mp_pck, file->config->offset_key, len);
 
             /* val */
-            total = file->offset + processed_bytes;
+            total = file->offset + file->last_processed_bytes;
             msgpack_pack_uint64(&mp_pck, total);
         }
 
         /* finalize map */
         flb_mp_map_header_end(&mh);
+
+        /* counter */
+        records++;
     }
 
     *out_data = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
-    return 0;
+    return records;
 }
 
 static int unpack_and_pack(msgpack_packer *pck, msgpack_object *root,
@@ -318,6 +374,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
     data = file->buf_data;
     end = data + file->buf_len;
 
+    /* reset last processed bytes */
+    file->last_processed_bytes = 0;
+
     /* Skip null characters from the head (sometimes introduced by copy-truncate log rotation) */
     while (data < end && *data == '\0') {
         data++;
@@ -403,7 +462,7 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
             ret = flb_parser_do(ctx->parser, line, line_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
 
@@ -463,8 +522,9 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         /* Adjust counters */
         data += len + 1;
         processed_bytes += len + 1;
-        file->parsed = 0;
         lines++;
+        file->parsed = 0;
+        file->last_processed_bytes += processed_bytes;
     }
     file->parsed = file->buf_len;
 
@@ -473,42 +533,12 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
         *bytes = processed_bytes;
 
         if (out_sbuf->size > 0) {
-            flb_input_chunk_append_raw(ctx->ins,
-                                       file->tag_buf,
-                                       file->tag_len,
-                                       out_sbuf->data,
-                                       out_sbuf->size);
-        }
-        else if (ctx->ml_ctx && file->mult_sbuf.size > 0) {
-            /* If no extra keys are needed, just enqueue the buffer */
-            if (file->config->path_key == NULL &&
-                file->config->offset_key == NULL) {
-                flb_input_chunk_append_raw(ctx->ins,
-                                           file->tag_buf,
-                                           file->tag_len,
-                                           file->mult_sbuf.data,
-                                           file->mult_sbuf.size);
-
-            }
-            else {
-                char *mult_buf = NULL;
-                size_t mult_size = 0;
-
-                /* adjust the records in a new buffer */
-                record_append_custom_keys(file,
-                                          processed_bytes,
-                                          file->mult_sbuf.data,
-                                          file->mult_sbuf.size,
-                                          &mult_buf, &mult_size);
-
-                flb_input_chunk_append_raw(ctx->ins,
-                                           file->tag_buf,
-                                           file->tag_len,
-                                           mult_buf,
-                                           mult_size);
-                flb_free(mult_buf);
-            }
-            file->mult_sbuf.size = 0;
+            flb_input_chunk_append_raw2(ctx->ins,
+                                        lines,
+                                        file->tag_buf,
+                                        file->tag_len,
+                                        out_sbuf->data,
+                                        out_sbuf->size);
         }
     }
     else if (file->skip_next) {
@@ -690,7 +720,7 @@ static int tag_compose(char *tag, char *fname, char *out_buf, size_t *out_size,
     return 0;
 }
 
-static inline int flb_tail_file_exists(struct stat *st,
+static inline int flb_tail_file_exists_old(struct stat *st,
                                        struct flb_tail_config *ctx)
 {
     struct mk_list *head;
@@ -710,6 +740,30 @@ static inline int flb_tail_file_exists(struct stat *st,
         if (file->inode == st->st_ino) {
             return FLB_TRUE;
         }
+    }
+
+    return FLB_FALSE;
+}
+
+static inline int flb_tail_file_exists(struct stat *st,
+                                       struct flb_tail_config *ctx)
+{
+    int ret;
+    uint64_t hash;
+
+    ret = stat_to_hash_bits(ctx, st, &hash);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* static hash */
+    if (flb_hash_exists(ctx->static_hash, hash)) {
+        return FLB_TRUE;
+    }
+
+    /* event hash */
+    if (flb_hash_exists(ctx->event_hash, hash)) {
+        return FLB_TRUE;
     }
 
     return FLB_FALSE;
@@ -775,10 +829,32 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
                              void *data, char *buf_data, size_t buf_size)
 {
+    size_t mult_size = 0;
+    char *mult_buf = NULL;
     struct flb_tail_file *file = data;
+    struct flb_tail_config *ctx = file->config;
 
-    /* Enqueue the records in our file->multiline buffer */
-    msgpack_sbuffer_write(&file->mult_sbuf, buf_data, buf_size);
+    if (ctx->path_key == NULL && ctx->offset_key == NULL) {
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   buf_data, buf_size);
+    }
+    else {
+        /* adjust the records in a new buffer */
+        record_append_custom_keys(file,
+                                  file->mult_sbuf.data,
+                                  file->mult_sbuf.size,
+                                  &mult_buf, &mult_size);
+
+        flb_input_chunk_append_raw(ctx->ins,
+                                   file->tag_buf,
+                                   file->tag_len,
+                                   mult_buf,
+                                   mult_size);
+        flb_free(mult_buf);
+    }
+
     return 0;
 }
 
@@ -789,6 +865,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     int ret;
     uint64_t stream_id;
     uint64_t ts;
+    uint64_t hash_bits;
+    flb_sds_t hash_key;
     size_t len;
     char *tag;
     char *name;
@@ -831,22 +909,21 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         }
     }
 
-    /*
-     * Duplicate string into 'file' structure, the called function
-     * take cares to resolve real-name of the file in case we are
-     * running in a non-Linux system.
-     *
-     * Depending of the operating system, the way to obtain the file
-     * name associated to it file descriptor can have different behaviors
-     * specifically if it root path it's under a symbolic link. On Linux
-     * we can trust the file name but in others it's better to solve it
-     * with some extra calls.
-     */
-    ret = flb_tail_file_name_dup(path, file);
-    if (!file->name) {
-        flb_errno();
+    /* get unique hash for this file */
+    ret = stat_to_hash_bits(ctx, st, &hash_bits);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "error procesisng hash bits for file %s", path);
         goto error;
     }
+    file->hash_bits = hash_bits;
+
+    /* store the hash key used for hash_bits */
+    ret = stat_to_hash_key(ctx, st, &hash_key);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "error procesisng hash key for file %s", path);
+        goto error;
+    }
+    file->hash_key = hash_key;
 
     file->inode     = st->st_ino;
     file->offset    = 0;
@@ -864,7 +941,25 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->mult_flush_timeout = 0;
     file->mult_skipping = FLB_FALSE;
 
+    /*
+     * Duplicate string into 'file' structure, the called function
+     * take cares to resolve real-name of the file in case we are
+     * running in a non-Linux system.
+     *
+     * Depending of the operating system, the way to obtain the file
+     * name associated to it file descriptor can have different behaviors
+     * specifically if it root path it's under a symbolic link. On Linux
+     * we can trust the file name but in others it's better to solve it
+     * with some extra calls.
+     */
+    ret = flb_tail_file_name_dup(path, file);
+    if (!file->name) {
+        flb_errno();
+        goto error;
+    }
+
     /* multiline msgpack buffers */
+    file->mult_records = 0;
     msgpack_sbuffer_init(&file->mult_sbuf);
     msgpack_packer_init(&file->mult_pck, &file->mult_sbuf,
                         msgpack_sbuffer_write);
@@ -953,10 +1048,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     if (mode == FLB_TAIL_STATIC) {
         mk_list_add(&file->_head, &ctx->files_static);
+        ctx->files_static_count++;
+        flb_hash_add(ctx->static_hash, file->hash_key, flb_sds_len(file->hash_key),
+                     file, sizeof(file));
         tail_signal_manager(file->config);
     }
     else if (mode == FLB_TAIL_EVENT) {
         mk_list_add(&file->_head, &ctx->files_event);
+        flb_hash_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
+                     file, sizeof(file));
 
         /* Register this file into the fs_event monitoring */
         ret = flb_tail_fs_add(ctx, file);
@@ -1052,6 +1152,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_free(file->buf_data);
     flb_free(file->name);
     flb_free(file->real_name);
+    flb_sds_destroy(file->hash_key);
 
 #ifdef FLB_HAVE_METRICS
     name = (char *) flb_input_name(ctx->ins);
@@ -1074,12 +1175,14 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
+        flb_hash_del(ctx->static_hash, file->hash_key);
         flb_tail_file_remove(file);
         count++;
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
+        flb_hash_del(ctx->event_hash, file->hash_key);
         flb_tail_file_remove(file);
         count++;
     }
@@ -1213,7 +1316,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                           file->inode, file->name);
             return FLB_TAIL_ERROR;
         }
-
 
         /* Adjust the file offset and buffer */
         file->offset += processed_bytes;
@@ -1367,9 +1469,15 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         return -1;
     }
 
-    /* List change */
+    /* List swap: change from 'static' to 'event' list */
     mk_list_del(&file->_head);
+    ctx->files_static_count--;
+    flb_hash_del(ctx->static_hash, file->hash_key);
+
     mk_list_add(&file->_head, &file->config->files_event);
+    flb_hash_add(ctx->event_hash, file->hash_key, flb_sds_len(file->hash_key),
+                 file, sizeof(file));
+
     file->tail_mode = FLB_TAIL_EVENT;
 
     return 0;
@@ -1466,6 +1574,7 @@ int flb_tail_file_name_dup(char *path, struct flb_tail_file *file)
     if (file->real_name) {
         flb_free(file->real_name);
     }
+
     file->real_name = flb_tail_file_name(file);
     if (!file->real_name) {
         flb_errno();

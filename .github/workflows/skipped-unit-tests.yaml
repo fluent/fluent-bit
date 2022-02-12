@@ -9,7 +9,8 @@ on:
       - 'docker_compose/**'
       - 'packaging/**'
       - '.gitignore'
-  workflow_dispatch:
+      - 'appveyor.yml'
+      - '**.sh'
 
 jobs:
   run-all-unit-tests:

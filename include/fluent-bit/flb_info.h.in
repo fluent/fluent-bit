@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@
 
 #ifndef FLB_INFO_H
 #define FLB_INFO_H
+
+#define STR_HELPER(s)      #s
+#define STR(s)             STR_HELPER(s)
 
 #define FLB_SOURCE_DIR "@CMAKE_SOURCE_DIR@"
 

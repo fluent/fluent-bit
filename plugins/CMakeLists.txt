@@ -181,7 +181,11 @@ REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
-REGISTER_IN_PLUGIN("in_storage_backlog")
+
+if (FLB_IN_STORAGE_BACKLOG)
+  REGISTER_IN_PLUGIN("in_storage_backlog")
+endif()
+
 REGISTER_IN_PLUGIN("in_nginx_exporter_metrics")
 
 if (FLB_STREAM_PROCESSOR)

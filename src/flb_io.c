@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -118,12 +117,11 @@ int flb_io_net_connect(struct flb_upstream_conn *u_conn,
     return 0;
 }
 
+static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len);
 static int net_io_write(struct flb_upstream_conn *u_conn,
                         const void *data, size_t len, size_t *out_len)
 {
     int ret;
-    int tries = 0;
-    size_t total = 0;
     struct flb_coro *coro;
 
     if (u_conn->fd <= 0) {
@@ -134,8 +132,17 @@ static int net_io_write(struct flb_upstream_conn *u_conn,
         }
     }
 
+    return fd_io_write(u_conn->fd, data, len, out_len);
+}
+
+static int fd_io_write(int fd, const void *data, size_t len, size_t *out_len)
+{
+    int ret;
+    int tries = 0;
+    size_t total = 0;
+
     while (total < len) {
-        ret = send(u_conn->fd, (char *) data + total, len - total, 0);
+        ret = send(fd, (char *) data + total, len - total, 0);
         if (ret == -1) {
             if (FLB_WOULDBLOCK()) {
                 /*
@@ -305,12 +312,33 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     return bytes;
 }
 
+static ssize_t fd_io_read(int fd, void *buf, size_t len);
 static ssize_t net_io_read(struct flb_upstream_conn *u_conn,
                            void *buf, size_t len)
 {
     int ret;
 
-    ret = recv(u_conn->fd, buf, len, 0);
+    ret = fd_io_read(u_conn->fd, buf, len);
+    if (ret == -1) {
+        ret = FLB_WOULDBLOCK();
+        if (ret) {
+            /* timeout caused error */
+            flb_warn("[net] sync io_read #%i timeout after %i seconds from: "
+                    "%s:%i",
+                    u_conn->fd, u_conn->u->net.io_timeout,
+                    u_conn->u->tcp_host, u_conn->u->tcp_port);
+        }
+        return -1;
+    }
+
+    return ret;
+}
+
+static ssize_t fd_io_read(int fd, void *buf, size_t len)
+{
+    int ret;
+
+    ret = recv(fd, buf, len, 0);
     if (ret == -1) {
         return -1;
     }
@@ -360,6 +388,13 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
     return ret;
 }
 
+/* Write data to fd. For unix socket. */
+int flb_io_fd_write(int fd, const void *data, size_t len, size_t *out_len)
+{
+    /* TODO: support async mode */
+    return fd_io_write(fd, data, len, out_len);
+}
+
 /* Write data to an upstream connection/server */
 int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
                      size_t len, size_t *out_len)
@@ -398,6 +433,12 @@ int flb_io_net_write(struct flb_upstream_conn *u_conn, const void *data,
     flb_trace("[io coro=%p] [net_write] ret=%i total=%lu/%lu",
               coro, ret, *out_len, len);
     return ret;
+}
+
+ssize_t flb_io_fd_read(int fd, void *buf, size_t len)
+{
+    /* TODO: support async mode */
+    return fd_io_read(fd, buf, len);
 }
 
 ssize_t flb_io_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)

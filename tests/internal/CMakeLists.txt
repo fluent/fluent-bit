@@ -20,9 +20,26 @@ set(UNIT_TESTS_FILES
   mp.c
   input_chunk.c
   flb_time.c
+  file.c
   multiline.c
   typecast.c
+  timeout.c
+  base64.c
   )
+
+# Config format
+set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    config_format.c
+    config_format_fluentbit.c
+)
+
+if(FLB_HAVE_LIBYAML)
+  set(UNIT_TESTS_FILES
+      ${UNIT_TESTS_FILES}
+      config_format_yaml.c
+      )
+endif()
 
 if (NOT WIN32)
   set(UNIT_TESTS_FILES
@@ -130,41 +147,49 @@ foreach(test_data ${UNIT_TESTS_DATA})
   FLB_TEST_COPY_DATA(${test_data})
 endforeach()
 
-# Prepare list of unit tests
-foreach(source_file ${UNIT_TESTS_FILES})
-  get_filename_component(source_file_we ${source_file} NAME_WE)
-  set(source_file_we flb-it-${source_file_we})
-  if(FLB_WITHOUT_${source_file_we})
-    message("Skipping test ${source_file_we}")
-  else()
-    add_executable(
-      ${source_file_we}
-      ${source_file}
-      )
-    add_sanitizers(${source_file_we})
-
-    if(FLB_JEMALLOC)
-      target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+# Prepare list of unit tests function
+function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
+  foreach(source_file ${SOURCEFILES})
+    get_filename_component(source_file_we ${source_file} NAME_WE)
+    set(source_file_we ${TEST_PREFIX}${source_file_we})
+    if(FLB_WITHOUT_${source_file_we})
+      message("Skipping test ${source_file_we}")
     else()
-      target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
+      add_executable(
+        ${source_file_we}
+        ${source_file}
+        )
+      add_sanitizers(${source_file_we})
+
+      if(FLB_JEMALLOC)
+        target_link_libraries(${source_file_we} libjemalloc ${CMAKE_THREAD_LIBS_INIT})
+      else()
+        target_link_libraries(${source_file_we} ${CMAKE_THREAD_LIBS_INIT})
+      endif()
+
+      if(FLB_STREAM_PROCESSOR)
+        target_link_libraries(${source_file_we} flb-sp)
+      endif()
+
+      target_link_libraries(${source_file_we} fluent-bit-static)
+
+      if(FLB_AVRO_ENCODER)
+        target_link_libraries(${source_file_we} avro-static jansson)
+      endif()
+
+      add_test(NAME ${source_file_we}
+              COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+              WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+      set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
     endif()
+  endforeach()
+endfunction(prepare_unit_tests)
 
-    if(FLB_STREAM_PROCESSOR)
-      target_link_libraries(${source_file_we} flb-sp)
-    endif()
+prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
 
-    target_link_libraries(${source_file_we} fluent-bit-static)
-
-    if(FLB_AVRO_ENCODER)
-      target_link_libraries(${source_file_we} avro-static jansson)
-    endif()
-
-    add_test(NAME ${source_file_we}
-            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
-            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
-    set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
-  endif()
-endforeach()
+if(FLB_AWS)
+  add_subdirectory(aws)
+endif()
 
 if(FLB_TESTS_INTERNAL_FUZZ)
   add_subdirectory(fuzzers)

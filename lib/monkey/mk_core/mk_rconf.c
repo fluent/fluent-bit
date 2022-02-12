@@ -257,7 +257,7 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
     /* looking for configuration directives */
     while (fgets(buf, MK_RCONF_KV_SIZE, f)) {
         len = strlen(buf);
-        if (buf[len - 1] == '\n') {
+        if (len > 0 && buf[len - 1] == '\n') {
             buf[--len] = 0;
             if (len && buf[len - 1] == '\r') {
                 buf[--len] = 0;
@@ -370,6 +370,10 @@ static int mk_rconf_read(struct mk_rconf *conf, const char *path)
         }
 
         if (buf[indent_len] == '#' || indent_len == len) {
+            continue;
+        }
+
+        if (len - indent_len >= 3 && strncmp(buf + indent_len, "---", 3) == 0) {
             continue;
         }
 

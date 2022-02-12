@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -115,7 +115,7 @@ struct flb_aws_credentials *get_credentials_fn_sts(struct flb_aws_provider
          * another co-routine is performing the refresh.
          */
         flb_warn("[aws_credentials] No cached credentials are available and "
-                 "a credential refresh is already in progress. The current"
+                 "a credential refresh is already in progress. The current "
                  "co-routine will retry.");
 
         return NULL;

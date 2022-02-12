@@ -3,7 +3,6 @@
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -180,6 +179,9 @@ int flb_tls_net_read(struct flb_upstream_conn *u_conn, void *buf, size_t len)
     if (ret == FLB_TLS_WANT_READ) {
         goto retry_read;
     }
+    else if (ret == FLB_TLS_WANT_WRITE) {
+        goto retry_read;
+    }
     else if (ret < 0) {
         return -1;
     }
@@ -204,6 +206,14 @@ int flb_tls_net_read_async(struct flb_coro *co, struct flb_upstream_conn *u_conn
         io_tls_event_switch(u_conn, MK_EVENT_READ);
         flb_coro_yield(co, FLB_FALSE);
 
+        goto retry_read;
+    }
+    else if (ret == FLB_TLS_WANT_WRITE) {
+        u_conn->coro = co;
+
+        io_tls_event_switch(u_conn, MK_EVENT_WRITE);
+        flb_coro_yield(co, FLB_FALSE);
+        
         goto retry_read;
     }
     else

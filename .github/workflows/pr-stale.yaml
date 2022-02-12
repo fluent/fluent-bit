@@ -5,6 +5,7 @@ on:
 
 jobs:
   stale:
+    name: PR - mark stale
     runs-on: ubuntu-latest
     steps:
       - uses: actions/stale@v3
@@ -19,3 +20,5 @@ jobs:
           exempt-all-pr-assignees: true
           exempt-all-pr-milestones: true
           exempt-issue-labels: 'long-term,enhancement,exempt-stale'
+          # start with the oldest
+          ascending: true

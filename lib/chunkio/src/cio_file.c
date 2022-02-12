@@ -608,6 +608,10 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     cf->map = NULL;
     ch->backend = cf;
 
+#if defined (CIO_HAVE_FALLOCATE)
+    cf->allocate_strategy = CIO_FILE_LINUX_FALLOCATE;
+#endif
+
     /* Should we open and put this file up ? */
     ret = open_and_up(ctx);
     if (ret == CIO_FALSE) {
@@ -1104,20 +1108,29 @@ int cio_file_fs_size_change(struct cio_file *cf, size_t new_size)
      */
 #if defined(CIO_HAVE_FALLOCATE)
     if (new_size > cf->alloc_size) {
-        /*
-         * To increase the file size we use fallocate() since this option
-         * will send a proper ENOSPC error if the file system ran out of
-         * space. ftruncate() will not fail and upon memcpy() over the
-         * mmap area it will trigger a 'Bus Error' crashing the program.
-         *
-         * fallocate() is not portable, Linux only.
-         */
-        ret = fallocate(cf->fd, 0, 0, new_size);
-        if (ret == EOPNOTSUPP) {
-            /* If fallocate fails with an EOPNOTSUPP try operation using
-             * posix_fallocate. Required since some filesystems do not support
-             * the fallocate operation e.g. ext3 and reiserfs.
+        retry:
+
+        if (cf->allocate_strategy == CIO_FILE_LINUX_FALLOCATE) {
+            /*
+             * To increase the file size we use fallocate() since this option
+             * will send a proper ENOSPC error if the file system ran out of
+             * space. ftruncate() will not fail and upon memcpy() over the
+             * mmap area it will trigger a 'Bus Error' crashing the program.
+             *
+             * fallocate() is not portable, Linux only.
              */
+            ret = fallocate(cf->fd, 0, 0, new_size);
+            if (ret == -1 && errno == EOPNOTSUPP) {
+                /*
+                 * If fallocate fails with an EOPNOTSUPP try operation using
+                 * posix_fallocate. Required since some filesystems do not support
+                 * the fallocate operation e.g. ext3 and reiserfs.
+                 */
+                cf->allocate_strategy = CIO_FILE_LINUX_POSIX_FALLOCATE;
+                goto retry;
+            }
+        }
+        else if (cf->allocate_strategy == CIO_FILE_LINUX_POSIX_FALLOCATE) {
             ret = posix_fallocate(cf->fd, 0, new_size);
         }
     }

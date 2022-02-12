@@ -1,0 +1,70 @@
+name: Composite action to sync release to server
+description: Carry out all the tasks to sync from a bucket to the release server.
+
+inputs:
+  bucket:
+    description: The name of the S3 (US-East) bucket to sync packages from.
+    required: true
+  access_key_id:
+    description: The S3 access key id for the bucket.
+    required: true
+  secret_access_key:
+    description: The S3 secret access key for the bucket.
+    required: true
+  server_hostname:
+    description: The server hostname to sync to.
+    required: true
+  server_username:
+    description: The username to authenticate with on the server.
+    required: true
+  server_key:
+    description: The SSH key to use for authentication.
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+  - name: Setup runner
+    run: |
+      sudo apt-get install rsync
+    shell: bash
+
+  - name: Hashed known hosts value
+    id: known_hosts
+    run: |
+      OUTPUT=$(ssh-keyscan -H ${{ inputs.server_hostname }})
+      echo ::set-output name=OUTPUT::$OUTPUT
+    shell: bash
+
+  - name: Install SSH Key
+    uses: shimataro/ssh-key-action@v2
+    with:
+      key: ${{ inputs.server_key }}
+      known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+  - name: Sync packages from release bucket on S3
+    run: |
+      mkdir -p packaging/releases
+      aws s3 sync "s3://$BUCKET" packaging/releases/ --no-progress
+    env:
+      AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}
+      AWS_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
+      BUCKET: ${{ inputs.bucket }}
+    shell: bash
+
+  - name: Upload to build server
+    run: |
+      ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/apt
+      rsync --include="*/" --include="*.rpm" --include="*.deb" --exclude="*" -amvz packaging/releases/ $USERNAME@$HOST:/home/$USERNAME/apt
+    env:
+      HOST: ${{ inputs.server_hostname }}
+      USERNAME: ${{ inputs.server_username }}
+    shell: bash
+
+  # We could also automate the final step here eventually to get the packages "live"
+  # - name: Publish on build server
+  #   run: |
+  #     ssh $USERNAME@$HOST /bin/bash /home/$USERNAME/publish_all.sh "$VERSION"
+  #   env:
+  #     VERSION: ${{ inputs.version }}
+  #   shell: bash
