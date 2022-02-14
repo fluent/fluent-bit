@@ -1,0 +1,10 @@
+service:
+    http_server: on
+    Health_Check: on
+
+pipeline:
+    inputs:
+        cpu:
+    outputs:
+        stdout:
+            match: '*'
