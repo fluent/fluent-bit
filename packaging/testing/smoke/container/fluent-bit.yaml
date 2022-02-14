@@ -5,6 +5,7 @@ service:
 pipeline:
     inputs:
         cpu:
+          tag: input
     outputs:
         stdout:
             match: '*'

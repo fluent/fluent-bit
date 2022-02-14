@@ -28,7 +28,7 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 # Remove any existing container
 docker rm -f "$CONTAINER_NAME"
 
-# Repeat for YAML and legacy config
+# Repeat for YAML and legacy config - note the config file extension is important for format detection
 declare -a CONFIG_FILES=("fluent-bit.conf" "fluent-bit.yaml")
 
 for CONFIG_FILE in "${CONFIG_FILES[@]}"
@@ -47,7 +47,8 @@ do
         --publish-all \
         --restart=no \
         -v "$SCRIPT_DIR/$CONFIG_FILE":"/fluent-bit/etc/$CONFIG_FILE":ro \
-        "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+        "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" \
+        "/fluent-bit/bin/fluent-bit" "-c" "/fluent-bit/etc/$CONFIG_FILE"
 
     # Get debug details
     docker image inspect "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
