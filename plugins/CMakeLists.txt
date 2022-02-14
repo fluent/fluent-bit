@@ -233,9 +233,12 @@ REGISTER_OUT_PLUGIN("out_kafka_rest")
 REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_nrlogs")
 REGISTER_OUT_PLUGIN("out_null")
+REGISTER_OUT_PLUGIN("out_opensearch")
+
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
   REGISTER_OUT_PLUGIN("out_plot")
 endif()
+
 REGISTER_OUT_PLUGIN("out_pgsql")
 REGISTER_OUT_PLUGIN("out_retry")
 REGISTER_OUT_PLUGIN("out_skywalking")
