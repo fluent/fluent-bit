@@ -2,6 +2,7 @@
 ARG STAGING_BASE=dokken/centos-7
 
 FROM dokken/centos-7 as official-install
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Use the one-line install
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
 RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
