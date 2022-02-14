@@ -34,6 +34,7 @@ RUN apt-get update && \
     postgresql-server-dev-all \
     flex \
     bison \
+    libyaml-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
@@ -89,6 +90,9 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libz* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/libz* /lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libssl.so* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcrypto.so* /usr/lib/aarch64-linux-gnu/
+
+# YAML stuff
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libyaml* /usr/lib/aarch64-linux-gnu/
 
 # These below are all needed for systemd
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libsystemd* /usr/lib/aarch64-linux-gnu/
