@@ -429,10 +429,10 @@ Config maps are an improvement to the previous Fluent Bit API that was used by p
 
 There are various types of supported configuration types. Full list available [here](https://github.com/fluent/fluent-bit/blob/v1.4.2/include/fluent-bit/flb_config_map.h#L29). The most used ones are:
 
-| Type                   | Description           | 
-| -----------------------|:---------------------:| 
-| FLB_CONFIG_MAP_INT     | Represents integer data type | 
-| FLB_CONFIG_MAP_BOOL    | Represents boolean data type | 
+| Type                   | Description           |
+| -----------------------|:---------------------:|
+| FLB_CONFIG_MAP_INT     | Represents integer data type |
+| FLB_CONFIG_MAP_BOOL    | Represents boolean data type |
 | FLB_CONFIG_MAP_DOUBLE  | Represents a double |
 | FLB_CONFIG_MAP_SIZE    | Provides size_type as an integer datatype large enough to represent any possible string size. |
 | FLB_CONFIG_MAP_STR     | Represents string data type |
@@ -441,8 +441,8 @@ There are various types of supported configuration types. Full list available [h
 
 A config map expects certain public fields at registration.
 
-| Public Fields | Description           | 
-| --------------|:---------------------| 
+| Public Fields | Description           |
+| --------------|:---------------------|
 | Type          | This field is the data type of the property that we are writing to the config map. If the property is of type `int` we use `FLB_CONFIG_MAP_INT`, if `string` `FLB_CONFIG_MAP_STR` etc. |
 | Name          | This field is the name of the configuration property. For example for the property flush count we use `flush_count`|
 | Default Value | This field allows the user to set the default value of the property. For example, for a property of type `FLB_CONFIG_MAP_BOOL` (boolean), the default value may be false. Then we have to give `false` as default value. If there is no default value, `NULL` is given.|
@@ -469,7 +469,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
-     "Specifies the format of the date. Supported formats are double,  iso8601 and epoch."
+     "Specifies the format of the date. Supported formats are double,  iso8601, java_sql_timestamp and epoch."
     },
 
     /* EOF */

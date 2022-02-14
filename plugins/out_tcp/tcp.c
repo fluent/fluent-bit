@@ -124,8 +124,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", "double",
      0, FLB_FALSE, 0,
-     "Specify the format of the date, supported formats: double, iso8601 "
-     "(e.g: 2018-05-30T09:39:52.000681Z) and epoch."
+     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
 
     {

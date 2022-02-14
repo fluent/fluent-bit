@@ -46,6 +46,12 @@
 /* Specific Java SQL Timestamp format */
 #define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT "%Y-%m-%d %H:%M:%S"
 
+#define FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION   "Specify the format of the date, " \
+    "supported formats: double, " \
+     "iso8601 (e.g: 2018-05-30T09:39:52.000681Z), " \
+     "java_sql_timestamp (e.g: 2018-05-30 09:39:52.000681, useful for AWS Athena), "\
+     "and epoch."
+
 /* JSON formats (modes) */
 #define FLB_PACK_JSON_FORMAT_NONE        0
 #define FLB_PACK_JSON_FORMAT_JSON        1
