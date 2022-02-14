@@ -495,5 +495,6 @@ int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
     }
     va_end(va);
 
+    flb_sds_len_set(*str, ret);
     return ret;
 }
