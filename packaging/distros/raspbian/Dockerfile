@@ -19,7 +19,7 @@ RUN apt-get -qq update && \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
+                           libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # raspbian/bullseye base image
@@ -32,7 +32,7 @@ RUN apt-get -qq update && \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
+                           libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # Common build for all distributions now

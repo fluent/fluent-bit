@@ -16,9 +16,9 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Ensure this is updated for new targets
 # We do the arm64 targets at the end as ideally the amd64 ones trigger any issues with dependencies.
-declare -a TARGETS=("centos/7" "centos/8"
-"debian/buster" "debian/bullseye" "raspbian/buster" "raspbian/bullseye" "ubuntu/16.04" "ubuntu/18.04" "ubuntu/20.04"
-"centos/7.arm64v8" "centos/8.arm64v8" "debian/buster.arm64v8" "debian/bullseye.arm64v8" "ubuntu/18.04.arm64v8" "ubuntu/20.04.arm64v8"
+declare -a TARGETS=("amazonlinux/2"
+"centos/7" "centos/8" "debian/buster" "debian/bullseye" "raspbian/buster" "raspbian/bullseye" "ubuntu/16.04" "ubuntu/18.04" "ubuntu/20.04"
+"amazonlinux/2.arm64v8" "centos/7.arm64v8" "centos/8.arm64v8" "debian/buster.arm64v8" "debian/bullseye.arm64v8" "ubuntu/18.04.arm64v8" "ubuntu/20.04.arm64v8"
 )
 
 # Output checks are easier plus do not want to fill up git

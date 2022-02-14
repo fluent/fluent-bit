@@ -18,7 +18,7 @@ RUN yum -y update && \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3 && \
+                   cmake3 libyaml-devel && \
     yum clean all
 
 # amazonlinux/2.arm64v8 base image
@@ -32,7 +32,7 @@ RUN yum -y update && \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3 && \
+                   cmake3 libyaml-devel && \
     yum clean all
 
 # Common build for all distributions now
