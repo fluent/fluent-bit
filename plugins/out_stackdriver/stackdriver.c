@@ -1980,8 +1980,10 @@ static int stackdriver_format(struct flb_config *config,
         /* Extract httpRequest */
         init_http_request(&http_request);
         http_request_extra_size = 0;
-        http_request_extracted = extract_http_request(&http_request, obj,
-                                                      &http_request_extra_size);
+        http_request_extracted = extract_http_request(&http_request, 
+                                                      ctx->http_request_key,
+                                                      ctx->http_request_key_size,
+                                                      obj, &http_request_extra_size);
         if (http_request_extracted == FLB_TRUE) {
             entry_size += 1;
         }
