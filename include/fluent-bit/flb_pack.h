@@ -35,12 +35,16 @@
 #define FLB_PACK_JSON_PRIMITIVE     JSMN_PRIMITIVE
 
 /* Date formats */
-#define FLB_PACK_JSON_DATE_DOUBLE   0
-#define FLB_PACK_JSON_DATE_ISO8601  1
-#define FLB_PACK_JSON_DATE_EPOCH    2
+#define FLB_PACK_JSON_DATE_DOUBLE                0
+#define FLB_PACK_JSON_DATE_ISO8601               1
+#define FLB_PACK_JSON_DATE_EPOCH                 2
+#define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP    3
 
 /* Specific ISO8601 format */
 #define FLB_PACK_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
+/* Specific Java SQL Timestamp format */
+#define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT "%Y-%m-%d %H:%M:%S"
 
 /* JSON formats (modes) */
 #define FLB_PACK_JSON_FORMAT_NONE        0
