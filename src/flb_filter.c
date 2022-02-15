@@ -372,6 +372,7 @@ const char *flb_filter_name(struct flb_filter_instance *ins)
 int flb_filter_init_all(struct flb_config *config)
 {
     int ret;
+    uint64_t ts;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -401,6 +402,7 @@ int flb_filter_init_all(struct flb_config *config)
 
         /* Get name or alias for the instance */
         name = (char *) flb_filter_name(ins);
+        ts = cmt_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();
@@ -416,6 +418,7 @@ int flb_filter_init_all(struct flb_config *config)
                                                   "add_records_total",
                                                   "Total number of new added records.",
                                                   1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_add_records, ts, 0, 1, (char *[]) {name});
 
         /* Register generic filter plugin metrics */
         ins->cmt_drop_records = cmt_counter_create(ins->cmt,
@@ -423,6 +426,8 @@ int flb_filter_init_all(struct flb_config *config)
                                                   "drop_records_total",
                                                   "Total number of dropped records.",
                                                   1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_drop_records, ts, 0, 1, (char *[]) {name});
+
         /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
 
