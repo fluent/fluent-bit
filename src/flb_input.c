@@ -482,9 +482,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config)
 {
     int ret;
-#ifdef FLB_HAVE_METRICS
-    const char *name;
-#endif
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
@@ -496,6 +493,13 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     if (!p) {
         return 0;
     }
+
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+
+    name = (char *) flb_input_name(ins);
+    ts = cmt_time_now();
 
     /* CMetrics */
     ins->cmt = cmt_create();
@@ -510,17 +514,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                                         "fluentbit", "input", "bytes_total",
                                         "Number of input bytes.",
                                         1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
+
     ins->cmt_records = cmt_counter_create(ins->cmt,
                                         "fluentbit", "input", "records_total",
                                         "Number of input records.",
                                         1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
 
     /* OLD Metrics */
-#ifdef FLB_HAVE_METRICS
-    /* Get name or alias for the instance */
-    name = flb_input_name(ins);
-
-    /* [OLD METRICS] Create the metrics context */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
