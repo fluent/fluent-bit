@@ -25,10 +25,10 @@
 #include <fluent-bit/flb_bucket_queue.h>
 
 /* priority queue utility */
-static inline void flb_event_load_bucket_queue(struct mk_event *event,
-                                      struct flb_bucket_queue *bktq,
-                                      struct mk_event_loop *evl)
+static inline void flb_event_load_bucket_queue(struct flb_bucket_queue *bktq,
+                                              struct mk_event_loop *evl)
 {
+    struct mk_event *event;
     mk_event_foreach(event, evl) {
         if (event->_priority_head.prev == NULL) {
             flb_bucket_queue_add(bktq, &event->_priority_head, event->priority);
@@ -37,15 +37,15 @@ static inline void flb_event_load_bucket_queue(struct mk_event *event,
 }
 
 #define flb_event_priority_live_foreach(event, bktq, evl, max_iter)                     \
-    int __flb_event_priority_live_foreach_iter;                                         \
     for (                                                                               \
         /* init */                                                                      \
-        __flb_event_priority_live_foreach_iter = 0,                                     \
-        flb_event_load_bucket_queue(event, bktq, evl),                                  \
+        int __flb_event_priority_live_foreach_iter = (                                  \
+        flb_event_load_bucket_queue(bktq, evl),                                         \
         event = flb_bucket_queue_find_min(bktq) ?                                       \
                 mk_list_entry(                                                          \
                     flb_bucket_queue_pop_min(bktq), struct mk_event, _priority_head) :  \
-                NULL;                                                                   \
+                NULL,                                                                   \
+        0);                                                                             \
                                                                                         \
         /* condition */                                                                 \
         event != NULL &&                                                                \
@@ -54,7 +54,7 @@ static inline void flb_event_load_bucket_queue(struct mk_event *event,
         /* update */                                                                    \
         ++__flb_event_priority_live_foreach_iter,                                       \
         mk_event_wait_2(evl, 0),                                                        \
-        flb_event_load_bucket_queue(event, bktq, evl),                                  \
+        flb_event_load_bucket_queue(bktq, evl),                                         \
         event = flb_bucket_queue_find_min(bktq) ?                                       \
                 mk_list_entry(                                                          \
                     flb_bucket_queue_pop_min(bktq), struct mk_event, _priority_head) :  \
