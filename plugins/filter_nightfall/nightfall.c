@@ -117,7 +117,7 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
-static int redact_record(msgpack_object *data, msgpack_object_array *to_redact, 
+static int redact_record(msgpack_object *data, char **to_redact_data, size_t *to_redact_size, 
                          struct flb_time t, msgpack_sbuffer *new_rec) 
 {
     int ret;
@@ -133,6 +133,17 @@ static int redact_record(msgpack_object *data, msgpack_object_array *to_redact,
     char should_pop = FLB_TRUE;
 
     int to_redact_index = 0;
+    msgpack_unpacked finding_list_unpacked;
+    size_t finding_list_off = 0;
+    msgpack_object_array to_redact;
+
+    /* Convert to_redact_data to a msgpack_object_array */
+    msgpack_unpacked_init(&finding_list_unpacked);
+    ret = msgpack_unpack_next(&finding_list_unpacked, *to_redact_data, *to_redact_size, 
+                              &finding_list_off);
+    if (ret == MSGPACK_UNPACK_SUCCESS) {
+        to_redact = finding_list_unpacked.data.via.array;
+    }
 
     mk_list_init(&stack);
 
@@ -165,9 +176,10 @@ static int redact_record(msgpack_object *data, msgpack_object_array *to_redact,
 
         switch(cur->obj->type) {
             case MSGPACK_OBJECT_ARRAY:
-                ret = redact_array_fields(&new_rec_pk, &to_redact_index, to_redact, cur,
+                ret = redact_array_fields(&new_rec_pk, &to_redact_index, &to_redact, cur,
                                           &stack, &should_pop);
                 if (ret != 0) {
+                    msgpack_unpacked_destroy(&finding_list_unpacked);
                     mk_list_foreach_safe(head, tmp, &stack) {
                         cur = mk_list_entry(head, struct nested_obj, _head);
                         mk_list_del(&cur->_head);
@@ -177,9 +189,10 @@ static int redact_record(msgpack_object *data, msgpack_object_array *to_redact,
                 }
                 break;
             case MSGPACK_OBJECT_MAP:
-                ret = redact_map_fields(&new_rec_pk, &to_redact_index, to_redact, cur,
+                ret = redact_map_fields(&new_rec_pk, &to_redact_index, &to_redact, cur,
                                           &stack, &should_pop);
                 if (ret != 0) {
+                    msgpack_unpacked_destroy(&finding_list_unpacked);
                     mk_list_foreach_safe(head, tmp, &stack) {
                         cur = mk_list_entry(head, struct nested_obj, _head);
                         mk_list_del(&cur->_head);
@@ -189,13 +202,13 @@ static int redact_record(msgpack_object *data, msgpack_object_array *to_redact,
                 }
                 break;
             case MSGPACK_OBJECT_STR:
-                maybe_redact_field(&new_rec_pk, cur->obj, to_redact, &to_redact_index);
+                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index);
                 break;
             case MSGPACK_OBJECT_POSITIVE_INTEGER:
-                maybe_redact_field(&new_rec_pk, cur->obj, to_redact, &to_redact_index);
+                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index);
                 break;
             case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-                maybe_redact_field(&new_rec_pk, cur->obj, to_redact, &to_redact_index);
+                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index);
                 break;
             default:
                 msgpack_pack_object(&new_rec_pk, *cur->obj);
@@ -206,6 +219,7 @@ static int redact_record(msgpack_object *data, msgpack_object_array *to_redact,
             flb_free(cur);
         }
     }
+    msgpack_unpacked_destroy(&finding_list_unpacked);
 
     *new_rec = new_rec_sbuf;
     return 0;
@@ -434,7 +448,8 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
     msgpack_object *p;
     msgpack_unpacked result;
 
-    msgpack_object to_redact;
+    char *to_redact;
+    size_t to_redact_size;
     char is_sensitive = FLB_FALSE;
 
     msgpack_sbuffer new_rec_sbuf;
@@ -451,7 +466,7 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
     while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tmp, &result, &p);
 
-        ret = scan_log(ctx, &result.data, &to_redact, &is_sensitive);
+        ret = scan_log(ctx, &result.data, &to_redact, &to_redact_size, &is_sensitive);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "scanning error");
             msgpack_unpacked_destroy(&result);
@@ -459,9 +474,10 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
         }
         
         if (is_sensitive == FLB_TRUE) {
-            ret = redact_record(p, &to_redact.via.array, tmp, &new_rec_sbuf);
+            ret = redact_record(p, &to_redact, &to_redact_size, tmp, &new_rec_sbuf);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "redaction error");
+                flb_free(to_redact);
                 msgpack_unpacked_destroy(&result);
                 msgpack_sbuffer_destroy(&new_rec_sbuf);
                 return FLB_FILTER_NOTOUCH;
@@ -469,6 +485,7 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
             is_modified = FLB_TRUE;
         }
     }
+    flb_free(to_redact);
     msgpack_unpacked_destroy(&result);
 
     if (!is_modified) {

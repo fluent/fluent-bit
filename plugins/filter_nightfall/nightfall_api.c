@@ -309,7 +309,8 @@ static int get_map_val(msgpack_object m, char *key, msgpack_object *ret)
 }
 
 static int process_response(const char *resp, size_t resp_size,
-                      msgpack_object *f, char *is_sensitive)
+                            char **to_redact, size_t *to_redact_size, 
+                            char *is_sensitive)
 {
     int root_type;
     char *buf;
@@ -327,19 +328,16 @@ static int process_response(const char *resp, size_t resp_size,
     msgpack_object location;
     msgpack_object byteRange;
 
-    msgpack_unpacked finding_list_unpacked;
-    size_t finding_list_off = 0;
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-    msgpack_unpacked_init(&resp_unpacked);
-
     /* Convert json response body to msgpack */
     ret = flb_pack_json(resp, resp_size, &buf, &size, &root_type);
     if (ret != 0) {
         flb_errno();
         return -1;
     }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&resp_unpacked);
 
     /*
      * For every scannable field (positive/negative ints, strings) we sent to
@@ -352,6 +350,9 @@ static int process_response(const char *resp, size_t resp_size,
         resp_map = resp_unpacked.data;
         ret = get_map_val(resp_map, "findings", &findings_list);
         if (ret != 0) {
+            msgpack_unpacked_destroy(&resp_unpacked);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            flb_free(buf);
             flb_errno();
             return -1;
         }
@@ -369,12 +370,18 @@ static int process_response(const char *resp, size_t resp_size,
                 finding = findings.via.array.ptr[j];
                 ret = get_map_val(finding, "location", &location);
                 if (ret != 0) {
+                    msgpack_unpacked_destroy(&resp_unpacked);
+                    msgpack_sbuffer_destroy(&mp_sbuf);
+                    flb_free(buf);
                     flb_errno();
                     return -1;
                 }
 
                 ret = get_map_val(location, "byteRange", &byteRange);
                 if (ret != 0) {
+                    msgpack_unpacked_destroy(&resp_unpacked);
+                    msgpack_sbuffer_destroy(&mp_sbuf);
+                    flb_free(buf);
                     flb_errno();
                     return -1;
                 }
@@ -387,22 +394,17 @@ static int process_response(const char *resp, size_t resp_size,
         }
     }
     msgpack_unpacked_destroy(&resp_unpacked);
+    flb_free(buf);
 
-    msgpack_unpacked_init(&finding_list_unpacked);
-    ret = msgpack_unpack_next(&finding_list_unpacked, mp_sbuf.data, mp_sbuf.size, 
-                              &finding_list_off);
-    if (ret == MSGPACK_UNPACK_SUCCESS) {
-        *f = finding_list_unpacked.data;
-    }
-    msgpack_sbuffer_destroy(&mp_sbuf);
-    msgpack_unpacked_destroy(&finding_list_unpacked);
+    *to_redact = mp_sbuf.data;
+    *to_redact_size = mp_sbuf.size;
 
     return 0;
 }
 
 /* Scans log for sensitive content and returns the locations of such content */
 int scan_log(struct flb_filter_nightfall *ctx, msgpack_object *data, 
-             msgpack_object *to_redact, char *is_sensitive) 
+             char **to_redact, size_t *to_redact_size, char *is_sensitive) 
 {        
     struct flb_http_client *client;
     struct flb_upstream_conn *u_conn;
@@ -461,7 +463,7 @@ int scan_log(struct flb_filter_nightfall *ctx, msgpack_object *data,
     }
     
     ret = process_response(client->resp.payload, client->resp.payload_size, 
-                           to_redact, is_sensitive);
+                           to_redact, to_redact_size, is_sensitive);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "could not process response");
         flb_http_client_destroy(client);

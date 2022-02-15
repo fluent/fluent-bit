@@ -26,6 +26,6 @@
 #include "nightfall.h"
 
 int scan_log(struct flb_filter_nightfall *ctx, msgpack_object *data, 
-             msgpack_object *to_redact, char *is_sensitive);
+             char **to_redact, size_t *to_redact_size, char *is_sensitive);
 
 #endif
