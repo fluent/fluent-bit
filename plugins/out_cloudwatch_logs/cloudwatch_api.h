@@ -45,7 +45,7 @@ void cw_flush_destroy(struct cw_flush *buf);
 int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin, struct cw_flush *buf,
                      struct log_stream *stream,
                      const char *data, size_t bytes);
-int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream);
+int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream, int can_retry);
 struct log_stream *get_log_stream(struct flb_cloudwatch *ctx,
                                   const char *tag, int tag_len);
 int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
