@@ -65,7 +65,11 @@ int flb_http_strip_port_from_host(struct flb_http_client *c)
     struct flb_upstream *u = c->u_conn->u;
 
     if (!c->host) {
-        out_host = u->tcp_host;
+        if (!u->proxied_host) {
+            out_host = u->tcp_host;
+        } else {
+            out_host = u->proxied_host;
+        }
     } else {
         out_host = (char *) c->host;
     }
