@@ -383,7 +383,6 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
                                 struct flb_config *config)
 {
     struct flb_cloudwatch *ctx = out_context;
-    int ret;
     int event_count;
     struct log_stream *stream = NULL;
     (void) i_ins;
@@ -391,14 +390,8 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
 
     ctx->buf->put_events_calls = 0;
 
-    if (ctx->create_group == FLB_TRUE && ctx->group_created == FLB_FALSE) {
-        ret = create_log_group(ctx);
-        if (ret < 0) {
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-    }
-
-    stream = get_log_stream(ctx, tag, tag_len);
+    stream = get_log_stream(ctx,
+                            event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!stream) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
