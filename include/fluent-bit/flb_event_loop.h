@@ -24,13 +24,14 @@
 #include <monkey/mk_core/mk_event.h>
 #include <fluent-bit/flb_bucket_queue.h>
 
-/* priority queue utility */
+/* Priority queue utility */
 static inline void flb_event_load_bucket_queue(struct flb_bucket_queue *bktq,
                                               struct mk_event_loop *evl)
 {
     struct mk_event *event;
     mk_event_foreach(event, evl) {
-        if (event->_priority_head.prev == NULL) {
+        if (event->_priority_head.prev == NULL      /* not in bktq */
+            && event->status != MK_EVENT_NONE) {    /* not deleted event */
             flb_bucket_queue_add(bktq, &event->_priority_head, event->priority);
         }
     }
