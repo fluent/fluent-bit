@@ -104,7 +104,7 @@ void test_non_blocking_and_blocking_timeout()
 
     flb_time_diff(&end_time, &start_time, &diff_time);
     elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
-    TEST_CHECK(elapsed_time_flb == target);
+    TEST_CHECK(elapsed_time_flb <= target + TIME_EPSILON_MS);
     TEST_MSG("Target time failed for mk_wait_2. Expect %d ms. Waited %d ms\n", target,
              (int) elapsed_time_flb);
     TEST_CHECK(n_events == 0);
@@ -121,7 +121,7 @@ void test_non_blocking_and_blocking_timeout()
 
     flb_time_diff(&end_time, &start_time, &diff_time);
     elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
-    TEST_CHECK(elapsed_time_flb == target);
+    TEST_CHECK(elapsed_time_flb <= target + TIME_EPSILON_MS);
     TEST_MSG("Target time failed for mk_wait_2. Expect %d ms. Waited %d ms\n", target,
              (int) elapsed_time_flb);
     TEST_CHECK(n_events == 0);
@@ -148,7 +148,7 @@ void test_non_blocking_and_blocking_timeout()
 
     flb_time_diff(&end_time, &start_time, &diff_time);
     elapsed_time_flb = flb_time_to_nanosec(&diff_time) / 1000000;
-    TEST_CHECK(elapsed_time_flb == target);
+    TEST_CHECK(elapsed_time_flb <= target + TIME_EPSILON_MS);
     TEST_MSG("Target time failed for mk_wait_2. Expect %d ms. Waited %d ms\n", target,
              (int) elapsed_time_flb);
     TEST_CHECK(n_events == 1);
@@ -223,15 +223,6 @@ void synchronize_tests()
 {
     test_non_blocking_and_blocking_timeout();
     test_infinite_wait();
-}
-
-/*
- * Add 5x 0second timers, 3 with different priority, 2 with same
- * Loop though and confirm order
- */
-void event_loop_priority_iter()
-{
-
 }
 
 /*
@@ -469,12 +460,14 @@ void event_loop_stress_priority_add_delete()
         TEST_CHECK(delayed_timers[i] == 0);
         TEST_MSG("Not all delayed timers processed");
     }
+
+    evl_context_destroy(ctx);
 }
 
 TEST_LIST = {
-    //{"test_simple_timeout_1000ms", test_simple_timeout_1000ms},
-    //{"test_non_blocking_and_blocking_timeout", test_non_blocking_and_blocking_timeout},
-    //{"test_infinite_wait", test_infinite_wait},
+    {"test_simple_timeout_1000ms", test_simple_timeout_1000ms},
+    {"test_non_blocking_and_blocking_timeout", test_non_blocking_and_blocking_timeout},
+    {"test_infinite_wait", test_infinite_wait},
     {"event_loop_stress_priority_add_delete", event_loop_stress_priority_add_delete},
     { 0 }
 };
