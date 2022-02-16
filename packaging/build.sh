@@ -105,11 +105,6 @@ else
     fi
 fi
 
-# The FLB_NIGHTLY_BUILD must not be empty so set to version if not defined
-if [[ -z "$FLB_NIGHTLY_BUILD" ]]; then
-    FLB_NIGHTLY_BUILD="$FLB_VERSION"
-fi
-
 # CMake configuration variables, override via environment rather than parameters
 CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX:-/opt/td-agent-bit/}
 FLB_TD=${FLB_TD:-On}
