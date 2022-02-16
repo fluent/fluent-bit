@@ -210,7 +210,7 @@ option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
 
-if(DEFINED FLB_NIGHTLY_BUILD)
+if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
   FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
 endif()
 
