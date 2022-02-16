@@ -34,6 +34,7 @@ RUN apt-get update && \
     flex \
     bison \
     openssl \
+    libyaml-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && c_rehash \
@@ -94,6 +95,7 @@ RUN apt-get update && \
       ca-certificates \
       libatomic1 \
       libgcrypt20 \
+      libyaml-0-2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

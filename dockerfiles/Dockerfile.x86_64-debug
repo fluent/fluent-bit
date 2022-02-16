@@ -31,6 +31,7 @@ RUN apt-get update && \
     postgresql-server-dev-all \
     flex \
     bison \
+    libyaml-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
@@ -89,6 +90,7 @@ RUN apt-get update && \
       ca-certificates \
       libatomic1 \
       libgcrypt20 \
+      libyaml \
       bash gdb valgrind build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
