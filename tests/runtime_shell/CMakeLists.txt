@@ -6,6 +6,7 @@ configure_file(
 set(UNIT_TESTS_SH
   in_dummy_expect.sh
   in_tail_expect.sh
+  in_dummy_thread_expect.sh
   )
 
 # Prepare list of unit tests

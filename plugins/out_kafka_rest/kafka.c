@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -246,8 +245,8 @@ static int cb_kafka_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_kafka_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -260,8 +259,6 @@ static void cb_kafka_flush(const void *data, size_t bytes,
     struct flb_upstream_conn *u_conn;
     struct flb_kafka_rest *ctx = out_context;
     (void) i_ins;
-    (void) tag;
-    (void) tag_len;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -270,7 +267,9 @@ static void cb_kafka_flush(const void *data, size_t bytes,
     }
 
     /* Convert format */
-    js = kafka_rest_format(data, bytes, tag, tag_len, &js_size, ctx);
+    js = kafka_rest_format(event_chunk->data, event_chunk->size,
+                           event_chunk->tag, flb_sds_len(event_chunk->tag),
+                           &js_size, ctx);
     if (!js) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);

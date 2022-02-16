@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,6 +27,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/stream_processor/flb_sp_key.h>
 #include <fluent-bit/stream_processor/flb_sp_stream.h>
@@ -64,10 +64,10 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
     const char *cfg = NULL;
     char tmp[PATH_MAX + 1];
     struct stat st;
-    struct mk_rconf *fconf;
-    struct mk_rconf_section *section;
     struct mk_list *head;
     struct flb_sp_task *task;
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -87,34 +87,34 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         cfg = file;
     }
 
-    fconf = mk_rconf_open(cfg);
+    cf = flb_cf_create_from_file(NULL, cfg);
 #else
-    fconf = flb_config_static_open(file);
+    cf = flb_config_static_open(file);
 #endif
 
-    if (!fconf) {
+    if (!cf) {
         return -1;
     }
 
-    /* Read all [STREAM_TASK] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "STREAM_TASK") != 0) {
+    /* Read all 'stream_task' sections */
+    mk_list_foreach(head, &cf->sections) {
+        section = mk_list_entry(head, struct flb_cf_section, _head);
+        if (strcasecmp(section->name, "stream_task") != 0) {
             continue;
         }
 
         name = NULL;
         exec = NULL;
 
-        /* Name */
-        name = mk_rconf_section_get_key(section, "Name", MK_RCONF_STR);
+        /* name */
+        name = flb_cf_section_property_get(cf, section, "name");
         if (!name) {
             flb_error("[sp] task 'name' not found in file '%s'", cfg);
             goto fconf_error;
         }
 
-        /* Exec */
-        exec = mk_rconf_section_get_key(section, "Exec", MK_RCONF_STR);
+        /* exec */
+        exec = flb_cf_section_property_get(cf, section, "exec");
         if (!exec) {
             flb_error("[sp] task '%s' don't have an 'exec' command", name);
             goto fconf_error;
@@ -125,18 +125,13 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         if (!task) {
             goto fconf_error;
         }
-
-        flb_free(name);
-        flb_free(exec);
     }
 
-    mk_rconf_free(fconf);
+    flb_cf_destroy(cf);
     return 0;
 
 fconf_error:
-    flb_free(name);
-    flb_free(exec);
-
+    flb_cf_destroy(cf);
     return -1;
 }
 

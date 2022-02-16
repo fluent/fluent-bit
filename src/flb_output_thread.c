@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -178,9 +177,9 @@ static void output_thread(void *data)
     struct flb_task *task;
     struct flb_upstream_conn *u_conn;
     struct flb_output_instance *ins;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins = data;
-    struct flb_out_coro_params *params;
+    struct flb_out_flush_params *params;
     struct flb_net_dns dns_ctx;
 
     /* Register thread instance */
@@ -284,17 +283,14 @@ static void output_thread(void *data)
                 }
 
                 /* Start the co-routine with the flush callback */
-                out_coro = flb_output_coro_create(task,
-                                                  task->i_ins,
-                                                  th_ins->ins,
-                                                  th_ins->config,
-                                                  task->buf, task->size,
-                                                  task->tag,
-                                                  task->tag_len);
-                if (!out_coro) {
+                out_flush = flb_output_flush_create(task,
+                                                    task->i_ins,
+                                                    th_ins->ins,
+                                                    th_ins->config);
+                if (!out_flush) {
                     continue;
                 }
-                flb_coro_resume(out_coro->coro);
+                flb_coro_resume(out_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
@@ -332,7 +328,7 @@ static void output_thread(void *data)
         flb_sched_timer_cleanup(sched);
 
         /* Check if we should stop the event loop */
-        if (stopping == FLB_TRUE && mk_list_size(&th_ins->coros) == 0) {
+        if (stopping == FLB_TRUE && mk_list_size(&th_ins->flush_list) == 0) {
             /*
              * If there are no busy network connections (and no coroutines) its
              * safe to stop it.
@@ -356,13 +352,13 @@ static void output_thread(void *data)
     upstream_thread_destroy(th_ins);
     flb_upstream_conn_active_destroy_list(&th_ins->upstreams);
     flb_upstream_conn_pending_destroy_list(&th_ins->upstreams);
-    mk_event_loop_destroy(th_ins->evl);
 
     flb_sched_destroy(sched);
-    params = FLB_TLS_GET(out_coro_params);
+    params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
+    mk_event_loop_destroy(th_ins->evl);
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
@@ -431,10 +427,10 @@ int flb_output_thread_pool_create(struct flb_config *config,
 
         th_ins->config = config;
         th_ins->ins = ins;
-        th_ins->coro_id = 0;
-        mk_list_init(&th_ins->coros);
-        mk_list_init(&th_ins->coros_destroy);
-        pthread_mutex_init(&th_ins->coro_mutex, NULL);
+        th_ins->flush_id = 0;
+        mk_list_init(&th_ins->flush_list);
+        mk_list_init(&th_ins->flush_list_destroy);
+        pthread_mutex_init(&th_ins->flush_mutex, NULL);
         mk_list_init(&th_ins->upstreams);
 
         upstream_thread_create(th_ins, ins);
@@ -500,9 +496,9 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 
         th_ins = th->params.data;
 
-        pthread_mutex_lock(&th_ins->coro_mutex);
-        n = mk_list_size(&th_ins->coros);
-        pthread_mutex_unlock(&th_ins->coro_mutex);
+        pthread_mutex_lock(&th_ins->flush_mutex);
+        n = mk_list_size(&th_ins->flush_list);
+        pthread_mutex_unlock(&th_ins->flush_mutex);
 
         size += n;
     }

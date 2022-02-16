@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -218,6 +217,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->host.ipv6    = FLB_FALSE;
 
         /* Initialize list heads */
+        mk_list_init(&instance->routes_direct);
         mk_list_init(&instance->routes);
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
@@ -350,22 +350,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
         flb_sds_destroy(tmp);
     }
     else if (prop_key_check("storage.type", k, len) == 0 && tmp) {
-        /* If the input generate metrics, always use memory storage (for now) */
-        if (flb_input_event_type_is_metric(ins)) {
+        /* Set the storage type */
+        if (strcasecmp(tmp, "filesystem") == 0) {
+            ins->storage_type = CIO_STORE_FS;
+        }
+        else if (strcasecmp(tmp, "memory") == 0) {
             ins->storage_type = CIO_STORE_MEM;
         }
         else {
-            /* Set the storage type */
-            if (strcasecmp(tmp, "filesystem") == 0) {
-                ins->storage_type = CIO_STORE_FS;
-            }
-            else if (strcasecmp(tmp, "memory") == 0) {
-                ins->storage_type = CIO_STORE_MEM;
-            }
-            else {
-                flb_sds_destroy(tmp);
-                return -1;
-            }
+            flb_sds_destroy(tmp);
+            return -1;
         }
         flb_sds_destroy(tmp);
     }
@@ -481,9 +475,6 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config)
 {
     int ret;
-#ifdef FLB_HAVE_METRICS
-    const char *name;
-#endif
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
@@ -495,6 +486,13 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     if (!p) {
         return 0;
     }
+
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+
+    name = (char *) flb_input_name(ins);
+    ts = cmt_time_now();
 
     /* CMetrics */
     ins->cmt = cmt_create();
@@ -509,17 +507,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                                         "fluentbit", "input", "bytes_total",
                                         "Number of input bytes.",
                                         1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
+
     ins->cmt_records = cmt_counter_create(ins->cmt,
                                         "fluentbit", "input", "records_total",
                                         "Number of input records.",
                                         1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
 
     /* OLD Metrics */
-#ifdef FLB_HAVE_METRICS
-    /* Get name or alias for the instance */
-    name = flb_input_name(ins);
-
-    /* [OLD METRICS] Create the metrics context */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
@@ -676,7 +672,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *

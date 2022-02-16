@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -282,7 +281,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                              * holder with the new value, otherwise keep the
                              * original.
                              */
-                            if (flb_time_to_double(&parsed_time) != 0.0) {
+                            if (flb_time_to_nanosec(&parsed_time) != 0L) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
 

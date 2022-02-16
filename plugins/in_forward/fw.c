@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -186,28 +185,32 @@ static void in_fw_pause(void *data, struct flb_config *config)
      */
     if (config->is_ingestion_active == FLB_FALSE) {
         mk_event_closesocket(ctx->server_fd);
+        fw_conn_del_all(ctx);
+
     }
 }
 
 static int in_fw_exit(void *data, struct flb_config *config)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
     (void) *config;
     struct flb_in_fw_config *ctx = data;
-    struct fw_conn *conn;
 
-    mk_list_foreach_safe(head, tmp, &ctx->connections) {
-        conn = mk_list_entry(head, struct fw_conn, _head);
-        fw_conn_del(conn);
+    if (!ctx) {
+        return 0;
     }
 
+    fw_conn_del_all(ctx);
     fw_config_destroy(ctx);
     return 0;
 }
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_STR, "tag_prefix", NULL,
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, tag_prefix),
+    "Prefix incoming tag with the defined value."
+   },
    {
     FLB_CONFIG_MAP_STR, "unix_path", NULL,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_path),

@@ -1,0 +1,29 @@
+# For staging upgrade we use the 'staging-upgrade-prep' as the base
+ARG STAGING_BASE=dokken/centos-7
+
+FROM dokken/centos-7 as official-install
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# Use the one-line install
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
+
+COPY ./test.sh /test.sh
+RUN chmod a+x /test.sh
+
+FROM official-install as staging-upgrade-prep
+RUN rm -f /etc/yum.repos.d/*-bit.repo
+
+FROM ${STAGING_BASE} as staging-install
+ARG AWS_URL
+ARG STAGING_VERSION
+ENV STAGING_VERSION=${STAGING_VERSION}
+RUN rpm --import "$AWS_URL/fluentbit.key"
+RUN wget "$AWS_URL/centos-7.repo" -O /etc/yum.repos.d/staging.repo
+# hadolint ignore=DL3032
+RUN yum update -y && yum install -y fluent-bit
+RUN systemctl enable fluent-bit
+
+COPY ./test.sh /test.sh
+RUN chmod a+x /test.sh
+
+FROM staging-install as staging-upgrade

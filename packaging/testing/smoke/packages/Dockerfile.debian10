@@ -1,0 +1,29 @@
+# For staging upgrade we use the 'official-install' as the base
+ARG STAGING_BASE=dokken/debian-10
+
+FROM dokken/debian-10 as official-install
+ARG RELEASE_URL
+RUN wget -qO - $RELEASE_URL/fluentbit.key | apt-key add -
+RUN echo "deb $RELEASE_URL/debian/buster buster main" >> /etc/apt/sources.list
+RUN apt-get update && apt-get install -y td-agent-bit
+RUN systemctl enable td-agent-bit
+
+COPY ./test.sh /test.sh
+RUN chmod a+x /test.sh
+
+FROM official-install as staging-upgrade-prep
+RUN head -n -1 /etc/apt/sources.list > /tmp/sources.list && mv /tmp/sources.list /etc/apt/sources.list
+
+FROM ${STAGING_BASE} as staging-install
+ARG AWS_URL
+ARG STAGING_VERSION
+ENV STAGING_VERSION=${STAGING_VERSION}
+RUN wget -qO - $AWS_URL/fluentbit.key | apt-key add -
+RUN echo "deb $AWS_URL/debian/buster buster main" >> /etc/apt/sources.list
+RUN apt-get update && apt-get install -y td-agent-bit
+RUN systemctl enable td-agent-bit
+
+COPY ./test.sh /test.sh
+RUN chmod a+x /test.sh
+
+FROM staging-install as staging-upgrade

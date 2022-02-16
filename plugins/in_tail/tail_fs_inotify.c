@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -363,6 +362,5 @@ int flb_tail_fs_inotify_remove(struct flb_tail_file *file)
 
 int flb_tail_fs_inotify_exit(struct flb_tail_config *ctx)
 {
-    (void) ctx;
-    return 0;
+    return close(ctx->fd_notify);
 }

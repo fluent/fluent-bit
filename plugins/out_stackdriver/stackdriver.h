@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -131,6 +130,8 @@ struct flb_stackdriver {
     flb_sds_t severity_key;
     flb_sds_t trace_key;
     flb_sds_t log_name_key;
+    flb_sds_t http_request_key;
+    int http_request_key_size;
     bool autoformat_stackdriver_trace;
 
     flb_sds_t stackdriver_agent;
@@ -155,6 +156,7 @@ struct flb_stackdriver {
     /* metrics */
     struct cmt_counter *cmt_successful_requests;
     struct cmt_counter *cmt_failed_requests;
+    struct cmt_counter *cmt_requests_total;
 #endif
 
     /* plugin instance */

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +33,7 @@
 #define FLB_CONFIG_MAP_DOUBLE      4    /* double */
 #define FLB_CONFIG_MAP_SIZE        5    /* string size to integer (e.g: 2M) */
 #define FLB_CONFIG_MAP_TIME        6    /* string time to integer seconds (e.g: 2H) */
+#define FLB_CONFIG_MAP_DEPRECATED  7    /* for deprecated parameter */
 
 #define FLB_CONFIG_MAP_CLIST    30   /* comma separated list of strings */
 #define FLB_CONFIG_MAP_CLIST_1  31   /* split up to 1 node  + remaining data */

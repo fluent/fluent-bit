@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019      The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -320,7 +319,7 @@ int flb_sp_cmd_key_add(struct flb_sp_cmd *cmd, int func, const char *key_name)
 
 void flb_sp_cmd_alias_add(struct flb_sp_cmd *cmd, const char *key_alias)
 {
-    cmd->alias = key_alias;
+    cmd->alias = (char *) key_alias;
 }
 
 int flb_sp_cmd_source(struct flb_sp_cmd *cmd, int type, const char *source)

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -76,6 +75,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     int ret_j;
     int len;
     int entries = 0;
+    int skip_entries = 0;
     int rows = 0;
     time_t sec;
     long nsec;
@@ -203,6 +203,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 
         /* Pack every field in the entry */
         entries = 0;
+        skip_entries = 0;
         while (sd_journal_enumerate_data(ctx->j, &data, &length) > 0 &&
                entries < ctx->max_fields) {
             key = (const char *) data;
@@ -211,6 +212,10 @@ static int in_systemd_collect(struct flb_input_instance *ins,
                 length--;
             }
             sep = strchr(key, '=');
+            if (sep == NULL) {
+                skip_entries++;
+                continue;
+            }
             len = (sep - key);
             msgpack_pack_str(&mp_pck, len);
             msgpack_pack_str_body(&mp_pck, key, len);
@@ -227,6 +232,9 @@ static int in_systemd_collect(struct flb_input_instance *ins,
             flb_plg_debug(ctx->ins,
                           "max number of fields is reached: %i; all other "
                           "fields are discarded", ctx->max_fields);
+        }
+        if (skip_entries > 0) {
+            flb_plg_error(ctx->ins, "Skip %d broken entries", skip_entries);
         }
 
         /*

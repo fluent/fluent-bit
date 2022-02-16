@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -173,6 +172,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
 
     if ( configure(ctx, f_ins) < 0 ){
         delete_list(ctx);
+        flb_free(ctx);
         return -1;
     }
 

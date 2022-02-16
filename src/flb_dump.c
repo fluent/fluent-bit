@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -25,6 +24,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_event.h>
 
 #ifdef FLB_DUMP_STACKTRACE
 #include <fluent-bit/flb_stacktrace.h>
@@ -118,7 +118,7 @@ static void dump_input_chunks(struct flb_config *ctx)
         /* Iterate tasks and print a summary */
         mk_list_foreach(h_task, &i->tasks) {
             task = mk_list_entry(h_task, struct flb_task, _head);
-            size += task->size;
+            size += task->event_chunk->size;
             if (task->status == FLB_TASK_NEW) {
                 task_new++;
             }

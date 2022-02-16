@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #define FLB_AWS_IMDS_HOST "169.254.169.254"
 #define FLB_AWS_IMDS_HOST_LEN 15
 #define FLB_AWS_IMDS_PORT 80
+#define FLB_AWS_IMDS_TIMEOUT 1  /* 1 second */
 
 #define FLB_AWS_IMDS_VERSION_EVALUATE 0
 #define FLB_AWS_IMDS_VERSION_1 1

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -57,6 +56,8 @@ struct flb_calyptia {
     flb_sds_t api_key;
     flb_sds_t cloud_host;
     flb_sds_t store_path;
+
+    /* config reader for 'add_label' */
     struct mk_list *add_labels;
 
     /* internal */

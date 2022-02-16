@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -134,6 +133,55 @@ static void tls_context_destroy(void *ctx_backend)
     flb_free(ctx);
 }
 
+#ifdef _MSC_VER
+static int windows_load_system_certificates(struct tls_context *ctx)
+{
+    int ret;
+    HANDLE win_store;
+    PCCERT_CONTEXT win_cert = NULL;
+    const unsigned char *win_cert_data;
+    X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
+    X509 *ossl_cert;
+
+    win_store = CertOpenSystemStoreA(0, "Root");
+    if (win_store == NULL) {
+        flb_error("[tls] Cannot open cert store: %i", GetLastError());
+        return -1;
+    }
+
+    while (win_cert = CertEnumCertificatesInStore(win_store, win_cert)) {
+        if (win_cert->dwCertEncodingType & X509_ASN_ENCODING) {
+            /*
+             * Decode the certificate into X509 struct.
+             *
+             * The additional pointer variable is necessary per OpenSSL docs because the
+             * pointer is incremented by d2i_X509.
+             */
+            win_cert_data = win_cert->pbCertEncoded;
+            ossl_cert = d2i_X509(NULL, &win_cert_data, win_cert->cbCertEncoded);
+            if (!ossl_cert) {
+                flb_debug("[tls] Cannot parse a certificate. skipping...");
+                continue;
+            }
+
+            /* Add X509 struct to the openssl cert store */
+            ret = X509_STORE_add_cert(ossl_store, ossl_cert);
+            if (!ret) {
+                flb_warn("[tls] Failed to add a certificate to the store: %lu: %s",
+                         ERR_get_error(), ERR_error_string(ERR_get_error(), NULL));
+            }
+            X509_free(ossl_cert);
+        }
+    }
+
+    if (!CertCloseStore(win_store, 0)) {
+        flb_error("[tls] Cannot close cert store: %i", GetLastError());
+        return -1;
+    }
+    return 0;
+}
+#endif
+
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
@@ -141,7 +189,7 @@ static int load_system_certificates(struct tls_context *ctx)
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
-    //return windows_load_system_certificates(ctx);
+    return windows_load_system_certificates(ctx);
 #endif
 
     if (access(RHEL_DEFAULT_CA, R_OK) == 0) {
@@ -353,13 +401,17 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    ERR_clear_error();
     ret = SSL_read(session->ssl, buf, len);
     if (ret <= 0) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
-        else if (ret < 0) {
+        else if (ret == SSL_ERROR_WANT_WRITE) {
+            ret = FLB_TLS_WANT_WRITE;
+        }
+        else {
             ret = -1;
         }
     }
@@ -379,6 +431,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    ERR_clear_error();
     ret = SSL_write(session->ssl,
                     (unsigned char *) data + total,
                     len - total);
@@ -414,6 +467,7 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
         SSL_set_tlsext_host_name(session->ssl, tls->vhost);
     }
 
+    ERR_clear_error();
     ret = SSL_connect(session->ssl);
     if (ret != 1) {
         ret = SSL_get_error(session->ssl, ret);

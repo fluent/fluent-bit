@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -40,11 +39,11 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_pack.h>
 
-FLB_TLS_DEFINE(struct flb_out_coro_params, out_coro_params);
+FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
 
 void flb_output_prepare()
 {
-    FLB_TLS_INIT(out_coro_params);
+    FLB_TLS_INIT(out_flush_params);
 }
 
 /* Validate the the output address protocol */
@@ -118,26 +117,26 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
 #endif
 }
 
-void flb_output_coro_prepare_destroy(struct flb_output_coro *out_coro)
+void flb_output_flush_prepare_destroy(struct flb_output_flush *out_flush)
 {
-    struct flb_output_instance *ins = out_coro->o_ins;
+    struct flb_output_instance *ins = out_flush->o_ins;
     struct flb_out_thread_instance *th_ins;
 
     /* Move output coroutine context from active list to the destroy one */
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
         th_ins = flb_output_thread_instance_get();
-        pthread_mutex_lock(&th_ins->coro_mutex);
-        mk_list_del(&out_coro->_head);
-        mk_list_add(&out_coro->_head, &th_ins->coros_destroy);
-        pthread_mutex_unlock(&th_ins->coro_mutex);
+        pthread_mutex_lock(&th_ins->flush_mutex);
+        mk_list_del(&out_flush->_head);
+        mk_list_add(&out_flush->_head, &th_ins->flush_list_destroy);
+        pthread_mutex_unlock(&th_ins->flush_mutex);
     }
     else {
-        mk_list_del(&out_coro->_head);
-        mk_list_add(&out_coro->_head, &ins->coros_destroy);
+        mk_list_del(&out_flush->_head);
+        mk_list_add(&out_flush->_head, &ins->flush_list_destroy);
     }
 }
 
-int flb_output_coro_id_get(struct flb_output_instance *ins)
+int flb_output_flush_id_get(struct flb_output_instance *ins)
 {
     int id;
     int max = (2 << 13) - 1; /* max for 14 bits */
@@ -145,21 +144,21 @@ int flb_output_coro_id_get(struct flb_output_instance *ins)
 
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
         th_ins = flb_output_thread_instance_get();
-        id = th_ins->coro_id;
-        th_ins->coro_id++;
+        id = th_ins->flush_id;
+        th_ins->flush_id++;
 
         /* reset once it reach the maximum allowed */
-        if (th_ins->coro_id > max) {
-            th_ins->coro_id = 0;
+        if (th_ins->flush_id > max) {
+            th_ins->flush_id = 0;
         }
     }
     else {
-        id = ins->coro_id;
-        ins->coro_id++;
+        id = ins->flush_id;
+        ins->flush_id++;
 
         /* reset once it reach the maximum allowed */
-        if (ins->coro_id > max) {
-            ins->coro_id = 0;
+        if (ins->flush_id > max) {
+            ins->flush_id = 0;
         }
     }
 
@@ -168,10 +167,10 @@ int flb_output_coro_id_get(struct flb_output_instance *ins)
 
 void flb_output_coro_add(struct flb_output_instance *ins, struct flb_coro *coro)
 {
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
 
-    out_coro = (struct flb_output_coro *) FLB_CORO_DATA(coro);
-    mk_list_add(&out_coro->_head, &ins->coros);
+    out_flush = (struct flb_output_flush *) FLB_CORO_DATA(coro);
+    mk_list_add(&out_flush->_head, &ins->flush_list);
 }
 
 /*
@@ -183,7 +182,7 @@ int flb_output_task_flush(struct flb_task *task,
                           struct flb_config *config)
 {
     int ret;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
 
     if (flb_output_is_threaded(out_ins) == FLB_TRUE) {
         flb_task_users_inc(task);
@@ -196,19 +195,16 @@ int flb_output_task_flush(struct flb_task *task,
     }
     else {
         /* Direct co-routine handling */
-        out_coro = flb_output_coro_create(task,
-                                          task->i_ins,
-                                          out_ins,
-                                          config,
-                                          task->buf, task->size,
-                                          task->tag,
-                                          task->tag_len);
-        if (!out_coro) {
+        out_flush = flb_output_flush_create(task,
+                                           task->i_ins,
+                                           out_ins,
+                                           config);
+        if (!out_flush) {
             return -1;
         }
 
         flb_task_users_inc(task);
-        flb_coro_resume(out_coro->coro);
+        flb_coro_resume(out_flush->coro);
     }
 
     return 0;
@@ -310,7 +306,7 @@ void flb_output_exit(struct flb_config *config)
 
         /* Check a exit callback */
         if (p->cb_exit) {
-            if(!p->proxy) {
+            if (!p->proxy) {
                 p->cb_exit(ins->context, config);
             }
             else {
@@ -320,7 +316,7 @@ void flb_output_exit(struct flb_config *config)
         flb_output_instance_destroy(ins);
     }
 
-    params = FLB_TLS_GET(out_coro_params);
+    params = FLB_TLS_GET(out_flush_params);
     if (params) {
         flb_free(params);
     }
@@ -370,7 +366,7 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
     struct mk_list *head;
     struct mk_list *list;
     struct flb_output_instance *ins;
-    struct flb_output_coro *out_coro;
+    struct flb_output_flush *out_flush;
     struct flb_out_thread_instance *th_ins;
 
     ins = flb_output_get_instance(config, out_id);
@@ -380,16 +376,16 @@ int flb_output_flush_finished(struct flb_config *config, int out_id)
 
     if (flb_output_is_threaded(ins) == FLB_TRUE) {
         th_ins = flb_output_thread_instance_get();
-        list = &th_ins->coros_destroy;
+        list = &th_ins->flush_list_destroy;
     }
     else {
-        list = &ins->coros_destroy;
+        list = &ins->flush_list_destroy;
     }
 
     /* Look for output coroutines that needs to be destroyed */
     mk_list_foreach_safe(head, tmp, list) {
-        out_coro = mk_list_entry(head, struct flb_output_coro, _head);
-        flb_output_coro_destroy(out_coro);
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
     }
 
     return 0;
@@ -534,8 +530,8 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     flb_kv_init(&instance->properties);
     flb_kv_init(&instance->net_properties);
     mk_list_init(&instance->upstreams);
-    mk_list_init(&instance->coros);
-    mk_list_init(&instance->coros_destroy);
+    mk_list_init(&instance->flush_list);
+    mk_list_init(&instance->flush_list_destroy);
 
     mk_list_add(&instance->_head, &config->outputs);
 
@@ -818,6 +814,7 @@ int flb_output_init_all(struct flb_config *config)
     struct mk_list *config_map;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    uint64_t ts;
 
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -854,6 +851,9 @@ int flb_output_init_all(struct flb_config *config)
         /* Get name or alias for the instance */
         name = (char *) flb_output_name(ins);
 
+        /* get timestamp */
+        ts = cmt_time_now();
+
         /* CMetrics */
         ins->cmt = cmt_create();
         if (!ins->cmt) {
@@ -861,43 +861,64 @@ int flb_output_init_all(struct flb_config *config)
             return -1;
         }
 
-        /* Register generic output plugin metrics */
+        /*
+         * Register generic output plugin metrics
+         */
+
+        /* fluentbit_output_proc_records_total */
         ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
                                                    "output", "proc_records_total",
                                                    "Number of processed output records.",
                                                    1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_proc_records, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_proc_bytes_total */
         ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
                                                  "output", "proc_bytes_total",
                                                  "Number of processed output bytes.",
                                                  1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_proc_bytes, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_errors_total */
         ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "errors_total",
                                              "Number of output errors.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_errors, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_retries_total */
         ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "retries_total",
                                              "Number of output retries.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_retries, ts, 0, 1, (char *[]) {name});
 
+        /* fluentbit_output_retries_failed_total */
         ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "retries_failed_total",
                                              "Number of abandoned batches because "
                                              "the maximum number of re-tries was "
                                              "reached.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_retries_failed, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_dropped_records_total */
         ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "dropped_records_total",
                                              "Number of dropped records.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_dropped_records, ts, 0, 1, (char *[]) {name});
 
+        /* fluentbit_output_retried_records_total */
         ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "retried_records_total",
                                              "Number of retried records.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_retried_records, ts, 0, 1, (char *[]) {name});
 
         /* old API */
         ins->metrics = flb_metrics_create(name);

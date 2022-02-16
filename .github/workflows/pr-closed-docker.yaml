@@ -5,16 +5,12 @@ on:
       - master
     types: [closed]
 jobs:
-  docker_cleanup:
+  cleanup:
+    name: PR - cleanup pr-${{ github.event.number }} images
     runs-on: ubuntu-latest
     steps:
-      - uses: addnab/docker-run-action@v2
+      - uses: bots-house/ghcr-delete-image-action@v1.0.1
         with:
-          image: lumir/remove-dockerhub-tag
-          run: python3 remove-dockerhub-tag.py --user ${{ env.dockerhub_username }} --password ${{ env.dockerhub_password }} ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-master-pr-${{ env.pr }} || exit 0
-        env:
-          pr: ${{ github.event.number }}
-          arch: x86_64
-          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub_password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          dockerhub_organization: ${{ secrets.DOCKERHUB_DEV_ORGANIZATION }}
+          owner: fluent
+          name: fluent-bit/pr-${{ github.event.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}

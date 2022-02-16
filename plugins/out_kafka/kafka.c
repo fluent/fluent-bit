@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -451,8 +450,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     return FLB_OK;
 }
 
-static void cb_kafka_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -476,7 +475,9 @@ static void cb_kafka_flush(const void *data, size_t bytes,
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         ret = produce_message(&tms, obj, ctx, config);

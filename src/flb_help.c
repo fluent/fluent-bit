@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -79,6 +78,9 @@ int pack_config_map_entry(msgpack_packer *mp_pck, struct flb_config_map *m)
 
     if (m->type == FLB_CONFIG_MAP_STR) {
         pack_str(mp_pck, "string");
+    }
+    else if (m->type == FLB_CONFIG_MAP_DEPRECATED) {
+        pack_str(mp_pck, "deprecated");
     }
     else if (m->type == FLB_CONFIG_MAP_INT) {
         pack_str(mp_pck, "integer");

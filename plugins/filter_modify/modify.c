@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -681,6 +680,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_EQUAL(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_EQUALS(ctx, map, condition);
 }
 
@@ -715,6 +717,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_MATCHES(ctx, map, condition);
 }
 
@@ -1231,7 +1236,7 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
         // * * Record array item 1/2
         msgpack_pack_object(packer, ts);
 
-        flb_plg_debug(ctx->ins, "Input map size %d elements, output map size "
+        flb_plg_trace(ctx->ins, "Input map size %d elements, output map size "
                       "%d elements", records_in, map.via.map.size);
 
         // * * Record array item 2/2

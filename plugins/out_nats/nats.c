@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +21,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -32,6 +32,7 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
                         void *data)
 {
     int io_flags;
+    int ret;
     struct flb_upstream *upstream;
     struct flb_out_nats_config *ctx;
 
@@ -42,6 +43,14 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     ctx = flb_malloc(sizeof(struct flb_out_nats_config));
     if (!ctx) {
         flb_errno();
+        return -1;
+    }
+
+    /* Set default values */
+    ret = flb_output_config_map_set(ins, ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "flb_output_config_map_set failed");
+        flb_free(ctx);
         return -1;
     }
 
@@ -143,11 +152,11 @@ static int msgpack_to_json(const void *data, size_t bytes,
     return 0;
 }
 
-void cb_nats_flush(const void *data, size_t bytes,
-                   const char *tag, int tag_len,
-                   struct flb_input_instance *i_ins,
-                   void *out_context,
-                   struct flb_config *config)
+static void cb_nats_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
+                          struct flb_input_instance *i_ins,
+                          void *out_context,
+                          struct flb_config *config)
 {
     int ret;
     size_t bytes_sent;
@@ -175,14 +184,16 @@ void cb_nats_flush(const void *data, size_t bytes,
     }
 
     /* Convert original Fluent Bit MsgPack format to JSON */
-    ret = msgpack_to_json(data, bytes, tag, tag_len, &json_msg, &json_len);
+    ret = msgpack_to_json(event_chunk->data, event_chunk->size,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
+                          &json_msg, &json_len);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
     /* Compose the NATS Publish request */
-    request = flb_malloc(json_len + tag_len + 32);
+    request = flb_malloc(json_len + flb_sds_len(event_chunk->tag) + 32);
     if (!request) {
         flb_errno();
         flb_sds_destroy(json_msg);
@@ -190,8 +201,9 @@ void cb_nats_flush(const void *data, size_t bytes,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    req_len = snprintf(request, tag_len + 32, "PUB %s %zu\r\n",
-                       tag, json_len);
+    req_len = snprintf(request, flb_sds_len(event_chunk->tag)+ 32,
+                       "PUB %s %zu\r\n",
+                       event_chunk->tag, json_len);
 
     /* Append JSON message and ending CRLF */
     memcpy(request + req_len, json_msg, json_len);
@@ -224,6 +236,11 @@ int cb_nats_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_nats_plugin = {
     .name         = "nats",
     .description  = "NATS Server",
@@ -231,4 +248,5 @@ struct flb_output_plugin out_nats_plugin = {
     .cb_flush     = cb_nats_flush,
     .cb_exit      = cb_nats_exit,
     .flags        = FLB_OUTPUT_NET,
+    .config_map   = config_map
 };

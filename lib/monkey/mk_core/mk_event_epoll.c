@@ -359,6 +359,33 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     return 0;
 }
 
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask,
+                                   int prevent_duplication)
+{
+    size_t               index;
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    if (prevent_duplication) {
+        for (index = 0 ; index < loop->n_events ; index++) {
+            if (ctx->events[index].data.ptr == event) {
+                return 0;
+            }
+        }
+    }
+
+    event->mask = mask;
+
+    ctx->events[loop->n_events].data.ptr = event;
+
+    loop->n_events++;
+
+    return 0;
+}
+
 static inline int _mk_event_wait(struct mk_event_loop *loop)
 {
     struct mk_event_ctx *ctx = loop->data;

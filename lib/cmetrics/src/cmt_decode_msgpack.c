@@ -627,7 +627,7 @@ static int unpack_basic_type(mpack_reader_t *reader, struct cmt *cmt, struct cmt
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
 
-    *map = cmt_map_create(0, NULL, 0, NULL);
+    *map = cmt_map_create(0, NULL, 0, NULL, NULL);
 
     if (NULL == *map) {
         return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
@@ -685,6 +685,7 @@ static int append_unpacked_counter_to_metrics_context(struct cmt *context,
     }
 
     counter->map = map;
+    map->parent = (void *) counter;
 
     memcpy(&counter->opts, map->opts, sizeof(struct cmt_opts));
 
@@ -714,6 +715,7 @@ static int append_unpacked_gauge_to_metrics_context(struct cmt *context,
     }
 
     gauge->map = map;
+    map->parent = (void *) gauge;
 
     memcpy(&gauge->opts, map->opts, sizeof(struct cmt_opts));
 
@@ -742,6 +744,7 @@ static int append_unpacked_untyped_to_metrics_context(struct cmt *context,
     }
 
     untyped->map = map;
+    map->parent = (void *) untyped;
 
     memcpy(&untyped->opts, map->opts, sizeof(struct cmt_opts));
 

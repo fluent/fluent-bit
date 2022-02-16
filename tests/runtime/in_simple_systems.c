@@ -169,6 +169,10 @@ void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
 }
+void flb_test_in_dummy_thread_flush()
+{
+    do_test("dummy_thread", NULL);
+}
 void flb_test_in_mem_flush()
 {
     do_test("mem", NULL);
@@ -191,7 +195,7 @@ void flb_test_in_proc_absent_process(void)
     in_ffd = flb_input(ctx, (char *) "proc", NULL);
     TEST_CHECK(in_ffd >= 0);
     flb_input_set(ctx, in_ffd, "tag", "test",
-                  "interval_sec", "1", "proc_name", "",
+                  "interval_sec", "1", "proc_name", "-",
                   "alert", "true", "mem", "on", "fd", "on", NULL);
 
     out_ffd = flb_output(ctx, (char *) "lib", &cb);
@@ -228,6 +232,9 @@ TEST_LIST = {
 #endif
 #ifdef in_dummy
     {"dummy_flush",   flb_test_in_dummy_flush},
+#endif
+#ifdef in_dummy_thread
+    {"dummy_thread_flish",   flb_test_in_dummy_thread_flush},
 #endif
 #ifdef in_mem
     {"mem_flush",     flb_test_in_mem_flush},

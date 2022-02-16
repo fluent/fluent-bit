@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -666,24 +665,24 @@ int should_add_to_emf(struct flb_intermediate_metric *an_item)
     return 0;
 }
 
-struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx, 
+int pack_emf_payload(struct flb_cloudwatch *ctx,
                                        struct mk_list *flb_intermediate_metrics, 
                                        const char *input_plugin, 
-                                       struct flb_time tms)
+                                       struct flb_time tms,
+                                       msgpack_sbuffer *mp_sbuf,
+                                       msgpack_unpacked *mp_result,
+                                       msgpack_object *emf_payload)
 {
     int total_items = mk_list_size(flb_intermediate_metrics) + 1;
 
     struct mk_list *metric_temp;
     struct mk_list *metric_head;
     struct flb_intermediate_metric *an_item;
-
-    /* msgpack::sbuffer is a simple buffer implementation. */
-    msgpack_sbuffer mp_sbuf;
-    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_unpack_return mp_ret;
 
     /* Serialize values into the buffer using msgpack_sbuffer_write */
     msgpack_packer mp_pck;
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
     msgpack_pack_map(&mp_pck, total_items);
 
     /* Pack the _aws map */
@@ -778,20 +777,17 @@ struct msgpack_object pack_emf_payload(struct flb_cloudwatch *ctx,
 
     /* 
      * Deserialize the buffer into msgpack_object instance.
-     * Deserialized object is valid during the msgpack_zone instance alive. 
      */
-    msgpack_zone mempool;
-    msgpack_zone_init(&mempool, 2048);
 
-    msgpack_object deserialized_emf_object;
-    msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, 
-                   &deserialized_emf_object);
+    mp_ret = msgpack_unpack_next(mp_result, mp_sbuf->data, mp_sbuf->size, NULL);
 
-    /* free allocated memory */
-    msgpack_zone_destroy(&mempool);
-    msgpack_sbuffer_destroy(&mp_sbuf);
+    if (mp_ret != MSGPACK_UNPACK_SUCCESS) {
+        flb_plg_error(ctx->ins, "msgpack_unpack returned non-success value %i", mp_ret);
+        return -1;
+    }
 
-    return deserialized_emf_object;
+    *emf_payload = mp_result->data;
+    return 0;
 }
 
 /*
@@ -812,6 +808,11 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     msgpack_object_kv *kv;
     msgpack_object  key;
     msgpack_object  val;
+    msgpack_unpacked mp_emf_result;
+    msgpack_object emf_payload;
+    /* msgpack::sbuffer is a simple buffer implementation. */
+    msgpack_sbuffer mp_sbuf;
+
     char *key_str = NULL;
     size_t key_str_size = 0;
     int j;
@@ -927,10 +928,19 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 
             }  
 
-            struct msgpack_object emf_payload = pack_emf_payload(ctx, 
-                                                                &flb_intermediate_metrics, 
-                                                                input_plugin, 
-                                                                tms);
+            /* The msgpack object is only valid during the lifetime of the
+             * sbuffer & the unpacked result.
+            */
+            msgpack_sbuffer_init(&mp_sbuf);
+            msgpack_unpacked_init(&mp_emf_result);
+
+            ret = pack_emf_payload(ctx,
+                                    &flb_intermediate_metrics,
+                                    input_plugin,
+                                    tms,
+                                    &mp_sbuf,
+                                    &mp_emf_result,
+                                    &emf_payload);
             
             /* free the intermediate metric list */
             
@@ -940,7 +950,17 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                 flb_free(an_item);
             }
 
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "Failed to convert EMF metrics to msgpack object. ret=%i", ret);
+                msgpack_unpacked_destroy(&mp_emf_result);
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                goto error;
+            }
             ret = add_event(ctx, buf, stream, &emf_payload, &tms);
+
+            msgpack_unpacked_destroy(&mp_emf_result);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+
         } else {
             ret = add_event(ctx, buf, stream, &map, &tms);
         }
@@ -1313,6 +1333,7 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     flb_sds_t tmp;
     flb_sds_t error;
     int num_headers = 1;
+    int retry = FLB_TRUE;
 
     buf->put_events_calls++;
 
@@ -1336,6 +1357,7 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         num_headers = 2;
     }
 
+retry_request:
     if (plugin_under_test() == FLB_TRUE) {
         c = mock_http_call("TEST_PUT_LOG_EVENTS_ERROR", "PutLogEvents");
     }
@@ -1350,6 +1372,25 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
         flb_plg_debug(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
 
         if (c->resp.status == 200) {
+            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
+                /* code was 200, but response is invalid, treat as failure */
+                if (c->resp.data != NULL) {
+                    flb_plg_debug(ctx->ins, "Could not find sequence token in "
+                                  "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
+                }
+                flb_http_client_destroy(c);
+
+                if (retry == FLB_TRUE) {
+                    flb_plg_debug(ctx->ins, "issuing immediate retry for invalid response");
+                    retry = FLB_FALSE;
+                    goto retry_request;
+                }
+                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
+                                  AMZN_REQUEST_ID_HEADER);
+                return -1;
+            }
+
+
             /* success */
             if (c->resp.payload_size > 0) {
                 flb_plg_debug(ctx->ins, "Sent events to %s", stream->name);
@@ -1370,18 +1411,6 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                 }
             }
         
-            if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
-                /* code was 200, but response is invalid, treat as failure */
-                flb_plg_error(ctx->ins, "Recieved code 200 but response was invalid, %s header not found",
-                              AMZN_REQUEST_ID_HEADER);
-                if (c->resp.data != NULL) {
-                    flb_plg_debug(ctx->ins, "Could not find sequence token in "
-                                  "response: response body is empty: full data: `%.*s`", c->resp.data_len, c->resp.data);
-                }
-                flb_http_client_destroy(c);
-                return -1;
-            }
-            
             flb_http_client_destroy(c);
             return 0;
         }

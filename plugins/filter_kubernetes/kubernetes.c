@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -132,7 +131,7 @@ static int merge_log_handler(msgpack_object o,
         ret = flb_parser_do(parser, ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0.0) {
+            if (flb_time_to_nanosec(log_time) == 0L) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -143,7 +142,7 @@ static int merge_log_handler(msgpack_object o,
                             ctx->unesc_buf, ctx->unesc_buf_len,
                             out_buf, out_size, log_time);
         if (ret >= 0) {
-            if (flb_time_to_double(log_time) == 0.0) {
+            if (flb_time_to_nanosec(log_time) == 0L) {
                 flb_time_get(log_time);
             }
             return MERGE_PARSED;
@@ -273,7 +272,7 @@ static int pack_map_content(msgpack_packer *pck, msgpack_sbuffer *sbuf,
 
     /* Append record timestamp */
     if (merge_status == MERGE_PARSED) {
-        if (flb_time_to_double(&log_time) == 0.0) {
+        if (flb_time_to_nanosec(&log_time) == 0L) {
             flb_time_append_to_msgpack(time_lookup, pck, 0);
         }
         else {

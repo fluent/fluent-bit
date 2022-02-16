@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -27,6 +26,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <sys/types.h>
@@ -109,7 +109,7 @@ static int get_token_with_command(const char *command,
     res = flb_calloc(1, FLB_KUBE_TOKEN_BUF_SIZE);
     if (!res) {
         flb_errno();
-        fclose(fp);
+        pclose(fp);
         return -1;
     }
     
@@ -120,7 +120,7 @@ static int get_token_with_command(const char *command,
             if (temp == NULL) {
                 flb_errno();
                 flb_free(res);
-                fclose(fp);
+                pclose(fp);
                 return -1;
             }
             res = temp;
@@ -131,11 +131,11 @@ static int get_token_with_command(const char *command,
 
     if (strlen(res) < 1) {
         flb_free(res);
-        fclose(fp);
+        pclose(fp);
         return -1;
     }
     
-    fclose(fp);
+    pclose(fp);
 
     *out_buf = res;
     *out_size = strlen(res);
@@ -229,6 +229,23 @@ static int refresh_token_if_needed(struct flb_kube *ctx)
     return 0;
 }
 
+static void expose_k8s_meta(struct flb_kube *ctx)
+{
+    char *tmp;
+    struct flb_env *env;
+
+    env = ctx->config->env;
+
+    flb_env_set(env, "k8s", "enabled");
+    flb_env_set(env, "k8s.namespace", ctx->namespace);
+    flb_env_set(env, "k8s.pod_name", ctx->podname);
+
+    tmp = (char *) flb_env_get(env, "NODE_NAME");
+    if (tmp) {
+        flb_env_set(env, "k8s.node_name", tmp);
+    }
+}
+
 /* Load local information from a POD context */
 static int get_local_pod_info(struct flb_kube *ctx)
 {
@@ -273,6 +290,7 @@ static int get_local_pod_info(struct flb_kube *ctx)
         return FLB_FALSE;
     }
 
+    expose_k8s_meta(ctx);
     return FLB_TRUE;
 }
 

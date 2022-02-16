@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -231,6 +230,8 @@ struct flb_input_instance {
     struct mk_list *config_map;          /* configuration map        */
 
     struct mk_list _head;                /* link to config->inputs     */
+
+    struct mk_list routes_direct;        /* direct routes set by API   */
     struct mk_list routes;               /* flb_router_path's list     */
     struct mk_list properties;           /* properties / configuration */
     struct mk_list collectors;           /* collectors                 */
@@ -389,7 +390,7 @@ struct flb_coro *flb_input_coro_create(struct flb_input_instance *ins,
     }
 
     /* Setup thread specific data */
-    in_coro = (struct flb_input_coro *) flb_malloc(sizeof(struct flb_input_coro));
+    in_coro = (struct flb_input_coro *) flb_calloc(1, sizeof(struct flb_input_coro));
     if (!in_coro) {
         flb_errno();
         return NULL;
@@ -483,7 +484,7 @@ static inline void flb_input_return(struct flb_coro *coro) {
     uint64_t val;
     struct flb_input_coro *in_coro;
 
-    in_coro = (struct flb_input_coro *) FLB_CORO_DATA(coro);
+    in_coro = (struct flb_input_coro *) coro->data;
 
     /*
      * To compose the signal event the relevant info is:
@@ -500,6 +501,17 @@ static inline void flb_input_return(struct flb_coro *coro) {
         flb_errno();
     }
 }
+
+static inline void flb_input_return_do(int ret) {
+    struct flb_coro *coro = flb_coro_get();
+
+    flb_input_return(coro);
+    flb_coro_yield(coro, FLB_TRUE);
+}
+
+#define FLB_INPUT_RETURN(x) \
+    flb_input_return_do(x); \
+    return x;
 
 static inline int flb_input_buf_paused(struct flb_input_instance *i)
 {

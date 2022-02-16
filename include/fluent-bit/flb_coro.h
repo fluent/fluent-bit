@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -63,9 +62,9 @@ struct flb_coro {
 };
 
 #ifdef FLB_CORO_STACK_SIZE
-#define FLB_CORO_STACK_SIZE      FLB_CORO_STACK_SIZE
+#define FLB_CORO_STACK_SIZE_BYTE      FLB_CORO_STACK_SIZE
 #else
-#define FLB_CORO_STACK_SIZE      ((3 * PTHREAD_STACK_MIN) / 2)
+#define FLB_CORO_STACK_SIZE_BYTE      ((3 * PTHREAD_STACK_MIN) / 2)
 #endif
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -708,7 +707,7 @@ static void flush_snapshot(struct flb_input_instance *i_ins,
     /* Memory limit [bytes] */
     msgpack_pack_str(&mp_pck, 9);
     msgpack_pack_str_body(&mp_pck, "mem_limit", 9);
-    msgpack_pack_unsigned_int(&mp_pck, snapshot->mem->limit);
+    msgpack_pack_uint64(&mp_pck, snapshot->mem->limit);
 
     flb_trace("[in_docker] ID %s CPU %lu MEMORY %ld", snapshot->id,
               snapshot->cpu->used, snapshot->mem->used);

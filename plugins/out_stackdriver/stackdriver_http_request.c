@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -231,6 +230,8 @@ static void validate_latency(msgpack_object_str latency_in_payload,
 
 /* Return true if httpRequest extracted */
 int extract_http_request(struct http_request_field *http_request,
+                         flb_sds_t http_request_key,
+                         int http_request_key_size,
                          msgpack_object *obj, int *extra_subfields)
 {
     http_request_status op_status = NO_HTTPREQUEST;
@@ -249,8 +250,8 @@ int extract_http_request(struct http_request_field *http_request,
     for (; p < pend && op_status == NO_HTTPREQUEST; ++p) {
 
         if (p->val.type != MSGPACK_OBJECT_MAP
-            || !validate_key(p->key, HTTPREQUEST_FIELD_IN_JSON,
-                             HTTP_REQUEST_KEY_SIZE)) {
+            || !validate_key(p->key, http_request_key,
+                             http_request_key_size)) {
 
             continue;
         }

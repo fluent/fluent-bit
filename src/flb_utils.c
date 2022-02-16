@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -47,61 +46,69 @@ extern struct flb_aws_error_reporter *error_reporter;
 #include <openssl/rand.h>
 #endif
 
+/*
+ * The following block descriptor describes the private use unicode character range
+ * used for denoting invalid utf-8 fragments. Invalid fragment 0xCE would become
+ * utf-8 codepoint U+E0CE if FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR is set to
+ * E0 since U+E0CE = U+<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR><HEX_FRAGMENT>
+ */
+#define FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR 0xE0
+
 void flb_utils_error(int err)
 {
     char *msg = NULL;
 
     switch (err) {
     case FLB_ERR_CFG_FILE:
-        msg = "Could not open configuration file";
+        msg = "could not open configuration file";
         break;
     case FLB_ERR_CFG_FILE_FORMAT:
-        msg = "Configuration file contains format errors";
+        msg = "configuration file contains format errors";
         break;
     case FLB_ERR_CFG_FILE_STOP:
-        msg = "Configuration file contains errors";
+        msg = "configuration file contains errors";
         break;
     case FLB_ERR_CFG_FLUSH:
-        msg = "Invalid flush value";
+        msg = "invalid flush value";
         break;
     case FLB_ERR_CFG_FLUSH_CREATE:
-        msg = "Could not create timer for flushing";
+        msg = "could not create timer for flushing";
         break;
     case FLB_ERR_CFG_FLUSH_REGISTER:
-        msg = "Could not register timer for flushing";
+        msg = "could not register timer for flushing";
         break;
     case FLB_ERR_INPUT_INVALID:
-        msg = "Invalid input type";
+        msg = "invalid input type";
         break;
     case FLB_ERR_INPUT_UNDEF:
-        msg = "No Input(s) have been defined";
+        msg = "no input(s) have been defined";
         break;
     case FLB_ERR_INPUT_UNSUP:
-        msg = "Unsupported Input";
+        msg = "unsupported Input";
         break;
     case FLB_ERR_OUTPUT_UNDEF:
-        msg = "You must specify an output target";
+        msg = "you must specify an output target";
         break;
     case FLB_ERR_OUTPUT_INVALID:
-        msg = "Invalid output target";
+        msg = "invalid output target";
         break;
     case FLB_ERR_OUTPUT_UNIQ:
-        msg = "Just one output type is supported";
+        msg = "just one output type is supported";
         break;
     case FLB_ERR_FILTER_INVALID:
-        msg = "Invalid filter plugin";
+        msg = "invalid filter plugin";
         break;
     case FLB_ERR_CFG_PARSER_FILE:
-        msg = "Could not open parser configuration file";
+        msg = "could not open parser configuration file";
         break;
     case FLB_ERR_JSON_INVAL:
-        msg = "Invalid JSON string";
+        msg = "invalid JSON string";
         break;
     case FLB_ERR_JSON_PART:
-        msg = "Truncated JSON string";
+        msg = "truncated JSON string";
         break;
     case FLB_ERR_CORO_STACK_SIZE:
-        msg = "Invalid coroutine stack size";
+        msg = "invalid coroutine stack size";
         break;
     }
 
@@ -117,10 +124,7 @@ void flb_utils_error(int err)
 
     }
     else {
-        fprintf(stderr,
-                "%sError%s: %s. Aborting\n\n",
-                ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
-
+        flb_error("%s, aborting.", msg);
         #ifdef FLB_HAVE_AWS_ERROR_REPORTER
         if (is_error_reporting_enabled()) {
             flb_aws_error_reporter_write(error_reporter, msg);
@@ -636,6 +640,9 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
     int required;
     int len;
     int hex_bytes;
+    int is_valid;
+    int utf_sequence_number;
+    int utf_sequence_length;
     uint32_t codepoint;
     uint32_t state = 0;
     char tmp[16];
@@ -732,20 +739,102 @@ int flb_utils_write_str(char *buf, int *off, size_t size,
             i += (hex_bytes - 1);
         }
         else if (c > 0xFFFF) {
-            hex_bytes = flb_utf8_len(str + i);
-            if (available - written < 6) {
-                return FLB_FALSE;
-            }
+            utf_sequence_length = flb_utf8_len(str + i);
 
-            if (i + hex_bytes > str_len) {
+            if (i + utf_sequence_length > str_len) {
                 break; /* skip truncated UTF-8 */
             }
-            for (b = 0; b < hex_bytes; b++) {
-                tmp[b] = str[i+b];
+
+            is_valid = FLB_TRUE;
+            for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length;
+                utf_sequence_number++) {
+                /* Leading characters must start with bits 11 */
+                if (utf_sequence_number == 0 && ((str[i] & 0xC0) != 0xC0)) {
+                    /* Invalid unicode character. replace */
+                    flb_debug("[pack] unexpected UTF-8 leading byte, "
+                             "substituting character with replacement character");
+                    tmp[utf_sequence_number] = str[i];
+                    ++i; /* Consume invalid leading byte */
+                    utf_sequence_length = utf_sequence_number + 1;
+                    is_valid = FLB_FALSE;
+                    break;
+                }
+                /* Trailing characters must start with bits 10 */
+                else if (utf_sequence_number > 0 && ((str[i] & 0xC0) != 0x80)) {
+                    /* Invalid unicode character. replace */
+                    flb_debug("[pack] unexpected UTF-8 continuation byte, "
+                             "substituting character with replacement character");
+                    /* This byte, i, is the start of the next unicode character */
+                    utf_sequence_length = utf_sequence_number;
+                    is_valid = FLB_FALSE;
+                    break;
+                }
+
+                tmp[utf_sequence_number] = str[i];
+                ++i;
             }
-            encoded_to_buf(p, tmp, hex_bytes);
-            p += hex_bytes;
-            i += (hex_bytes - 1);
+            --i;
+
+            if (is_valid) {
+                if (available - written < utf_sequence_length) {
+                    return FLB_FALSE;
+                }
+
+                encoded_to_buf(p, tmp, utf_sequence_length);
+                p += utf_sequence_length;
+            }
+            else {
+                if (available - written < utf_sequence_length * 3) {
+                    return FLB_FALSE;
+                }
+
+                /*
+                 * Utf-8 sequence is invalid. Map fragments to private use area
+                 * codepoints in range:
+                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
+                 * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF
+                 */
+                for (b = 0; b < utf_sequence_length; ++b) {
+                    /*
+                     * Utf-8 private block invalid hex mapping. Format unicode charpoint
+                     * in the following format:
+                     *
+                     *      +--------+--------+--------+
+                     *      |1110PPPP|10PPPPHH|10HHHHHH|
+                     *      +--------+--------+--------+
+                     *
+                     * Where:
+                     *   P is FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR bits (1 byte)
+                     *   H is Utf-8 fragment hex bits (1 byte)
+                     *   1 is bit 1
+                     *   0 is bit 0
+                     */
+
+                    /* unicode codepoint start */
+                    *p = 0xE0;
+
+                    /* print unicode private block header first 4 bits */
+                    *p |= FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4;
+                    ++p;
+
+                    /* unicode codepoint middle */
+                    *p = 0x80;
+
+                    /* print end of unicode private block header last 4 bits */
+                    *p |= ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f);
+
+                    /* print hex fragment first 2 bits */
+                    *p |= (tmp[b] >> 6) & 0x03;
+                    ++p;
+
+                    /* unicode codepoint middle */
+                    *p = 0x80;
+
+                    /* print hex fragment last 6 bits */
+                    *p |= tmp[b] & 0x3f;
+                    ++p;
+                }
+            }
         }
         else {
             *p++ = c;

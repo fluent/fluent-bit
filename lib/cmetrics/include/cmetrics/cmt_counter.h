@@ -29,6 +29,7 @@ struct cmt_counter {
     struct mk_list _head;
     struct cmt *cmt;
     int    allow_reset;
+    int    aggregation_type;
 };
 
 struct cmt_counter *cmt_counter_create(struct cmt *cmt,

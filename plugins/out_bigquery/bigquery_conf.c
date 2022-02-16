@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,11 +20,12 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_aws_credentials.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <fluent-bit/flb_utils.h>
 
 #include "bigquery.h"
 #include "bigquery_conf.h"
@@ -176,6 +176,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
 {
     int ret;
     const char *tmp;
+    char *tmp_aws_region;
     struct flb_bigquery *ctx;
     struct flb_bigquery_oauth_credentials *creds;
 
@@ -208,6 +209,75 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    tmp = flb_output_get_property("enable_identity_federation", ins);
+    if (tmp) {
+        ctx->has_identity_federation = flb_utils_bool(tmp);
+    }
+
+    if (ctx->credentials_file && ctx->has_identity_federation) {
+        flb_plg_error(ctx->ins, "Either `google_service_credentials` or `enable_identity_federation` should be set");
+        return NULL;
+    }
+
+    tmp = flb_output_get_property("aws_region", ins);
+    if (tmp) {
+        ctx->aws_region = flb_sds_create(tmp);
+        tmp_aws_region = flb_aws_endpoint("sts", ctx->aws_region);
+        if (!tmp_aws_region) {
+            flb_plg_error(ctx->ins, "Could not create AWS STS regional endpoint");
+            return NULL;
+        }
+        ctx->aws_sts_endpoint = flb_sds_create(tmp_aws_region);
+        flb_free(tmp_aws_region);
+    }
+
+    tmp = flb_output_get_property("project_number", ins);
+    if (tmp) {
+        ctx->project_number = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("pool_id", ins);
+    if (tmp) {
+        ctx->pool_id = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("provider_id", ins);
+    if (tmp) {
+        ctx->provider_id = flb_sds_create(tmp);
+    }
+
+    tmp = flb_output_get_property("google_service_account", ins);
+    if (tmp) {
+        ctx->google_service_account = flb_sds_create(tmp);
+    }
+
+    if (ctx->has_identity_federation) {
+        if (!ctx->aws_region) {
+            flb_plg_error(ctx->ins, "`aws_region` is required when `enable_identity_federation` is true");
+            return NULL;
+        }
+
+        if (!ctx->project_number) {
+            flb_plg_error(ctx->ins, "`project_number` is required when `enable_identity_federation` is true");
+            return NULL;
+        }
+
+        if (!ctx->pool_id) {
+            flb_plg_error(ctx->ins, "`pool_id` is required when `enable_identity_federation` is true");
+            return NULL;
+        }
+
+        if (!ctx->provider_id) {
+            flb_plg_error(ctx->ins, "`provider_id` is required when `enable_identity_federation` is true");
+            return NULL;
+        }
+
+        if (!ctx->google_service_account) {
+            flb_plg_error(ctx->ins, "`google_service_account` is required when `enable_identity_federation` is true");
+            return NULL;
+        }
+    }
+
     if (ctx->credentials_file) {
         ret = flb_bigquery_read_credentials_file(ctx,
                                                  ctx->credentials_file,
@@ -217,7 +287,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
             return NULL;
         }
     }
-    else {
+    else if (!ctx->credentials_file && !ctx->has_identity_federation) {
         /*
          * If no credentials file has been defined, do manual lookup of the
          * client email and the private key.
@@ -266,7 +336,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         ctx->project_id = flb_sds_create(tmp);
     }
     else {
-       if (creds->project_id) {
+        if (creds->project_id) {
             ctx->project_id = flb_sds_create(creds->project_id);
             if (!ctx->project_id) {
                 flb_plg_error(ctx->ins,
@@ -372,6 +442,45 @@ int flb_bigquery_conf_destroy(struct flb_bigquery *ctx)
 
     flb_bigquery_oauth_credentials_destroy(ctx->oauth_credentials);
 
+    if (ctx->aws_sts_upstream) {
+        flb_upstream_destroy(ctx->aws_sts_upstream);
+    }
+
+    if (ctx->google_sts_upstream) {
+        flb_upstream_destroy(ctx->google_sts_upstream);
+    }
+
+    if (ctx->google_iam_upstream) {
+        flb_upstream_destroy(ctx->google_iam_upstream);
+    }
+
+    if (ctx->aws_provider) {
+        flb_aws_provider_destroy(ctx->aws_provider);
+    }
+
+    if (ctx->aws_tls) {
+        flb_tls_destroy(ctx->aws_tls);
+    }
+
+    if (ctx->aws_sts_tls) {
+        flb_tls_destroy(ctx->aws_sts_tls);
+    }
+
+    if (ctx->google_sts_tls) {
+        flb_tls_destroy(ctx->google_sts_tls);
+    }
+
+    if (ctx->google_iam_tls) {
+        flb_tls_destroy(ctx->google_iam_tls);
+    }
+
+    flb_sds_destroy(ctx->project_number);
+    flb_sds_destroy(ctx->pool_id);
+    flb_sds_destroy(ctx->provider_id);
+    flb_sds_destroy(ctx->aws_region);
+    flb_sds_destroy(ctx->google_service_account);
+    flb_sds_destroy(ctx->aws_sts_endpoint);
+    flb_sds_destroy(ctx->sa_token);
     flb_sds_destroy(ctx->project_id);
     flb_sds_destroy(ctx->dataset_id);
     flb_sds_destroy(ctx->table_id);

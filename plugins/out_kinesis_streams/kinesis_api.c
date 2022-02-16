@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,9 +34,9 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_base64.h>
 
 #include <monkey/mk_core.h>
-#include <mbedtls/base64.h>
 #include <msgpack.h>
 #include <string.h>
 #include <stdio.h>
@@ -342,7 +341,7 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
     }
 
     tmp_buf_ptr = buf->tmp_buf + buf->tmp_buf_offset;
-    ret = mbedtls_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
+    ret = flb_base64_encode((unsigned char *) buf->event_buf, size, &b64_len,
                                 (unsigned char *) tmp_buf_ptr, written);
     if (ret != 0) {
         flb_errno();

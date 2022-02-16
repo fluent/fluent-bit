@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -66,7 +65,11 @@ int flb_http_strip_port_from_host(struct flb_http_client *c)
     struct flb_upstream *u = c->u_conn->u;
 
     if (!c->host) {
-        out_host = u->tcp_host;
+        if (!u->proxied_host) {
+            out_host = u->tcp_host;
+        } else {
+            out_host = u->proxied_host;
+        }
     } else {
         out_host = (char *) c->host;
     }

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_jsmn.h>
+#include <fluent-bit/flb_sds.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -172,7 +172,10 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 {
     int ret;
     const char *tmp;
+    const char *backwards_compatible_env_var;
     struct flb_stackdriver *ctx;
+    flb_sds_t http_request_key;
+    size_t http_request_key_size;
 
     /* Allocate config context */
     ctx = flb_calloc(1, sizeof(struct flb_stackdriver));
@@ -205,9 +208,22 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->credentials_file = flb_sds_create(tmp);
     }
     else {
-        tmp = getenv("GOOGLE_SERVICE_CREDENTIALS");
+        /*
+         * Use GOOGLE_APPLICATION_CREDENTIALS to fetch the credentials.
+         * GOOGLE_SERVICE_CREDENTIALS is checked for backwards compatibility.
+         */
+        tmp = getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        backwards_compatible_env_var = getenv("GOOGLE_SERVICE_CREDENTIALS");
+        if (tmp && backwards_compatible_env_var) {
+            flb_plg_warn(ctx->ins, "GOOGLE_APPLICATION_CREDENTIALS and "
+                "GOOGLE_SERVICE_CREDENTIALS are both defined. "
+                "Defaulting to GOOGLE_APPLICATION_CREDENTIALS");
+        }
         if (tmp) {
             ctx->credentials_file = flb_sds_create(tmp);
+        }
+        else if (backwards_compatible_env_var) {
+            ctx->credentials_file = flb_sds_create(backwards_compatible_env_var);
         }
     }
 
@@ -317,6 +333,23 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     else {
         ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
+    }
+
+    tmp = flb_output_get_property("http_request_key", ins);
+    if (tmp) {
+        http_request_key = flb_sds_create(tmp);
+        http_request_key_size = flb_sds_len(http_request_key);
+        if (http_request_key_size < INT_MAX) {
+            ctx->http_request_key = http_request_key;
+            ctx->http_request_key_size = (int)http_request_key_size;
+        } 
+        else {
+            flb_plg_error(ctx->ins, "http_request_key is too long");
+        }
+    }
+    else {
+        ctx->http_request_key = flb_sds_create(HTTPREQUEST_FIELD_IN_JSON);
+        ctx->http_request_key_size = HTTP_REQUEST_KEY_SIZE;
     }
 
     if (flb_sds_cmp(ctx->resource, "k8s_container",
@@ -453,6 +486,13 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                                                   "requests.",
                                                   1, (char *[]) {"name"});
 
+    ctx->cmt_requests_total = cmt_counter_create(ins->cmt,
+                                                 "fluentbit",
+                                                 "stackdriver",
+                                                 "requests_total",
+                                                 "Total number of requests.",
+                                                  1, (char *[]) {"status"});
+
     /* OLD api */
     flb_metrics_add(FLB_STACKDRIVER_SUCCESSFUL_REQUESTS,
                     "stackdriver_successful_requests", ctx->ins->metrics);
@@ -506,6 +546,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->severity_key);
     flb_sds_destroy(ctx->trace_key);
     flb_sds_destroy(ctx->log_name_key);
+    flb_sds_destroy(ctx->http_request_key);
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
     flb_sds_destroy(ctx->custom_k8s_regex);
