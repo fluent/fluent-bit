@@ -42,6 +42,10 @@ struct flb_filter_nightfall {
     flb_sds_t nightfall_api_key;
     flb_sds_t policy_id;
     double sampling_rate;
+    int tls_debug;
+    int tls_verify;
+    char *tls_ca_path;
+    flb_sds_t tls_vhost;
 
     struct flb_tls *tls;
     struct flb_upstream *upstream;

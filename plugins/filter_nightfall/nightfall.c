@@ -88,10 +88,10 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
                    "Bearer %s",
                    ctx->nightfall_api_key);
 
-    ctx->tls = flb_tls_create(0,
-                              0,
-                              NULL,
-                              NULL,
+    ctx->tls = flb_tls_create(ctx->tls_verify,
+                              ctx->tls_debug,
+                              ctx->tls_vhost,
+                              ctx->tls_ca_path,
                               NULL,
                               NULL, NULL, NULL);
     if (!ctx->tls) {
@@ -533,6 +533,27 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_DOUBLE, "sampling_rate", "1",
      0, FLB_TRUE, offsetof(struct flb_filter_nightfall, sampling_rate),
      "The sampling rate for scanning, must be (0,1]. 1 means all logs will be scanned."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "0",
+     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, tls_debug),
+     "Set TLS debug level: 0 (no debug), 1 (error), "
+     "2 (state change), 3 (info) and 4 (verbose)"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, tls_verify),
+     "Enable or disable verification of TLS peer certificate"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, tls_vhost),
+     "Set optional TLS virtual host"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "tls.ca_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, tls_ca_path),
+     "Path to root certificates on the system"
     },
     {0}
 };
