@@ -69,7 +69,6 @@ jobs:
 
     pr-image-tests-classic-docker-build:
       name: PR - Classic docker build test
-      needs: pr-get-latest-tag
       runs-on: ubuntu-latest
       environment: pr
       strategy:
