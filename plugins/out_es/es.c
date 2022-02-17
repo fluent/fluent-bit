@@ -1138,6 +1138,7 @@ struct flb_output_plugin out_es_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_es_flush,
     .cb_exit        = cb_es_exit,
+    .workers        = 2,
 
     /* Configuration */
     .config_map     = config_map,
