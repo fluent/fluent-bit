@@ -145,5 +145,6 @@ struct flb_output_plugin out_tcp_plugin = {
     .cb_flush       = cb_tcp_flush,
     .cb_exit        = cb_tcp_exit,
     .config_map     = config_map,
+    .workers        = 2,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };
