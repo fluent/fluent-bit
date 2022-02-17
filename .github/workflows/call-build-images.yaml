@@ -28,6 +28,7 @@ on:
         description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
         type: string
         required: false
+        default: ''
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.

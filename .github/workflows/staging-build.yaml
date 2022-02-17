@@ -19,7 +19,7 @@ on:
 
   # Run nightly build
   schedule:
-  - cron: "0 2 * * *"
+  - cron: "0 6 * * *"
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -147,25 +147,10 @@ jobs:
         with:
           path: artifacts/
 
-      - name: Rename by target
-        # We need to include the directory name in every artefact otherwise the package is always called the same thing.
-        # This then means it is overwritten on release upload.
-        # https://github.com/actions/download-artifact#download-all-artifacts
-        #
-        # We essentially flatten a directory structure:
-        # artifacts/packages-master-debian-buster/debian/buster/master/staging/fluent-bit_1.9.0_amd64.deb ==>
-        # artifacts/packages-master-debian-buster-fluent-bit_1.9.0_amd64.deb
-        #
-        # This guarantees no duplicates even if it is quite verbose.
-        # We can look to remove some of the common strings as well later.
+      - name: Single packages tar
         run: |
-          while IFS= read -r -d '' file; do
-              # Strip off artifacts directory
-              tempfile=${file#artifacts/*}
-              # Concatenate the first directory (before /) and filename (after last /) together.
-              outputfile="artifacts/${tempfile%%/*}-${tempfile##*/}"
-              mv -f "$file" "$outputfile"
-          done < <(find artifacts/ -type f \( -iname '*.rpm' -o -iname '*.deb' \) -print0)
+          mkdir -p release-upload
+          tar -czvf release-upload/packages-unstable-${{ needs.staging-build-get-version.outputs.version }}.tar.gz -C artifacts/ .
         shell: bash
 
       - name: Log in to the Container registry
@@ -184,11 +169,11 @@ jobs:
           docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}-debug
           docker save --output container-${{ needs.staging-build-get-version.outputs.version }}-debug.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}-debug
         shell: bash
-        working-directory: artifacts
+        working-directory: release-upload
 
-      - name: Display structure of downloaded files
+      - name: Display structure of files to upload
         run: ls -R
-        working-directory: artifacts
+        working-directory: release-upload
         shell: bash
 
       - name: Unstable release on push to master to make it easier to download
@@ -198,6 +183,5 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'unstable'
-          rm: true
           files: |
-            artifacts/**/*
+            release-upload/**/*

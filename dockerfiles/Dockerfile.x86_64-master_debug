@@ -4,6 +4,9 @@ ENV DEBIAN_FRONTEND noninteractive
 
 ADD . /source
 
+ARG FLB_NIGHTLY_BUILD
+ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -38,7 +41,9 @@ RUN cmake -DFLB_DEBUG=On \
           -DFLB_HTTP_SERVER=On \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
-          -DFLB_OUT_PGSQL=On ..
+          -DFLB_OUT_PGSQL=On \
+          -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
