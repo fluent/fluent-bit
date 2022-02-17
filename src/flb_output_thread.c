@@ -276,7 +276,7 @@ static void output_thread(void *data)
                  * If the address receives 0xdeadbeef, means the thread must
                  * be terminated.
                  */
-                if ((uint64_t) task == 0xdeadbeef) {
+                if (task == (struct flb_task *) 0xdeadbeef) {
                     stopping = FLB_TRUE;
                     flb_plg_info(th_ins->ins, "thread worker #%i stopping...",
                                  thread_id);
