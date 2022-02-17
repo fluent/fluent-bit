@@ -445,7 +445,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
-
+    instance->tp_workers = plugin->workers;
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
