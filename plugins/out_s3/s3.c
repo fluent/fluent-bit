@@ -2325,6 +2325,7 @@ struct flb_output_plugin out_s3_plugin = {
     .cb_init      = cb_s3_init,
     .cb_flush     = cb_s3_flush,
     .cb_exit      = cb_s3_exit,
+    .workers      = 1,
     .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
     .config_map   = config_map
 };
