@@ -1286,6 +1286,7 @@ int flb_main(int argc, char **argv)
     if (exit_signal) {
         flb_signal_exit(exit_signal);
     }
+    ret = config->exit_status_code;
     flb_destroy(ctx);
 
 
