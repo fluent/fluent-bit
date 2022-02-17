@@ -202,6 +202,9 @@ struct flb_output_plugin {
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
 
+    /* Default number of worker threads */
+    int workers;
+
     /* Tests */
     struct flb_test_out_formatter test_formatter;
 
