@@ -56,4 +56,5 @@ struct flb_output_plugin out_null_plugin = {
     .cb_init      = cb_null_init,
     .cb_flush     = cb_null_flush,
     .flags        = 0,
+    .workers      = 1,
 };
