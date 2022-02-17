@@ -146,7 +146,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         *headers = s3_headers;
         return 0;
     }
-    
+
     s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
     if (s3_headers == NULL) {
         flb_errno();
@@ -174,7 +174,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
     }
-    
+
     *num_headers = headers_len;
     *headers = s3_headers;
     return 0;
@@ -374,7 +374,7 @@ static int init_seq_index(void *context) {
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
             return -1;
         }
-    } 
+    }
     else {
         ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
         if (ret < 0) {
@@ -725,7 +725,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
@@ -1366,7 +1366,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
     }
-    
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
@@ -1872,7 +1872,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     msgpack_unpacked_init(&result);
-    while (!alloc_error && 
+    while (!alloc_error &&
            msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Each array must have two entries: time and record */
         root = result.data;
@@ -1914,7 +1914,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                 if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
-                    /* 
+                    /*
                      * Copy contents of value into buffer. Necessary to copy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
@@ -1932,7 +1932,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset, 
+                        ret = flb_msgpack_to_json(val_buf + val_offset,
                                                   msgpack_size - val_offset, &val);
                         if (ret < 0) {
                             break;
@@ -1955,7 +1955,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
     /* Throw error once per chunk if at least one log key was not found */
     if (log_key_missing == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records", 
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
 
@@ -2241,7 +2241,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
