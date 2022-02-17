@@ -2345,6 +2345,7 @@ struct flb_output_plugin out_stackdriver_plugin = {
     .cb_init      = cb_stackdriver_init,
     .cb_flush     = cb_stackdriver_flush,
     .cb_exit      = cb_stackdriver_exit,
+    .workers      = 2,
 
     /* Test */
     .test_formatter.callback = stackdriver_format,
