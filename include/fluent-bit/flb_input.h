@@ -51,6 +51,8 @@
 
 /* Input plugin flag masks */
 #define FLB_INPUT_NET          4   /* input address may set host and port   */
+#define FLB_INPUT_PLUGIN_CORE  0
+#define FLB_INPUT_PLUGIN_PROXY 1
 #define FLB_INPUT_CORO       128   /* plugin requires a thread on callbacks */
 #define FLB_INPUT_PRIVATE    256   /* plugin is not published/exposed       */
 #define FLB_INPUT_NOTAG      512   /* plugin might don't have tags          */
@@ -67,6 +69,13 @@
 struct flb_input_instance;
 
 struct flb_input_plugin {
+    /*
+     * The type defines if this is a core-based plugin or it's handled by
+     * some specific proxy.
+     */
+    int type;
+    void *proxy;
+
     int flags;                /* plugin flags */
     int event_type;           /* event type to be generated: logs ?, metrics ? */
 
@@ -522,6 +531,9 @@ int flb_input_set_property(struct flb_input_instance *ins,
                            const char *k, const char *v);
 const char *flb_input_get_property(const char *key,
                                    struct flb_input_instance *ins);
+#ifdef FLB_HAVE_METRICS
+void *flb_input_get_cmt_instance(struct flb_input_instance *ins);
+#endif
 
 int flb_input_check(struct flb_config *config);
 void flb_input_set_context(struct flb_input_instance *ins, void *context);
@@ -581,6 +593,7 @@ void flb_input_net_default_listener(const char *listen, int port,
 
 int flb_input_event_type_is_metric(struct flb_input_instance *ins);
 int flb_input_event_type_is_log(struct flb_input_instance *ins);
+int flb_input_log_check(struct flb_input_instance *ins, int l);
 
 struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);

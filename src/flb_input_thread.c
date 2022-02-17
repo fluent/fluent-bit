@@ -775,6 +775,10 @@ int flb_input_thread_destroy(struct flb_input_thread *it, struct flb_input_insta
 {
     int ret;
     flb_input_thread_exit(it, ins);
+    /* On Darwin, we must call pthread_cancel here to ensure worker
+     * thread termination. Otherwise, worker thread termination will
+     * be blocked. */
+    pthread_cancel(it->thread);
     ret = pthread_join(it->thread, NULL);
     mpack_writer_destroy(&it->writer);
     pthread_mutex_destroy(&it->mutex);
