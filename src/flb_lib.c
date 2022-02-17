@@ -629,6 +629,7 @@ static void flb_lib_worker(void *data)
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    config->exit_status_code = ret;
     ctx->status = FLB_LIB_NONE;
 }
 
