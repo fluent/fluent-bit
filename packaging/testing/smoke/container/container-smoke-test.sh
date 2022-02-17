@@ -75,5 +75,5 @@ do
     curl -v localhost:"$LOCAL_PORT"/api/v1/health
 
     # Clean up
-    docker stop "$CONTAINER_NAME"
+    docker rm -f "$CONTAINER_NAME"
 done
