@@ -28,7 +28,7 @@ jobs:
         - name: Build the master image
           uses: docker/build-push-action@v2
           with:
-            file: ./dockerfiles/Dockerfile.x86-64-master
+            file: ./dockerfiles/Dockerfile.x86_64-master
             context: .
             platforms: linux/amd64
             push: false
@@ -49,7 +49,7 @@ jobs:
         - name: Build the master debug image
           uses: docker/build-push-action@v2
           with:
-            file: ./dockerfiles/Dockerfile.x86-64-master_debug
+            file: ./dockerfiles/Dockerfile.x86_64-master_debug
             context: .
             platforms: linux/amd64
             push: false
