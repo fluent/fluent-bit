@@ -174,4 +174,5 @@ struct flb_output_plugin out_null_plugin = {
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .config_map   = config_map,
     .flags        = 0,
+    .workers      = 1,
 };
