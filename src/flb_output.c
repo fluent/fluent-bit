@@ -807,6 +807,13 @@ const char *flb_output_get_property(const char *key, struct flb_output_instance 
     return flb_config_prop_get(key, &ins->properties);
 }
 
+#ifdef FLB_HAVE_METRICS
+void *flb_output_get_cmt_instance(struct flb_output_instance *ins)
+{
+    return (void *)ins->cmt;
+}
+#endif
+
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
 {
@@ -948,7 +955,7 @@ int flb_output_init_all(struct flb_config *config)
 #ifdef FLB_HAVE_PROXY_GO
         /* Proxy plugins have their own initialization */
         if (p->type == FLB_OUTPUT_PLUGIN_PROXY) {
-            ret = flb_plugin_proxy_init(p->proxy, ins, config);
+            ret = flb_plugin_proxy_output_init(p->proxy, ins, config);
             if (ret == -1) {
                 flb_output_instance_destroy(ins);
                 return -1;
@@ -1096,6 +1103,18 @@ int flb_output_check(struct flb_config *config)
         return -1;
     }
     return 0;
+}
+
+/* Check output plugin's log level.
+ * Not for core plugins but for Golang plugins.
+ * Golang plugins do not have thread-local flb_worker_ctx information. */
+int flb_output_log_check(struct flb_output_instance *ins, int l)
+{
+    if (ins->log_level < l) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
 
 /*

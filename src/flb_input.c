@@ -30,6 +30,7 @@
 #include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_storage.h>
@@ -135,6 +136,18 @@ int flb_input_event_type_is_log(struct flb_input_instance *ins)
     return FLB_FALSE;
 }
 
+/* Check input plugin's log level.
+ * Not for core plugins but for Golang plugins.
+ * Golang plugins do not have thread-local flb_worker_ctx information. */
+int flb_input_log_check(struct flb_input_instance *ins, int l)
+{
+    if (ins->log_level < l) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 /* Create an input plugin instance */
 struct flb_input_instance *flb_input_new(struct flb_config *config,
                                          const char *input, void *data,
@@ -211,6 +224,24 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             return NULL;
         }
 
+        if (plugin->type == FLB_INPUT_PLUGIN_CORE) {
+            instance->context = NULL;
+        }
+        else {
+            struct flb_plugin_proxy_context *ctx;
+
+            ctx = flb_calloc(1, sizeof(struct flb_plugin_proxy_context));
+            if (!ctx) {
+                flb_errno();
+                flb_free(instance);
+                return NULL;
+            }
+
+            ctx->proxy = plugin->proxy;
+
+            instance->context = ctx;
+        }
+
         /* initialize remaining vars */
         instance->alias    = NULL;
         instance->id       = id;
@@ -219,7 +250,6 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tag      = NULL;
         instance->tag_len  = 0;
         instance->routable = FLB_TRUE;
-        instance->context  = NULL;
         instance->data     = data;
         instance->storage  = NULL;
         instance->storage_type = -1;
@@ -512,6 +542,13 @@ const char *flb_input_get_property(const char *key,
 {
     return flb_config_prop_get(key, &ins->properties);
 }
+
+#ifdef FLB_HAVE_METRICS
+void *flb_input_get_cmt_instance(struct flb_input_instance *ins)
+{
+    return (void *)ins->cmt;
+}
+#endif
 
 /* Return an instance name or alias */
 const char *flb_input_name(struct flb_input_instance *ins)
@@ -884,6 +921,7 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
 
     p = ins->p;
     if (p->cb_exit && ins->context) {
+        /* Multi-threaded input plugins use the same function signature for exit callbacks. */
         p->cb_exit(ins->context, config);
     }
 }
