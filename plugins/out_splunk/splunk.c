@@ -814,6 +814,7 @@ struct flb_output_plugin out_splunk_plugin = {
     .cb_flush     = cb_splunk_flush,
     .cb_exit      = cb_splunk_exit,
     .config_map   = config_map,
+    .workers      = 2,
 
     /* for testing */
     .test_formatter.callback = cb_splunk_format_test,
