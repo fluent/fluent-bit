@@ -38,8 +38,8 @@ build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
   - cpack
-  - if %PLATFORM%==Win32 cmake -G "NMake Makefiles" -D FLB_TD=On -D OPENSSL_ROOT_DIR=C:\OpenSSL-v111-Win32" ../
-  - if %PLATFORM%==x64   cmake -G "NMake Makefiles" -D FLB_TD=On -D OPENSSL_ROOT_DIR=C:\OpenSSL-v111-Win64" ../
+  - if %PLATFORM%==Win32 cmake -G "NMake Makefiles" -D FLB_TD=On -D OPENSSL_ROOT_DIR=C:\OpenSSL-v111-Win32" ..\
+  - if %PLATFORM%==x64   cmake -G "NMake Makefiles" -D FLB_TD=On -D OPENSSL_ROOT_DIR=C:\OpenSSL-v111-Win64" ..\
   - cmake --build .
   - cpack
 
