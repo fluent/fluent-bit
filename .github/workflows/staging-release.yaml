@@ -35,7 +35,7 @@ jobs:
         curl --fail -LO "$AWS_URL/latest-version.txt"
         cat latest-version.txt
         STAGING_VERSION=$(cat latest-version.txt)
-        if [[ "$STAGING_VERSION" != "$RELEASE_VERSION" ]] && echo "Latest version mismatch: $STAGING_VERSION != $RELEASE_VERSION" && exit 1
+        [[ "$STAGING_VERSION" != "$RELEASE_VERSION" ]] && echo "Latest version mismatch: $STAGING_VERSION != $RELEASE_VERSION" && exit 1
       shell: bash
       env:
         AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
