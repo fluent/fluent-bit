@@ -28,6 +28,7 @@ jobs:
 
   staging-release-version-check:
     name: Check staging release matches
+    environment: release
     runs-on: ubuntu-latest
     steps:
     - name: Get the version on staging
