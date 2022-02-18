@@ -42,6 +42,12 @@ struct record_modifier_ctx {
     int records_num;
     int remove_keys_num;
     int allowlist_keys_num;
+    /* config map */
+    struct mk_list *records_map;
+    struct mk_list *remove_keys_map;
+    struct mk_list *allowlist_keys_map;
+    struct mk_list *whitelist_keys_map;
+
     struct mk_list records;
     struct mk_list remove_keys;
     struct mk_list allowlist_keys;
