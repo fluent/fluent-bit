@@ -18,7 +18,12 @@
 
 #define EVENT_LOOP_TEST_PRIORITIES 7
 #define EVENT_LOOP_MAX_EVENTS 64
-#define TIME_EPSILON_MS 10
+#ifdef _WIN32
+    #define TIME_EPSILON_MS 30
+#else
+    #define TIME_EPSILON_MS 10
+#endif
+
 #define TIMER_COARSE_EPSION_MS 300
 
 struct test_evl_context {
@@ -26,10 +31,103 @@ struct test_evl_context {
     struct flb_bucket_queue *bktq;
 };
 
+/*
+ * The following implements a custom delayed event
+ * primarily for Windows. It is needed to simulate
+ * another thread or network call writing to fd
+ * activating an event without disrupting the libevent
+ * loop. LibEvent timeouts disrupt the libevent loop
+ * making the testcases non-homogeneous between platforms
+ */
+#ifdef _WIN32
+struct delay_worker_args {
+    int fd; /* pipefd */
+    int sec; /* seconds */
+};
+
+/* Writes to pipe after set delay. Cleans self up after pipe closure */
+void _delay_worker(void *arg) {
+    int ret;
+    uint64_t val = 1;
+    struct timespec t_spec;
+    char tmp[100];
+
+    struct delay_worker_args *args = (struct delay_worker_args *) arg;
+    static int idx = 0;
+
+    sprintf(tmp, "delay-timer-%i", ++idx);
+    mk_utils_worker_rename(tmp);
+
+    /* Sleep for a while */
+    sleep(args->sec);
+
+    /* Send notification */
+    ret = send(args->fd, &val, sizeof(uint64_t), 0);
+
+    /* Self cleanup */
+    while (1) {
+        // Uniform wait
+        sleep(1);
+        // Attempt send data to detect read pipe/socket side closure
+        ret = send(args->fd, &val, sizeof(uint64_t), 0);
+        if (ret == -1) {
+            break;
+        }
+    }
+    evutil_closesocket(args->fd);
+    flb_free(args);
+}
+#endif
+
+void test_timeout_create(struct mk_event_loop *loop,
+                         time_t sec, long nsec, void *data)
+{
+    #ifndef _WIN32
+        mk_event_timeout_create(loop, sec, nsec, data);
+    #else
+        /* Windows */
+        evutil_socket_t fd[2];
+        int ret;
+        pthread_t tid;
+        
+        if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
+            perror("socketpair");
+            return;
+        }
+
+        /* 
+         * Now, lets spin up another thread to keep
+         * track of our delay (don't register in libevent)
+         */
+        struct delay_worker_args *args = flb_malloc(sizeof(struct delay_worker_args));
+        
+        /* Register write end of data pipe */
+        args->fd = fd[1];
+        args->sec = sec;
+        ret = mk_utils_worker_spawn(_delay_worker, args, &tid); /* worker handles freeing up args. */
+
+        /* Convert read end to monkey event */
+        MK_EVENT_NEW(data);
+        mk_event_add(loop, fd[0], MK_EVENT_NOTIFICATION, MK_EVENT_READ, data);
+    #endif
+}
+
+void test_timeout_destroy(struct mk_event_loop *loop, void *data)
+{
+    #ifndef _WIN32
+        mk_event_timeout_destroy(loop, data);
+    #else
+        /* Windows */
+        struct mk_event *event = (struct mk_event *) data;
+        evutil_closesocket(event->fd);
+        mk_event_del(loop, event);
+    #endif
+}
+
 struct test_evl_context *evl_context_create()
 {
     struct test_evl_context *ctx = flb_malloc(sizeof(struct test_evl_context));
-  ctx->evl = mk_event_loop_create(EVENT_LOOP_MAX_EVENTS);
+    ctx->evl = mk_event_loop_create(EVENT_LOOP_MAX_EVENTS);
     ctx->bktq = flb_bucket_queue_create(EVENT_LOOP_TEST_PRIORITIES);
     return ctx;
 }
@@ -49,9 +147,14 @@ void test_simple_timeout_1000ms()
     struct flb_time end_time;
     struct flb_time diff_time;
     uint64_t elapsed_time_flb;
+    int target;
 
-    int target = 1000;
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
 
+    target = 1000;
     ctx = evl_context_create();
 
     flb_time_get(&start_time);
@@ -67,7 +170,10 @@ void test_simple_timeout_1000ms()
              (int) elapsed_time_flb);
 
     evl_context_destroy(ctx);
-    return;
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 /*
@@ -93,6 +199,10 @@ void test_non_blocking_and_blocking_timeout()
 
     int target;
     int wait_2_timeout = 2100;
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
 
     ctx = evl_context_create();
 
@@ -111,7 +221,9 @@ void test_non_blocking_and_blocking_timeout()
 
     /* Add somewhat inexact 1 second timer */
     target = 1000;
-    mk_event_timeout_create(ctx->evl, target / 1000, 0, &event);
+    event.mask   = MK_EVENT_EMPTY;
+    event.status = MK_EVENT_NONE;
+    test_timeout_create(ctx->evl, target / 1000, 0, &event);
 
     /* Non blocking wait -- one event */
     target = 0;
@@ -154,7 +266,7 @@ void test_non_blocking_and_blocking_timeout()
     TEST_CHECK(n_events == 1);
 
     /* Remove triggered 1s timer event */
-    mk_event_timeout_destroy(ctx->evl, &event);
+    test_timeout_destroy(ctx->evl, &event);
 
     /* Blocking wait, used timeout */
     target = wait_2_timeout;
@@ -170,7 +282,9 @@ void test_non_blocking_and_blocking_timeout()
     TEST_CHECK(n_events == 0);
 
     evl_context_destroy(ctx);
-    return;
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 /*
@@ -191,12 +305,16 @@ void test_infinite_wait()
     int n_events;
 
     int target;
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
 
     ctx = evl_context_create();
 
     /* Add somewhat inexact 1 second timer */
     target = 1000;
-    mk_event_timeout_create(ctx->evl, target / 1000, 0, &event);
+    test_timeout_create(ctx->evl, target / 1000, 0, &event);
 
     /* Infinite wait -- 1 event */
     target = 1000;
@@ -213,10 +331,12 @@ void test_infinite_wait()
     TEST_CHECK(n_events == 1);
 
     /* Remove triggered 1s timer event */
-    mk_event_timeout_destroy(ctx->evl, &event);
+    test_timeout_destroy(ctx->evl, &event);
 
     evl_context_destroy(ctx);
-    return;
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 void synchronize_tests()
@@ -259,7 +379,7 @@ void event_loop_stress_priority_add_delete()
     struct test_evl_context *ctx;
 
     const int n_timers = EVENT_LOOP_MAX_EVENTS;
-    struct mk_event events[n_timers];
+    struct mk_event events[EVENT_LOOP_MAX_EVENTS];
     struct mk_event *event_cronology[EVENT_LOOP_TEST_PRIORITIES] = {0}; /* event loop priority fifo */
     int priority_cronology = 0;
 
@@ -278,6 +398,10 @@ void event_loop_stress_priority_add_delete()
     int j;
     int ret = 0;
     int immediate_timer_count;
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
 
     ctx = evl_context_create();
     srand(20);
@@ -286,7 +410,7 @@ void event_loop_stress_priority_add_delete()
     for (i = 0; i < n_timers / 2; ++i) {
         priority = rand() % EVENT_LOOP_TEST_PRIORITIES;
         target = 0;
-        mk_event_timeout_create(ctx->evl, 0, 0, &events[i]);
+        test_timeout_create(ctx->evl, 0, 0, &events[i]);
         events[i].priority = priority;
         ++immediate_timers[priority];
     }
@@ -295,7 +419,7 @@ void event_loop_stress_priority_add_delete()
 
     /* Remove the first n/8 events */
     for (i = 0; i < n_timers / 8; ++i) {
-        mk_event_timeout_destroy(ctx->evl, &events[i]);
+        test_timeout_destroy(ctx->evl, &events[i]);
         --immediate_timers[(int) events[i].priority];
     }
 
@@ -307,7 +431,7 @@ void event_loop_stress_priority_add_delete()
     
     /* Remove the first n/8 events */
     for (i = n_timers / 8; i < n_timers / 4; ++i) {
-        mk_event_timeout_destroy(ctx->evl, &events[i]);
+        test_timeout_destroy(ctx->evl, &events[i]);
         --immediate_timers[(int) events[i].priority];
     }
     
@@ -325,10 +449,10 @@ void event_loop_stress_priority_add_delete()
         /* update records */
 
         /* delete event */
-        mk_event_timeout_destroy(ctx->evl, event);
+        test_timeout_destroy(ctx->evl, event);
 
         /* update records */
-        mk_event_timeout_destroy(ctx->evl, event);
+        test_timeout_destroy(ctx->evl, event);
         if (event < &events[n_timers/2]) {
             /* immediate timer */
             --immediate_timers[(int) event->priority];
@@ -356,7 +480,7 @@ void event_loop_stress_priority_add_delete()
     for (i = 0; i < n_timers / 2; ++i) {
         priority = rand() % EVENT_LOOP_TEST_PRIORITIES;
         target = 0;
-        mk_event_timeout_create(ctx->evl, target, 0, &events[i]);
+        test_timeout_create(ctx->evl, target, 0, &events[i]);
         events[i].priority = priority;
         ++immediate_timers[priority];
     }
@@ -367,7 +491,7 @@ void event_loop_stress_priority_add_delete()
     for (i = n_timers / 2; i < n_timers; ++i) {
         priority = rand() % EVENT_LOOP_TEST_PRIORITIES;
         target = 2; /* 2 second delay */
-        mk_event_timeout_create(ctx->evl, target, 0, &events[i]);
+        test_timeout_create(ctx->evl, target, 0, &events[i]);
         events[i].priority = priority;
         ++delayed_timers[priority];
     }
@@ -388,7 +512,7 @@ void event_loop_stress_priority_add_delete()
                 if (&events[i] == event) {
                     continue;
                 }
-                mk_event_timeout_destroy(ctx->evl, &events[i]);
+                test_timeout_destroy(ctx->evl, &events[i]);
                 --immediate_timers[(int) events[i].priority];
             }
 
@@ -397,7 +521,7 @@ void event_loop_stress_priority_add_delete()
             priority_cronology = event->priority;
 
             /* delete actual event */
-            mk_event_timeout_destroy(ctx->evl, event);
+            test_timeout_destroy(ctx->evl, event);
             --immediate_timers[(int) event->priority];
             TEST_CHECK(event < &events[n_timers/2]);
             TEST_MSG("Processed delayed timer first. Should process immediate timer first");
@@ -439,7 +563,7 @@ void event_loop_stress_priority_add_delete()
         TEST_MSG("Processed a deleted timer. Delete performed after event is registered in the event loop bucket queue.");
 
         /* update records */
-        mk_event_timeout_destroy(ctx->evl, event);
+        test_timeout_destroy(ctx->evl, event);
         if (event < &events[n_timers/2]) {
             /* immediate timer */
             --immediate_timers[(int) event->priority];
@@ -462,6 +586,9 @@ void event_loop_stress_priority_add_delete()
     }
 
     evl_context_destroy(ctx);
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 TEST_LIST = {
