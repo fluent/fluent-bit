@@ -26,6 +26,21 @@ concurrency: staging-build-release
 
 jobs:
 
+  staging-release-version-check:
+    name: Check staging release matches
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get the version on staging
+      run: |
+        curl --fail -LO "$AWS_URL/latest-version.txt"
+        cat latest-version.txt
+        STAGING_VERSION=$(cat latest-version.txt)
+        [[ "$STAGING_VERSION" != "$RELEASE_VERSION" ]] && echo "Latest version mismatch: $STAGING_VERSION != $RELEASE_VERSION" && exit 1
+      shell: bash
+      env:
+        AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
+        RELEASE_VERSION: ${{ github.event.inputs.version }}
+
   # 1. Take packages from the staging bucket
   # 2. Sign them with the release GPG key
   # 3. Also take existing release packages from the release bucket.
@@ -36,6 +51,7 @@ jobs:
     name: S3 - create release
     runs-on: ubuntu-18.04 # no createrepo on Ubuntu 20.04
     environment: release
+    needs: staging-release-version-check
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -124,6 +140,7 @@ jobs:
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533
   staging-release-images:
     runs-on: ubuntu-latest
+    needs: staging-release-version-check
     environment: release
     env:
       STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
