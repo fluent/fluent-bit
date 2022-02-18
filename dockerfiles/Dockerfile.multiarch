@@ -94,7 +94,8 @@ FROM debian:bullseye-slim as deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
-# We download all debs locally then extract them into a directory we can use as the root for distroless
+# We download all debs locally then extract them into a directory we can use as the root for distroless.
+# We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 RUN apt-get update && \
     apt-get download \
@@ -128,8 +129,17 @@ RUN apt-get update && \
         libffi7 \
         liblzma5 \
         libyaml-0-2 && \
-    mkdir -p /dpkg && \
-    for deb in *.deb; do dpkg --extract "$deb" /dpkg || exit 10; done
+    mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
+    for deb in *.deb; do \
+        package_name=$(dpkg-deb -I ${deb} | awk '/^ Package: .*$/ {print $2}'); \
+        echo "Processing: ${package_name}"; \
+        dpkg --ctrl-tarfile $deb | tar -Oxf - ./control > /dpkg/var/lib/dpkg/status.d/${package_name}; \
+        dpkg --extract $deb /dpkg || exit 10; \
+    done
+
+# Remove unnecessary files extracted from deb packages like man pages and docs etc.
+RUN find /dpkg/ -type d -empty -delete && \
+    rm -r /dpkg/usr/share/doc/
 
 # We want latest at time of build
 # hadolint ignore=DL3006
