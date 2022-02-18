@@ -402,10 +402,10 @@ static inline int _mk_event_wait_with_flags(struct mk_event_loop *loop, int flag
     return loop->n_events;
 }
 
+/* This is a callback stub for wait_2 resume. It does nothing */
 static void cb_wait_2_timeout(evutil_socket_t fd, short flags, void *data)
 {
-    int *timedout_flag = (int *) data;
-    *timedout_flag = 1;
+    return;
 }
 
 static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
@@ -430,16 +430,19 @@ static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
     /* Add timeout */
     timeout_event = event_new(ctx->base, -1,
                       EV_TIMEOUT,
-                      cb_timeout, &timedout_flag);
+                      cb_wait_2_timeout, &timedout_flag);
     event_add(timeout_event, &timev);
 
     /* Blocking wait */
     ret = _mk_event_wait_with_flags(loop, EVLOOP_ONCE);
 
-    /* Remove timeout */
-    if (!timedout_flag) {
-        ret = event_del(timeout_event);
-    }
+    /*
+     * Remove timeout
+     * "To deallocate an event, call event_free(). It is safe to call event_free()
+     * on an event that is pending or active: doing so makes the event non-pending
+     * and inactive before deallocating it."
+     * ref: http://www.wangafu.net/~nickm/libevent-book/Ref4_event.html
+     */
     event_free(timeout_event);
 
     return ret;
