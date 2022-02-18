@@ -1,0 +1,101 @@
+FROM amd64/debian:bullseye-slim as builder
+
+# Fluent Bit version
+ENV FLB_MAJOR 1
+ENV FLB_MINOR 9
+ENV FLB_PATCH 0
+ENV FLB_VERSION 1.9.0
+
+ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
+ENV FLB_SOURCE $FLB_TARBALL
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
+
+ENV DEBIAN_FRONTEND noninteractive
+
+WORKDIR /tmp/fluent-bit/
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+    cmake \
+    make \
+    tar \
+    libssl-dev \
+    libsasl2-dev \
+    pkg-config \
+    libsystemd-dev \
+    zlib1g-dev \
+    libpq-dev \
+    postgresql-server-dev-all \
+    flex \
+    bison \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
+    && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
+    && rm -rf /tmp/fluent-bit/build/*
+
+WORKDIR /tmp/fluent-bit/build/
+RUN cmake -DFLB_RELEASE=On \
+          -DFLB_TRACE=Off \
+          -DFLB_JEMALLOC=On \
+          -DFLB_TLS=On \
+          -DFLB_SHARED_LIB=Off \
+          -DFLB_EXAMPLES=Off \
+          -DFLB_HTTP_SERVER=On \
+          -DFLB_IN_SYSTEMD=On \
+          -DFLB_OUT_KAFKA=On \
+          -DFLB_OUT_PGSQL=On ..
+
+RUN make -j "$(getconf _NPROCESSORS_ONLN)"
+RUN install bin/fluent-bit /fluent-bit/bin/
+
+# Configuration files
+COPY conf/fluent-bit.conf \
+     conf/parsers.conf \
+     conf/parsers_ambassador.conf \
+     conf/parsers_java.conf \
+     conf/parsers_extra.conf \
+     conf/parsers_openstack.conf \
+     conf/parsers_cinder.conf \
+     conf/plugins.conf \
+     /fluent-bit/etc/
+
+# hadolint ignore=DL3006
+FROM debian:bullseye-slim
+# Keep old labels for backwards compatibility with any tooling using them
+LABEL description="Fluent Bit container debug image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
+
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libssl1.1 \
+      libsasl2-2 \
+      pkg-config \
+      libpq5 \
+      libsystemd0 \
+      zlib1g \
+      ca-certificates \
+      libatomic1 \
+      libgcrypt20 \
+      bash gdb valgrind build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /fluent-bit /fluent-bit
+
+EXPOSE 2020
+
+# No entry point as want to shell in
+CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]

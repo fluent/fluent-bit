@@ -1,60 +1,114 @@
 # Fluent Bit Docker Image
 
-[Fluent Bit](https://fluentbit.io) container images are available on Docker Hub ready for production usage. Our stable images are based in [Distroless](https://github.com/GoogleContainerTools/distroless) focusing on security containing just the Fluent Bit binary, minimal system libraries and basic configuration.
+[Fluent Bit](https://fluentbit.io) container images are available on Docker Hub ready for production usage.
 
-Optionally, we provide debug images which contains Busybox that can be used to troubleshoot or testing purposes.
+The stable AMD64 images are based on [Distroless](https://github.com/GoogleContainerTools/distroless) focusing on security containing just the Fluent Bit binary, minimal system libraries and basic configuration.
 
-For a detailed list of Tags and versions available, please refer to the the official documentation:
+Optionally, we provide debug images which contain shells and tooling that can be used to troubleshoot or for testing purposes.
 
-https://docs.fluentbit.io/manual/installation/docker
+There are also images for ARM32 and ARM64 architectures but no debug versions of these.
 
+For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/docker
 
+## Multiple architecture support
 
-## 1. Checkout Branch
+A good introduction to the available approaches is here: https://www.docker.com/blog/multi-arch-build-and-images-the-simple-way/
 
-Fluent Bit Dockerfiles are located in separated branches with proper tags:
+To build for multiple architectures the [QEMU tooling](https://www.qemu.org/) can be used with the [BuildKit extension for Docker](https://docs.docker.com/buildx/working-with-buildx).
 
-| Branch | Tags Available                                               |
-| ------ | ------------------------------------------------------------ |
-| 1.2    | 1.2, 1.2-debug, 1.2.0, 1.2.0-debug, 1.2.1, 1.2.1-debug |
-| 1.1    | 1.1, 1.1-debug, 1.1.0, 1.1.0-debug, 1.1.1, 1.1.1-debug, 1.1.2, 1.1.2-debug, 1.1.3, 1.1.3-debug |
-| 1.0    | 1.0, 1.0-debug, 1.0.0, 1.0.1, 1.0.2, 1.0.3, 1.0.3-debug, 1.0.4, 1.0.4-debug, 1.0.5, 1.0.5-debug, 1.0.6, 1.0.6-debug |
-| 0.14   | 0.14, 0.14.0, 0.14.1, 0.14.2, 0.14.3, 0.14.4, 0.14.5, 0.14.6, 0.14.7, 0.14.8, 0.14.9 |
-| 0.13   | 0.13, 0.13.0, 0.13.1, 0.13.2, 0.13.3, 0.13.4, 0.13.5, 0.13.6, 0.13.7, 0.13.8 |
-| 0.12   | 0.12, 0.12.19, 0.12.18, 0.12.17, 0.12.16, 0.12.15, 0.12.14, 0.12.13, 0.12.12, 0.12.11, 0.12.10, 0.12.9, 0.12.8, 0.12.7, 0.12.6, 0.12.5, 0.12.4, 0.12.3, 0.12.2, 0.12.1, 0.12.0 |
+With QEMU set up and buildkit support, you can build all targets in one simple call.
 
-## 2. Build image
+To set up for Ubuntu 20.04 development PC as an example:
 
-Use `docker build` command to build the image. This example names the image "fluent-bit:latest":
-
+1. Add QEMU: https://askubuntu.com/a/1369504
 ```
-$ docker build -t fluent/fluent-bit:1.2 ./
+sudo add-apt-repository ppa:jacob/virtualisation
+sudo apt-get update && sudo apt-get install qemu qemu-user qemu-user-static
 ```
-
-## 3. Test it
-
-Once the image is built, it's ready to run:
-
+2. Install buildkit: https://docs.docker.com/buildx/working-with-buildx/#install
 ```
-docker run -p 127.0.0.1:24224:24224 fluent/fluent-bit:latest
+wget https://github.com/docker/buildx/releases/download/v0.7.1/buildx-v0.7.1.linux-amd64
+mv buildx-v0.7.1.linux-amd64 ~/.docker/cli-plugins/docker-buildx
+chmod a+x ~/.docker/cli-plugins/docker-buildx
 ```
-
-By default, the configuration set a listener on TCP port 24224 through Forward protocol and prints to the standard output interface each message. So this can be used to forward Docker log messages from one container to the Fluent Bit image, e.g:
-
+3. Configure and use: https://stackoverflow.com/a/60667468
 ```
-$ docker run --log-driver=fluentd -t ubuntu echo "Testing a log message"
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+docker buildx rm builder
+docker buildx create --name builder --use
+docker buildx inspect --bootstrap
+```
+4. Build Fluent Bit from the root of the Git repo:
+```
+docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 ```
 
+## Build and test
 
-On Fluent Bit container will print to stdout something like this:
+1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
+2. Build the container image using the appropriate Dockerfile in this directory.
+```
+$ docker build -t fluent/fluent-bit -f ./dockerfiles/Dockerfile.x86_64 ./dockerfiles
+```
+3. Test the container.
+```
+$ docker run --rm -it fluent/fluent-bit:latest
+```
+
+By default, the configuration uses the CPU input plugin and the stdout output plugin which means you should see regular output in the log showing the CPU loading.
 
 ```
-Fluent Bit v1.2.x
-Copyright (C) Treasure Data
+Fluent Bit v1.8.11
+* Copyright (C) 2019-2021 The Fluent Bit Authors
+* Copyright (C) 2015-2018 Treasure Data
+* Fluent Bit is a CNCF sub-project under the umbrella of Fluentd
+* https://fluentbit.io
 
-[0] docker.31c94ceb86ca: [1487548735, {"container_id"=>"31c94ceb86cae7055564eb4d65cd2e2897addd252fe6b86cd11bddd70a871c08", "container_name"=>"/admiring_shannon", "source"=>"stdout","}]og"=>"Testing a log message
+[2022/01/13 14:48:44] [ info] [engine] started (pid=1)
+[2022/01/13 14:48:44] [ info] [storage] version=1.1.5, initializing...
+[2022/01/13 14:48:44] [ info] [storage] in-memory
+[2022/01/13 14:48:44] [ info] [storage] normal synchronization mode, checksum disabled, max_chunks_up=128
+[2022/01/13 14:48:44] [ info] [cmetrics] version=0.2.2
+[2022/01/13 14:48:44] [ info] [sp] stream processor started
+[0] cpu.local: [1642085324.503383520, {"cpu_p"=>0.437500, "user_p"=>0.250000, "system_p"=>0.187500, "cpu0.p_cpu"=>0.000000, "cpu0.p_user"=>0.000000, "cpu0.p_system"=>0.000000, "cpu1.p_cpu"=>0.000000, "cpu1.p_user"=>0.000000, "cpu1.p_system"=>0.000000, "cpu2.p_cpu"=>1.000000, "cpu2.p_user"=>1.000000, "cpu2.p_system"=>0.000000, "cpu3.p_cpu"=>1.000000, "cpu3.p_user"=>1.000000, "cpu3.p_system"=>0.000000, "cpu4.p_cpu"=>1.000000, "cpu4.p_user"=>1.000000, "cpu4.p_system"=>0.000000, "cpu5.p_cpu"=>1.000000, "cpu5.p_user"=>0.000000, "cpu5.p_system"=>1.000000, "cpu6.p_cpu"=>0.000000, "cpu6.p_user"=>0.000000, "cpu6.p_system"=>0.000000, "cpu7.p_cpu"=>0.000000, "cpu7.p_user"=>0.000000, "cpu7.p_system"=>0.000000, "cpu8.p_cpu"=>2.000000, "cpu8.p_user"=>1.000000, "cpu8.p_system"=>1.000000, "cpu9.p_cpu"=>1.000000, "cpu9.p_user"=>1.000000, "cpu9.p_system"=>0.000000, "cpu10.p_cpu"=>0.000000, "cpu10.p_user"=>0.000000, "cpu10.p_system"=>0.000000, "cpu11.p_cpu"=>0.000000, "cpu11.p_user"=>0.000000, "cpu11.p_system"=>0.000000, "cpu12.p_cpu"=>0.000000, "cpu12.p_user"=>0.000000, "cpu12.p_system"=>0.000000, "cpu13.p_cpu"=>0.000000, "cpu13.p_user"=>0.000000, "cpu13.p_system"=>0.000000, "cpu14.p_cpu"=>2.000000, "cpu14.p_user"=>1.000000, "cpu14.p_system"=>1.000000, "cpu15.p_cpu"=>0.000000, "cpu15.p_user"=>0.000000, "cpu15.p_system"=>0.000000}]
 ```
 
+## ghcr.io topology
+
+Containers are "staged" prior to release in the following ways to `ghcr.io`:
+* `ghcr.io/fluent/fluent-bit` - official releases, identical to DockerHub
+* `ghcr.io/fluent/fluent-bit/staging` - all architectures staging images used for testing prior to release
+* `ghcr.io/fluent/fluent-bit/master` - x86_64/AMD64 only images built on each push to master, used for integration tests
+* `ghcr.io/fluent/fluent-bit/pr-X` - x86_64/AMD64 only PR images where `X` is the PR number
+* `ghcr.io/fluent/fluent-bit/multiarch` - developer preview multi-arch images built from `Dockerfile.multiarch`
+
+## Windows
+
+**The minimum version of fluent-bit supported is `1.3.7`.**
+
+The Windows version can be specified when building the Windows image. The instructions below leverage the **Windows Server Core 2019 - 1809/ltsc2019** base image. The large Windows Server Core base image is leveraged as the builder, while the smaller Windows Nano base image is leveraged for the final runtime image.
+
+More information is available at:
+
+- [Windows Container Base Images](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/container-base-images)
+- [Windows Container Version Compatibility](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility?tabs=windows-server-2019%2Cwindows-10-1909#tabpanel_CeZOj-G++Q_windows-server-2019)
+
+In addition, metadata as defined in OCI image spec annotations, is leveraged in the generated image. This is the reason for the additional `--build-arg` parameters.
+
+### Minimum set of build-args
+```powershell
+docker build --no-cache `
+  --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.8.11 `
+  -t fluent/fluent-bit:1.8.11-nanoserver -f ./dockerfiles/Dockerfile.windows ./dockerfiles/
+```
+### Full set of build-args
+```powershell
+docker build --no-cache `
+  --build-arg WINDOWS_VERSION=1809 --build-arg FLUENTBIT_VERSION=1.8.11 `
+  --build-arg IMAGE_CREATE_DATE="$(Get-Date((Get-Date).ToUniversalTime()) -UFormat '%Y-%m-%dT%H:%M:%SZ')" `
+  --build-arg IMAGE_SOURCE_REVISION="$(git rev-parse HEAD)" `
+  -t fluent/fluent-bit:1.8.11-nanoserver -f ./dockerfiles/Dockerfile.windows ./dockerfiles/
+```
 ## Contact
 
 Feel free to join us on our Mailing List or IRC:

@@ -1,12 +1,19 @@
 name: Build and run image tests for all architectures
 on:
-  pull_request:
-    paths:
-      - dockerfiles/*
+  # We cannot trigger just on PRs as these do not have write permissions to GHCR from forks.
+  # See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+  # Instead we use the label to gate running this.
+  pull_request_target:
+    types:
+      - labeled
+      - opened
+      - reopened
+      - synchronize
 
 jobs:
     pr-get-latest-tag:
-      name: PR get latest tag for source build
+      if: contains(github.event.pull_request.labels.*.name, 'ok-container-test')
+      name: PR - get latest tag for source build
       runs-on: ubuntu-latest
       environment: pr
       outputs:
@@ -26,6 +33,7 @@ jobs:
             flags: 'g'
 
     pr-image-tests-build-images:
+      name: PR - build images
       uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
       needs: pr-get-latest-tag
       with:
@@ -38,14 +46,76 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
     pr-image-tests-smoke-test-images:
-      name: Multi-arch images smoke tests
-      needs: pr-image-tests-build-images
+      name: PR - smoke test images
+      needs: [pr-get-latest-tag, pr-image-tests-build-images]
       uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         image: ${{ github.repository }}/pr-${{ github.event.number }}
-        image-tag: latest
+        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
         environment: pr
       secrets:
         token: ${{ secrets.GITHUB_TOKEN }}
+
+    pr-image-tests-smoke-test-multiarch-images:
+      name: PR - multiarch smoke test images
+      needs: [pr-get-latest-tag, pr-image-tests-build-images]
+      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        image: ${{ github.repository }}/pr-${{ github.event.number }}/multiarch
+        image-tag: ${{ needs.pr-get-latest-tag.outputs.latest_tag }}
+        environment: pr
+      secrets:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    pr-image-tests-classic-docker-build:
+      name: PR - Classic docker build test
+      needs: pr-get-latest-tag
+      runs-on: ubuntu-latest
+      environment: pr
+      strategy:
+        # A failure on one is probably shared
+        fail-fast: true
+        matrix:
+          arch: [ amd64, arm64, arm/v7 ]
+          include:
+            - arch: amd64
+              suffix: x86_64
+            - arch: arm/v7
+              suffix: arm32v7
+            - arch: arm64
+              suffix: arm64v8
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Build the ${{ matrix.suffix }} classic build test image
+        # We only want to confirm it builds with classic mode, nothing else
+        run: |
+          docker build --platform=linux/${{ matrix.arch }} --build-arg FLB_TARBALL="$FLB_TARBALL" -f ./dockerfiles/Dockerfile.${{ matrix.suffix }} ./dockerfiles/
+        env:
+          # Ensure we disable buildkit
+          DOCKER_BUILDKIT: 0
+          FLB_TARBALL: https://github.com/fluent/fluent-bit/archive/v${{ needs.pr-get-latest-tag.outputs.latest_tag }}.tar.gz
+        shell: bash
+
+    pr-image-tests-post-label:
+      name: PR - image tests complete
+      runs-on: ubuntu-latest
+      needs:
+        - pr-image-tests-smoke-test-multiarch-images
+        - pr-image-tests-classic-docker-build
+      steps:
+        - uses: actions-ecosystem/action-add-labels@v1
+          name: Label the PR
+          with:
+            labels: ci/container-test-ok
+            github_token: ${{ secrets.GITHUB_TOKEN }}
+            number: ${{ github.event.pull_request.number }}
+            repo: fluent/fluent-bit

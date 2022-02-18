@@ -17,6 +17,8 @@
 | Label name | Description |
 | :----------|-------------|
 | docs-required| default tag used to request documentation, has to be removed before merge |
+| ok-container-test | run all image tests |
+| ci/container-test-ok | image tests pass |
 | ok-to-test | run all integration tests |
 | ok-to-merge | run mergebot and merge (rebase) current PR |
 | ci/integration-docker-ok | integration test is able to build docker image |
@@ -31,6 +33,7 @@
 * AWS_S3_BUCKET_STAGING
 * AWS_S3_BUCKET_RELEASE
 * GPG_PRIVATE_KEY
+* GPG_PRIVATE_KEY_PASSPHRASE
 
 These are only required for Cosign of the container images, will be skipped if not present:
 * COSIGN_PUBLIC_KEY

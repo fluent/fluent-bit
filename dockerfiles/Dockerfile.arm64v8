@@ -67,7 +67,17 @@ COPY conf/fluent-bit.conf \
      /fluent-bit/etc/
 
 FROM arm64v8/debian:bullseye-slim
-LABEL description="Fluent Bit docker image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# Keep old labels for backwards compatibility with any tooling using them
+LABEL description="Fluent Bit container image" vendor="Fluent Organization" version="1.9.0" author="Eduardo Silva <eduardo@calyptia.com>"
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 # Copy certificates
 COPY --from=builder /usr/share/ca-certificates/  /usr/share/ca-certificates/
@@ -79,13 +89,12 @@ COPY --from=builder /usr/lib/aarch64-linux-gnu/libz* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/libz* /lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libssl.so* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libcrypto.so* /usr/lib/aarch64-linux-gnu/
-COPY --from=builder /usr/lib/aarch64-linux-gnu/libgcrypt.so* /usr/lib/aarch64-linux-gnu/
 
 # These below are all needed for systemd
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libsystemd* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/liblzma.so* /lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/liblz4.so* /usr/lib/aarch64-linux-gnu/
-COPY --from=builder /lib/aarch64-linux-gnu/libgcrypt.so* /lib/aarch64-linux-gnu/
+COPY --from=builder /usr/lib/aarch64-linux-gnu/libgcrypt.so* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /lib/aarch64-linux-gnu/libgpg-error.so* /lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libpq.so* /usr/lib/aarch64-linux-gnu/
 COPY --from=builder /usr/lib/aarch64-linux-gnu/libgssapi* /usr/lib/aarch64-linux-gnu/

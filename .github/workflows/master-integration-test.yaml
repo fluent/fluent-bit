@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - master
+
+concurrency: integration-test
+
 jobs:
   master-integration-test-build:
     name: Master - integration build
@@ -11,8 +14,8 @@ jobs:
       ref: ${{ github.sha }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
-      image-tag: x86_64-master
+      image: ${{ github.repository }}/master
+      image-tag: x86_64
       environment: integration
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,8 +34,8 @@ jobs:
     needs: master-integration-test-build
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
-      image_name: ghcr.io/${{ github.repository }}
-      image_tag: x86_64-master
+      image_name: ghcr.io/${{ github.repository }}/master
+      image_tag: x86_64
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}

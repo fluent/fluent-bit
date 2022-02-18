@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -482,6 +481,12 @@ static int net_connect_async(int fd,
     ret = mk_event_del(u_conn->evl, &u_conn->event);
     if (ret == -1) {
         flb_error("[io] connect event handler error");
+        return -1;
+    }
+
+    if (u_conn->net_error == ETIMEDOUT) {
+        flb_debug("[net] TCP connection timed out: %s:%i",
+                  u->tcp_host, u->tcp_port);
         return -1;
     }
 
@@ -1311,6 +1316,17 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         else {
             ret = net_connect_sync(fd, rp->ai_addr, rp->ai_addrlen,
                                    (char *) host, port, connect_timeout);
+        }
+
+        if (u_conn->net_error == ETIMEDOUT) {
+            /* flb_upstream_conn_timeouts called prepare_destroy_conn which
+             * closed the file descriptor and removed it from the event so
+             * we can safely ignore it.
+             */
+
+            fd = -1;
+
+            break;
         }
 
         if (ret == -1) {

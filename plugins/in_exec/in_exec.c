@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -69,10 +68,12 @@ static int in_exec_collect(struct flb_input_instance *ins,
     if (ctx->parser) {
         while (fgets(ctx->buf, ctx->buf_size, cmdp) != NULL) {
             str_len = strnlen(ctx->buf, ctx->buf_size);
-            ctx->buf[str_len - 1] = '\0'; /* chomp */
+            if (ctx->buf[str_len - 1] == '\n') {
+                ctx->buf[--str_len] = '\0'; /* chomp */
+            }
 
             flb_time_get(&out_time);
-            parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len - 1,
+            parser_ret = flb_parser_do(ctx->parser, ctx->buf, str_len,
                                        &out_buf, &out_size, &out_time);
             if (parser_ret >= 0) {
                 if (flb_time_to_nanosec(&out_time) == 0L) {
@@ -102,7 +103,9 @@ static int in_exec_collect(struct flb_input_instance *ins,
     else {
         while (fgets(ctx->buf, ctx->buf_size, cmdp) != NULL) {
             str_len = strnlen(ctx->buf, ctx->buf_size);
-            ctx->buf[str_len - 1] = '\0'; /* chomp */
+            if (ctx->buf[str_len - 1] == '\n') {
+                ctx->buf[--str_len] = '\0'; /* chomp */
+            }
 
             /* Initialize local msgpack buffer */
             msgpack_sbuffer_init(&mp_sbuf);
@@ -114,9 +117,9 @@ static int in_exec_collect(struct flb_input_instance *ins,
 
             msgpack_pack_str(&mp_pck, 4);
             msgpack_pack_str_body(&mp_pck, "exec", 4);
-            msgpack_pack_str(&mp_pck, str_len - 1);
+            msgpack_pack_str(&mp_pck, str_len);
             msgpack_pack_str_body(&mp_pck,
-                                  ctx->buf, str_len - 1);
+                                  ctx->buf, str_len);
 
             flb_input_chunk_append_raw(ins, NULL, 0,
                                        mp_sbuf.data, mp_sbuf.size);

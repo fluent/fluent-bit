@@ -469,13 +469,162 @@ void cb_dash_key()
     msgpack_unpacked_destroy(&result);
 }
 
+void cb_dot_and_slash_key()
+{
+    int len;
+    int ret;
+    int type;
+    size_t off = 0;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Sample JSON message */
+    json = "{\"root.with/symbols\": \"something\"}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Formatter */
+    fmt = flb_sds_create("$root.with/symbols");
+    if (!TEST_CHECK(fmt != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    fmt_out = "something";
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
+static int order_lookup_check(char *buf, size_t size,
+                              char *fmt, char *expected_out)
+{
+    size_t off = 0;
+    char *fmt_out;
+    flb_sds_t str;
+    msgpack_unpacked result;
+    msgpack_object map;
+    struct flb_record_accessor *ra;
+
+    /* Check bool is 'true' */
+    fmt = flb_sds_create(fmt);
+    if (!TEST_CHECK(fmt != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    fmt_out = expected_out;
+
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, buf, size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(flb_sds_len(str) == strlen(expected_out));
+    if (flb_sds_len(str) != strlen(expected_out)) {
+        printf("received: '%s', expected: '%s'\n", str, fmt_out);
+    }
+
+    TEST_CHECK(memcmp(str, expected_out, strlen(expected_out)) == 0);
+
+    flb_sds_destroy(str);
+    flb_sds_destroy(fmt);
+    flb_ra_destroy(ra);
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+void cb_key_order_lookup()
+{
+    int len;
+    int ret;
+    int type;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+
+    /* Sample JSON message */
+    json = "{\"key\": \"abc\", \"bool\": false, \"bool\": true, "
+             "\"str\": \"bad\", \"str\": \"good\", "
+             "\"num\": 0, \"num\": 1}";
+
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    printf("\n-- record --\n");
+    flb_pack_print(out_buf, out_size);
+
+    /* check expected outputs per record accessor pattern */
+    order_lookup_check(out_buf, out_size, "$bool", "true");
+    order_lookup_check(out_buf, out_size, "$str" , "good");
+    order_lookup_check(out_buf, out_size, "$num" , "1");
+
+    flb_free(out_buf);
+}
+
 TEST_LIST = {
-    { "keys"         , cb_keys},
-    { "dash_key"     , cb_dash_key},
-    { "translate"    , cb_translate},
-    { "translate_tag", cb_translate_tag},
-    { "dots_subkeys" , cb_dots_subkeys},
-    { "array_id"     , cb_array_id},
-    { "get_kv_pair"  , cb_get_kv_pair},
+    { "keys"            , cb_keys},
+    { "dash_key"        , cb_dash_key},
+    { "dot_slash_key"   , cb_dot_and_slash_key},
+    { "translate"       , cb_translate},
+    { "translate_tag"   , cb_translate_tag},
+    { "dots_subkeys"    , cb_dots_subkeys},
+    { "array_id"        , cb_array_id},
+    { "get_kv_pair"     , cb_get_kv_pair},
+    { "key_order_lookup", cb_key_order_lookup},
     { NULL }
 };

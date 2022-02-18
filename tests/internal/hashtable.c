@@ -1,9 +1,11 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_hash.h>
 
 #include "flb_tests_internal.h"
+#include <xxhash.h>
 
 struct map {
     char *key;
@@ -354,6 +356,49 @@ void test_pointer()
     flb_hash_destroy(ht);
 }
 
+void test_hash_exists()
+{
+    int i;
+    int id;
+    int ret;
+    int len;
+    struct map *m;
+    uint64_t hash;
+    const char *out_buf;
+    size_t out_size;
+    struct flb_hash *ht;
+
+    ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1000, 0);
+    TEST_CHECK(ht != NULL);
+
+    for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
+        m = &entries[i];
+        id = ht_add(ht, m->key, m->val);
+
+        len = strlen(m->key);
+        hash = XXH3_64bits(m->key, len);
+
+        ret = flb_hash_exists(ht, hash);
+        TEST_CHECK(ret == FLB_TRUE);
+    }
+
+    for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
+        m = &entries[i];
+
+        /* get hash */
+        len = strlen(m->key);
+        hash = XXH3_64bits(m->key, len);
+
+        /* delete */
+        ret = flb_hash_del(ht, m->key);
+
+        ret = flb_hash_exists(ht, hash);
+        TEST_CHECK(ret == FLB_FALSE);;
+    }
+
+    flb_hash_destroy(ht);
+}
+
 TEST_LIST = {
     { "zero_size", test_create_zero },
     { "single",    test_single },
@@ -365,5 +410,6 @@ TEST_LIST = {
     { "less_used_eviction", test_less_used_eviction },
     { "older_eviction", test_older_eviction },
     { "pointer", test_pointer },
+    { "hash_exists", test_hash_exists},
     { 0 }
 };

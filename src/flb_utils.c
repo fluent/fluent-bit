@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -61,55 +60,55 @@ void flb_utils_error(int err)
 
     switch (err) {
     case FLB_ERR_CFG_FILE:
-        msg = "Could not open configuration file";
+        msg = "could not open configuration file";
         break;
     case FLB_ERR_CFG_FILE_FORMAT:
-        msg = "Configuration file contains format errors";
+        msg = "configuration file contains format errors";
         break;
     case FLB_ERR_CFG_FILE_STOP:
-        msg = "Configuration file contains errors";
+        msg = "configuration file contains errors";
         break;
     case FLB_ERR_CFG_FLUSH:
-        msg = "Invalid flush value";
+        msg = "invalid flush value";
         break;
     case FLB_ERR_CFG_FLUSH_CREATE:
-        msg = "Could not create timer for flushing";
+        msg = "could not create timer for flushing";
         break;
     case FLB_ERR_CFG_FLUSH_REGISTER:
-        msg = "Could not register timer for flushing";
+        msg = "could not register timer for flushing";
         break;
     case FLB_ERR_INPUT_INVALID:
-        msg = "Invalid input type";
+        msg = "invalid input type";
         break;
     case FLB_ERR_INPUT_UNDEF:
-        msg = "No Input(s) have been defined";
+        msg = "no input(s) have been defined";
         break;
     case FLB_ERR_INPUT_UNSUP:
-        msg = "Unsupported Input";
+        msg = "unsupported Input";
         break;
     case FLB_ERR_OUTPUT_UNDEF:
-        msg = "You must specify an output target";
+        msg = "you must specify an output target";
         break;
     case FLB_ERR_OUTPUT_INVALID:
-        msg = "Invalid output target";
+        msg = "invalid output target";
         break;
     case FLB_ERR_OUTPUT_UNIQ:
-        msg = "Just one output type is supported";
+        msg = "just one output type is supported";
         break;
     case FLB_ERR_FILTER_INVALID:
-        msg = "Invalid filter plugin";
+        msg = "invalid filter plugin";
         break;
     case FLB_ERR_CFG_PARSER_FILE:
-        msg = "Could not open parser configuration file";
+        msg = "could not open parser configuration file";
         break;
     case FLB_ERR_JSON_INVAL:
-        msg = "Invalid JSON string";
+        msg = "invalid JSON string";
         break;
     case FLB_ERR_JSON_PART:
-        msg = "Truncated JSON string";
+        msg = "truncated JSON string";
         break;
     case FLB_ERR_CORO_STACK_SIZE:
-        msg = "Invalid coroutine stack size";
+        msg = "invalid coroutine stack size";
         break;
     }
 
@@ -125,10 +124,7 @@ void flb_utils_error(int err)
 
     }
     else {
-        fprintf(stderr,
-                "%sError%s: %s. Aborting\n\n",
-                ANSI_BOLD ANSI_RED, ANSI_RESET, msg);
-
+        flb_error("%s, aborting.", msg);
         #ifdef FLB_HAVE_AWS_ERROR_REPORTER
         if (is_error_reporting_enabled()) {
             flb_aws_error_reporter_write(error_reporter, msg);

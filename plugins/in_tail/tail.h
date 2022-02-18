@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,9 +34,10 @@
 #define FLB_TAIL_EVENT   1  /* Data is being consumed through inotify */
 
 /* Config */
-#define FLB_TAIL_CHUNK        "32768"    /* buffer chunk = 32KB            */
-#define FLB_TAIL_REFRESH      60         /* refresh every 60 seconds       */
-#define FLB_TAIL_ROTATE_WAIT  "5"        /* time to monitor after rotation */
+#define FLB_TAIL_CHUNK              "32768"   /* buffer chunk = 32KB      */
+#define FLB_TAIL_REFRESH                 60   /* refresh every 60 seconds */
+#define FLB_TAIL_ROTATE_WAIT             "5"  /* time to monitor after rotation */
+#define FLB_TAIL_STATIC_BATCH_SIZE      "50M" /* static batch size */
 
 int in_tail_collect_event(void *file, struct flb_config *config);
 

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -173,6 +172,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 {
     int ret;
     const char *tmp;
+    const char *backwards_compatible_env_var;
     struct flb_stackdriver *ctx;
     flb_sds_t http_request_key;
     size_t http_request_key_size;
@@ -208,9 +208,22 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->credentials_file = flb_sds_create(tmp);
     }
     else {
-        tmp = getenv("GOOGLE_SERVICE_CREDENTIALS");
+        /*
+         * Use GOOGLE_APPLICATION_CREDENTIALS to fetch the credentials.
+         * GOOGLE_SERVICE_CREDENTIALS is checked for backwards compatibility.
+         */
+        tmp = getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        backwards_compatible_env_var = getenv("GOOGLE_SERVICE_CREDENTIALS");
+        if (tmp && backwards_compatible_env_var) {
+            flb_plg_warn(ctx->ins, "GOOGLE_APPLICATION_CREDENTIALS and "
+                "GOOGLE_SERVICE_CREDENTIALS are both defined. "
+                "Defaulting to GOOGLE_APPLICATION_CREDENTIALS");
+        }
         if (tmp) {
             ctx->credentials_file = flb_sds_create(tmp);
+        }
+        else if (backwards_compatible_env_var) {
+            ctx->credentials_file = flb_sds_create(backwards_compatible_env_var);
         }
     }
 

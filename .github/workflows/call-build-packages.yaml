@@ -36,6 +36,9 @@ on:
       gpg_private_key:
         description: The GPG key to use for signing the packages.
         required: false
+      gpg_private_key_passphrase:
+        description: The GPG key passphrase to use for signing the packages.
+        required: false
 
 jobs:
   call-build-packages:
@@ -160,6 +163,7 @@ jobs:
         uses: crazy-max/ghaction-import-gpg@v4
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
+          passphrase: ${{ secrets.gpg_private_key_passphrase }}
 
       - name: Create repositories on staging now
         # We sync down what we have for the release directories.

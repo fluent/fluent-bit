@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,6 +22,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugin_proxy.h>
@@ -327,12 +328,12 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
     int ret;
     char tmp[PATH_MAX + 1];
     const char *cfg = NULL;
-    struct mk_rconf *fconf;
-    struct mk_rconf_section *section;
-    struct mk_rconf_entry *entry;
     struct mk_list *head;
     struct mk_list *head_e;
     struct stat st;
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
+    struct flb_kv *entry;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -353,38 +354,39 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
     }
 
     flb_debug("[plugin] opening configuration file %s", cfg);
-    fconf = mk_rconf_open(cfg);
+
+    cf = flb_cf_create_from_file(NULL, cfg);
 #else
-    fconf = flb_config_static_open(file);
+    cf = flb_config_static_open(file);
 #endif
 
-    if (!fconf) {
+    if (!cf) {
         return -1;
     }
 
-    /* Read all [PLUGINS] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(section->name, "PLUGINS") != 0) {
+    /* read all 'plugins' sections */
+    mk_list_foreach(head, &cf->sections) {
+        section = mk_list_entry(head, struct flb_cf_section, _head);
+        if (strcasecmp(section->name, "plugins") != 0) {
             continue;
         }
 
-        mk_list_foreach(head_e, &section->entries) {
-            entry = mk_list_entry(head_e, struct mk_rconf_entry, _head);
-            if (strcasecmp(entry->key, "Path") != 0) {
+        mk_list_foreach(head_e, &section->properties) {
+            entry = mk_list_entry(head_e, struct flb_kv, _head);
+            if (strcasecmp(entry->key, "path") != 0) {
                 continue;
             }
 
             /* Load plugin with router function */
             ret = flb_plugin_load_router(entry->val, config);
             if (ret == -1) {
-                mk_rconf_free(fconf);
+                flb_cf_destroy(cf);
                 return -1;
             }
         }
     }
 
-    mk_rconf_free(fconf);
+    flb_cf_destroy(cf);
     return 0;
 }
 

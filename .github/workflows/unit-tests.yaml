@@ -11,10 +11,12 @@ on:
       - 'docker_compose/**'
       - 'packaging/**'
       - '.gitignore'
+      - 'appveyor.yml'
+      - '**.sh'
     branches:
       - master
       - 1.8
-    types: [opened, edited, synchronize]
+    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 jobs:

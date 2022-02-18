@@ -13,7 +13,16 @@ on:
       version:
         description: Version of Fluent Bit to build
         required: true
-        default: 1.8.11
+        default: 1.8.12
+      target:
+        description: Only build a specific target
+        required: false
+        default: ""
+
+# We do not want a new staging build to run whilst we are releasing the current staging build.
+# We also do not want multiples to run for the same version.
+concurrency: staging-build-release
+
 jobs:
 
   # This job copes with the variable approach of either being triggered by a tag,
@@ -60,7 +69,7 @@ jobs:
       version: ${{ needs.staging-build-get-version.outputs.version }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
+      image: ${{ github.repository }}/staging
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -85,6 +94,14 @@ jobs:
             echo '"raspbian/buster", "raspbian/bullseye"'
             echo ']}'
           ) | jq -c .)
+          if [ -n "${{ github.event.inputs.target || '' }}" ]; then
+            echo "Overriding matrix to build: ${{ github.event.inputs.target }}"
+            matrix=$((
+              echo '{ "distro" : ['
+              echo '"${{ github.event.inputs.target }}"'
+              echo ']}'
+            ) | jq -c .)
+          fi
           echo $matrix
           echo $matrix| jq .
           echo "::set-output name=matrix::$matrix"
@@ -103,3 +120,4 @@ jobs:
       access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+      gpg_private_key_passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}

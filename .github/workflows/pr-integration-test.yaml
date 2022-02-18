@@ -1,17 +1,20 @@
 name: Build and run integration tests for PR
 on:
-  pull_request:
+  # We need write token for upload to GHCR and we are protecting with labels too.
+  pull_request_target:
     branches:
       - master
     types:
       - labeled
       - opened
-      - edited
       - reopened
       - synchronize
+
+concurrency: integration-test
+
 jobs:
   pr-integration-test-build:
-    name: PR - integration build
+    name: PR - GCP build
     # We only need to test this once as the rest are chained from it.
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
     uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
@@ -19,14 +22,14 @@ jobs:
       ref: ${{ github.event.pull_request.head.sha }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
-      image-tag: x86_64-master-pr-${{ github.event.number }}
+      image: ${{ github.repository }}/pr-${{ github.event.number }}
+      image-tag: x86_64
       environment: integration
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   pr-integration-test-build-complete:
-    name: PR - build complete
+    name: PR - GCP build complete
     runs-on: ubuntu-latest
     needs: pr-integration-test-build
     steps:
@@ -42,7 +45,7 @@ jobs:
           docker pull $IMAGE
           docker save --output /tmp/pr-image.tar $IMAGE
         env:
-          IMAGE: ghcr.io/${{ github.repository }}:x86_64-master-pr-${{ github.event.pull_request.number }}
+          IMAGE: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}:x86_64
         shell: bash
 
       - name: Upload artifact
@@ -57,8 +60,8 @@ jobs:
     needs: pr-integration-test-build
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
-      image_name: ghcr.io/${{ github.repository }}
-      image_tag: x86_64-master-pr-${{ github.event.pull_request.number }}
+      image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+      image_tag: x86_64
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}
@@ -66,7 +69,7 @@ jobs:
       grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
 
   pr-integration-test-run-integration-post-label:
-    name: PR - test complete
+    name: PR - GCP test complete
     runs-on: ubuntu-latest
     needs: pr-integration-test-run-integration-gcp
     steps:

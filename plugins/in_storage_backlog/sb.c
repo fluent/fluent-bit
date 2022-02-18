@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -274,7 +273,8 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
                                                   struct flb_sb     *context)
 {
     struct flb_input_chunk  dummy_input_chunk;
-    struct mk_list         *backlog_iterator;
+    struct mk_list         *tmp;
+    struct mk_list         *head;
     size_t                  chunk_size;
     struct sb_out_queue    *backlog;
     int                     tag_len;
@@ -289,25 +289,24 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
     chunk_size = cio_chunk_get_real_size(target_chunk);
 
     if (chunk_size < 0) {
-        flb_warn("[storage backlog] could not retrieve chunk real size");
-
+        flb_warn("[storage backlog] could not get real size of chunk %s/%s",
+                  stream->name, target_chunk->name);
         return -1;
     }
 
     result = flb_input_chunk_get_tag(&dummy_input_chunk, &tag_buf, &tag_len);
-
     if (result == -1) {
-        flb_error("[storage backlog] could not retrieve chunk tag");
-
+        flb_error("[storage backlog] could not retrieve chunk tag from %s/%s, "
+                  "removing it from the queue",
+                  stream->name, target_chunk->name);
         return -2;
     }
 
     flb_routes_mask_set_by_tag(dummy_input_chunk.routes_mask, tag_buf, tag_len,
                                context->ins);
 
-    mk_list_foreach(backlog_iterator, &context->backlogs) {
-        backlog = mk_list_entry(backlog_iterator, struct sb_out_queue, _head);
-
+    mk_list_foreach_safe(head, tmp, &context->backlogs) {
+        backlog = mk_list_entry(head, struct sb_out_queue, _head);
         if (flb_routes_mask_get_bit(dummy_input_chunk.routes_mask,
                                     backlog->ins->id)) {
             result = sb_append_chunk_to_segregated_backlog(target_chunk, stream,
@@ -323,10 +322,12 @@ static int sb_append_chunk_to_segregated_backlogs(struct cio_chunk  *target_chun
 
 int sb_segregate_chunks(struct flb_config *config)
 {
+    int                ret;
+    size_t             size;
+    struct mk_list    *tmp;
     struct mk_list    *stream_iterator;
     struct mk_list    *chunk_iterator;
     struct flb_sb     *context;
-    int                result;
     struct cio_stream *stream;
     struct cio_chunk  *chunk;
 
@@ -336,16 +337,15 @@ int sb_segregate_chunks(struct flb_config *config)
         return 0;
     }
 
-    result = sb_allocate_backlogs(context);
-
-    if (result) {
+    ret = sb_allocate_backlogs(context);
+    if (ret) {
         return -2;
     }
 
     mk_list_foreach(stream_iterator, &context->cio->streams) {
         stream = mk_list_entry(stream_iterator, struct cio_stream, _head);
 
-        mk_list_foreach(chunk_iterator, &stream->chunks) {
+        mk_list_foreach_safe(chunk_iterator, tmp, &stream->chunks) {
             chunk = mk_list_entry(chunk_iterator, struct cio_chunk, _head);
 
             if (!cio_chunk_is_up(chunk)) {
@@ -356,11 +356,23 @@ int sb_segregate_chunks(struct flb_config *config)
                 return -3;
             }
 
-            result = sb_append_chunk_to_segregated_backlogs(chunk, stream, context);
-
-            if (result) {
-                flb_error("[storage backlog] error distributing chunk references");
-                return -4;
+            /* try to segregate a chunk */
+            ret = sb_append_chunk_to_segregated_backlogs(chunk, stream, context);
+            if (ret) {
+                /*
+                 * if the chunk could not be segregated, just remove it from the
+                 * queue and continue.
+                 *
+                 * if content size is zero, it's safe to 'delete it'.
+                 */
+                size = cio_chunk_get_content_size(chunk);
+                if (size <= 0) {
+                    cio_chunk_close(chunk, CIO_TRUE);
+                }
+                else {
+                    cio_chunk_close(chunk, CIO_FALSE);
+                }
+                continue;
             }
 
             /* lock the chunk */

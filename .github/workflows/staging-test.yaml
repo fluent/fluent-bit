@@ -9,6 +9,8 @@ on:
       - completed
   workflow_dispatch:
 
+concurrency: integration-test
+
 jobs:
   staging-test-images:
     name: Container images staging tests
@@ -19,7 +21,7 @@ jobs:
     with:
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
+      image: ${{ github.repository }}/staging
       image-tag: latest
       environment: staging
     secrets:
@@ -33,7 +35,7 @@ jobs:
     needs: staging-test-images
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
-      image_name: ghcr.io/${{ github.repository }}
+      image_name: ghcr.io/${{ github.repository }}/staging
       image_tag: latest
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
@@ -71,8 +73,8 @@ jobs:
 
   staging-test-images-multiarch-integration-gcp:
     name: Multi-arch - run integration tests on GCP
-    # Wait for other tests to succeed
-    needs: staging-test-images
+    # Wait for other tests to succeed, ensure one set of GCP tests at a time
+    needs: [ staging-test-multiarch-images, staging-test-images-integration-gcp ]
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}/multiarch
