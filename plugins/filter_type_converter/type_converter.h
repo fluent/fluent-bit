@@ -36,6 +36,11 @@ struct conv_entry {
 struct type_converter_ctx {
     struct mk_list conv_entries;
     struct flb_filter_instance *ins;
+    /* config maps */
+    struct mk_list *int_keys;
+    struct mk_list *uint_keys;
+    struct mk_list *float_keys;
+    struct mk_list *str_keys;
 };
 
 #endif
