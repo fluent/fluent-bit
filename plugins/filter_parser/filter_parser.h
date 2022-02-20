@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_sds.h>
 
 struct filter_parser {
     struct flb_parser *parser;
@@ -30,7 +31,7 @@ struct filter_parser {
 };
 
 struct filter_parser_ctx {
-    char     *key_name;
+    flb_sds_t key_name;
     int    key_name_len;
     int    reserve_data;
     int    preserve_key;
