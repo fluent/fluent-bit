@@ -311,9 +311,9 @@ static struct flb_config_map config_map[] = {
      "Add a HTTP header key/value pair. Multiple headers can be set"
     },
     {
-     FLB_CONFIG_MAP_STR, "uri", NULL,
+     FLB_CONFIG_MAP_STR, "uri", "/v1/metrics",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, uri),
-     "Specify an optional HTTP URI for the target web server, e.g: /something"
+     "Specify an optional HTTP URI for the target OTel endpoint."
     },
     {
      FLB_CONFIG_MAP_BOOL, "log_response_payload", "true",
