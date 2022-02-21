@@ -261,6 +261,10 @@ int http_conn_del(struct http_conn *conn)
 
     ctx = conn->ctx;
 
+    if (conn->session.channel != NULL) {
+        mk_channel_release(conn->session.channel);
+    }
+
     mk_event_del(ctx->evl, &conn->event);
     mk_list_del(&conn->_head);
     flb_socket_close(conn->fd);
