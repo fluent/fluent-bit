@@ -35,8 +35,8 @@
 struct flb_input_plugin in_thermal_plugin;
 
 /* Default collection time: every 1 second (0 nanoseconds) */
-#define DEFAULT_INTERVAL_SEC    1
-#define DEFAULT_INTERVAL_NSEC   0
+#define DEFAULT_INTERVAL_SEC    "1"
+#define DEFAULT_INTERVAL_NSEC   "0"
 
 #define IN_THERMAL_N_MAX          32
 #define IN_THERMAL_FILENAME_LEN   1024
@@ -76,7 +76,7 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx,
         }
 
 #ifdef FLB_HAVE_REGEX
-        if (ctx->name_regex && !flb_regex_match(ctx->name_regex,
+        if (ctx->name_rgx && !flb_regex_match(ctx->name_rgx,
                                                 (unsigned char *) e->d_name,
                                                 strlen(e->d_name))) {
             continue;
@@ -109,8 +109,8 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx,
                 fclose(f);
 
 #ifdef FLB_HAVE_REGEX
-                if (ctx->type_regex &&
-                    !flb_regex_match(ctx->type_regex,
+                if (ctx->type_rgx &&
+                    !flb_regex_match(ctx->type_rgx,
                                      (unsigned char *) info[i].type,
                                      strlen(info[i].type))) {
                     continue;
@@ -144,7 +144,6 @@ static int in_thermal_init(struct flb_input_instance *in,
 {
     int ret;
     struct flb_in_thermal_config *ctx;
-    const char *pval = NULL;
     struct temp_info info[IN_THERMAL_N_MAX];
     (void) data;
 
@@ -157,43 +156,25 @@ static int in_thermal_init(struct flb_input_instance *in,
     ctx->ins = in;
 
     /* Collection time setting */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
 #ifdef FLB_HAVE_REGEX
-    ctx->name_regex = NULL;
-    pval = flb_input_get_property("name_regex", in);
-    if (pval) {
-        ctx->name_regex = flb_regex_create(pval);
-        if (!ctx->name_regex) {
+    ctx->name_rgx = NULL;
+    if (ctx->name_regex && strcmp(ctx->name_regex, "") != 0) {
+        ctx->name_rgx = flb_regex_create(ctx->name_regex);
+        if (!ctx->name_rgx) {
             flb_plg_error(ctx->ins, "invalid 'name_regex' config value");
         }
     }
 
-    ctx->type_regex = NULL;
-    pval = flb_input_get_property("type_regex", in);
-    if (pval) {
-        ctx->type_regex = flb_regex_create(pval);
-        if (!ctx->type_regex) {
+    ctx->type_rgx = NULL;
+    if (ctx->type_regex && strcmp(ctx->type_regex, "") != 0) {
+        ctx->type_rgx = flb_regex_create(ctx->type_regex);
+        if (!ctx->type_rgx) {
             flb_plg_error(ctx->ins, "invalid 'type_regex' config value");
         }
     }
@@ -298,16 +279,43 @@ static int in_thermal_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
 #ifdef FLB_HAVE_REGEX
-    if (ctx && ctx->name_regex) {
-        flb_regex_destroy(ctx->name_regex);
+    if (ctx && ctx->name_rgx) {
+        flb_regex_destroy(ctx->name_rgx);
     }
-    if (ctx && ctx->type_regex) {
-        flb_regex_destroy(ctx->type_regex);
+    if (ctx && ctx->type_rgx) {
+        flb_regex_destroy(ctx->type_rgx);
     }
 #endif
     flb_free(ctx);
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, interval_nsec),
+      "Set the collector interval (sub seconds)"
+    },
+#ifdef FLB_HAVE_REGEX
+    {
+      FLB_CONFIG_MAP_STR, "name_regex", "",
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, name_regex),
+      "Set thermal name regular expression filter"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "type_regex", "",
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, type_regex),
+      "Set thermal type regular expression filter"
+    },
+#endif // FLB_HAVE_REGEX
+    /* EOF */
+    {0}
+};
 
 /* Plugin reference */
 struct flb_input_plugin in_thermal_plugin = {
@@ -319,5 +327,6 @@ struct flb_input_plugin in_thermal_plugin = {
     .cb_flush_buf = NULL,
     .cb_pause     = in_thermal_pause,
     .cb_resume    = in_thermal_resume,
-    .cb_exit      = in_thermal_exit
+    .cb_exit      = in_thermal_exit,
+    .config_map   = config_map
 };

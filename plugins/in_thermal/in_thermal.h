@@ -35,8 +35,10 @@ struct flb_in_thermal_config {
     int interval_nsec;            /* interval collection time (Nanosecond) */
     int prev_device_num;          /* number of thermal devices             */
 #ifdef FLB_HAVE_REGEX
-    struct flb_regex *name_regex; /* optional filter by name */
-    struct flb_regex *type_regex; /* optional filter by type */
+    struct flb_regex *name_rgx;   /* compiled filter by name */
+    struct flb_regex *type_rgx;   /* compiled filter by type */
+    char *name_regex; /* optional filter by name */
+    char *type_regex; /* optional filter by type */
 #endif
     struct flb_input_instance *ins;
 };
