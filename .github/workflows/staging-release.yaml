@@ -37,6 +37,8 @@ jobs:
         cat latest-version.txt
         STAGING_VERSION=$(cat latest-version.txt)
         [[ "$STAGING_VERSION" != "$RELEASE_VERSION" ]] && echo "Latest version mismatch: $STAGING_VERSION != $RELEASE_VERSION" && exit 1
+        # Must end in something that exits 0
+        echo "Successfully confirmed version is as expected: $STAGING_VERSION"
       shell: bash
       env:
         AWS_URL: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
@@ -94,7 +96,6 @@ jobs:
       run: |
         rm -f packaging/releases/*.repo
         LATEST_VERSION=$(cat packaging/releases/latest-version.txt)
-        [[ "$LATEST_VERSION" != "$VERSION" ]] && echo "Latest version mismatch: $LATEST_VERSION != $VERSION"
         packaging/update-repos.sh "$VERSION" packaging/releases/
         rm -f packaging/releases/latest-version.txt
       env:
