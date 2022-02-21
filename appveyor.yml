@@ -38,7 +38,9 @@ build_script:
   - powershell ".\ci\do-ut.ps1;exit $LASTEXITCODE"
   - cd build
   - cpack
-  - cpack -DFLB_TD=On
+  - cmake -G "NMake Makefiles" -D FLB_TD=On ..\
+  - cmake --build .
+  - cpack
 
 artifacts:
   - path: build/td-agent-bit-*.exe
