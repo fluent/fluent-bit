@@ -83,7 +83,8 @@ static inline int _next_target(struct mk_server *server)
      * If sched_ctx->workers[target] worker is full then the whole server too,
      * because it has the lowest load.
      */
-    if (mk_unlikely(cur >= server->server_capacity)) {
+    if (mk_unlikely(server->server_capacity > 0 &&
+                    server->server_capacity <= cur)) {
         MK_TRACE("Too many clients: %i", server->server_capacity);
 
         /* Instruct to close the connection anyways, we lie, it will die */
