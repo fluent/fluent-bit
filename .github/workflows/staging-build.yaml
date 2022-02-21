@@ -38,6 +38,10 @@ jobs:
       version: ${{ steps.formatted_version.outputs.replaced }}
       date: ${{ steps.date.outputs.date }}
     steps:
+      # This step is to consolidate the three different triggers into a single "version"
+      # 1. If manual dispatch - use the version provided.
+      # 2. If cron/regular build - use master.
+      # 3. If tag trigger, use that tag.
       - name: Get the version
         id: get_version
         # Use the input variable if defined, if not attempt to get a tag
@@ -56,6 +60,7 @@ jobs:
         env:
           INPUT_VERSION: ${{ github.event.inputs.version || '' }}
 
+      # String the 'v' prefix for tags.
       - uses: frabert/replace-string-action@v2.0
         id: formatted_version
         with:
@@ -64,6 +69,7 @@ jobs:
           replace-with: '$1'
           flags: 'g'
 
+      # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
       - name: Get current date
         id: date
         run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
