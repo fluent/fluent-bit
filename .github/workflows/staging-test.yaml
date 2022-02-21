@@ -64,7 +64,7 @@ jobs:
     with:
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}/multiarch
+      image: ${{ github.repository }}/staging/multiarch
       image-tag: latest
       environment: staging
     secrets:
@@ -77,7 +77,7 @@ jobs:
     needs: [ staging-test-multiarch-images, staging-test-images-integration-gcp ]
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
-      image_name: ghcr.io/${{ github.repository }}/multiarch
+      image_name: ghcr.io/${{ github.repository }}/staging/multiarch
       image_tag: latest
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
