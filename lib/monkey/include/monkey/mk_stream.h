@@ -390,6 +390,7 @@ struct mk_stream *mk_stream_new(int type, struct mk_channel *channel,
 int mk_channel_stream_write(struct mk_stream *stream, size_t *count);
 
 struct mk_channel *mk_channel_new(int type, int fd);
+int mk_channel_release(struct mk_channel *channel);
 
 int mk_channel_flush(struct mk_channel *channel);
 int mk_channel_write(struct mk_channel *channel, size_t *count);
