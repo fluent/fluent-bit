@@ -214,36 +214,18 @@ static int configure(struct flb_in_disk_config *disk_config,
                      struct flb_input_instance *in)
 {
     (void) *in;
-    const char *pval = NULL;
     int entry = 0;
     int i;
 
     /* interval settings */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        disk_config->interval_sec = atoi(pval);
-    }
-    else {
-        disk_config->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        disk_config->interval_nsec = atoi(pval);
-    }
-    else {
-        disk_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
     if (disk_config->interval_sec <= 0 && disk_config->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        disk_config->interval_sec = DEFAULT_INTERVAL_SEC;
-        disk_config->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        disk_config->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        disk_config->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    pval = flb_input_get_property("dev_name", in);
-    if (pval != NULL) {
-        disk_config->dev_name = flb_strdup(pval);
+    if (disk_config->dev_name != NULL) {
+        disk_config->dev_name = flb_strdup(disk_config->dev_name);
     }
     else {
         disk_config->dev_name = NULL;
@@ -342,6 +324,26 @@ static int in_disk_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_disk_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_disk_config, interval_nsec),
+      "Set the collector interval (sub seconds)"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "dev_name", "",
+      0, FLB_TRUE, offsetof(struct flb_in_disk_config, dev_name),
+      "Set the collector interval (sub seconds)"
+    },
+    /* EOF */
+    {0}
+};
 
 struct flb_input_plugin in_disk_plugin = {
     .name         = "disk",
@@ -350,5 +352,6 @@ struct flb_input_plugin in_disk_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_disk_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_disk_exit
+    .cb_exit      = in_disk_exit,
+    .config_map   = config_map
 };

@@ -23,8 +23,8 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_input.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 #define STR_KEY_WRITE "write_size"
 #define STR_KEY_READ  "read_size"
