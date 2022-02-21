@@ -17,9 +17,9 @@ on:
         required: false
         default: ""
 
-  # Run nightly build
-  schedule:
-  - cron: "0 6 * * *"
+  # Run nightly build - disable until after 1.9 release
+  # schedule:
+  # - cron: "0 6 * * *"
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
