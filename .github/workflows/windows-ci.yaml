@@ -79,6 +79,10 @@ jobs:
       timeout-minutes: 1
       run: |
         $fluentbit=Start-Process -Verbose -PassThru -NoNewWindow -FilePath "fluent-bit.exe" -ArgumentList "--version" -Wait
+        $stdout = $fluentbit.StandardOutput.ReadToEnd()
+        $stderr = $fluentbit.StandardError.ReadToEnd()
+        Write-Host "stdout: $stdout"
+        Write-Host "stderr: $stderr"
       shell: pwsh
       working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64\bin
 
@@ -89,6 +93,10 @@ jobs:
         Start-Sleep -s 15
         if ($fluentbit.HasExited) {
           Write-Host "Fluent Bit exited prematurely"
+          $stdout = $fluentbit.StandardOutput.ReadToEnd()
+          $stderr = $fluentbit.StandardError.ReadToEnd()
+          Write-Host "stdout: $stdout"
+          Write-Host "stderr: $stderr"
           exit 1
         }
         Stop-Process -Force -InputObject $fluentbit
@@ -104,6 +112,10 @@ jobs:
         Start-Sleep -s 15
         if ($fluentbit.HasExited) {
           Write-Host "Fluent Bit exited prematurely"
+          $stdout = $fluentbit.StandardOutput.ReadToEnd()
+          $stderr = $fluentbit.StandardError.ReadToEnd()
+          Write-Host "stdout: $stdout"
+          Write-Host "stderr: $stderr"
           exit 1
         }
         Stop-Process -Force -InputObject $fluentbit
@@ -143,6 +155,10 @@ jobs:
         Start-Sleep -s 15
         if ($fluentbit.HasExited) {
           Write-Host "Fluent Bit exited prematurely"
+          $stdout = $fluentbit.StandardOutput.ReadToEnd()
+          $stderr = $fluentbit.StandardError.ReadToEnd()
+          Write-Host "stdout: $stdout"
+          Write-Host "stderr: $stderr"
           exit 1
         }
         Stop-Process -Force -InputObject $fluentbit
