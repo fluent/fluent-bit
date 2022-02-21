@@ -44,7 +44,7 @@ struct expected_result {
     struct record_check *out_records;
 };
 
-int test_multiline_parser(msgpack_object *root2, char *str1, size_t str1_len) {
+void test_multiline_parser(msgpack_object *root2, char *str1, size_t str1_len) {
     uint64_t stream_id;
     struct expected_result res = {0};
     struct flb_config *config = NULL;
@@ -81,7 +81,7 @@ int test_multiline_parser(msgpack_object *root2, char *str1, size_t str1_len) {
     flb_config_exit(config);
 }
 
-int LLVMFuzzerTestOneInput(unsigned char *data, size_t size) {
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 		TIMEOUT_GUARD
 
     if (size < 50) {
@@ -109,4 +109,5 @@ int LLVMFuzzerTestOneInput(unsigned char *data, size_t size) {
         free(out_buf);
     }
     free(raw_data_to_parse);
+    return 0;
 }

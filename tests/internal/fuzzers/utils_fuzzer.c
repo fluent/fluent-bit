@@ -22,6 +22,7 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_uri.h>
@@ -122,7 +123,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
         char *out_buf = NULL;
         size_t out_size;
-        flb_hash_get(ht, null_terminated, size, (const char **)&out_buf, &out_size);
+        flb_hash_get(ht, null_terminated, size, (void **)&out_buf, &out_size);
 
         /* now let's create some more instances */
         char *instances1[128] = { NULL };
@@ -198,8 +199,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     flb_regex_init();
     struct flb_regex *freg = flb_regex_create(pregex);
     if (freg != NULL) {
-        struct flb_regex_search res;
-        flb_regex_match(freg, null_terminated, size);
+        flb_regex_match(freg, (unsigned char*)null_terminated, size);
         flb_regex_destroy(freg);
     }
     flb_regex_exit();
