@@ -1,3 +1,14 @@
+if (CMT_BUILD_PROMETHEUS_DECODER)
+    flex_target(cmt_decode_prometheus_lexer cmt_decode_prometheus.l
+        "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_lexer.c"
+        DEFINES_FILE "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_lexer.h"
+        )
+    bison_target(cmt_decode_prometheus_parser cmt_decode_prometheus.y
+        "${FLEX_BISON_GENERATED_DIR}/cmt_decode_prometheus_parser.c")
+    add_flex_bison_dependency(cmt_decode_prometheus_lexer cmt_decode_prometheus_parser)
+endif()
+
+
 set(src
   cmt_gauge.c
   cmt_counter.c
@@ -44,6 +55,13 @@ set(src
   ${src}
   ${PLATFORM_SPECIFIC_ATOMIC_MODULE}
   )
+
+if (CMT_BUILD_PROMETHEUS_DECODER)
+    set(src ${src}
+        ${FLEX_cmt_decode_prometheus_lexer_OUTPUTS}
+        ${BISON_cmt_decode_prometheus_parser_OUTPUTS}
+        )
+endif()
 
 # Static Library
 add_library(cmetrics-static STATIC ${src})

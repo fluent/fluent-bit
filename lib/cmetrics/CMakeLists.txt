@@ -1,17 +1,27 @@
 cmake_minimum_required(VERSION 2.8)
 project(cmetrics C)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Include helpers
+include(cmake/macros.cmake)
+include(CheckCSourceCompiles)
+include(GNUInstallDirs)
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(CMT_SYSTEM_WINDOWS On)
   add_definitions(-DCMT_SYSTEM_WINDOWS)
+
+  # Disable unistd.h for flex/bison
+  CMT_DEFINITION(YY_NO_UNISTD_H)
+  message(STATUS "Specifying YY_NO_UNISTD_H")
 endif()
 
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
-set(CMT_VERSION_MINOR  2)
-set(CMT_VERSION_PATCH  3)
+set(CMT_VERSION_MINOR  3)
+set(CMT_VERSION_PATCH  0)
 set(CMT_VERSION_STR "${CMT_VERSION_MAJOR}.${CMT_VERSION_MINOR}.${CMT_VERSION_PATCH}")
 
 # Define __FILENAME__ consistently across Operating Systems
@@ -20,11 +30,6 @@ if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__FILENAME__=__FILE__")
 endif()
-
-# Include helpers
-include(cmake/macros.cmake)
-include(CheckCSourceCompiles)
-include(GNUInstallDirs)
 
 # Configuration options
 option(CMT_DEV             "Enable development mode"                   No)
@@ -35,11 +40,14 @@ if(CMT_DEV)
   set(CMT_TESTS   Yes)
 endif()
 
+set(FLEX_BISON_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR})
 # Include headers and dependency headers
 include_directories(
+  src
   include
   lib/monkey/include
   lib/xxHash-0.8.0/
+  ${FLEX_BISON_GENERATED_DIR}
   )
 
 # timespec_get() support
@@ -100,6 +108,13 @@ check_c_source_compiles("
      msgpack_sbuffer sbuf;
      return 0;
   }" CMT_HAVE_MSGPACK)
+
+find_package(FLEX 2)
+find_package(BISON 3)
+
+if(FLEX_FOUND AND BISON_FOUND)
+    set(CMT_BUILD_PROMETHEUS_DECODER 1)
+endif()
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/cmetrics/cmt_info.h.in"
