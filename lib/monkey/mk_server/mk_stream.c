@@ -37,6 +37,7 @@ struct mk_channel *mk_channel_new(int type, int fd)
 
 int mk_channel_release(struct mk_channel *channel)
 {
+    /* this is a dummy change */
     mk_mem_free(channel);
 }
 
