@@ -78,7 +78,7 @@ jobs:
     - name: Run zip version with simple check on binary
       timeout-minutes: 1
       run: |
-        $fluentbit=Start-Process -Verbose -PassThru -NoNewWindow -FilePath "fluent-bit.exe" -ArgumentList "--version"
+        $fluentbit=Start-Process -Verbose -PassThru -NoNewWindow -FilePath "fluent-bit.exe" -ArgumentList "--version" -Wait
       shell: pwsh
       working-directory: fluent-bit-${{ env.VERSION }}-win64\fluent-bit-${{ env.VERSION }}-win64\bin
 
