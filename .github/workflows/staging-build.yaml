@@ -46,21 +46,18 @@ jobs:
       # 3. If tag trigger, use that tag.
       - name: Get the version
         id: get_version
-        # Use the input variable if defined, if not attempt to get a tag
         run: |
             VERSION="${INPUT_VERSION}"
             if [ -z "${VERSION}" ]; then
-              if [ -z "${GITHUB_REF/refs\/tags\//}" ]; then
-                VERSION="${GITHUB_REF/refs\/tags\//}"
-              else
-                echo "Defaulting to master"
-                VERSION=master
-              fi
+              echo "Defaulting to master"
+              VERSION=master
             fi
             echo ::set-output name=VERSION::$VERSION
         shell: bash
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+          # Use the dispatch variable in preference, if empty use the context ref_name which should
+          # only ever be a tag or the master branch for cron builds.
+          INPUT_VERSION: ${{ github.event.inputs.version || github.ref_name }}
 
       # String the 'v' prefix for tags.
       - uses: frabert/replace-string-action@v2.0
