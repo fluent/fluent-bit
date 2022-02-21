@@ -136,7 +136,7 @@ jobs:
       timeout-minutes: 5
       # Silent install accepting all defaults
       run: |
-        Start-Process -NoNewWindow -FilePath "fluent-bit-${{ env.VERSION }}-win64.exe" -ArgumentList "/S", "/D=C:\fluent-bit"
+        Start-Process -NoNewWindow -FilePath "fluent-bit-${{ env.VERSION }}-win64.exe" -ArgumentList "/S", "/D=C:\fluent-bit" -Wait
       shell: pwsh
 
     - name: Verify installation
