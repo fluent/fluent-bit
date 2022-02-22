@@ -72,20 +72,15 @@ static int in_dummy_thread_init(struct flb_input_instance *in,
         flb_errno();
         return -1;
     }
-
-    conf = flb_input_get_property("message", in);
-    if (conf) {
-        ctx->message = conf;
-    }
-    else {
-        ctx->message = "thread dummy"; 
+    
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        return -1;
     }
 
-    conf = flb_input_get_property("samples", in);
-    if (conf && (val = atoi(conf)) >= 1) {
-        ctx->samples = val;
-    }
-    else {
+
+    if (ctx->samples <= 0) {
         ctx->samples = 1000000;
     }
 
@@ -137,6 +132,21 @@ static int in_dummy_thread_exit(void *in_context, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "message", "thready dummy",
+     0, FLB_TRUE, offsetof(struct flb_in_dummy_thread_config, message),
+     "Define dummy message"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "message", "1000000",
+     0, FLB_TRUE, offsetof(struct flb_in_dummy_thread_config, samples),
+     "Define the number of samples to send"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_dummy_thread_plugin = {
     .name         = "dummy_thread",
@@ -145,5 +155,6 @@ struct flb_input_plugin in_dummy_thread_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = flb_input_thread_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_dummy_thread_exit
+    .cb_exit      = in_dummy_thread_exit,
+    .config_map   = config_map
 };
