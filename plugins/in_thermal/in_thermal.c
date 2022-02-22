@@ -155,6 +155,13 @@ static int in_thermal_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
+
     /* Collection time setting */
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
