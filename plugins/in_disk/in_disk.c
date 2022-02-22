@@ -216,6 +216,13 @@ static int configure(struct flb_in_disk_config *disk_config,
     (void) *in;
     int entry = 0;
     int i;
+    int ret;
+
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)disk_config);
+    if (ret == -1) {
+        return -1;
+    }
 
     /* interval settings */
     if (disk_config->interval_sec <= 0 && disk_config->interval_nsec <= 0) {
