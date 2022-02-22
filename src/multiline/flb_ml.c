@@ -498,12 +498,11 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     /* Package the content */
     ret = package_content(mst, full_map, buf, size, tm,
                           val_content, val_pattern, val_group);
-    if (ret == FLB_FALSE) {
-        return -1;
-    }
-
     if (unpacked) {
         msgpack_unpacked_destroy(&result);
+    }
+    if (ret == FLB_FALSE) {
+        return -1;
     }
     return 0;
 }
