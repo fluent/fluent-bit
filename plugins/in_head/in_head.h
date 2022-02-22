@@ -25,9 +25,9 @@
 
 #include <msgpack.h>
 
-#define DEFAULT_BUF_SIZE      256
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_BUF_SIZE      "256"
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct flb_in_head_config {
     int          coll_fd;
