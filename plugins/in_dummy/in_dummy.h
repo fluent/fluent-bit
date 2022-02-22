@@ -27,9 +27,13 @@
 
 struct flb_dummy {
     int  samples;
+    int  rate;
     int  samples_count;
     char *dummy_message;
     int  dummy_message_len;
+    time_t start_time_sec;
+    long   start_time_nsec;
+
     bool fixed_timestamp;
 
     char *ref_msgpack;

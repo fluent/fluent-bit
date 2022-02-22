@@ -120,7 +120,6 @@ static int config_destroy(struct flb_dummy *ctx)
 {
     flb_free(ctx->dummy_timestamp);
     flb_free(ctx->base_timestamp);
-    flb_free(ctx->dummy_message);
     if (ctx->fixed_timestamp == FLB_TRUE) {
         msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     }
@@ -134,12 +133,10 @@ static int configure(struct flb_dummy *ctx,
                      struct flb_input_instance *in,
                      struct timespec *tm)
 {
-    const char *str = NULL;
     struct flb_time dummy_time;
     int dummy_time_enabled = FLB_FALSE;
     int root_type;
     int  ret = -1;
-    long val  = 0;
 
     ctx->ref_msgpack = NULL;
 
@@ -148,24 +145,15 @@ static int configure(struct flb_dummy *ctx,
         return -1;
     }
 
-    /* the message */
-    str = flb_input_get_property("dummy", in);
-    if (str != NULL) {
-        ctx->dummy_message = flb_strdup(str);
-    }
-    else {
-        ctx->dummy_message = flb_strdup(DEFAULT_DUMMY_MESSAGE);
-    }
     ctx->dummy_message_len = strlen(ctx->dummy_message);
 
     /* interval settings */
     tm->tv_sec  = 1;
     tm->tv_nsec = 0;
 
-    str = flb_input_get_property("rate", in);
-    if (str != NULL && (val = atoi(str)) > 1) {
+    if (ctx->rate > 1) {
         tm->tv_sec = 0;
-        tm->tv_nsec = 1000000000 / val;
+        tm->tv_nsec = 1000000000 / ctx->rate;
     }
 
     /* dummy timestamp */
@@ -173,15 +161,14 @@ static int configure(struct flb_dummy *ctx,
     ctx->base_timestamp = NULL;
     flb_time_zero(&dummy_time);
 
-    str = flb_input_get_property("start_time_sec", in);
-    if (str != NULL && (val = atoi(str)) >= 0) {
+    if (ctx->start_time_sec >= 0 || ctx->start_time_nsec >= 0) {
         dummy_time_enabled = FLB_TRUE;
-        dummy_time.tm.tv_sec = val;
-    }
-    str = flb_input_get_property("start_time_nsec", in);
-    if (str != NULL && (val = atoi(str)) >= 0) {
-        dummy_time_enabled = FLB_TRUE;
-        dummy_time.tm.tv_nsec = val;
+        if (ctx->start_time_sec >= 0) {
+            dummy_time.tm.tv_sec = ctx->start_time_sec;
+        }
+        if (ctx->start_time_nsec >= 0) {
+            dummy_time.tm.tv_nsec = ctx->start_time_nsec;
+        }
     }
 
     if (dummy_time_enabled) {
@@ -264,7 +251,6 @@ static int in_dummy_exit(void *data, struct flb_config *config)
     return 0;
 }
 
-
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
    {
@@ -274,22 +260,22 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "dummy", DEFAULT_DUMMY_MESSAGE,
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_dummy, dummy_message),
     "set the sample record to be generated. It should be a JSON object."
    },
    {
     FLB_CONFIG_MAP_INT, "rate", "1",
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_dummy, rate),
     "set a number of events per second."
    },
    {
     FLB_CONFIG_MAP_INT, "start_time_sec", "1",
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_dummy, start_time_sec),
     "set a dummy base timestamp in seconds."
    },
    {
     FLB_CONFIG_MAP_INT, "start_time_nsec", "0",
-    0, FLB_FALSE, 0,
+    0, FLB_TRUE, offsetof(struct flb_dummy, start_time_nsec),
     "set a dummy base timestamp in nanoseconds."
    },
    {
