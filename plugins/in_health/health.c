@@ -79,7 +79,7 @@ static int in_health_collect(struct flb_input_instance *ins,
     }
 
     if (alive == FLB_TRUE && ctx->alert == FLB_TRUE) {
-        return 0;
+        FLB_INPUT_RETURN(0);
     }
 
     /* Initialize local msgpack buffer */
