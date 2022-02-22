@@ -249,7 +249,7 @@ int flb_sosreport(struct flb_config *config)
         printf("    Name\t\t%s (%s, id=%i)\n", ins_in->name, ins_in->p->name,
                ins_in->id);
         printf("    Flags\t\t"); input_flags(ins_in->flags);
-        printf("    Threaded\t\t%s\n", ins_in->threaded ? "Yes": "No");
+        printf("    Coroutines\t\t%s\n", ins_in->runs_in_coroutine ? "Yes": "No");
         if (ins_in->tag) {
             printf("    Tag\t\t\t%s\n", ins_in->tag);
         }
