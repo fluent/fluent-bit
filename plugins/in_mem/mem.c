@@ -119,10 +119,8 @@ static int in_mem_init(struct flb_input_instance *in,
                        struct flb_config *config, void *data)
 {
     int ret;
-    const char *tmp;
     struct flb_in_mem_config *ctx;
     (void) data;
-    const char *pval = NULL;
 
     /* Initialize context */
     ctx = flb_malloc(sizeof(struct flb_in_mem_config));
@@ -133,6 +131,13 @@ static int in_mem_init(struct flb_input_instance *in,
     ctx->pid = 0;
     ctx->page_size = sysconf(_SC_PAGESIZE);
     ctx->ins = in;
+    
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Collection time setting */
     if (ctx->interval_sec <= 0) {
@@ -153,6 +158,7 @@ static int in_mem_init(struct flb_input_instance *in,
                                        config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not set collector for memory input plugin");
+        return -1;
     }
 
     return 0;
