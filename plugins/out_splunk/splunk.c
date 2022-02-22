@@ -439,7 +439,6 @@ static void debug_request_response(struct flb_splunk *ctx,
     unsigned char *ptr;
     flb_sds_t req_headers = NULL;
     flb_sds_t req_body = NULL;
-    flb_sds_t res_body = NULL;
 
     if (c->body_len > 3) {
         ptr = (unsigned char *) c->body_buf;
