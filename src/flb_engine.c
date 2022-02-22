@@ -126,6 +126,35 @@ static void cb_engine_sched_timer(struct flb_config *ctx, void *data)
     flb_upstream_conn_timeouts(&ctx->upstreams);
 }
 
+static inline int handle_input_event(flb_pipefd_t fd, uint64_t ts,
+                                     struct flb_config *config)
+{
+    int bytes;
+    uint32_t type;
+    uint32_t ins_id;
+    uint64_t val;
+
+    bytes = flb_pipe_r(fd, &val, sizeof(val));
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Get type and key */
+    type   = FLB_BITS_U64_HIGH(val);
+    ins_id = FLB_BITS_U64_LOW(val);
+
+    /* At the moment we only support events coming from an input coroutine */
+    if (type != FLB_ENGINE_IN_CORO) {
+        flb_error("[engine] invalid event type %i for input handler",
+                  type);
+        return -1;
+    }
+
+    flb_input_coro_finished(config, ins_id);
+    return 0;
+}
+
 static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
                                       struct flb_config *config)
 {
@@ -371,10 +400,6 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
             flb_engine_flush(config, NULL);
             return FLB_ENGINE_STOP;
         }
-    }
-    else if (type == FLB_ENGINE_IN_THREAD) {
-        /* Event coming from an input thread */
-        flb_input_coro_destroy_id(key, config);
     }
 
     return 0;
@@ -796,6 +821,10 @@ int flb_engine_start(struct flb_config *config)
                  * status.
                  */
                 handle_output_event(event->fd, ts, config);
+            }
+            else if (event->type == FLB_ENGINE_EV_INPUT) {
+                ts = cmt_time_now();
+                handle_input_event(event->fd, ts, config);
             }
         }
 
