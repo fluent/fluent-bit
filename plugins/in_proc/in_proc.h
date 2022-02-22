@@ -25,8 +25,8 @@
 #include <fluent-bit/flb_input.h>
 #include <msgpack.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 #define FLB_CMD_LEN 256
 #define FLB_IN_PROC_NAME "in_proc"
