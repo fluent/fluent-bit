@@ -495,8 +495,7 @@ static int cb_cpu_init(struct flb_input_instance *in,
     int ret;
     struct flb_cpu *ctx;
     (void) data;
-    const char *pval = NULL;
-
+    
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_cpu));
     if (!ctx) {
@@ -504,6 +503,12 @@ static int cb_cpu_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
+    
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Gather number of processors and CPU ticks */
     ctx->n_processors = sysconf(_SC_NPROCESSORS_ONLN);
@@ -512,8 +517,8 @@ static int cb_cpu_init(struct flb_input_instance *in,
     /* Collection time setting */
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
     /* Initialize buffers for CPU stats */
