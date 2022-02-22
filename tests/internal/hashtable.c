@@ -364,8 +364,6 @@ void test_hash_exists()
     int len;
     struct map *m;
     uint64_t hash;
-    const char *out_buf;
-    size_t out_size;
     struct flb_hash *ht;
 
     ht = flb_hash_create(FLB_HASH_EVICT_NONE, 1000, 0);
@@ -374,6 +372,7 @@ void test_hash_exists()
     for (i = 0; i < sizeof(entries) / sizeof(struct map); i++) {
         m = &entries[i];
         id = ht_add(ht, m->key, m->val);
+        TEST_CHECK(id >= 0);
 
         len = strlen(m->key);
         hash = XXH3_64bits(m->key, len);
