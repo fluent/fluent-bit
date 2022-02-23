@@ -266,7 +266,7 @@ static int in_head_config_read(struct flb_in_head_config *ctx,
 
     ctx->key_len = strlen(ctx->key);
 
-    // only set lines if not explicitly set
+    /* only set lines if not explicitly set */
     if (ctx->split_line && ctx->lines <= 0) {
         ctx->lines      = 10;
     }
