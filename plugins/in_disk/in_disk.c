@@ -346,7 +346,7 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_STR, "dev_name", "",
       0, FLB_TRUE, offsetof(struct flb_in_disk_config, dev_name),
-      "Set the collector interval (sub seconds)"
+      "Set the device name"
     },
     /* EOF */
     {0}
