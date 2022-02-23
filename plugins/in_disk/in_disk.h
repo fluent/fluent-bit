@@ -30,15 +30,15 @@
 #define STR_KEY_READ  "read_size"
 
 struct flb_in_disk_config {
-    uint64_t *read_total;
-    uint64_t *write_total;
-    uint64_t *prev_read_total;
-    uint64_t *prev_write_total;
-    char     *dev_name;
-    int      entry;
-    int      interval_sec;
-    int      interval_nsec;
-    int      first_snapshot;   /* a feild to indicate whethor or not this is the first collect*/
+    uint64_t  *read_total;
+    uint64_t  *write_total;
+    uint64_t  *prev_read_total;
+    uint64_t  *prev_write_total;
+    flb_sds_t dev_name;
+    int       entry;
+    int       interval_sec;
+    int       interval_nsec;
+    int       first_snapshot;   /* a feild to indicate whethor or not this is the first collect*/
 };
 
 extern struct flb_input_plugin in_disk_plugin;
