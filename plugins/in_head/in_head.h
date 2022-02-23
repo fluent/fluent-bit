@@ -33,11 +33,11 @@ struct flb_in_head_config {
     int          coll_fd;
     size_t       buf_size; /* size of buf */
     ssize_t      buf_len;  /* read size */
-    char         *buf;      /* read buf */
-    const char   *key;
+    char         *buf;     /* read buf */
+    flb_sds_t    key;
     int          key_len;
 
-    const char   *filepath; /* to read */
+    flb_sds_t    filepath; /* to read */
 
     char         add_path; /* add path mode */
     size_t       path_len;
