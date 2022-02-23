@@ -386,7 +386,7 @@ static int in_head_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "file", "",
+     FLB_CONFIG_MAP_STR, "file", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_head_config, filepath),
      "Set the file"
     },
