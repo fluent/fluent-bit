@@ -423,7 +423,7 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
       0, FLB_TRUE, offsetof(struct flb_in_head_config, interval_nsec),
-      "Set the collector interval (sub seconds)"
+      "Set the collector interval (nanoseconds)"
     },
     /* EOF */
     {0}
