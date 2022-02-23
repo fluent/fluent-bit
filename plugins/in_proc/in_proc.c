@@ -158,7 +158,6 @@ static pid_t get_pid_from_procname_linux(struct flb_in_proc_config *ctx,
 static int configure(struct flb_in_proc_config *ctx,
                      struct flb_input_instance *in)
 {
-    char *proc_name = NULL;
     int ret;
 
     /* Load the config map */
