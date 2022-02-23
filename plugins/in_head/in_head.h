@@ -39,7 +39,7 @@ struct flb_in_head_config {
 
     flb_sds_t    filepath; /* to read */
 
-    char         add_path; /* add path mode */
+    int          add_path; /* add path mode */
     size_t       path_len;
 
     int          lines; /* line num to read */
