@@ -163,6 +163,7 @@ static int configure(struct flb_in_proc_config *ctx,
     /* Load the config map */
     ret = flb_input_config_map_set(in, (void *)ctx);
     if (ret == -1) {
+        flb_plg_error(in, "unable to load configuration");
         return -1;
     }
     
