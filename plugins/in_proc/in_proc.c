@@ -511,7 +511,7 @@ static struct flb_config_map config_map[] = {
      "Append fd count to record"
     },
     {
-     FLB_CONFIG_MAP_STR, "proc_name", "",
+     FLB_CONFIG_MAP_STR, "proc_name", NULL,
      0, FLB_TRUE, offsetof(struct flb_in_proc_config, proc_name),
      "Define process name to health check"
     },
