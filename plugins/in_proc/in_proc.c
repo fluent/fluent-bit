@@ -174,13 +174,6 @@ static int configure(struct flb_in_proc_config *ctx,
     }
 
     if (ctx->proc_name != NULL && strcmp(ctx->proc_name, "") != 0) {
-        proc_name = (char*)flb_malloc(FLB_CMD_LEN);
-        if (ctx->proc_name == NULL) {
-            return -1;
-        }
-        strncpy(proc_name, ctx->proc_name, FLB_CMD_LEN);
-        proc_name[FLB_CMD_LEN-1] = '\0';
-        ctx->proc_name = proc_name;
         ctx->len_proc_name = strlen(ctx->proc_name);
     }
 
