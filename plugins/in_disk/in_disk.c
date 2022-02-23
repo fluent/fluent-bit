@@ -232,13 +232,6 @@ static int configure(struct flb_in_disk_config *disk_config,
         disk_config->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    if (disk_config->dev_name != NULL) {
-        disk_config->dev_name = flb_strdup(disk_config->dev_name);
-    }
-    else {
-        disk_config->dev_name = NULL;
-    }
-
     entry = get_diskstats_entries();
     if (entry == 0) {
         /* no entry to count */
@@ -281,7 +274,7 @@ static int in_disk_init(struct flb_input_instance *in,
     int ret = -1;
 
     /* Allocate space for the configuration */
-    disk_config = flb_malloc(sizeof(struct flb_in_disk_config));
+    disk_config = flb_calloc(1, sizeof(struct flb_in_disk_config));
     if (disk_config == NULL) {
         return -1;
     }
@@ -327,7 +320,6 @@ static int in_disk_exit(void *data, struct flb_config *config)
     flb_free(disk_config->write_total);
     flb_free(disk_config->prev_read_total);
     flb_free(disk_config->prev_write_total);
-    flb_free(disk_config->dev_name);
     flb_free(disk_config);
     return 0;
 }
