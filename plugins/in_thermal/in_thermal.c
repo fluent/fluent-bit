@@ -76,7 +76,7 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx,
         }
 
 #ifdef FLB_HAVE_REGEX
-        if (ctx->name_rgx && !flb_regex_match(ctx->name_rgx,
+        if (ctx->name_regex && !flb_regex_match(ctx->name_regex,
                                                 (unsigned char *) e->d_name,
                                                 strlen(e->d_name))) {
             continue;
@@ -109,8 +109,8 @@ static inline int proc_temperature(struct flb_in_thermal_config *ctx,
                 fclose(f);
 
 #ifdef FLB_HAVE_REGEX
-                if (ctx->type_rgx &&
-                    !flb_regex_match(ctx->type_rgx,
+                if (ctx->type_regex &&
+                    !flb_regex_match(ctx->type_regex,
                                      (unsigned char *) info[i].type,
                                      strlen(info[i].type))) {
                     continue;
@@ -170,18 +170,16 @@ static int in_thermal_init(struct flb_input_instance *in,
     }
 
 #ifdef FLB_HAVE_REGEX
-    ctx->name_rgx = NULL;
-    if (ctx->name_regex && strcmp(ctx->name_regex, "") != 0) {
-        ctx->name_rgx = flb_regex_create(ctx->name_regex);
-        if (!ctx->name_rgx) {
+    if (ctx->name_rgx && strcmp(ctx->name_rgx, "") != 0) {
+        ctx->name_regex = flb_regex_create(ctx->name_rgx);
+        if (!ctx->name_regex) {
             flb_plg_error(ctx->ins, "invalid 'name_regex' config value");
         }
     }
 
-    ctx->type_rgx = NULL;
-    if (ctx->type_regex && strcmp(ctx->type_regex, "") != 0) {
-        ctx->type_rgx = flb_regex_create(ctx->type_regex);
-        if (!ctx->type_rgx) {
+    if (ctx->type_rgx && strcmp(ctx->type_rgx, "") != 0) {
+        ctx->type_regex = flb_regex_create(ctx->type_rgx);
+        if (!ctx->type_regex) {
             flb_plg_error(ctx->ins, "invalid 'type_regex' config value");
         }
     }
@@ -286,11 +284,11 @@ static int in_thermal_exit(void *data, struct flb_config *config)
     (void) *config;
     struct flb_in_thermal_config *ctx = data;
 #ifdef FLB_HAVE_REGEX
-    if (ctx && ctx->name_rgx) {
-        flb_regex_destroy(ctx->name_rgx);
+    if (ctx && ctx->name_regex) {
+        flb_regex_destroy(ctx->name_regex);
     }
-    if (ctx && ctx->type_rgx) {
-        flb_regex_destroy(ctx->type_rgx);
+    if (ctx && ctx->type_regex) {
+        flb_regex_destroy(ctx->type_regex);
     }
 #endif
     flb_free(ctx);
@@ -306,17 +304,17 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
       0, FLB_TRUE, offsetof(struct flb_in_thermal_config, interval_nsec),
-      "Set the collector interval (sub seconds)"
+      "Set the collector interval (nanoseconds)"
     },
 #ifdef FLB_HAVE_REGEX
     {
       FLB_CONFIG_MAP_STR, "name_regex", "",
-      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, name_regex),
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, name_rgx),
       "Set thermal name regular expression filter"
     },
     {
       FLB_CONFIG_MAP_STR, "type_regex", "",
-      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, type_regex),
+      0, FLB_TRUE, offsetof(struct flb_in_thermal_config, type_rgx),
       "Set thermal type regular expression filter"
     },
 #endif // FLB_HAVE_REGEX
