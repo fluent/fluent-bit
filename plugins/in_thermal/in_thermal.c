@@ -318,7 +318,7 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_in_thermal_config, type_rgx),
       "Set thermal type regular expression filter"
     },
-#endif // FLB_HAVE_REGEX
+#endif /* FLB_HAVE_REGEX */
     /* EOF */
     {0}
 };
