@@ -56,9 +56,9 @@ struct flb_in_proc_config {
     uint8_t  alive;
 
     /* Checking process */
-    char*  proc_name;
-    pid_t  pid;
-    size_t len_proc_name;
+    flb_sds_t  proc_name;
+    pid_t      pid;
+    size_t     len_proc_name;
 
     /* Time interval check */
     int interval_sec;
