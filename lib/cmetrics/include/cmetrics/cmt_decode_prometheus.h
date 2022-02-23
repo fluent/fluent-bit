@@ -74,10 +74,12 @@ struct cmt_decode_prometheus_context {
     struct cmt_decode_prometheus_context_metric metric;
 };
 
-#define YY_DECL int cmt_decode_prometheus_lex \
+#define LEX_DECL int cmt_decode_prometheus_lex \
                (YYSTYPE * yylval_param, \
                void* yyscanner, \
                struct cmt_decode_prometheus_context *context)
+
+#define YY_DECL LEX_DECL
 
 #include "cmt_decode_prometheus_parser.h"
 
@@ -86,6 +88,8 @@ struct cmt_decode_prometheus_context {
 // which defines FLEX_SCANNER
 #include "cmt_decode_prometheus_lexer.h"
 #endif
+
+LEX_DECL; /* Declear as an entity of yylex function declaration. */
 
 int cmt_decode_prometheus_create(
         struct cmt **out_cmt,

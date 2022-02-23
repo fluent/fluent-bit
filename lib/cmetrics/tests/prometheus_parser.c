@@ -241,13 +241,10 @@ void test_samples()
 void test_escape_sequences()
 {
     cmt_sds_t result;
-    // this "expected" value is not correct since the encoder doesn't handle
-    // escape sequences. I'm adding it here to verify that the parser is
-    // correctly treating escape sequences
     const char expected[] = (
         "# HELP msdos_file_access_time_seconds (no information)\n"
         "# TYPE msdos_file_access_time_seconds untyped\n"
-        "msdos_file_access_time_seconds{path=\"C:\\DIR\\FILE.TXT\",error=\"Cannot find file:\n\"FILE.TXT\"\"} 1458255915 0\n"
+        "msdos_file_access_time_seconds{path=\"C:\\\\DIR\\\\FILE.TXT\",error=\"Cannot find file:\\n\\\"FILE.TXT\\\"\"} 1458255915 0\n"
         );
 
     struct fixture *f = init(0,
@@ -357,8 +354,7 @@ void test_prometheus_spec_example()
         "rpc_duration_seconds{quantile=\"0.99\"} 76656 0\n"
         "# HELP msdos_file_access_time_seconds (no information)\n"
         "# TYPE msdos_file_access_time_seconds untyped\n"
-        // notice how scientific notation cannot be parsed by strtod
-        "msdos_file_access_time_seconds{path=\"C:\\DIR\\FILE.TXT\",error=\"Cannot find file:\n\"FILE.TXT\"\"} 1458255915 0\n"
+        "msdos_file_access_time_seconds{path=\"C:\\\\DIR\\\\FILE.TXT\",error=\"Cannot find file:\\n\\\"FILE.TXT\\\"\"} 1458255915 0\n"
         "# HELP metric_without_timestamp_and_labels (no information)\n"
         "# TYPE metric_without_timestamp_and_labels untyped\n"
         "metric_without_timestamp_and_labels 12.470000000000001 0\n"
@@ -373,7 +369,6 @@ void test_prometheus_spec_example()
         "http_request_duration_seconds_count 144320 0\n"
         "# HELP rpc_duration_seconds_sum (no information)\n"
         "# TYPE rpc_duration_seconds_sum untyped\n"
-        // notice how scientific notation cannot be parsed by strtod
         "rpc_duration_seconds_sum 17560473 0\n"
         "# HELP rpc_duration_seconds_count (no information)\n"
         "# TYPE rpc_duration_seconds_count untyped\n"
@@ -630,8 +625,8 @@ void test_values()
             "metric_name{key=\"simple float\"} 12.470000000000001 0\n"
             "metric_name{key=\"scientific notation 1\"} 17560473 0\n"
             "metric_name{key=\"scientific notation 2\"} 1.7560473000000001 0\n"
-            "metric_name{key=\"Positive \"not a number\"\"} nan 0\n"
-            "metric_name{key=\"Negative \"not a number\"\"} -nan 0\n"
+            "metric_name{key=\"Positive \\\"not a number\\\"\"} nan 0\n"
+            "metric_name{key=\"Negative \\\"not a number\\\"\"} -nan 0\n"
             "metric_name{key=\"Positive infinity\"} inf 0\n"
             "metric_name{key=\"Negative infinity\"} -inf 0\n") == 0);
     cmt_sds_destroy(result);
