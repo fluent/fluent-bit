@@ -151,16 +151,19 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     if (ctx->filter_type) {
         if (strcasecmp(ctx->filter_type, "and") == 0) {
             journal_filter_is_and = FLB_TRUE;
-        } else if (strcasecmp(ctx->filter_type, "or") == 0) {
+        }
+        else if (strcasecmp(ctx->filter_type, "or") == 0) {
             journal_filter_is_and = FLB_FALSE;
-        } else {
+        }
+        else {
             flb_plg_error(ctx->ins,
                           "systemd_filter_type must be 'and' or 'or'. Got %s",
                           ctx->filter_type);
             flb_free(ctx);
             return NULL;
         }
-    } else {
+    }
+    else {
         journal_filter_is_and = FLB_FALSE;
     }
 
@@ -172,7 +175,8 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
             sd_journal_add_match(ctx->j, mv->val.str, 0);
             if (journal_filter_is_and) {
                 sd_journal_add_conjunction(ctx->j);
-            } else {
+            }
+            else {
                 sd_journal_add_disjunction(ctx->j);
             }
         }
