@@ -309,12 +309,12 @@ static struct flb_config_map config_map[] = {
     },
 #ifdef FLB_HAVE_REGEX
     {
-      FLB_CONFIG_MAP_STR, "name_regex", "",
+      FLB_CONFIG_MAP_STR, "name_regex", NULL,
       0, FLB_TRUE, offsetof(struct flb_in_thermal_config, name_rgx),
       "Set thermal name regular expression filter"
     },
     {
-      FLB_CONFIG_MAP_STR, "type_regex", "",
+      FLB_CONFIG_MAP_STR, "type_regex", NULL,
       0, FLB_TRUE, offsetof(struct flb_in_thermal_config, type_rgx),
       "Set thermal type regular expression filter"
     },
