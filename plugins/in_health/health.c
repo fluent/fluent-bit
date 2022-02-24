@@ -162,6 +162,7 @@ static int in_health_init(struct flb_input_instance *in,
     ret = flb_input_config_map_set(in, (void *)ctx);
     if (ret == -1) {
         flb_free(ctx);
+        flb_plg_error(in, "unable to load configuration");
         return -1;
     }
 
@@ -243,7 +244,7 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
       0, FLB_TRUE, offsetof(struct flb_in_health_config, interval_nsec),
-      "Set the collector interval (sub seconds)"
+      "Set the collector interval (nanoseconds)"
     },
     /* EOF */
     {0}
