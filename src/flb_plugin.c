@@ -327,7 +327,7 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
 {
     int ret;
     char tmp[PATH_MAX + 1];
-    const char *cfg = NULL;
+    char *cfg = NULL;
     struct mk_list *head;
     struct mk_list *head_e;
     struct stat st;
@@ -350,7 +350,7 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
         }
     }
     else {
-        cfg = file;
+        cfg = (char *) file;
     }
 
     flb_debug("[plugin] opening configuration file %s", cfg);

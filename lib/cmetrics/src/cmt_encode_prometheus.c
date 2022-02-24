@@ -17,6 +17,8 @@
  *  limitations under the License.
  */
 
+#include <stdbool.h>
+
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
@@ -32,6 +34,34 @@
  * https://github.com/prometheus/docs/blob/master/content/docs/instrumenting/exposition_formats.md
  */
 
+static void metric_escape(cmt_sds_t *buf, cmt_sds_t description, bool escape_quote)
+{
+    int i;
+    size_t len;
+
+    len = cmt_sds_len(description);
+
+    for (i = 0; i < len; i++) {
+        switch (description[i]) {
+            case '\\':
+                cmt_sds_cat_safe(buf, "\\\\", 2);
+                break;
+            case '\n':
+                cmt_sds_cat_safe(buf, "\\n", 2);
+                break;
+            case '"':
+                if (escape_quote) {
+                    cmt_sds_cat_safe(buf, "\\\"", 2);
+                    break;
+                }
+                /* FALLTHROUGH */
+            default:
+                cmt_sds_cat_safe(buf, description + i, 1);
+                break;
+        }
+    }
+}
+
 static void metric_banner(cmt_sds_t *buf, struct cmt_map *map,
                           struct cmt_metric *metric)
 {
@@ -44,7 +74,7 @@ static void metric_banner(cmt_sds_t *buf, struct cmt_map *map,
     cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
 
     cmt_sds_cat_safe(buf, " ", 1);
-    cmt_sds_cat_safe(buf, opts->description, cmt_sds_len(opts->description));
+    metric_escape(buf, opts->description, false);
     cmt_sds_cat_safe(buf, "\n", 1);
 
     /* TYPE */
@@ -116,7 +146,7 @@ static void format_metric(struct cmt *cmt,
             slabel = mk_list_entry(head, struct cmt_label, _head);
             cmt_sds_cat_safe(buf, slabel->key, cmt_sds_len(slabel->key));
             cmt_sds_cat_safe(buf, "=\"", 2);
-            cmt_sds_cat_safe(buf, slabel->val, cmt_sds_len(slabel->val));
+            metric_escape(buf, slabel->val, true);
             cmt_sds_cat_safe(buf, "\"", 1);
 
             if (count < static_labels) {
@@ -143,7 +173,7 @@ static void format_metric(struct cmt *cmt,
 
             cmt_sds_cat_safe(buf, label_k->name, cmt_sds_len(label_k->name));
             cmt_sds_cat_safe(buf, "=\"", 2);
-            cmt_sds_cat_safe(buf, label_v->name, cmt_sds_len(label_v->name));
+            metric_escape(buf, label_v->name, true);
 
             if (i < n) {
                 cmt_sds_cat_safe(buf, "\",", 2);
