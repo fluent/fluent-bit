@@ -37,8 +37,8 @@
 /* constants */
 #define FLB_SYSTEMD_UNIT     "_SYSTEMD_UNIT"
 #define FLB_SYSTEMD_UNKNOWN  "unknown"
-#define FLB_SYSTEMD_MAX_FIELDS   8000
-#define FLB_SYSTEMD_MAX_ENTRIES  5000
+#define FLB_SYSTEMD_MAX_FIELDS   "8000"
+#define FLB_SYSTEMD_MAX_ENTRIES  "5000"
 
 /* Input configuration & context */
 struct flb_systemd_config {
@@ -46,7 +46,9 @@ struct flb_systemd_config {
     int fd;              /* Journal file descriptor */
     sd_journal *j;       /* Journal context */
     char *cursor;
-    char *path;
+    flb_sds_t path;
+    flb_sds_t filter_type; /* sysytemd filter type: and|or */
+    struct mk_list *systemd_filters;
     int pending_records;
     int read_from_tail;  /* read_from_tail option */
 
@@ -61,7 +63,9 @@ struct flb_systemd_config {
     int strip_underscores;
 
 #ifdef FLB_HAVE_SQLDB
+    flb_sds_t db_path;
     struct flb_sqldb *db;
+    flb_sds_t db_sync_mode;
     int db_sync;
     sqlite3_stmt *stmt_cursor;
 #endif
