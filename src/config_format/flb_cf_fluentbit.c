@@ -106,6 +106,8 @@ static int char_search(const char *string, int c, int len)
  * Helper function to simulate a fgets(2) but instead of using a real file stream
  * uses the data buffer provided.
  */
+#ifdef FLB_HAVE_STATIC_CONF
+
 static int static_fgets(char *out, size_t size, const char *data, size_t *off)
 {
     size_t len;
@@ -132,6 +134,7 @@ static int static_fgets(char *out, size_t size, const char *data, size_t *off)
 
     return 1;
 }
+#endif
 
 #ifndef _WIN32
 static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char * path)

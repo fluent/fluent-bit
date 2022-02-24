@@ -407,8 +407,14 @@ void flb_test_input_chunk_fs_chunks_size_real()
     struct cio_ctx *cio;
     msgpack_sbuffer mp_sbuf;
     char buf[262144];
+    struct mk_event_loop *evl;
 
     cfg = flb_config_init();
+    evl = mk_event_loop_create(256);
+
+    TEST_CHECK(evl != NULL);
+    cfg->evl = evl;
+
     flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
 
     i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);

@@ -96,7 +96,6 @@ static int configure(struct filter_parser_ctx *ctx,
                      struct flb_config *config)
 {
     int ret;
-    const char *tmp;
     struct mk_list *head;
     struct flb_kv *kv;
 

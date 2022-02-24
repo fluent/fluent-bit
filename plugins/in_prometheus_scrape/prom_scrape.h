@@ -17,26 +17,20 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_LUAJIT_H
-#define FLB_LUAJIT_H
+#ifndef FLB_IN_PROMETHEUS_SCRAPE_H
+#define FLB_IN_PROMETHEUS_SCRAPE_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_input_plugin.h>
 
-#include <lauxlib.h>
-#include <lua.h>
-#include <lualib.h>
+#define DEFAULT_URI           "/metrics"
 
-/* Lua Context */
-struct flb_luajit {
-    lua_State *state;      /* LuaJIT VM environment   */
-    void *config;          /* Fluent Bit context      */
-    struct mk_list _head;  /* Link to flb_config->lua */
+struct prom_scrape
+{
+    int coll_id;                     /* collector id */
+    uint64_t scrape_interval;
+    flb_sds_t metrics_path;
+    struct flb_upstream *upstream;
+    struct flb_input_instance *ins;  /* input plugin instance */
 };
-
-struct flb_luajit *flb_luajit_create();
-int flb_luajit_load_script(struct flb_luajit *lj, char *script);
-void flb_luajit_destroy(struct flb_luajit *lj);
-int flb_luajit_destroy_all(struct flb_config *ctx);
 
 #endif
