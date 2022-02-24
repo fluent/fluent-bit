@@ -509,7 +509,7 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 {
     int n;
-    uint64_t stop = 0xdeadbeef;
+    struct flb_task *stop = 0xdeadbeef;
     struct flb_tp *tp = ins->tp;
     struct mk_list *head;
     struct flb_out_thread_instance *th_ins;
