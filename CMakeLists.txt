@@ -317,8 +317,8 @@ endif()
 
 # Optional features like Stream Processor and Record Accessor needs Flex
 # and Bison to generate it parsers.
-find_package(FLEX)
-find_package(BISON)
+find_package(FLEX 2)
+find_package(BISON 3)
 
 if(FLEX_FOUND AND BISON_FOUND)
   set(FLB_FLEX_BISON  1)
