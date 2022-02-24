@@ -392,6 +392,14 @@ static int in_systemd_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
+    /* Load the config_map */
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(config);
+        return -1;
+    }
+
     /* Events collector: archive */
     ret = flb_input_set_collector_event(ins, in_systemd_collect_archive,
                                         ctx->ch_manager[0], config);
@@ -462,6 +470,53 @@ static int in_systemd_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_STR, "path", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, path),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "max_fields", FLB_SYSTEMD_MAX_FIELDS,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, max_fields),
+      "Set the maximum fields per notification"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "max_entries", FLB_SYSTEMD_MAX_ENTRIES,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, max_entries),
+      "Set the maximum entries per notification"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "systemd_filter_type", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, filter_type),
+      "Set the systemd filter type to either 'and' or 'or'"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "read_from_tail", "false",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, read_from_tail),
+      "Read the journal from the end (tail)"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "strip_underscores", "false",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, strip_underscores),
+      "Strip undersecores from fields"
+    },
+#ifdef FLB_HAVE_SQLDB
+    {
+      FLB_CONFIG_MAP_STR, "db_sync", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, db_sync_mode),
+      "Set the database sync mode: extra, full, normal or off"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "db", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, db_path),
+      "Set the database path"
+    },
+#endif /* FLB_HAVE_SQLDB */
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_systemd_plugin = {
     .name         = "systemd",
@@ -472,5 +527,6 @@ struct flb_input_plugin in_systemd_plugin = {
     .cb_pause     = in_systemd_pause,
     .cb_resume    = in_systemd_resume,
     .cb_exit      = in_systemd_exit,
+    .config_map   = config_map,
     .flags        = 0
 };
