@@ -51,8 +51,8 @@ struct flb_in_netif_config {
     int interval_sec;
     int interval_nsec;
 
-    const char *interface;
-    int  interface_len;
+    flb_sds_t interface;
+    int       interface_len;
 
     int  verbose;
     int  first_snapshot;   /* a feild to indicate whethor or not this is the first collect */
