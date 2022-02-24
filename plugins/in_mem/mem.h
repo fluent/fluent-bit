@@ -25,8 +25,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <msgpack.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct flb_in_mem_info {
     uint64_t mem_total;
