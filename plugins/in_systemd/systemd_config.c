@@ -41,10 +41,11 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     char *cursor = NULL;
     struct stat st;
     struct mk_list *head;
-    struct flb_kv *kv;
     struct flb_systemd_config *ctx;
     int journal_filter_is_and;
     size_t size;
+    struct flb_config_map_val *mv;
+
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_systemd_config));
@@ -66,24 +67,21 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     }
 
     /* Config: path */
-    tmp = flb_input_get_property("path", ins);
-    if (tmp) {
-        ret = stat(tmp, &st);
+    if (ctx->path) {
+        ret = stat(ctx->path, &st);
         if (ret == -1) {
             flb_errno();
-            flb_plg_error(ctx->ins, "given path %s is invalid", tmp);
+            flb_plg_error(ctx->ins, "given path %s is invalid", ctx->path);
             flb_free(ctx);
             return NULL;
         }
 
         if (!S_ISDIR(st.st_mode)) {
             flb_errno();
-            flb_plg_error(ctx->ins, "given path is not a directory: %s", tmp);
+            flb_plg_error(ctx->ins, "given path is not a directory: %s", ctx->path);
             flb_free(ctx);
             return NULL;
         }
-
-        ctx->path = flb_strdup(tmp);
     }
     else {
         ctx->path = NULL;
@@ -114,64 +112,43 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
 #ifdef FLB_HAVE_SQLDB
     /* Database options (needs to be set before the context) */
-    tmp = flb_input_get_property("db.sync", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "extra") == 0) {
+    if (ctx->db_sync_mode) {
+        if (strcasecmp(ctx->db_sync_mode, "extra") == 0) {
             ctx->db_sync = 3;
         }
-        else if (strcasecmp(tmp, "full") == 0) {
+        else if (strcasecmp(ctx->db_sync_mode, "full") == 0) {
             ctx->db_sync = 2;
             }
-        else if (strcasecmp(tmp, "normal") == 0) {
+        else if (strcasecmp(ctx->db_sync_mode, "normal") == 0) {
             ctx->db_sync = 1;
         }
-        else if (strcasecmp(tmp, "off") == 0) {
+        else if (strcasecmp(ctx->db_sync_mode, "off") == 0) {
             ctx->db_sync = 0;
         }
         else {
-            flb_plg_error(ctx->ins, "invalid database 'db.sync' value");
+            flb_plg_error(ctx->ins, "invalid database 'db.sync' value: %s", ctx->db_sync_mode);
         }
     }
 
     /* Database file */
-    tmp = flb_input_get_property("db", ins);
-    if (tmp) {
-        ctx->db = flb_systemd_db_open(tmp, ins, ctx, config);
+    if (ctx->db_path) {
+        ctx->db = flb_systemd_db_open(ctx->db_path, ins, ctx, config);
         if (!ctx->db) {
-            flb_plg_error(ctx->ins, "could not open/create database '%s'", tmp);
+            flb_plg_error(ctx->ins, "could not open/create database '%s'", ctx->db_path);
         }
     }
 
 #endif
 
-    /* Max number of fields per record/entry */
-    tmp = flb_input_get_property("max_fields", ins);
-    if (tmp) {
-        ctx->max_fields = atoi(tmp);
-    }
-    else {
-        ctx->max_fields = FLB_SYSTEMD_MAX_FIELDS;
-    }
-
-    /* Max number of entries per notification */
-    tmp = flb_input_get_property("max_entries", ins);
-    if (tmp) {
-        ctx->max_entries = atoi(tmp);
-    }
-    else {
-        ctx->max_entries = FLB_SYSTEMD_MAX_ENTRIES;
-    }
-
-    tmp = flb_input_get_property("systemd_filter_type", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "and") == 0) {
+    if (ctx->filter_type) {
+        if (strcasecmp(ctx->filter_type, "and") == 0) {
             journal_filter_is_and = FLB_TRUE;
-        } else if (strcasecmp(tmp, "or") == 0) {
+        } else if (strcasecmp(ctx->filter_type, "or") == 0) {
             journal_filter_is_and = FLB_FALSE;
         } else {
             flb_plg_error(ctx->ins,
                           "systemd_filter_type must be 'and' or 'or'. Got %s",
-                          tmp);
+                          ctx->filter_type);
             flb_free(ctx);
             return NULL;
         }
@@ -179,32 +156,18 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         journal_filter_is_and = FLB_FALSE;
     }
 
-    /* Load Systemd filters, iterate all properties */
-    mk_list_foreach(head, &ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        if (strcasecmp(kv->key, "systemd_filter") != 0) {
-            continue;
+    /* Load Systemd filters */
+    if (ctx->systemd_filters) {
+        flb_config_map_foreach(head, mv, ctx->systemd_filters) {
+            flb_plg_debug(ctx->ins, "add filter: %s (%s)", mv->val.str,
+                journal_filter_is_and ? "and" : "or");
+            sd_journal_add_match(ctx->j, mv->val.str, 0);
+            if (journal_filter_is_and) {
+                sd_journal_add_conjunction(ctx->j);
+            } else {
+                sd_journal_add_disjunction(ctx->j);
+            }
         }
-
-        flb_plg_debug(ctx->ins, "add filter: %s (%s)", kv->val,
-                      journal_filter_is_and ? "and" : "or");
-
-        /* Apply filter/match */
-        sd_journal_add_match(ctx->j, kv->val, 0);
-        if (journal_filter_is_and) {
-            sd_journal_add_conjunction(ctx->j);
-        } else {
-            sd_journal_add_disjunction(ctx->j);
-        }
-    }
-
-    /* Seek to head by default or tail if specified in configuration */
-    tmp = flb_input_get_property("read_from_tail", ins);
-    if (tmp) {
-        ctx->read_from_tail = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->read_from_tail = FLB_FALSE;
     }
 
     if (ctx->read_from_tail == FLB_TRUE) {
@@ -264,13 +227,6 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         }
     }
 #endif
-
-    tmp = flb_input_get_property("strip_underscores", ins);
-    if (tmp != NULL && flb_utils_bool(tmp)) {
-        ctx->strip_underscores = FLB_TRUE;
-    } else {
-        ctx->strip_underscores = FLB_FALSE;
-    }
 
     sd_journal_get_data_threshold(ctx->j, &size);
     flb_plg_debug(ctx->ins,
