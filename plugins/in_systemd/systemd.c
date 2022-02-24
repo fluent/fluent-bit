@@ -474,7 +474,7 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_STR, "path", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_systemd_config, path),
-      "Set the collector interval"
+      "Set the systemd journal path"
     },
     {
       FLB_CONFIG_MAP_INT, "max_fields", FLB_SYSTEMD_MAX_FIELDS,
