@@ -392,14 +392,6 @@ static int in_systemd_init(struct flb_input_instance *ins,
     /* Set the context */
     flb_input_set_context(ins, ctx);
 
-    /* Load the config_map */
-    ret = flb_input_config_map_set(ins, (void *)ctx);
-    if (ret == -1) {
-        flb_plg_error(ins, "unable to load configuration");
-        flb_free(config);
-        return -1;
-    }
-
     /* Events collector: archive */
     ret = flb_input_set_collector_event(ins, in_systemd_collect_archive,
                                         ctx->ch_manager[0], config);
@@ -490,6 +482,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "systemd_filter_type", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_systemd_config, filter_type),
       "Set the systemd filter type to either 'and' or 'or'"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "systemd_filter", (char *)NULL,
+      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_systemd_config, systemd_filters),
+      "Add a systemd filter, can be set multiple times"
     },
     {
       FLB_CONFIG_MAP_BOOL, "read_from_tail", "false",

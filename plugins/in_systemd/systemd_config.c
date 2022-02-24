@@ -58,6 +58,14 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     ctx->db_sync = -1;
 #endif
 
+    /* Load the config_map */
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(config);
+        return NULL;
+    }
+
     /* Create the channel manager */
     ret = pipe(ctx->ch_manager);
     if (ret == -1) {
@@ -241,10 +249,6 @@ int flb_systemd_config_destroy(struct flb_systemd_config *ctx)
     /* Close context */
     if (ctx->j) {
         sd_journal_close(ctx->j);
-    }
-
-    if (ctx->path) {
-        flb_free(ctx->path);
     }
 
 #ifdef FLB_HAVE_SQLDB
