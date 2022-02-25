@@ -339,6 +339,36 @@ static int cb_serial_init(struct flb_input_instance *in,
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "file", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_serial_config, file),
+     "Set the serial character device file name"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "bitrate", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_serial_config, bitrate),
+     "Set the serial bitrate (baudrate)"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "separator", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_serial_config, separator),
+     "Set the record separator"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "format", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_serial_config, format_str),
+     "Set the serial format: json or none"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "min_bytes", "0",
+     0, FLB_TRUE, offsetof(struct flb_in_serial_config, min_bytes),
+     "Set the serial minimum bytes"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_serial_plugin = {
     .name         = "serial",
@@ -347,5 +377,6 @@ struct flb_input_plugin in_serial_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = cb_serial_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = cb_serial_exit
+    .cb_exit      = cb_serial_exit,
+    .config_map   = config_map,
 };
