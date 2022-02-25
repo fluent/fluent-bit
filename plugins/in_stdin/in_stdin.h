@@ -32,6 +32,8 @@ struct flb_in_stdin_config {
     size_t buf_size;          /* size of a buffer      */
     int    buf_len;           /* read buffer length    */
     char   *buf;              /* read buffer           */
+    flb_sds_t parser_name;    /* name of the parser    */
+    flb_sds_t buffer_size;    /* buffer size in string */
 
     /* Parser / Format */
     struct flb_parser *parser;
