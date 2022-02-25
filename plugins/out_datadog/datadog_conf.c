@@ -122,8 +122,6 @@ struct flb_out_datadog *flb_datadog_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* Add the api_key to the URI */
-    ctx->uri = flb_sds_cat(ctx->uri, ctx->api_key, flb_sds_len(ctx->api_key));
     flb_plg_debug(ctx->ins, "uri: %s", ctx->uri);
 
     /* Get network configuration */
