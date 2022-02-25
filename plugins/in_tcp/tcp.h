@@ -29,11 +29,15 @@
 
 struct flb_in_tcp_config {
     int server_fd;                  /* TCP server file descriptor  */
+    flb_sds_t format_name;          /* Data format name */
     int format;                     /* Data format */
     size_t buffer_size;             /* Buffer size for each reader */
+    flb_sds_t buffer_size_str;      /* Buffer size in string form  */
     size_t chunk_size;              /* Chunk allocation size       */
+    flb_sds_t chunk_size_str;       /* Chunk size in string form   */
     char *listen;                   /* Listen interface            */
     char *tcp_port;                 /* TCP Port                    */
+    flb_sds_t raw_separator;        /* Unescaped string delimiterr */
     flb_sds_t separator;            /* String delimiter            */
     struct mk_list connections;     /* List of active connections  */
     struct mk_event_loop *evl;      /* Event loop file descriptor  */

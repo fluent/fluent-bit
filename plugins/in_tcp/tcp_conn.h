@@ -22,7 +22,7 @@
 
 #include <fluent-bit/flb_pack.h>
 
-#define FLB_IN_TCP_CHUNK 32768
+#define FLB_IN_TCP_CHUNK "32768"
 
 enum {
     TCP_NEW        = 1,  /* it's a new connection                */
