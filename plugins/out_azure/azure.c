@@ -344,12 +344,53 @@ static int cb_azure_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "customer_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure, customer_id),
+     "Customer ID or WorkspaceID string."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "shared_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_azure, shared_key),
+     "The primary or the secondary Connected Sources client authentication key."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "log_type", FLB_AZURE_LOG_TYPE,
+     0, FLB_TRUE, offsetof(struct flb_azure, log_type),
+    "The name of the event type."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "time_key", FLB_AZURE_TIME_KEY,
+     0, FLB_TRUE, offsetof(struct flb_azure, log_type),
+    "Optional parameter to specify the key name where the timestamp will be stored."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "time_generated", "false",
+     0, FLB_TRUE, offsetof(struct flb_azure, time_generated),
+     "If enabled, the HTTP request header 'time-generated-field' will be included "
+     "so Azure can override the timestamp with the key specified by 'time_key' "
+     "option."
+    },
+
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_azure_plugin = {
     .name         = "azure",
     .description  = "Send events to Azure HTTP Event Collector",
     .cb_init      = cb_azure_init,
     .cb_flush     = cb_azure_flush,
     .cb_exit      = cb_azure_exit,
+
+    /* Configuration */
+    .config_map     = config_map,
 
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,
