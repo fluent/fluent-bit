@@ -145,6 +145,14 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
 #endif
 
+    tmp = flb_input_get_property("lowercase", ins);
+    if (tmp != NULL && flb_utils_bool(tmp)) {
+        ctx->lowercase = FLB_TRUE;
+    }
+    else {
+        ctx->lowercase = FLB_FALSE;
+    }
+
     /* Max number of fields per record/entry */
     tmp = flb_input_get_property("max_fields", ins);
     if (tmp) {
