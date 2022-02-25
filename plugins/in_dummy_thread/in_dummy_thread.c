@@ -139,7 +139,7 @@ static struct flb_config_map config_map[] = {
      "Define dummy message"
     },
     {
-     FLB_CONFIG_MAP_INT, "message", "1000000",
+     FLB_CONFIG_MAP_INT, "samples", "1000000",
      0, FLB_TRUE, offsetof(struct flb_in_dummy_thread_config, samples),
      "Define the number of samples to send"
     },
