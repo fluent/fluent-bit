@@ -34,6 +34,7 @@ struct flb_in_collectd_config {
     flb_sockfd_t server_fd;
     flb_pipefd_t coll_fd;
 
+    flb_sds_t types_db;
     struct mk_list *tdb;
 
     /* Plugin input instance */
