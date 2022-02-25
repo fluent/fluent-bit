@@ -153,6 +153,40 @@ static int in_syslog_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "mode", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, mode_str),
+     "Set the socket mode: unix_tcp, unix_udp, tcp or udp"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "path", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, unix_path),
+     "Set the path for the UNIX socket"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "unix_perm", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, unix_perm_str),
+     "Set the permissions for the UNIX socket"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "buffer_chunk_size", FLB_SYSLOG_CHUNK,
+      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_chunk_size_str),
+      "Set the buffer chunk size"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "buffer_max_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_max_size_str),
+      "Set the buffer chunk size"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parser", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_syslog, parser_name),
+     "Set the parser"
+    },
+    /* EOF */
+    {0}
+};
 
 struct flb_input_plugin in_syslog_plugin = {
     .name         = "syslog",
@@ -162,5 +196,6 @@ struct flb_input_plugin in_syslog_plugin = {
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
     .cb_exit      = in_syslog_exit,
+    .config_map   = config_map,
     .flags        = FLB_INPUT_NET
 };
