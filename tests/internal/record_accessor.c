@@ -616,6 +616,79 @@ void cb_key_order_lookup()
     flb_free(out_buf);
 }
 
+void cb_issue_4917()
+{
+    int len;
+    int ret;
+    int type;
+    char *out_buf;
+    size_t out_size;
+    char *json;
+    char *fmt_out;
+    size_t off = 0;
+    flb_sds_t fmt;
+    flb_sds_t str;
+    struct flb_record_accessor *ra;
+    msgpack_unpacked result;
+    msgpack_object map;
+
+    fmt_out = "from.new.fluent.bit.out";
+
+    /* Sample JSON message */
+    json = "{\"tool\": \"fluent\", \"sub\": {\"s1\": {\"s2\": \"bit\"}}}";
+    /* Convert to msgpack */
+    len = strlen(json);
+    ret = flb_pack_json(json, len, &out_buf, &out_size, &type);
+    TEST_CHECK(ret == 0);
+    if (ret == -1) {
+        exit(EXIT_FAILURE);
+    }
+
+    printf("\n-- record --\n");
+    flb_pack_print(out_buf, out_size);
+
+    /* Formatter */
+    fmt = flb_sds_create("from.new.$tool.$sub['s1']['s2'].out");
+    if (!TEST_CHECK(fmt != NULL)) {
+        flb_free(out_buf);
+        exit(EXIT_FAILURE);
+    }
+
+    /* create ra */
+    ra = flb_ra_create(fmt, FLB_FALSE);
+    TEST_CHECK(ra != NULL);
+    if (!ra) {
+        flb_sds_destroy(fmt);
+        flb_free(out_buf);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Unpack msgpack object */
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, out_buf, out_size, &off);
+    map = result.data;
+
+    /* Do translation */
+    str = flb_ra_translate(ra, NULL, -1, map, NULL);
+    TEST_CHECK(str != NULL);
+    if (!str) {
+        flb_ra_destroy(ra);
+        msgpack_unpacked_destroy(&result);
+        flb_sds_destroy(fmt);
+        flb_free(out_buf);
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(flb_sds_len(str) == strlen(fmt_out));
+    TEST_CHECK(memcmp(str, fmt_out, strlen(fmt_out)) == 0);
+    printf("== input ==\n%s\n== output ==\n%s\n", str, fmt_out);
+
+    flb_sds_destroy(fmt);
+    flb_sds_destroy(str);
+    flb_ra_destroy(ra);
+    flb_free(out_buf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
@@ -626,5 +699,6 @@ TEST_LIST = {
     { "array_id"        , cb_array_id},
     { "get_kv_pair"     , cb_get_kv_pair},
     { "key_order_lookup", cb_key_order_lookup},
+    { "issue_4917"      , cb_issue_4917},
     { NULL }
 };
