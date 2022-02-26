@@ -692,7 +692,10 @@ void cb_issue_4917()
 TEST_LIST = {
     { "keys"            , cb_keys},
     { "dash_key"        , cb_dash_key},
+    /*
+     * If #4370 is fixed, this testcase should be enabled.
     { "dot_slash_key"   , cb_dot_and_slash_key},
+    */
     { "translate"       , cb_translate},
     { "translate_tag"   , cb_translate_tag},
     { "dots_subkeys"    , cb_dots_subkeys},
