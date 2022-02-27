@@ -12,7 +12,6 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
 
 ENV DEBIAN_FRONTEND noninteractive
 
-COPY ./fluent-bit.tar.gz /tmp/fluent-bit.tar.gz
 WORKDIR /tmp/fluent-bit/
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -34,7 +33,7 @@ RUN apt-get update && \
     bison \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    # && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
+    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
     && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
     && rm -rf /tmp/fluent-bit/build/*
 
@@ -49,12 +48,9 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_IN_EXEC=Off \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
-          -DFLB_FILTER_LUA=Off \
-          -DFLB_LUAJIT=Off \
-          -DFLB_FILTER_NIGHTFALL=On \
           -DFLB_OUT_PGSQL=On ..
 
-RUN make
+RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
 
 # Configuration files
