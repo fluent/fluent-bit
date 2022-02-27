@@ -39,7 +39,8 @@ static int redact_map_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
                              msgpack_object_array *to_redact, struct nested_obj *cur,
                              struct mk_list *stack, char *should_pop);
 static void maybe_redact_field(msgpack_packer *new_rec_pk, msgpack_object *field, 
-                               msgpack_object_array *to_redact, int *to_redact_i);
+                               msgpack_object_array *to_redact, int *to_redact_i,
+                               int byte_offset);
 
 static int cb_nightfall_init(struct flb_filter_instance *f_ins,
                              struct flb_config *config,
@@ -202,13 +203,13 @@ static int redact_record(msgpack_object *data, char **to_redact_data, size_t *to
                 }
                 break;
             case MSGPACK_OBJECT_STR:
-                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index);
+                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index, 0);
                 break;
             case MSGPACK_OBJECT_POSITIVE_INTEGER:
-                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index);
+                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index, 0);
                 break;
             case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index);
+                maybe_redact_field(&new_rec_pk, cur->obj, &to_redact, &to_redact_index, 0);
                 break;
             default:
                 msgpack_pack_object(&new_rec_pk, *cur->obj);
@@ -269,7 +270,7 @@ static int redact_array_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
              * A field that could potentially contain sensitive content, so we check
              * if there were any findings associated with it
              */
-            maybe_redact_field(new_rec_pk, item, to_redact, to_redact_index);
+            maybe_redact_field(new_rec_pk, item, to_redact, to_redact_index, 0);
         }
         else {
             /* Non scannable type, so just append as is. */
@@ -289,9 +290,9 @@ static int redact_map_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
     struct nested_obj *new_obj;
 
     for (int i = cur->cur_index; i < cur->obj->via.map.size; i++) {
+        k = &cur->obj->via.map.ptr[i].key;
         if (!cur->start_at_val) {
             /* Handle the key of this kv pair */
-            k = &cur->obj->via.map.ptr[i].key;
             if (k->type == MSGPACK_OBJECT_MAP || k->type == MSGPACK_OBJECT_ARRAY) {
                 /* A nested object, so add to stack and return to DFS to process immediately */
                 new_obj = flb_malloc(sizeof(struct nested_obj));
@@ -328,7 +329,7 @@ static int redact_map_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
                  * A field that could potentially contain sensitive content, so we check
                  * if there were any findings associated with it
                  */
-                maybe_redact_field(new_rec_pk, k, to_redact, to_redact_index);
+                maybe_redact_field(new_rec_pk, k, to_redact, to_redact_index, 0);
             }
             else {
                 /* Non scannable type, so just append as is. */
@@ -367,7 +368,20 @@ static int redact_map_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
         else if (v->type == MSGPACK_OBJECT_STR || 
                  v->type == MSGPACK_OBJECT_POSITIVE_INTEGER || 
                  v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            maybe_redact_field(new_rec_pk, v, to_redact, to_redact_index);
+            if (k->type == MSGPACK_OBJECT_STR) {
+                /* 
+                 * When building the request to scan the log, keys that are strings are
+                 * appended to the beginning of the value to provide more context when 
+                 * scanning in the format of "<key> <val>", which is why we need to 
+                 * offset the length of the key plus a space when we do redaction on the
+                 * value on its own.
+                 */
+                maybe_redact_field(new_rec_pk, v, to_redact, to_redact_index, 
+                                   k->via.str.size + 1);
+            }
+            else {
+                maybe_redact_field(new_rec_pk, v, to_redact, to_redact_index, 0);
+            }
         }
         else {
             msgpack_pack_object(new_rec_pk, *v);
@@ -378,7 +392,8 @@ static int redact_map_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
 }
 
 static void maybe_redact_field(msgpack_packer *new_rec_pk, msgpack_object *field, 
-                               msgpack_object_array *to_redact, int *to_redact_i) 
+                               msgpack_object_array *to_redact, int *to_redact_i,
+                               int byte_offset)
 {
     flb_sds_t cur_str;
     msgpack_object_array content_range;
@@ -417,8 +432,11 @@ static void maybe_redact_field(msgpack_packer *new_rec_pk, msgpack_object *field
     cur_str = flb_sds_create_len(field->via.str.ptr, field->via.str.size);
     for (int i = 0; i < to_redact->ptr[*to_redact_i].via.array.size; i++) {
         content_range = to_redact->ptr[*to_redact_i].via.array.ptr[i].via.array;
-        content_start = content_range.ptr[0].via.i64;
-        content_end = content_range.ptr[1].via.i64;
+        content_start = content_range.ptr[0].via.i64 - byte_offset;
+        if (content_start < 0) {
+            content_start = 0;
+        }
+        content_end = content_range.ptr[1].via.i64 - byte_offset;
         for (int64_t replace_i = content_start; replace_i < content_end &&
              replace_i < flb_sds_len(cur_str); replace_i++) {
             cur_str[replace_i] = '*';
@@ -472,7 +490,7 @@ static int cb_nightfall_filter(const void *data, size_t bytes,
             msgpack_unpacked_destroy(&result);
             return FLB_FILTER_NOTOUCH;
         }
-        
+
         if (is_sensitive == FLB_TRUE) {
             ret = redact_record(p, &to_redact, &to_redact_size, tmp, &new_rec_sbuf);
             if (ret != 0) {

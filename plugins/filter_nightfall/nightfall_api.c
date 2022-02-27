@@ -53,6 +53,10 @@ static flb_sds_t build_request_body(struct flb_filter_nightfall *ctx,
     msgpack_packer req_pk;
     flb_sds_t num_str;
     int num_str_len;
+    flb_sds_t key_str;
+    flb_sds_t val_str;
+    flb_sds_t key_val_str;
+    int key_val_str_len;
     flb_sds_t request_body;
 
     char should_pop = FLB_TRUE;
@@ -131,18 +135,59 @@ static flb_sds_t build_request_body(struct flb_filter_nightfall *ctx,
     msgpack_pack_map(&req_pk, 2);
     msgpack_pack_str_with_body(&req_pk, "payload", 7);
     msgpack_pack_array(&req_pk, mk_list_size(&payload_list));
-    /* Initialize buf to hold string representation of numberse */
+    /* Initialize buf to hold string representation of numbers */
     num_str = flb_sds_create_size(21);
     mk_list_foreach_safe(head, tmp, &payload_list) {
         pl = mk_list_entry(head, struct payload, _head);
         if (pl->obj->type == MSGPACK_OBJECT_STR) {
-            msgpack_pack_str_with_body(&req_pk, pl->obj->via.str.ptr, 
-                                       pl->obj->via.str.size);
+            if (pl->key_to_scan_with != NULL) {
+                /* 
+                 * Payload is the value of a keyval pair with a string key that could
+                 * provide context when scanning, so join them together and scan.
+                 */
+                val_str = flb_sds_create_len(pl->obj->via.str.ptr, 
+                                             pl->obj->via.str.size);
+                key_str = flb_sds_create_len(pl->key_to_scan_with->via.str.ptr, 
+                                             pl->key_to_scan_with->via.str.size);
+                key_val_str = flb_sds_create_size(pl->key_to_scan_with->via.str.size + 
+                                                  pl->obj->via.str.size + 2);
+                key_val_str_len = flb_sds_snprintf(&key_val_str, 
+                                                   flb_sds_alloc(key_val_str), 
+                                                   "%s %s", key_str, val_str);
+                msgpack_pack_str_with_body(&req_pk, key_val_str, key_val_str_len);
+                flb_sds_destroy(val_str);
+                flb_sds_destroy(key_str);
+                flb_sds_destroy(key_val_str);
+            }
+            else {
+                msgpack_pack_str_with_body(&req_pk, pl->obj->via.str.ptr, 
+                                           pl->obj->via.str.size);
+            }
         }
         else {
-            num_str_len = flb_sds_snprintf(&num_str, flb_sds_alloc(num_str), 
-                                           "%lld", pl->obj->via.i64);
-            msgpack_pack_str_with_body(&req_pk, num_str, num_str_len);
+            if (pl->key_to_scan_with != NULL) {
+                /* 
+                 * Payload is the value of a keyval pair with a string key that could
+                 * provide context when scanning, so join them together and scan.
+                 */
+                key_str = flb_sds_create_len(pl->key_to_scan_with->via.str.ptr, 
+                                             pl->key_to_scan_with->via.str.size);
+                key_val_str = flb_sds_create_size(pl->key_to_scan_with->via.str.size + 
+                                                  num_str_len + 2);
+                num_str_len = flb_sds_snprintf(&num_str, flb_sds_alloc(num_str), 
+                                               "%lld", pl->obj->via.i64);
+                key_val_str_len = flb_sds_snprintf(&key_val_str, 
+                                                   flb_sds_alloc(key_val_str), 
+                                                   "%s %s", key_str, num_str);
+                msgpack_pack_str_with_body(&req_pk, key_val_str, key_val_str_len);
+                flb_sds_destroy(key_str);
+                flb_sds_destroy(key_val_str);
+            }
+            else {
+                num_str_len = flb_sds_snprintf(&num_str, flb_sds_alloc(num_str), 
+                                               "%lld", pl->obj->via.i64);
+                msgpack_pack_str_with_body(&req_pk, num_str, num_str_len);
+            }
         }
         mk_list_del(&pl->_head);
         flb_free(pl);
@@ -193,7 +238,7 @@ static int extract_array_fields(struct nested_obj *cur, struct mk_list *stack,
                  item->type == MSGPACK_OBJECT_POSITIVE_INTEGER || 
                  item->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
             /* Field is a scannable type, so add to payload list to build request later */
-            pl = flb_malloc(sizeof(struct payload));
+            pl = flb_calloc(1, sizeof(struct payload));
             if (!pl) {
                 flb_errno();
                 return -1;
@@ -215,9 +260,9 @@ static int extract_map_fields(struct nested_obj *cur, struct mk_list *stack,
     struct payload *pl;
 
     for (int i = cur->cur_index; i < cur->obj->via.map.size; i++) {
+        k = &cur->obj->via.map.ptr[i].key;
         if (!cur->start_at_val) {
             /* Handle the key of this kv pair */
-            k = &cur->obj->via.map.ptr[i].key;
             if (k->type == MSGPACK_OBJECT_MAP || k->type == MSGPACK_OBJECT_ARRAY) {
                 /* A nested object, so add to stack and return to DFS to process immediately */
                 new_obj = flb_malloc(sizeof(struct nested_obj));
@@ -244,7 +289,7 @@ static int extract_map_fields(struct nested_obj *cur, struct mk_list *stack,
                      k->type == MSGPACK_OBJECT_POSITIVE_INTEGER || 
                      k->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
                 /* Field is a scannable type, so add to payload list to build request later */
-                pl = flb_malloc(sizeof(struct payload));
+                pl = flb_calloc(1, sizeof(struct payload));
                 if (!pl) {
                     flb_errno();
                     return -1;
@@ -278,10 +323,18 @@ static int extract_map_fields(struct nested_obj *cur, struct mk_list *stack,
         else if (v->type == MSGPACK_OBJECT_STR || 
                  v->type == MSGPACK_OBJECT_POSITIVE_INTEGER || 
                  v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            pl = flb_malloc(sizeof(struct payload));
+            /* Field is a scannable type, so add to payload list to build request later */
+            pl = flb_calloc(1, sizeof(struct payload));
             if (!pl) {
                 flb_errno();
                 return -1;
+            }
+            if (k->type == MSGPACK_OBJECT_STR) {
+                /* 
+                 * The key could provide more context for scanning so save it to scan
+                 * with the val together.
+                 */
+                pl->key_to_scan_with = k;
             }
             pl->obj = v;
             mk_list_add(&pl->_head, payload_list);

@@ -33,6 +33,7 @@ struct nested_obj {
 
 struct payload {
     msgpack_object *obj;
+    msgpack_object *key_to_scan_with;
 
     struct mk_list _head;
 };
