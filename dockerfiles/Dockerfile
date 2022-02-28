@@ -158,6 +158,10 @@ LABEL description="Fluent Bit multi-architecture container image" \
 # Copy the libraries from the extractor stage into root
 COPY --from=deb-extractor /dpkg /
 
+# Copy certificates
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+
+# Finally the binaries as most likely to change
 COPY --from=builder /fluent-bit /fluent-bit
 
 EXPOSE 2020
