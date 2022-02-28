@@ -168,6 +168,8 @@ void flb_test_in_random_flush()
 void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
+    do_test("dummy", "start_time_sec", "1337", NULL);
+    do_test("dummy", "start_time_sec", "1445", NULL);
 }
 void flb_test_in_dummy_thread_flush()
 {

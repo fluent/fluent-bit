@@ -269,12 +269,12 @@ static struct flb_config_map config_map[] = {
     "set a number of events per second."
    },
    {
-    FLB_CONFIG_MAP_INT, "start_time_sec", "1",
+    FLB_CONFIG_MAP_INT, "start_time_sec", "-1",
     0, FLB_TRUE, offsetof(struct flb_dummy, start_time_sec),
     "set a dummy base timestamp in seconds."
    },
    {
-    FLB_CONFIG_MAP_INT, "start_time_nsec", "0",
+    FLB_CONFIG_MAP_INT, "start_time_nsec", "-1",
     0, FLB_TRUE, offsetof(struct flb_dummy, start_time_nsec),
     "set a dummy base timestamp in nanoseconds."
    },
