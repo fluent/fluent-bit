@@ -360,5 +360,6 @@ struct flb_output_plugin out_prometheus_remote_write_plugin = {
     .cb_exit     = cb_prom_exit,
     .config_map  = config_map,
     .event_type  = FLB_OUTPUT_METRICS,
+    .workers     = 2,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

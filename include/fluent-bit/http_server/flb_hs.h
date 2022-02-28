@@ -54,6 +54,7 @@ struct flb_hs {
 
 struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
                              struct flb_config *config);
+int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size);
 int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size);
 int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size);
 

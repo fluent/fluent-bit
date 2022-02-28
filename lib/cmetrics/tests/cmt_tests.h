@@ -25,4 +25,9 @@
 #define MSGPACK_STABILITY_TEST_ITERATION_COUNT   1000
 #define MSGPACK_PARTIAL_PROCESSING_ELEMENT_COUNT 20
 
+#include "tests/cmt_tests_config.h"
+#include <cmetrics/cmt_sds.h>
+
+cmt_sds_t read_file(const char *path);
+
 #endif

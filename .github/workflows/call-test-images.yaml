@@ -154,7 +154,7 @@ jobs:
           docker run --rm --platform=${{ matrix.arch }} alpine uname -a
 
       - name: Test the HTTP server is responding
-        timeout-minutes: 2
+        timeout-minutes: 10
         run: |
           packaging/testing/smoke/container/container-smoke-test.sh
         shell: bash
@@ -190,7 +190,7 @@ jobs:
         uses: azure/setup-kubectl@v2.0
 
       - name: Test the HTTP server is responding
-        timeout-minutes: 2
+        timeout-minutes: 5
         run: |
           packaging/testing/smoke/k8s/k8s-smoke-test.sh
         shell: bash

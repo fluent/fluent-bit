@@ -1,0 +1,12 @@
+# Translated according to https://github.com/fluent/fluent-bit/pull/4621
+service:
+    http_server: on
+    Health_Check: on
+
+pipeline:
+    inputs:
+        cpu:
+          tag: input
+    outputs:
+        stdout:
+            match: '*'

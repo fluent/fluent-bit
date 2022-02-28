@@ -28,7 +28,7 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    struct flb_kafka *ctx = (struct flb_kafka *) opaque;
+    struct flb_out_kafka *ctx = (struct flb_out_kafka *) opaque;
 
     if (rkmessage->err) {
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
@@ -44,9 +44,9 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
-    struct flb_kafka *ctx;
+    struct flb_out_kafka *ctx;
 
-    ctx = (struct flb_kafka *) rd_kafka_opaque(rk);
+    ctx = (struct flb_out_kafka *) rd_kafka_opaque(rk);
 
     if (level <= FLB_KAFKA_LOG_ERR) {
         flb_plg_error(ctx->ins, "%s: %s",
@@ -70,10 +70,10 @@ static int cb_kafka_init(struct flb_output_instance *ins,
                          struct flb_config *config,
                          void *data)
 {
-    struct flb_kafka *ctx;
+    struct flb_out_kafka *ctx;
 
     /* Configuration */
-    ctx = flb_kafka_conf_create(ins, config);
+    ctx = flb_out_kafka_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "failed to initialize");
         return -1;
@@ -85,7 +85,7 @@ static int cb_kafka_init(struct flb_output_instance *ins,
 }
 
 int produce_message(struct flb_time *tm, msgpack_object *map,
-                    struct flb_kafka *ctx, struct flb_config *config)
+                    struct flb_out_kafka *ctx, struct flb_config *config)
 {
     int i;
     int ret;
@@ -420,7 +420,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * issue a full retry of the data chunk.
              */
             flb_time_sleep(1000);
-            rd_kafka_poll(ctx->producer, 0);
+            rd_kafka_poll(ctx->kafka.rk, 0);
 
             /* Issue a re-try */
             queue_full_retries++;
@@ -433,7 +433,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     ctx->blocked = FLB_FALSE;
 
-    rd_kafka_poll(ctx->producer, 0);
+    rd_kafka_poll(ctx->kafka.rk, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
         flb_sds_destroy(s);
     }
@@ -459,7 +459,7 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
 
     int ret;
     size_t off = 0;
-    struct flb_kafka *ctx = out_context;
+    struct flb_out_kafka *ctx = out_context;
     struct flb_time tms;
     msgpack_object *obj;
     msgpack_unpacked result;
@@ -497,9 +497,9 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
 
 static int cb_kafka_exit(void *data, struct flb_config *config)
 {
-    struct flb_kafka *ctx = data;
+    struct flb_out_kafka *ctx = data;
 
-    flb_kafka_conf_destroy(ctx);
+    flb_out_kafka_destroy(ctx);
     return 0;
 }
 

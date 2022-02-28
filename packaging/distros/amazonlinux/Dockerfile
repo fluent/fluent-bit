@@ -18,7 +18,7 @@ RUN yum -y update && \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3 && \
+                   cmake3 libyaml-devel && \
     yum clean all
 
 # amazonlinux/2.arm64v8 base image
@@ -32,7 +32,7 @@ RUN yum -y update && \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3 && \
+                   cmake3 libyaml-devel && \
     yum clean all
 
 # Common build for all distributions now
@@ -45,6 +45,9 @@ ARG FLB_SRC
 ENV FLB_PREFIX=$FLB_PREFIX
 ENV FLB_VERSION=$FLB_VERSION
 ENV FLB_SRC=$FLB_SRC
+
+ARG FLB_NIGHTLY_BUILD
+ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
 ENV FLB_TARBALL http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip
 COPY sources/$FLB_SRC /
@@ -75,6 +78,7 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
            -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
            -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
            ../
 
 VOLUME [ "/output" ]

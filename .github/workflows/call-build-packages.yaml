@@ -5,7 +5,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version of the Fluent Bit to build.
+        description: The version of Fluent Bit to build.
         type: string
         required: true
       build_matrix:
@@ -20,6 +20,11 @@ on:
         description: The optional source code branch to use for building against.
         type: string
         required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
     secrets:
       token:
         description: The Github token or similar to authenticate with.
@@ -75,6 +80,7 @@ jobs:
           FLB_OUT_DIR: staging
           FLB_BRANCH: ${{ inputs.branch }}
           FLB_TD: "Off"
+          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
         working-directory: packaging
 
@@ -87,6 +93,7 @@ jobs:
           FLB_OUT_DIR: staging
           FLB_BRANCH: ${{ inputs.branch }}
           FLB_TD: "On"
+          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
         working-directory: packaging
 

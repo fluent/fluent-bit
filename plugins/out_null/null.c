@@ -146,7 +146,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_null, json_date_key),
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
 
     /* EOF */
@@ -174,4 +174,5 @@ struct flb_output_plugin out_null_plugin = {
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .config_map   = config_map,
     .flags        = 0,
+    .workers      = 1,
 };

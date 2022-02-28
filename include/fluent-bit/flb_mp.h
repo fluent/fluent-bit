@@ -26,6 +26,7 @@
 #define FLB_MP_ARRAY      MSGPACK_OBJECT_ARRAY
 
 int flb_mp_count(const void *data, size_t bytes);
+int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes);
 int flb_mp_validate_log_chunk(const void *data, size_t bytes,
                               int *out_records, size_t *processed_bytes);
 int flb_mp_validate_metric_chunk(const void *data, size_t bytes,

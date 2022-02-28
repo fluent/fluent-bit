@@ -28,38 +28,52 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 # Remove any existing container
 docker rm -f "$CONTAINER_NAME"
 
-# Run up the container
-docker run --name "$CONTAINER_NAME" -d \
-    --platform "$CONTAINER_ARCH" \
-    --pull=always \
-    --publish-all \
-    --restart=no \
-    -v "$SCRIPT_DIR/fluent-bit.conf":/fluent-bit/etc/fluent-bit.conf:ro \
-    "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+# Repeat for YAML and legacy config - note the config file extension is important for format detection
+declare -a CONFIG_FILES=("fluent-bit.conf" "fluent-bit.yaml")
 
-# Get debug details
-docker image inspect "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+for CONFIG_FILE in "${CONFIG_FILES[@]}"
+do
+    if [[ ! -f "$SCRIPT_DIR/$CONFIG_FILE" ]]; then
+        echo "Missing config file: $SCRIPT_DIR/$CONFIG_FILE"
+        exit 1
+    fi
 
-# Stream the logs live
-docker logs -f "$CONTAINER_NAME" &
+    echo "Testing: $CONFIG_FILE"
 
-# # Wait for the container to start up as we have to pull it
-until [[ $(docker ps --filter "status=running" --filter "name=$CONTAINER_NAME" --quiet | wc -l) -gt 0 ]] ; do
-    sleep 2
+    # Run up the container
+    docker run --name "$CONTAINER_NAME" -d \
+        --platform "$CONTAINER_ARCH" \
+        --pull=always \
+        --publish-all \
+        --restart=no \
+        -v "$SCRIPT_DIR/$CONFIG_FILE":"/fluent-bit/etc/$CONFIG_FILE":ro \
+        "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" \
+        "/fluent-bit/bin/fluent-bit" "-c" "/fluent-bit/etc/$CONFIG_FILE"
+
+    # Get debug details
+    docker image inspect "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+
+    # Stream the logs live
+    docker logs -f "$CONTAINER_NAME" &
+
+    # # Wait for the container to start up as we have to pull it
+    until [[ $(docker ps --filter "status=running" --filter "name=$CONTAINER_NAME" --quiet | wc -l) -gt 0 ]] ; do
+        sleep 2
+    done
+    docker ps
+    # Grab the ephemeral port
+    docker container inspect "$CONTAINER_NAME"
+    LOCAL_PORT=$(docker inspect --format='{{(index (index .NetworkSettings.Ports "2020/tcp") 0).HostPort}}' "$CONTAINER_NAME")
+    # Allow to run for a bit
+    sleep 60
+    docker ps
+    docker logs "$CONTAINER_NAME"
+    # Check we are still ok
+    curl -v localhost:"$LOCAL_PORT"                 | jq
+    curl -v localhost:"$LOCAL_PORT"/api/v1/metrics  | jq
+    curl -v localhost:"$LOCAL_PORT"/api/v1/uptime   | jq
+    curl -v localhost:"$LOCAL_PORT"/api/v1/health
+
+    # Clean up
+    docker rm -f "$CONTAINER_NAME"
 done
-docker ps
-# Grab the ephemeral port
-docker container inspect "$CONTAINER_NAME"
-LOCAL_PORT=$(docker inspect --format='{{(index (index .NetworkSettings.Ports "2020/tcp") 0).HostPort}}' "$CONTAINER_NAME")
-# Allow to run for a bit
-sleep 60
-docker ps
-docker logs "$CONTAINER_NAME"
-# Check we are still ok
-curl -v localhost:"$LOCAL_PORT"                 | jq
-curl -v localhost:"$LOCAL_PORT"/api/v1/metrics  | jq
-curl -v localhost:"$LOCAL_PORT"/api/v1/uptime   | jq
-curl -v localhost:"$LOCAL_PORT"/api/v1/health
-
-# Clean up
-docker stop "$CONTAINER_NAME"

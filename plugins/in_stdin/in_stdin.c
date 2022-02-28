@@ -215,35 +215,38 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
                                struct flb_input_instance *in,
                                struct flb_config *config)
 {
-    const char *pval = NULL;
+    int ret;
 
     ctx->buf_size = DEFAULT_BUF_SIZE;
     ctx->buf = NULL;
     ctx->buf_len = 0;
     ctx->ins = in;
 
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* parser settings */
-    pval = flb_input_get_property("parser", in);
-    if (pval) {
-        ctx->parser = flb_parser_get(pval, config);
+    if (ctx->parser_name) {
+        ctx->parser = flb_parser_get(ctx->parser_name, config);
         if (!ctx->parser) {
-            flb_plg_error(ctx->ins, "requested parser '%s' not found", pval);
+            flb_plg_error(ctx->ins, "requested parser '%s' not found", ctx->parser_name);
             return -1;
         }
     }
 
     /* buffer size setting */
-    pval = flb_input_get_property("buffer_size", in);
-    if (pval != NULL) {
-        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
+    if (ctx->buffer_size != NULL) {
+        ctx->buf_size = (size_t) flb_utils_size_to_bytes(ctx->buffer_size);
 
         if (ctx->buf_size == -1) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", pval);
+            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", ctx->buffer_size);
             return -1;
         }
         else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
             flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
-                          pval, DEFAULT_BUF_SIZE);
+                          ctx->buffer_size, DEFAULT_BUF_SIZE);
             return -1;
         }
     }
@@ -272,7 +275,6 @@ static int in_stdin_init(struct flb_input_instance *in,
     int fd;
     int ret;
     struct flb_in_stdin_config *ctx;
-    (void) data;
 
     /* Allocate space for the configuration context */
     ctx = flb_malloc(sizeof(struct flb_in_stdin_config));
@@ -346,6 +348,21 @@ static int in_stdin_exit(void *in_context, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "parser", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_stdin_config, parser_name),
+     "Set and use a fluent-bit parser"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "buffer_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_stdin_config, buffer_size),
+      "Set the read buffer size"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_stdin_plugin = {
     .name         = "stdin",
@@ -354,5 +371,6 @@ struct flb_input_plugin in_stdin_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_stdin_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_stdin_exit
+    .cb_exit      = in_stdin_exit,
+    .config_map   = config_map
 };

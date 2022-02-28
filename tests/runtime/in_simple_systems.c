@@ -169,6 +169,10 @@ void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
 }
+void flb_test_in_dummy_thread_flush()
+{
+    do_test("dummy_thread", NULL);
+}
 void flb_test_in_mem_flush()
 {
     do_test("mem", NULL);
@@ -228,6 +232,9 @@ TEST_LIST = {
 #endif
 #ifdef in_dummy
     {"dummy_flush",   flb_test_in_dummy_flush},
+#endif
+#ifdef in_dummy_thread
+    {"dummy_thread_flish",   flb_test_in_dummy_thread_flush},
 #endif
 #ifdef in_mem
     {"mem_flush",     flb_test_in_mem_flush},

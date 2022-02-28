@@ -24,6 +24,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -35,6 +40,29 @@ on:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
+  # We need version without the 'v' prefix but this is required for the source tarball
+  call-build-images-get-tarball:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      url: ${{ steps.get_tarball.outputs.TARBALL }}
+    steps:
+      - name: Get the source tarball to use
+        id: get_tarball
+        # Determine the tarball to use, tags with 'v' are the main one to cope with
+        run: |
+          if curl -L --output /dev/null --silent --head --fail "https://github.com/fluent/fluent-bit/tarball/$VERSION"; then
+            echo ::set-output name=TARBALL::https://github.com/fluent/fluent-bit/tarball/$VERSION
+          elif curl -L --output /dev/null --silent --head --fail "https://github.com/fluent/fluent-bit/tarball/v$VERSION"; then
+            echo ::set-output name=TARBALL::https://github.com/fluent/fluent-bit/tarball/v$VERSION
+          else
+            echo "Unable to get source for $VERSION"
+            exit 1
+          fi
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+
   call-build-images:
     name: Multiarch container images to GHCR
     runs-on: [ ubuntu-latest ]
@@ -42,6 +70,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+    needs: call-build-images-get-tarball
     steps:
       - name: Checkout code
         uses: actions/checkout@v2

@@ -27,20 +27,18 @@
 #include "kafka_topic.h"
 #include "kafka_callbacks.h"
 
-struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
-                                        struct flb_config *config)
+struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
+                                           struct flb_config *config)
 {
-    int ret;
     const char *tmp;
     char errstr[512];
     struct mk_list *head;
     struct mk_list *topics;
     struct flb_split_entry *entry;
-    struct flb_kafka *ctx;
-    struct flb_kv *kv;
+    struct flb_out_kafka *ctx;
 
     /* Configuration context */
-    ctx = flb_calloc(1, sizeof(struct flb_kafka));
+    ctx = flb_calloc(1, sizeof(struct flb_out_kafka));
     if (!ctx) {
         flb_errno();
         return NULL;
@@ -49,53 +47,11 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     ctx->blocked = FLB_FALSE;
 
     /* rdkafka config context */
-    ctx->conf = rd_kafka_conf_new();
+    ctx->conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 0);
     if (!ctx->conf) {
         flb_plg_error(ctx->ins, "error creating context");
         flb_free(ctx);
         return NULL;
-    }
-
-    /* rdkafka configuration parameters */
-    ret = rd_kafka_conf_set(ctx->conf, "client.id", "fluent-bit",
-                            errstr, sizeof(errstr));
-    if (ret != RD_KAFKA_CONF_OK) {
-        flb_plg_error(ctx->ins, "cannot configure client.id");
-    }
-
-    /* Config: Brokers */
-    tmp = flb_output_get_property("brokers", ins);
-    if (tmp) {
-        ret = rd_kafka_conf_set(ctx->conf,
-                                "bootstrap.servers",
-                                tmp,
-                                errstr, sizeof(errstr));
-        if (ret != RD_KAFKA_CONF_OK) {
-            flb_plg_error(ctx->ins, "config: %s", errstr);
-            flb_free(ctx);
-            return NULL;
-        }
-        ctx->brokers = flb_strdup(tmp);
-    }
-    else {
-        flb_plg_error(ctx->ins, "config: no brokers defined");
-        flb_free(ctx);
-        return NULL;
-    }
-
-    /* Iterate custom rdkafka properties */
-    mk_list_foreach(head, &ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        if (strncasecmp(kv->key, "rdkafka.", 8) == 0 &&
-            flb_sds_len(kv->key) > 8) {
-
-            ret = rd_kafka_conf_set(ctx->conf, kv->key + 8, kv->val,
-                                    errstr, sizeof(errstr));
-            if (ret != RD_KAFKA_CONF_OK) {
-                flb_plg_error(ctx->ins, "cannot configure '%s' property",
-                              kv->key + 8);
-            }
-        }
     }
 
     /* Set our global opaque data (plugin context*/
@@ -234,12 +190,12 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     }
 
     /* Kafka Producer */
-    ctx->producer = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
+    ctx->kafka.rk = rd_kafka_new(RD_KAFKA_PRODUCER, ctx->conf,
                                  errstr, sizeof(errstr));
-    if (!ctx->producer) {
+    if (!ctx->kafka.rk) {
         flb_plg_error(ctx->ins, "failed to create producer: %s",
                       errstr);
-        flb_kafka_conf_destroy(ctx);
+        flb_out_kafka_destroy(ctx);
         return NULL;
     }
 
@@ -280,7 +236,7 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
         }
     }
 
-    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->brokers, tmp);
+    flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
 #ifdef FLB_HAVE_AVRO_ENCODER
     flb_plg_info(ctx->ins, "schemaID='%s' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
 #endif
@@ -288,20 +244,20 @@ struct flb_kafka *flb_kafka_conf_create(struct flb_output_instance *ins,
     return ctx;
 }
 
-int flb_kafka_conf_destroy(struct flb_kafka *ctx)
+int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 {
     if (!ctx) {
         return 0;
     }
 
-    if (ctx->brokers) {
-        flb_free(ctx->brokers);
+    if (ctx->kafka.brokers) {
+        flb_free(ctx->kafka.brokers);
     }
 
     flb_kafka_topic_destroy_all(ctx);
 
-    if (ctx->producer) {
-        rd_kafka_destroy(ctx->producer);
+    if (ctx->kafka.rk) {
+        rd_kafka_destroy(ctx->kafka.rk);
     }
 
     if (ctx->topic_key) {

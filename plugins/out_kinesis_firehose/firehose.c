@@ -204,7 +204,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         ctx->aws_provider = flb_sts_provider_create(config,
                                                     ctx->sts_tls,
                                                     ctx->base_aws_provider,
-                                                    ctx->external_id,
+                                                    (char *) ctx->external_id,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
@@ -465,6 +465,7 @@ struct flb_output_plugin out_kinesis_firehose_plugin = {
     .cb_init      = cb_firehose_init,
     .cb_flush     = cb_firehose_flush,
     .cb_exit      = cb_firehose_exit,
+    .workers      = 1,
     .flags        = 0,
 
     /* Configuration */

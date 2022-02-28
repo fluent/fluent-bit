@@ -24,6 +24,9 @@ ENV FLB_MINOR 9
 ENV FLB_PATCH 0
 ENV FLB_VERSION 1.9.0
 
+ARG FLB_NIGHTLY_BUILD
+ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
+
 ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
 ENV FLB_SOURCE $FLB_TARBALL
 RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
@@ -49,6 +52,7 @@ RUN apt-get update && \
     postgresql-server-dev-all \
     flex \
     bison \
+    libyaml-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
@@ -66,7 +70,9 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_IN_EXEC=Off \
           -DFLB_IN_SYSTEMD=On \
           -DFLB_OUT_KAFKA=On \
-          -DFLB_OUT_PGSQL=On ..
+          -DFLB_OUT_PGSQL=On \
+          -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"
 RUN install bin/fluent-bit /fluent-bit/bin/
@@ -88,7 +94,8 @@ FROM debian:bullseye-slim as deb-extractor
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
-# We download all debs locally then extract them into a directory we can use as the root for distroless
+# We download all debs locally then extract them into a directory we can use as the root for distroless.
+# We also include some extra handling for the status files that some tooling uses for scanning, etc.
 WORKDIR /tmp
 RUN apt-get update && \
     apt-get download \
@@ -120,9 +127,19 @@ RUN apt-get update && \
         libhogweed6 \
         libgmp10 \
         libffi7 \
-        liblzma5 && \
-    mkdir -p /dpkg && \
-    for deb in *.deb; do dpkg --extract "$deb" /dpkg || exit 10; done
+        liblzma5 \
+        libyaml-0-2 && \
+    mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
+    for deb in *.deb; do \
+        package_name=$(dpkg-deb -I ${deb} | awk '/^ Package: .*$/ {print $2}'); \
+        echo "Processing: ${package_name}"; \
+        dpkg --ctrl-tarfile $deb | tar -Oxf - ./control > /dpkg/var/lib/dpkg/status.d/${package_name}; \
+        dpkg --extract $deb /dpkg || exit 10; \
+    done
+
+# Remove unnecessary files extracted from deb packages like man pages and docs etc.
+RUN find /dpkg/ -type d -empty -delete && \
+    rm -r /dpkg/usr/share/doc/
 
 # We want latest at time of build
 # hadolint ignore=DL3006
@@ -173,6 +190,7 @@ RUN apt-get update && \
         ca-certificates \
         libatomic1 \
         libgcrypt20 \
+        libyaml-0-2 \
         bash gdb valgrind build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

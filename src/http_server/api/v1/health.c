@@ -322,7 +322,7 @@ int api_v1_health(struct flb_hs *hs)
 
     counter_init(hs);
     /* Create a message queue */
-    hs->qid_metrics = mk_mq_create(hs->ctx, "/health",
+    hs->qid_health = mk_mq_create(hs->ctx, "/health",
                                    cb_mq_health, NULL);
 
     mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/health", cb_health, hs);

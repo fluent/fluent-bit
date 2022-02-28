@@ -1,82 +1,71 @@
-name: Build and run image tests for all architectures
+name: Build images for all architectures
 on:
-  # We cannot trigger just on PRs as these do not have write permissions to GHCR from forks.
-  # See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
-  # Instead we use the label to gate running this.
-  pull_request_target:
+  pull_request:
     types:
-      - labeled
       - opened
       - reopened
       - synchronize
+    paths:
+      - 'dockerfiles/**'
+
+  workflow_dispatch:
 
 jobs:
-
-    # Not running these changes...
-
-    pr-check-label:
-      if: contains(github.event.pull_request.labels.*.name, 'ok-container-test')
-      name: PR - prevent run without label
+    pr-image-tests-build-images:
+      name: PR - Buildkit docker build test
       runs-on: ubuntu-latest
       environment: pr
       steps:
-        - run: echo "Proceed"
+        - name: Checkout code
+          uses: actions/checkout@v2
 
-    pr-image-tests-build-images:
-      name: PR - build images
-      uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
-      needs: pr-check-label
-      with:
-        version: ${{ github.event.pull_request.head.ref }}
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        image: ${{ github.repository }}/pr-${{ github.event.number }}
-        environment: pr
-      secrets:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        - name: Set up QEMU
+          uses: docker/setup-qemu-action@v1
 
-    pr-image-tests-smoke-test-images:
-      name: PR - smoke test images
-      needs: [pr-check-label, pr-image-tests-build-images]
-      uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        image: ${{ github.repository }}/pr-${{ github.event.number }}
-        image-tag: ${{ github.event.pull_request.head.ref }}
-        environment: pr
-      secrets:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v1
+
+        - name: Build the multi-arch images using current master tarball
+          uses: docker/build-push-action@v2
+          with:
+            file: ./dockerfiles/Dockerfile
+            context: .
+            platforms: linux/amd64
+            target: production
+            push: false
+            load: false
+            build-args: |
+              FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/master
+
+        - name: Build the debug multi-arch images
+          uses: docker/build-push-action@v2
+          with:
+            file: ./dockerfiles/Dockerfile
+            context: .
+            platforms: linux/amd64
+            target: debug
+            push: false
+            load: false
+            build-args: |
+              FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/master
 
     pr-image-tests-classic-docker-build:
       name: PR - Classic docker build test
-      needs: pr-check-label
       runs-on: ubuntu-latest
       environment: pr
       steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Build the classic build test image
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Build the ${{ matrix.suffix }} classic test image
         # We only want to confirm it builds with classic mode, nothing else
         run: |
           docker build --target production -f ./dockerfiles/Dockerfile .
         env:
           # Ensure we disable buildkit
           DOCKER_BUILDKIT: 0
+          FLB_TARBALL: https://github.com/fluent/fluent-bit/tarball/master
         shell: bash
-
-    pr-image-tests-post-label:
-      name: PR - image tests complete
-      runs-on: ubuntu-latest
-      needs:
-        - pr-image-tests-smoke-test-images
-        - pr-image-tests-classic-docker-build
-      steps:
-        - uses: actions-ecosystem/action-add-labels@v1
-          name: Label the PR
-          with:
-            labels: ci/container-test-ok
-            github_token: ${{ secrets.GITHUB_TOKEN }}
-            number: ${{ github.event.pull_request.number }}
-            repo: fluent/fluent-bit

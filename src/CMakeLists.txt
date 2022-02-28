@@ -23,6 +23,7 @@ set(src
   flb_input.c
   flb_input_chunk.c
   flb_input_metric.c
+  flb_input_thread.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -60,6 +61,7 @@ set(src
   flb_routes_mask.c
   flb_typecast.c
   flb_event.c
+  flb_base64.c
   )
 
 # Config format
@@ -185,6 +187,13 @@ if(FLB_LUAJIT)
     ${src}
     "flb_lua.c"
     "flb_luajit.c"
+    )
+endif()
+
+if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+  set(src
+    ${src}
+    "flb_kafka.c"
     )
 endif()
 

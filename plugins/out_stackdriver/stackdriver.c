@@ -1974,8 +1974,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         /* Extract httpRequest */
         init_http_request(&http_request);
         http_request_extra_size = 0;
-        http_request_extracted = extract_http_request(&http_request, obj,
-                                                      &http_request_extra_size);
+        http_request_extracted = extract_http_request(&http_request, 
+                                                      ctx->http_request_key,
+                                                      ctx->http_request_key_size,
+                                                      obj, &http_request_extra_size);
         if (http_request_extracted == FLB_TRUE) {
             entry_size += 1;
         }
@@ -2174,6 +2176,18 @@ static int stackdriver_format_test(struct flb_config *config,
 
 }
 
+#ifdef FLB_HAVE_METRICS
+void update_http_metrics(struct flb_stackdriver *ctx, uint64_t ts, int http_status)
+{
+    char tmp[32];
+
+    /* convert status to string format */
+    snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
+
+    cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+}
+#endif
+
 static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                                  struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins,
@@ -2310,6 +2324,11 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
     }
+
+    /* Update metrics counter by using labels/http status code */
+    if (ret == 0) {
+        update_http_metrics(ctx, ts, c->resp.status);
+    }
 #endif
 
     /* Cleanup */
@@ -2340,6 +2359,7 @@ struct flb_output_plugin out_stackdriver_plugin = {
     .cb_init      = cb_stackdriver_init,
     .cb_flush     = cb_stackdriver_flush,
     .cb_exit      = cb_stackdriver_exit,
+    .workers      = 2,
 
     /* Test */
     .test_formatter.callback = stackdriver_format_test,

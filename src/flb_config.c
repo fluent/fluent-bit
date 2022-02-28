@@ -440,6 +440,13 @@ void flb_config_exit(struct flb_config *config)
     flb_parser_exit(config);
 #endif
 
+    if (config->dns_mode) {
+        flb_free(config->dns_mode);
+    }
+    if (config->dns_resolver) {
+        flb_free(config->dns_resolver);
+    }
+
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
