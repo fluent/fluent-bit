@@ -5,7 +5,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version of the Fluent Bit to build as a tag, commit, SHA.
+        description: The version of Fluent Bit to build as a tag, commit, SHA.
         type: string
         required: true
       registry:
@@ -110,6 +110,9 @@ jobs:
           target: production
           push: true
           load: false
+          build-args: |
+            FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
       - id: debug-meta
         uses: docker/metadata-action@v3
@@ -130,6 +133,9 @@ jobs:
           target: debug
           push: true
           load: false
+          build-args: |
+            FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
   call-build-images-scan:
     name: Trivy + Dockle image scan
