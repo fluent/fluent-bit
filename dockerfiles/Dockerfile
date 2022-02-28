@@ -159,11 +159,10 @@ LABEL description="Fluent Bit multi-architecture container image" \
 COPY --from=deb-extractor /dpkg /
 
 # Copy certificates
-COPY --from=builder /usr/share/ca-certificates/  /usr/share/ca-certificates/
-# Workaround for https://github.com/moby/moby/issues/37965 in classic mode
-COPY --from=builder /fluent-bit /fluent-bit
-COPY --from=builder /etc/ssl/ /etc/ssl/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 
+# Finally the binaries as most likely to change
+COPY --from=builder /fluent-bit /fluent-bit
 
 EXPOSE 2020
 
