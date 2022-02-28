@@ -60,12 +60,11 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
-      - name: Build the ${{ matrix.suffix }} classic test image
+      - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
         run: |
-          docker build --target production -f ./dockerfiles/Dockerfile .
+          docker build --target production -f ./dockerfiles/Dockerfile --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/master .
         env:
           # Ensure we disable buildkit
           DOCKER_BUILDKIT: 0
-          FLB_TARBALL: https://github.com/fluent/fluent-bit/tarball/master
         shell: bash
