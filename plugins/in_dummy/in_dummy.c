@@ -123,6 +123,9 @@ static int config_destroy(struct flb_dummy *ctx)
     if (ctx->fixed_timestamp == FLB_TRUE) {
         msgpack_sbuffer_destroy(&ctx->mp_sbuf);
     }
+    if (ctx->dummy_message) {
+        flb_free(ctx->dummy_message);
+    }
     flb_free(ctx->ref_msgpack);
     flb_free(ctx);
     return 0;
@@ -134,6 +137,7 @@ static int configure(struct flb_dummy *ctx,
                      struct timespec *tm)
 {
     struct flb_time dummy_time;
+    const char *msg;
     int dummy_time_enabled = FLB_FALSE;
     int root_type;
     int  ret = -1;
@@ -144,8 +148,6 @@ static int configure(struct flb_dummy *ctx,
     if (ret == -1) {
         return -1;
     }
-
-    ctx->dummy_message_len = strlen(ctx->dummy_message);
 
     /* interval settings */
     tm->tv_sec  = 1;
@@ -176,13 +178,19 @@ static int configure(struct flb_dummy *ctx,
         flb_time_copy(ctx->dummy_timestamp, &dummy_time);
     }
 
-    ret = flb_pack_json(ctx->dummy_message,
-                  ctx->dummy_message_len,
-                        &ctx->ref_msgpack, &ctx->ref_msgpack_size, &root_type);
-    if (ret != 0) {
+    /* handle it explicitly since we need to validate it is valid JSON */
+    msg = flb_input_get_property("dummy", in);
+    if (msg == NULL) {
+        msg = DEFAULT_DUMMY_MESSAGE;
+    }
+    ret = flb_pack_json(msg, strlen(msg), &ctx->ref_msgpack,
+                        &ctx->ref_msgpack_size, &root_type);
+    if (ret == 0) {
+        ctx->dummy_message = flb_strdup(msg);
+        ctx->dummy_message_len = strlen(msg);
+    } else {
         flb_plg_warn(ctx->ins, "data is incomplete. Use default string.");
 
-        flb_free(ctx->dummy_message);
         ctx->dummy_message = flb_strdup(DEFAULT_DUMMY_MESSAGE);
         ctx->dummy_message_len = strlen(ctx->dummy_message);
 
@@ -260,7 +268,7 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "dummy", DEFAULT_DUMMY_MESSAGE,
-    0, FLB_TRUE, offsetof(struct flb_dummy, dummy_message),
+    0, FLB_FALSE, 0,
     "set the sample record to be generated. It should be a JSON object."
    },
    {
