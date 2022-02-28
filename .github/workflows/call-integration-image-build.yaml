@@ -69,6 +69,8 @@ jobs:
           target: production
           push: true
           load: false
+          build-args: |
+            FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
 
       - name: Extract metadata from Github
         id: meta-debug
@@ -89,6 +91,8 @@ jobs:
           platforms: linux/amd64
           push: true
           load: false
+          build-args: |
+            FLB_TARBALL=${{ needs.call-build-images-get-tarball.outputs.url }}
 
   call-integration-image-build-smoke-test:
     name: Integration test image is valid
