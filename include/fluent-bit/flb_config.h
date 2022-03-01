@@ -30,7 +30,7 @@
 
 #include <monkey/mk_core.h>
 
-#define FLB_CONFIG_FLUSH_SECS   5
+#define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
 #define HC_ERRORS_COUNT_DEFAULT 5
