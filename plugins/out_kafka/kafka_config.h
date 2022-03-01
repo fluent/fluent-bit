@@ -35,7 +35,7 @@
 #define FLB_KAFKA_FMT_AVRO            3
 #endif
 #define FLB_KAFKA_TS_KEY              "@timestamp"
-#define FLB_KAFKA_QUEUE_FULL_RETRIES  10
+#define FLB_KAFKA_QUEUE_FULL_RETRIES  "10"
 
 /* rdkafka log levels based on syslog(3) */
 #define FLB_KAFKA_LOG_EMERG   0
@@ -62,6 +62,7 @@ struct flb_out_kafka {
     struct flb_kafka kafka;
     /* Config Parameters */
     int format;
+    flb_sds_t format_str;
 
     /* Optional topic key for routing */
     int topic_key_len;
@@ -70,6 +71,7 @@ struct flb_out_kafka {
     int timestamp_key_len;
     char *timestamp_key;
     int timestamp_format;
+    flb_sds_t timestamp_format_str;
 
     int message_key_len;
     char *message_key;

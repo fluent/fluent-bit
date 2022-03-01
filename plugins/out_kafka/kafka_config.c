@@ -64,38 +64,23 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     rd_kafka_conf_set_log_cb(ctx->conf, cb_kafka_logger);
 
     /* Config: Topic_Key */
-    tmp = flb_output_get_property("topic_key", ins);
-    if (tmp) {
-        ctx->topic_key = flb_strdup(tmp);
-        ctx->topic_key_len = strlen(tmp);
-    }
-    else {
-        ctx->topic_key = NULL;
-    }
-
-    /* Config: dynamic_topic */
-    tmp = flb_output_get_property("dynamic_topic", ins);
-    if (tmp) {
-        ctx->dynamic_topic = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->dynamic_topic = FLB_FALSE;
+    if (ctx->topic_key) {
+        ctx->topic_key_len = strlen(ctx->topic_key);
     }
 
     /* Config: Format */
-    tmp = flb_output_get_property("format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "json") == 0) {
+    if (ctx->format_str) {
+        if (strcasecmp(ctx->format_str, "json") == 0) {
             ctx->format = FLB_KAFKA_FMT_JSON;
         }
-        else if (strcasecmp(tmp, "msgpack") == 0) {
+        else if (strcasecmp(ctx->format_str, "msgpack") == 0) {
             ctx->format = FLB_KAFKA_FMT_MSGP;
         }
-        else if (strcasecmp(tmp, "gelf") == 0) {
+        else if (strcasecmp(ctx->format_str, "gelf") == 0) {
             ctx->format = FLB_KAFKA_FMT_GELF;
         }
 #ifdef FLB_HAVE_AVRO_ENCODER
-        else if (strcasecmp(tmp, "avro") == 0) {
+        else if (strcasecmp(ctx->format_str, "avro") == 0) {
             ctx->format = FLB_KAFKA_FMT_AVRO;
         }
 #endif
@@ -105,70 +90,37 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
 
     /* Config: Message_Key */
-    tmp = flb_output_get_property("message_key", ins);
-    if (tmp) {
-        ctx->message_key = flb_strdup(tmp);
-        ctx->message_key_len = strlen(tmp);
+    if (ctx->message_key) {
+        ctx->message_key_len = strlen(ctx->message_key);
     }
     else {
-        ctx->message_key = NULL;
         ctx->message_key_len = 0;
     }
 
     /* Config: Message_Key_Field */
-    tmp = flb_output_get_property("message_key_field", ins);
-    if (tmp) {
-        ctx->message_key_field = flb_strdup(tmp);
-        ctx->message_key_field_len = strlen(tmp);
+    if (ctx->message_key_field) {
+        ctx->message_key_field_len = strlen(ctx->message_key_field);
     }
     else {
-        ctx->message_key_field = NULL;
         ctx->message_key_field_len = 0;
     }
 
     /* Config: Timestamp_Key */
-    tmp = flb_output_get_property("timestamp_key", ins);
-    if (tmp) {
-        ctx->timestamp_key = flb_strdup(tmp);
-        ctx->timestamp_key_len = strlen(tmp);
-    }
-    else {
-        ctx->timestamp_key = FLB_KAFKA_TS_KEY;
-        ctx->timestamp_key_len = strlen(FLB_KAFKA_TS_KEY);
+    if (ctx->timestamp_key) {
+        ctx->timestamp_key_len = strlen(ctx->timestamp_key);
     }
 
     /* Config: Timestamp_Format */
     ctx->timestamp_format = FLB_JSON_DATE_DOUBLE;
-    tmp = flb_output_get_property("timestamp_format", ins);
-    if (tmp) {
-        if (strcasecmp(tmp, "iso8601") == 0) {
+    if (ctx->timestamp_format_str) {
+        if (strcasecmp(ctx->timestamp_format_str, "iso8601") == 0) {
             ctx->timestamp_format = FLB_JSON_DATE_ISO8601;
         }
     }
 
-    /* Config: queue_full_retries */
-    tmp = flb_output_get_property("queue_full_retries", ins);
-    if (!tmp) {
-        ctx->queue_full_retries = FLB_KAFKA_QUEUE_FULL_RETRIES;
-    }
-    else {
-        /* set number of retries: note that if the number is zero, means forever */
-        ctx->queue_full_retries = atoi(tmp);
-        if (ctx->queue_full_retries < 0) {
-            ctx->queue_full_retries = 0;
-        }
-    }
-
-    /* Config Gelf_Timestamp_Key */
-    tmp = flb_output_get_property("gelf_timestamp_key", ins);
-    if (tmp) {
-        ctx->gelf_fields.timestamp_key = flb_sds_create(tmp);
-    }
-
-    /* Config Gelf_Host_Key */
-    tmp = flb_output_get_property("gelf_host_key", ins);
-    if (tmp) {
-        ctx->gelf_fields.host_key = flb_sds_create(tmp);
+    /* set number of retries: note that if the number is zero, means forever */
+    if (ctx->queue_full_retries < 0) {
+        ctx->queue_full_retries = 0;
     }
 
     /* Config Gelf_Short_Message_Key */
