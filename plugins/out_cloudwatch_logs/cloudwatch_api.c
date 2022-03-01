@@ -52,7 +52,7 @@
 #define ERR_CODE_ALREADY_EXISTS         "ResourceAlreadyExistsException"
 #define ERR_CODE_INVALID_SEQUENCE_TOKEN "InvalidSequenceTokenException"
 #define ERR_CODE_NOT_FOUND              "ResourceNotFoundException"
-
+#define ERR_CODE_DATA_ALREADY_ACCEPTED  "DataAlreadyAcceptedException"
 
 #define AMZN_REQUEST_ID_HEADER          "x-amzn-RequestId"
 
@@ -1477,6 +1477,13 @@ retry_request:
                         /* tell the caller to retry */
                         return 1;
                     }
+                } else if (strcmp(error, ERR_CODE_DATA_ALREADY_ACCEPTED) == 0) {
+                    /* not sure what causes this but it counts as success */
+                    flb_plg_info(ctx->ins, "Got %s, a previous retry must have succeeded asychronously", ERR_CODE_DATA_ALREADY_ACCEPTED);
+                    flb_sds_destroy(error);
+                    flb_http_client_destroy(c);
+                    /* success */
+                    return 0;
                 }
                 /* some other error occurred; notify user */
                 flb_aws_print_error(c->resp.payload, c->resp.payload_size,
