@@ -129,6 +129,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     }
 
     event->mask = events;
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
     return 0;
 }
 
@@ -157,6 +160,12 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
             mk_libc_error("kevent");
             return ret;
         }
+    }
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
     }
 
     MK_EVENT_NEW(event);
@@ -287,11 +296,13 @@ static inline int _mk_event_inject(struct mk_event_loop *loop,
     return 0;
 }
 
-static inline int _mk_event_wait(struct mk_event_loop *loop)
+static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
 {
     struct mk_event_ctx *ctx = loop->data;
 
-    loop->n_events = kevent(ctx->kfd, NULL, 0, ctx->events, ctx->queue_size, NULL);
+    struct timespec timev = {timeout / 1000, (timeout % 1000) * 1000000};
+    loop->n_events = kevent(ctx->kfd, NULL, 0, ctx->events, ctx->queue_size,
+                            (timeout != -1) ? &timev : NULL);
     return loop->n_events;
 }
 
