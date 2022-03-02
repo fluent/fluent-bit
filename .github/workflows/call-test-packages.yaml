@@ -32,7 +32,7 @@ jobs:
         distro: [ amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004 ]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Get the version
       id: get_version
