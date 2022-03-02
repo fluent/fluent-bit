@@ -2,11 +2,14 @@ set(UNIT_TESTS_FILES
   basic.c
   gauge.c
   counter.c
+  summary.c
+  histogram.c
   untyped.c
   atomic_operations.c
   encoding.c
   cat.c
   issues.c
+  null_label.c
   )
 
 if (CMT_BUILD_PROMETHEUS_DECODER)
