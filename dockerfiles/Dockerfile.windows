@@ -79,6 +79,7 @@ WORKDIR /local
 ADD https://aka.ms/vs/15/release/vc_redist.x64.exe /local/vc_redist.x64.exe
 
 WORKDIR /fluent-bit/bin/
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 RUN Start-Process /local/vc_redist.x64.exe -ArgumentList '/install', '/quiet', '/norestart' -NoNewWindow -Wait; `
     Copy-Item -Path /Windows/System32/msvcp140.dll -Destination /fluent-bit/bin/; `
     Copy-Item -Path /Windows/System32/vccorlib140.dll -Destination /fluent-bit/bin/; `
