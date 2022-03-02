@@ -38,7 +38,8 @@ RUN cmake -G "'Visual Studio 16 2019'" -DCMAKE_BUILD_TYPE=Release ../; `
     cmake --build . --config Release;
 
 # Set up config files and binaries in single /fluent-bit hierarchy for easy copy in later stage
-RUN Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
+RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
+    Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.conf; `
     Copy-Item -Path /src/conf/parsers.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_ambassador.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_java.conf /fluent-bit/etc/; `
@@ -46,6 +47,7 @@ RUN Copy-Item -Path /src/conf/fluent-bit-win32.conf /fluent-bit/etc/fluent-bit.c
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
+    New-Item -Path  /fluent-bit/bin/ -ItemType "directory"; `
     Copy-Item -Path /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/; `
     Copy-Item -Path /src/build/bin/Release/fluent-bit.dll /fluent-bit/bin/;
 
