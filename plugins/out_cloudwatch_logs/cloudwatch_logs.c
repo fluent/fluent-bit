@@ -390,8 +390,7 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
 
     ctx->buf->put_events_calls = 0;
 
-    stream = get_log_stream(ctx,
-                            event_chunk->tag, flb_sds_len(event_chunk->tag));
+    stream = get_log_stream(ctx, tag, tag_len);
     if (!stream) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
