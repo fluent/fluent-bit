@@ -6,7 +6,8 @@ on:
       - reopened
       - synchronize
     paths:
-      - 'dockerfiles/**'
+      - 'dockerfiles/Dockerfile'
+      - 'conf/**'
 
   workflow_dispatch:
 
