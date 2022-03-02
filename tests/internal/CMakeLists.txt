@@ -25,6 +25,7 @@ set(UNIT_TESTS_FILES
   typecast.c
   timeout.c
   base64.c
+  bucket_queue.c
   )
 
 # Config format
