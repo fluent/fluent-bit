@@ -21,6 +21,8 @@
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_sds.h>
+#include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
@@ -166,16 +168,26 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     struct cmt_opts      *opts;
     struct mk_list       *head;
     struct cmt_map_label *label;
+    struct cmt_histogram *histogram;
     ptrdiff_t             label_index;
     struct cmt_label     *static_label;
+    size_t                bucket_index;
+    size_t                meta_field_count;
 
     opts = map->opts;
+    meta_field_count = 6;
+
+    if (map->type == CMT_HISTOGRAM) {
+        histogram = (struct cmt_histogram *) map->parent;
+
+        meta_field_count++;
+    }
 
     mpack_start_map(writer, 2);
 
     /* 'meta' */
     mpack_write_cstr(writer, "meta");
-    mpack_start_map(writer, 6);
+    mpack_start_map(writer, meta_field_count);
 
     /* 'ver' */
     mpack_write_cstr(writer, "ver");
@@ -246,6 +258,20 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     }
     mpack_finish_array(writer);
 
+    if (map->type == CMT_HISTOGRAM) {
+        /* 'buckets' (histogram buckets) */
+        mpack_write_cstr(writer, "buckets");
+
+        mpack_start_array(writer, histogram->buckets->count);
+
+        for (bucket_index = 0 ;
+             bucket_index < histogram->buckets->count ;
+             bucket_index++) {
+            mpack_write_double(writer, histogram->buckets->upper_bounds[bucket_index]);
+        }
+        mpack_finish_array(writer);
+    }
+
     mpack_finish_map(writer); /* 'meta' */
 }
 
@@ -254,14 +280,16 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
     int c_labels;
     int s;
     double val;
+    size_t index;
     struct mk_list *head;
     struct cmt_map_label *label;
+    struct cmt_histogram *histogram;
     ptrdiff_t label_index;
 
-    /* FYI: ONLY SUPPORTS COUNTER & GAUGE FOR NOW */
     c_labels = mk_list_size(&metric->labels);
 
-    s = 2;
+    s = 3;
+
     if (c_labels > 0) {
         s++;
     }
@@ -271,14 +299,66 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
     mpack_write_cstr(writer, "ts");
     mpack_write_uint(writer, metric->timestamp);
 
-    mpack_write_cstr(writer, "value");
-    val = cmt_metric_get_value(metric);
-    mpack_write_double(writer, val);
+    if (map->type == CMT_HISTOGRAM) {
+        histogram = (struct cmt_histogram *) map->parent;
+
+        mpack_write_cstr(writer, "histogram");
+        mpack_start_map(writer, 3);
+
+        mpack_write_cstr(writer, "buckets");
+        mpack_start_array(writer, histogram->buckets->count);
+
+        for (index = 0 ;
+             index < histogram->buckets->count ;
+             index++) {
+            mpack_write_uint(writer, cmt_metric_hist_get_value(metric, index));
+        }
+
+        mpack_finish_array(writer);
+
+        mpack_write_cstr(writer, "sum");
+        mpack_write_double(writer, cmt_metric_hist_get_sum_value(metric));
+
+        mpack_write_cstr(writer, "count");
+        mpack_write_uint(writer, cmt_metric_hist_get_count_value(metric));
+
+        mpack_finish_map(writer); /* 'histogram' */
+    }
+    else if (map->type == CMT_SUMMARY) {
+        mpack_write_cstr(writer, "summary");
+        mpack_start_map(writer, 4);
+
+        mpack_write_cstr(writer, "quantiles_set");
+        mpack_write_uint(writer, metric->sum_quantiles_set);
+
+        mpack_write_cstr(writer, "quantiles");
+        mpack_start_array(writer, 5);
+
+        for (index = 0 ; index < 5 ; index++) {
+            mpack_write_uint(writer, metric->sum_quantiles[index]);
+        }
+
+        mpack_finish_array(writer);
+
+        mpack_write_cstr(writer, "count");
+        mpack_write_uint(writer, cmt_summary_get_count_value(metric));
+
+        mpack_write_cstr(writer, "sum");
+        mpack_write_uint(writer, metric->sum_sum);
+
+        mpack_finish_map(writer); /* 'summary' */
+    }
+    else {
+        mpack_write_cstr(writer, "value");
+        val = cmt_metric_get_value(metric);
+        mpack_write_double(writer, val);
+    }
 
     s = mk_list_size(&metric->labels);
     if (s > 0) {
         mpack_write_cstr(writer, "labels");
         mpack_start_array(writer, c_labels);
+
         mk_list_foreach(head, &metric->labels) {
             label = mk_list_entry(head, struct cmt_map_label, _head);
 
@@ -286,8 +366,13 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
 
             mpack_write_uint(writer, (uint16_t) label_index);
         }
+
         mpack_finish_array(writer);
     }
+
+    mpack_write_cstr(writer, "hash");
+    mpack_write_uint(writer, metric->hash);
+
     mpack_finish_map(writer);
 
     return 0;
@@ -356,38 +441,65 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
     struct cmt_untyped *untyped;
+    struct cmt_summary *summary;
+    struct cmt_histogram *histogram;
     size_t metric_count;
 
     /*
      * CMetrics data schema
-[
-     * {
-     *   'meta' => {
-     *                 'ver' => INTEGER
-     *                 'type' => INTEGER
-     *                           '0' = counter
-     *                           '1' = gauge
-     *                           '2' = histogram (WIP)
-     *                 'opts' => {
-     *                            'ns'   => ns
-     *                            'subsystem'   => subsystem
-     *                            'name'        => name
-     *                            'description' => description
-     *                           },
-     *                 'label_dictionary' => ['', ...],
-     *                 'static_labels' => [n, ...],
-     *                 'label_keys' => [n, ...]
-     *               },
-     *   'values' => [
-     *                 {
-     *                  'ts'   : nanosec timestamp,
-     *                  'value': float64 value
-     *                  'label_values': [n, ...]
-     *                 }
-     *               ]
-     * }
-]
+     *  [
+     *      {
+     *        'meta' => {
+     *                      'ver' => INTEGER
+     *                      'type' => INTEGER
+     *                                '0' = counter
+     *                                '1' = gauge
+     *                                '2' = histogram (WIP)
+     *                      'opts' => {
+     *                                 'ns'   => ns
+     *                                 'subsystem'   => subsystem
+     *                                 'name'        => name
+     *                                 'description' => description
+     *                                },
+     *                      'label_dictionary' => ['', ...],
+     *                      'static_labels' => [n, ...],
+     *                      'label_keys' => [n, ...],
+     *                      'buckets' => [n, ...]
+     *                    },
+     *        'values' => [
+     *                      {
+     *                       'ts'   : nanosec timestamp,
+     *                       'value': float64 value,
+     *                       'label_values': [n, ...],
+     *                       'histogram': {
+     *                                         'sum': float64,
+     *                                         'count': uint64,
+     *                                         'buckets': [n, ...]
+     *                                     },
+     *                       'summary': {
+     *                                      'sum': float64,
+     *                                      'count': uint64,
+     *                                      'quantiles': [n, ...],
+     *                                      'quantiles_set': uint64
+     *                                  },
+     *                       'hash': uint64 value
+     *                      }
+     *                    ]
+     *      }
+     *  , ...]
+     *
+     *
+     * The following fields are metric type specific and are only
+     * included for histograms :
+     *      meta->buckets
+     *      values[n]->buckets
+     *      values[n]->count
+     *      values[n]->sum
      */
+
+    if (cmt == NULL) {
+        return -1;
+    }
 
     mpack_writer_init_growable(&writer, &data, &size);
 
@@ -395,6 +507,8 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     metric_count += mk_list_size(&cmt->counters);
     metric_count += mk_list_size(&cmt->gauges);
     metric_count += mk_list_size(&cmt->untypeds);
+    metric_count += mk_list_size(&cmt->summaries);
+    metric_count += mk_list_size(&cmt->histograms);
 
     /* We want an array to group all these metrics in a context */
     mpack_start_array(&writer, metric_count);
@@ -415,6 +529,18 @@ int cmt_encode_msgpack_create(struct cmt *cmt, char **out_buf, size_t *out_size)
     mk_list_foreach(head, &cmt->untypeds) {
         untyped = mk_list_entry(head, struct cmt_untyped, _head);
         pack_basic_type(&writer, cmt, untyped->map);
+    }
+
+    /* Summary */
+    mk_list_foreach(head, &cmt->summaries) {
+        summary = mk_list_entry(head, struct cmt_summary, _head);
+        pack_basic_type(&writer, cmt, summary->map);
+    }
+
+    /* Histogram */
+    mk_list_foreach(head, &cmt->histograms) {
+        histogram = mk_list_entry(head, struct cmt_histogram, _head);
+        pack_basic_type(&writer, cmt, histogram->map);
     }
 
     if (mpack_writer_destroy(&writer) != mpack_ok) {

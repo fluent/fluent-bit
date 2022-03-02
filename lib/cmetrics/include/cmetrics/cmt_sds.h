@@ -45,6 +45,11 @@ struct cmt_sds {
 
 #define CMT_SDS_HEADER(s)  ((struct cmt_sds *) (s - CMT_SDS_HEADER_SIZE))
 
+static inline void cmt_sds_len_set(cmt_sds_t s, size_t len)
+{
+    CMT_SDS_HEADER(s)->len = len;
+}
+
 size_t cmt_sds_avail(cmt_sds_t s);
 cmt_sds_t sds_alloc(size_t size);
 size_t cmt_sds_alloc(cmt_sds_t s);

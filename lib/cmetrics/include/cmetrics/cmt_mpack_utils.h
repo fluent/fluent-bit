@@ -42,6 +42,6 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
 int cmt_mpack_unpack_array(mpack_reader_t *reader, 
                            cmt_mpack_unpacker_entry_callback_fn_t entry_processor_callback, 
                            void *context);
-
+int cmt_mpack_peek_array_length(mpack_reader_t *reader);
 
 #endif

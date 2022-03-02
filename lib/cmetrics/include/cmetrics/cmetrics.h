@@ -26,7 +26,8 @@
 #define CMT_COUNTER   0
 #define CMT_GAUGE     1
 #define CMT_HISTOGRAM 2
-#define CMT_UNTYPED   3
+#define CMT_SUMMARY   3
+#define CMT_UNTYPED   4
 
 #define CMT_AGGREGATION_TYPE_UNSPECIFIED 0
 #define CMT_AGGREGATION_TYPE_DELTA       1
@@ -56,8 +57,9 @@ struct cmt {
     /* Metrics list */
     struct mk_list counters;
     struct mk_list gauges;
-    struct mk_list untypeds;
     struct mk_list histograms;
+    struct mk_list summaries;
+    struct mk_list untypeds;
 };
 
 void cmt_initialize();
