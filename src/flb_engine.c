@@ -555,6 +555,26 @@ int flb_engine_start(struct flb_config *config)
     }
     config->evl = evl;
 
+    /*
+     * Event loop channel to ingest flush events from flb_engine_flush()
+     *
+     *  - FLB engine uses 'ch_self_events[1]' to dispatch tasks to self
+     *  - Self to receive message on ch_parent_events[0]
+     *
+     * The mk_event_channel_create() will attach the pipe read end ch_self_events[0]
+     * to the local event loop 'evl'.
+     */
+    ret = mk_event_channel_create(config->evl,
+                                    &config->ch_self_events[0],
+                                    &config->ch_self_events[1],
+                                    &config->event_thread_init);
+    if (ret == -1) {
+        flb_error("[engine] could not create engine thread channel");
+        return -1;
+    }
+    /* Signal type to indicate a "flush" request */
+    config->event_thread_init.type = FLB_ENGINE_EV_THREAD_ENGINE;
+
     /* Register the event loop on this thread */
     flb_engine_evl_init();
     flb_engine_evl_set(evl);
@@ -794,6 +814,19 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type & FLB_ENGINE_EV_SCHED) {
                 /* Event type registered by the Scheduler */
                 flb_sched_event_handler(config, event);
+            }
+            else if (event->type == FLB_ENGINE_EV_THREAD_ENGINE) {
+                struct flb_output_flush *output_flush;
+
+                /* Read the coroutine reference */
+                ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
+                if (ret <= 0 || output_flush == 0) {
+                    flb_errno();
+                    continue;
+                }
+
+                /* Init coroutine */
+                flb_coro_resume(output_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
