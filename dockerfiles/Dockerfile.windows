@@ -55,7 +55,6 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
     Copy-Item -Path /src/conf/parsers_openstack.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/parsers_cinder.conf /fluent-bit/etc/; `
     Copy-Item -Path /src/conf/plugins.conf /fluent-bit/etc/; `
-    New-Item -Path  /fluent-bit/bin/ -ItemType "directory"; `
     Copy-Item -Path /src/build/bin/Release/fluent-bit.exe /fluent-bit/bin/; `
     Copy-Item -Path /src/build/bin/Release/fluent-bit.dll /fluent-bit/bin/;
 #
