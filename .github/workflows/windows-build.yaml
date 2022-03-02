@@ -68,11 +68,11 @@ jobs:
 
     - run: |
         docker build -t fluent/fluent-bit:windows-${{ github.sha }} -f ./dockerfiles/Dockerfile.windows .
-        docker save -o /tmp/windows--${{ github.sha }}.tar fluent/fluent-bit:windows-${{ github.sha }}
+        docker save -o windows-${{ github.sha }}.tar fluent/fluent-bit:windows-${{ github.sha }}
 
     - name: Upload containers
       uses: actions/upload-artifact@v2
       with:
         name: windows-containers
-        path: /tmp/windows--${{ github.sha }}.tar
+        path: windows-${{ github.sha }}.tar
         if-no-files-found: error
