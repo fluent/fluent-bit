@@ -3,6 +3,14 @@ on:
   workflow_dispatch:
 
   pull_request:
+    # Limit to just those changes that 'might' affect Windows for automated builds
+    # We can always do a manual build for a branch
+    paths:
+      - '**.h'
+      - '**.c'
+      - '**.windows'
+      - './conf/**'
+      - './cmake/**'
     types:
       - opened
       - reopened
@@ -52,7 +60,8 @@ jobs:
         if-no-files-found: error
 
   windows-build-container:
-    runs-on: windows-latest
+    # Need to match the container base image
+    runs-on: windows-2019
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
