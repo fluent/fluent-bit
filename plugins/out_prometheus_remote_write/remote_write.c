@@ -141,12 +141,12 @@ static int http_post(struct prometheus_remote_write_context *ctx,
         else {
             if (ctx->log_response_payload &&
                 c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                              ctx->host, ctx->port,
                              c->resp.status, c->resp.payload);
             }
             else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
                              ctx->host, ctx->port,
                              c->resp.status);
             }
