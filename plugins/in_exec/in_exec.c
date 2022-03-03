@@ -169,7 +169,6 @@ static int in_exec_config_read(struct flb_exec *ctx,
         }
     }
 
-    ctx->buf_size = (size_t) flb_utils_size_to_bytes(ctx->buf_size_str);
     if (ctx->buf_size == -1) {
         flb_error("[in_exec] buffer size '%s' is invalid", ctx->buf_size_str);
         return -1;
@@ -186,8 +185,8 @@ static int in_exec_config_read(struct flb_exec *ctx,
         ctx->interval_nsec = -1;
     }
 
-    flb_debug("[in_exec] interval_sec=%d interval_nsec=%d oneshot=%i",
-              ctx->interval_sec, ctx->interval_nsec, ctx->oneshot);
+    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i buf_size=%d",
+              ctx->interval_sec, ctx->interval_nsec, ctx->oneshot, ctx->buf_size);
 
     return 0;
 }
@@ -329,8 +328,8 @@ static struct flb_config_map config_map[] = {
       "Set the collector interval (nanoseconds)"
     },
     {
-      FLB_CONFIG_MAP_STR, "buf_size", DEFAULT_BUF_SIZE,
-      0, FLB_TRUE, offsetof(struct flb_exec, buf_size_str),
+      FLB_CONFIG_MAP_SIZE, "buf_size", DEFAULT_BUF_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_exec, buf_size),
       "Set the buffer size"
     },
     {
