@@ -273,6 +273,11 @@ static int cb_td_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_output_plugin out_td_plugin = {
     .name           = "td",
@@ -281,5 +286,6 @@ struct flb_output_plugin out_td_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_td_flush,
     .cb_exit        = cb_td_exit,
+    .config_map     = config_map,
     .flags          = FLB_IO_TLS,
 };
