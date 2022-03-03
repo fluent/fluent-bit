@@ -38,7 +38,6 @@ struct flb_exec {
     struct flb_parser  *parser;
     char *buf;
     size_t buf_size;
-    flb_sds_t buf_size_str;
     struct flb_input_instance *ins;
     int oneshot;
     flb_pipefd_t ch_manager[2];
