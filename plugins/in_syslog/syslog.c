@@ -170,13 +170,13 @@ static struct flb_config_map config_map[] = {
      "Set the permissions for the UNIX socket"
     },
     {
-      FLB_CONFIG_MAP_INT, "buffer_chunk_size", FLB_SYSLOG_CHUNK,
-      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_chunk_size_str),
+      FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_SYSLOG_CHUNK,
+      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_chunk_size),
       "Set the buffer chunk size"
     },
     {
-      FLB_CONFIG_MAP_INT, "buffer_max_size", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_max_size_str),
+      FLB_CONFIG_MAP_SIZE, "buffer_max_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_syslog, buffer_max_size),
       "Set the buffer chunk size"
     },
     {

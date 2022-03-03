@@ -54,8 +54,6 @@ struct flb_syslog {
     size_t buffer_size;
 
     /* Buffers setup */
-    flb_sds_t buffer_max_size_str;
-    flb_sds_t buffer_chunk_size_str;
     size_t buffer_max_size;
     size_t buffer_chunk_size;
 
