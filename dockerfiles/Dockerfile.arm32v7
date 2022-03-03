@@ -1,6 +1,7 @@
-FROM arm32v7/debian:buster-slim as builder
+FROM multiarch/qemu-user-static:x86_64-arm as qemu
+FROM arm32v7/debian:bullseye-slim as builder
 
-COPY --from=multiarch/qemu-user-static:x86_64-arm /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
+COPY --from=qemu /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
 
 # Fluent Bit version
 ENV FLB_MAJOR 1
@@ -10,12 +11,12 @@ ENV FLB_VERSION 1.8.13
 
 ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
 ENV FLB_SOURCE $FLB_TARBALL
-RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-master/
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
 
 ENV DEBIAN_FRONTEND noninteractive
-
-RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && \
-    apt-get update && \
+WORKDIR /tmp/fluent-bit/
+# hadolint ignore=DL3008
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -26,18 +27,18 @@ RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sou
     libssl-dev \
     libsasl2-dev \
     pkg-config \
-    libsystemd-dev/buster-backports \
+    libsystemd-dev \
     zlib1g-dev \
     libpq-dev \
     postgresql-server-dev-all \
     flex \
     bison \
     openssl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
     && c_rehash \
     && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && cd tmp/ && mkdir fluent-bit \
-    && tar zxfv fluent-bit.tar.gz -C ./fluent-bit --strip-components=1 \
-    && cd fluent-bit/build/ \
+    && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
     && rm -rf /tmp/fluent-bit/build/*
 
 WORKDIR /tmp/fluent-bit/build/
@@ -67,21 +68,34 @@ COPY conf/fluent-bit.conf \
      conf/plugins.conf \
      /fluent-bit/etc/
 
-FROM arm32v7/debian:buster-slim
+FROM arm32v7/debian:bullseye-slim
+# Keep old labels for backwards compatibility with any tooling using them
+LABEL description="Fluent Bit container image" vendor="Fluent Organization" version="1.8.13" author="Eduardo Silva <eduardo@calyptia.com>"
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.description="Fluent Bit container image" \
+      org.opencontainers.image.title="Fluent Bit" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="1.8.13" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 COPY --from=builder /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
-
-RUN echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && \
-    apt-get update && \
+# hadolint ignore=DL3008
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       libssl1.1 \
       libsasl2-2 \
       pkg-config \
       libpq5 \
-      libsystemd0/buster-backports \
+      libsystemd0 \
       zlib1g \
       ca-certificates \
-      libatomic1
+      libatomic1 \
+      libgcrypt20 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /fluent-bit /fluent-bit
 RUN rm /usr/bin/qemu-arm-static
