@@ -20,8 +20,8 @@ RUN ./configure && make && make install
 # Fluent Bit version
 ENV FLB_MAJOR 1
 ENV FLB_MINOR 8
-ENV FLB_PATCH 12
-ENV FLB_VERSION 1.8.12
+ENV FLB_PATCH 13
+ENV FLB_VERSION 1.8.13
 
 # Note we use the upstream source directly here
 ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
@@ -72,7 +72,7 @@ RUN make test || true
 FROM registry.access.redhat.com/ubi8/ubi-minimal:8.5 as production
 RUN microdnf update && microdnf install -y openssl libpq systemd-libs shadow-utils && microdnf clean all
 
-ARG FLUENT_BIT_VER=1.8.12
+ARG FLUENT_BIT_VER=1.8.13
 ENV FLUENTBIT_VERSION=$FLUENT_BIT_VER
 
 # https://redhat-connect.gitbook.io/partner-guide-for-red-hat-openshift-and-container/program-on-boarding/technical-prerequisites#dockerfile-requirements
