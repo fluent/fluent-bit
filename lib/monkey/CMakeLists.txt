@@ -1,5 +1,5 @@
 # Let's have fun!
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(monkey C)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 set(CMAKE_INCLUDE_DIRECTORIES_BEFORE ON)

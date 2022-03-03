@@ -27,13 +27,10 @@ ENV FLB_VERSION 1.9.0
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
-ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
-ENV FLB_SOURCE $FLB_TARBALL
-RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit/
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
 ENV DEBIAN_FRONTEND noninteractive
 
-WORKDIR /tmp/fluent-bit/
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -54,10 +51,11 @@ RUN apt-get update && \
     bison \
     libyaml-dev \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
-    && rm -rf /tmp/fluent-bit/build/*
+    && rm -rf /var/lib/apt/lists/*
+
+# Must be run from root of repo
+WORKDIR /tmp/fluent-bit/
+COPY . ./
 
 WORKDIR /tmp/fluent-bit/build/
 RUN cmake -DFLB_RELEASE=On \
@@ -160,6 +158,10 @@ LABEL description="Fluent Bit multi-architecture container image" \
 # Copy the libraries from the extractor stage into root
 COPY --from=deb-extractor /dpkg /
 
+# Copy certificates
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+
+# Finally the binaries as most likely to change
 COPY --from=builder /fluent-bit /fluent-bit
 
 EXPOSE 2020

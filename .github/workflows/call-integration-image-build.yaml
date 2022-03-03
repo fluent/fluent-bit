@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
 
@@ -61,13 +61,29 @@ jobs:
       - name: Build the AMD64 image
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.x86_64-master
+          file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
+          target: production
           push: true
           load: false
+
+      - name: Upload the image just in case as an artefact
+        run: |
+          docker pull $IMAGE
+          docker save --output /tmp/pr-image.tar $IMAGE
+        env:
+          IMAGE: ${{ steps.meta.outputs.tags }}
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: pr-${{ github.event.pull_request.number }}-image
+          path: /tmp/pr-image.tar
+          if-no-files-found: error
 
       - name: Extract metadata from Github
         id: meta-debug
@@ -77,13 +93,14 @@ jobs:
           tags: |
             raw,${{ inputs.image-tag }}-debug
 
-      - name: Build the AMD64 development image
+      - name: Build the AMD64 debug image
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.x86_64-master_debug
+          file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.meta-debug.outputs.tags }}
           labels: ${{ steps.meta-debug.outputs.labels }}
+          target: debug
           platforms: linux/amd64
           push: true
           load: false
@@ -95,7 +112,9 @@ jobs:
     environment: ${{ inputs.environment }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v1

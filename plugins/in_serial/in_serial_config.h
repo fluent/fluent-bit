@@ -38,15 +38,16 @@ struct flb_in_serial_config {
 
     /* config */
     int min_bytes;
-    const char *file;
-    const char *bitrate;
+    flb_sds_t file;
+    flb_sds_t bitrate;
 
     /* separator */
     int sep_len;
-    const char *separator;
+    flb_sds_t separator;
 
     /* Incoming format: JSON only for now */
     int format;
+    flb_sds_t format_str;
 
     struct termios tio;
     struct termios tio_orig;

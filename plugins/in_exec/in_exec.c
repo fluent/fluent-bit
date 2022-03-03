@@ -145,75 +145,49 @@ static int in_exec_config_read(struct flb_exec *ctx,
                                int *interval_nsec
 )
 {
-    const char *cmd = NULL;
-    const char *pval = NULL;
+    int ret;
 
     ctx->ins = in;
 
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(in, "unable to load configuration");
+        return -1;
+    }
+   
     /* filepath setting */
-    cmd = flb_input_get_property("command", in);
-    if (cmd == NULL) {
+    if (ctx->cmd == NULL) {
         flb_error("[in_exec] no input 'command' was given");
         return -1;
     }
-    ctx->cmd = cmd;
 
-    pval = flb_input_get_property("parser", in);
-    if (pval != NULL) {
-        ctx->parser = flb_parser_get(pval, config);
+    if (ctx->parser_name != NULL) {
+        ctx->parser = flb_parser_get(ctx->parser_name, config);
         if (ctx->parser == NULL) {
-            flb_error("[in_exec] requested parser '%s' not found", pval);
+            flb_error("[in_exec] requested parser '%s' not found", ctx->parser_name);
         }
     }
 
-    pval = flb_input_get_property("buf_size", in);
-    if (pval != NULL) {
-        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
-
-        if (ctx->buf_size == -1) {
-            flb_error("[in_exec] buffer size '%s' is invalid", pval);
-            return -1;
-        }
-    }
-    else {
-        ctx->buf_size = DEFAULT_BUF_SIZE;
+    ctx->buf_size = (size_t) flb_utils_size_to_bytes(ctx->buf_size_str);
+    if (ctx->buf_size == -1) {
+        flb_error("[in_exec] buffer size '%s' is invalid", ctx->buf_size_str);
+        return -1;
     }
 
-    /* interval settings */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        *interval_sec = atoi(pval);
-    }
-    else {
-        *interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        *interval_nsec = atoi(pval);
-    }
-    else {
-        *interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
-    if (*interval_sec <= 0 && *interval_nsec <= 0) {
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        *interval_sec = DEFAULT_INTERVAL_SEC;
-        *interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    pval = flb_input_get_property("oneshot", in);
-    if (pval != NULL && flb_utils_bool(pval) == FLB_TRUE) {
-        ctx->oneshot = FLB_TRUE;
-        *interval_sec = -1;
-        *interval_nsec = -1;
-    }
-    else {
-        ctx->oneshot = FLB_FALSE;
+    if (ctx->oneshot) {
+        ctx->interval_sec = -1;
+        ctx->interval_nsec = -1;
     }
 
     flb_debug("[in_exec] interval_sec=%d interval_nsec=%d oneshot=%i",
-              *interval_sec, *interval_nsec, ctx->oneshot);
+              ctx->interval_sec, ctx->interval_nsec, ctx->oneshot);
 
     return 0;
 }
@@ -333,6 +307,40 @@ static int in_exec_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "command", NULL,
+     0, FLB_TRUE, offsetof(struct flb_exec, cmd),
+     "Set the command to execute"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "parser", NULL,
+     0, FLB_TRUE, offsetof(struct flb_exec, parser_name),
+     "Set a parser"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_exec, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_exec, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "buf_size", DEFAULT_BUF_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_exec, buf_size_str),
+      "Set the buffer size"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "bool", "false",
+      0, FLB_TRUE, offsetof(struct flb_exec, oneshot),
+      "execute the command only once"
+    },
+    /* EOF */
+    {0}
+};
 
 struct flb_input_plugin in_exec_plugin = {
     .name         = "exec",
@@ -341,5 +349,6 @@ struct flb_input_plugin in_exec_plugin = {
     .cb_pre_run   = in_exec_prerun,
     .cb_collect   = in_exec_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_exec_exit
+    .cb_exit      = in_exec_exit,
+    .config_map   = config_map
 };
