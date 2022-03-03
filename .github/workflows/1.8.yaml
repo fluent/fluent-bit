@@ -3,8 +3,6 @@ on:
     branches:
       - 1.8
   workflow_dispatch:
-  # DO NOT MERGE THIS - added for testing
-  pull_request:
 
 name: Build and publish for branch 1.8
 jobs:
