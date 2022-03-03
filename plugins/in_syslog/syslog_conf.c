@@ -97,12 +97,19 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
     }
 
     /* Buffer Chunk Size */
-    ctx->buffer_chunk_size = flb_utils_size_to_bytes(ctx->buffer_chunk_size_str);
+    if (ctx->buffer_chunk_size == -1) {
+        flb_plg_error(ins, "invalid buffer_chunk_size");
+        flb_free(ctx);
+        return NULL; 
+    }
 
     /* Buffer Max Size */
-    if (ctx->buffer_max_size_str) {
-        ctx->buffer_max_size = flb_utils_size_to_bytes(ctx->buffer_max_size_str);
-    } else {
+    if (ctx->buffer_max_size == -1) {
+        flb_plg_error(ins, "invalid buffer_max_size");
+        flb_free(ctx);
+        return NULL;
+    }
+    else if (ctx->buffer_max_size == 0) {
         ctx->buffer_max_size = ctx->buffer_chunk_size;
     }
 
