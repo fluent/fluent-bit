@@ -237,18 +237,14 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
     }
 
     /* buffer size setting */
-    if (ctx->buffer_size != NULL) {
-        ctx->buf_size = (size_t) flb_utils_size_to_bytes(ctx->buffer_size);
-
-        if (ctx->buf_size == -1) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", ctx->buffer_size);
-            return -1;
-        }
-        else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
-                          ctx->buffer_size, DEFAULT_BUF_SIZE);
-            return -1;
-        }
+    if (ctx->buf_size == -1) {
+        flb_plg_error(ctx->ins, "buffer_size is invalid");
+        return -1;
+    }
+    else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
+        flb_plg_error(ctx->ins, "buffer_size '%d' must be at least %i bytes",
+                      ctx->buf_size, DEFAULT_BUF_SIZE);
+        return -1;
     }
 
     flb_plg_debug(ctx->ins, "buf_size=%zu", ctx->buf_size);
@@ -355,8 +351,8 @@ static struct flb_config_map config_map[] = {
      "Set and use a fluent-bit parser"
     },
     {
-      FLB_CONFIG_MAP_STR, "buffer_size", (char *)NULL,
-      0, FLB_TRUE, offsetof(struct flb_in_stdin_config, buffer_size),
+      FLB_CONFIG_MAP_SIZE, "buffer_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_stdin_config, buf_size),
       "Set the read buffer size"
     },
     /* EOF */
