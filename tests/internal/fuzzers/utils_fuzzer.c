@@ -34,9 +34,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     TIMEOUT_GUARD
 
-    if (size < 600) {
+    if (size < 750) {
         return 0;
     }
+
+    uint64_t ran_hash = *(uint64_t *)data;
+    char *null_terminated1 = get_null_terminated(25, &data, &size);
+    char *null_terminated2 = get_null_terminated(25, &data, &size);
+    char *null_terminated3 = get_null_terminated(25, &data, &size);
 
     /* Prepare a general null-terminated string */
     char *null_terminated = (char*)malloc(size+1);
@@ -147,6 +152,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                                (const char **)&hash_out_buf, &hash_out_size);
         }
 
+        flb_hash_del(ht, null_terminated1);
+        flb_hash_exists(ht, ran_hash);
+        flb_hash_del_ptr(ht, null_terminated2, strlen(null_terminated2), NULL);
+        flb_hash_get_ptr(ht, null_terminated3, strlen(null_terminated3));
+
         flb_hash_destroy(ht);
         for (int i =0; i<128; i++) {
             flb_free(instances1[i]);
@@ -216,5 +226,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* General cleanup */
     flb_free(null_terminated);
+    flb_free(null_terminated1);
+    flb_free(null_terminated2);
+    flb_free(null_terminated3);
     return 0;
 }
