@@ -158,19 +158,19 @@ static int in_exec_config_read(struct flb_exec *ctx,
    
     /* filepath setting */
     if (ctx->cmd == NULL) {
-        flb_error("[in_exec] no input 'command' was given");
+        flb_plg_error(in, "no input 'command' was given");
         return -1;
     }
 
     if (ctx->parser_name != NULL) {
         ctx->parser = flb_parser_get(ctx->parser_name, config);
         if (ctx->parser == NULL) {
-            flb_error("[in_exec] requested parser '%s' not found", ctx->parser_name);
+            flb_plg_error(in, "requested parser '%s' not found", ctx->parser_name);
         }
     }
 
     if (ctx->buf_size == -1) {
-        flb_error("[in_exec] buffer size '%s' is invalid", ctx->buf_size_str);
+        flb_plg_error(in, "buffer size is invalid");
         return -1;
     }
 
@@ -237,7 +237,7 @@ static int in_exec_init(struct flb_input_instance *in,
 
     ctx->buf = flb_malloc(ctx->buf_size);
     if (ctx->buf == NULL) {
-        flb_error("could not allocate exec buffer");
+        flb_plg_error(in, "could not allocate exec buffer");
         goto init_error;
     }
 
@@ -248,7 +248,7 @@ static int in_exec_init(struct flb_input_instance *in,
 
     if (ctx->oneshot == FLB_TRUE) {
         if (flb_pipe_create(ctx->ch_manager)) {
-            flb_error("could not create pipe for oneshot command");
+            flb_plg_error(in, "could not create pipe for oneshot command");
             goto init_error;
         }
 
@@ -263,7 +263,7 @@ static int in_exec_init(struct flb_input_instance *in,
                                            interval_nsec, config);
     }
     if (ret < 0) {
-        flb_error("could not set collector for exec input plugin");
+        flb_plg_error(in, "could not set collector for exec input plugin");
         goto init_error;
     }
 
