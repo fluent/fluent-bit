@@ -299,6 +299,8 @@ REGISTER_FILTER_PLUGIN("filter_stdout")
 
 REGISTER_FILTER_PLUGIN("filter_geoip2")
 
+REGISTER_FILTER_PLUGIN("filter_nightfall")
+
 # Register external input and output plugins
 if(EXT_IN_PLUGINS)
   string(REPLACE "," ";" plugins ${EXT_IN_PLUGINS})
