@@ -193,8 +193,13 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     event = data;
     event->fd = fd;
+    event->status = MK_EVENT_REGISTERED;
     event->type = MK_EVENT_NOTIFICATION;
     event->mask = MK_EVENT_EMPTY;
+
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
 
 #ifdef NOTE_SECONDS
     /* FreeBSD or LINUX_KQUEUE defined */
@@ -233,6 +238,14 @@ static inline int _mk_event_timeout_destroy(struct mk_event_ctx *ctx, void *data
         mk_libc_error("kevent");
         return ret;
     }
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
+    MK_EVENT_NEW(event);
 
     return 0;
 }
