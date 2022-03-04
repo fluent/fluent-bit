@@ -278,6 +278,7 @@ void flb_test_dummy_records_1234(struct callback_records *records)
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(ftm.tm.tv_sec == 1234);
+            TEST_CHECK(ftm.tm.tv_nsec == 1234);
         }
         msgpack_unpacked_destroy(&result);
     }
@@ -299,6 +300,7 @@ void flb_test_dummy_records_1999(struct callback_records *records)
                                    records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
             flb_time_pop_from_msgpack(&ftm, &result, &obj);
             TEST_CHECK(ftm.tm.tv_sec == 1999);
+            TEST_CHECK(ftm.tm.tv_nsec == 1999);
         }
         msgpack_unpacked_destroy(&result);
     }
@@ -307,8 +309,14 @@ void flb_test_dummy_records_1999(struct callback_records *records)
 void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
-    do_test_records("dummy", flb_test_dummy_records_1234, "start_time_sec", "1234", NULL);
-    do_test_records("dummy", flb_test_dummy_records_1999, "start_time_sec", "1999", NULL);
+    do_test_records("dummy", flb_test_dummy_records_1234, 
+                    "start_time_sec", "1234",
+                    "start_time_nsec", "1234",
+                    NULL);
+    do_test_records("dummy", flb_test_dummy_records_1999,
+                    "start_time_sec", "1999",
+                    "start_time_nsec", "1999",
+                    NULL);
 }
 void flb_test_in_dummy_thread_flush()
 {
