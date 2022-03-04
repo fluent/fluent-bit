@@ -146,6 +146,13 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         }
     }
 
+    /* Config: Timestamp_Mode */
+    ctx->timestamp_mode = FLB_TRUE;
+    tmp = flb_output_get_property("timestamp_mode", ins);
+    if (tmp) {
+        ctx->timestamp_mode = flb_utils_bool(tmp);
+    }
+
     /* Config: queue_full_retries */
     tmp = flb_output_get_property("queue_full_retries", ins);
     if (!tmp) {

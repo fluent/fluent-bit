@@ -145,7 +145,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_MSGP) {
+    if ((ctx->timestamp_mode) &&
+        (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_MSGP)) {
         /* Make room for the timestamp */
         size = map->via.map.size + 1;
         msgpack_pack_map(&mp_pck, size);
