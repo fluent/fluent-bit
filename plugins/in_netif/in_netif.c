@@ -184,18 +184,11 @@ static inline uint64_t calc_diff(struct netif_entry *entry)
 }
 
 #define LINE_LEN 256
-static int in_netif_collect_linux(struct flb_input_instance *i_ins,
-                           struct flb_config *config, void *in_context)
+static read_proc_file_linux(struct flb_in_netif_config *ctx)
 {
-    struct flb_in_netif_config *ctx = in_context;
     FILE *fp = NULL;
     char line[LINE_LEN] = {0};
-    char key_name[LINE_LEN] = {0};
-    int  key_len;
-    int i;
-    int entry_len = ctx->entry_len;
-    msgpack_packer mp_pck;
-    msgpack_sbuffer mp_sbuf;
+    int interface_found = FLB_FALSE;
 
     fp = fopen("/proc/net/dev", "r");
     if (fp == NULL) {
@@ -204,8 +197,29 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
         return -1;
     }
     while(fgets(line, LINE_LEN-1, fp) != NULL){
-        parse_proc_line(line, ctx);
+        if(parse_proc_line(line, ctx) == 0) {
+            interface_found = FLB_TRUE;
+        }
     }
+    fclose(fp);
+    if (interface_found != FLB_TRUE) {
+        return -1;
+    }
+    return 0;
+}
+
+static int in_netif_collect_linux(struct flb_input_instance *i_ins,
+                           struct flb_config *config, void *in_context)
+{
+    struct flb_in_netif_config *ctx = in_context;
+    char key_name[LINE_LEN] = {0};
+    int  key_len;
+    int i;
+    int entry_len = ctx->entry_len;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+
+    read_proc_file_linux(ctx);
 
     if (ctx->first_snapshot == FLB_TRUE) {
         /* if in_netif are called for the first time, assign prev with now */
@@ -245,7 +259,6 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
         msgpack_sbuffer_destroy(&mp_sbuf);
     }
 
-    fclose(fp);
     return 0;
 }
 
@@ -274,6 +287,18 @@ static int in_netif_init(struct flb_input_instance *in,
     if (configure(ctx, in) < 0) {
         config_destroy(ctx);
         return -1;
+    }
+
+    /* Testing interface */
+    if (ctx->test_at_init == FLB_TRUE) {
+        /* Try to read procfs */
+        ret = read_proc_file_linux(ctx);
+        if (ret < 0) {
+            flb_plg_error(in, "%s: init test failed", ctx->interface);
+            config_destroy(ctx);
+            return -1;
+        }
+        flb_plg_info(in, "%s: init test passed", ctx->interface);
     }
 
     /* Set the context */
@@ -314,6 +339,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "verbose", "false",
       0, FLB_TRUE, offsetof(struct flb_in_netif_config, verbose),
       "Enable verbosity"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "test_at_init", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_netif_config, test_at_init),
+      "Testing interface at initialization"
     },
     /* EOF */
     {0}
