@@ -98,7 +98,7 @@ static int cb_retry_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
    {
-    FLB_CONFIG_MAP_INT, "retries", "3",
+    FLB_CONFIG_MAP_INT, "retry", "3",
     0, FLB_TRUE, offsetof(struct retry_ctx, n_retry),
     "Number of retries."
    },
