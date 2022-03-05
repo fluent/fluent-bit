@@ -58,7 +58,7 @@ struct flb_ml_parser *flb_ml_parser_java(struct flb_config *config, char *key)
 
     ret = rule(mlp,
                "start_state, java_start_exception",
-               "/(?:Exception|Error|Throwable|V8 errors stack trace)[:\\r\\n]/",
+               "/(.)(?:Exception|Error|Throwable|V8 errors stack trace)[:\\r\\n]/",
                "java_after_exception", NULL);
     if (ret != 0) {
         rule_error(mlp);
