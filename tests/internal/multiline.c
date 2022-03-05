@@ -728,6 +728,73 @@ static void test_parser_python()
     flb_config_exit(config);
 }
 
+static void test_issue_4949()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    struct record_check *r;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+
+    /* Expected results context */
+    res.key = "log";
+    res.out_records = python_output;
+
+    /* initialize buffers */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Initialize environment */
+    config = flb_config_init();
+
+    /* Create docker multiline mode */
+    ml = flb_ml_create(config, "python-test");
+    TEST_CHECK(ml != NULL);
+
+    /* Generate an instance of multiline python parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "python");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "python", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    /* Generate an instance of multiline java parser */
+    mlp_i = flb_ml_parser_instance_create(ml, "java");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "java", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    flb_time_get(&tm);
+
+    printf("\n");
+    entries = sizeof(python_input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        r = &python_input[i];
+        len = strlen(r->buf);
+
+        /* Package as msgpack */
+        flb_time_get(&tm);
+        flb_ml_append(ml, stream_id, FLB_ML_TYPE_TEXT, &tm, r->buf, len);
+    }
+
+    if (ml) {
+        flb_ml_destroy(ml);
+    }
+
+    flb_config_exit(config);
+}
+
 static void test_parser_elastic()
 {
     int i;
@@ -1141,5 +1208,6 @@ TEST_LIST = {
 
     /* Issues reported on Github */
     { "issue_3817_1"  , test_issue_3817_1},
+    { "issue_4949"    , test_issue_4949},
     { 0 }
 };
