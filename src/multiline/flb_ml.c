@@ -634,7 +634,7 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
         break;
 
     default:
-        flb_error("%s: unknown type=%d", type);
+        flb_error("[multiline] unknown type=%d", type);
         return -1;
     }
 
