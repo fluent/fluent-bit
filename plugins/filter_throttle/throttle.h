@@ -28,10 +28,10 @@
 #define THROTTLE_RET_DROP  1
 
 /* defaults */
-#define THROTTLE_DEFAULT_RATE  1
-#define THROTTLE_DEFAULT_WINDOW  5
+#define THROTTLE_DEFAULT_RATE "1"
+#define THROTTLE_DEFAULT_WINDOW  "5"
 #define THROTTLE_DEFAULT_INTERVAL  "1"
-#define THROTTLE_DEFAULT_STATUS FLB_FALSE;
+#define THROTTLE_DEFAULT_STATUS "false"
 
 struct flb_filter_throttle_ctx {
     double    max_rate;
