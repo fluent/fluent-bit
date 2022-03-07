@@ -45,6 +45,11 @@ static int cb_counter_init(struct flb_output_instance *ins,
     }
     ctx->total = 0;
     flb_output_set_context(ins, ctx);
+    if (flb_output_config_map_set(ins, (void *)ctx) == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return -1;
+    }
 
     return 0;
 }
