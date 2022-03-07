@@ -217,13 +217,14 @@ void do_test_records(char *system, void (*records_cb)(struct callback_records *)
     
     records_cb(records);
     
+    flb_stop(ctx);
+
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);
     }
     flb_free(records->records);
     flb_free(records);
-    
-    flb_stop(ctx);
+
     flb_destroy(ctx);
 }
 
