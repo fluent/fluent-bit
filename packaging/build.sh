@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -eux
 
 # Never rely on PWD so we can invoke from anywhere
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -81,6 +81,7 @@ if ! docker build \
     --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     $FLB_ARG \
     -t "$MAIN_IMAGE" \
+    -f "$IMAGE_CONTEXT_DIR/Dockerfile" \
     "$SCRIPT_DIR/.."
 then
     echo "Error building main docker image $MAIN_IMAGE"
