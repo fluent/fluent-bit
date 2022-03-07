@@ -69,23 +69,14 @@ RUN apt-get -qq update && \
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
 
-ARG FLB_PREFIX
-ARG FLB_VERSION
-ARG FLB_SRC
-
-ENV FLB_PREFIX=$FLB_PREFIX
-ENV FLB_VERSION=$FLB_VERSION
-ENV FLB_SRC=$FLB_SRC
-
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
-ENV FLB_TARBALL http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip
-COPY sources/$FLB_SRC /
+# Docker context must be the base of the repo
+WORKDIR /tmp/fluent-bit/
+COPY . ./
 
-WORKDIR /tmp
-RUN if [ -z "$FLB_SRC" ] ; then wget -q -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
-
+WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 ARG CFLAGS="-std=gnu99"
 ARG CMAKE_INSTALL_PREFIX=/opt/td-agent-bit/
@@ -99,7 +90,6 @@ ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 
-WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
