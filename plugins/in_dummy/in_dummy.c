@@ -142,6 +142,9 @@ static int configure(struct flb_dummy *ctx,
     int root_type;
     int  ret = -1;
 
+    ctx->dummy_message = NULL;
+    ctx->dummy_message_len = 0;
+
     ctx->ref_msgpack = NULL;
 
     ret = flb_input_config_map_set(in, (void *) ctx);
