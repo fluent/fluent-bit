@@ -20,6 +20,7 @@
 #include <stdio.h>
 
 #include <fluent-bit/flb_filter.h>
+#include <fluent-bit/flb_filter_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 
@@ -33,6 +34,10 @@ static int cb_stdout_init(struct flb_filter_instance *f_ins,
     (void) config;
     (void) data;
 
+    if (flb_filter_config_map_set(f_ins, (void *)config) == -1) {
+        flb_plg_error(f_ins, "unable to load configuration");
+        return -1;
+    }
     return 0;
 }
 
@@ -66,11 +71,17 @@ static int cb_stdout_filter(const void *data, size_t bytes,
     return FLB_FILTER_NOTOUCH;
 }
 
+static struct flb_config_map config_map[] = {
+    /* EOF */
+    {0}
+};
+
 struct flb_filter_plugin filter_stdout_plugin = {
     .name         = "stdout",
     .description  = "Filter events to STDOUT",
     .cb_init      = cb_stdout_init,
     .cb_filter    = cb_stdout_filter,
     .cb_exit      = NULL,
+    .config_map   = config_map,
     .flags        = 0
 };
