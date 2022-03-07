@@ -107,42 +107,14 @@ static inline int throttle_data(struct flb_filter_throttle_ctx *ctx)
 
 static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_instance *f_ins)
 {
-    const char *str = NULL;
-    double val  = 0;
-    char *endp;
+    int ret;
 
-    /* rate per second */
-    str = flb_filter_get_property("rate", f_ins);
-
-    if (str != NULL && (val = strtod(str, &endp)) > 1) {
-        ctx->max_rate = val;
-    } else {
-        ctx->max_rate = THROTTLE_DEFAULT_RATE;
+    ret = flb_filter_config_map_set(f_ins, ctx);
+    if (ret == -1)  {
+        flb_plg_error(f_ins, "unable to load configuration");
+        return -1;
     }
 
-    /* windows size */
-    str = flb_filter_get_property("window", f_ins);
-    if (str != NULL && (val = strtoul(str, &endp, 10)) > 1) {
-        ctx->window_size = val;
-    } else {
-        ctx->window_size = THROTTLE_DEFAULT_WINDOW;
-    }
-
-    /* print informational status */
-    str = flb_filter_get_property("print_status", f_ins);
-    if (str != NULL) {
-        ctx->print_status = flb_utils_bool(str);
-    } else {
-        ctx->print_status = THROTTLE_DEFAULT_STATUS;
-    }
-
-    /* sliding interval */
-    str = flb_filter_get_property("interval", f_ins);
-    if (str != NULL) {
-        ctx->slide_interval = str;
-    } else {
-        ctx->slide_interval = THROTTLE_DEFAULT_INTERVAL;
-    }
     return 0;
 }
 
@@ -281,11 +253,41 @@ static int cb_throttle_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    // rate
+    // window
+    // print_status
+    // interval
+    {
+     FLB_CONFIG_MAP_DOUBLE, "rate", THROTTLE_DEFAULT_RATE,
+     0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, max_rate),
+     "Set throttle rate"
+    },
+    {
+     FLB_CONFIG_MAP_INT, "window", THROTTLE_DEFAULT_WINDOW,
+     0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, window_size),
+     "Set throttle window"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "print_status", THROTTLE_DEFAULT_STATUS,
+     0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, print_status),
+     "Set whether or not to print status information"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "interval", THROTTLE_DEFAULT_INTERVAL,
+     0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, slide_interval),
+     "Set the slide interval"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_filter_plugin filter_throttle_plugin = {
     .name         = "throttle",
     .description  = "Throttle messages using sliding window algorithm",
     .cb_init      = cb_throttle_init,
     .cb_filter    = cb_throttle_filter,
     .cb_exit      = cb_throttle_exit,
+    .config_map   = config_map,
     .flags        = 0
 };
