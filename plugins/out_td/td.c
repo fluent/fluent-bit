@@ -274,6 +274,26 @@ static int cb_td_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_STR, "API", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, api),
+      "Set the API key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "Database", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, db_name),
+      "Set the Database file"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "Table", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, db_table),
+      "Set the Database Table"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "Region", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_td, region_str),
+      "Set the Region: us or jp"
+    },
     /* EOF */
     {0}
 };
