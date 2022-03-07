@@ -29,7 +29,6 @@ jobs:
     with:
       version: master
       ref: master
-      branch: master
       build_matrix: ${{ needs.master-build-generate-matrix.outputs.build-matrix }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
