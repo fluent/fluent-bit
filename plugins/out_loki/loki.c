@@ -357,7 +357,7 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
             /* record accessor type */
             ra_val = flb_ra_translate(kv->ra_val, tag, tag_len, *(map), NULL);
             if (!ra_val || flb_sds_len(ra_val) == 0) {
-                flb_plg_warn(ctx->ins, "could not translate record accessor");
+                flb_plg_debug(ctx->ins, "could not translate record accessor");
             }
             else {
                 flb_mp_map_header_append(&mh);
