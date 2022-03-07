@@ -93,23 +93,15 @@ ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
-ARG FLB_PREFIX
-ARG FLB_VERSION
-ARG FLB_SRC
-
-ENV FLB_PREFIX=$FLB_PREFIX
-ENV FLB_VERSION=$FLB_VERSION
-ENV FLB_SRC=$FLB_SRC
 
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
-ENV FLB_TARBALL http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip
-COPY sources/$FLB_SRC /
+# Docker context must be the base of the repo
+WORKDIR /tmp/fluent-bit/
+COPY . ./
 
-WORKDIR /tmp
-RUN if [ -z "$FLB_SRC" ] ; then wget -q -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
-
+WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 # Unused
 ARG CFLAGS
@@ -122,7 +114,6 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 
-WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 # cmake3 exists in every image - cmake references the older cmake2 in centos 7
 RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
