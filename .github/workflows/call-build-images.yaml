@@ -5,7 +5,11 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version of Fluent Bit to build as a tag, commit, SHA.
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
         type: string
         required: true
       registry:
@@ -51,7 +55,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          ref: ${{ inputs.version }}
+          ref: ${{ inputs.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
