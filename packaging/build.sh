@@ -36,7 +36,7 @@ fi
 
 if [ -z "$FLB_BRANCH" ]; then
     # The standard tags have a v prefix but we may want to build others
-    if curl -sL --output /dev/null --head --fail "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
+    if curl -sL --output /dev/null --head --fail --retry 3 "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
         FLB_PREFIX="v"
     fi
 fi
@@ -99,7 +99,7 @@ if [ -n "$FLB_TARGZ" ]; then
 else
     # Check we have a valid remote source URL
     FLB_SOURCE_URL="http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip"
-    if ! curl -sL --output /dev/null --head --fail "$FLB_SOURCE_URL" ; then
+    if ! curl -sL --output /dev/null --head --fail --retry 3 "$FLB_SOURCE_URL" ; then
         echo "Unable to download source from URL:$FLB_SOURCE_URL "
         exit 1
     fi
