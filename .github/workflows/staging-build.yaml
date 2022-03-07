@@ -173,9 +173,9 @@ jobs:
         continue-on-error: true
         run: |
           docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}
-          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}
+          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}
           docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}-debug
-          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}-debug.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}-debug
+          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}-debug.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}-debug
         shell: bash
         working-directory: release-upload
 
