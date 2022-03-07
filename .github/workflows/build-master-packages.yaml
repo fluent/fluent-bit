@@ -28,6 +28,7 @@ jobs:
     uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: master
+      ref: master
       branch: master
       build_matrix: ${{ needs.master-build-generate-matrix.outputs.build-matrix }}
     secrets:
