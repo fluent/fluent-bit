@@ -46,6 +46,10 @@ RUN yum -y update && \
 ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
+# Need larger page size
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
+ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+
 # centos/8 base image
 FROM centos:8 as centos-8-base
 
@@ -89,6 +93,10 @@ RUN yum -y update && \
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+
+# Need larger page size
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
+ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -134,6 +142,7 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
            -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
            -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+           -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
            ../
 
 VOLUME [ "/output" ]
