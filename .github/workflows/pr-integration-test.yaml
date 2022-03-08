@@ -23,7 +23,7 @@ jobs:
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/pr-${{ github.event.number }}
-      image-tag: ${{ github.event.pull_request.head.ref }}
+      image-tag: ${{ github.sha }}
       environment: integration
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -46,7 +46,7 @@ jobs:
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
-      image_tag: ${{ github.event.pull_request.head.ref }}
+      image-tag: ${{ github.sha }}
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}
