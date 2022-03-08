@@ -22,12 +22,6 @@
 #ifndef FLB_FILTER_GEOIP2_H
 #define FLB_FILTER_GEOIP2_H
 
-struct geoip2_lookup_key {
-    char *key;
-    int key_len;
-    struct mk_list _head;
-};
-
 struct geoip2_record {
     char *lookup_key;
     char *key;
@@ -39,10 +33,12 @@ struct geoip2_record {
 };
 
 struct geoip2_ctx {
+    flb_sds_t database;
     MMDB_s *mmdb;
     int lookup_keys_num;
     int records_num;
-    struct mk_list lookup_keys;
+    struct mk_list *lookup_keys;
+    struct mk_list *record_keys;
     struct mk_list records;
     struct flb_filter_instance *ins;
 };
