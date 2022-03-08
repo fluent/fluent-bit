@@ -47,7 +47,7 @@ ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # Need larger page size
-ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16"
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # centos/8 base image
@@ -95,7 +95,7 @@ ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
 # Need larger page size
-ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16"
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
