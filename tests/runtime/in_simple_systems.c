@@ -333,10 +333,45 @@ void flb_test_dummy_records_today(struct callback_records *records)
     }
 }
 
+void flb_test_dummy_records_message(struct callback_records *records)
+{
+    int i;
+    msgpack_unpacked result;
+    msgpack_object *obj;
+    size_t off = 0;
+    struct flb_time ftm;
+    struct flb_time now;
+
+    flb_time_get(&now);
+    /* set 5 minutes in the past since this is invoked after the test began */
+    now.tm.tv_sec -= (5 * 60);
+
+    TEST_CHECK(records->num_records > 0);
+    for (i = 0; i < records->num_records; i++) {
+        msgpack_unpacked_init(&result);
+
+        while (msgpack_unpack_next(&result, records->records[i].data, 
+                                   records->records[i].size, &off) == MSGPACK_UNPACK_SUCCESS) {
+            flb_time_pop_from_msgpack(&ftm, &result, &obj);
+            TEST_CHECK(obj->type == MSGPACK_OBJECT_MAP);
+            TEST_CHECK(strncmp("new_key", 
+                               obj->via.map.ptr[0].key.via.str.ptr,
+                               obj->via.map.ptr[0].key.via.str.size) == 0);
+            TEST_CHECK(strncmp("new_value", 
+                               obj->via.map.ptr[0].val.via.str.ptr,
+                               obj->via.map.ptr[0].val.via.str.size) == 0);
+        }
+        msgpack_unpacked_destroy(&result);
+    }
+}
+
 void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
     do_test_records("dummy", flb_test_dummy_records_today, NULL);
+    do_test_records("dummy", flb_test_dummy_records_message,
+                    "dummy", "{\"new_key\": \"new_value\"}",
+                    NULL);
     do_test_records("dummy", flb_test_dummy_records_1234, 
                     "start_time_sec", "1234",
                     "start_time_nsec", "1234",
