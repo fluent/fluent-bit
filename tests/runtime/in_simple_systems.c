@@ -390,6 +390,7 @@ void flb_test_dummy_records_message_default(struct callback_records *records)
 void flb_test_in_dummy_flush()
 {
     do_test("dummy", NULL);
+    do_test_records("dummy", flb_test_dummy_records_message_default, NULL);
     do_test_records("dummy", flb_test_dummy_records_today, NULL);
     do_test_records("dummy", flb_test_dummy_records_message,
                     "dummy", "{\"new_key\": \"new_value\"}",
