@@ -715,8 +715,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
   # Add support for options like page size
-  set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3" CACHE string "Extra options to configure jemalloc")
-  message(STATUS "jemalloc configuration: \"${FLB_JEMALLOC_OPTIONS}\"")
+  set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3 " CACHE string "Extra options to configure jemalloc")
   # Split into a list so CMake handles it correctly when passing to configure command
   separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
 
