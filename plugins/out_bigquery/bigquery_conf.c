@@ -294,13 +294,13 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         }
 
         if (!creds->client_email) {
-            flb_plg_error(ctx->ins, "client_email is not defined");
+            flb_plg_error(ctx->ins, "service_account_email/client_email is not defined");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
 
         if (!creds->private_key) {
-            flb_plg_error(ctx->ins, "private_key is not defined");
+            flb_plg_error(ctx->ins, "service_account_secret/private_key is not defined");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
