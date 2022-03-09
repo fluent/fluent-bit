@@ -189,6 +189,13 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->config = config;
 
+    ret = flb_output_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return NULL;
+    }
+
     /* Lookup credentials file */
     creds = flb_calloc(1, sizeof(struct flb_bigquery_oauth_credentials));
     if (!creds) {
