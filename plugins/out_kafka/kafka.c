@@ -517,7 +517,7 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_STR, "format", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, format_str),
-    "Set the rcord output format."
+    "Set the record output format."
    },
    {
     FLB_CONFIG_MAP_STR, "message_key", (char *)NULL,
@@ -582,7 +582,7 @@ static struct flb_config_map config_map[] = {
    },
 #endif
    {
-    FLB_CONFIG_MAP_STR, "topic", (char *)NULL,
+    FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
     0, FLB_FALSE, 0,
     "Set the kafka topics, delimited by commas."
    },
