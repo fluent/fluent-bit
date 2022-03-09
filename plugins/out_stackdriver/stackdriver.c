@@ -2353,6 +2353,123 @@ static int cb_stackdriver_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "google_service_credentials", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_stackdriver, credentials_file),
+     "Set the path for the google service credentials file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metadata_server", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_stackdriver, metadata_server),
+     "Set the metadata server"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "service_account_email", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, client_email),
+      "Set the service account email"
+    },
+    // set in flb_bigquery_oauth_credentials
+    {
+      FLB_CONFIG_MAP_STR, "service_account_secret", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, private_key),
+      "Set the service account secret"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "export_to_project_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, export_to_project_id),
+      "Export to project id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "resource", FLB_SDS_RESOURCE_TYPE,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, resource),
+      "Set the resource"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "severity_key", DEFAULT_SEVERITY_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, severity_key),
+      "Set the severity key"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "autoformat_stackdriver_trace", "false",
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, autoformat_stackdriver_trace),
+      "Autoformat the stacrdriver trace"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "trace_key", DEFAULT_TRACE_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, trace_key),
+      "Set the trace key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "log_name_key", DEFAULT_LOG_NAME_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, log_name_key),
+      "Set the logname key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "http_request_key", HTTPREQUEST_FIELD_IN_JSON,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, http_request_key),
+      "Set the http request key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "k8s_cluster_name", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, cluster_name),
+      "Set the kubernetes cluster name"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "k8s_cluster_location", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, cluster_location),
+      "Set the kubernetes cluster location"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "location", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, location),
+      "Set the resource location"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "namespace", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, namespace_id),
+      "Set the resource namespace"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "node_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, node_id),
+      "Set the resource node id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "job", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, job),
+      "Set the resource job"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "task_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, task_id),
+      "Set the resource task id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "labels_key", DEFAULT_LABELS_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, labels_key),
+      "Set the labels key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "tag_prefix", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, tag_prefix),
+      "Set the tag prefix"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "stackdriver_agent", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, stackdriver_agent),
+      "Set the stackdriver agent"
+    },
+    /* Custom Regex */
+    {
+      FLB_CONFIG_MAP_STR, "custom_k8s_regex", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, custom_k8s_regex),
+      "Set a custom kubernetes regex filter"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_stackdriver_plugin = {
     .name         = "stackdriver",
     .description  = "Send events to Google Stackdriver Logging",
@@ -2360,6 +2477,7 @@ struct flb_output_plugin out_stackdriver_plugin = {
     .cb_flush     = cb_stackdriver_flush,
     .cb_exit      = cb_stackdriver_exit,
     .workers      = 2,
+    .config_map   = config_map,
 
     /* Test */
     .test_formatter.callback = stackdriver_format_test,

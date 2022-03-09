@@ -174,7 +174,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     const char *tmp;
     const char *backwards_compatible_env_var;
     struct flb_stackdriver *ctx;
-    flb_sds_t http_request_key;
     size_t http_request_key_size;
 
     /* Allocate config context */
@@ -185,13 +184,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
     ctx->ins = ins;
     ctx->config = config;
+    
+    ret = flb_output_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* Lookup metadata server URL */
-    tmp = flb_output_get_property("metadata_server", ctx->ins);
-    if(tmp) {
-        ctx->metadata_server = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->metadata_server == NULL) {
         tmp = getenv("METADATA_SERVER");
         if(tmp) {
             ctx->metadata_server = flb_sds_create(tmp);
@@ -203,11 +205,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     flb_plg_info(ctx->ins, "metadata_server set to %s", ctx->metadata_server);
 
     /* Lookup credentials file */
-    tmp = flb_output_get_property("google_service_credentials", ins);
-    if (tmp) {
-        ctx->credentials_file = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->credentials_file == NULL) {
         /*
          * Use GOOGLE_APPLICATION_CREDENTIALS to fetch the credentials.
          * GOOGLE_SERVICE_CREDENTIALS is checked for backwards compatibility.
@@ -241,11 +239,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
          */
 
         /* Service Account Email */
-        tmp = flb_output_get_property("service_account_email", ins);
-        if (tmp) {
-            ctx->client_email = flb_sds_create(tmp);
-        }
-        else {
+        if (ctx->client_email == NULL) {
             tmp = getenv("SERVICE_ACCOUNT_EMAIL");
             if (tmp) {
                 ctx->client_email = flb_sds_create(tmp);
@@ -253,11 +247,7 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
 
         /* Service Account Secret */
-        tmp = flb_output_get_property("service_account_secret", ins);
-        if (tmp) {
-            ctx->private_key = flb_sds_create(tmp);
-        }
-        else {
+        if (ctx->private_key == NULL) {
             tmp = getenv("SERVICE_ACCOUNT_SECRET");
             if (tmp) {
                 ctx->private_key = flb_sds_create(tmp);
@@ -289,67 +279,12 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->metadata_server_auth = true;
     }
 
-    tmp = flb_output_get_property("export_to_project_id", ins);
-    if (tmp) {
-        ctx->export_to_project_id = flb_sds_create(tmp);
-        flb_plg_info(ctx->ins, "export_to_project_id set to %s", ctx->export_to_project_id);
-    }
-
-    tmp = flb_output_get_property("resource", ins);
-    if (tmp) {
-        ctx->resource = flb_sds_create(tmp);
-    }
-    else {
-        ctx->resource = flb_sds_create(FLB_SDS_RESOURCE_TYPE);
-    }
-
-    tmp = flb_output_get_property("severity_key", ins);
-    if (tmp) {
-        ctx->severity_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->severity_key = flb_sds_create(DEFAULT_SEVERITY_KEY);
-    }
-
-    tmp = flb_output_get_property("autoformat_stackdriver_trace", ins);
-    if (tmp) {
-        ctx->autoformat_stackdriver_trace = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->autoformat_stackdriver_trace = FLB_FALSE;
-    }
-
-    tmp = flb_output_get_property("trace_key", ins);
-    if (tmp) {
-        ctx->trace_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->trace_key = flb_sds_create(DEFAULT_TRACE_KEY);
-    }
-
-    tmp = flb_output_get_property("log_name_key", ins);
-    if (tmp) {
-        ctx->log_name_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
-    }
-
-    tmp = flb_output_get_property("http_request_key", ins);
-    if (tmp) {
-        http_request_key = flb_sds_create(tmp);
-        http_request_key_size = flb_sds_len(http_request_key);
-        if (http_request_key_size < INT_MAX) {
-            ctx->http_request_key = http_request_key;
-            ctx->http_request_key_size = (int)http_request_key_size;
-        } 
-        else {
+    if (ctx->http_request_key) {
+        http_request_key_size = flb_sds_len(ctx->http_request_key);
+        if (http_request_key_size >= INT_MAX) {
             flb_plg_error(ctx->ins, "http_request_key is too long");
+            return NULL;
         }
-    }
-    else {
-        ctx->http_request_key = flb_sds_create(HTTPREQUEST_FIELD_IN_JSON);
-        ctx->http_request_key_size = HTTP_REQUEST_KEY_SIZE;
     }
 
     if (flb_sds_cmp(ctx->resource, "k8s_container",
@@ -360,16 +295,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
                     flb_sds_len(ctx->resource)) == 0) {
 
         ctx->is_k8s_resource_type = FLB_TRUE;
-
-        tmp = flb_output_get_property("k8s_cluster_name", ins);
-        if (tmp) {
-            ctx->cluster_name = flb_sds_create(tmp);
-        }
-
-        tmp = flb_output_get_property("k8s_cluster_location", ins);
-        if (tmp) {
-            ctx->cluster_location = flb_sds_create(tmp);
-        }
 
         if (!ctx->cluster_name || !ctx->cluster_location) {
             flb_plg_error(ctx->ins, "missing k8s_cluster_name "
@@ -386,43 +311,28 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
 
         ctx->is_generic_resource_type = FLB_TRUE;
 
-        tmp = flb_output_get_property("location", ins);
-        if (tmp) {
-            ctx->location = flb_sds_create(tmp);
-        } else {
+        if (ctx->location == NULL) {
             flb_plg_error(ctx->ins, "missing generic resource's location");
         }
 
-        tmp = flb_output_get_property("namespace", ins);
-        if (tmp) {
-            ctx->namespace_id = flb_sds_create(tmp);
-        } else {
+        if (ctx->namespace_id == NULL) {
             flb_plg_error(ctx->ins, "missing generic resource's namespace");
         }
 
         if (flb_sds_cmp(ctx->resource, "generic_node",
                     flb_sds_len(ctx->resource)) == 0) {
-            tmp = flb_output_get_property("node_id", ins);
-            if (tmp) {
-                ctx->node_id = flb_sds_create(tmp);
-            } else {
+            if (ctx->node_id == NULL) {
                 flb_plg_error(ctx->ins, "missing generic_node's node_id");
                 flb_stackdriver_conf_destroy(ctx);
                 return NULL;
             }
         }
         else {
-            tmp = flb_output_get_property("job", ins);
-            if (tmp) {
-                ctx->job = flb_sds_create(tmp);
-            } else {
+            if (ctx->job == NULL) {
                 flb_plg_error(ctx->ins, "missing generic_task's job");
             }
 
-            tmp = flb_output_get_property("task_id", ins);
-            if (tmp) {
-                ctx->task_id = flb_sds_create(tmp);
-            } else {
+            if (ctx->task_id == NULL) {
                 flb_plg_error(ctx->ins, "missing generic_task's task_id");
             }
 
@@ -438,34 +348,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         }
     }
 
-    tmp = flb_output_get_property("labels_key", ins);
-    if (tmp) {
-        ctx->labels_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->labels_key = flb_sds_create(DEFAULT_LABELS_KEY);
-    }
-
-    tmp = flb_output_get_property("tag_prefix", ins);
-    if (tmp) {
-        ctx->tag_prefix = flb_sds_create(tmp);
-    }
-    else {
-        if (ctx->is_k8s_resource_type == FLB_TRUE) {
-            ctx->tag_prefix = flb_sds_create(ctx->resource);
-            ctx->tag_prefix = flb_sds_cat(ctx->tag_prefix, ".", 1);
-        }
-    }
-
-    tmp = flb_output_get_property("stackdriver_agent", ins);
-    if (tmp) {
-        ctx->stackdriver_agent = flb_sds_create(tmp);
-    }
-
-    /* Custom Regex */
-    tmp = flb_output_get_property("custom_k8s_regex", ins);
-    if (tmp) {
-        ctx->custom_k8s_regex = flb_sds_create(tmp);
+    if (ctx->tag_prefix == NULL && ctx->is_k8s_resource_type == FLB_TRUE) {
+        ctx->tag_prefix = flb_sds_create(ctx->resource);
+        ctx->tag_prefix = flb_sds_cat(ctx->tag_prefix, ".", 1);
     }
 
     /* Register metrics */
@@ -519,42 +404,13 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->local_resource_id);
     }
 
-    if (ctx->is_generic_resource_type){
-        flb_sds_destroy(ctx->location);
-        flb_sds_destroy(ctx->namespace_id);
-        if(ctx->node_id){
-            flb_sds_destroy(ctx->node_id);
-        }
-        else {
-            flb_sds_destroy(ctx->job);
-            flb_sds_destroy(ctx->task_id);
-        }
-    }
-
-    flb_sds_destroy(ctx->metadata_server);
-    flb_sds_destroy(ctx->credentials_file);
     flb_sds_destroy(ctx->type);
     flb_sds_destroy(ctx->project_id);
-    flb_sds_destroy(ctx->export_to_project_id);
     flb_sds_destroy(ctx->private_key_id);
-    flb_sds_destroy(ctx->private_key);
-    flb_sds_destroy(ctx->client_email);
     flb_sds_destroy(ctx->client_id);
     flb_sds_destroy(ctx->auth_uri);
     flb_sds_destroy(ctx->token_uri);
-    flb_sds_destroy(ctx->resource);
-    flb_sds_destroy(ctx->severity_key);
-    flb_sds_destroy(ctx->trace_key);
-    flb_sds_destroy(ctx->log_name_key);
-    flb_sds_destroy(ctx->http_request_key);
-    flb_sds_destroy(ctx->labels_key);
-    flb_sds_destroy(ctx->tag_prefix);
-    flb_sds_destroy(ctx->custom_k8s_regex);
-
-    if (ctx->stackdriver_agent) {
-        flb_sds_destroy(ctx->stackdriver_agent);
-    }
-
+    
     if (ctx->metadata_server_auth) {
         flb_sds_destroy(ctx->zone);
         flb_sds_destroy(ctx->instance_id);
