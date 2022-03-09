@@ -3,6 +3,15 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version of Fluent Bit to build
+        required: false
+        default: master
+      target:
+        description: Only build a specific target, intended for debug/test builds only.
+        required: false
+        default: ""
 
 name: Build packages for master
 jobs:
@@ -18,6 +27,14 @@ jobs:
           matrix=$((
             echo '{ "distro" : [ "debian/bullseye", "ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04" ]}'
           ) | jq -c .)
+          if [ -n "${{ github.event.inputs.target || '' }}" ]; then
+            echo "Overriding matrix to build: ${{ github.event.inputs.target }}"
+            matrix=$((
+              echo '{ "distro" : ['
+              echo '"${{ github.event.inputs.target }}"'
+              echo ']}'
+            ) | jq -c .)
+          fi
           echo $matrix
           echo $matrix| jq .
           echo "::set-output name=matrix::$matrix"
