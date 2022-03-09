@@ -21,7 +21,6 @@ This directory contains Docker files used to build [Fluent Bit](http://fluentbit
 | Ubuntu       |   16.04 / Xenial Xerus  | x86_64  | ubuntu/16.04            |
 | Raspbian     |   11 / Bullseye         | arm32v7 | raspbian/bullseye       |
 | Raspbian     |   10 / Buster           | arm32v7 | raspbian/buster         |
-| openSUSE     |   15 / Leap             | x86_64  | opensuse/leap           |
 
 ## Usage
 

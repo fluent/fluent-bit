@@ -1,9 +1,14 @@
+name: Build packages for master or a tagged release
+
 on:
   push:
     branches:
       - master
+    # Any tag starting with 'v'
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
-name: Build packages for master
 jobs:
   build-distro-packages:
     name: build packages
@@ -26,3 +31,36 @@ jobs:
           name: ${{ matrix.format }}
           path: |
             ./*.${{matrix.format}}
+
+  release:
+    name: Create release and upload packages
+    needs: build-distro-packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artefacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts/
+
+      - name: Display structure of downloaded files
+        run: ls -R
+        working-directory: artifacts
+        shell: bash
+
+      - name: Unstable release on push to master to make it easier to download
+        uses: pyTooling/Actions/releaser@r0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: 'unstable'
+          files: |
+            artifacts/**/*
+
+      - name: Release on tag
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/**/*

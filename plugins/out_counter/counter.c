@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -46,6 +45,11 @@ static int cb_counter_init(struct flb_output_instance *ins,
     }
     ctx->total = 0;
     flb_output_set_context(ins, ctx);
+    if (flb_output_config_map_set(ins, (void *)ctx) == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return -1;
+    }
 
     return 0;
 }
@@ -86,11 +90,17 @@ static int cb_counter_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+   /* EOF */
+   {0}
+};
+
 struct flb_output_plugin out_counter_plugin = {
     .name         = "counter",
     .description  = "Records counter",
     .cb_init      = cb_counter_init,
     .cb_flush     = cb_counter_flush,
     .cb_exit      = cb_counter_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -95,45 +94,24 @@ static int init_entry_linux(struct flb_in_netif_config *ctx)
 }
 
 static int configure(struct flb_in_netif_config *ctx,
-                     struct flb_input_instance *in,
-                     int *interval_sec,
-                     int *interval_nsec)
+                     struct flb_input_instance *in)
 {
-    const char *pval = NULL;
+    int ret;
     ctx->map_num = 0;
 
-    /* interval settings */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        *interval_sec = atoi(pval);
-    }
-    else {
-        *interval_sec = DEFAULT_INTERVAL_SEC;
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(in, "unable to load configuration");
+        return -1;
     }
 
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        *interval_nsec = atoi(pval);
-    }
-    else {
-        *interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
-    if (*interval_sec <= 0 && *interval_nsec <= 0) {
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        *interval_sec = DEFAULT_INTERVAL_SEC;
-        *interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    pval = flb_input_get_property("verbose", in);
-    if (pval != NULL && flb_utils_bool(pval)) {
-        ctx->verbose = FLB_TRUE;
-    }
-    else {
-        ctx->verbose = FLB_FALSE;
-    }
-
-    ctx->interface = flb_input_get_property("interface", in);
     if (ctx->interface == NULL) {
         flb_plg_error(ctx->ins, "'interface' is not set");
         return -1;
@@ -281,8 +259,6 @@ static int in_netif_init(struct flb_input_instance *in,
                          struct flb_config *config, void *data)
 {
     int ret;
-    int interval_sec = 0;
-    int interval_nsec = 0;
 
     struct flb_in_netif_config *ctx = NULL;
     (void) data;
@@ -295,7 +271,7 @@ static int in_netif_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
-    if (configure(ctx, in, &interval_sec, &interval_nsec) < 0) {
+    if (configure(ctx, in) < 0) {
         config_destroy(ctx);
         return -1;
     }
@@ -306,8 +282,8 @@ static int in_netif_init(struct flb_input_instance *in,
     /* Set our collector based on time */
     ret = flb_input_set_collector_time(in,
                                        in_netif_collect,
-                                       interval_sec,
-                                       interval_nsec,
+                                       ctx->interval_sec,
+                                       ctx->interval_nsec,
                                        config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "Could not set collector for Proc input plugin");
@@ -318,6 +294,31 @@ static int in_netif_init(struct flb_input_instance *in,
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_STR, "interface", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_netif_config, interface),
+      "Set the interface, eg: eth0 or enp1s0"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_netif_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_netif_config, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "verbose", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_netif_config, verbose),
+      "Enable verbosity"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_netif_plugin = {
     .name         = "netif",
@@ -327,5 +328,6 @@ struct flb_input_plugin in_netif_plugin = {
     .cb_collect   = in_netif_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_netif_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

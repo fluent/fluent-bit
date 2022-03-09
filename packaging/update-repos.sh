@@ -15,8 +15,8 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
     [[ ! -d "$REPO_DIR" ]] && continue
 
-    # Sign all RPMs created for this version
-    find "$REPO_DIR" -name "td-agent-bit-${VERSION}*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
+    # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
+    find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
 
     # Create full metadata for all RPMs in the directory
     createrepo -dvp "$REPO_DIR"
@@ -76,8 +76,7 @@ EOF
     aptly -config="$APTLY_CONFIG" repo add "$APTLY_REPO_NAME" "$REPO_DIR/"
     aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
     aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
-    mv "$APTLY_ROOTDIR"/public/* "$REPO_DIR"/
-
+    rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
     # Remove unnecessary files
     rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
 done

@@ -102,6 +102,21 @@ int mk_event_add(struct mk_event_loop *loop, int fd,
     return 0;
 }
 
+/* Inject an event */
+int mk_event_inject(struct mk_event_loop *loop, struct mk_event *event,
+                    int flags, int prevent_duplication)
+{
+    int result;
+
+    if (loop->n_events + 1 >= loop->size) {
+        return -1;
+    }
+
+    _mk_event_inject(loop, event, flags, prevent_duplication);
+
+    return 0;
+}
+
 /* Remove an event */
 int mk_event_del(struct mk_event_loop *loop, struct mk_event *event)
 {
@@ -166,7 +181,17 @@ int mk_event_channel_create(struct mk_event_loop *loop,
 /* Poll events */
 int mk_event_wait(struct mk_event_loop *loop)
 {
-    return _mk_event_wait(loop);
+    return _mk_event_wait_2(loop, -1);
+}
+
+/*
+ * Poll events with timeout in milliseconds
+ * zero timeout for non blocking wait
+ * -1 timeout for infinite wait
+ */
+int mk_event_wait_2(struct mk_event_loop *loop, int timeout)
+{
+    return _mk_event_wait_2(loop, timeout);
 }
 
 /* Return the backend name */

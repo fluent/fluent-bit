@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,12 +35,22 @@
 #define FLB_PACK_JSON_PRIMITIVE     JSMN_PRIMITIVE
 
 /* Date formats */
-#define FLB_PACK_JSON_DATE_DOUBLE   0
-#define FLB_PACK_JSON_DATE_ISO8601  1
-#define FLB_PACK_JSON_DATE_EPOCH    2
+#define FLB_PACK_JSON_DATE_DOUBLE                0
+#define FLB_PACK_JSON_DATE_ISO8601               1
+#define FLB_PACK_JSON_DATE_EPOCH                 2
+#define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP    3
 
 /* Specific ISO8601 format */
 #define FLB_PACK_JSON_DATE_ISO8601_FMT "%Y-%m-%dT%H:%M:%S"
+
+/* Specific Java SQL Timestamp format */
+#define FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT "%Y-%m-%d %H:%M:%S"
+
+#define FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION   "Specify the format of the date, " \
+    "supported formats: double, " \
+     "iso8601 (e.g: 2018-05-30T09:39:52.000681Z), " \
+     "java_sql_timestamp (e.g: 2018-05-30 09:39:52.000681, useful for AWS Athena), "\
+     "and epoch."
 
 /* JSON formats (modes) */
 #define FLB_PACK_JSON_FORMAT_NONE        0

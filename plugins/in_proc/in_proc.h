@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,8 +25,8 @@
 #include <fluent-bit/flb_input.h>
 #include <msgpack.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 #define FLB_CMD_LEN 256
 #define FLB_IN_PROC_NAME "in_proc"
@@ -57,9 +56,9 @@ struct flb_in_proc_config {
     uint8_t  alive;
 
     /* Checking process */
-    char*  proc_name;
-    pid_t  pid;
-    size_t len_proc_name;
+    flb_sds_t  proc_name;
+    pid_t      pid;
+    size_t     len_proc_name;
 
     /* Time interval check */
     int interval_sec;

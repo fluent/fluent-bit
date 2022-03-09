@@ -1,9 +1,0 @@
-FROM arm64v8/amazonlinux:2
-
-COPY --from=multiarch/qemu-user-static:x86_64-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
-
-RUN yum -y update && \
-    yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
-                   wget unzip systemd-devel wget flex bison \
-                   cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                   cmake3 

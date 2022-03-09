@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -142,12 +141,12 @@ static int http_post(struct prometheus_remote_write_context *ctx,
         else {
             if (ctx->log_response_payload &&
                 c->resp.payload && c->resp.payload_size > 0) {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i\n%s",
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i\n%s",
                              ctx->host, ctx->port,
                              c->resp.status, c->resp.payload);
             }
             else {
-                flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                flb_plg_debug(ctx->ins, "%s:%i, HTTP status=%i",
                              ctx->host, ctx->port,
                              c->resp.status);
             }
@@ -361,5 +360,6 @@ struct flb_output_plugin out_prometheus_remote_write_plugin = {
     .cb_exit     = cb_prom_exit,
     .config_map  = config_map,
     .event_type  = FLB_OUTPUT_METRICS,
+    .workers     = 2,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

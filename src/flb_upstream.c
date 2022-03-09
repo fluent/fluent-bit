@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -762,6 +761,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
         ret = mk_event_add(conn->evl, conn->fd,
                            FLB_ENGINE_EV_CUSTOM,
                            MK_EVENT_CLOSE, &conn->event);
+        conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             /* We failed the registration, for safety just destroy the connection */
             flb_debug("[upstream] KA connection #%i to %s:%i could not be "
@@ -842,46 +842,13 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             }
 
             if (drop == FLB_TRUE) {
-                /*
-                 * Shutdown the connection, this is the safest way to indicate
-                 * that the socket cannot longer work and any co-routine on
-                 * waiting for I/O will receive the notification and trigger
-                 * the error to it caller.
-                 */
-                if (u_conn->fd != -1) {
-                    shutdown(u_conn->fd, SHUT_RDWR);
+                if (u_conn->event.status != MK_EVENT_NONE) {
+                    mk_event_inject(u_conn->evl, &u_conn->event,
+                                    MK_EVENT_READ | MK_EVENT_WRITE,
+                                    FLB_TRUE);
                 }
-
                 u_conn->net_error = ETIMEDOUT;
                 prepare_destroy_conn(u_conn);
-
-                /*
-                 * If the connection has its coro field set it means it's waiting for a
-                 * FLB_ENGINE_EV_THREAD event which in some specific cases might never
-                 * arrive which would leave the coroutin eternally suspended and the
-                 * chunk it was trying to handle (in case of output related coroutines)
-                 * locked which (if repeated enough times) could lead to a system wide
-                 * lockup.
-                 *
-                 * Since we don't have a proper way to generate the required activity in
-                 * the socket to have the system organically resume the coroutine we need
-                 * to resume it ourselves.
-                 */
-                if (u_conn->event.type == FLB_ENGINE_EV_THREAD &&
-                    u_conn->coro != NULL) {
-                    MK_EVENT_NEW(&u_conn->event);
-
-                    flb_trace("[upstream] resuming timed out coroutine=%p", u_conn->coro);
-                    flb_coro_resume(u_conn->coro);
-
-                    if (u_conn->coro != NULL) {
-                        flb_trace("[upstream] the recently resumed coroutine=%p "
-                                  "did not clear the u_conn->coro field which could "
-                                  "cause issues, please correct the code." , u_conn->coro);
-
-                        u_conn->coro = NULL;
-                    }
-                }
             }
         }
 

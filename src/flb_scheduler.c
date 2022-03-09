@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -129,6 +128,7 @@ static int schedule_request_now(int seconds,
 
     /* Create a timeout into the main event loop */
     fd = mk_event_timeout_create(config->evl, seconds, 0, event);
+    event->priority = FLB_ENGINE_PRIORITY_CB_SCHED;
     if (fd == -1) {
         return -1;
     }
@@ -467,6 +467,7 @@ int flb_sched_timer_cb_create(struct flb_sched *sched, int type, int ms,
 
     /* Create the frame timer */
     fd = mk_event_timeout_create(sched->evl, sec, nsec, event);
+    event->priority = FLB_ENGINE_PRIORITY_CB_TIMER;
     if (fd == -1) {
         flb_error("[sched] cannot do timeout_create()");
         flb_sched_timer_destroy(timer);
@@ -547,6 +548,7 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
     /* Create the frame timer */
     fd = mk_event_timeout_create(evl, FLB_SCHED_REQUEST_FRAME, 0,
                                  event);
+    event->priority = FLB_ENGINE_PRIORITY_CB_SCHED;
     if (fd == -1) {
         flb_sched_timer_destroy(timer);
         flb_free(sched);

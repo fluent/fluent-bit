@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -496,8 +495,7 @@ static int cb_cpu_init(struct flb_input_instance *in,
     int ret;
     struct flb_cpu *ctx;
     (void) data;
-    const char *pval = NULL;
-
+    
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_cpu));
     if (!ctx) {
@@ -505,41 +503,22 @@ static int cb_cpu_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->ins = in;
+    
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Gather number of processors and CPU ticks */
     ctx->n_processors = sysconf(_SC_NPROCESSORS_ONLN);
     ctx->cpu_ticks    = sysconf(_SC_CLK_TCK);
 
-    /* Process ID */
-    pval = flb_input_get_property("pid", in);
-    if (pval) {
-        ctx->pid = atoi(pval);
-    }
-    else {
-        ctx->pid = -1;
-    }
-
     /* Collection time setting */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
     /* Initialize buffers for CPU stats */
@@ -611,6 +590,27 @@ static int cb_cpu_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_INT, "pid", "-1",
+     0, FLB_TRUE, offsetof(struct flb_cpu, pid),
+     "Configure a single process to measure usage via their PID"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_cpu, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_cpu, interval_nsec),
+      "Set the collector interval (sub seconds)"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_cpu_plugin = {
     .name         = "cpu",
@@ -619,6 +619,7 @@ struct flb_input_plugin in_cpu_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = cb_cpu_collect,
     .cb_flush_buf = NULL,
+    .config_map   = config_map,
     .cb_pause     = cb_cpu_pause,
     .cb_resume    = cb_cpu_resume,
     .cb_exit      = cb_cpu_exit

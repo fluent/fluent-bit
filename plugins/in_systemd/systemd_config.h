@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,8 +37,8 @@
 /* constants */
 #define FLB_SYSTEMD_UNIT     "_SYSTEMD_UNIT"
 #define FLB_SYSTEMD_UNKNOWN  "unknown"
-#define FLB_SYSTEMD_MAX_FIELDS   8000
-#define FLB_SYSTEMD_MAX_ENTRIES  5000
+#define FLB_SYSTEMD_MAX_FIELDS   "8000"
+#define FLB_SYSTEMD_MAX_ENTRIES  "5000"
 
 /* Input configuration & context */
 struct flb_systemd_config {
@@ -47,9 +46,13 @@ struct flb_systemd_config {
     int fd;              /* Journal file descriptor */
     sd_journal *j;       /* Journal context */
     char *cursor;
-    char *path;
+    flb_sds_t path;
+    flb_sds_t filter_type; /* sysytemd filter type: and|or */
+    struct mk_list *systemd_filters;
     int pending_records;
     int read_from_tail;  /* read_from_tail option */
+    int lowercase;
+    int strip_underscores;
 
     /* Internal */
     int ch_manager[2];         /* pipe: channel manager    */
@@ -59,10 +62,11 @@ struct flb_systemd_config {
     int dynamic_tag;
     int max_fields;            /* max number of fields per record */
     int max_entries;           /* max number of records per iteration */
-    int strip_underscores;
 
 #ifdef FLB_HAVE_SQLDB
+    flb_sds_t db_path;
     struct flb_sqldb *db;
+    flb_sds_t db_sync_mode;
     int db_sync;
     sqlite3_stmt *stmt_cursor;
 #endif

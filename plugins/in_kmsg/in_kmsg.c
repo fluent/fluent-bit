@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -282,6 +281,13 @@ static int in_kmsg_init(struct flb_input_instance *ins,
     ctx->buf_len = 0;
     ctx->buf_size = FLB_KMSG_BUF_SIZE;
 
+    /* Load the config map */
+    ret = flb_input_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
+
     /* set context */
     flb_input_set_context(ins, ctx);
 
@@ -332,6 +338,10 @@ static int in_kmsg_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    /* EOF */
+    {0}
+};
 
 /* Plugin reference */
 struct flb_input_plugin in_kmsg_plugin = {
@@ -341,5 +351,6 @@ struct flb_input_plugin in_kmsg_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_kmsg_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_kmsg_exit
+    .cb_exit      = in_kmsg_exit,
+    .config_map   = config_map
 };

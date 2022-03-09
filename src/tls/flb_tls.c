@@ -3,7 +3,6 @@
 /*  Fluent Bit
  *  ==========
  *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -103,6 +102,7 @@ static inline int io_tls_event_switch(struct flb_upstream_conn *u_conn,
                            event->fd,
                            FLB_ENGINE_EV_THREAD,
                            mask, &u_conn->event);
+        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             flb_error("[io_tls] error changing mask to %i", mask);
             return -1;
@@ -400,6 +400,7 @@ int flb_tls_session_create(struct flb_tls *tls,
                            u_conn->event.fd,
                            FLB_ENGINE_EV_THREAD,
                            flag, &u_conn->event);
+        u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
         if (ret == -1) {
             goto error;
         }

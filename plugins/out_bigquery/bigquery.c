@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_signv4.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <msgpack.h>
 
@@ -252,6 +253,376 @@ static int bigquery_get_oauth2_token(struct flb_bigquery *ctx)
     return 0;
 }
 
+static flb_sds_t add_aws_signature(struct flb_http_client *c, struct flb_bigquery *ctx) {
+    flb_sds_t signature;
+
+    flb_plg_debug(ctx->ins, "Signing the request with AWS SigV4 using IMDS credentials");
+
+    signature = flb_signv4_do(c, FLB_TRUE, FLB_TRUE, time(NULL),
+                              ctx->aws_region, "sts",
+                              0, ctx->aws_provider);
+    if (!signature) {
+        flb_plg_error(ctx->ins, "Could not sign the request with AWS SigV4");
+        return NULL;
+    }
+
+    return signature;
+}
+
+static inline int to_encode_path(char c)
+{
+    if ((c >= 48 && c <= 57)  ||  /* 0-9 */
+        (c >= 65 && c <= 90)  ||  /* A-Z */
+        (c >= 97 && c <= 122) ||  /* a-z */
+        (c == '-' || c == '_' || c == '.' || c == '~' || c == '/')) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static flb_sds_t uri_encode(const char *uri, size_t len)
+{
+    int i;
+    flb_sds_t buf = NULL;
+    flb_sds_t tmp = NULL;
+
+    buf = flb_sds_create_size(len * 2);
+    if (!buf) {
+        flb_error("[uri_encode] cannot allocate buffer for URI encoding");
+        return NULL;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (to_encode_path(uri[i]) == FLB_TRUE) {
+            tmp = flb_sds_printf(&buf, "%%%02X", (unsigned char) *(uri + i));
+            if (!tmp) {
+                flb_error("[uri_encode] error formatting special character");
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            continue;
+        }
+
+        /* Direct assignment, just copy the character */
+        if (buf) {
+            tmp = flb_sds_cat(buf, uri + i, 1);
+            if (!tmp) {
+                flb_error("[uri_encode] error composing outgoing buffer");
+                flb_sds_destroy(buf);
+                return NULL;
+            }
+            buf = tmp;
+        }
+    }
+
+    return buf;
+}
+
+/* https://cloud.google.com/iam/docs/using-workload-identity-federation */
+static int bigquery_exchange_aws_creds_for_google_oauth(struct flb_bigquery *ctx)
+{
+    struct flb_upstream_conn *aws_sts_conn;
+    struct flb_upstream_conn *google_sts_conn = NULL;
+    struct flb_upstream_conn *google_gen_access_token_conn = NULL;
+    struct flb_http_client *aws_sts_c = NULL;
+    struct flb_http_client *google_sts_c = NULL;
+    struct flb_http_client *google_gen_access_token_c = NULL;
+    int google_sts_ret;
+    int google_gen_access_token_ret;
+    size_t b_sent_google_sts;
+    size_t b_sent_google_gen_access_token;
+    flb_sds_t signature = NULL;
+    flb_sds_t sigv4_amz_date = NULL;
+    flb_sds_t sigv4_amz_sec_token = NULL;
+    flb_sds_t aws_gci_url = NULL;
+    flb_sds_t aws_gci_goog_target_resource = NULL;
+    flb_sds_t aws_gci_token = NULL;
+    flb_sds_t aws_gci_token_encoded = NULL;
+    flb_sds_t google_sts_token = NULL;
+    flb_sds_t google_gen_access_token_body = NULL;
+    flb_sds_t google_gen_access_token_url = NULL;
+    flb_sds_t google_federated_token = NULL;
+    flb_sds_t google_auth_header = NULL;
+
+    if (ctx->sa_token) {
+        flb_sds_destroy(ctx->sa_token);
+        ctx->sa_token = NULL;
+    }
+
+    /* Sign an AWS STS request with AWS SigV4 signature */
+    aws_sts_conn = flb_upstream_conn_get(ctx->aws_sts_upstream);
+    if (!aws_sts_conn) {
+        flb_plg_error(ctx->ins, "Failed to get upstream connection for AWS STS");
+        goto error;
+    }
+
+    aws_sts_c = flb_http_client(aws_sts_conn, FLB_HTTP_POST, FLB_BIGQUERY_AWS_STS_ENDPOINT,
+                                NULL, 0, NULL, 0, NULL, 0);
+    if (!aws_sts_c) {
+        flb_plg_error(ctx->ins, "Failed to create HTTP client for AWS STS");
+        goto error;
+    }
+
+    signature = add_aws_signature(aws_sts_c, ctx);
+    if (!signature) {
+        flb_plg_error(ctx->ins, "Failed to sign AWS STS request");
+        goto error;
+    }
+
+    sigv4_amz_date = flb_sds_create(flb_kv_get_key_value("x-amz-date", &aws_sts_c->headers));
+    if (!sigv4_amz_date) {
+        flb_plg_error(ctx->ins, "Failed to extract `x-amz-date` header from AWS STS signed request");
+        goto error;
+    }
+
+    sigv4_amz_sec_token = flb_sds_create(flb_kv_get_key_value("x-amz-security-token", &aws_sts_c->headers));
+    if (!sigv4_amz_sec_token) {
+        flb_plg_error(ctx->ins, "Failed to extract `x-amz-security-token` header from AWS STS signed request");
+        goto error;
+    }
+
+    /* Create an AWS GetCallerIdentity token */
+
+    /* AWS STS endpoint URL */
+    aws_gci_url = flb_sds_create_size(128);
+    aws_gci_url = flb_sds_printf(&aws_gci_url,
+                                 "https://%s%s",
+                                 ctx->aws_sts_endpoint,
+                                 FLB_BIGQUERY_AWS_STS_ENDPOINT);
+
+    /* x-goog-cloud-target-resource header */
+    aws_gci_goog_target_resource = flb_sds_create_size(128);
+    aws_gci_goog_target_resource = flb_sds_printf(&aws_gci_goog_target_resource,
+                                                  FLB_BIGQUERY_GOOGLE_CLOUD_TARGET_RESOURCE,
+                                                  ctx->project_number, ctx->pool_id, ctx->provider_id);
+
+    aws_gci_token = flb_sds_create_size(2048);
+    aws_gci_token = flb_sds_printf(
+            &aws_gci_token,
+            "{\"url\":\"%s\",\"method\":\"POST\",\"headers\":["
+            "{\"key\":\"Authorization\",\"value\":\"%s\"},"
+            "{\"key\":\"host\",\"value\":\"%s\"},"
+            "{\"key\":\"x-amz-date\",\"value\":\"%s\"},"
+            "{\"key\":\"x-goog-cloud-target-resource\",\"value\":\"%s\"},"
+            "{\"key\":\"x-amz-security-token\",\"value\":\"%s\"}"
+            "]}",
+            aws_gci_url,
+            signature,
+            ctx->aws_sts_endpoint,
+            sigv4_amz_date,
+            aws_gci_goog_target_resource,
+            sigv4_amz_sec_token);
+
+    aws_gci_token_encoded = uri_encode(aws_gci_token, flb_sds_len(aws_gci_token));
+    if (!aws_gci_token_encoded) {
+        flb_plg_error(ctx->ins, "Failed to encode GetCallerIdentity token");
+        goto error;
+    }
+
+    /* To exchange the AWS credential for a federated access token,
+     * we need to pass the AWS GetCallerIdentity token to the Google Security Token Service's token() method */
+    google_sts_token = flb_sds_create_size(2048);
+    google_sts_token = flb_sds_printf(
+            &google_sts_token,
+            "{\"audience\":\"%s\","
+            "\"grantType\":\"%s\","
+            "\"requestedTokenType\":\"%s\","
+            "\"scope\":\"%s\","
+            "\"subjectTokenType\":\"%s\","
+            "\"subjectToken\":\"%s\"}",
+            aws_gci_goog_target_resource,
+            FLB_BIGQUERY_GOOGLE_STS_TOKEN_GRANT_TYPE,
+            FLB_BIGQUERY_GOOGLE_STS_TOKEN_REQUESTED_TOKEN_TYPE,
+            FLB_BIGQUERY_GOOGLE_STS_TOKEN_SCOPE,
+            FLB_BIGQUERY_GOOGLE_STS_TOKEN_SUBJECT_TOKEN_TYPE,
+            aws_gci_token_encoded);
+
+    google_sts_conn = flb_upstream_conn_get(ctx->google_sts_upstream);
+    if (!google_sts_conn) {
+        flb_plg_error(ctx->ins, "Google STS connection setup failed");
+        goto error;
+    }
+
+    google_sts_c = flb_http_client(google_sts_conn, FLB_HTTP_POST, FLB_BIGQUERY_GOOGLE_CLOUD_TOKEN_ENDPOINT,
+                                   google_sts_token, flb_sds_len(google_sts_token),
+                                   NULL, 0, NULL, 0);
+
+    google_sts_ret = flb_http_do(google_sts_c, &b_sent_google_sts);
+    if (google_sts_ret != 0) {
+        flb_plg_error(ctx->ins, "Google STS token request http_do=%i", google_sts_ret);
+        goto error;
+    }
+
+    if (google_sts_c->resp.status != 200) {
+        flb_plg_error(ctx->ins, "Google STS token response status: %i, payload:\n%s",
+                      google_sts_c->resp.status, google_sts_c->resp.payload);
+        goto error;
+    }
+
+    /* To exchange the federated token for a service account access token,
+     * we need to call the Google Service Account Credentials API generateAccessToken() method */
+    google_federated_token = flb_json_get_val(google_sts_c->resp.payload,
+                                              google_sts_c->resp.payload_size,
+                                              "access_token");
+    if (!google_federated_token) {
+        flb_plg_error(ctx->ins, "Failed to extract Google federated access token from STS token() response");
+        goto error;
+    }
+
+    google_gen_access_token_conn = flb_upstream_conn_get(ctx->google_iam_upstream);
+    if (!google_gen_access_token_conn) {
+        flb_plg_error(ctx->ins, "Google Service Account Credentials API connection setup failed");
+        goto error;
+    }
+
+    google_gen_access_token_url = flb_sds_create_size(256);
+    google_gen_access_token_url = flb_sds_printf(&google_gen_access_token_url,
+                                                 FLB_BIGQUERY_GOOGLE_GEN_ACCESS_TOKEN_URL,
+                                                 ctx->google_service_account);
+
+    google_gen_access_token_body = flb_sds_create(FLB_BIGQUERY_GOOGLE_GEN_ACCESS_TOKEN_REQUEST_BODY);
+
+    google_gen_access_token_c = flb_http_client(google_gen_access_token_conn, FLB_HTTP_POST, google_gen_access_token_url,
+                                                google_gen_access_token_body, flb_sds_len(google_gen_access_token_body),
+                                                NULL, 0, NULL, 0);
+
+    google_auth_header = flb_sds_create_size(2048 + 7);
+    google_auth_header = flb_sds_printf(&google_auth_header, "%s%s",
+                                        "Bearer ", google_federated_token);
+
+    flb_http_add_header(google_gen_access_token_c, "Authorization", 13,
+                        google_auth_header, flb_sds_len(google_auth_header));
+
+    flb_http_add_header(google_gen_access_token_c, "Content-Type", 12,
+                        "application/json; charset=utf-8", 31);
+
+    google_gen_access_token_ret = flb_http_do(google_gen_access_token_c, &b_sent_google_gen_access_token);
+    if (google_gen_access_token_ret != 0) {
+        flb_plg_error(ctx->ins, "Google Service Account Credentials API generateAccessToken() request http_do=%i",
+                      google_gen_access_token_ret);
+        goto error;
+    }
+
+    if (google_gen_access_token_c->resp.status != 200) {
+        flb_plg_error(ctx->ins, "Google Service Account Credentials API generateAccessToken() response "
+                                "status: %i, payload:\n%s",
+                      google_gen_access_token_c->resp.status, google_gen_access_token_c->resp.payload);
+        goto error;
+    }
+
+    ctx->sa_token = flb_json_get_val(google_gen_access_token_c->resp.payload,
+                                     google_gen_access_token_c->resp.payload_size,
+                                     "accessToken");
+    if (!ctx->sa_token) {
+        flb_plg_error(ctx->ins, "Failed to extract Google OAuth token "
+                                "from Service Account Credentials API generateAccessToken() response");
+        goto error;
+    }
+
+    ctx->sa_token_expiry = time(NULL) + FLB_BIGQUERY_TOKEN_REFRESH;
+
+    flb_sds_destroy(signature);
+    flb_sds_destroy(sigv4_amz_date);
+    flb_sds_destroy(sigv4_amz_sec_token);
+    flb_sds_destroy(aws_gci_url);
+    flb_sds_destroy(aws_gci_goog_target_resource);
+    flb_sds_destroy(aws_gci_token);
+    flb_sds_destroy(aws_gci_token_encoded);
+    flb_sds_destroy(google_sts_token);
+    flb_sds_destroy(google_gen_access_token_body);
+    flb_sds_destroy(google_gen_access_token_url);
+    flb_sds_destroy(google_federated_token);
+    flb_sds_destroy(google_auth_header);
+
+    flb_http_client_destroy(aws_sts_c);
+    flb_http_client_destroy(google_sts_c);
+    flb_http_client_destroy(google_gen_access_token_c);
+
+    flb_upstream_conn_release(aws_sts_conn);
+    flb_upstream_conn_release(google_sts_conn);
+    flb_upstream_conn_release(google_gen_access_token_conn);
+
+    flb_plg_info(ctx->ins, "Retrieved Google service account OAuth token via Identity Federation");
+
+    return 0;
+
+error:
+    flb_sds_destroy(signature);
+    flb_sds_destroy(sigv4_amz_date);
+    flb_sds_destroy(sigv4_amz_sec_token);
+    flb_sds_destroy(aws_gci_url);
+    flb_sds_destroy(aws_gci_goog_target_resource);
+    flb_sds_destroy(aws_gci_token);
+    flb_sds_destroy(aws_gci_token_encoded);
+    flb_sds_destroy(google_sts_token);
+    flb_sds_destroy(google_gen_access_token_body);
+    flb_sds_destroy(google_gen_access_token_url);
+    flb_sds_destroy(google_federated_token);
+    flb_sds_destroy(google_auth_header);
+
+    if (aws_sts_c) {
+        flb_http_client_destroy(aws_sts_c);
+    }
+
+    if (google_sts_c) {
+        flb_http_client_destroy(google_sts_c);
+    }
+
+    if (google_gen_access_token_c) {
+        flb_http_client_destroy(google_gen_access_token_c);
+    }
+
+    if (aws_sts_conn) {
+        flb_upstream_conn_release(aws_sts_conn);
+    }
+
+    if (google_sts_conn) {
+        flb_upstream_conn_release(google_sts_conn);
+    }
+
+    if (google_gen_access_token_conn) {
+        flb_upstream_conn_release(google_gen_access_token_conn);
+    }
+
+    return -1;
+}
+
+static int flb_bigquery_google_token_expired(time_t expiry)
+{
+    time_t now;
+
+    now = time(NULL);
+    if (expiry <= now) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static flb_sds_t get_google_service_account_token(struct flb_bigquery *ctx) {
+    int ret = 0;
+    flb_sds_t output;
+    flb_plg_trace(ctx->ins, "Getting Google service account token");
+
+    if (!ctx->sa_token) {
+        flb_plg_trace(ctx->ins, "Acquiring new token");
+        ret = bigquery_exchange_aws_creds_for_google_oauth(ctx);
+    }
+    else if (flb_bigquery_google_token_expired(ctx->sa_token_expiry) == FLB_TRUE) {
+        flb_plg_trace(ctx->ins, "Replacing expired token");
+        ret = bigquery_exchange_aws_creds_for_google_oauth(ctx);
+    }
+
+    if (ret != 0) {
+        return NULL;
+    }
+
+    output = flb_sds_create_size(2048 + 7);
+    output = flb_sds_printf(&output, "%s%s", "Bearer ", ctx->sa_token);
+    return output;
+}
+
 static flb_sds_t get_google_token(struct flb_bigquery *ctx)
 {
     int ret = 0;
@@ -318,6 +689,134 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (ctx->has_identity_federation) {
+        /* Configure AWS IMDS */
+        ctx->aws_tls = flb_tls_create(FLB_TRUE,
+                                      ins->tls_debug,
+                                      ins->tls_vhost,
+                                      ins->tls_ca_path,
+                                      ins->tls_ca_file,
+                                      ins->tls_crt_file,
+                                      ins->tls_key_file,
+                                      ins->tls_key_passwd);
+
+        if (!ctx->aws_tls) {
+            flb_plg_error(ctx->ins, "Failed to create TLS context");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        ctx->aws_provider = flb_standard_chain_provider_create(config,
+                                                               ctx->aws_tls,
+                                                               NULL,
+                                                               NULL,
+                                                               NULL,
+                                                               flb_aws_client_generator());
+
+        if (!ctx->aws_provider) {
+            flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        /* initialize credentials in sync mode */
+        ctx->aws_provider->provider_vtable->sync(ctx->aws_provider);
+        ctx->aws_provider->provider_vtable->init(ctx->aws_provider);
+
+        /* set back to async */
+        ctx->aws_provider->provider_vtable->async(ctx->aws_provider);
+        ctx->aws_provider->provider_vtable->upstream_set(ctx->aws_provider, ctx->ins);
+
+        /* Configure AWS STS */
+        ctx->aws_sts_tls = flb_tls_create(FLB_TRUE,
+                                          ins->tls_debug,
+                                          ins->tls_vhost,
+                                          ins->tls_ca_path,
+                                          ins->tls_ca_file,
+                                          ins->tls_crt_file,
+                                          ins->tls_key_file,
+                                          ins->tls_key_passwd);
+
+        if (!ctx->aws_sts_tls) {
+            flb_plg_error(ctx->ins, "Failed to create TLS context");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        ctx->aws_sts_upstream = flb_upstream_create(config,
+                                                    ctx->aws_sts_endpoint,
+                                                    443,
+                                                    io_flags,
+                                                    ctx->aws_sts_tls);
+
+        if (!ctx->aws_sts_upstream) {
+            flb_plg_error(ctx->ins, "AWS STS upstream creation failed");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        ctx->aws_sts_upstream->net.keepalive = FLB_FALSE;
+
+        /* Configure Google STS */
+        ctx->google_sts_tls = flb_tls_create(FLB_TRUE,
+                                             ins->tls_debug,
+                                             ins->tls_vhost,
+                                             ins->tls_ca_path,
+                                             ins->tls_ca_file,
+                                             ins->tls_crt_file,
+                                             ins->tls_key_file,
+                                             ins->tls_key_passwd);
+
+        if (!ctx->google_sts_tls) {
+            flb_plg_error(ctx->ins, "Failed to create TLS context");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        ctx->google_sts_upstream = flb_upstream_create_url(config,
+                                                           FLB_BIGQUERY_GOOGLE_STS_URL,
+                                                           io_flags,
+                                                           ctx->google_sts_tls);
+
+        if (!ctx->google_sts_upstream) {
+            flb_plg_error(ctx->ins, "Google STS upstream creation failed");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        /* Configure Google IAM */
+        ctx->google_iam_tls = flb_tls_create(FLB_TRUE,
+                                             ins->tls_debug,
+                                             ins->tls_vhost,
+                                             ins->tls_ca_path,
+                                             ins->tls_ca_file,
+                                             ins->tls_crt_file,
+                                             ins->tls_key_file,
+                                             ins->tls_key_passwd);
+
+        if (!ctx->google_iam_tls) {
+            flb_plg_error(ctx->ins, "Failed to create TLS context");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        ctx->google_iam_upstream = flb_upstream_create_url(config,
+                                                           FLB_BIGQUERY_GOOGLE_IAM_URL,
+                                                           io_flags,
+                                                           ctx->google_iam_tls);
+
+        if (!ctx->google_iam_upstream) {
+            flb_plg_error(ctx->ins, "Google IAM upstream creation failed");
+            flb_bigquery_conf_destroy(ctx);
+            return -1;
+        }
+
+        /* Remove async flag from upstream */
+        ctx->aws_sts_upstream->flags    &= ~(FLB_IO_ASYNC);
+        ctx->google_sts_upstream->flags &= ~(FLB_IO_ASYNC);
+        ctx->google_iam_upstream->flags &= ~(FLB_IO_ASYNC);
+    }
+
     /* Create oauth2 context */
     ctx->o = flb_oauth2_create(ctx->config, FLB_BIGQUERY_AUTH_URL, 3000);
     if (!ctx->o) {
@@ -326,8 +825,14 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
     }
     flb_output_upstream_set(ctx->u, ins);
 
-    /* Retrief oauth2 token */
-    token = get_google_token(ctx);
+    /* Get or renew the OAuth2 token */
+    if (ctx->has_identity_federation) {
+        token = get_google_service_account_token(ctx);
+    }
+    else {
+        token = get_google_token(ctx);
+    }
+
     if (!token) {
         flb_plg_warn(ctx->ins, "token retrieval failed");
     }
@@ -473,7 +978,13 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Get or renew Token */
-    token = get_google_token(ctx);
+    if (ctx->has_identity_federation) {
+        token = get_google_service_account_token(ctx);
+    }
+    else {
+        token = get_google_token(ctx);
+    }
+
     if (!token) {
         flb_plg_error(ctx->ins, "cannot retrieve oauth2 token");
         flb_upstream_conn_release(u_conn);
@@ -525,7 +1036,7 @@ static void cb_bigquery_flush(struct flb_event_chunk *event_chunk,
         else {
             if (c->resp.payload && c->resp.payload_size > 0) {
                 /* we got an error */
-                flb_plg_warn(ctx->ins, "repsponse\n%s", c->resp.payload);
+                flb_plg_warn(ctx->ins, "response\n%s", c->resp.payload);
             }
             ret_code = FLB_RETRY;
         }
