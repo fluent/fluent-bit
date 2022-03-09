@@ -384,8 +384,6 @@ int flb_bigquery_conf_destroy(struct flb_bigquery *ctx)
         return -1;
     }
 
-    flb_sds_destroy(ctx->credentials_file);
-
     flb_bigquery_oauth_credentials_destroy(ctx->oauth_credentials);
 
     if (ctx->aws_sts_upstream) {
@@ -420,16 +418,8 @@ int flb_bigquery_conf_destroy(struct flb_bigquery *ctx)
         flb_tls_destroy(ctx->google_iam_tls);
     }
 
-    flb_sds_destroy(ctx->project_number);
-    flb_sds_destroy(ctx->pool_id);
-    flb_sds_destroy(ctx->provider_id);
-    flb_sds_destroy(ctx->aws_region);
-    flb_sds_destroy(ctx->google_service_account);
     flb_sds_destroy(ctx->aws_sts_endpoint);
     flb_sds_destroy(ctx->sa_token);
-    flb_sds_destroy(ctx->project_id);
-    flb_sds_destroy(ctx->dataset_id);
-    flb_sds_destroy(ctx->table_id);
     flb_sds_destroy(ctx->uri);
 
     if (ctx->o) {
