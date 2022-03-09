@@ -534,7 +534,7 @@ if(FLB_TRACE)
   FLB_DEFINITION(FLB_HAVE_TRACE)
 endif()
 
-if(FLB_HTTP_SERVER)
+if(FLB_HTTP_SERVER)*
   FLB_OPTION(FLB_METRICS ON)
   FLB_DEFINITION(FLB_HAVE_METRICS)
   FLB_DEFINITION(FLB_HAVE_HTTP_SERVER)
@@ -714,8 +714,8 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
-  # Add support for options like page size
-  if(NOT DEFINED FLB_JEMALLOC_OPTIONS)
+  # Add support for options like page size, if empty we default it
+  if(DEFINED FLB_JEMALLOC_OPTIONS AND NOT "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
     set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
   endif()
   # Split into a list so CMake handles it correctly when passing to configure command
