@@ -283,7 +283,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         http_request_key_size = flb_sds_len(ctx->http_request_key);
         if (http_request_key_size >= INT_MAX) {
             flb_plg_error(ctx->ins, "http_request_key is too long");
-            return NULL;
+            flb_sds_destroy(ctx->http_request_key);
+            ctx->http_request_key = NULL;
+            ctx->http_request_key_size = 0;
         }
     }
 
@@ -399,8 +401,6 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->pod_name);
         flb_sds_destroy(ctx->container_name);
         flb_sds_destroy(ctx->node_name);
-        flb_sds_destroy(ctx->cluster_name);
-        flb_sds_destroy(ctx->cluster_location);
         flb_sds_destroy(ctx->local_resource_id);
     }
 
