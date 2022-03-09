@@ -28,6 +28,7 @@
 struct flb_td {
     int fd;           /* Socket to destination/backend */
     int region;       /* TD Region end-point */
+    flb_sds_t region_str;
     const char *api;
     const char *db_name;
     const char *db_table;
