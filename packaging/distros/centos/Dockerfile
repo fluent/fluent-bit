@@ -129,6 +129,7 @@ ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
+ARG FLB_JEMALLOC=On
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 # cmake3 exists in every image - cmake references the older cmake2 in centos 7
@@ -143,6 +144,7 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
            -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
            -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
+           -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
            ../
 
 VOLUME [ "/output" ]
