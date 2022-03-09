@@ -52,27 +52,14 @@ static inline void consume_bytes(char *buf, int bytes, int length)
     memmove(buf, buf + bytes, length - bytes);
 }
 
-static uint64_t stat_get_st_dev(struct stat *st)
-{
-#ifdef FLB_SYSTEM_WINDOWS
-    /* do you want to contribute with a way to extract volume serial number ? */
-    return 0;
-#else
-    return st->st_dev;
-#endif
-}
-
 static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
                              uint64_t *out_hash)
 {
     int len;
-    uint64_t st_dev;
     char tmp[64];
 
-    st_dev = stat_get_st_dev(st);
-
     len = snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64 ":%" PRIu64,
-                   st_dev, st->st_ino);
+                   st->st_dev, st->st_ino);
 
     *out_hash = XXH3_64bits(tmp, len);
     return 0;
@@ -81,7 +68,6 @@ static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
 static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
                             flb_sds_t *key)
 {
-    uint64_t st_dev;
     flb_sds_t tmp;
     flb_sds_t buf;
 
@@ -90,9 +76,8 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
         return -1;
     }
 
-    st_dev = stat_get_st_dev(st);
     tmp = flb_sds_printf(&buf, "%" PRIu64 ":%" PRIu64,
-                         st_dev, st->st_ino);
+                         st->st_dev, st->st_ino);
     if (!tmp) {
         flb_sds_destroy(buf);
         return -1;
