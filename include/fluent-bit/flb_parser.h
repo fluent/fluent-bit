@@ -31,11 +31,25 @@
 #define FLB_PARSER_JSON  2
 #define FLB_PARSER_LTSV  3
 #define FLB_PARSER_LOGFMT 4
+#define FLB_PARSER_CSV 5
 
 struct flb_parser_types {
     char *key;
     int  key_len;
     int type;
+};
+
+struct flb_parser_csv_state {
+    flb_sds_t buffered;
+};
+
+struct flb_parser_csv_context {
+    char **header;
+    size_t header_count;
+    int time_field_index;
+    char *escape_buf;
+    size_t escape_buf_size;
+    struct flb_parser_csv_state state;
 };
 
 struct flb_parser {
@@ -63,6 +77,9 @@ struct flb_parser {
     int time_with_tz;     /* do time_fmt consider a timezone ?  */
     struct flb_regex *regex;
     struct mk_list _head;
+
+    /* csv state */
+    struct flb_parser_csv_context csv_context;
 };
 
 enum {
@@ -97,6 +114,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int time_strict,
                                      struct flb_parser_types *types,
                                      int types_len,
+                                     char **csv_header,
                                      struct mk_list *decoders,
                                      struct flb_config *config);
 int flb_parser_conf_file(const char *file, struct flb_config *config);

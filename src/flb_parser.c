@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include "fluent-bit/flb_sds.h"
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
@@ -109,6 +110,13 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
                          void **out_buf, size_t *out_size,
                          struct flb_time *out_time);
 
+int flb_parser_csv_do(struct flb_parser *parser,
+                         const char *buf, size_t length,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
+
+char **flb_parser_csv_parse_line(const char *in_buf, size_t in_size);
+
 /*
  * This function is used to free all aspects of a parser
  * which is provided by the caller of flb_create_parser.
@@ -140,6 +148,21 @@ static void flb_interim_parser_destroy(struct flb_parser *parser)
     flb_free(parser);
 }
 
+static int parse_int(const char *in, long *out)
+{
+    char *end;
+    long val;
+
+    errno = 0;
+    val = strtol(in, &end, 10);
+    if (end == in || *end != 0 || errno)  {
+        return 0;
+    }
+
+    *out = val;
+    return 1;
+}
+
 struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      const char *p_regex,
                                      int skip_empty,
@@ -149,11 +172,13 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
                                      int time_strict,
                                      struct flb_parser_types *types,
                                      int types_len,
+                                     char **csv_header,
                                      struct mk_list *decoders,
                                      struct flb_config *config)
 {
     int ret;
     int len;
+    int i;
     int diff = 0;
     int size;
     int is_epoch = FLB_FALSE;
@@ -194,6 +219,9 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     }
     else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
+    }
+    else if (strcasecmp(format, "csv") == 0) {
+        p->type = FLB_PARSER_CSV;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -317,6 +345,23 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     p->time_strict = time_strict;
     p->types = types;
     p->types_len = types_len;
+    p->csv_context.header = csv_header;
+    p->csv_context.time_field_index = -1;
+    p->csv_context.escape_buf = NULL;
+    p->csv_context.escape_buf_size = 0;
+    p->csv_context.state.buffered = NULL;
+    if (p->csv_context.header) {
+        p->csv_context.header_count = 0;
+        for (i = 0; csv_header[i]; i++) {
+            p->csv_context.header_count++;
+        }
+    }
+    if (time_key) {
+        long tk;
+        if (parse_int(time_key, &tk)) {
+            p->csv_context.time_field_index = tk;
+        }
+    }
     return p;
 }
 
@@ -345,6 +390,18 @@ void flb_parser_destroy(struct flb_parser *parser)
             flb_free(parser->types[i].key);
         }
         flb_free(parser->types);
+    }
+    if (parser->csv_context.header) {
+        for (i = 0; i < parser->csv_context.header_count; i++) {
+            flb_free(parser->csv_context.header[i]);
+        }
+        flb_free(parser->csv_context.header);
+    }
+    if (parser->csv_context.state.buffered) {
+        flb_free(parser->csv_context.state.buffered);
+    }
+    if (parser->csv_context.escape_buf) {
+        flb_free(parser->csv_context.escape_buf);
     }
 
     if (parser->decoders) {
@@ -471,6 +528,8 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
     struct mk_list *decoders = NULL;
     struct flb_cf_section *s;
     struct flb_parser_types *types = NULL;
+    flb_sds_t csv_header_raw = NULL;
+    char **csv_header = NULL;
 
     /* Read all 'parser' sections */
     mk_list_foreach(head, &cf->parsers) {
@@ -551,13 +610,19 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
             types_len = 0;
         }
 
+        /* csv */
+        csv_header_raw = get_parser_key(config, cf, s, "csv_header");
+        if (csv_header_raw) {
+            csv_header = flb_parser_csv_parse_line(csv_header_raw, strlen(csv_header_raw));
+        }
+
         /* Decoders */
         decoders = flb_parser_decoder_list_create(s);
 
         /* Create the parser context */
         if (!flb_parser_create(name, format, regex, skip_empty,
                                time_fmt, time_key, time_offset, time_keep, time_strict,
-                               types, types_len, decoders, config)) {
+                               types, types_len, csv_header, decoders, config)) {
             goto fconf_error;
         }
 
@@ -580,6 +645,9 @@ static int parser_conf_file(const char *cfg, struct flb_cf *cf,
         }
         if (types_str) {
             flb_sds_destroy(types_str);
+        }
+        if (csv_header_raw) {
+            flb_sds_destroy(csv_header_raw);
         }
         decoders = NULL;
     }
@@ -921,6 +989,10 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     else if (parser->type == FLB_PARSER_LOGFMT) {
         return flb_parser_logfmt_do(parser, buf, length,
                                   out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_CSV) {
+        return flb_parser_csv_do(parser, buf, length,
+                                 out_buf, out_size, out_time);
     }
 
     return -1;

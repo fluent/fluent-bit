@@ -37,6 +37,7 @@ static struct flb_parser *docker_parser_create(struct flb_config *config)
                           FLB_FALSE,              /* time strict */
                           NULL,                   /* parser types */
                           0,                      /* types len */
+                          NULL,                   /* csv header */
                           NULL,                   /* decoders */
                           config);                /* Fluent Bit context */
     return p;

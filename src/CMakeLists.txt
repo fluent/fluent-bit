@@ -101,6 +101,7 @@ if(FLB_PARSER)
     flb_parser_decoder.c
     flb_parser_ltsv.c
     flb_parser_logfmt.c
+    flb_parser_csv.c
     )
 endif()
 
