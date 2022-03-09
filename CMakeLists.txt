@@ -720,6 +720,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   endif()
   # Split into a list so CMake handles it correctly when passing to configure command
   separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
+  message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
 
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
