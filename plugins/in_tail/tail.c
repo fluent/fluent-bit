@@ -190,7 +190,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             if (file->config->exit_on_eof) {
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
-                if (ctx->files_static_count == 1) {
+                if (mk_list_size(&ctx->files_static) == 1) {
                     flb_engine_exit(config);
                 }
             }
@@ -227,7 +227,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
              * when to stop processing the static list.
              */
             if (alter_size == 0) {
-                pre_size = ctx->files_static_count;
+                pre_size = mk_list_size(&ctx->files_static);
             }
             ret = flb_tail_file_to_event(file);
             if (ret == -1) {
@@ -237,7 +237,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             }
 
             if (alter_size == 0) {
-                pos_size = ctx->files_static_count;
+                pos_size = mk_list_size(&ctx->files_static);
                 if (pre_size == pos_size) {
                     alter_size++;
                 }

@@ -41,7 +41,6 @@ struct flb_tail_file {
     int64_t size;
     int64_t offset;
     int64_t last_line;
-    uint64_t  dev_id;
     uint64_t  inode;
     uint64_t  link_inode;
     int   is_link;
@@ -104,9 +103,6 @@ struct flb_tail_file {
 
     /* database reference */
     uint64_t db_id;
-
-    uint64_t hash_bits;
-    flb_sds_t hash_key;
 
     /* reference */
     int tail_mode;

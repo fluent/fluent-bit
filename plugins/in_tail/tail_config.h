@@ -34,7 +34,6 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #endif
 
-#include <xxhash.h>
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -126,7 +125,7 @@ struct flb_tail_config {
     struct flb_ml *ml_ctx;
     struct mk_list *multiline_parsers;
 
-    uint64_t files_static_count;   /* number of items in the static file list */
+    /* Lists head for files consumed statically (read) and by events (inotify) */
     struct mk_list files_static;
     struct mk_list files_event;
 
@@ -143,10 +142,6 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_opened;
     struct cmt_counter *cmt_files_closed;
     struct cmt_counter *cmt_files_rotated;
-
-    /* Hash: hash tables for quick acess to registered files */
-    struct flb_hash *static_hash;
-    struct flb_hash *event_hash;
 
     struct flb_config *config;
 };
