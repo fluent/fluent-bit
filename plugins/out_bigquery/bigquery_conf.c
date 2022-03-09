@@ -198,20 +198,11 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
     ctx->oauth_credentials = creds;
 
-    tmp = flb_output_get_property("google_service_credentials", ins);
-    if (tmp) {
-        ctx->credentials_file = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->credentials_file == NULL) {
         tmp = getenv("GOOGLE_SERVICE_CREDENTIALS");
         if (tmp) {
             ctx->credentials_file = flb_sds_create(tmp);
         }
-    }
-
-    tmp = flb_output_get_property("enable_identity_federation", ins);
-    if (tmp) {
-        ctx->has_identity_federation = flb_utils_bool(tmp);
     }
 
     if (ctx->credentials_file && ctx->has_identity_federation) {
@@ -219,9 +210,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    tmp = flb_output_get_property("aws_region", ins);
-    if (tmp) {
-        ctx->aws_region = flb_sds_create(tmp);
+    if (ctx->aws_region) {
         tmp_aws_region = flb_aws_endpoint("sts", ctx->aws_region);
         if (!tmp_aws_region) {
             flb_plg_error(ctx->ins, "Could not create AWS STS regional endpoint");
@@ -229,26 +218,6 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         }
         ctx->aws_sts_endpoint = flb_sds_create(tmp_aws_region);
         flb_free(tmp_aws_region);
-    }
-
-    tmp = flb_output_get_property("project_number", ins);
-    if (tmp) {
-        ctx->project_number = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("pool_id", ins);
-    if (tmp) {
-        ctx->pool_id = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("provider_id", ins);
-    if (tmp) {
-        ctx->provider_id = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("google_service_account", ins);
-    if (tmp) {
-        ctx->google_service_account = flb_sds_create(tmp);
     }
 
     if (ctx->has_identity_federation) {
@@ -331,11 +300,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
 
     /* config: 'project_id' */
-    tmp = flb_output_get_property("project_id", ins);
-    if (tmp) {
-        ctx->project_id = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->project_id == NULL) {
         if (creds->project_id) {
             ctx->project_id = flb_sds_create(creds->project_id);
             if (!ctx->project_id) {
@@ -354,43 +319,17 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
 
     /* config: 'dataset_id' */
-    tmp = flb_output_get_property("dataset_id", ins);
-    if (tmp) {
-        ctx->dataset_id = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->dataset_id == NULL) {
         flb_plg_error(ctx->ins, "property 'dataset_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
     }
 
     /* config: 'table_id' */
-    tmp = flb_output_get_property("table_id", ins);
-    if (tmp) {
-        ctx->table_id = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->table_id == NULL) {
         flb_plg_error(ctx->ins, "property 'table_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
-    }
-
-    /* config: 'skip_invalid_rows' */
-    tmp = flb_output_get_property("skip_invalid_rows", ins);
-    if (tmp && flb_utils_bool(tmp)) {
-        ctx->skip_invalid_rows = FLB_TRUE;
-    }
-    else {
-        ctx->skip_invalid_rows = FLB_FALSE;
-    }
-
-    /* config: 'ignore_unknown_values' */
-    tmp = flb_output_get_property("ignore_unknown_values", ins);
-    if (tmp && flb_utils_bool(tmp)) {
-        ctx->ignore_unknown_values = FLB_TRUE;
-    }
-    else {
-        ctx->ignore_unknown_values = FLB_FALSE;
     }
 
     /* Create the target URI */

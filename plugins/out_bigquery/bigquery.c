@@ -1068,13 +1068,90 @@ static int cb_bigquery_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "google_service_credentials", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_bigquery, credentials_file),
+     "Set the path for the google service credentials file"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "enable_identity_federation", "false",
+     0, FLB_TRUE, offsetof(struct flb_bigquery, has_identity_federation),
+     "Enable identity federation"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_region", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_bigquery, aws_region),
+     "Enable identity federation"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "project_number", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, project_number),
+      "Set project number"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "pool_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, pool_id),
+      "Set the pool id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "provider_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, provider_id),
+      "Set the provider id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "google_service_account", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, google_service_account),
+      "Set the google service account"
+    },
+    // set in flb_bigquery_oauth_credentials
+    {
+      FLB_CONFIG_MAP_STR, "service_account_email", (char *)NULL,
+      0, FLB_FALSE, 0,
+      "Set the service account email"
+    },
+    // set in flb_bigquery_oauth_credentials
+    {
+      FLB_CONFIG_MAP_STR, "service_account_secret", (char *)NULL,
+      0, FLB_FALSE, 0,
+      "Set the service account secret"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "project_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, project_id),
+      "Set the project id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "dataset_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, dataset_id),
+      "Set the dataset id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "table_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_bigquery, table_id),
+      "Set the table id"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "skip_invalid_rows", "false",
+      0, FLB_TRUE, offsetof(struct flb_bigquery, skip_invalid_rows),
+      "Enable skipping of invalid rows",
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "ignore_unknown_values", "false",
+      0, FLB_TRUE, offsetof(struct flb_bigquery, ignore_unknown_values),
+      "Enable ignoring unknown value",
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_bigquery_plugin = {
     .name         = "bigquery",
     .description  = "Send events to BigQuery via streaming insert",
     .cb_init      = cb_bigquery_init,
     .cb_flush     = cb_bigquery_flush,
     .cb_exit      = cb_bigquery_exit,
-
+    .config_map   = config_map,
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,
 };
