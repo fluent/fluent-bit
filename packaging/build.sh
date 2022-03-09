@@ -13,6 +13,9 @@ FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_TARGZ=${FLB_TARGZ:-}
 FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
 
+# Use this to pass special arguments to docker build
+FLB_ARG=${FLB_ARG:-}
+
 while getopts "v:d:b:t:o:" option
 do
         case "${option}"
@@ -68,7 +71,6 @@ MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
 # For the multistage ones, we pass in the base image to use.
 #
 IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/$FLB_DISTRO"
-FLB_ARG=""
 if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
     IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/${FLB_DISTRO%%/*}"
     FLB_ARG="--build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
