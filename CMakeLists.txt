@@ -663,10 +663,14 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
+  # Add support for options like page size
+  set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3" CACHE string "Extra options to configure jemalloc")
+  message(STATUS "jemalloc configuration: \"${FLB_JEMALLOC_OPTIONS}\"")
+
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --host=${HOST} ${FLB_JEMALLOC_OPTIONS} --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
     BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
