@@ -73,7 +73,7 @@ MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
 IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/$FLB_DISTRO"
 if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
     IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/${FLB_DISTRO%%/*}"
-    FLB_ARG="--build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
+    FLB_ARG="$FLB_ARG --build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
 fi
 
 if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
