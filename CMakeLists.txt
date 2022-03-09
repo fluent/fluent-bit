@@ -715,7 +715,7 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
   # Add support for options like page size, if empty we default it
-  if(DEFINED FLB_JEMALLOC_OPTIONS AND NOT "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
+  if(DEFINED FLB_JEMALLOC_OPTIONS AND "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
     set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
   endif()
   # Split into a list so CMake handles it correctly when passing to configure command
