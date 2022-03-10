@@ -81,7 +81,6 @@
 struct flb_stackdriver_oauth_credentials {
     /* parsed credentials file */
     flb_sds_t type;
-    flb_sds_t project_id;
     flb_sds_t private_key_id;
     flb_sds_t private_key;
     flb_sds_t client_email;

@@ -132,7 +132,7 @@ static int read_credentials_file(const char *cred_file, struct flb_stackdriver *
             ctx->creds->type = flb_sds_create_len(val, val_len);
         }
         else if (key_cmp(key, key_len, "project_id") == 0) {
-            ctx->creds->project_id = flb_sds_create_len(val, val_len);
+            ctx->project_id = flb_sds_create_len(val, val_len);
         }
         else if (key_cmp(key, key_len, "private_key_id") == 0) {
             ctx->creds->private_key_id = flb_sds_create_len(val, val_len);
@@ -254,7 +254,6 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             return NULL;
         }
         ctx->type = ctx->creds->type;
-        ctx->project_id = ctx->creds->project_id;
         ctx->private_key_id = ctx->creds->private_key_id;
         ctx->private_key = ctx->creds->private_key;
         ctx->client_email = ctx->creds->client_email;
@@ -439,9 +438,6 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         if (ctx->creds->type) {
             flb_sds_destroy(ctx->creds->type);
         }
-        if (ctx->creds->project_id) {
-            flb_sds_destroy(ctx->creds->project_id);
-        }
         if (ctx->creds->private_key_id) {
             flb_sds_destroy(ctx->creds->private_key_id);
         }
@@ -500,6 +496,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     if (ctx->regex) {
         flb_regex_destroy(ctx->regex);
+    }
+    
+    if (ctx->project_id) {
+        flb_sds_destroy(ctx->project_id);
     }
 
     flb_free(ctx);
