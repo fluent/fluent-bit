@@ -40,8 +40,6 @@ static int opentelemetry_conn_event(void *data)
     struct mk_event *event;
     struct flb_opentelemetry *ctx = conn->ctx;
 
-    printf("activity on client socket\n");
-
     event = &conn->event;
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len) - 1;

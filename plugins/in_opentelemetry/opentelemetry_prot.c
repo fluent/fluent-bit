@@ -89,58 +89,21 @@ static int process_payload(struct flb_opentelemetry *ctx, struct http_conn *conn
                            struct mk_http_session *session,
                            struct mk_http_request *request)
 {
-    struct mk_list        *header_iterator;
-    struct                *decoded_context;
-    size_t                 payload_length;
-    unsigned char         *payload_buffer;
-    int                    gzip_payload;
-    struct mk_http_header *header;
-    size_t                 offset;
-    int                    result;
-
-    gzip_payload = FLB_FALSE;
-
-    mk_list_foreach(header_iterator, &request->header_list) {
-        header = mk_list_entry(head, struct mk_http_header, _head);
-
-        if (strcasecmp(header->key.data, "Content-Encoding") == 0) {
-            if (strcasecmp(header->val.data, "gzip") == 0) {
-                gzip_payload = FLB_TRUE;
-            }
-
-            break;
-        }
-    }
-
-    if (gzip_payload) {
-        result = flb_gzip_uncompress(request->data.data, request->data.len,
-                                     &payload_buffer, &payload_length);
-
-        if (result) {
-            send_response(conn, 400, "error: decompression error\n");
-            return -1;
-        }
-    }
-    else {
-        payload_buffer = request->data.data;
-        payload_length = request->data.len;
-    }
+    struct cmt *decoded_context;
+    size_t      offset;
+    int         result;
 
     offset = 0;
 
     result = cmt_decode_opentelemetry_create(&decoded_context,
-                                             payload_buffer,
-                                             payload_length,
+                                             request->data.data,
+                                             request->data.len,
                                              &offset);
 
     if (result == CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         result = flb_input_metrics_append(ctx->ins, NULL, 0, decoded_context);
 
         cmt_decode_opentelemetry_destroy(decoded_context);
-    }
-
-    if (gzip_payload) {
-        free(payload_buffer);
     }
 
     return 0;
