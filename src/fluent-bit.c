@@ -59,6 +59,39 @@
 #include <mcheck.h>
 #endif
 
+const char *ansi_reset   = ANSI_RESET;
+const char *ansi_bold    = ANSI_BOLD;
+const char *ansi_cyan    = ANSI_CYAN;
+const char *ansi_magenta = ANSI_MAGENTA;
+const char *ansi_red     = ANSI_RED;
+const char *ansi_yellow  = ANSI_YELLOW;
+const char *ansi_blue    = ANSI_BLUE;
+const char *ansi_green   = ANSI_GREEN;
+const char *ansi_white   = ANSI_WHITE;
+
+static void disable_ansi_formatting_if_unavailable()
+{
+    int availability_flag;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    availability_flag = FLB_FALSE;
+#else
+    availability_flag = isatty(STDOUT_FILENO);
+#endif
+
+    if (!availability_flag) {
+        ansi_reset   = "";
+        ansi_bold    = "";
+        ansi_cyan    = "";
+        ansi_magenta = "";
+        ansi_red     = "";
+        ansi_yellow  = "";
+        ansi_blue    = "";
+        ansi_green   = "";
+        ansi_white   = "";
+    }
+}
+
 #ifdef FLB_SYSTEM_WINDOWS
 extern int win32_main(int, char**);
 extern void win32_started(void);
@@ -105,14 +138,14 @@ static void flb_banner()
 #ifdef FLB_NIGHTLY_BUILD
     fprintf(stderr,
             "%sFluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!"
-            "%s\n", ANSI_BOLD, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), ANSI_RESET);
+            "%s\n", ansi_bold, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), ansi_reset);
 #else
     fprintf(stderr,
-            "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+            "%sFluent Bit v%s%s\n", ansi_bold, FLB_VERSION_STR, ansi_reset);
 #endif
 
-    fprintf(stderr, "* %sCopyright (C) 2015-2021 The Fluent Bit Authors%s\n",
-            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
+    fprintf(stderr, "* %s%sCopyright (C) 2015-2021 The Fluent Bit Authors%s\n",
+            ansi_bold, ansi_yellow, ansi_reset);
     fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
             "umbrella of Fluentd\n");
     fprintf(stderr, "* https://fluentbit.io\n\n");
@@ -126,7 +159,7 @@ static void flb_help(int rc, struct flb_config *config)
     struct flb_filter_plugin *filter;
 
     printf("Usage: fluent-bit [OPTION]\n\n");
-    printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("%sAvailable Options%s\n", ansi_bold, ansi_reset);
     print_opt("-b  --storage_path=PATH", "specify a storage buffering path");
     print_opt("-c  --config=FILE", "specify an optional configuration file");
 #ifdef FLB_HAVE_FORK
@@ -166,7 +199,7 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-V, --version", "show version number");
     print_opt("-h, --help", "print this help");
 
-    printf("\n%sInputs%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("\n%sInputs%s\n", ansi_bold, ansi_reset);
 
     /* Iterate each supported input */
     mk_list_foreach(head, &config->in_plugins) {
@@ -178,13 +211,13 @@ static void flb_help(int rc, struct flb_config *config)
         print_opt(in->name, in->description);
     }
 
-    printf("\n%sFilters%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("\n%sFilters%s\n", ansi_bold, ansi_reset);
     mk_list_foreach(head, &config->filter_plugins) {
         filter = mk_list_entry(head, struct flb_filter_plugin, _head);
         print_opt(filter->name, filter->description);
     }
 
-    printf("\n%sOutputs%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("\n%sOutputs%s\n", ansi_bold, ansi_reset);
     mk_list_foreach(head, &config->out_plugins) {
         out = mk_list_entry(head, struct flb_output_plugin, _head);
         if (strcmp(out->name, "lib") == 0 || (out->flags & FLB_OUTPUT_PRIVATE)) {
@@ -194,7 +227,7 @@ static void flb_help(int rc, struct flb_config *config)
         print_opt(out->name, out->description);
     }
 
-    printf("\n%sInternal%s\n", ANSI_BOLD, ANSI_RESET);
+    printf("\n%sInternal%s\n", ansi_bold, ansi_reset);
     printf(" Event Loop  = %s\n", mk_event_backend());
     printf(" Build Flags =%s\n", FLB_INFO_FLAGS);
     exit(rc);
@@ -318,7 +351,7 @@ static void help_print_property(int max, msgpack_object k, msgpack_object v)
         buf[i] = toupper(k.via.str.ptr[i]);
     }
     buf[k.via.str.size] = '\0';
-    printf(ANSI_BOLD "\n%s\n" ANSI_RESET, buf);
+    printf("\n%s%s%s\n", ansi_bold, buf, ansi_reset);
 
     snprintf(fmt, sizeof(fmt) - 1, "%%-%is", max);
     snprintf(fmt_prf, sizeof(fmt_prf) - 1, "%%-%is", max);
@@ -393,13 +426,13 @@ static void help_format_text(void *help_buf, size_t help_size)
     name = help_get_value(map, "$name");
     desc = help_get_value(map, "$description");
 
-    printf("%sHELP%s\n%s %s plugin\n", ANSI_BOLD, ANSI_RESET,
+    printf("%sHELP%s\n%s %s plugin\n", ansi_bold, ansi_reset,
            name, type);
     flb_sds_destroy(type);
     flb_sds_destroy(name);
 
     if (desc) {
-        printf(ANSI_BOLD "\nDESCRIPTION\n" ANSI_RESET "%s\n", desc);
+        printf("\n%sDESCRIPTION%s\n%s\n", ansi_bold, ansi_reset, desc);
         flb_sds_destroy(desc);
     }
 
@@ -1216,6 +1249,8 @@ int flb_main(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+    disable_ansi_formatting_if_unavailable();
+
 #ifdef FLB_SYSTEM_WINDOWS
     return win32_main(argc, argv);
 #else
