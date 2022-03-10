@@ -107,6 +107,7 @@ struct flb_s3 {
     char *sts_endpoint;
     char *canned_acl;
     char *content_type;
+    char *storage_class;
     char *log_key;
     char *external_id;
     int free_endpoint;
