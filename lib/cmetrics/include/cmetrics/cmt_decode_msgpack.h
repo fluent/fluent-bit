@@ -50,6 +50,8 @@ struct cmt_msgpack_decode_context {
     struct cmt_metric *metric;
     double            *bucket_list;
     size_t             bucket_count;
+    double            *quantile_list;
+    size_t             quantile_count;
     struct mk_list     unique_label_list;
     uint64_t           summary_quantiles[5];
     int                static_labels_unpacked;

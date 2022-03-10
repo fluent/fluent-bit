@@ -44,12 +44,21 @@
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_label.h>
+#include <cmetrics/cmt_array.h>
+#include <cmetrics/cmt_kvlist.h>
+#include <cmetrics/cmt_variant.h>
 #include <cmetrics/cmt_version.h>
 
 struct cmt {
     /* logging */
     int log_level;
     void (*log_cb)(void *, int, const char *, int, const char *);
+
+    /* cmetrics metadata */
+    struct cmt_kvlist *internal_metadata;
+
+    /* third party metadata (ie. otlp resource & instrumentation library) */
+    struct cmt_kvlist *external_metadata;
 
     /* static labels */
     struct cmt_labels *static_labels;

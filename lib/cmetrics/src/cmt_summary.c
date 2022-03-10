@@ -38,8 +38,11 @@
 struct cmt_summary *cmt_summary_create(struct cmt *cmt,
                                        char *ns, char *subsystem,
                                        char *name, char *help,
+                                       size_t quantiles_count,
+                                       double *quantiles,
                                        int label_count, char **label_keys)
 {
+    int i;
     int ret;
     struct cmt_summary *s;
 
@@ -60,6 +63,11 @@ struct cmt_summary *cmt_summary_create(struct cmt *cmt,
 
     if (!help || strlen(help) == 0) {
         cmt_log_error(cmt, "undefined help");
+        return NULL;
+    }
+
+    if (quantiles_count <= 0) {
+        cmt_log_error(cmt, "quantiles_count cannot be zero");
         return NULL;
     }
 
@@ -87,6 +95,19 @@ struct cmt_summary *cmt_summary_create(struct cmt *cmt,
         return NULL;
     }
 
+    /* create quantiles buffer */
+    s->quantiles_count = quantiles_count;
+    s->quantiles = calloc(1, sizeof(double) * quantiles_count);
+    if (!s->quantiles_count) {
+        cmt_errno();
+        cmt_summary_destroy(s);
+        return NULL;
+    }
+
+    /* set quantile */
+    for (i = 0; i < quantiles_count; i++) {
+        s->quantiles[i] = quantiles[i];
+    }
     return s;
 }
 
@@ -97,6 +118,10 @@ int cmt_summary_destroy(struct cmt_summary *summary)
 
     if (summary->map) {
         cmt_map_destroy(summary->map);
+    }
+
+    if (summary->quantiles) {
+        free(summary->quantiles);
     }
 
     free(summary);
@@ -237,7 +262,7 @@ void cmt_summary_count_set(struct cmt_metric *metric, uint64_t timestamp,
 
 int cmt_summary_set_default(struct cmt_summary *summary,
                             uint64_t timestamp,
-                            double *quantiles_default,
+                            double *quantile_values,
                             double sum,
                             uint64_t count,
                             int labels_count, char **label_vars)
@@ -255,14 +280,22 @@ int cmt_summary_set_default(struct cmt_summary *summary,
         return -1;
     }
 
+    if (!metric->sum_quantiles) {
+        metric->sum_quantiles = calloc(1, sizeof(uint64_t) * summary->quantiles_count);
+        if (!metric->sum_quantiles) {
+            cmt_errno();
+            return -1;
+        }
+    }
+
     /* set quantile values */
-    if (quantiles_default) {
+    if (quantile_values) {
         /* yes, quantile values are set */
         metric->sum_quantiles_set = CMT_TRUE;
 
         /* populate each quantile */
-        for (i = 0; i < 5; i++) {
-            cmt_summary_quantile_set(metric, timestamp, i, quantiles_default[i]);
+        for (i = 0; i < summary->quantiles_count; i++) {
+            cmt_summary_quantile_set(metric, timestamp, i, quantile_values[i]);
         }
     }
 

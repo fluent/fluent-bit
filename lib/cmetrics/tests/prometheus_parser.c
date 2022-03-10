@@ -488,48 +488,6 @@ void test_label_limits()
     TEST_CHECK(strcmp(errbuf, "maximum number of labels exceeded") == 0);
 }
 
-void test_invalid_types()
-{
-    int status;
-    char errbuf[256];
-    struct cmt *cmt;
-    struct cmt_decode_prometheus_parse_opts opts;
-    memset(&opts, 0, sizeof(opts));
-    opts.errbuf = errbuf;
-    opts.errbuf_size = sizeof(errbuf);
-
-    status = cmt_decode_prometheus_create(&cmt,
-            "# HELP metric_name some docstring\n"
-            "# TYPE metric_name summary\n"
-            "metric_name {key=\"abc\"} 32.4", 0, &opts);
-    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_PARSE_UNSUPPORTED_TYPE);
-    TEST_CHECK(strcmp(errbuf, "unsupported metric type: summary") == 0);
-}
-
-void test_skip_unsupported_types()
-{
-    int status;
-    struct cmt *cmt;
-    cmt_sds_t result;
-    struct cmt_decode_prometheus_parse_opts opts;
-    memset(&opts, 0, sizeof(opts));
-    opts.skip_unsupported_type = true;
-
-    status = cmt_decode_prometheus_create(&cmt,
-            "# HELP metric_name some docstring\n"
-            "# TYPE metric_name summary\n"
-            "metric_name {key=\"abc\"} 32.4"
-            "another_metric {key=\"abc\"} 32.4", 0, &opts);
-    TEST_CHECK(status == 0);
-    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
-    TEST_CHECK(strcmp(result,
-            "# HELP another_metric (no information)\n"
-            "# TYPE another_metric untyped\n"
-            "another_metric{key=\"abc\"} 32.399999999999999 0\n") == 0);
-    cmt_sds_destroy(result);
-    cmt_decode_prometheus_destroy(cmt);
-}
-
 void test_invalid_value()
 {
     int status;
@@ -736,58 +694,68 @@ void test_histogram_labels()
     cmt_decode_prometheus_destroy(cmt);
 }
 
-void test_histogram_broken_labels()
+void test_summary()
 {
     int status;
-    char errbuf[256];
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    cmt_sds_t result;
+    memset(&opts, 0, sizeof(opts));
+
+    status = cmt_decode_prometheus_create(&cmt,
+        "# HELP rpc_duration_seconds A summary of the RPC duration in seconds.\n"
+        "# TYPE rpc_duration_seconds summary\n"
+        "rpc_duration_seconds{quantile=\"0.01\"} 3102\n"
+        "rpc_duration_seconds{quantile=\"0.05\"} 3272\n"
+        "rpc_duration_seconds{quantile=\"0.5\"} 4773\n"
+        "rpc_duration_seconds{quantile=\"0.9\"} 9001\n"
+        "rpc_duration_seconds{quantile=\"0.99\"} 76656\n"
+        "rpc_duration_seconds_sum 1.7560473e+07\n"
+        "rpc_duration_seconds_count 2693\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+    TEST_CHECK(strcmp(result,
+        "# HELP rpc_duration_seconds A summary of the RPC duration in seconds.\n"
+        "# TYPE rpc_duration_seconds summary\n"
+        "rpc_duration_seconds{quantile=\"0.01\"} 3102\n"
+        "rpc_duration_seconds{quantile=\"0.05\"} 3272\n"
+        "rpc_duration_seconds{quantile=\"0.5\"} 4773\n"
+        "rpc_duration_seconds{quantile=\"0.9\"} 9001\n"
+        "rpc_duration_seconds{quantile=\"0.99\"} 76656\n"
+        "rpc_duration_seconds_sum 17560473\n"
+        "rpc_duration_seconds_count 2693\n") == 0);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_null_labels()
+{
+    int status;
+    size_t offset;
+    cmt_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
     memset(&opts, 0, sizeof(opts));
-    opts.errbuf = errbuf;
-    opts.errbuf_size = sizeof(errbuf);
+    const char in_buf[] =
+        "# TYPE ns_ss_name counter\n"
+        "# HELP ns_ss_name Example with null labels.\n"
+        "ns_ss_name{A=\"a\",B=\"b\",C=\"c\"} 1027 1395066363000\n"
+        "ns_ss_name{C=\"c\",D=\"d\",E=\"e\"} 1027 1395066363000\n"
+        ;
+    const char expected[] =
+        "# HELP ns_ss_name Example with null labels.\n"
+        "# TYPE ns_ss_name counter\n"
+        "ns_ss_name{A=\"a\",B=\"b\",C=\"c\"} 1027 1395066363000\n"
+        "ns_ss_name{C=\"c\",D=\"d\",E=\"e\"} 1027 1395066363000\n"
+        ;
 
-    status = cmt_decode_prometheus_create(&cmt,
-            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
-            "# TYPE http_request_duration_seconds histogram\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
-            "http_request_duration_seconds_bucket{le=\"0.1\"} 33444\n"
-            "http_request_duration_seconds_bucket{le=\"0.2\"} 100392\n"
-            "http_request_duration_seconds_bucket{le=\"0.5\"} 129389\n"
-            "http_request_duration_seconds_bucket{le=\"1\"} 133988\n"
-            "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320\n"
-            "http_request_duration_seconds_sum 53423\n"
-            "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"}144320\n", 0, &opts);
-    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR);
-    TEST_CHECK(strcmp(errbuf, "inconsistent labels on histogram bucket") == 0);
-
-    status = cmt_decode_prometheus_create(&cmt,
-            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
-            "# TYPE http_request_duration_seconds histogram\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.1\",label2=\"val2\"} 33444\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.2\",label2=\"val2\"} 100392\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.5\",label2=\"val2\"} 129389\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"1\",label2=\"val2\"} 133988\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"+Inf\",label2=\"val2\"} 144320\n"
-            "http_request_duration_seconds_sum{label1=\"val1\"} 53423\n"
-            "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"}144320\n", 0, &opts);
-    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR);
-    TEST_CHECK(strcmp(errbuf, "inconsistent labels on histogram sum") == 0);
-
-
-    status = cmt_decode_prometheus_create(&cmt,
-            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
-            "# TYPE http_request_duration_seconds histogram\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.1\",label2=\"val2\"} 33444\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.2\",label2=\"val2\"} 100392\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.5\",label2=\"val2\"} 129389\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"1\",label2=\"val2\"} 133988\n"
-            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"+Inf\",label2=\"val2\"} 144320\n"
-            "http_request_duration_seconds_sum{label1=\"val1\",label2=\"val2\"} 53423\n"
-            "http_request_duration_seconds_count{label1=\"val1\"} 144320\n", 0, &opts);
-    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR);
-    TEST_CHECK(strcmp(errbuf, "inconsistent labels on histogram count") == 0);
+    cmt_initialize();
+    status = cmt_decode_prometheus_create(&cmt, in_buf, 0, &opts);
+    TEST_CHECK(status == 0);
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result, expected) == 0);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
 }
 
 
@@ -805,8 +773,6 @@ TEST_LIST = {
     {"prometheus_spec_example", test_prometheus_spec_example},
     {"bison_parsing_error", test_bison_parsing_error},
     {"label_limits", test_label_limits},
-    {"invalid_types", test_invalid_types},
-    {"skip_unsupported_types", test_skip_unsupported_types},
     {"invalid_value", test_invalid_value},
     {"invalid_timestamp", test_invalid_timestamp},
     {"default_timestamp", test_default_timestamp},
@@ -815,6 +781,7 @@ TEST_LIST = {
     {"issue_71", test_issue_71},
     {"histogram", test_histogram},
     {"histogram_labels", test_histogram_labels},
-    {"histogram_broken_labels", test_histogram_broken_labels},
+    {"summary", test_summary},
+    {"null_labels", test_null_labels},
     { 0 }
 };

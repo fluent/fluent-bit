@@ -29,7 +29,6 @@
 #define CMT_DECODE_PROMETHEUS_SUCCESS                     0
 #define CMT_DECODE_PROMETHEUS_SYNTAX_ERROR                1
 #define CMT_DECODE_PROMETHEUS_ALLOCATION_ERROR           10
-#define CMT_DECODE_PROMETHEUS_PARSE_UNSUPPORTED_TYPE     20
 #define CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT_EXCEEDED   30
 #define CMT_DECODE_PROMETHEUS_CMT_SET_ERROR              40
 #define CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR           50
@@ -48,7 +47,6 @@ enum cmt_decode_prometheus_context_sample_type {
 struct cmt_decode_prometheus_context_sample {
     char value1[64];
     char value2[64];
-    size_t label_count;
     int type;
     cmt_sds_t label_values[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];
 
@@ -73,7 +71,6 @@ struct cmt_decode_prometheus_parse_opts {
     uint64_t default_timestamp;
     char *errbuf;
     size_t errbuf_size;
-    bool skip_unsupported_type;
 };
 
 struct cmt_decode_prometheus_context {

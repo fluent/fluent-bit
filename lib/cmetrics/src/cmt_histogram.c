@@ -52,8 +52,10 @@ struct cmt_histogram_buckets *cmt_histogram_buckets_create_size(double *bkts, si
     buckets->count = count;
     buckets->upper_bounds = upper_bounds;
 
-    for (i = 0; i < count; i++) {
-        upper_bounds[i] = bkts[i];
+    if (bkts != NULL) {
+        for (i = 0; i < count; i++) {
+            upper_bounds[i] = bkts[i];
+        }
     }
 
     return buckets;

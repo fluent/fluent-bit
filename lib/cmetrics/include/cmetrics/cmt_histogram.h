@@ -34,6 +34,7 @@ struct cmt_histogram {
     struct cmt_map *map;
     struct mk_list _head;
     struct cmt *cmt;
+    int    aggregation_type;
 };
 
 /* Buckets */

@@ -52,6 +52,23 @@ struct cmt *cmt_create()
         return NULL;
     }
 
+    cmt->internal_metadata = cmt_kvlist_create();
+
+    if (cmt->internal_metadata == NULL) {
+        cmt_labels_destroy(cmt->static_labels);
+
+        free(cmt);
+    }
+
+    cmt->external_metadata = cmt_kvlist_create();
+
+    if (cmt->external_metadata == NULL) {
+        cmt_kvlist_destroy(cmt->internal_metadata);
+        cmt_labels_destroy(cmt->static_labels);
+
+        free(cmt);
+    }
+
     mk_list_init(&cmt->counters);
     mk_list_init(&cmt->gauges);
     mk_list_init(&cmt->histograms);
@@ -100,6 +117,14 @@ void cmt_destroy(struct cmt *cmt)
 
     if (cmt->static_labels) {
         cmt_labels_destroy(cmt->static_labels);
+    }
+
+    if (cmt->internal_metadata != NULL) {
+        cmt_kvlist_destroy(cmt->internal_metadata);
+    }
+
+    if (cmt->external_metadata != NULL) {
+        cmt_kvlist_destroy(cmt->external_metadata);
     }
 
     free(cmt);
