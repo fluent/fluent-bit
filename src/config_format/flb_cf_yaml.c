@@ -72,6 +72,7 @@ enum state {
     STATE_PLUGIN_OUTPUT,   /* output plugins section */
 
     STATE_CUSTOM,                  /* custom plugins */
+    STATE_CUSTOM_SEQUENCE,
     STATE_CUSTOM_KEY_VALUE_PAIR,
     STATE_CUSTOM_KEY,
     STATE_CUSTOM_VAL,
@@ -398,6 +399,21 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
      */
     case STATE_CUSTOM:
         switch (event->type) {
+        case YAML_SEQUENCE_START_EVENT:
+            s->state = STATE_CUSTOM_SEQUENCE;
+            break;
+
+        case YAML_SEQUENCE_END_EVENT:
+            s->state = STATE_SECTION;
+            break;
+        default:
+            yaml_error_event(ctx, s, event);
+            return YAML_FAILURE;
+        }
+        break;
+
+    case STATE_CUSTOM_SEQUENCE:
+        switch (event->type) {
         case YAML_SCALAR_EVENT:
             value = (char *)event->data.scalar.value;
             len = strlen(value);
@@ -426,6 +442,8 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_MAPPING_START_EVENT:
             break;
         case YAML_MAPPING_END_EVENT:
+            break;
+        case YAML_SEQUENCE_END_EVENT:
             s->state = STATE_SECTION;
             break;
         default:
@@ -441,6 +459,9 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
         case YAML_MAPPING_END_EVENT:
             s->state = STATE_CUSTOM;
             break;
+        case YAML_SEQUENCE_END_EVENT:
+            break;
+
         default:
             yaml_error_event(ctx, s, event);
             return YAML_FAILURE;
@@ -458,7 +479,7 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             s->state = STATE_CUSTOM;
             break;
         case YAML_MAPPING_END_EVENT:
-            s->state = STATE_CUSTOM;
+            s->state = STATE_CUSTOM_SEQUENCE;
             break;
         default:
             yaml_error_event(ctx, s, event);
@@ -686,14 +707,19 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
     case STATE_PLUGIN_FILTER:
     case STATE_PLUGIN_OUTPUT:
         switch(event->type) {
+        case YAML_SEQUENCE_START_EVENT:
+            s->state = STATE_PLUGIN_TYPE;
+            break;
+        case YAML_SEQUENCE_END_EVENT:
+            break;
+        case YAML_SCALAR_EVENT:
+            s->state = STATE_SECTION;
+            break;
         case YAML_MAPPING_START_EVENT:
             s->state = STATE_PLUGIN_TYPE;
             break;
         case YAML_MAPPING_END_EVENT:
             s->state = STATE_SECTION_KEY;
-            break;
-        case YAML_SCALAR_EVENT:
-            s->state = STATE_SECTION;
             break;
         default:
             yaml_error_event(ctx, s, event);
@@ -721,11 +747,14 @@ static int consume_event(struct flb_cf *cf, struct local_ctx *ctx,
             if (!kv) {
                 return YAML_FAILURE;
             }
-
             /* next state are key value pairs */
             s->state = STATE_PLUGIN_KEY_VALUE_PAIR;
             break;
+        case YAML_MAPPING_START_EVENT:
+            break;
         case YAML_MAPPING_END_EVENT:
+            break;
+        case YAML_SEQUENCE_END_EVENT:
             s->state = STATE_PIPELINE;
             break;
         default:
