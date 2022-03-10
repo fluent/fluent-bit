@@ -309,7 +309,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     if (!ctx->client_email) {
         flb_plg_warn(ctx->ins, "client_email is not defined, using "
                      "a default one");
-        ctx->client_email = flb_sds_create("default");
+        if (ctx->creds == NULL) {
+            ctx->creds = flb_calloc(1, sizeof(struct flb_stackdriver_oauth_credentials));
+            if (ctx->creds == NULL) {
+                flb_plg_error(ctx->ins, "unable to allocate credentials");
+                flb_stackdriver_conf_destroy(ctx);
+                return NULL;
+            }
+        }
+        ctx->creds->client_email = flb_sds_create("default");
+        ctx->client_email = ctx->creds->client_email;
     }
     if (!ctx->private_key) {
         flb_plg_warn(ctx->ins, "private_key is not defined, fetching "
