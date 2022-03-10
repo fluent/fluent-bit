@@ -5,20 +5,25 @@ includes:
     - service.yaml
 
 customs:
-    ${observability}:
+    - ${observability}:
         api_key: zyJUb2tlbklEItoiY2ZlMTcx
 
 pipeline:
     inputs:
-        tail:
+        - tail:
             path: ./test.log
             parser: json
             read_from_head: true
+        - tail:
+            path: ./test.log
+            parser: json
+            read_from_head: true
+
     filters:
-        record_modifier:
+        - record_modifier:
             match: "*"
             record: powered_by calyptia
 
     outputs:
-        stdout:
+        - stdout:
             match: "*"
