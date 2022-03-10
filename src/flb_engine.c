@@ -21,6 +21,8 @@
 #include <stdlib.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_bucket_queue.h>
+#include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_bits.h>
@@ -538,6 +540,7 @@ int flb_engine_start(struct flb_config *config)
     struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
+    struct flb_bucket_queue *evl_bktq;
     struct flb_sched *sched;
     struct flb_net_dns dns_ctx;
 
@@ -554,6 +557,34 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
     config->evl = evl;
+
+    /* Create the bucket queue (FLB_ENGINE_PRIORITY_COUNT priorities) */
+    evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
+    if (!evl_bktq) {
+        return -1;
+    }
+    config->evl_bktq = evl_bktq;
+
+    /*
+     * Event loop channel to ingest flush events from flb_engine_flush()
+     *
+     *  - FLB engine uses 'ch_self_events[1]' to dispatch tasks to self
+     *  - Self to receive message on ch_parent_events[0]
+     *
+     * The mk_event_channel_create() will attach the pipe read end ch_self_events[0]
+     * to the local event loop 'evl'.
+     */
+    ret = mk_event_channel_create(config->evl,
+                                    &config->ch_self_events[0],
+                                    &config->ch_self_events[1],
+                                    &config->event_thread_init);
+    if (ret == -1) {
+        flb_error("[engine] could not create engine thread channel");
+        return -1;
+    }
+    /* Signal type to indicate a "flush" request */
+    config->event_thread_init.type = FLB_ENGINE_EV_THREAD_ENGINE;
+    config->event_thread_init.priority = FLB_ENGINE_PRIORITY_THREAD;
 
     /* Register the event loop on this thread */
     flb_engine_evl_init();
@@ -650,6 +681,7 @@ int flb_engine_start(struct flb_config *config)
                                                t_flush.tm.tv_sec,
                                                t_flush.tm.tv_nsec,
                                                event);
+    event->priority = FLB_ENGINE_PRIORITY_FLUSH;
     if (config->flush_fd == -1) {
         flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
     }
@@ -723,8 +755,8 @@ int flb_engine_start(struct flb_config *config)
     }
 
     while (1) {
-        mk_event_wait(evl);
-        mk_event_foreach(event, evl) {
+        mk_event_wait(evl); /* potentially conditional mk_event_wait or mk_event_wait_2 based on bucket queue capacity for one shot events */
+        flb_event_priority_live_foreach(event, evl_bktq, evl, FLB_ENGINE_LOOP_MAX_ITER) {
             if (event->type == FLB_ENGINE_EV_CORE) {
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == FLB_ENGINE_STOP) {
@@ -754,6 +786,7 @@ int flb_engine_start(struct flb_config *config)
                                                                   1,
                                                                   0,
                                                                   event);
+                    event->priority = FLB_ENGINE_PRIORITY_SHUTDOWN;
                 }
                 else if (ret == FLB_ENGINE_SHUTDOWN) {
                     if (config->shutdown_fd > 0) {
@@ -794,6 +827,19 @@ int flb_engine_start(struct flb_config *config)
             else if (event->type & FLB_ENGINE_EV_SCHED) {
                 /* Event type registered by the Scheduler */
                 flb_sched_event_handler(config, event);
+            }
+            else if (event->type == FLB_ENGINE_EV_THREAD_ENGINE) {
+                struct flb_output_flush *output_flush;
+
+                /* Read the coroutine reference */
+                ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
+                if (ret <= 0 || output_flush == 0) {
+                    flb_errno();
+                    continue;
+                }
+
+                /* Init coroutine */
+                flb_coro_resume(output_flush->coro);
             }
             else if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);

@@ -23,6 +23,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      ref:
+        description: The commit, tag or branch to checkout for testing scripts.
+        type: string
+        default: master
+        required: false
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -126,7 +131,9 @@ jobs:
         arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
         uses: docker/login-action@v1
@@ -170,7 +177,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.2.0
@@ -181,7 +190,7 @@ jobs:
           version: v3.6.3
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v2.0
+        uses: azure/setup-kubectl@v2.1
 
       - name: Test the HTTP server is responding
         timeout-minutes: 5

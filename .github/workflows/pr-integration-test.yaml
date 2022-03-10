@@ -23,7 +23,7 @@ jobs:
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/pr-${{ github.event.number }}
-      image-tag: x86_64
+      image-tag: ${{ github.sha }}
       environment: integration
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
@@ -40,28 +40,13 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           number: ${{ github.event.pull_request.number }}
 
-      - name: Upload the image just in case as an artefact
-        run: |
-          docker pull $IMAGE
-          docker save --output /tmp/pr-image.tar $IMAGE
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}:x86_64
-        shell: bash
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: pr-${{ github.event.pull_request.number }}-image
-          path: /tmp/pr-image.tar
-          if-no-files-found: error
-
   pr-integration-test-run-integration-gcp:
     name: PR - GCP integration test
     needs: pr-integration-test-build
     uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
     with:
       image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
-      image_tag: x86_64
+      image_tag: ${{ github.sha }}
     secrets:
       grafana_username: ${{ secrets.GRAFANA_USERNAME }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}

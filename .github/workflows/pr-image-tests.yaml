@@ -6,7 +6,8 @@ on:
       - reopened
       - synchronize
     paths:
-      - 'dockerfiles/**'
+      - 'dockerfiles/Dockerfile'
+      - 'conf/**'
 
   workflow_dispatch:
 
@@ -17,85 +18,44 @@ jobs:
       environment: pr
       steps:
         - name: Checkout code
-          uses: actions/checkout@v2
-
-        - name: Set up QEMU
-          uses: docker/setup-qemu-action@v1
+          uses: actions/checkout@v3
 
         - name: Set up Docker Buildx
           uses: docker/setup-buildx-action@v1
 
-        - name: Build the master image
+        - name: Build the multi-arch images
           uses: docker/build-push-action@v2
           with:
-            file: ./dockerfiles/Dockerfile.x86_64-master
-            context: .
-            platforms: linux/amd64
-            push: false
-            load: false
-
-        - name: Build the multi-arch images using current master tarball
-          uses: docker/build-push-action@v2
-          with:
-            file: ./dockerfiles/Dockerfile.multiarch
+            file: ./dockerfiles/Dockerfile
             context: .
             platforms: linux/amd64
             target: production
-            push: false
-            load: false
-            build-args: |
-              FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/master
-
-        - name: Build the master debug image
-          uses: docker/build-push-action@v2
-          with:
-            file: ./dockerfiles/Dockerfile.x86_64-master_debug
-            context: .
-            platforms: linux/amd64
             push: false
             load: false
 
         - name: Build the debug multi-arch images
           uses: docker/build-push-action@v2
           with:
-            file: ./dockerfiles/Dockerfile.multiarch
+            file: ./dockerfiles/Dockerfile
             context: .
             platforms: linux/amd64
             target: debug
             push: false
             load: false
-            build-args: |
-              FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/master
 
     pr-image-tests-classic-docker-build:
       name: PR - Classic docker build test
       runs-on: ubuntu-latest
       environment: pr
-      strategy:
-        # A failure on one is probably shared
-        fail-fast: true
-        matrix:
-          arch: [ amd64, arm64, arm/v7 ]
-          include:
-            - arch: amd64
-              suffix: x86_64
-            - arch: arm/v7
-              suffix: arm32v7
-            - arch: arm64
-              suffix: arm64v8
       steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-
-      - name: Build the ${{ matrix.suffix }} classic test image
+      - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
         run: |
-          docker build --platform=linux/${{ matrix.arch }} --build-arg FLB_TARBALL="$FLB_TARBALL" -f ./dockerfiles/Dockerfile.${{ matrix.suffix }} ./dockerfiles/
+          docker build -f ./dockerfiles/Dockerfile .
         env:
           # Ensure we disable buildkit
           DOCKER_BUILDKIT: 0
-          FLB_TARBALL: https://github.com/fluent/fluent-bit/tarball/master
         shell: bash

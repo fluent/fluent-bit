@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     name: PR - Hadolint
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         # Ignores do not work: https://github.com/reviewdog/action-hadolint/issues/35 is resolved
       - uses: reviewdog/action-hadolint@v1
         with:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     name: PR - Shellcheck
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ludeeus/action-shellcheck@master
         with:
           ignore_paths: lib plugins tests
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     name: PR - Actionlint
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - run: |
           echo "::add-matcher::.github/actionlint-matcher.json"
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
@@ -43,7 +43,7 @@ jobs:
     name: PR - Reusable workflow linting
     steps:
       # We probably should target this on only workflow changes but the complexity of doing that is a lot more than just letting the grep run.
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       # Recursive grep or any workflow using a local reusable workflow but not ending in @master
       - run: |
           if [[ $(grep -R -E 'uses:[ ]*fluent/fluent-bit/.github/workflows/.*@[^master].*$' .github/workflows/*.y*ml| wc -l) -gt 0 ]]; then

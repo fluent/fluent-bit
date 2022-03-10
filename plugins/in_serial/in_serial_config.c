@@ -19,72 +19,58 @@
  */
 
 #include <stdlib.h>
-#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_plugin.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_error.h>
 
 #include "in_serial_config.h"
 
 struct flb_in_serial_config *serial_config_read(struct flb_in_serial_config *config,
                                                 struct flb_input_instance *i_ins)
 {
-    uint64_t min_bytes;
-    const char *file;
-    const char *bitrate;
-    const char *separator;
-    const char *tmp;
-    const char *format;
+    int ret;
 
-    /* Get input properties */
-    file      = flb_input_get_property("file", i_ins);
-    bitrate   = flb_input_get_property("bitrate", i_ins);
-    separator = flb_input_get_property("separator", i_ins);
-    format    = flb_input_get_property("format", i_ins);
-
-    tmp = flb_input_get_property("min_bytes", i_ins);
-    if (!tmp) {
-        min_bytes = 0;
-    }
-    else {
-        min_bytes = atoi(tmp);
+    /* Load the config map */
+    ret = flb_input_config_map_set(i_ins, (void *)config);
+    if (ret == -1) {
+        flb_plg_error(i_ins, "unable to load configuration");
+        return NULL;
     }
 
-    if (!file) {
+    if (!config->file) {
         flb_error("[serial] error reading filename from "
                   "configuration");
         return NULL;
     }
 
-    if (!bitrate) {
+    if (!config->bitrate) {
         flb_error("[serial] error reading bitrate from "
                   "configuration");
         return NULL;
     }
 
-    if (min_bytes <= 0) {
-        min_bytes = 1;
+    if (config->min_bytes <= 0) {
+        config->min_bytes = 1;
     }
 
     config->fd        = -1;
     config->buf_len   = 0;
-    config->file      = file;
-    config->bitrate   = bitrate;
-    config->min_bytes = min_bytes;
-    config->separator = separator;
 
-    if (format && separator) {
+    if (config->format_str && config->separator) {
         flb_error("[in_serial] specify 'format' or 'separator', not both");
         return NULL;
     }
 
-    if (separator) {
-        config->sep_len = strlen(separator);
+    if (config->separator) {
+        config->sep_len = strlen(config->separator);
     }
     else {
         config->sep_len = 0;
     }
 
-    if (format) {
-        if (strcasecmp(format, "json") == 0) {
+    if (config->format_str) {
+        if (strcasecmp(config->format_str, "json") == 0) {
             config->format = FLB_SERIAL_FORMAT_JSON;
         }
     }

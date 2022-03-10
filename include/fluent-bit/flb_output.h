@@ -493,6 +493,7 @@ static FLB_INLINE void output_pre_cb_flush(void)
     struct flb_coro *coro;
     struct flb_output_plugin *out_p;
     struct flb_out_flush_params *params;
+    struct flb_out_flush_params persisted_params;
 
     params = (struct flb_out_flush_params *) FLB_TLS_GET(out_flush_params);
     if (!params) {
@@ -504,17 +505,20 @@ static FLB_INLINE void output_pre_cb_flush(void)
      * Until this point the th->callee already set the variables, so we
      * wait until the core wanted to resume so we really trigger the
      * output callback.
+     *
+     * Persist params locally incase ptr data is changed while switched out.
      */
     coro = params->coro;
+    persisted_params = *params;
     co_switch(coro->caller);
 
     /* Continue, we will resume later */
-    out_p = params->out_plugin;
-    out_p->cb_flush(params->event_chunk,
-                    params->out_flush,
-                    params->i_ins,
-                    params->out_context,
-                    params->config);
+    out_p = persisted_params.out_plugin;
+    out_p->cb_flush(persisted_params.event_chunk,
+                    persisted_params.out_flush,
+                    persisted_params.i_ins,
+                    persisted_params.out_context,
+                    persisted_params.config);
 }
 
 void flb_output_flush_prepare_destroy(struct flb_output_flush *out_flush);
