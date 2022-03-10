@@ -21,6 +21,7 @@
 /.github/                @niedbalski
 /appveyor.yml            @niedbalski
 /dockerfiles/            @niedbalski
+/packaging/              @niedbalski
 
 # Core: Signv4
 # ------------

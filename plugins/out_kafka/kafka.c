@@ -503,11 +503,120 @@ static int cb_kafka_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_STR, "topic_key", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, topic_key),
+    "Which record to use as the kafka topic."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "dynamic_topic", "false",
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, dynamic_topic),
+    "Activate dynamic topics."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "format", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, format_str),
+    "Set the record output format."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "message_key", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, message_key),
+    "Which record key to use as the message data."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "message_key_field", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, message_key_field),
+    "Which record key field to use as the message data."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "timestamp_key", FLB_KAFKA_TS_KEY,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_key),
+    "Set the key for the the timestamp."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "timestamp_format", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_format_str),
+    "Set the format the timestamp is in."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "queue_full_retries", FLB_KAFKA_QUEUE_FULL_RETRIES,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_format_str),
+    "Set the format the timestamp is in."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_timestamp_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the timestamp key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_host_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the host key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_short_message_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the short message key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_full_message_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the full message key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_level_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the level key for gelf  output."
+   },
+#ifdef FLB_HAVE_AVRO_ENCODER
+   {
+    FLB_CONFIG_MAP_STR, "schema_str", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set AVRO schema."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_id", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set AVRO schema ID."
+   },
+#endif
+   {
+    FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka topics, delimited by commas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "brokers", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka brokers, delimited by commas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "client_id", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka client_id."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "group_id", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka group_id."
+   },
+   {
+    FLB_CONFIG_MAP_STR_PREFIX, "rdkafka.", NULL,
+    //FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_kafka, rdkafka_opts),
+    0,  FLB_FALSE, 0,
+    "Set the kafka group_id."
+   },
+   /* EOF */
+   {0}
+};
+
 struct flb_output_plugin out_kafka_plugin = {
     .name         = "kafka",
     .description  = "Kafka",
     .cb_init      = cb_kafka_init,
     .cb_flush     = cb_kafka_flush,
     .cb_exit      = cb_kafka_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

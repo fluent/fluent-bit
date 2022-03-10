@@ -57,7 +57,7 @@ jobs:
     needs: staging-release-version-check
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Setup runner
       run: |
@@ -127,7 +127,7 @@ jobs:
     environment: release
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - uses: ./.github/actions/release-server-sync
       with:

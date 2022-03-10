@@ -25,6 +25,8 @@
 #include "systemd_config.h"
 #include "systemd_db.h"
 
+#include <ctype.h>
+
 /* msgpack helpers to pack unsigned ints (it takes care of endianness */
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
 #define pack_uint32(buf, d) _msgpack_store32(buf, (uint32_t) d)
@@ -73,6 +75,7 @@ static int in_systemd_collect(struct flb_input_instance *ins,
 {
     int ret;
     int ret_j;
+    int i;
     int len;
     int entries = 0;
     int skip_entries = 0;
@@ -82,10 +85,12 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     uint8_t h;
     uint64_t usec;
     size_t length;
+    size_t threshold;
     const char *sep;
     const char *key;
     const char *val;
     char *tmp;
+    char *buf = NULL;
 #ifdef FLB_HAVE_SQLDB
     char *cursor = NULL;
 #endif
@@ -122,6 +127,17 @@ static int in_systemd_collect(struct flb_input_instance *ins,
         }
         if (ret != SD_JOURNAL_APPEND && ret != SD_JOURNAL_NOP) {
             return FLB_SYSTEMD_NONE;
+        }
+    }
+
+    if (ctx->lowercase == FLB_TRUE) {
+        ret = sd_journal_get_data_threshold(ctx->j, &threshold);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins,
+                          "error setting up systemd data. "
+                          "sd_journal_get_data_threshold() return value '%i'",
+                          ret);
+            return FLB_SYSTEMD_ERROR;
         }
     }
 
@@ -211,14 +227,36 @@ static int in_systemd_collect(struct flb_input_instance *ins,
                 key++;
                 length--;
             }
+
             sep = strchr(key, '=');
             if (sep == NULL) {
                 skip_entries++;
                 continue;
             }
+
             len = (sep - key);
             msgpack_pack_str(&mp_pck, len);
-            msgpack_pack_str_body(&mp_pck, key, len);
+
+            if (ctx->lowercase == FLB_TRUE) {
+                /*
+                 * Ensure buf to have enough space for the key because the libsystemd
+                 * might return larger data than the threshold.
+                 */
+                if (buf == NULL) {
+                    buf = flb_sds_create_len(NULL, threshold);
+                }
+                if (flb_sds_alloc(buf) < len) {
+                    buf = flb_sds_increase(buf, len - flb_sds_alloc(buf));
+                }
+                for (i = 0; i < len; i++) {
+                    buf[i] = tolower(key[i]);
+                }
+
+                msgpack_pack_str_body(&mp_pck, buf, len);
+            }
+            else {
+                msgpack_pack_str_body(&mp_pck, key, len);
+            }
 
             val = sep + 1;
             len = length - (sep - key) - 1;
@@ -275,6 +313,8 @@ static int in_systemd_collect(struct flb_input_instance *ins,
             break;
         }
     }
+
+    flb_sds_destroy(buf);
 
 #ifdef FLB_HAVE_SQLDB
     /* Save cursor */
@@ -462,6 +502,63 @@ static int in_systemd_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_STR, "path", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, path),
+      "Set the systemd journal path"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "max_fields", FLB_SYSTEMD_MAX_FIELDS,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, max_fields),
+      "Set the maximum fields per notification"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "max_entries", FLB_SYSTEMD_MAX_ENTRIES,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, max_entries),
+      "Set the maximum entries per notification"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "systemd_filter_type", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, filter_type),
+      "Set the systemd filter type to either 'and' or 'or'"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "systemd_filter", (char *)NULL,
+      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_systemd_config, systemd_filters),
+      "Add a systemd filter, can be set multiple times"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "read_from_tail", "false",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, read_from_tail),
+      "Read the journal from the end (tail)"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "lowercase", "false",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, lowercase),
+      "Lowercase the fields"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "strip_underscores", "false",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, strip_underscores),
+      "Strip undersecores from fields"
+    },
+#ifdef FLB_HAVE_SQLDB
+    {
+      FLB_CONFIG_MAP_STR, "db_sync", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, db_sync_mode),
+      "Set the database sync mode: extra, full, normal or off"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "db", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, db_path),
+      "Set the database path"
+    },
+#endif /* FLB_HAVE_SQLDB */
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_systemd_plugin = {
     .name         = "systemd",
@@ -472,5 +569,6 @@ struct flb_input_plugin in_systemd_plugin = {
     .cb_pause     = in_systemd_pause,
     .cb_resume    = in_systemd_resume,
     .cb_exit      = in_systemd_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

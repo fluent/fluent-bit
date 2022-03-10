@@ -500,13 +500,6 @@ void test_invalid_types()
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP metric_name some docstring\n"
-            "# TYPE metric_name histogram\n"
-            "metric_name {key=\"abc\"} 32.4", 0, &opts);
-    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_PARSE_UNSUPPORTED_TYPE);
-    TEST_CHECK(strcmp(errbuf, "unsupported metric type: histogram") == 0);
-
-    status = cmt_decode_prometheus_create(&cmt,
-            "# HELP metric_name some docstring\n"
             "# TYPE metric_name summary\n"
             "metric_name {key=\"abc\"} 32.4", 0, &opts);
     TEST_CHECK(status == CMT_DECODE_PROMETHEUS_PARSE_UNSUPPORTED_TYPE);
@@ -524,7 +517,7 @@ void test_skip_unsupported_types()
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP metric_name some docstring\n"
-            "# TYPE metric_name histogram\n"
+            "# TYPE metric_name summary\n"
             "metric_name {key=\"abc\"} 32.4"
             "another_metric {key=\"abc\"} 32.4", 0, &opts);
     TEST_CHECK(status == 0);
@@ -549,7 +542,7 @@ void test_invalid_value()
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP metric_name some docstring\n"
-            "# TYPE metric_name histogram\n"
+            "# TYPE metric_name counter\n"
             "metric_name {key=\"abc\"} 10e", 0, &opts);
     TEST_CHECK(status == CMT_DECODE_PROMETHEUS_PARSE_VALUE_FAILED);
     TEST_CHECK(strcmp(errbuf,
@@ -568,7 +561,7 @@ void test_invalid_timestamp()
 
     status = cmt_decode_prometheus_create(&cmt,
             "# HELP metric_name some docstring\n"
-            "# TYPE metric_name histogram\n"
+            "# TYPE metric_name counter\n"
             "metric_name {key=\"abc\"} 10 3e", 0, &opts);
     TEST_CHECK(status == CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED);
     TEST_CHECK(strcmp(errbuf,
@@ -671,6 +664,132 @@ void test_issue_71()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+void test_histogram()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    cmt_sds_t result;
+    memset(&opts, 0, sizeof(opts));
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{le=\"0.05\"} 24054\n"
+            "http_request_duration_seconds_bucket{le=\"0.1\"} 33444\n"
+            "http_request_duration_seconds_bucket{le=\"0.2\"} 100392\n"
+            "http_request_duration_seconds_bucket{le=\"0.5\"} 129389\n"
+            "http_request_duration_seconds_bucket{le=\"1\"} 133988\n"
+            "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320\n"
+            "http_request_duration_seconds_sum 53423\n"
+            "http_request_duration_seconds_count 144320\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+    TEST_CHECK(strcmp(result,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{le=\"0.05\"} 24054\n"
+            "http_request_duration_seconds_bucket{le=\"0.1\"} 33444\n"
+            "http_request_duration_seconds_bucket{le=\"0.2\"} 100392\n"
+            "http_request_duration_seconds_bucket{le=\"0.5\"} 129389\n"
+            "http_request_duration_seconds_bucket{le=\"1.0\"} 133988\n"
+            "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320\n"
+            "http_request_duration_seconds_sum 53423\n"
+            "http_request_duration_seconds_count 144320\n") == 0);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_histogram_labels()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    cmt_sds_t result;
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.1\",label2=\"val2\"} 33444\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.2\",label2=\"val2\"} 100392\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.5\",label2=\"val2\"} 129389\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"1\",label2=\"val2\"} 133988\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"+Inf\",label2=\"val2\"} 144320\n"
+            "http_request_duration_seconds_sum{label1=\"val1\",label2=\"val2\"} 53423\n"
+            "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"}144320\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+    TEST_CHECK(strcmp(result,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{le=\"0.05\",label1=\"val1\",label2=\"val2\"} 24054\n"
+            "http_request_duration_seconds_bucket{le=\"0.1\",label1=\"val1\",label2=\"val2\"} 33444\n"
+            "http_request_duration_seconds_bucket{le=\"0.2\",label1=\"val1\",label2=\"val2\"} 100392\n"
+            "http_request_duration_seconds_bucket{le=\"0.5\",label1=\"val1\",label2=\"val2\"} 129389\n"
+            "http_request_duration_seconds_bucket{le=\"1.0\",label1=\"val1\",label2=\"val2\"} 133988\n"
+            "http_request_duration_seconds_bucket{le=\"+Inf\",label1=\"val1\",label2=\"val2\"} 144320\n"
+            "http_request_duration_seconds_sum{label1=\"val1\",label2=\"val2\"} 53423\n"
+            "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"} 144320\n") == 0);
+    cmt_sds_destroy(result);
+    cmt_decode_prometheus_destroy(cmt);
+}
+
+void test_histogram_broken_labels()
+{
+    int status;
+    char errbuf[256];
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
+            "http_request_duration_seconds_bucket{le=\"0.1\"} 33444\n"
+            "http_request_duration_seconds_bucket{le=\"0.2\"} 100392\n"
+            "http_request_duration_seconds_bucket{le=\"0.5\"} 129389\n"
+            "http_request_duration_seconds_bucket{le=\"1\"} 133988\n"
+            "http_request_duration_seconds_bucket{le=\"+Inf\"} 144320\n"
+            "http_request_duration_seconds_sum 53423\n"
+            "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"}144320\n", 0, &opts);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR);
+    TEST_CHECK(strcmp(errbuf, "inconsistent labels on histogram bucket") == 0);
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.1\",label2=\"val2\"} 33444\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.2\",label2=\"val2\"} 100392\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.5\",label2=\"val2\"} 129389\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"1\",label2=\"val2\"} 133988\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"+Inf\",label2=\"val2\"} 144320\n"
+            "http_request_duration_seconds_sum{label1=\"val1\"} 53423\n"
+            "http_request_duration_seconds_count{label1=\"val1\",label2=\"val2\"}144320\n", 0, &opts);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR);
+    TEST_CHECK(strcmp(errbuf, "inconsistent labels on histogram sum") == 0);
+
+
+    status = cmt_decode_prometheus_create(&cmt,
+            "# HELP http_request_duration_seconds A histogram of the request duration.\n"
+            "# TYPE http_request_duration_seconds histogram\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.05\",label2=\"val2\"} 24054\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.1\",label2=\"val2\"} 33444\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.2\",label2=\"val2\"} 100392\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"0.5\",label2=\"val2\"} 129389\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"1\",label2=\"val2\"} 133988\n"
+            "http_request_duration_seconds_bucket{label1=\"val1\",le=\"+Inf\",label2=\"val2\"} 144320\n"
+            "http_request_duration_seconds_sum{label1=\"val1\",label2=\"val2\"} 53423\n"
+            "http_request_duration_seconds_count{label1=\"val1\"} 144320\n", 0, &opts);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR);
+    TEST_CHECK(strcmp(errbuf, "inconsistent labels on histogram count") == 0);
+}
+
 
 TEST_LIST = {
     {"header_help", test_header_help},
@@ -694,5 +813,8 @@ TEST_LIST = {
     {"values", test_values},
     {"in_size", test_in_size},
     {"issue_71", test_issue_71},
+    {"histogram", test_histogram},
+    {"histogram_labels", test_histogram_labels},
+    {"histogram_broken_labels", test_histogram_broken_labels},
     { 0 }
 };
