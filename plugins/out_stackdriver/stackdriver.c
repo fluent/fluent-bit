@@ -980,13 +980,6 @@ static void cb_results(const char *name, const char *value,
 int flb_stackdriver_regex_init(struct flb_stackdriver *ctx)
 {
     /* If a custom regex is not set, use the defaults */
-    if (!ctx->custom_k8s_regex) {
-        ctx->custom_k8s_regex = flb_sds_create(DEFAULT_TAG_REGEX);
-        if (!ctx->custom_k8s_regex) {
-            return -1;
-        }
-    }
-
     ctx->regex = flb_regex_create(ctx->custom_k8s_regex);
     if (!ctx->regex) {
         return -1;
@@ -2360,7 +2353,7 @@ static struct flb_config_map config_map[] = {
      "Set the path for the google service credentials file"
     },
     {
-     FLB_CONFIG_MAP_STR, "metadata_server", (char *)NULL,
+     FLB_CONFIG_MAP_STR, "metadata_server", FLB_STD_METADATA_SERVER,
      0, FLB_TRUE, offsetof(struct flb_stackdriver, metadata_server),
      "Set the metadata server"
     },
@@ -2462,7 +2455,7 @@ static struct flb_config_map config_map[] = {
     },
     /* Custom Regex */
     {
-      FLB_CONFIG_MAP_STR, "custom_k8s_regex", (char *)NULL,
+      FLB_CONFIG_MAP_STR, "custom_k8s_regex", DEFAULT_TAG_REGEX,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, custom_k8s_regex),
       "Set a custom kubernetes regex filter"
     },
