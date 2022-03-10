@@ -316,6 +316,34 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   endif()
 endif()
 
+# Extract Git commit information for debug output.
+# Default if we cannot retrieve the information.
+set(FLB_GIT_HASH, "<unknown>")
+set(FLB_GIT_HASH_SHORT, "<unknown>")
+
+find_package(Git)
+if (GIT_FOUND AND IS_DIRECTORY "${FLB_ROOT}/.git")
+  set(FLB_IN_GIT ON)
+  execute_process(
+    COMMAND           "${GIT_EXECUTABLE}"
+                      rev-parse
+                      HEAD
+    WORKING_DIRECTORY "${FLB_ROOT}"
+    RESULT_VARIABLE   GIT_RETURN
+    OUTPUT_VARIABLE   FLB_GIT_HASH)
+  execute_process(
+    COMMAND           "${GIT_EXECUTABLE}"
+                      rev-parse
+                      --short
+                      HEAD
+    WORKING_DIRECTORY "${FLB_ROOT}"
+    RESULT_VARIABLE   GIT_RETURN
+    OUTPUT_VARIABLE   FLB_GIT_HASH_SHORT)
+endif()
+# Output the information during build
+message(STATUS "Git hash: ${FLB_GIT_HASH}")
+message(STATUS "Git short hash: ${FLB_GIT_HASH_SHORT}")
+
 # Optional features like Stream Processor and Record Accessor needs Flex
 # and Bison to generate it parsers.
 find_package(FLEX 2)
