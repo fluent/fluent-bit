@@ -389,8 +389,10 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     if (ctx->tag_prefix == NULL && ctx->is_k8s_resource_type == FLB_TRUE) {
-        ctx->tag_prefix = flb_sds_create(ctx->resource);
-        ctx->tag_prefix = flb_sds_cat(ctx->tag_prefix, ".", 1);
+        /* allocate the flb_sds_t to tag_prefix_k8s so we can safely deallocate it */
+        ctx->tag_prefix_k8s = flb_sds_create(ctx->resource);
+        ctx->tag_prefix_k8s = flb_sds_cat(ctx->tag_prefix_k8s, ".", 1);
+        ctx->tag_prefix = ctx->tag_prefix_k8s;
     }
 
     /* Register metrics */
@@ -500,6 +502,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     
     if (ctx->project_id) {
         flb_sds_destroy(ctx->project_id);
+    }
+    
+    if (ctx->tag_prefix_k8s) {
+        flb_sds_destroy(ctx->tag_prefix_k8s);
     }
 
     flb_free(ctx);

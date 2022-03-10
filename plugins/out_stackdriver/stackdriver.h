@@ -127,6 +127,8 @@ struct flb_stackdriver {
     flb_sds_t labels_key;
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
+    /* shadow tag_prefix for safe deallocation */
+    flb_sds_t tag_prefix_k8s;
 
     /* generic resources */
     flb_sds_t location;
