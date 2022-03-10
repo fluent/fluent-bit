@@ -88,6 +88,13 @@ static struct flb_aws_header content_md5_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header storage_class_header = {
+    .key = "x-amz-storage-class",
+    .key_len = 19,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -138,6 +145,9 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
     if (body_md5 != NULL && strlen(body_md5)) {
         headers_len++;
     }
+    if (ctx->storage_class != NULL) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -170,6 +180,12 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
+        n++;
+    }
+    if (ctx->storage_class != NULL) {
+        s3_headers[n] = storage_class_header;
+        s3_headers[n].val = ctx->storage_class;
+        s3_headers[n].val_len = strlen(ctx->storage_class);
     }
 
     *num_headers = headers_len;
@@ -737,6 +753,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("content_type", ins);
     if (tmp) {
         ctx->content_type = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("storage_class", ins);
+    if (tmp) {
+        if (ctx->use_put_object == FLB_FALSE) {
+            flb_plg_error(ctx->ins,
+                          "use_put_object must be enabled when storage_class is specified");
+            return -1;
+        }
+        ctx->storage_class = (char *) tmp;
     }
 
     if (ctx->insecure == FLB_FALSE) {
@@ -2381,6 +2407,14 @@ static struct flb_config_map config_map[] = {
      "Disables behavior where UUID string is automatically appended to end of S3 key name when "
      "$UUID is not provided in s3_key_format. $UUID, time formatters, $TAG, and other dynamic "
      "key formatters all work as expected while this feature is set to true."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "storage_class", NULL,
+     0, FLB_FALSE, 0,
+     "Specify the storage class for S3 objects. This option can be enabled "
+     "when use_put_object is on. If this option is not specified, objects "
+     "will be stored with the default 'STANDARD' storage class."
     },
 
     /* EOF */
