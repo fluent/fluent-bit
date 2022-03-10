@@ -18,6 +18,7 @@
  */
 
 #include "cmetrics/cmt_histogram.h"
+#include "cmetrics/cmt_summary.h"
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -46,7 +47,7 @@ static void reset_context(struct cmt_decode_prometheus_context *context)
     while (mk_list_is_empty(&context->metric.samples) != 0) {
         sample = mk_list_entry_first(&context->metric.samples,
                 struct cmt_decode_prometheus_context_sample, _head);
-        for (i = 0; i < sample->label_count; i++) {
+        for (i = 0; i < context->metric.label_count; i++) {
             cmt_sds_destroy(sample->label_values[i]);
         }
         mk_list_del(&sample->_head);
@@ -186,7 +187,7 @@ static int split_metric_name(struct cmt_decode_prometheus_context *context,
 // Use this helper function to return a stub value for docstring when it is not
 // available. This is necessary for now because the metric constructors require
 // a docstring, even though it is not required by prometheus spec.
-static const char *get_docstring(struct cmt_decode_prometheus_context *context)
+static char *get_docstring(struct cmt_decode_prometheus_context *context)
 {
     return context->metric.docstring ? context->metric.docstring : "(no information)";
 }
@@ -285,7 +286,7 @@ static int add_metric_counter(struct cmt_decode_prometheus_context *context)
 
     mk_list_foreach_safe(head, tmp, &context->metric.samples) {
         sample = mk_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
-        label_count = sample->label_count;
+        label_count = context->metric.label_count;
         ret = parse_value_timestamp(context, sample, &value, &timestamp);
         if (ret) {
             return ret;
@@ -332,7 +333,7 @@ static int add_metric_gauge(struct cmt_decode_prometheus_context *context)
 
     mk_list_foreach_safe(head, tmp, &context->metric.samples) {
         sample = mk_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
-        label_count = sample->label_count;
+        label_count = context->metric.label_count;
         ret = parse_value_timestamp(context, sample, &value, &timestamp);
         if (ret) {
             return ret;
@@ -379,7 +380,7 @@ static int add_metric_untyped(struct cmt_decode_prometheus_context *context)
 
     mk_list_foreach_safe(head, tmp, &context->metric.samples) {
         sample = mk_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
-        label_count = sample->label_count;
+        label_count = context->metric.label_count;
         ret = parse_value_timestamp(context, sample, &value, &timestamp);
         if (ret) {
             return ret;
@@ -415,6 +416,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     struct cmt_histogram *h;
     struct cmt_histogram_buckets *cmt_buckets;
     cmt_sds_t *labels_without_le = NULL;
+    cmt_sds_t *values_without_le = NULL;
     int label_i;
 
     // bucket_count = sample count - 3:
@@ -444,14 +446,23 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 "failed to allocate labels_without_le");
         goto end;
     }
+    values_without_le = calloc(context->metric.label_count - 1, sizeof(*labels_without_le));
+    if (!values_without_le) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "failed to allocate values_without_le");
+        goto end;
+    }
 
 
     label_i = 0;
+    sample = mk_list_entry_first(&context->metric.samples, struct cmt_decode_prometheus_context_sample, _head); 
     for (i = 0; i < context->metric.label_count; i++) {
         if (!strcmp(context->metric.labels[i], "le")) {
             le_label_index = i;
         } else {
             labels_without_le[label_i] = context->metric.labels[i];
+            values_without_le[label_i] = sample->label_values[i];
             label_i++;
         }
     }
@@ -461,12 +472,6 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         sample = mk_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
         switch (sample->type) {
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_BUCKET:
-                if (context->metric.label_count != sample->label_count) {
-                    ret = report_error(context,
-                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                            "inconsistent labels on histogram bucket");
-                    goto end;
-                }
                 if (bucket_index == bucket_count) {
                     // probably last bucket, which has "Inf"
                     break;
@@ -488,12 +493,6 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 bucket_index++;
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
-                if (context->metric.label_count - 1 != sample->label_count) {
-                    ret = report_error(context,
-                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                            "inconsistent labels on histogram sum");
-                    goto end;
-                }
                 if (parse_double(sample->value1, &sum)) {
                     ret = report_error(context,
                             CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
@@ -502,12 +501,6 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                 }
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
-                if (context->metric.label_count - 1 != sample->label_count) {
-                    ret = report_error(context,
-                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
-                            "inconsistent labels on histogram count");
-                    goto end;
-                }
                 if (parse_uint64(sample->value1, &count)) {
                     ret = report_error(context,
                             CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
@@ -545,7 +538,7 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
 
     if (cmt_histogram_set_default(h, 0, bucket_defaults, sum, count,
                 label_i,
-                label_i ? sample->label_values : NULL)) {
+                label_i ? values_without_le : NULL)) {
         ret = report_error(context,
                 CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
                 "cmt_histogram_set_default failed");
@@ -561,6 +554,160 @@ end:
     }
     if (labels_without_le) {
         free(labels_without_le);
+    }
+    if (values_without_le) {
+        free(values_without_le);
+    }
+
+    return ret;
+}
+
+static int add_metric_summary(struct cmt_decode_prometheus_context *context)
+{
+    int ret = 0;
+    int i;
+    size_t quantile_count;
+    size_t quantile_index;
+    double *quantiles = NULL;
+    double *quantile_defaults = NULL;
+    double sum;
+    uint64_t count;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct cmt_decode_prometheus_context_sample *sample;
+    size_t quantile_label_index = 0;
+    struct cmt_summary *s;
+    cmt_sds_t *labels_without_quantile = NULL;
+    cmt_sds_t *values_without_quantile = NULL;
+    int label_i;
+
+    // quantile_count = sample count - 2:
+    // - sum
+    // - count
+    quantile_count = mk_list_size(&context->metric.samples) - 2;
+
+    quantile_defaults = calloc(quantile_count, sizeof(*quantile_defaults));
+    if (!quantile_defaults) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "failed to allocate quantile defaults");
+        goto end;
+    }
+    quantiles = calloc(quantile_count, sizeof(*quantiles));
+    if (!quantiles) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "failed to allocate quantiles");
+        goto end;
+    }
+
+    labels_without_quantile = calloc(context->metric.label_count - 1, sizeof(*labels_without_quantile));
+    if (!labels_without_quantile) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "failed to allocate labels_without_quantile");
+        goto end;
+    }
+    values_without_quantile = calloc(context->metric.label_count - 1, sizeof(*labels_without_quantile));
+    if (!values_without_quantile) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "failed to allocate values_without_quantile");
+        goto end;
+    }
+
+    label_i = 0;
+    sample = mk_list_entry_first(&context->metric.samples,
+            struct cmt_decode_prometheus_context_sample, _head);
+    for (i = 0; i < context->metric.label_count; i++) {
+        if (!strcmp(context->metric.labels[i], "quantile")) {
+            quantile_label_index = i;
+            break;
+        } else {
+            labels_without_quantile[label_i] = context->metric.labels[i];
+            values_without_quantile[label_i] = sample->label_values[i];
+            label_i++;
+        }
+    }
+
+    quantile_index = 0;
+    mk_list_foreach_safe(head, tmp, &context->metric.samples) {
+        sample = mk_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
+        switch (sample->type) {
+            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_NORMAL:
+                if (parse_double(sample->label_values[quantile_label_index],
+                            quantiles + quantile_index)) {
+                    ret = report_error(context,
+                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                            "failed to parse bucket");
+                    goto end;
+                }
+                if (parse_double(sample->value1,
+                            quantile_defaults + quantile_index)) {
+                    ret = report_error(context,
+                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                            "failed to parse quantile value");
+                    goto end;
+                }
+                quantile_index++;
+                break;
+            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
+                if (parse_double(sample->value1, &sum)) {
+                    ret = report_error(context,
+                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                            "failed to parse summary sum");
+                    goto end;
+                }
+                break;
+            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
+                if (parse_uint64(sample->value1, &count)) {
+                    ret = report_error(context,
+                            CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                            "failed to parse summary count");
+                    goto end;
+                }
+                break;
+        }
+    }
+
+    s = cmt_summary_create(context->cmt,
+            context->metric.ns,
+            context->metric.subsystem,
+            context->metric.name,
+            get_docstring(context),
+            quantile_count,
+            quantiles,
+            label_i,
+            label_i ? labels_without_quantile : NULL);
+
+    if (!s) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "cmt_summary_create failed");
+        goto end;
+    }
+
+    if (cmt_summary_set_default(s, 0, quantile_defaults, sum, count,
+                label_i,
+                label_i ? values_without_quantile : NULL)) {
+        ret = report_error(context,
+                CMT_DECODE_PROMETHEUS_CMT_CREATE_ERROR,
+                "cmt_summary_set_default failed");
+    }
+
+
+end:
+    if (quantile_defaults) {
+        free(quantile_defaults);
+    }
+    if (quantiles) {
+        free(quantiles);
+    }
+    if (labels_without_quantile) {
+        free(labels_without_quantile);
+    }
+    if (values_without_quantile) {
+        free(values_without_quantile);
     }
 
     return ret;
@@ -583,14 +730,7 @@ static int finish_metric(struct cmt_decode_prometheus_context *context)
             rv = add_metric_histogram(context);
             break;
         case SUMMARY:
-            if (context->opts.skip_unsupported_type) {
-                rv = 0;
-            } else {
-                rv = report_error(context,
-                        CMT_DECODE_PROMETHEUS_PARSE_UNSUPPORTED_TYPE,
-                        "unsupported metric type: %s",
-                        context->metric.type == HISTOGRAM ? "histogram" : "summary");
-            }
+            rv = add_metric_summary(context);
             break;
         default:
             rv = add_metric_untyped(context);
@@ -652,7 +792,8 @@ static int parse_metric_name(
 
     if (context->metric.name_orig) {
         if (strcmp(context->metric.name_orig, metric_name)) {
-            if (context->metric.type == HISTOGRAM) {
+            if (context->metric.type == HISTOGRAM ||
+                    context->metric.type == SUMMARY) {
                 ret = parse_histogram_summary_name(context, metric_name);
                 if (!ret) {
                     // bucket/sum/count parsed
@@ -720,19 +861,7 @@ static int parse_label(
 
     sample = mk_list_entry_last(&context->metric.samples,
             struct cmt_decode_prometheus_context_sample, _head);
-    // Uncomment the following two lines when cmetrics support the following usage:
-    //     struct cmt *cmt = cmt_create();
-    //     struct cmt_counter *c = cmt_counter_create(cmt, "metric", "name", "total", "Some metric description", 4, (char *[]) {"a", "b", "c", "d"});
-    //     cmt_counter_set(c, 0, 5, 4, (char *[]) { "0", "1", NULL, NULL });
-    //     cmt_counter_set(c, 0, 7, 4, (char *[]) { NULL, NULL, "2", "3" });
-    //
-    // In other words, when cmetrics allows samples of the same metric with
-    // different keys
-    //
-    // samples->label_values[i] = value;
-    lindex = sample->label_count;
-    sample->label_values[lindex] = value;
-    sample->label_count++;
+    sample->label_values[i] = value;
     return 0;
 }
 

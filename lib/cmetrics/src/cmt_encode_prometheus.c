@@ -247,7 +247,12 @@ static void format_metric(struct cmt *cmt,
 
     /* Static labels */
     static_labels = cmt_labels_count(cmt->static_labels);
-    defined_labels = mk_list_size(&metric->labels);
+    mk_list_foreach(head, &metric->labels) {
+        label_v = mk_list_entry(head, struct cmt_map_label, _head);
+        if (strlen(label_v->name)) {
+            defined_labels++;
+        }
+    }
 
     if (!fmt->brace_open && (static_labels + defined_labels > 0)) {
         cmt_sds_cat_safe(buf, "{", 1);
@@ -272,12 +277,15 @@ static void format_metric(struct cmt *cmt,
         mk_list_foreach(head, &metric->labels) {
             label_v = mk_list_entry(head, struct cmt_map_label, _head);
 
-            fmt->labels_count += add_label(buf, label_k->name, label_v->name);
+            if (strlen(label_v->name)) {
+                fmt->labels_count += add_label(buf, label_k->name, label_v->name);
+                if (i < defined_labels) {
+                    cmt_sds_cat_safe(buf, ",", 1);
+                }
 
-            if (i < defined_labels) {
-                cmt_sds_cat_safe(buf, ",", 1);
+                i++;
             }
-            i++;
+
             label_k = mk_list_entry_next(&label_k->_head, struct cmt_map_label,
                                          _head, &map->label_keys);
         }
@@ -387,30 +395,16 @@ static void format_summary_quantiles(struct cmt *cmt,
     opts = map->opts;
 
     if (metric->sum_quantiles_set) {
-        for (i = 0; i < 5; i++) {
+        for (i = 0; i < summary->quantiles_count; i++) {
             /* metric name */
             cmt_sds_cat_safe(buf, opts->fqname, cmt_sds_len(opts->fqname));
 
-            /* upper bound */
+            /* quantiles */
             cmt_sds_cat_safe(buf, "{quantile=\"", 11);
-
-            switch (i) {
-                case 0:
-                    cmt_sds_cat_safe(buf, "0\"", 2);
-                    break;
-                case 1:
-                    cmt_sds_cat_safe(buf, "0.25\"", 5);
-                    break;
-                case 2:
-                    cmt_sds_cat_safe(buf, "0.5\"", 4);
-                    break;
-                case 3:
-                    cmt_sds_cat_safe(buf, "0.75\"", 5);
-                    break;
-                case 4:
-                    cmt_sds_cat_safe(buf, "1\"", 2);
-                    break;
-            };
+            val = bucket_value_to_string(summary->quantiles[i]);
+            cmt_sds_cat_safe(buf, val, cmt_sds_len(val));
+            cmt_sds_destroy(val);
+            cmt_sds_cat_safe(buf, "\"", 1);
 
             /* configure formatter */
             fmt.metric_name  = CMT_TRUE;

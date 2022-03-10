@@ -29,15 +29,23 @@
  * any other involved variable. We won't do calculations.
  */
 struct cmt_summary {
+    /* summary specific */
+    double *quantiles;
+    size_t quantiles_count;
+
+    /* metrics common */
     struct cmt_opts opts;
     struct cmt_map *map;
     struct mk_list _head;
     struct cmt *cmt;
+
 };
 
 struct cmt_summary *cmt_summary_create(struct cmt *cmt,
                                        char *ns, char *subsystem,
                                        char *name, char *help,
+                                       size_t quantiles_count,
+                                       double *quantiles,
                                        int label_count, char **label_keys);
 
 int cmt_summary_destroy(struct cmt_summary *summary);

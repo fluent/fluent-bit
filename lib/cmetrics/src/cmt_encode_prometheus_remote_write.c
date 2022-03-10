@@ -21,10 +21,18 @@
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_untyped.h>
 #include <cmetrics/cmt_hash.h> 
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
+
+#define SYNTHETIC_METRIC_SUMMARY_COUNT_SEQUENCE_DELTA   10000000
+#define SYNTHETIC_METRIC_SUMMARY_SUM_SEQUENCE_DELTA     100000000
+
+#define SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA 10000000
+#define SYNTHETIC_METRIC_HISTOGRAM_SUM_SEQUENCE_DELTA   100000000
 
 static cmt_sds_t render_remote_write_context_to_sds(
     struct cmt_prometheus_remote_write_context *context);
@@ -69,6 +77,40 @@ static int pack_metric_sample(struct cmt_prometheus_remote_write_context *contex
 
 static int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
                            struct cmt_map *map);
+
+static void destroy_label(struct cmt_map_label *instance)
+{
+    if (instance != NULL) {
+        if (instance->name != NULL) {
+            cmt_sds_destroy(instance->name);
+        }
+
+        free(instance);
+    }
+}
+
+static struct cmt_map_label *create_label(char *caption)
+{
+    struct cmt_map_label *instance;
+
+    instance = calloc(1, sizeof(struct cmt_map_label));
+
+    if (instance != NULL) {
+        if (caption != NULL) {
+            instance->name = cmt_sds_create(caption);
+
+            if (instance->name == NULL) {
+                cmt_errno();
+
+                free(instance);
+
+                instance = NULL;
+            }
+        }
+    }
+
+    return instance;
+}
 
 cmt_sds_t render_remote_write_context_to_sds(
     struct cmt_prometheus_remote_write_context *context)
@@ -169,6 +211,18 @@ void cmt_destroy_prometheus_remote_write_context(
     mk_list_foreach_safe(head, tmp, &context->metadata_entries) {
         metadata_entry = mk_list_entry(head, struct cmt_prometheus_metric_metadata, _head);
 
+        if (metadata_entry->data.metric_family_name != NULL) {
+            cmt_sds_destroy(metadata_entry->data.metric_family_name);
+        }
+
+        if (metadata_entry->data.help != NULL) {
+            cmt_sds_destroy(metadata_entry->data.help);
+        }
+
+        if (metadata_entry->data.unit != NULL) {
+            cmt_sds_destroy(metadata_entry->data.unit);
+        }
+
         mk_list_del(&metadata_entry->_head);
 
         free(metadata_entry);
@@ -188,7 +242,12 @@ uint64_t calculate_label_set_hash(struct mk_list *label_values, uint64_t seed)
     mk_list_foreach(head, label_values) {
         label_value = mk_list_entry(head, struct cmt_map_label, _head);
 
-        XXH64_update(&state, label_value->name, cmt_sds_len(label_value->name)); 
+        if (label_value->name == NULL) {
+            XXH64_update(&state, "_NULL_", 6);
+        }
+        else {
+            XXH64_update(&state, label_value->name, cmt_sds_len(label_value->name));
+        }
     }
 
     return XXH64_digest(&state);
@@ -498,13 +557,45 @@ int pack_metric_metadata(struct cmt_prometheus_remote_write_context *context,
     else if (map->type == CMT_UNTYPED) {
         metadata_entry->data.type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__UNKNOWN;
     }
+    else if (map->type == CMT_SUMMARY) {
+        metadata_entry->data.type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__SUMMARY;
+    }
     else {
         return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_UNEXPECTED_METRIC_TYPE;
     }
 
-    metadata_entry->data.metric_family_name = map->opts->fqname;
-    metadata_entry->data.help = map->opts->fqname;
-    metadata_entry->data.unit = "unit";
+    if (map->opts->fqname == NULL) {
+        metadata_entry->data.metric_family_name = cmt_sds_create("");
+    }
+    else {
+        metadata_entry->data.metric_family_name = cmt_sds_create(map->opts->fqname);
+    }
+
+    if (metadata_entry->data.metric_family_name == NULL) {
+        return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+    }
+
+    if (map->opts->description == NULL) {
+        metadata_entry->data.help = cmt_sds_create("");
+    }
+    else {
+        metadata_entry->data.help = cmt_sds_create(map->opts->description);
+    }
+
+    if (metadata_entry->data.help == NULL) {
+        return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+    }
+
+    if (map->unit == NULL) {
+        metadata_entry->data.unit = cmt_sds_create("");
+    }
+    else {
+        metadata_entry->data.unit = cmt_sds_create(map->unit);
+    }
+
+    if (metadata_entry->data.unit == NULL) {
+        return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+    }
 
     mk_list_add(&metadata_entry->_head, &context->metadata_entries);
 
@@ -536,10 +627,10 @@ int append_metric_to_timeseries(struct cmt_prometheus_time_series *time_series,
     return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
 }
 
-int pack_metric_sample(struct cmt_prometheus_remote_write_context *context,
-                       struct cmt_map *map,
-                       struct cmt_metric *metric,
-                       int add_metadata)
+int pack_basic_metric_sample(struct cmt_prometheus_remote_write_context *context,
+                             struct cmt_map *map,
+                             struct cmt_metric *metric,
+                             int add_metadata)
 {
     struct cmt_prometheus_time_series *time_series;
     int                                result;
@@ -570,10 +661,10 @@ int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
     struct mk_list    *head;
 
     context->sequence_number++;
-    add_metadata = CMT_TRUE;
+    add_metadata = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ADD_METADATA;
 
     if (map->metric_static_set == CMT_TRUE) {
-        result = pack_metric_sample(context, map, &map->metric, add_metadata);
+        result = pack_basic_metric_sample(context, map, &map->metric, add_metadata);
 
         if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
             return result;
@@ -583,7 +674,7 @@ int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
     mk_list_foreach(head, &map->metrics) {
         metric = mk_list_entry(head, struct cmt_metric, _head);
 
-        result = pack_metric_sample(context, map, metric, add_metadata);
+        result = pack_basic_metric_sample(context, map, metric, add_metadata);
 
         if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
             return result;
@@ -597,17 +688,377 @@ int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
     return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
 }
 
+int pack_complex_metric_sample(struct cmt_prometheus_remote_write_context *context,
+                               struct cmt_map *map,
+                               struct cmt_metric *metric,
+                               int add_metadata)
+{
+    size_t                             original_label_value_count;
+    cmt_sds_t                          synthetized_metric_name;
+    cmt_sds_t                          original_metric_name;
+    size_t                             label_value_count;
+    cmt_sds_t                          additional_label_caption;
+    size_t                             label_key_count;
+    struct cmt_map_label              *additional_label;
+    struct cmt_metric                  dummy_metric;
+    struct cmt_prometheus_time_series *time_series;
+    struct cmt_map_label              *dummy_label;
+    struct cmt_histogram              *histogram;
+    struct cmt_summary                *summary;
+    int                                result;
+    size_t                             index;
+
+    additional_label_caption = cmt_sds_create_len(NULL, 128);
+
+    if (additional_label_caption == NULL) {
+        return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+    }
+
+    synthetized_metric_name = cmt_sds_create_len(NULL,
+                                                 cmt_sds_alloc(map->opts->fqname) + 16);
+
+    if (synthetized_metric_name == NULL) {
+        cmt_sds_destroy(additional_label_caption);
+
+        return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+    }
+
+    original_metric_name = map->opts->fqname;
+
+    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
+
+    memset(&dummy_metric, 0, sizeof(struct cmt_metric));
+    memcpy(&dummy_metric.labels, &metric->labels, sizeof(struct mk_list));
+
+    dummy_metric.timestamp = metric->timestamp;
+
+    if (map->type == CMT_SUMMARY) {
+        summary = (struct cmt_summary *) map->parent;
+
+        context->sequence_number += SYNTHETIC_METRIC_SUMMARY_COUNT_SEQUENCE_DELTA;
+
+        map->opts->fqname = synthetized_metric_name;
+
+        cmt_sds_len_set(synthetized_metric_name,
+                        snprintf(synthetized_metric_name,
+                                 cmt_sds_alloc(synthetized_metric_name) -1,
+                                 "%s_count",
+                                 original_metric_name));
+
+        cmt_metric_set(&dummy_metric,
+                       dummy_metric.timestamp,
+                       cmt_summary_get_count_value(metric));
+
+        result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            if (add_metadata == CMT_TRUE) {
+                result = pack_metric_metadata(context, map, &dummy_metric);
+            }
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                result = append_metric_to_timeseries(time_series, &dummy_metric);
+            }
+        }
+
+        context->sequence_number -= SYNTHETIC_METRIC_SUMMARY_COUNT_SEQUENCE_DELTA;
+
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            context->sequence_number += SYNTHETIC_METRIC_SUMMARY_SUM_SEQUENCE_DELTA;
+            cmt_sds_len_set(synthetized_metric_name,
+                            snprintf(synthetized_metric_name,
+                                     cmt_sds_alloc(synthetized_metric_name) -1,
+                                     "%s_sum",
+                                     original_metric_name));
+
+            cmt_metric_set(&dummy_metric,
+                           dummy_metric.timestamp,
+                           cmt_summary_get_sum_value(metric));
+
+            result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                if (add_metadata == CMT_TRUE) {
+                    result = pack_metric_metadata(context, map, &dummy_metric);
+                }
+
+                if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                    result = append_metric_to_timeseries(time_series, &dummy_metric);
+                }
+            }
+
+            context->sequence_number -= SYNTHETIC_METRIC_SUMMARY_SUM_SEQUENCE_DELTA;
+        }
+
+        map->opts->fqname = original_metric_name;
+
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            label_key_count = mk_list_size(&map->label_keys);
+            original_label_value_count = mk_list_size(&metric->labels);
+
+            for (label_value_count = original_label_value_count ;
+                 result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
+                 label_value_count < label_key_count;
+                 label_value_count++) {
+                dummy_label = create_label(NULL);
+
+                if (dummy_label == NULL) {
+                    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+                }
+
+                mk_list_add(&dummy_label->_head, &metric->labels);
+            }
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                additional_label = mk_list_entry_last(&metric->labels, struct cmt_map_label, _head);
+
+                if (additional_label == NULL) {
+                    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+                }
+
+                if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                    additional_label->name = (cmt_sds_t) additional_label_caption;
+
+                    for(index = 0 ;
+                        result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
+                        index < summary->quantiles_count ;
+                        index++) {
+                        cmt_sds_len_set(additional_label_caption,
+                                        snprintf(additional_label_caption,
+                                        cmt_sds_alloc(additional_label_caption) - 1,
+                                        "%.17g", summary->quantiles[index]));
+
+                        dummy_metric.val = cmt_math_d64_to_uint64(cmt_summary_quantile_get_value(metric, index));
+
+                        result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+                        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                            if (add_metadata == CMT_TRUE) {
+                                result = pack_metric_metadata(context, map, &dummy_metric);
+                            }
+
+                            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                                result = append_metric_to_timeseries(time_series, &dummy_metric);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else if (map->type == CMT_HISTOGRAM) {
+        histogram = (struct cmt_histogram *) map->parent;
+
+        context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
+
+        map->opts->fqname = synthetized_metric_name;
+
+        cmt_sds_len_set(synthetized_metric_name,
+                        snprintf(synthetized_metric_name,
+                                 cmt_sds_alloc(synthetized_metric_name) -1,
+                                 "%s_count",
+                                 original_metric_name));
+
+        cmt_metric_set(&dummy_metric,
+                       dummy_metric.timestamp,
+                       cmt_metric_hist_get_count_value(metric));
+
+        result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            if (add_metadata == CMT_TRUE) {
+                result = pack_metric_metadata(context, map, &dummy_metric);
+            }
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                result = append_metric_to_timeseries(time_series, &dummy_metric);
+            }
+        }
+
+        context->sequence_number -= SYNTHETIC_METRIC_HISTOGRAM_COUNT_SEQUENCE_DELTA;
+
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            context->sequence_number += SYNTHETIC_METRIC_HISTOGRAM_SUM_SEQUENCE_DELTA;
+
+            cmt_sds_len_set(synthetized_metric_name,
+                            snprintf(synthetized_metric_name,
+                                     cmt_sds_alloc(synthetized_metric_name) -1,
+                                     "%s_sum",
+                                     original_metric_name));
+
+            cmt_metric_set(&dummy_metric,
+                           dummy_metric.timestamp,
+                           cmt_metric_hist_get_sum_value(metric));
+
+            result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                if (add_metadata == CMT_TRUE) {
+                    result = pack_metric_metadata(context, map, &dummy_metric);
+                }
+
+                if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                    result = append_metric_to_timeseries(time_series, &dummy_metric);
+                }
+            }
+
+            context->sequence_number -= SYNTHETIC_METRIC_HISTOGRAM_SUM_SEQUENCE_DELTA;
+        }
+
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            cmt_sds_len_set(synthetized_metric_name,
+                            snprintf(synthetized_metric_name,
+                                     cmt_sds_alloc(synthetized_metric_name) - 1,
+                                     "%s_bucket",
+                                     original_metric_name));
+
+            label_key_count = mk_list_size(&map->label_keys);
+            original_label_value_count = mk_list_size(&metric->labels);
+
+            for (label_value_count = original_label_value_count ;
+                 result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
+                 label_value_count < label_key_count;
+                 label_value_count++) {
+                dummy_label = create_label(NULL);
+
+                if (dummy_label == NULL) {
+                    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ALLOCATION_ERROR;
+                }
+
+                mk_list_add(&dummy_label->_head, &metric->labels);
+            }
+
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                additional_label = mk_list_entry_last(&metric->labels, struct cmt_map_label, _head);
+
+                additional_label->name = (cmt_sds_t) additional_label_caption;
+
+                for(index = 0 ;
+                    result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS &&
+                    index <= histogram->buckets->count ;
+                    index++) {
+                    if (index < histogram->buckets->count) {
+                        cmt_sds_len_set(additional_label_caption,
+                                            snprintf(additional_label_caption,
+                                            cmt_sds_alloc(additional_label_caption) - 1,
+                                            "%.17g", histogram->buckets->upper_bounds[index]));
+                    }
+                    else {
+                        cmt_sds_len_set(additional_label_caption,
+                                            snprintf(additional_label_caption,
+                                            cmt_sds_alloc(additional_label_caption) - 1,
+                                            "+Inf"));
+                    }
+
+
+                    dummy_metric.val = cmt_math_d64_to_uint64(cmt_metric_hist_get_value(metric, index));
+
+                    result = set_up_time_series_for_label_set(context, map, metric, &time_series);
+
+                    if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                        if (add_metadata == CMT_TRUE) {
+                            result = pack_metric_metadata(context, map, &dummy_metric);
+                        }
+
+                        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                            result = append_metric_to_timeseries(time_series, &dummy_metric);
+                        }
+                    }
+                }
+            }
+        }
+
+        map->opts->fqname = original_metric_name;
+    }
+
+    for ( ;
+         label_value_count > original_label_value_count;
+         label_value_count--) {
+        additional_label = mk_list_entry_last(&metric->labels, struct cmt_map_label, _head);
+
+        if (additional_label != NULL) {
+            mk_list_del(&additional_label->_head);
+
+            if (additional_label->name == additional_label_caption) {
+                additional_label_caption = NULL;
+            }
+
+            destroy_label(additional_label);
+        }
+    }
+
+    if (additional_label_caption != NULL) {
+        cmt_sds_destroy(additional_label_caption);
+    }
+
+    cmt_sds_destroy(synthetized_metric_name);
+
+    return result;
+}
+
+int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
+                      struct cmt_map *map)
+{
+    struct cmt_map_label  additional_label;
+    int                   add_metadata;
+    struct cmt_metric    *metric;
+    int                   result;
+    struct mk_list       *head;
+
+    context->sequence_number++;
+
+    add_metadata = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ADD_METADATA;
+    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
+
+    if (map->type == CMT_SUMMARY) {
+        additional_label.name = (cmt_sds_t) "quantile";
+    }
+    else if (map->type == CMT_HISTOGRAM) {
+        additional_label.name = (cmt_sds_t) "le";
+    }
+
+    mk_list_add(&additional_label._head, &map->label_keys);
+
+    if (map->metric_static_set == CMT_TRUE) {
+        result = pack_complex_metric_sample(context, map, &map->metric, add_metadata);
+    }
+
+    if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+        mk_list_foreach(head, &map->metrics) {
+            metric = mk_list_entry(head, struct cmt_metric, _head);
+
+            result = pack_complex_metric_sample(context, map, metric, add_metadata);
+
+            if (result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                if (add_metadata == CMT_TRUE) {
+                    add_metadata = CMT_FALSE;
+                }
+            }
+        }
+    }
+
+    if (map->type == CMT_SUMMARY ||
+        map->type == CMT_HISTOGRAM) {
+        mk_list_del(&additional_label._head);
+    }
+
+    return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
+}
+
 /* Format all the registered metrics in Prometheus Text format */
 cmt_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
 {
+    struct cmt_histogram                      *histogram;
     struct cmt_prometheus_remote_write_context context;
     struct cmt_untyped                        *untyped;
     struct cmt_counter                        *counter;
+    struct cmt_summary                        *summary;
     int                                        result;
     struct cmt_gauge                          *gauge;
     struct mk_list                            *head;
     cmt_sds_t                                  buf;
 
+    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
     buf = NULL;
 
     memset(&context, 0, sizeof(struct cmt_prometheus_remote_write_context));
@@ -639,7 +1090,6 @@ cmt_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
                 break;
             }
         }
-
     }
 
     if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
@@ -647,6 +1097,30 @@ cmt_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
         mk_list_foreach(head, &cmt->untypeds) {
             untyped = mk_list_entry(head, struct cmt_untyped, _head);
             pack_basic_type(&context, untyped->map);
+        }
+    }
+
+    if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+        /* Summaries */
+        mk_list_foreach(head, &cmt->summaries) {
+            summary = mk_list_entry(head, struct cmt_summary, _head);
+            result = pack_complex_type(&context, summary->map);
+
+            if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                break;
+            }
+        }
+    }
+
+    if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+        /* Histograms */
+        mk_list_foreach(head, &cmt->histograms) {
+            histogram = mk_list_entry(head, struct cmt_histogram, _head);
+            result = pack_complex_type(&context, histogram->map);
+
+            if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                break;
+            }
         }
     }
 

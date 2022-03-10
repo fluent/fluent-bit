@@ -32,6 +32,9 @@ struct cmt_opts {
 
     /* Formatted full qualified name: namespace_subsystem_name */
     cmt_sds_t fqname;
+
+    /* Resource index is only used by opentelemtry */
+    int resource_index;
 };
 
 int cmt_opts_init(struct cmt_opts *opts,
