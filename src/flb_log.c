@@ -328,6 +328,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     int len;
     int total;
     time_t now;
+    int log_file_descriptor;
     const char *header_color = NULL;
     const char *header_title = NULL;
     const char *bold_color = ANSI_BOLD;
@@ -336,6 +337,9 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     struct tm *current;
     struct log_message msg = {0};
     va_list args;
+    struct flb_config *config;
+    struct flb_log    *log;
+    struct flb_worker *w;
 
     va_start(args, fmt);
 
@@ -370,11 +374,31 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         break;
     }
 
+    w = flb_worker_get();
+
     /* Only print colors to a terminal */
-    if (!isatty(STDOUT_FILENO)) {
-        header_color = "";
-        bold_color = "";
-        reset_color = "";
+    if (w != NULL) {
+        config = w->config;
+        log = config->log;
+
+        log_file_descriptor = open(log->out, O_CREAT | O_WRONLY | O_APPEND, 0666);
+
+        if (log_file_descriptor != -1) {
+            if (!isatty(log_file_descriptor)) {
+                header_color = "";
+                bold_color = "";
+                reset_color = "";
+            }
+
+            close(log_file_descriptor);
+        }
+    }
+    else {
+        if (!isatty(STDOUT_FILENO)) {
+            header_color = "";
+            bold_color = "";
+            reset_color = "";
+        }
     }
 
     now = time(NULL);
@@ -416,9 +440,6 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
     msg.size = total;
     va_end(args);
 
-    struct flb_worker *w;
-
-    w = flb_worker_get();
     if (w) {
         int n = flb_pipe_write_all(w->log[1], &msg, sizeof(msg));
         if (n == -1) {
