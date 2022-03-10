@@ -309,7 +309,11 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     /* config: 'project_id' */
     if (ctx->project_id == NULL) {
         if (creds->project_id) {
-            ctx->project_id = flb_sds_create(creds->project_id);
+            /* flb_config_map_destroy uses the pointer within the config_map struct to
+             * free the value so if we assign it here it is safe to free later with the
+             * creds struct. If we do not we will leak here.
+             */
+            ctx->project_id = creds->project_id;
             if (!ctx->project_id) {
                 flb_plg_error(ctx->ins,
                               "failed extracting 'project_id' from credentials.");
