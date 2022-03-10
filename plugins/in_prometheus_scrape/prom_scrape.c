@@ -109,7 +109,6 @@ static int collect_metrics(struct prom_scrape *ctx)
 
     /* configure prometheus decoder options */
     opts.default_timestamp = cmt_time_now();
-    opts.skip_unsupported_type = 1;
     opts.errbuf = errbuf;
     opts.errbuf_size = sizeof(errbuf);
 
