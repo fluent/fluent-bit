@@ -96,6 +96,9 @@ static void flb_version()
 #else
     printf("Fluent Bit v%s\n", FLB_VERSION_STR);
 #endif
+#ifdef FLB_IN_GIT
+    printf("Git commit: %s\n", STR(FLB_GIT_HASH));
+#endif
 
     exit(EXIT_SUCCESS);
 }
@@ -109,6 +112,9 @@ static void flb_banner()
 #else
     fprintf(stderr,
             "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
+#endif
+#ifdef FLB_IN_GIT
+    fprintf(stderr, "%sGit commit: %s%s\n", ANSI_BOLD, STR(FLB_GIT_HASH), ANSI_RESET);
 #endif
 
     fprintf(stderr, "* %sCopyright (C) 2015-2021 The Fluent Bit Authors%s\n",
