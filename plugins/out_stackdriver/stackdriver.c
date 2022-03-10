@@ -1093,7 +1093,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     }
 
     if (!ctx->export_to_project_id) {
-        ctx->export_to_project_id = flb_sds_create(ctx->project_id);
+        ctx->export_to_project_id = ctx->project_id;
     }
 
     ret = flb_stackdriver_regex_init(ctx);
