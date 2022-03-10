@@ -316,35 +316,17 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   endif()
 endif()
 
-# Extract Git commit information for debug output.
-# Default if we cannot retrieve the information.
-set(FLB_GIT_HASH, "<unknown>")
-set(FLB_GIT_HASH_SHORT, "<unknown>")
-
+# Extract Git commit information for debug output: it will have `-dirty` after the hash for uncommited changes.
+# Note that this is only set when cmake is run, the intent here is to use in CI for verification of releases so is acceptable.
+# For a better solution see https://jonathanhamberg.com/post/cmake-embedding-git-hash/ but this is simple and easy.
 find_package(Git)
-if (GIT_FOUND AND IS_DIRECTORY "${FLB_ROOT}/.git")
-  set(FLB_IN_GIT ON)
-  execute_process(
-    COMMAND           "${GIT_EXECUTABLE}"
-                      rev-parse
-                      HEAD
-    WORKING_DIRECTORY "${FLB_ROOT}"
-    RESULT_VARIABLE   GIT_RETURN
-    OUTPUT_VARIABLE   FLB_GIT_HASH)
-  execute_process(
-    COMMAND           "${GIT_EXECUTABLE}"
-                      rev-parse
-                      --short
-                      HEAD
-    WORKING_DIRECTORY "${FLB_ROOT}"
-    RESULT_VARIABLE   GIT_RETURN
-    OUTPUT_VARIABLE   FLB_GIT_HASH_SHORT)
-    FLB_DEFINITION_VAL(FLB_GIT_HASH, ${FLB_GIT_HASH})
-    FLB_DEFINITION_VAL(FLB_GIT_HASH_SHORT, ${FLB_GIT_HASH_SHORT})
-endif()
-# Output the information during build
+# If we do not have Git or this is not a Git repo or another error this just is ignored and we have no output
+execute_process(COMMAND
+  "${GIT_EXECUTABLE}" log -1 --format=%H
+  WORKING_DIRECTORY "${FLB_ROOT}"
+  OUTPUT_VARIABLE FLB_GIT_HASH
+  ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 message(STATUS "Git hash: ${FLB_GIT_HASH}")
-message(STATUS "Git short hash: ${FLB_GIT_HASH_SHORT}")
 
 # Optional features like Stream Processor and Record Accessor needs Flex
 # and Bison to generate it parsers.
