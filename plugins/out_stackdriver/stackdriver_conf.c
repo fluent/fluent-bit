@@ -333,6 +333,8 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             flb_sds_destroy(ctx->http_request_key);
             ctx->http_request_key = NULL;
             ctx->http_request_key_size = 0;
+        } else {
+            ctx->http_request_key_size = http_request_key_size;
         }
     }
 
