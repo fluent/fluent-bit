@@ -26,17 +26,14 @@ PACKAGING_OUTPUT_DIR=${PACKAGING_OUTPUT_DIR:-test}
 echo "Cleaning any existing output"
 rm -rf "${PACKAGING_OUTPUT_DIR:?}/*"
 
-# We need a version of the source code to build
-FLB_VERSION=${FLB_VERSION:-1.8.12}
-
 # Iterate over each target and attempt to build it.
 # Verify that an RPM or DEB is created.
 for DISTRO in "${TARGETS[@]}"
 do
     echo "$DISTRO"
-    FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" -v "$FLB_VERSION" "$@"
-    if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$FLB_VERSION/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-*.rpm" -o -iname "*-bit-*.deb" \) | head -n1) ]]; then
-        echo "Unable to find any $FLB_VERSION binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$FLB_VERSION/$PACKAGING_OUTPUT_DIR"
+    FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" "$@"
+    if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-*.rpm" -o -iname "*-bit-*.deb" \) | head -n1) ]]; then
+        echo "Unable to find any binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$PACKAGING_OUTPUT_DIR"
         exit 1
     fi
 done
