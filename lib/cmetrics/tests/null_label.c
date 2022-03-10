@@ -19,7 +19,9 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_encode_prometheus.h>
 
+#include "cmetrics/cmt_sds.h"
 #include "cmt_tests.h"
 
 void test_labels()
@@ -75,7 +77,89 @@ void test_labels()
     TEST_CHECK((uint64_t) val == 1);
 }
 
+void test_encoding()
+{
+    cmt_sds_t result;
+    double val;
+    struct cmt *cmt;
+    struct cmt_counter *c;
+
+    cmt = cmt_create();
+    c = cmt_counter_create(cmt, "test", "dummy", "labels", "testing labels",
+                           6, (char *[]) {"A", "B", "C", "D", "E", "F"});
+
+    cmt_counter_inc(c, 0, 6, (char *[]) {NULL,NULL,NULL,NULL,NULL,NULL});
+    cmt_counter_inc(c, 0, 6, (char *[]) {NULL,NULL,NULL,NULL,NULL,NULL});
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result,
+        "# HELP test_dummy_labels testing labels\n"
+        "# TYPE test_dummy_labels counter\n"
+        "test_dummy_labels 2 0\n"
+        ) == 0);
+    cmt_sds_destroy(result);
+
+    cmt_counter_inc(c, 0, 6, (char *[]) {NULL,"b",NULL,NULL,NULL,NULL});
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result,
+        "# HELP test_dummy_labels testing labels\n"
+        "# TYPE test_dummy_labels counter\n"
+        "test_dummy_labels 2 0\n"
+        "test_dummy_labels{B=\"b\"} 1 0\n"
+        ) == 0);
+    cmt_sds_destroy(result);
+
+    cmt_counter_inc(c, 0, 6, (char *[]) {NULL,"b",NULL,NULL,NULL,NULL});
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result,
+        "# HELP test_dummy_labels testing labels\n"
+        "# TYPE test_dummy_labels counter\n"
+        "test_dummy_labels 2 0\n"
+        "test_dummy_labels{B=\"b\"} 2 0\n"
+        ) == 0);
+    cmt_sds_destroy(result);
+
+
+    cmt_counter_set(c, 0, 5, 6, (char *[]) {NULL,NULL,NULL,"d",NULL,NULL});
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result,
+        "# HELP test_dummy_labels testing labels\n"
+        "# TYPE test_dummy_labels counter\n"
+        "test_dummy_labels 2 0\n"
+        "test_dummy_labels{B=\"b\"} 2 0\n"
+        "test_dummy_labels{D=\"d\"} 5 0\n"
+        ) == 0);
+    cmt_sds_destroy(result);
+
+    cmt_counter_set(c, 0, 50, 6, (char *[]) {NULL,"b",NULL,"d",NULL,"f"});
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result,
+        "# HELP test_dummy_labels testing labels\n"
+        "# TYPE test_dummy_labels counter\n"
+        "test_dummy_labels 2 0\n"
+        "test_dummy_labels{B=\"b\"} 2 0\n"
+        "test_dummy_labels{D=\"d\"} 5 0\n"
+        "test_dummy_labels{B=\"b\",D=\"d\",F=\"f\"} 50 0\n"
+        ) == 0);
+    cmt_sds_destroy(result);
+
+    cmt_counter_inc(c, 0, 6, (char *[]) {"a","b","c","d","e","f"});
+    result = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    TEST_CHECK(strcmp(result,
+        "# HELP test_dummy_labels testing labels\n"
+        "# TYPE test_dummy_labels counter\n"
+        "test_dummy_labels 2 0\n"
+        "test_dummy_labels{B=\"b\"} 2 0\n"
+        "test_dummy_labels{D=\"d\"} 5 0\n"
+        "test_dummy_labels{B=\"b\",D=\"d\",F=\"f\"} 50 0\n"
+        "test_dummy_labels{A=\"a\",B=\"b\",C=\"c\",D=\"d\",E=\"e\",F=\"f\"} 1 0\n"
+        ) == 0);
+    cmt_sds_destroy(result);
+
+    cmt_destroy(cmt);
+}
+
 TEST_LIST = {
     {"labels", test_labels},
+    {"encoding", test_encoding},
     { 0 }
 };

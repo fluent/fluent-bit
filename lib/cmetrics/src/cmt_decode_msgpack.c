@@ -724,6 +724,7 @@ static int unpack_metric(mpack_reader_t *reader,
 {
     int                                   result;
     struct cmt_metric                    *metric;
+    struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
         {
@@ -765,6 +766,19 @@ static int unpack_metric(mpack_reader_t *reader,
             return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
         }
     }
+    else if (decode_context->map->type == CMT_SUMMARY) {
+        summary = decode_context->map->parent;
+
+        metric->sum_quantiles = calloc(summary->quantiles_count, sizeof(uint64_t));
+
+        if (metric->sum_quantiles == NULL) {
+            cmt_errno();
+
+            free(metric);
+
+            return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+        }
+    }
 
     mk_list_init(&metric->labels);
 
@@ -777,6 +791,10 @@ static int unpack_metric(mpack_reader_t *reader,
 
         if (NULL != metric->hist_buckets) {
             free(metric->hist_buckets);
+        }
+
+        if (NULL != metric->sum_quantiles) {
+            free(metric->sum_quantiles);
         }
 
         free(metric);
@@ -816,16 +834,11 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
                 decode_context->map->metric.hist_count = metric->hist_count;
                 decode_context->map->metric.hist_sum = metric->hist_sum;
             }
-            if (decode_context->map->type == CMT_SUMMARY) {
+            else if (decode_context->map->type == CMT_SUMMARY) {
                 decode_context->map->metric.sum_quantiles_set = metric->sum_quantiles_set;
-
-                memcpy(decode_context->map->metric.sum_quantiles,
-                       metric->sum_quantiles,
-                       sizeof(double) * 5);
-
+                decode_context->map->metric.sum_quantiles = metric->sum_quantiles;
                 decode_context->map->metric.sum_count = metric->sum_count;
                 decode_context->map->metric.sum_sum = metric->sum_sum;
-
             }
 
             decode_context->map->metric.val = metric->val;
@@ -1002,6 +1015,46 @@ static int unpack_meta_buckets(mpack_reader_t *reader, size_t index, void *conte
     return cmt_mpack_unpack_array(reader, unpack_meta_bucket, context);
 }
 
+static int unpack_meta_quantile(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    return cmt_mpack_consume_double_tag(reader, &decode_context->quantile_list[index]);
+}
+
+static int unpack_meta_quantiles(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+
+    if (NULL == reader ||
+        NULL == context) {
+        return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    decode_context->quantile_count = cmt_mpack_peek_array_length(reader);
+
+    if (0 < decode_context->quantile_count) {
+        decode_context->quantile_list = calloc(decode_context->quantile_count,
+                                               sizeof(double));
+
+        if (NULL == decode_context->quantile_list) {
+            return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+        }
+    }
+
+    return cmt_mpack_unpack_array(reader, unpack_meta_quantile, context);
+}
+
+
 static int initialize_histogram_bucket_list(struct cmt_histogram *histogram,
                                             double *bucket_list,
                                             size_t bucket_count)
@@ -1023,6 +1076,7 @@ static int initialize_histogram_bucket_list(struct cmt_histogram *histogram,
 static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *context)
 {
     int                                   result;
+    struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
     struct cmt_msgpack_decode_context    *decode_context;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
@@ -1034,6 +1088,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             {"static_labels",    unpack_meta_static_labels},
             {"labels",           unpack_meta_labels},
             {"buckets",          unpack_meta_buckets},
+            {"quantiles",        unpack_meta_quantiles},
             {NULL,               NULL}
         };
 
@@ -1060,6 +1115,19 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
                 result = CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
             }
         }
+        else if (decode_context->map->type == CMT_SUMMARY) {
+            summary = (struct cmt_summary *) decode_context->map->parent;
+
+            summary->quantiles = decode_context->quantile_list;
+            summary->quantiles_count = decode_context->quantile_count;
+
+            decode_context->quantile_list = NULL;
+            decode_context->quantile_count = 0;
+
+            if (summary->quantiles == NULL) {
+                result = CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
+        }
     }
 
     return result;
@@ -1080,6 +1148,7 @@ static int unpack_basic_type_values(mpack_reader_t *reader, size_t index, void *
 static int unpack_basic_type(mpack_reader_t *reader, struct cmt *cmt, struct cmt_map **map)
 {
     int                                   result;
+    struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
     struct cmt_msgpack_decode_context     decode_context;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
@@ -1148,6 +1217,13 @@ static int unpack_basic_type(mpack_reader_t *reader, struct cmt *cmt, struct cmt
                     free(histogram->buckets);
                 }
             }
+            else if ((*map)->type == CMT_SUMMARY) {
+                summary = ((struct cmt_summary *) (*map)->parent);
+
+                if (NULL != summary->quantiles) {
+                    free(summary->quantiles);
+                }
+            }
 
             free((*map)->parent);
         }
@@ -1161,6 +1237,10 @@ static int unpack_basic_type(mpack_reader_t *reader, struct cmt *cmt, struct cmt
 
     if (decode_context.bucket_list != NULL) {
         free(decode_context.bucket_list);
+    }
+
+    if (decode_context.quantile_list != NULL) {
+        free(decode_context.quantile_list);
     }
 
     return result;

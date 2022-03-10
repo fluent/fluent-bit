@@ -12,12 +12,11 @@ jobs:
     name: Build sources on amd64 for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      max-parallel: 48
       fail-fast: false
       matrix:
         os: [windows-latest, windows-2019]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build on ${{ matrix.os }} with vs-2019
         run: |
           .\scripts\win_build.bat
@@ -41,24 +40,51 @@ jobs:
           rpm -ivh epel-release-latest-7.noarch.rpm && \
           yum install -y cmake3
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Run compilation
         run: |
           cmake3 -DCMT_TESTS=on -DCMT_DEV=on .
           make
 
-  build-unix:
+  build-unix-arm64:
+    name: Build sources on arm64 for ${{ matrix.os }} - ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        compiler: [ gcc, clang ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
+        uses: uraimo/run-on-arch-action@v2.1.1
+        with:
+          arch: aarch64
+          distro: ubuntu20.04
+          run: |
+            apt-get update && \
+            apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            file \
+            make 
+            export CC=${{ env.compiler }}
+            cmake -DCMT_TESTS=On .
+            make all
+            CTEST_OUTPUT_ON_FAILURE=1 make test
+        env:
+          CC: ${{ matrix.compiler }}
+  build-unix-amd64:
     name: Build sources on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
     strategy:
-      max-parallel: 48
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         compiler: [ gcc, clang ]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
         run: |
           echo "CC = $CC, CXX = $CXX"

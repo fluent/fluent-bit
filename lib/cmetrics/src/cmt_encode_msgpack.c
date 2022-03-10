@@ -168,10 +168,11 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     struct cmt_opts      *opts;
     struct mk_list       *head;
     struct cmt_map_label *label;
+    size_t                index;
+    struct cmt_summary   *summary;
     struct cmt_histogram *histogram;
     ptrdiff_t             label_index;
     struct cmt_label     *static_label;
-    size_t                bucket_index;
     size_t                meta_field_count;
 
     opts = map->opts;
@@ -179,6 +180,11 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
     if (map->type == CMT_HISTOGRAM) {
         histogram = (struct cmt_histogram *) map->parent;
+
+        meta_field_count++;
+    }
+    if (map->type == CMT_SUMMARY) {
+        summary = (struct cmt_summary *) map->parent;
 
         meta_field_count++;
     }
@@ -264,11 +270,26 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
         mpack_start_array(writer, histogram->buckets->count);
 
-        for (bucket_index = 0 ;
-             bucket_index < histogram->buckets->count ;
-             bucket_index++) {
-            mpack_write_double(writer, histogram->buckets->upper_bounds[bucket_index]);
+        for (index = 0 ;
+             index < histogram->buckets->count ;
+             index++) {
+            mpack_write_double(writer, histogram->buckets->upper_bounds[index]);
         }
+
+        mpack_finish_array(writer);
+    }
+    else if (map->type == CMT_SUMMARY) {
+        /* 'quantiles' (summary quantiles) */
+        mpack_write_cstr(writer, "quantiles");
+
+        mpack_start_array(writer, summary->quantiles_count);
+
+        for (index = 0 ;
+             index < summary->quantiles_count ;
+             index++) {
+            mpack_write_double(writer, summary->quantiles[index]);
+        }
+
         mpack_finish_array(writer);
     }
 
@@ -283,6 +304,7 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
     size_t index;
     struct mk_list *head;
     struct cmt_map_label *label;
+    struct cmt_summary *summary;
     struct cmt_histogram *histogram;
     ptrdiff_t label_index;
 
@@ -325,6 +347,8 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         mpack_finish_map(writer); /* 'histogram' */
     }
     else if (map->type == CMT_SUMMARY) {
+        summary = (struct cmt_summary *) map->parent;
+
         mpack_write_cstr(writer, "summary");
         mpack_start_map(writer, 4);
 
@@ -332,9 +356,9 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         mpack_write_uint(writer, metric->sum_quantiles_set);
 
         mpack_write_cstr(writer, "quantiles");
-        mpack_start_array(writer, 5);
+        mpack_start_array(writer, summary->quantiles_count);
 
-        for (index = 0 ; index < 5 ; index++) {
+        for (index = 0 ; index < summary->quantiles_count ; index++) {
             mpack_write_uint(writer, metric->sum_quantiles[index]);
         }
 

@@ -10,8 +10,40 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-distro-packages:
-    name: build packages
+  build-distro-packages-arm64:
+    runs-on: ubuntu-latest
+    name: build arm64 packages
+    strategy:
+      fail-fast: true
+      matrix:
+        format: [ rpm, deb ]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: uraimo/run-on-arch-action@v2.1.1
+        name: Build the ${{matrix.format}} packages
+        with:
+          arch: aarch64
+          distro: ubuntu20.04
+          run: |
+            apt-get update && \
+            apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            file \
+            rpm \
+            make 
+            cmake .
+            echo ${{ matrix.format }} | awk '{print toupper($0)}' | xargs -I{} cpack -G {}
+
+      - name: Store the master package artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.format }}-arm64
+          path: |
+            ./*.${{matrix.format}}
+
+  build-distro-packages-amd64:
+    name: build amd64 packages
     strategy:
       fail-fast: true
       matrix:
@@ -28,13 +60,15 @@ jobs:
       - name: Store the master package artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.format }}
+          name: ${{ matrix.format }}-amd64
           path: |
             ./*.${{matrix.format}}
 
   release:
     name: Create release and upload packages
-    needs: build-distro-packages
+    needs:
+      - build-distro-packages-amd64
+      - build-distro-packages-arm64
     runs-on: ubuntu-latest
     permissions:
       contents: write

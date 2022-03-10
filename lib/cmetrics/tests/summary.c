@@ -39,7 +39,8 @@ void test_set_defaults()
     double sum;
     uint64_t count;
     uint64_t ts;
-    double q[5];
+    double q[6];
+    double r[6];
     struct cmt *cmt;
     struct cmt_summary *s;
 
@@ -52,9 +53,25 @@ void test_set_defaults()
     cmt = cmt_create();
     TEST_CHECK(cmt != NULL);
 
+    /* set quantiles, no labels */
+    q[0] = 0.1;
+    q[1] = 0.2;
+    q[2] = 0.3;
+    q[3] = 0.4;
+    q[4] = 0.5;
+    q[5] = 1.0;
+
+    r[0] = 1;
+    r[1] = 2;
+    r[2] = 3;
+    r[3] = 4;
+    r[4] = 5;
+    r[5] = 6;
+
     /* Create a gauge metric type */
     s = cmt_summary_create(cmt,
                            "k8s", "network", "load", "Network load",
+                           6, q,
                            1, (char *[]) {"my_label"});
     TEST_CHECK(s != NULL);
 
@@ -65,14 +82,7 @@ void test_set_defaults()
     cmt_summary_set_default(s, ts, NULL, sum, count, 0, NULL);
     prometheus_encode_test(cmt);
 
-    /* set quantiles, no labels */
-    q[0] = 0.1;
-    q[1] = 0.2;
-    q[2] = 0.3;
-    q[3] = 0.4;
-    q[4] = 0.5;
-
-    cmt_summary_set_default(s, ts, q, sum, count, 0, NULL);
+    cmt_summary_set_default(s, ts, r, sum, count, 0, NULL);
     prometheus_encode_test(cmt);
 
     /* static label: register static label for the context */
