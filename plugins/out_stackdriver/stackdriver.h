@@ -78,6 +78,22 @@
 #define FLB_STACKDRIVER_FAILED_REQUESTS      1001   /* failed requests */
 #endif
 
+struct flb_stackdriver_oauth_credentials {
+    /* parsed credentials file */
+    flb_sds_t type;
+    flb_sds_t private_key_id;
+    flb_sds_t private_key;
+    flb_sds_t client_email;
+    flb_sds_t client_id;
+    flb_sds_t auth_uri;
+    flb_sds_t token_uri;
+};
+
+struct flb_stackdriver_env {
+    flb_sds_t creds_file;
+    flb_sds_t metadata_server;
+};
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -111,6 +127,8 @@ struct flb_stackdriver {
     flb_sds_t labels_key;
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
+    /* shadow tag_prefix for safe deallocation */
+    flb_sds_t tag_prefix_k8s;
 
     /* generic resources */
     flb_sds_t location;
@@ -142,6 +160,12 @@ struct flb_stackdriver {
 
     /* oauth2 context */
     struct flb_oauth2 *o;
+
+    /* parsed oauth2 credentials */
+    struct flb_stackdriver_oauth_credentials *creds;
+
+    /* environment variable settings */
+    struct flb_stackdriver_env *env;
 
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
