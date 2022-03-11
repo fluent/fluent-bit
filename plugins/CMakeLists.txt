@@ -184,6 +184,7 @@ REGISTER_IN_PLUGIN("in_health")
 REGISTER_IN_PLUGIN("in_http")
 REGISTER_IN_PLUGIN("in_collectd")
 REGISTER_IN_PLUGIN("in_statsd")
+REGISTER_IN_PLUGIN("in_opentelemetry")
 
 if (FLB_IN_STORAGE_BACKLOG)
   REGISTER_IN_PLUGIN("in_storage_backlog")
