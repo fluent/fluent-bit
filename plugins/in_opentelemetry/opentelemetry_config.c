@@ -64,7 +64,7 @@ struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance 
 int opentelemetry_config_destroy(struct flb_opentelemetry *ctx)
 {
     /* release all connections */
-    http_conn_release_all(ctx);
+    opentelemetry_conn_release_all(ctx);
 
     if (ctx->server) {
         flb_free(ctx->server);
