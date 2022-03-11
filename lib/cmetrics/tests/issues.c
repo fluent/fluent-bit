@@ -27,12 +27,10 @@
 
 static struct cmt *generate_encoder_test_data()
 {
-    double val;
     uint64_t ts;
     struct cmt *cmt;
     struct cmt_counter *c1;
     struct cmt_counter *c2;
-    struct cmt_counter *c3;
 
     ts = 0;
     cmt = cmt_create();

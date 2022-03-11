@@ -31,7 +31,7 @@ struct cmt_array {
 struct cmt_array *cmt_array_create(size_t slot_count);
 void cmt_array_destroy(struct cmt_array *array);
 
-static struct cmt_variant *cmt_array_fetch_by_index(struct cmt_array *array,
+static inline struct cmt_variant *cmt_array_fetch_by_index(struct cmt_array *array,
                                                     size_t position)
 {
     if (position >= array->entry_count) {

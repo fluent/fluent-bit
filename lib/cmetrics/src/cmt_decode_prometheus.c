@@ -40,8 +40,6 @@
 static void reset_context(struct cmt_decode_prometheus_context *context)
 {
     int i;
-    struct mk_list *head;
-    struct mk_list *tmp;
     struct cmt_decode_prometheus_context_sample *sample;
 
     while (mk_list_is_empty(&context->metric.samples) != 0) {
@@ -260,7 +258,6 @@ static int parse_value_timestamp(
 
 static int add_metric_counter(struct cmt_decode_prometheus_context *context)
 {
-    int i;
     int ret;
     size_t label_count;
     struct cmt_counter *c;
@@ -307,7 +304,6 @@ static int add_metric_counter(struct cmt_decode_prometheus_context *context)
 
 static int add_metric_gauge(struct cmt_decode_prometheus_context *context)
 {
-    int i;
     int ret;
     size_t label_count;
     struct cmt_gauge *c;
@@ -354,7 +350,6 @@ static int add_metric_gauge(struct cmt_decode_prometheus_context *context)
 
 static int add_metric_untyped(struct cmt_decode_prometheus_context *context)
 {
-    int i;
     int ret;
     size_t label_count;
     struct cmt_untyped *c;
@@ -715,8 +710,6 @@ end:
 
 static int finish_metric(struct cmt_decode_prometheus_context *context)
 {
-    int i;
-    int j;
     int rv;
 
     switch (context->metric.type) {
@@ -831,9 +824,7 @@ static int parse_label(
         struct cmt_decode_prometheus_context *context,
         cmt_sds_t name, cmt_sds_t value)
 {
-    int lindex;
     int i;
-    cmt_sds_t label;
     struct cmt_decode_prometheus_context_sample *sample;
 
     if (context->metric.label_count >= CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT) {

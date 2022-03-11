@@ -112,11 +112,8 @@ static void prometheus_encode_test(struct cmt *cmt)
 
 void test_histogram()
 {
-    int ret;
-    double val;
     uint64_t ts;
     struct cmt *cmt;
-    struct cmt_gauge *g;
     struct cmt_histogram *h;
     struct cmt_histogram_buckets *buckets;
 
@@ -163,11 +160,8 @@ void test_histogram()
 
 void test_set_defaults()
 {
-    int ret;
-    double val;
     uint64_t ts;
     struct cmt *cmt;
-    struct cmt_gauge *g;
     struct cmt_histogram *h;
     struct cmt_histogram_buckets *buckets;
 

@@ -41,7 +41,6 @@ static int clone_kvlist(struct cmt_kvlist *target,
 static int clone_kvlist_entry(struct cmt_kvlist *target,
                            Opentelemetry__Proto__Common__V1__KeyValue *source);
 
-static void destroy_label(struct cmt_map_label *instance);
 static struct cmt_map_label *create_label(char *caption, size_t length);
 static int append_new_map_label_key(struct cmt_map *map, char *name);
 static int append_new_metric_label_value(struct cmt_metric *metric, char *name, size_t length);
@@ -200,17 +199,6 @@ static int clone_kvlist_entry(struct cmt_kvlist *target,
     return CMT_DECODE_OPENTELEMETRY_SUCCESS;
 }
 
-static void destroy_label(struct cmt_map_label *instance)
-{
-    if (instance != NULL) {
-        if (instance->name != NULL) {
-            cmt_sds_destroy(instance->name);
-        }
-
-        free(instance);
-    }
-}
-
 static struct cmt_map_label *create_label(char *caption, size_t length)
 {
     struct cmt_map_label *instance;
@@ -335,7 +323,6 @@ static int decode_instrumentation_library(struct cmt *cmt,
     struct cmt_kvlist  *attributes;
     struct cmt_array   *resources;
     int                 result;
-    size_t              index;
 
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
 
@@ -587,7 +574,6 @@ static int decode_summary_data_point(struct cmt *cmt,
     struct cmt_summary *summary;
     struct cmt_metric  *sample;
     int                 result;
-    double              value;
     size_t              index;
 
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
@@ -704,7 +690,6 @@ static int decode_histogram_data_point(struct cmt *cmt,
     struct cmt_histogram *histogram;
     struct cmt_metric    *sample;
     int                   result;
-    double                value;
     size_t                index;
 
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
@@ -928,7 +913,6 @@ static int decode_metrics_entry(struct cmt *cmt,
     char           *metric_name;
     void           *instance;
     int             result;
-    struct cmt_map *map;
 
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
 
@@ -1046,9 +1030,6 @@ static int decode_resource_metrics_entry(struct cmt *cmt,
     size_t resource_metrics_index,
     Opentelemetry__Proto__Metrics__V1__ResourceMetrics *resource_metrics)
 {
-    struct cmt_variant *kvlist_value;
-    struct cmt_kvlist  *attributes;
-    struct cmt_array   *resources;
     int                 result;
     size_t              index;
 

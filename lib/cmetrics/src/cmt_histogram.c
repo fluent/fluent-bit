@@ -335,7 +335,6 @@ int cmt_histogram_observe(struct cmt_histogram *histogram, uint64_t timestamp,
                           double val, int labels_count, char **label_vals)
 {
     int i;
-    double cur;
     struct cmt_metric *metric;
     struct cmt_histogram_buckets *buckets;
 

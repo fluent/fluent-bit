@@ -7,6 +7,7 @@ set(UNIT_TESTS_FILES
   untyped.c
   atomic_operations.c
   encoding.c
+  decoding.c
   cat.c
   issues.c
   null_label.c

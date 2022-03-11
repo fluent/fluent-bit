@@ -70,8 +70,6 @@ void cmt_array_destroy(struct cmt_array *array)
 int cmt_array_remove_by_index(struct cmt_array *array,
                               size_t position)
 {
-    struct cmt_variant *element;
-
     if (position >= array->entry_count) {
         return -1;
     }
@@ -110,8 +108,6 @@ int cmt_array_remove_by_reference(struct cmt_array *array,
 int cmt_array_append(struct cmt_array *array,
                      struct cmt_variant *value)
 {
-    int result;
-
     if (array->entry_count >= array->slot_count) {
         return -1;
     }

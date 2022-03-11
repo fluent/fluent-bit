@@ -27,7 +27,7 @@
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_hash.h> 
 #include <cmetrics/cmt_encode_opentelemetry.h>
-
+#include <cmetrics/cmt_array.h>
 
 static int is_string_releaseable(char *address);
 
@@ -49,11 +49,6 @@ static Opentelemetry__Proto__Metrics__V1__SummaryDataPoint__ValueAtQuantile **
 static void destroy_summary_value_at_quantile_list(
     Opentelemetry__Proto__Metrics__V1__SummaryDataPoint__ValueAtQuantile **list);
 
-static void destroy_export_metrics_service_request(
-    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *request);
-
-static Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *
-    initialize_export_metrics_service_request(size_t resource_metrics_count);
 
 static void destroy_metrics_data(
     Opentelemetry__Proto__Metrics__V1__MetricsData *metrics_data);
@@ -63,14 +58,6 @@ static Opentelemetry__Proto__Metrics__V1__MetricsData *
 
 static void destroy_resource(
     Opentelemetry__Proto__Resource__V1__Resource *resource);
-
-static Opentelemetry__Proto__Resource__V1__Resource *
-    initialize_resource(size_t attribute_count);
-
-static int append_attribute_to_resource(
-    Opentelemetry__Proto__Resource__V1__Resource *data_point,
-    Opentelemetry__Proto__Common__V1__KeyValue *attribute,
-    size_t attribute_slot_hint);
 
 static void destroy_resource_metrics(
     Opentelemetry__Proto__Metrics__V1__ResourceMetrics *resource_metrics);
@@ -148,10 +135,6 @@ static void destroy_summary_data_point_list(
 
 static void destroy_histogram_data_point_list(
     Opentelemetry__Proto__Metrics__V1__HistogramDataPoint **data_point_list);
-
-static void destroy_data_point_list(
-    void **data_point_list,
-    int data_point_type);
 
 static Opentelemetry__Proto__Metrics__V1__NumberDataPoint *
     initialize_numerical_data_point(
@@ -321,42 +304,6 @@ static size_t get_metric_count(struct cmt *cmt)
     return metric_count;
 }
 
-static void destroy_export_metrics_service_request(
-    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *request)
-{
-    if (request != NULL) {
-        destroy_resource_metrics_list(request->resource_metrics);
-
-        free(request);
-    }
-}
-
-static Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *
-    initialize_export_metrics_service_request(size_t resource_metrics_count)
-{
-    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *request;
-
-    request = calloc(1, sizeof(Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest));
-
-    if (request == NULL) {
-        return NULL;
-    }
-
-    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__init(request);
-
-    request->resource_metrics = initialize_resource_metrics_list(resource_metrics_count);
-
-    if (request->resource_metrics == NULL) {
-        destroy_export_metrics_service_request(request);
-
-        return NULL;
-    }
-
-    request->n_resource_metrics = resource_metrics_count;
-
-    return request;
-}
-
 static void destroy_metrics_data(
     Opentelemetry__Proto__Metrics__V1__MetricsData *metrics_data)
 {
@@ -403,52 +350,6 @@ static void destroy_resource(
 
         free(resource);
     }
-}
-
-static Opentelemetry__Proto__Resource__V1__Resource *
-    initialize_resource(size_t attribute_count)
-{
-    Opentelemetry__Proto__Resource__V1__Resource *resource;
-
-    resource = calloc(1, sizeof(Opentelemetry__Proto__Resource__V1__Resource));
-
-    if (resource == NULL) {
-        return NULL;
-    }
-
-    opentelemetry__proto__resource__v1__resource__init(resource);
-
-    resource->attributes = initialize_attribute_list(attribute_count);
-
-    if (resource->attributes == NULL) {
-        destroy_resource(resource);
-
-        return NULL;
-    }
-
-    resource->n_attributes = attribute_count;
-
-    return resource;
-}
-
-static int append_attribute_to_resource(
-    Opentelemetry__Proto__Resource__V1__Resource *resource,
-    Opentelemetry__Proto__Common__V1__KeyValue *attribute,
-    size_t attribute_slot_hint)
-{
-    size_t attribute_slot_index;
-
-    for (attribute_slot_index = attribute_slot_hint ;
-         attribute_slot_index < resource->n_attributes;
-         attribute_slot_index++) {
-        if (resource->attributes[attribute_slot_index] == NULL) {
-            resource->attributes[attribute_slot_index] = attribute;
-
-            return 0;
-        }
-    }
-
-    return -1;
 }
 
 static void destroy_resource_metrics(
@@ -537,10 +438,6 @@ static Opentelemetry__Proto__Metrics__V1__ResourceMetrics **
 
     metric_list = calloc(element_count + 1,
                          sizeof(Opentelemetry__Proto__Metrics__V1__ResourceMetrics *));
-
-    if (metric_list == NULL) {
-        return NULL;
-    }
 
     return metric_list;
 }
@@ -656,11 +553,11 @@ static int append_metric_to_instrumentation_library_metrics(
         if (instrumentation_library_metrics->metrics[metric_slot_index] == NULL) {
             instrumentation_library_metrics->metrics[metric_slot_index] = metric;
 
-            return 0;
+            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
         }
     }
 
-    return -1;
+    return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 }
 
 static void destroy_instrumentation_library_metric_list(
@@ -689,10 +586,6 @@ static Opentelemetry__Proto__Metrics__V1__InstrumentationLibraryMetrics **
 
     metric_list = calloc(element_count + 1,
                          sizeof(Opentelemetry__Proto__Metrics__V1__InstrumentationLibraryMetrics *));
-
-    if (metric_list == NULL) {
-        return NULL;
-    }
 
     return metric_list;
 }
@@ -793,10 +686,6 @@ static Opentelemetry__Proto__Common__V1__KeyValue **
     attribute_list = calloc(element_count + 1,
                             sizeof(Opentelemetry__Proto__Common__V1__KeyValue *));
 
-    if (attribute_list == NULL) {
-        return NULL;
-    }
-
     return attribute_list;
 }
 
@@ -851,6 +740,8 @@ static void destroy_data_point(
         case CMT_GAUGE:
         case CMT_UNTYPED:
             return destroy_numerical_data_point(data_point);
+        case CMT_SUMMARY:
+            return destroy_summary_data_point(data_point);
         case CMT_HISTOGRAM:
             return destroy_histogram_data_point(data_point);
     }
@@ -892,7 +783,6 @@ static void destroy_summary_data_point_list(
     }
 }
 
-
 static void destroy_histogram_data_point_list(
     Opentelemetry__Proto__Metrics__V1__HistogramDataPoint **data_point_list)
 {
@@ -908,20 +798,6 @@ static void destroy_histogram_data_point_list(
         }
 
         free(data_point_list);
-    }
-}
-
-static void destroy_data_point_list(
-    void **data_point_list,
-    int data_point_type)
-{
-    switch (data_point_type) {
-        case CMT_COUNTER:
-        case CMT_GAUGE:
-        case CMT_UNTYPED:
-            return destroy_numerical_data_point_list((Opentelemetry__Proto__Metrics__V1__NumberDataPoint **) data_point_list);
-        case CMT_HISTOGRAM:
-            return destroy_histogram_data_point_list((Opentelemetry__Proto__Metrics__V1__HistogramDataPoint **) data_point_list);
     }
 }
 
@@ -1062,8 +938,6 @@ static Opentelemetry__Proto__Metrics__V1__SummaryDataPoint *
                                                          cmt_math_uint64_to_d64(value_list[index]));
 
                 if (data_point->quantile_values[index] == NULL) {
-                    cmt_errno();
-
                     destroy_summary_value_at_quantile_list(data_point->quantile_values);
 
                     free(data_point);
@@ -1138,6 +1012,10 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
         if (data_point->explicit_bounds == NULL) {
             cmt_errno();
 
+            if (data_point->bucket_counts != NULL) {
+                free(data_point->bucket_counts);
+            }
+
             free(data_point);
 
             return NULL;
@@ -1169,11 +1047,11 @@ static int append_attribute_to_numerical_data_point(
         if (data_point->attributes[attribute_slot_index] == NULL) {
             data_point->attributes[attribute_slot_index] = attribute;
 
-            return 0;
+            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
         }
     }
 
-    return -1;
+    return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 }
 
 static int append_attribute_to_summary_data_point(
@@ -1189,11 +1067,11 @@ static int append_attribute_to_summary_data_point(
         if (data_point->attributes[attribute_slot_index] == NULL) {
             data_point->attributes[attribute_slot_index] = attribute;
 
-            return 0;
+            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
         }
     }
 
-    return -1;
+    return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 }
 
 static int append_attribute_to_histogram_data_point(
@@ -1209,11 +1087,11 @@ static int append_attribute_to_histogram_data_point(
         if (data_point->attributes[attribute_slot_index] == NULL) {
             data_point->attributes[attribute_slot_index] = attribute;
 
-            return 0;
+            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
         }
     }
 
-    return -1;
+    return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 }
 
 static int append_attribute_to_data_point(
@@ -1239,7 +1117,7 @@ static int append_attribute_to_data_point(
                                                                 attribute_slot_hint);
     }
 
-    return -1;
+    return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 }
 
 static Opentelemetry__Proto__Metrics__V1__NumberDataPoint **
@@ -1250,10 +1128,6 @@ static Opentelemetry__Proto__Metrics__V1__NumberDataPoint **
 
     data_point_list = calloc(element_count + 1,
                          sizeof(Opentelemetry__Proto__Metrics__V1__NumberDataPoint *));
-
-    if (data_point_list == NULL) {
-        return NULL;
-    }
 
     return data_point_list;
 }
@@ -1266,10 +1140,6 @@ static Opentelemetry__Proto__Metrics__V1__SummaryDataPoint **
 
     data_point_list = calloc(element_count + 1,
                          sizeof(Opentelemetry__Proto__Metrics__V1__SummaryDataPoint *));
-
-    if (data_point_list == NULL) {
-        return NULL;
-    }
 
     return data_point_list;
 }
@@ -1537,11 +1407,11 @@ static int append_data_point_to_metric(
         if (data_point_list[data_point_slot_index] == NULL) {
             data_point_list[data_point_slot_index] = data_point;
 
-            return 0;
+            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
         }
     }
 
-    return -1;
+    return CMT_ENCODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
 }
 
 static void destroy_metric_list(
@@ -1599,12 +1469,12 @@ static struct cmt_opentelemetry_context *initialize_opentelemetry_context(
     struct cmt_opentelemetry_context *context;
     int                               result;
 
-    result = 0;
+    result = CMT_ENCODE_OPENTELEMETRY_SUCCESS;
 
     context = calloc(1, sizeof(struct cmt_opentelemetry_context));
 
     if (context == NULL) {
-        result = -1;
+        result = CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
 
         goto cleanup;
     }
@@ -1614,7 +1484,7 @@ static struct cmt_opentelemetry_context *initialize_opentelemetry_context(
     context->metrics_data = initialize_metrics_data(1);
 
     if (context->metrics_data == NULL) {
-        result = -2;
+        result = CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
 
         goto cleanup;
     }
@@ -1623,7 +1493,7 @@ static struct cmt_opentelemetry_context *initialize_opentelemetry_context(
         initialize_resource_metrics(schema_url, NULL, 1);
 
     if (context->metrics_data->resource_metrics[0] == NULL) {
-        result = -3;
+        result = CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
 
         goto cleanup;
     }
@@ -1632,7 +1502,7 @@ static struct cmt_opentelemetry_context *initialize_opentelemetry_context(
         initialize_instrumentation_library_metric(metric_count);
 
     if (context->metrics_data->resource_metrics[0]->instrumentation_library_metrics[0] == NULL) {
-        result = -4;
+        result = CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
 
         goto cleanup;
     }
@@ -1651,14 +1521,14 @@ static struct cmt_opentelemetry_context *initialize_opentelemetry_context(
                 resource_metrics[0]->\
                     instrumentation_library_metrics[0]->\
                         instrumentation_library == NULL) {
-            result = -5;
+            result = CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
 
             goto cleanup;
         }
     }
 
 cleanup:
-    if (result != 0) {
+    if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS) {
         destroy_opentelemetry_context(context);
 
         context = NULL;
@@ -1692,7 +1562,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     attribute_list = initialize_attribute_list(attribute_count);
 
     if (attribute_list == NULL) {
-        return -1;
+        return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
     if (map->type == CMT_COUNTER   ||
@@ -1706,6 +1576,10 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     }
     else if (map->type == CMT_SUMMARY) {
         summary = (struct cmt_summary *) map->parent;
+
+        if (sample->sum_quantiles_set == CMT_FALSE) {
+            return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
+        }
 
         data_point = initialize_summary_data_point(0,
                                                    cmt_metric_get_timestamp(sample),
@@ -1725,7 +1599,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
                                                      cmt_metric_get_timestamp(sample),
                                                      cmt_metric_hist_get_count_value(sample),
                                                      cmt_metric_hist_get_sum_value(sample),
-                                                     histogram->buckets->count,
+                                                     histogram->buckets->count + 1,
                                                      sample->hist_buckets,
                                                      histogram->buckets->count,
                                                      histogram->buckets->upper_bounds,
@@ -1736,7 +1610,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
     if (data_point == NULL) {
         destroy_attribute_list(attribute_list);
 
-        return -2;
+        return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
     }
 
     attribute_index = 0;
@@ -1750,7 +1624,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
         if (attribute == NULL) {
             destroy_data_point(data_point, map->type);
 
-            return -3;
+            return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
         }
 
         result = append_attribute_to_data_point(data_point,
@@ -1758,11 +1632,11 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
                                                 attribute,
                                                 attribute_index++);
 
-        if (result != 0)
+        if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS)
         {
             destroy_data_point(data_point, map->type);
 
-            return -4;
+            return result;
         }
     }
 
@@ -1777,7 +1651,7 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
         if (attribute == NULL) {
             destroy_data_point(data_point, map->type);
 
-            return -5;
+            return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
         }
 
         result = append_attribute_to_data_point(data_point,
@@ -1785,11 +1659,11 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
                                                 attribute,
                                                 attribute_index++);
 
-        if (result != 0)
+        if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS)
         {
             destroy_data_point(data_point, map->type);
 
-            return -6;
+            return result;
         }
 
         label_name = mk_list_entry_next(&label_name->_head, struct cmt_map_label,
@@ -1798,13 +1672,13 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
 
     result = append_data_point_to_metric(metric, (void *) data_point, sample_index);
 
-    if (result != 0) {
+    if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS) {
         destroy_data_point(data_point, map->type);
 
-        return -7;
+        return result;
     }
 
-    return 0;
+    return result;
 }
 
 int pack_basic_type(struct cmt_opentelemetry_context *context,
@@ -1860,7 +1734,7 @@ int pack_basic_type(struct cmt_opentelemetry_context *context,
                                sample_count);
 
     if (metric == NULL) {
-        return -1;
+        return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
 
     sample_index = 0;
@@ -1872,10 +1746,10 @@ int pack_basic_type(struct cmt_opentelemetry_context *context,
                                          &map->metric,
                                          sample_index++);
 
-        if (result != 0) {
+        if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS) {
             destroy_metric(metric);
 
-            return -2;
+            return result;
         }
     }
 
@@ -1888,10 +1762,10 @@ int pack_basic_type(struct cmt_opentelemetry_context *context,
                                          sample,
                                          sample_index++);
 
-        if (result != 0) {
+        if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS) {
             destroy_metric(metric);
 
-            return -3;
+            return result;
         }
     }
 
@@ -1903,15 +1777,15 @@ int pack_basic_type(struct cmt_opentelemetry_context *context,
                 metric,
                 *metric_index);
 
-    if (result != 0) {
+    if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS) {
         destroy_metric(metric);
 
-        return -4;
+        return result;
     }
 
     (*metric_index)++;
 
-    return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
+    return result;
 }
 
 static cmt_sds_t render_opentelemetry_context_to_sds(

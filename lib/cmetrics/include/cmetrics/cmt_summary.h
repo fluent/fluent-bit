@@ -52,7 +52,7 @@ int cmt_summary_destroy(struct cmt_summary *summary);
 
 int cmt_summary_set_default(struct cmt_summary *summary,
                             uint64_t timestamp,
-                            double quantiles_default[5],
+                            double *quantile_values,
                             double sum,
                             uint64_t count,
                             int labels_count, char **label_vars);
