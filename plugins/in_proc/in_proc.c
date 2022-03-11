@@ -471,7 +471,6 @@ static int in_proc_exit(void *data, struct flb_config *config)
     }
 
     /* Destroy context */
-    flb_free(ctx->proc_name);
     flb_free(ctx);
 
     return 0;
