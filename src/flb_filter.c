@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -316,7 +315,7 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 
     mk_list_foreach(head, &config->filter_plugins) {
         plugin = mk_list_entry(head, struct flb_filter_plugin, _head);
-        if (strcmp(plugin->name, filter) == 0) {
+        if (strcasecmp(plugin->name, filter) == 0) {
             break;
         }
         plugin = NULL;
@@ -370,6 +369,7 @@ const char *flb_filter_name(struct flb_filter_instance *ins)
 int flb_filter_init_all(struct flb_config *config)
 {
     int ret;
+    uint64_t ts;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -399,6 +399,7 @@ int flb_filter_init_all(struct flb_config *config)
 
         /* Get name or alias for the instance */
         name = (char *) flb_filter_name(ins);
+        ts = cmt_time_now();
 
         /* CMetrics */
         ins->cmt = cmt_create();
@@ -414,6 +415,7 @@ int flb_filter_init_all(struct flb_config *config)
                                                   "add_records_total",
                                                   "Total number of new added records.",
                                                   1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_add_records, ts, 0, 1, (char *[]) {name});
 
         /* Register generic filter plugin metrics */
         ins->cmt_drop_records = cmt_counter_create(ins->cmt,
@@ -421,6 +423,8 @@ int flb_filter_init_all(struct flb_config *config)
                                                   "drop_records_total",
                                                   "Total number of dropped records.",
                                                   1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_drop_records, ts, 0, 1, (char *[]) {name});
+
         /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
 

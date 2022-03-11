@@ -496,6 +496,88 @@ void flb_test_in_tail_issue_3943()
     }
 }
 
+void flb_test_in_tail_multiline_json_and_regex()
+{
+    int64_t ret;
+    int in_ffd;
+    int out_ffd;
+    int n_expected;
+    int t_expected;
+    char *target;
+    char path[PATH_MAX];
+    struct tail_test_result result = {0};
+    flb_ctx_t *ctx;
+
+    target = "multiline_001";
+    result.nMatched = 0;
+    result.target = target;
+
+    struct flb_lib_out_cb cb;
+    cb.cb   = cb_check_result;
+    cb.data = &result;
+
+    /* initialize */
+    set_result(0);
+
+    ctx = flb_create();
+
+    TEST_CHECK(flb_service_set(ctx, "Flush", "0.5",
+                                    "Grace", "1",
+                                    NULL) == 0);
+
+    ret = flb_service_set(ctx,
+                          "Log_Level", "info",
+                          "Parsers_File", DPATH "/parsers_multiline_json.conf",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    TEST_CHECK(flb_input_set(ctx, in_ffd, "tag", "test", NULL) == 0);
+
+    /* Compose path based on target */
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "path"            , path,
+                             "read_from_head"  , "true",
+                             "multiline.parser", "multiline-json-regex",
+                             NULL) == 0);
+
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              "format", "json",
+                              NULL) == 0);
+
+    /* Start test */
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    /* Expect 1 final record */
+    n_expected = 1;
+    t_expected = 5000;
+
+    /* Poll for up to 5 seconds or until we got a match */
+    for (ret = 0; ret < t_expected && result.nMatched < n_expected; ret++) {
+        usleep(1000);
+    }
+
+    TEST_CHECK(result.nMatched == n_expected);
+    TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, n_expected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    if (ctx) {
+        flb_destroy(ctx);
+    }
+}
+
 /* Test list */
 TEST_LIST = {
     {"issue_3943", flb_test_in_tail_issue_3943},
@@ -506,6 +588,7 @@ TEST_LIST = {
     {"in_tail_dockermode_multiple_lines",           flb_test_in_tail_dockermode_multiple_lines},
     {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
     {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
+    {"in_tail_multiline_json_and_regex",            flb_test_in_tail_multiline_json_and_regex},
 #endif
     {NULL, NULL}
 };

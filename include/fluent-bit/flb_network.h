@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -40,6 +39,12 @@ struct flb_net_setup {
     /* max time in seconds to wait for a established connection */
     int connect_timeout;
 
+    /* max time in seconds to wait for blocking io calls */
+    int io_timeout;
+
+    /* connect timeout log error (default: true) */
+    int connect_timeout_log_error;
+
     /* network interface to bind and use to send data */
     flb_sds_t source_address;
 
@@ -48,6 +53,12 @@ struct flb_net_setup {
 
     /* dns mode : TCP or UDP */
     char *dns_mode;
+
+    /* dns resolver : LEGACY or ASYNC */
+    char *dns_resolver;
+
+    /* prioritize ipv4 results when trying to establish a connection*/
+    int   dns_prefer_ipv4;
 };
 
 /* Defines a host service and it properties */
@@ -85,11 +96,11 @@ struct flb_dns_lookup_context {
     ((struct flb_dns_lookup_context *) \
         &((uint8_t *) event)[-offsetof(struct flb_dns_lookup_context, response_event)])
 
+#define FLB_DNS_LEGACY  'L'
+#define FLB_DNS_ASYNC   'A'
+
 #define FLB_DNS_USE_TCP 'T'
 #define FLB_DNS_USE_UDP 'U'
-
-#define FLB_ARES_SOCKET_TYPE_TCP 1
-#define FLB_ARES_SOCKET_TYPE_UDP 2
 
 #ifndef TCP_FASTOPEN
 #define TCP_FASTOPEN  23

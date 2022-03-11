@@ -1,0 +1,13 @@
+pipeline:
+    inputs:
+        - dummy:
+            tag: success
+            group1:
+                a: b
+                c: d
+    outputs:
+        - stdout:
+            match: "*"
+
+unknown:
+    a: b

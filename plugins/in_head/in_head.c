@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -256,81 +255,30 @@ static int in_head_collect(struct flb_input_instance *i_ins,
 static int in_head_config_read(struct flb_in_head_config *ctx,
                                struct flb_input_instance *in)
 {
-    const char *filepath = NULL;
-    const char *pval = NULL;
-
-    /* filepath setting */
-    filepath = flb_input_get_property("file", in);
-    if (!filepath) {
+    int ret;
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(in, "unable to load configuration");
         return -1;
     }
-    ctx->filepath = filepath;
 
-    pval = flb_input_get_property("key", in);
-    if (pval) {
-        ctx->key      = pval;
-        ctx->key_len  = strlen(pval);
-    }
-    else {
-        ctx->key      = "head";
-        ctx->key_len  = 4;
-    }
 
-    /* buffer size setting */
-    pval = flb_input_get_property("buf_size", in);
-    if (pval != NULL && atoi(pval) > 0) {
-        ctx->buf_size = atoi(pval);
-    }
-    else {
-        ctx->buf_size = DEFAULT_BUF_SIZE;
-    }
+    ctx->key_len = strlen(ctx->key);
 
-    /* interval settings */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
-    pval = flb_input_get_property("split_line", in);
-    if (pval != NULL && flb_utils_bool(pval)) {
-        ctx->split_line = FLB_TRUE;
+    /* only set lines if not explicitly set */
+    if (ctx->split_line && ctx->lines <= 0) {
         ctx->lines      = 10;
-    }
-    else {
-        ctx->split_line = FLB_FALSE;
-    }
-
-    pval = flb_input_get_property("lines", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->lines = atoi(pval);
-    }
-    else {
-        ctx->lines = 0; /* read bytes mode */
     }
 
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    pval = flb_input_get_property("add_path", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->add_path = FLB_TRUE;
-            ctx->path_len = strlen(ctx->filepath);
-        }
+    if (ctx->add_path) {
+        ctx->path_len = strlen(ctx->filepath);
     }
 
     flb_plg_debug(ctx->ins, "buf_size=%zu path=%s",
@@ -435,6 +383,51 @@ static int in_head_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+/* Configuration properties map */
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_head_config, filepath),
+     "Set the file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "key", "head",
+     0, FLB_TRUE, offsetof(struct flb_in_head_config, key),
+     "Set the record key"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "buf_size", DEFAULT_BUF_SIZE,
+      0, FLB_TRUE, offsetof(struct flb_in_head_config, buf_size),
+      "Set the read buffer size"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "split_line", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_head_config, split_line),
+      "generate key/value pair per line"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "lines", "0",
+      0, FLB_TRUE, offsetof(struct flb_in_head_config, lines),
+      "Line number to read"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "add_path", "false",
+      0, FLB_TRUE, offsetof(struct flb_in_head_config, add_path),
+      "append filepath to records"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_head_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_head_config, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+    /* EOF */
+    {0}
+};
 
 struct flb_input_plugin in_head_plugin = {
     .name         = "head",
@@ -445,5 +438,6 @@ struct flb_input_plugin in_head_plugin = {
     .cb_flush_buf = NULL,
     .cb_pause     = in_head_pause,
     .cb_resume    = in_head_resume,
+    .config_map   = config_map,
     .cb_exit      = in_head_exit
 };

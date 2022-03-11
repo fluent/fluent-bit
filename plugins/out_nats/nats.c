@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,6 +21,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_config_map.h>
 
 #include <stdio.h>
 #include <msgpack.h>
@@ -32,6 +32,7 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
                         void *data)
 {
     int io_flags;
+    int ret;
     struct flb_upstream *upstream;
     struct flb_out_nats_config *ctx;
 
@@ -42,6 +43,14 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     ctx = flb_malloc(sizeof(struct flb_out_nats_config));
     if (!ctx) {
         flb_errno();
+        return -1;
+    }
+
+    /* Set default values */
+    ret = flb_output_config_map_set(ins, ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "flb_output_config_map_set failed");
+        flb_free(ctx);
         return -1;
     }
 
@@ -227,6 +236,11 @@ int cb_nats_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_nats_plugin = {
     .name         = "nats",
     .description  = "NATS Server",
@@ -234,4 +248,5 @@ struct flb_output_plugin out_nats_plugin = {
     .cb_flush     = cb_nats_flush,
     .cb_exit      = cb_nats_exit,
     .flags        = FLB_OUTPUT_NET,
+    .config_map   = config_map
 };

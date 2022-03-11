@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -120,10 +119,8 @@ static int in_mem_init(struct flb_input_instance *in,
                        struct flb_config *config, void *data)
 {
     int ret;
-    const char *tmp;
     struct flb_in_mem_config *ctx;
     (void) data;
-    const char *pval = NULL;
 
     /* Initialize context */
     ctx = flb_malloc(sizeof(struct flb_in_mem_config));
@@ -134,21 +131,20 @@ static int in_mem_init(struct flb_input_instance *in,
     ctx->pid = 0;
     ctx->page_size = sysconf(_SC_PAGESIZE);
     ctx->ins = in;
+    
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Collection time setting */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) > 0) {
-        ctx->interval_sec = atoi(pval);
+    if (ctx->interval_sec <= 0) {
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
     }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-
-    /* Check if the caller want's to trace a specific Process ID */
-    tmp = flb_input_get_property("pid", in);
-    if (tmp) {
-        ctx->pid = atoi(tmp);
+    if (ctx->interval_nsec <= 0) {
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
     /* Set the context */
@@ -162,6 +158,7 @@ static int in_mem_init(struct flb_input_instance *in,
                                        config);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "could not set collector for memory input plugin");
+        return -1;
     }
 
     return 0;
@@ -277,6 +274,26 @@ static int in_mem_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_mem_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_mem_config, interval_nsec),
+      "Set the collector interval (subseconds)"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "pid", "0",
+      0, FLB_TRUE, offsetof(struct flb_in_mem_config, pid),
+      "Set the PID of the process to measure"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_input_plugin in_mem_plugin = {
     .name         = "mem",
     .description  = "Memory Usage",
@@ -284,5 +301,6 @@ struct flb_input_plugin in_mem_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_mem_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_mem_exit
+    .cb_exit      = in_mem_exit,
+    .config_map   = config_map
 };

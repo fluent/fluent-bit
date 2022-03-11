@@ -22,6 +22,7 @@
 #include <msgpack.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_uri.h>
@@ -33,9 +34,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     TIMEOUT_GUARD
 
-    if (size < 600) {
+    if (size < 750) {
         return 0;
     }
+
+    uint64_t ran_hash = *(uint64_t *)data;
+    char *null_terminated1 = get_null_terminated(25, &data, &size);
+    char *null_terminated2 = get_null_terminated(25, &data, &size);
+    char *null_terminated3 = get_null_terminated(25, &data, &size);
 
     /* Prepare a general null-terminated string */
     char *null_terminated = (char*)malloc(size+1);
@@ -122,7 +128,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
         char *out_buf = NULL;
         size_t out_size;
-        flb_hash_get(ht, null_terminated, size, (const char **)&out_buf, &out_size);
+        flb_hash_get(ht, null_terminated, size, (void **)&out_buf, &out_size);
 
         /* now let's create some more instances */
         char *instances1[128] = { NULL };
@@ -145,6 +151,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             flb_hash_get_by_id(ht, (int)data[i], null_terminated,
                                (const char **)&hash_out_buf, &hash_out_size);
         }
+
+        flb_hash_del(ht, null_terminated1);
+        flb_hash_exists(ht, ran_hash);
+        flb_hash_del_ptr(ht, null_terminated2, strlen(null_terminated2), NULL);
+        flb_hash_get_ptr(ht, null_terminated3, strlen(null_terminated3));
 
         flb_hash_destroy(ht);
         for (int i =0; i<128; i++) {
@@ -198,8 +209,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     flb_regex_init();
     struct flb_regex *freg = flb_regex_create(pregex);
     if (freg != NULL) {
-        struct flb_regex_search res;
-        flb_regex_match(freg, null_terminated, size);
+        flb_regex_match(freg, (unsigned char*)null_terminated, size);
         flb_regex_destroy(freg);
     }
     flb_regex_exit();
@@ -216,5 +226,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* General cleanup */
     flb_free(null_terminated);
+    flb_free(null_terminated1);
+    flb_free(null_terminated2);
+    flb_free(null_terminated3);
     return 0;
 }

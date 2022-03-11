@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,9 +27,10 @@
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_base64.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <mbedtls/base64.h>
+
 #include <mbedtls/md5.h>
 #include <msgpack.h>
 
@@ -146,7 +146,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         *headers = s3_headers;
         return 0;
     }
-    
+
     s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
     if (s3_headers == NULL) {
         flb_errno();
@@ -174,7 +174,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
     }
-    
+
     *num_headers = headers_len;
     *headers = s3_headers;
     return 0;
@@ -374,7 +374,7 @@ static int init_seq_index(void *context) {
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
             return -1;
         }
-    } 
+    }
     else {
         ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
         if (ret < 0) {
@@ -493,7 +493,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
     int async_flags;
     int len;
     char *role_arn = NULL;
-    char *external_id = NULL;
     char *session_name;
     const char *tmp;
     struct flb_s3 *ctx = NULL;
@@ -726,7 +725,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
@@ -795,10 +794,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         /* Use the STS Provider */
         ctx->base_provider = ctx->provider;
         role_arn = (char *) tmp;
-        tmp = flb_output_get_property("external_id", ins);
-        if (tmp) {
-            external_id = (char *) tmp;
-        }
 
         /* STS provider needs yet another separate TLS instance */
         ctx->sts_provider_tls = flb_tls_create(FLB_TRUE,
@@ -826,7 +821,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
         ctx->provider = flb_sts_provider_create(config,
                                                 ctx->sts_provider_tls,
                                                 ctx->base_provider,
-                                                external_id,
+                                                ctx->external_id,
                                                 role_arn,
                                                 session_name,
                                                 ctx->region,
@@ -1371,7 +1366,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
     }
-    
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
@@ -1441,7 +1436,7 @@ int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_siz
         return ret;
     }
 
-    ret = mbedtls_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
+    ret = flb_base64_encode((unsigned char*) md5_str, md5_str_size, &olen, md5_bin,
                                 sizeof(md5_bin));
     if (ret != 0) {
         return ret;
@@ -1877,7 +1872,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     msgpack_unpacked_init(&result);
-    while (!alloc_error && 
+    while (!alloc_error &&
            msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Each array must have two entries: time and record */
         root = result.data;
@@ -1919,7 +1914,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                 if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
-                    /* 
+                    /*
                      * Copy contents of value into buffer. Necessary to copy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
@@ -1937,7 +1932,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset, 
+                        ret = flb_msgpack_to_json(val_buf + val_offset,
                                                   msgpack_size - val_offset, &val);
                         if (ret < 0) {
                             break;
@@ -1960,7 +1955,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
     /* Throw error once per chunk if at least one log key was not found */
     if (log_key_missing == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records", 
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
 
@@ -2246,7 +2241,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
@@ -2392,6 +2387,13 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, external_id),
+     "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
+    },
+
+    {
      FLB_CONFIG_MAP_BOOL, "static_file_path", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, static_file_path),
      "Disables behavior where UUID string is automatically appended to end of S3 key name when "
@@ -2410,6 +2412,7 @@ struct flb_output_plugin out_s3_plugin = {
     .cb_init      = cb_s3_init,
     .cb_flush     = cb_s3_flush,
     .cb_exit      = cb_s3_exit,
+    .workers      = 1,
     .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
     .config_map   = config_map
 };

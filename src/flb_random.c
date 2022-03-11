@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +20,15 @@
 #include <fluent-bit/flb_compat.h>
 #include <fcntl.h>
 
+#ifdef FLB_HAVE_GETENTROPY
+#include <unistd.h>
+#endif
+#ifdef FLB_HAVE_GETENTROPY_SYS_RANDOM
+#include <sys/random.h>
+#endif
+
+#define MAX_GETENTROPY_LEN 256
+
 /*
  * This module provides a random number generator for common use cases.
  *
@@ -28,7 +36,8 @@
  * is available since Windows Vista, and should be compliant to the
  * official recommendation.
  *
- * On Unix, we use /dev/urandom as a secure random source.
+ * On other platforms, we use getentropy(3) if available, otherwise
+ * /dev/urandom as a secure random source.
  */
 
 int flb_random_bytes(unsigned char *buf, int len)
@@ -41,9 +50,33 @@ int flb_random_bytes(unsigned char *buf, int len)
     }
     return 0;
 #else
-    int fd;
-    int bytes;
+    int     fd;
+    ssize_t bytes;
 
+#if defined(FLB_HAVE_GETENTROPY) || defined(FLB_HAVE_GETENTROPY_SYS_RANDOM)
+    while (len > 0) {
+        if (len > MAX_GETENTROPY_LEN) {
+            bytes = MAX_GETENTROPY_LEN;
+        }
+        else {
+            bytes = len;
+        }
+        if (getentropy(buf, bytes) < 0) {
+#ifdef ENOSYS
+            /* Fall back to urandom if the syscall is not available (Linux only) */
+            if (errno == ENOSYS) {                
+                goto try_urandom;
+            }
+#endif
+            return -1;
+        }
+        len -= bytes;
+        buf += bytes;
+    }
+    return 0;
+
+try_urandom:
+#endif /* FLB_HAVE_GETENTROPY || FLB_HAVE_GETENTROPY_SYS_RANDOM */
     fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
         return -1;
@@ -60,5 +93,5 @@ int flb_random_bytes(unsigned char *buf, int len)
     }
     close(fd);
     return 0;
-#endif
+#endif /* FLB_SYSTEM_WINDOWS */
 }

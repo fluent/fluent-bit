@@ -5,10 +5,8 @@
 | CI Workflow       | Status             |
 |-------------------|--------------------|
 | Unit Tests (master) | [![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=master)](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml) |
-| Integration Tests (master) | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/integration-run-master.yaml)|
-| Docker images (master) | [![CI/Docker Images](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/integration-build-master.yaml)|
-| Latest release build |  [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/build-release.yaml)|
-
+| Integration Tests (master) | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml)|
+| Latest release |  [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml)|
 
 ## Project Description
 

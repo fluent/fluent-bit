@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -210,12 +209,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-    "Specifies the name of the date field in output."
+    FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_stdout, json_date_key),
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    "Specifies the name of the date field in output."
     },
 
     /* EOF */
@@ -230,6 +229,7 @@ struct flb_output_plugin out_stdout_plugin = {
     .cb_flush     = cb_stdout_flush,
     .cb_exit      = cb_stdout_exit,
     .flags        = 0,
+    .workers      = 1,
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .config_map   = config_map
 };

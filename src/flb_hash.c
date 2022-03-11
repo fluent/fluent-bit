@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -292,8 +291,7 @@ static int entry_set_value(struct flb_hash_entry *entry, void *val, size_t val_s
     return 0;
 }
 
-int flb_hash_add(struct flb_hash *ht,
-                 const char *key, int key_len,
+int flb_hash_add(struct flb_hash *ht, const char *key, int key_len,
                  void *val, ssize_t val_size)
 {
     int id;
@@ -352,6 +350,7 @@ int flb_hash_add(struct flb_hash *ht,
         return -1;
     }
     entry->created = time(NULL);
+    entry->hash = hash;
     entry->hits = 0;
 
     /* Store the key and value as a new memory region */
@@ -409,6 +408,28 @@ int flb_hash_get(struct flb_hash *ht,
     return id;
 }
 
+/* check if a hash exists */
+int flb_hash_exists(struct flb_hash *ht, uint64_t hash)
+{
+    int id;
+    struct mk_list *head;
+    struct flb_hash_table *table;
+    struct flb_hash_entry *entry;
+
+    id = (hash % ht->size);
+    table = &ht->table[id];
+
+    /* Iterate entries */
+    mk_list_foreach(head, &table->chains) {
+        entry = mk_list_entry(head, struct flb_hash_entry, _head);
+        if (entry->hash == hash) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /*
  * Get an entry based in the table id. Note that a table id might have multiple
  * entries so the 'key' parameter is required to get an exact match.
@@ -454,8 +475,7 @@ int flb_hash_get_by_id(struct flb_hash *ht, int id,
     return 0;
 }
 
-void *flb_hash_get_ptr(struct flb_hash *ht,
-                 const char *key, int key_len)
+void *flb_hash_get_ptr(struct flb_hash *ht, const char *key, int key_len)
 {
     int id;
     struct flb_hash_entry *entry;

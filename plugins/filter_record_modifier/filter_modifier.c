@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -33,89 +32,106 @@
 
 #define PLUGIN_NAME "filter_record_modifier"
 
+static int config_allowlist_key(struct record_modifier_ctx *ctx,
+                                struct mk_list *list)
+{
+    struct modifier_key    *mod_key = NULL;
+    struct mk_list *head = NULL;
+    struct flb_config_map_val *mv = NULL;
+
+    if (ctx == NULL || list == NULL) {
+        return -1;
+    }
+
+    flb_config_map_foreach(head, mv, ctx->allowlist_keys_map) {
+        mod_key = flb_malloc(sizeof(struct modifier_key));
+        if (!mod_key) {
+            flb_errno();
+            continue;
+        }
+        mod_key->key     = mv->val.str;
+        mod_key->key_len = flb_sds_len(mv->val.str);
+        if (mod_key->key[mod_key->key_len - 1] == '*') {
+            mod_key->dynamic_key = FLB_TRUE;
+            mod_key->key_len--;
+        }
+        else {
+            mod_key->dynamic_key = FLB_FALSE;
+        }
+        mk_list_add(&mod_key->_head, &ctx->allowlist_keys);
+        ctx->allowlist_keys_num++;
+    }
+    return 0;
+}
+
 static int configure(struct record_modifier_ctx *ctx,
                          struct flb_filter_instance *f_ins)
 {
-    struct flb_kv *kv = NULL;
     struct mk_list *head = NULL;
-    struct mk_list *split;
     struct modifier_key    *mod_key;
     struct modifier_record *mod_record;
-    struct flb_split_entry *sentry;
+    struct flb_config_map_val *mv;
+    struct flb_slist_entry *sentry = NULL;
 
     ctx->records_num = 0;
     ctx->remove_keys_num = 0;
     ctx->allowlist_keys_num = 0;
 
-    /* Iterate all filter properties */
-    mk_list_foreach(head, &f_ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-
-        if (!strcasecmp(kv->key, "remove_key")) {
-            mod_key = flb_malloc(sizeof(struct modifier_key));
-            if (!mod_key) {
-                flb_errno();
-                continue;
-            }
-            mod_key->key     = kv->val;
-            mod_key->key_len = flb_sds_len(kv->val);
-            if (mod_key->key[mod_key->key_len - 1] == '*') {
-                mod_key->dynamic_key = FLB_TRUE;
-                mod_key->key_len--;
-            }
-            else {
-                mod_key->dynamic_key = FLB_FALSE;
-            }
-            mk_list_add(&mod_key->_head, &ctx->remove_keys);
-            ctx->remove_keys_num++;
-        }
-        else if (!strcasecmp(kv->key, "allowlist_key") ||
-                 !strcasecmp(kv->key, "whitelist_key")) {
-            mod_key = flb_malloc(sizeof(struct modifier_key));
-            if (!mod_key) {
-                flb_errno();
-                continue;
-            }
-            mod_key->key     = kv->val;
-            mod_key->key_len = flb_sds_len(kv->val);
-            if (mod_key->key[mod_key->key_len - 1] == '*') {
-                mod_key->dynamic_key = FLB_TRUE;
-                mod_key->key_len--;
-            }
-            else {
-                mod_key->dynamic_key = FLB_FALSE;
-            }
-            mk_list_add(&mod_key->_head, &ctx->allowlist_keys);
-            ctx->allowlist_keys_num++;
-        }
-        else if (!strcasecmp(kv->key, "record")) {
-            mod_record = flb_malloc(sizeof(struct modifier_record));
-            if (!mod_record) {
-                flb_errno();
-                continue;
-            }
-            split = flb_utils_split(kv->val, ' ', 1);
-            if (mk_list_size(split) != 2) {
-                flb_plg_error(ctx->ins, "invalid record parameters, "
-                              "expects 'KEY VALUE'");
-                flb_free(mod_record);
-                flb_utils_split_free(split);
-                continue;
-            }
-            /* Get first value (field) */
-            sentry = mk_list_entry_first(split, struct flb_split_entry, _head);
-            mod_record->key = flb_strndup(sentry->value, sentry->len);
-            mod_record->key_len = sentry->len;
-
-            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-            mod_record->val = flb_strndup(sentry->value, sentry->len);
-            mod_record->val_len = sentry->len;
-
-            flb_utils_split_free(split);
-            mk_list_add(&mod_record->_head, &ctx->records);
-            ctx->records_num++;
-        }
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        return -1;
     }
+
+    /* Check 'Record' properties */
+    flb_config_map_foreach(head, mv, ctx->records_map) {
+        mod_record = flb_malloc(sizeof(struct modifier_record));
+        if (!mod_record) {
+            flb_errno();
+            continue;
+        }
+
+        if (mk_list_size(mv->val.list) != 2) {
+            flb_plg_error(ctx->ins, "invalid record parameters, "
+                          "expects 'KEY VALUE'");
+            flb_free(mod_record);
+            continue;
+        }
+        /* Get first value (field) */
+        sentry = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+        mod_record->key_len = flb_sds_len(sentry->str);
+        mod_record->key = flb_strndup(sentry->str, mod_record->key_len);
+
+        sentry = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+        mod_record->val_len = flb_sds_len(sentry->str);
+        mod_record->val = flb_strndup(sentry->str, mod_record->val_len);
+
+        mk_list_add(&mod_record->_head, &ctx->records);
+        ctx->records_num++;
+    }
+    /* Check "Remove_Key" properties */
+    flb_config_map_foreach(head, mv, ctx->remove_keys_map) {
+        mod_key = flb_malloc(sizeof(struct modifier_key));
+        if (!mod_key) {
+            flb_errno();
+            continue;
+        }
+        mod_key->key     = mv->val.str;
+        mod_key->key_len = flb_sds_len(mv->val.str);
+        if (mod_key->key[mod_key->key_len - 1] == '*') {
+            mod_key->dynamic_key = FLB_TRUE;
+            mod_key->key_len--;
+        }
+        else {
+            mod_key->dynamic_key = FLB_FALSE;
+        }
+        mk_list_add(&mod_key->_head, &ctx->remove_keys);
+        ctx->remove_keys_num++;
+    }
+
+    /* Check "Allowlist_key" and "Whitelist_key" properties */
+    config_allowlist_key(ctx, ctx->allowlist_keys_map);
+    config_allowlist_key(ctx, ctx->whitelist_keys_map);
 
     if (ctx->remove_keys_num > 0 && ctx->allowlist_keys_num > 0) {
         flb_plg_error(ctx->ins, "remove_keys and allowlist_keys are exclusive "
@@ -149,7 +165,6 @@ static int delete_list(struct record_modifier_ctx *ctx)
         mk_list_del(&record->_head);
         flb_free(record);
     }
-
     return 0;
 }
 
@@ -173,6 +188,7 @@ static int cb_modifier_init(struct flb_filter_instance *f_ins,
 
     if ( configure(ctx, f_ins) < 0 ){
         delete_list(ctx);
+        flb_free(ctx);
         return -1;
     }
 
@@ -382,11 +398,38 @@ static int cb_modifier_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_SLIST_2, "record", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct record_modifier_ctx, records_map),
+     "Append fields. This parameter needs key and value pair."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "remove_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct record_modifier_ctx, remove_keys_map),
+     "If the key is matched, that field is removed."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "allowlist_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct record_modifier_ctx, allowlist_keys_map),
+     "If the key is not matched, that field is removed."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "whitelist_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct record_modifier_ctx, whitelist_keys_map),
+     "(Alias of allowlist_key)"
+    },
+
+    {0}
+};
+
 struct flb_filter_plugin filter_record_modifier_plugin = {
     .name         = "record_modifier",
     .description  = "modify record",
     .cb_init      = cb_modifier_init,
     .cb_filter    = cb_modifier_filter,
     .cb_exit      = cb_modifier_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

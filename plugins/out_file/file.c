@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,10 +30,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#ifdef FLB_SYSTEM_WINDOWS
+#include <Shlobj.h>
+#include <Shlwapi.h>
+#endif
+
 #include "file.h"
 
 #ifdef FLB_SYSTEM_WINDOWS
 #define NEWLINE "\r\n"
+#define S_ISDIR(m)      (((m) & S_IFMT) == S_IFDIR)
 #else
 #define NEWLINE "\n"
 #endif
@@ -47,6 +52,7 @@ struct flb_file_conf {
     const char *template;
     int format;
     int csv_column_names;
+    int mkdir;
     struct flb_output_instance *ins;
 };
 
@@ -122,6 +128,10 @@ static int cb_file_init(struct flb_output_instance *ins,
         }
         else if (!strcasecmp(tmp, "template")) {
             ctx->format    = FLB_OUT_FILE_FMT_TEMPLATE;
+        }
+        else if (!strcasecmp(tmp, "out_file")) {
+            /* for explicit setting */
+            ctx->format = FLB_OUT_FILE_FMT_JSON;
         }
         else {
             flb_plg_error(ctx->ins, "unknown format %s. abort.", tmp);
@@ -350,6 +360,57 @@ static void print_metrics_text(struct flb_output_instance *ins,
     cmt_encode_text_destroy(text);
 }
 
+static int mkpath(struct flb_output_instance *ins, const char *dir)
+{
+    struct stat st;
+    char *dup_dir = NULL;
+    int ret;
+
+    if (!dir) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (strlen(dir) == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (stat(dir, &st) == 0) {
+        if (S_ISDIR (st.st_mode)) {
+            return 0;
+        }
+        flb_plg_error(ins, "%s is not a directory", dir);
+        errno = ENOTDIR;
+        return -1;
+    }
+
+#ifdef FLB_SYSTEM_WINDOWS
+    char path[MAX_PATH];
+
+    if (_fullpath(path, dir, MAX_PATH) == NULL) {
+        return -1;
+    }
+
+    if (SHCreateDirectoryExA(NULL, path, NULL) != ERROR_SUCCESS) {
+        return -1;
+    }
+    return 0;
+#else
+    dup_dir = strdup(dir);
+    if (!dup_dir) {
+        return -1;
+    }
+    ret = mkpath(ins, dirname(dup_dir));
+    free(dup_dir);
+    if (ret != 0) {
+        return ret;
+    }
+    flb_plg_debug(ins, "creating directory %s", dir);
+    return mkdir(dir, 0755);
+#endif
+}
+
 static void cb_file_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins,
@@ -371,6 +432,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     struct flb_file_conf *ctx = out_context;
     struct flb_time tm;
     (void) config;
+    char* out_file_copy;
 
     /* Set the right output file */
     if (ctx->out_path) {
@@ -394,6 +456,21 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
 
     /* Open output file with default name as the Tag */
     fp = fopen(out_file, "ab+");
+    if (ctx->mkdir == FLB_TRUE && fp == NULL && errno == ENOENT) {
+        out_file_copy = strdup(out_file);
+        if (out_file_copy) {
+#ifdef FLB_SYSTEM_WINDOWS
+            PathRemoveFileSpecA(out_file_copy);
+            ret = mkpath(ctx->ins, out_file_copy);
+#else
+            ret = mkpath(ctx->ins, dirname(out_file_copy));
+#endif
+            free(out_file_copy);
+            if (ret == 0) {
+                fp = fopen(out_file, "ab+");
+            }
+        }
+    }
     if (fp == NULL) {
         flb_errno();
         flb_plg_error(ctx->ins, "error opening: %s", out_file);
@@ -553,6 +630,12 @@ static struct flb_config_map config_map[] = {
      "Add column names (keys) in the first line of the target file"
     },
 
+    {
+     FLB_CONFIG_MAP_BOOL, "mkdir", "false",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, mkdir),
+     "Recursively create output directory if it does not exist. Permissions set to 0755"
+    },
+
     /* EOF */
     {0}
 };
@@ -564,6 +647,7 @@ struct flb_output_plugin out_file_plugin = {
     .cb_flush     = cb_file_flush,
     .cb_exit      = cb_file_exit,
     .flags        = 0,
+    .workers      = 1,
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
     .config_map   = config_map,
 };

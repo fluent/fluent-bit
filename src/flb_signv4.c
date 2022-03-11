@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -93,7 +92,22 @@ static int kv_key_cmp(const void *a_arg, const void *b_arg)
 
     ret = strcmp(kv_a->key, kv_b->key);
     if (ret == 0) {
-        ret = strcmp(kv_a->val, kv_b->val);
+        /*
+         * NULL pointer is allowed in kv_a->val and kv_b->val.
+         * Handle NULL pointer cases before passing to strcmp.
+         */
+        if (kv_a->val == NULL && kv_b->val == NULL) {
+            ret = 0;
+        }
+        else if (kv_a->val == NULL) {
+            ret = -1;
+        }
+        else if (kv_b->val == NULL) {
+            ret = 1;
+        }
+        else {
+            ret = strcmp(kv_a->val, kv_b->val);
+        }
     }
 
     return ret;

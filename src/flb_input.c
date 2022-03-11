@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -205,10 +204,10 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->routable = FLB_TRUE;
         instance->context  = NULL;
         instance->data     = data;
-        instance->threaded = FLB_FALSE;
         instance->storage  = NULL;
         instance->storage_type = -1;
         instance->log_level = -1;
+        instance->runs_in_coroutine = FLB_FALSE;
 
         /* net */
         instance->host.name    = NULL;
@@ -223,7 +222,8 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->tasks);
         mk_list_init(&instance->chunks);
         mk_list_init(&instance->collectors);
-        mk_list_init(&instance->coros);
+        mk_list_init(&instance->input_coro_list);
+        mk_list_init(&instance->input_coro_list_destroy);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
@@ -239,7 +239,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
 
         /* Plugin requires a Thread context */
         if (plugin->flags & FLB_INPUT_CORO) {
-            instance->threaded = FLB_TRUE;
+            instance->runs_in_coroutine = FLB_TRUE;
         }
 
         instance->mp_total_buf_size = 0;
@@ -264,6 +264,67 @@ static inline int prop_key_check(const char *key, const char *kv, int k_len)
     }
 
     return -1;
+}
+
+struct flb_input_instance *flb_input_get_instance(struct flb_config *config,
+                                                  int ins_id)
+{
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (ins->id == ins_id) {
+            break;
+        }
+        ins = NULL;
+    }
+
+    if (!ins) {
+        return NULL;
+    }
+
+    return ins;
+}
+
+static void flb_input_coro_destroy(struct flb_input_coro *input_coro)
+{
+    flb_debug("[input coro] destroy coro_id=%i", input_coro->id);
+
+    mk_list_del(&input_coro->_head);
+    flb_coro_destroy(input_coro->coro);
+    flb_free(input_coro);
+}
+
+int flb_input_coro_finished(struct flb_config *config, int ins_id)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct flb_input_coro *input_coro;
+
+    ins = flb_input_get_instance(config, ins_id);
+    if (!ins) {
+        return -1;
+    }
+
+    /* Look for input coroutines that needs to be destroyed */
+    mk_list_foreach_safe(head, tmp, &ins->input_coro_list_destroy) {
+        input_coro = mk_list_entry(head, struct flb_input_coro, _head);
+        printf("coro destroy!: coro_id=%i\n", input_coro->id);
+        flb_input_coro_destroy(input_coro);
+    }
+
+    return 0;
+}
+
+void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro)
+{
+    struct flb_input_instance *ins = input_coro->ins;
+
+    /* move flb_input_coro from 'input_coro_list' to 'input_coro_list_destroy' */
+    mk_list_del(&input_coro->_head);
+    mk_list_add(&input_coro->_head, &ins->input_coro_list_destroy);
 }
 
 int flb_input_name_exists(const char *name, struct flb_config *config)
@@ -472,13 +533,26 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     flb_free(ins);
 }
 
+int flb_input_coro_id_get(struct flb_input_instance *ins)
+{
+    int id;
+    int max = (2 << 13) - 1; /* max for 14 bits */
+
+    id = ins->input_coro_id;
+    ins->input_coro_id++;
+
+    /* reset once it reach the maximum allowed */
+    if (ins->input_coro_id > max) {
+        ins->input_coro_id = 0;
+    }
+
+    return id;
+}
+
 int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config)
 {
     int ret;
-#ifdef FLB_HAVE_METRICS
-    const char *name;
-#endif
     struct mk_list *config_map;
     struct flb_input_plugin *p = ins->p;
 
@@ -490,6 +564,35 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     if (!p) {
         return 0;
     }
+
+    /* Input event channel */
+    ret = mk_event_channel_create(config->evl,
+                                  &ins->ch_events[0],
+                                  &ins->ch_events[1],
+                                  ins);
+    if (ret != 0) {
+        flb_error("could not create events channels for '%s'",
+                  flb_input_name(ins));
+        return -1;
+    }
+
+    flb_debug("[%s:%s] created event channels: read=%i write=%i",
+              ins->p->name, flb_input_name(ins),
+              ins->ch_events[0], ins->ch_events[1]);
+
+    /*
+     * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+     * default, we need to overwrite this value so we can do a clean check
+     * into the Engine when the event is triggered.
+     */
+    ins->event.type = FLB_ENGINE_EV_INPUT;
+
+#ifdef FLB_HAVE_METRICS
+    uint64_t ts;
+    char *name;
+
+    name = (char *) flb_input_name(ins);
+    ts = cmt_time_now();
 
     /* CMetrics */
     ins->cmt = cmt_create();
@@ -504,17 +607,15 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                                         "fluentbit", "input", "bytes_total",
                                         "Number of input bytes.",
                                         1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_bytes, ts, 0, 1, (char *[]) {name});
+
     ins->cmt_records = cmt_counter_create(ins->cmt,
                                         "fluentbit", "input", "records_total",
                                         "Number of input records.",
                                         1, (char *[]) {"name"});
+    cmt_counter_set(ins->cmt_records, ts, 0, 1, (char *[]) {name});
 
     /* OLD Metrics */
-#ifdef FLB_HAVE_METRICS
-    /* Get name or alias for the instance */
-    name = flb_input_name(ins);
-
-    /* [OLD METRICS] Create the metrics context */
     ins->metrics = flb_metrics_create(name);
     if (ins->metrics) {
         flb_metrics_add(FLB_METRIC_N_RECORDS, "records", ins->metrics);
@@ -671,7 +772,7 @@ int flb_input_check(struct flb_config *config)
 /*
  * API for Input plugins
  * =====================
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  * The Input interface provides a certain number of functions that can be
  * used by Input plugins to configure it own behavior and request specific
  *
@@ -1067,7 +1168,7 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
 {
     struct mk_list *head;
     struct flb_input_collector *collector = NULL;
-    struct flb_coro *co;
+    struct flb_input_coro *input_coro;
 
     mk_list_foreach(head, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
@@ -1091,12 +1192,12 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
     }
 
     /* Trigger the collector callback */
-    if (collector->instance->threaded == FLB_TRUE) {
-        co = flb_input_coro_collect(collector, config);
-        if (!co) {
+    if (collector->instance->runs_in_coroutine) {
+        input_coro = flb_input_coro_collect(collector, config);
+        if (!input_coro) {
             return -1;
         }
-        flb_coro_resume(co);
+        flb_input_coro_resume(input_coro);
     }
     else {
         collector->cb_collect(collector->instance, config,

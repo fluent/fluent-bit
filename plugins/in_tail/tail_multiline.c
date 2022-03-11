@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -175,7 +174,7 @@ int flb_tail_mult_process_first(time_t now,
     file->mult_firstline = FLB_TRUE;
 
     /* Validate obtained time, if not set, set the current time */
-    if (flb_time_to_double(out_time) == 0.0) {
+    if (flb_time_to_nanosec(out_time) == 0L) {
         flb_time_get(out_time);
     }
 

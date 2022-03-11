@@ -39,11 +39,21 @@
 #define CMT_DECODE_MSGPACK_DICTIONARY_LOOKUP_ERROR    CMT_MPACK_ERROR_CUTOFF + 1
 #define CMT_DECODE_MSGPACK_VERSION_ERROR              CMT_MPACK_ERROR_CUTOFF + 2
 
+struct cmt_msgpack_temporary_bucket {
+    double upper_bound;
+    struct mk_list _head;
+};
+
 struct cmt_msgpack_decode_context {
     struct cmt        *cmt;
     struct cmt_map    *map;
     struct cmt_metric *metric;
+    double            *bucket_list;
+    size_t             bucket_count;
+    double            *quantile_list;
+    size_t             quantile_count;
     struct mk_list     unique_label_list;
+    uint64_t           summary_quantiles[5];
     int                static_labels_unpacked;
 };
 

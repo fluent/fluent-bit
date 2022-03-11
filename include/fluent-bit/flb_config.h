@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,7 +30,7 @@
 
 #include <monkey/mk_core.h>
 
-#define FLB_CONFIG_FLUSH_SECS   5
+#define FLB_CONFIG_FLUSH_SECS   1
 #define FLB_CONFIG_HTTP_LISTEN  "0.0.0.0"
 #define FLB_CONFIG_HTTP_PORT    "2020"
 #define HC_ERRORS_COUNT_DEFAULT 5
@@ -45,6 +44,7 @@ struct flb_config {
 
     int support_mode;         /* enterprise support mode ?      */
     int is_ingestion_active;  /* date ingestion active/allowed  */
+    int is_shutting_down;     /* is the service shutting down ? */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
     int grace;                /* Maximum grace time on shutdown */
@@ -58,15 +58,21 @@ struct flb_config {
     time_t init_time;      /* Time when Fluent Bit started   */
 
     /* Used in library mode */
-    pthread_t worker;            /* worker tid */
-    flb_pipefd_t ch_data[2];     /* pipe to communicate caller with worker */
-    flb_pipefd_t ch_manager[2];  /* channel to administrate fluent bit     */
-    flb_pipefd_t ch_notif[2];    /* channel to receive notifications       */
+    pthread_t worker;               /* worker tid */
+    flb_pipefd_t ch_data[2];        /* pipe to communicate caller with worker */
+    flb_pipefd_t ch_manager[2];     /* channel to administrate fluent bit     */
+    flb_pipefd_t ch_notif[2];       /* channel to receive notifications       */
+
+    flb_pipefd_t ch_self_events[2]; /* channel to recieve thread tasks        */
 
     /* Channel event loop (just for ch_notif) */
     struct mk_event_loop *ch_evl;
 
     struct mk_rconf *file;
+
+    /* main configuration */
+    struct flb_cf *cf_main;
+    struct flb_cf *cf_parsers;
 
     flb_sds_t program_name;      /* argv[0] */
 
@@ -79,6 +85,7 @@ struct flb_config {
     /* Event */
     struct mk_event event_flush;
     struct mk_event event_shutdown;
+    struct mk_event event_thread_init;  /* event to initiate thread in engine */
 
     /* Collectors */
     struct mk_list collectors;
@@ -112,6 +119,8 @@ struct flb_config {
     struct mk_list filters;
 
     struct mk_event_loop *evl;          /* the event loop (mk_core) */
+
+    struct flb_bucket_queue *evl_bktq;   /* bucket queue for evl track event priority */
 
     /* Proxies */
     struct mk_list proxies;
@@ -187,6 +196,8 @@ struct flb_config {
 
     /* DNS */
     char *dns_mode;
+    char *dns_resolver;
+    int   dns_prefer_ipv4;
 
     /* Chunk I/O Buffering */
     void *cio;
@@ -252,7 +263,7 @@ int flb_config_set_program_name(struct flb_config *config, char *name);
 
 int set_log_level_from_env(struct flb_config *config);
 #ifdef FLB_HAVE_STATIC_CONF
-struct mk_rconf *flb_config_static_open(const char *file);
+struct flb_cf *flb_config_static_open(const char *file);
 #endif
 
 struct flb_service_config {
@@ -291,6 +302,8 @@ enum conf_type {
 
 /* DNS */
 #define FLB_CONF_DNS_MODE              "dns.mode"
+#define FLB_CONF_DNS_RESOLVER          "dns.resolver"
+#define FLB_CONF_DNS_PREFER_IPV4       "dns.prefer_ipv4"
 
 /* Storage / Chunk I/O */
 #define FLB_CONF_STORAGE_PATH          "storage.path"

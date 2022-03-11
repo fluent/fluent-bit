@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +25,8 @@
 #include <fluent-bit/flb_parser_decoder.h>
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_kv.h>
+
 #include <msgpack.h>
 
 #define TYPE_OUT_STRING  0  /* unstructured text         */
@@ -596,13 +597,12 @@ static struct flb_parser_dec *get_decoder_key_context(const char *key_name, int 
     return dec;
 }
 
-struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
+struct mk_list *flb_parser_decoder_list_create(struct flb_cf_section *section)
 {
     int c = 0;
     int type;
     int backend;
     int size;
-    struct mk_rconf_entry *entry;
     struct mk_list *head;
     struct mk_list *list = NULL;
     struct mk_list *split;
@@ -611,6 +611,7 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
     struct flb_split_entry *action;
     struct flb_parser_dec *dec;
     struct flb_parser_dec_rule *dec_rule;
+    struct flb_kv *entry;
 
     /* Global list to be referenced by parent parser definition */
     list = flb_malloc(sizeof(struct mk_list));
@@ -620,15 +621,14 @@ struct mk_list *flb_parser_decoder_list_create(struct mk_rconf_section *section)
     }
     mk_list_init(list);
 
-
-    mk_list_foreach(head, &section->entries) {
-        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
+    mk_list_foreach(head, &section->properties) {
+        entry = mk_list_entry(head, struct flb_kv, _head);
 
         /* Lookup for specific Decode rules */
-        if (strcasecmp(entry->key, "Decode_Field") == 0) {
+        if (strcasecmp(entry->key, "decode_field") == 0) {
             type = FLB_PARSER_DEC_DEFAULT;
         }
-        else if (strcasecmp(entry->key, "Decode_Field_As") == 0) {
+        else if (strcasecmp(entry->key, "decode_field_as") == 0) {
             type = FLB_PARSER_DEC_AS;
         }
         else {

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -69,6 +68,8 @@ static int tls_init(void)
     OPENSSL_add_all_algorithms_noconf();
     SSL_load_error_strings();
     SSL_library_init();
+#else
+    SSL_load_error_strings();
 #endif
     return 0;
 }
@@ -134,6 +135,55 @@ static void tls_context_destroy(void *ctx_backend)
     flb_free(ctx);
 }
 
+#ifdef _MSC_VER
+static int windows_load_system_certificates(struct tls_context *ctx)
+{
+    int ret;
+    HANDLE win_store;
+    PCCERT_CONTEXT win_cert = NULL;
+    const unsigned char *win_cert_data;
+    X509_STORE *ossl_store = SSL_CTX_get_cert_store(ctx->ctx);
+    X509 *ossl_cert;
+
+    win_store = CertOpenSystemStoreA(0, "Root");
+    if (win_store == NULL) {
+        flb_error("[tls] Cannot open cert store: %i", GetLastError());
+        return -1;
+    }
+
+    while (win_cert = CertEnumCertificatesInStore(win_store, win_cert)) {
+        if (win_cert->dwCertEncodingType & X509_ASN_ENCODING) {
+            /*
+             * Decode the certificate into X509 struct.
+             *
+             * The additional pointer variable is necessary per OpenSSL docs because the
+             * pointer is incremented by d2i_X509.
+             */
+            win_cert_data = win_cert->pbCertEncoded;
+            ossl_cert = d2i_X509(NULL, &win_cert_data, win_cert->cbCertEncoded);
+            if (!ossl_cert) {
+                flb_debug("[tls] Cannot parse a certificate. skipping...");
+                continue;
+            }
+
+            /* Add X509 struct to the openssl cert store */
+            ret = X509_STORE_add_cert(ossl_store, ossl_cert);
+            if (!ret) {
+                flb_warn("[tls] Failed to add a certificate to the store: %lu: %s",
+                         ERR_get_error(), ERR_error_string(ERR_get_error(), NULL));
+            }
+            X509_free(ossl_cert);
+        }
+    }
+
+    if (!CertCloseStore(win_store, 0)) {
+        flb_error("[tls] Cannot close cert store: %i", GetLastError());
+        return -1;
+    }
+    return 0;
+}
+#endif
+
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
@@ -141,7 +191,7 @@ static int load_system_certificates(struct tls_context *ctx)
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
-    //return windows_load_system_certificates(ctx);
+    return windows_load_system_certificates(ctx);
 #endif
 
     if (access(RHEL_DEFAULT_CA, R_OK) == 0) {
@@ -166,6 +216,7 @@ static void *tls_context_create(int verify, int debug,
     int ret;
     SSL_CTX *ssl_ctx;
     struct tls_context *ctx;
+    char err_buf[256];
 
     /*
      * Init library ? based in the documentation on OpenSSL >= 1.1.0 is not longer
@@ -212,20 +263,18 @@ static void *tls_context_create(int verify, int debug,
     if (ca_path) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, NULL, ca_path);
         if (ret != 1) {
-            flb_error("[tls] ca_path'%s' %lu: %s",
-                      ca_path,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] ca_path '%s' %lu: %s",
+                      ca_path, ERR_get_error(), err_buf);
             goto error;
         }
     }
     else if (ca_file) {
         ret = SSL_CTX_load_verify_locations(ctx->ctx, ca_file, NULL);
         if (ret != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] ca_file '%s' %lu: %s",
-                      ca_file,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+                      ca_file, ERR_get_error(), err_buf);
             goto error;
         }
     }
@@ -236,11 +285,10 @@ static void *tls_context_create(int verify, int debug,
     /* crt_file */
     if (crt_file) {
         ret = SSL_CTX_use_certificate_chain_file(ssl_ctx, crt_file);
-		if (ret != 1) {
+        if (ret != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] crt_file '%s' %lu: %s",
-                      crt_file,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+                      crt_file, ERR_get_error(), err_buf);
             goto error;
         }
     }
@@ -254,10 +302,9 @@ static void *tls_context_create(int verify, int debug,
         ret = SSL_CTX_use_PrivateKey_file(ssl_ctx, key_file,
                                           SSL_FILETYPE_PEM);
         if (ret != 1) {
+            ERR_error_string_n(ERR_get_error(), err_buf, sizeof(err_buf)-1);
             flb_error("[tls] key_file '%s' %lu: %s",
-                      key_file,
-                      ERR_get_error(),
-                      ERR_error_string(ERR_get_error(), NULL));
+                      crt_file, ERR_get_error(), err_buf);
         }
 
         /* Make sure the key and certificate file match */
@@ -347,19 +394,28 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
                         void *buf, size_t len)
 {
     int ret;
+    char err_buf[256];
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
 
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    ERR_clear_error();
     ret = SSL_read(session->ssl, buf, len);
     if (ret <= 0) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret == SSL_ERROR_WANT_READ) {
             ret = FLB_TLS_WANT_READ;
         }
+        else if (ret == SSL_ERROR_WANT_WRITE) {
+            ret = FLB_TLS_WANT_WRITE;
+        }
         else if (ret < 0) {
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] error: %s", err_buf);
+        }
+        else {
             ret = -1;
         }
     }
@@ -372,6 +428,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
                          const void *data, size_t len)
 {
     int ret;
+    char err_buf[256];
     size_t total = 0;
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
     struct tls_context *ctx;
@@ -379,6 +436,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     ctx = session->parent;
     pthread_mutex_lock(&ctx->mutex);
 
+    ERR_clear_error();
     ret = SSL_write(session->ssl,
                     (unsigned char *) data + total,
                     len - total);
@@ -391,6 +449,8 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
             ret = FLB_TLS_WANT_READ;
         }
         else {
+            ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+            flb_error("[tls] error: %s", err_buf);
             ret = -1;
         }
     }
@@ -404,6 +464,7 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
 static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
 {
     int ret = 0;
+    char err_buf[256];
     struct tls_session *session = ptr_session;
     struct tls_context *ctx;
 
@@ -414,12 +475,21 @@ static int tls_net_handshake(struct flb_tls *tls, void *ptr_session)
         SSL_set_tlsext_host_name(session->ssl, tls->vhost);
     }
 
+    ERR_clear_error();
     ret = SSL_connect(session->ssl);
     if (ret != 1) {
         ret = SSL_get_error(session->ssl, ret);
         if (ret != SSL_ERROR_WANT_READ &&
             ret != SSL_ERROR_WANT_WRITE) {
             ret = SSL_get_error(session->ssl, ret);
+            // The SSL_ERROR_SYSCALL with errno value of 0 indicates unexpected
+            //  EOF from the peer. This is fixed in OpenSSL 3.0.
+            if (ret == 0) {
+            	flb_error("[tls] error: unexpected EOF");
+            } else {
+                ERR_error_string_n(ret, err_buf, sizeof(err_buf)-1);
+                flb_error("[tls] error: %s", err_buf);
+            }
             pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }

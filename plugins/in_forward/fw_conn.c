@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -44,14 +43,20 @@ int fw_conn_event(void *data)
     if (event->mask & MK_EVENT_READ) {
         available = (conn->buf_size - conn->buf_len);
         if (available < 1) {
-            if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
+            if (conn->buf_size >= ctx->buffer_max_size) {
                 flb_plg_warn(ctx->ins, "fd=%i incoming data exceed limit (%lu bytes)",
                              event->fd, (ctx->buffer_max_size));
                 fw_conn_del(conn);
                 return -1;
             }
-
-            size = conn->buf_size + ctx->buffer_chunk_size;
+            else if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
+                /* no space to add buffer_chunk_size */
+                /* set maximum size */
+                size = ctx->buffer_max_size;
+            }
+            else {
+                size = conn->buf_size + ctx->buffer_chunk_size;
+            }
             tmp = flb_realloc(conn->buf, size);
             if (!tmp) {
                 flb_errno();

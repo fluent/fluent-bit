@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(fluent-bit)
 
 # Fluent Bit Version
@@ -8,6 +8,7 @@ set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -122,11 +123,13 @@ option(FLB_IN_FORWARD         "Enable Forward input plugin"         Yes)
 option(FLB_IN_HEALTH          "Enable Health input plugin"          Yes)
 option(FLB_IN_HTTP            "Enable HTTP input plugin"            Yes)
 option(FLB_IN_MEM             "Enable Memory input plugin"          Yes)
+option(FLB_IN_KAFKA           "Enable Kafka input plugin"           No)
 option(FLB_IN_KMSG            "Enable Kernel log input plugin"      Yes)
 option(FLB_IN_LIB             "Enable library mode input plugin"    Yes)
 option(FLB_IN_RANDOM          "Enable random input plugin"          Yes)
 option(FLB_IN_SERIAL          "Enable Serial input plugin"          Yes)
 option(FLB_IN_STDIN           "Enable Standard input plugin"        Yes)
+option(FLB_IN_DUMMY_THREAD    "Enable Threaded dummy plugin"        Yes)
 option(FLB_IN_SYSLOG          "Enable Syslog input plugin"          Yes)
 option(FLB_IN_TAIL            "Enable Tail input plugin"            Yes)
 option(FLB_IN_TCP             "Enable TCP input plugin"             Yes)
@@ -139,12 +142,15 @@ option(FLB_IN_NGINX_EXPORTER_METRICS "Enable Nginx Metrics input plugin" Yes)
 option(FLB_IN_NETIF           "Enable NetworkIF input plugin"       Yes)
 option(FLB_IN_WINLOG          "Enable Windows Log input plugin"      No)
 option(FLB_IN_WINSTAT         "Enable Windows Stat input plugin"     No)
+option(FLB_IN_WINEVTLOG       "Enable Windows EvtLog input plugin"   No)
 option(FLB_IN_COLLECTD        "Enable Collectd input plugin"        Yes)
+option(FLB_IN_PROMETHEUS_SCRAPE "Enable Promeheus Scrape input plugin" Yes)
 option(FLB_IN_STATSD          "Enable StatsD input plugin"          Yes)
 option(FLB_IN_STORAGE_BACKLOG "Enable storage backlog input plugin" Yes)
 option(FLB_IN_EMITTER         "Enable emitter input plugin"         Yes)
 option(FLB_IN_NODE_EXPORTER_METRICS "Enable node exporter metrics input plugin" Yes)
 option(FLB_IN_PROC_METRICS    "Enable process metrics input plugin" Yes)
+option(FLB_IN_WINDOWS_EXPORTER_METRICS "Enable windows exporter metrics input plugin" Yes)
 option(FLB_OUT_AZURE          "Enable Azure output plugin"          Yes)
 option(FLB_OUT_AZURE_BLOB     "Enable Azure output plugin"          Yes)
 option(FLB_OUT_BIGQUERY       "Enable BigQuery output plugin"       Yes)
@@ -159,12 +165,14 @@ option(FLB_OUT_HTTP           "Enable HTTP output plugin"           Yes)
 option(FLB_OUT_INFLUXDB       "Enable InfluxDB output plugin"       Yes)
 option(FLB_OUT_NATS           "Enable NATS output plugin"           Yes)
 option(FLB_OUT_NRLOGS         "Enable New Relic output plugin"      Yes)
+option(FLB_OUT_OPENSEARCH     "Enable OpenSearch output plugin"     Yes)
 option(FLB_OUT_TCP            "Enable TCP output plugin"            Yes)
 option(FLB_OUT_PLOT           "Enable Plot output plugin"           Yes)
 option(FLB_OUT_FILE           "Enable file output plugin"           Yes)
 option(FLB_OUT_TD             "Enable Treasure Data output plugin"  Yes)
 option(FLB_OUT_RETRY          "Enable Retry test output plugin"      No)
 option(FLB_OUT_PGSQL          "Enable PostgreSQL output plugin"      No)
+option(FLB_OUT_SKYWALKING     "Enable Apache SkyWalking output plugin" Yes)
 option(FLB_OUT_SLACK          "Enable Slack output plugin"          Yes)
 option(FLB_OUT_SPLUNK         "Enable Splunk output plugin"         Yes)
 option(FLB_OUT_STACKDRIVER    "Enable Stackdriver output plugin"    Yes)
@@ -180,6 +188,7 @@ option(FLB_OUT_KAFKA_REST     "Enable Kafka Rest output plugin"     Yes)
 option(FLB_OUT_CLOUDWATCH_LOGS "Enable AWS CloudWatch output plugin" Yes)
 option(FLB_OUT_KINESIS_FIREHOSE "Enable AWS Firehose output plugin" Yes)
 option(FLB_OUT_KINESIS_STREAMS "Enable AWS Kinesis output plugin" Yes)
+option(FLB_OUT_OPENTELEMETRY  "Enable OpenTelemetry plugin" Yes)
 option(FLB_OUT_PROMETHEUS_EXPORTER "Enable Prometheus exporter plugin" Yes)
 option(FLB_OUT_PROMETHEUS_REMOTE_WRITE "Enable Prometheus remote write plugin" Yes)
 option(FLB_OUT_S3             "Enable AWS S3 output plugin"         Yes)
@@ -196,12 +205,23 @@ option(FLB_FILTER_KUBERNETES  "Enable kubernetes filter"            Yes)
 option(FLB_FILTER_REWRITE_TAG "Enable tag rewrite filter"           Yes)
 option(FLB_FILTER_THROTTLE    "Enable throttle filter"              Yes)
 option(FLB_FILTER_THROTTLE_SIZE "Enable throttle size filter"        No)
+option(FLB_FILTER_TYPE_CONVERTER "Enable type converter filter"     Yes)
 option(FLB_FILTER_MULTILINE   "Enable multiline filter"             Yes)
 option(FLB_FILTER_NEST        "Enable nest filter"                  Yes)
 option(FLB_FILTER_LUA         "Enable Lua scripting filter"         Yes)
+option(FLB_FILTER_LUA_USE_MPACK  "Enable mpack on the lua filter"   Yes)
 option(FLB_FILTER_RECORD_MODIFIER "Enable record_modifier filter"   Yes)
 option(FLB_FILTER_TENSORFLOW  "Enable tensorflow filter"             No)
 option(FLB_FILTER_GEOIP2      "Enable geoip2 filter"                Yes)
+option(FLB_FILTER_Nightfall   "Enable Nightfall filter"             Yes)
+
+if(DEFINED FLB_NIGHTLY_BUILD AND NOT "${FLB_NIGHTLY_BUILD}" STREQUAL "")
+  FLB_DEFINITION_VAL(FLB_NIGHTLY_BUILD ${FLB_NIGHTLY_BUILD})
+endif()
+
+if(FLB_IN_STORAGE_BACKLOG)
+  FLB_DEFINITION(FLB_HAVE_IN_STORAGE_BACKLOG)
+endif()
 
 # Debug callbacks
 option(FLB_HTTP_CLIENT_DEBUG  "Enable HTTP Client debug callbacks"   No)
@@ -226,6 +246,7 @@ if(FLB_ALL)
   set(FLB_IN_PROC      1)
   set(FLB_IN_DISK      1)
   set(FLB_IN_DUMMY     1)
+  set(FLB_IN_DUMMY_THREAD 1)
   set(FLB_IN_NETIF     1)
   set(FLB_IN_NGINX_STATUS 1)
   set(FLB_IN_EXEC      1)
@@ -299,8 +320,8 @@ endif()
 
 # Optional features like Stream Processor and Record Accessor needs Flex
 # and Bison to generate it parsers.
-find_package(FLEX)
-find_package(BISON)
+find_package(FLEX 2)
+find_package(BISON 3)
 
 if(FLEX_FOUND AND BISON_FOUND)
   set(FLB_FLEX_BISON  1)
@@ -381,6 +402,7 @@ option(MSGPACK_BUILD_EXAMPLES         OFF)
 add_subdirectory(${FLB_PATH_LIB_MSGPACK} EXCLUDE_FROM_ALL)
 
 # MPack
+add_definitions(-DMPACK_EXTENSIONS=1)
 add_subdirectory(${FLB_PATH_LIB_MPACK} EXCLUDE_FROM_ALL)
 
 # Miniz (zip)
@@ -623,6 +645,17 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
+# libyaml support
+check_c_source_compiles("
+  #include <yaml.h>
+  int main() {
+    yaml_parser_t parser;
+    return 0;
+  }" FLB_HAVE_LIBYAML)
+if(FLB_HAVE_LIBYAML)
+  FLB_DEFINITION(FLB_HAVE_LIBYAML)
+endif()
+
 # check attribute alloc_size
 check_c_source_compiles("
 #include <stdlib.h>
@@ -682,12 +715,20 @@ if(FLB_JEMALLOC AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   FLB_DEFINITION(FLB_HAVE_JEMALLOC)
   FLB_DEFINITION(JEMALLOC_MANGLE)
 
+  # Add support for options like page size, if empty we default it
+  if(NOT DEFINED FLB_JEMALLOC_OPTIONS OR "${FLB_JEMALLOC_OPTIONS}" STREQUAL "")
+    set(FLB_JEMALLOC_OPTIONS "--with-lg-quantum=3")
+  endif()
+  # Split into a list so CMake handles it correctly when passing to configure command
+  separate_arguments(FLB_JEMALLOC_OPTIONS_LIST UNIX_COMMAND ${FLB_JEMALLOC_OPTIONS})
+  message(STATUS "jemalloc configure: ${FLB_JEMALLOC_OPTIONS_LIST}")
+
   # Link to Jemalloc as an external dependency
   ExternalProject_Add(jemalloc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --with-lg-quantum=3 --prefix=<INSTALL_DIR>
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/jemalloc-5.2.1/configure ${AUTOCONF_HOST_OPT} "${FLB_JEMALLOC_OPTIONS_LIST}" --prefix=<INSTALL_DIR>
     CFLAGS=-std=gnu99\ -Wall\ -pipe\ -g3\ -O3\ -funroll-loops
-    BUILD_COMMAND $(MAKE) CC=${CMAKE_C_COMPILER}
+    BUILD_COMMAND $(MAKE)
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/
     INSTALL_COMMAND $(MAKE) install_lib_static install_include)
   add_library(libjemalloc STATIC IMPORTED GLOBAL)
@@ -710,15 +751,24 @@ if(FLB_BACKTRACE)
     set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
   endif()
   ExternalProject_Add(backtrace
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-ca0de05/configure ${AUTOCONF_HOST_OPT} --host=${HOST} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
-    BUILD_COMMAND $(MAKE) CC=${DEPS_C_COMPILER}
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-2446c66/
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/lib/libbacktrace-2446c66/configure ${AUTOCONF_HOST_OPT} --prefix=<INSTALL_DIR> --enable-shared=no --enable-static=yes
+    BUILD_COMMAND $(MAKE)
     INSTALL_COMMAND $(MAKE) DESTDIR= install
     )
   add_library(libbacktrace STATIC IMPORTED GLOBAL)
   set_target_properties(libbacktrace PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
   add_dependencies(libbacktrace backtrace)
   include_directories("${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/include/")
+endif()
+
+if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+    FLB_OPTION(RDKAFKA_BUILD_STATIC    On)
+    FLB_OPTION(RDKAFKA_BUILD_EXAMPLES Off)
+    FLB_OPTION(RDKAFKA_BUILD_TESTS    Off)
+    FLB_OPTION(ENABLE_LZ4_EXT         Off)
+
+    add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
 endif()
 
 # Onigmo (Regex Engine)
@@ -805,6 +855,20 @@ if(FLB_INOTIFY)
   if(FLB_HAVE_INOTIFY)
     FLB_DEFINITION(FLB_HAVE_INOTIFY)
   endif()
+endif()
+
+include(CheckSymbolExists)
+
+# Check for getentropy(3)
+check_symbol_exists(getentropy "unistd.h" HAVE_GETENTROPY)
+if(HAVE_GETENTROPY)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY)
+endif()
+
+# getentropy(3) is in sys/random.h on mac
+check_symbol_exists(getentropy "sys/random.h" HAVE_GETENTROPY_SYS_RANDOM)
+if(HAVE_GETENTROPY_SYS_RANDOM)
+  FLB_DEFINITION(FLB_HAVE_GETENTROPY_SYS_RANDOM)
 endif()
 
 configure_file(

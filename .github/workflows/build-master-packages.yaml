@@ -2,53 +2,51 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of Fluent Bit to build
+        required: false
+        default: master
+      target:
+        description: Only build a specific target, intended for debug/test builds only.
+        required: false
+        default: ""
 
 name: Build packages for master
 jobs:
-  build-distro-packages:
-    name: build packages
-    strategy:
-      max-parallel: 48
-      fail-fast: true
-      matrix:
-        distro: [ ubuntu/16.04, ubuntu/18.04, ubuntu/20.04, debian/buster ]
-
-    runs-on: [ ubuntu-latest ] #self-hosted, Linux, X64, packet-builder]
+  master-build-generate-matrix:
+    name: Staging build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Setup environment
+      # Set up the list of target to build so we can pass the JSON to the reusable job
+      - id: set-matrix
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes qemu binfmt-support qemu-user-static qemu-utils qemu-efi-aarch64 qemu-system-arm docker.io containerd runc
-          sudo systemctl unmask docker && sudo systemctl start docker
-          docker run --rm --privileged --name qemu multiarch/qemu-user-static:register --reset
+          matrix=$((
+            echo '{ "distro" : [ "debian/bullseye", "ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04" ]}'
+          ) | jq -c .)
+          if [ -n "${{ github.event.inputs.target || '' }}" ]; then
+            echo "Overriding matrix to build: ${{ github.event.inputs.target }}"
+            matrix=$((
+              echo '{ "distro" : ['
+              echo '"${{ github.event.inputs.target }}"'
+              echo ']}'
+            ) | jq -c .)
+          fi
+          echo $matrix
+          echo $matrix| jq .
+          echo "::set-output name=matrix::$matrix"
+        shell: bash
 
-      - uses: frabert/replace-string-action@master
-        id: formatted_distro
-        with:
-          pattern: '(.*)\/(.*)$'
-          string: "${{ matrix.distro }}"
-          replace-with: '$1-$2'
-          flags: 'g'
-
-      - uses: actions/checkout@v2
-        with:
-          repository: fluent/fluent-bit-packaging
-          fetch-depth: 1
-          path: packaging
-
-      - name: Build the distro artifacts
-        run: ./build.sh -v master -d ${{ env.distro }} -b master
-        env:
-          distro: ${{ matrix.distro }}
-        working-directory: packaging
-
-      - name: Store the master package artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: packages-${{env.release}}-${{env.bucket-name}}
-          path: |
-            packaging/packages/${{env.distro}}/${{env.release}}/**/*
-        env:
-          bucket-name: ${{ steps.formatted_distro.outputs.replaced }}
-          release: master
-          distro: ${{ matrix.distro }}
+  master-build-packages:
+    needs: master-build-generate-matrix
+    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    with:
+      version: master
+      ref: master
+      branch: master
+      build_matrix: ${{ needs.master-build-generate-matrix.outputs.build-matrix }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

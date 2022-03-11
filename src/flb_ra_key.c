@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -84,7 +83,7 @@ static int ra_key_val_id(flb_sds_t ckey, msgpack_object map)
     }
 
     map_size = map.via.map.size;
-    for (i = 0; i < map_size; i++) {
+    for (i = map_size - 1; i >= 0; i--) {
         key = map.via.map.ptr[i].key;
 
         if (key.type != MSGPACK_OBJECT_STR) {
@@ -225,7 +224,7 @@ struct flb_ra_value *flb_ra_key_to_value(flb_sds_t ckey,
     result->o = val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
 
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
@@ -275,7 +274,7 @@ int flb_ra_key_value_get(flb_sds_t ckey, msgpack_object map,
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
         ret = subkey_to_object(&val, subkeys, &o_key, &o_val);
         if (ret == 0) {
             *out_key = o_key;
@@ -311,7 +310,7 @@ int flb_ra_key_strcmp(flb_sds_t ckey, msgpack_object map,
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
             return msgpack_object_strcmp(*out_val, str, len);
@@ -344,7 +343,7 @@ int flb_ra_key_regex_match(flb_sds_t ckey, msgpack_object map,
     val = map.via.map.ptr[i].val;
 
     if ((val.type == MSGPACK_OBJECT_MAP || val.type == MSGPACK_OBJECT_ARRAY)
-        && subkeys != NULL) {
+        && subkeys != NULL && mk_list_size(subkeys) > 0) {
         ret = subkey_to_object(&val, subkeys, &out_key, &out_val);
         if (ret == 0) {
             if (out_val->type != MSGPACK_OBJECT_STR) {

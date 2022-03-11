@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,7 +40,9 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/flb_bucket_queue.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -111,6 +112,14 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_STR,
      offsetof(struct flb_config, dns_mode)},
 
+    {FLB_CONF_DNS_RESOLVER,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, dns_resolver)},
+
+    {FLB_CONF_DNS_PREFER_IPV4,
+     FLB_CONF_TYPE_BOOL,
+     offsetof(struct flb_config, dns_prefer_ipv4)},
+
     /* Storage */
     {FLB_CONF_STORAGE_PATH,
      FLB_CONF_TYPE_STR,
@@ -158,6 +167,8 @@ struct flb_config *flb_config_init()
 {
     int ret;
     struct flb_config *config;
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -174,6 +185,22 @@ struct flb_config *flb_config_init()
 
     /* Is the engine (event loop) actively running ? */
     config->is_running = FLB_TRUE;
+
+    /* Initialize config_format context */
+    cf = flb_cf_create();
+    if (!cf) {
+        return NULL;
+    }
+    config->cf_main = cf;
+
+    section = flb_cf_section_create(cf, "service", 0);
+    if (!section) {
+        flb_cf_destroy(cf);
+        return NULL;
+    }
+
+    /* config_format for parsers */
+    config->cf_parsers = flb_cf_create();
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
@@ -198,13 +225,19 @@ struct flb_config *flb_config_init()
 
     config->http_proxy = getenv("HTTP_PROXY");
     if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
-        /* Proxy should not be set when the `HTTP_PROXY` is set to "" */
-        config->http_proxy = NULL;
+        config->http_proxy = getenv("http_proxy");
+        if (flb_str_emptyval(config->http_proxy) == FLB_TRUE) {
+            /* Proxy should not be set when `HTTP_PROXY` or `http_proxy` are set to "" */
+            config->http_proxy = NULL;
+        }
     }
     config->no_proxy = getenv("NO_PROXY");
     if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
-        /* NoProxy  should not be set when the `NO_PROXYY` is set to "" or there is no Proxy. */
-        config->no_proxy = NULL;
+        config->no_proxy = getenv("no_proxy");
+        if (flb_str_emptyval(config->no_proxy) == FLB_TRUE || config->http_proxy == NULL) {
+            /* NoProxy  should not be set when `NO_PROXY` or `no_proxy` are set to "" or there is no Proxy. */
+            config->no_proxy = NULL;
+        }
     }
 
     config->cio          = NULL;
@@ -227,7 +260,12 @@ struct flb_config *flb_config_init()
 #endif
 
     /* Set default coroutines stack size */
-    config->coro_stack_size = FLB_CORO_STACK_SIZE;
+    config->coro_stack_size = FLB_CORO_STACK_SIZE_BYTE;
+    if (config->coro_stack_size < getpagesize()) {
+        flb_info("[config] changing coro_stack_size from %u to %u bytes",
+                 config->coro_stack_size, getpagesize());
+        config->coro_stack_size = (unsigned int)getpagesize();
+    }
 
     /* Initialize linked lists */
     mk_list_init(&config->collectors);
@@ -347,7 +385,8 @@ void flb_config_exit(struct flb_config *config)
                 mk_event_timeout_destroy(config->evl, &collector->event);
                 mk_event_closesocket(collector->fd_timer);
             }
-        } else {
+        }
+        else {
             mk_event_del(config->evl, &collector->event);
         }
 
@@ -402,6 +441,13 @@ void flb_config_exit(struct flb_config *config)
     flb_parser_exit(config);
 #endif
 
+    if (config->dns_mode) {
+        flb_free(config->dns_mode);
+    }
+    if (config->dns_resolver) {
+        flb_free(config->dns_resolver);
+    }
+
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
@@ -423,8 +469,18 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
+    if (config->evl_bktq) {
+        flb_bucket_queue_destroy(config->evl_bktq);
+    }
 
     flb_plugins_unregister(config);
+
+    if (config->cf_main) {
+        flb_cf_destroy(config->cf_main);
+    }
+    if (config->cf_parsers) {
+        flb_cf_destroy(config->cf_parsers);
+    }
     flb_free(config);
 }
 

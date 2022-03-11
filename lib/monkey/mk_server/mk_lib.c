@@ -154,7 +154,13 @@ static void mk_lib_worker(void *data)
     mk_event_wait(server->lib_evl);
     mk_event_foreach(event, server->lib_evl) {
         fd = event->fd;
+
+#ifdef _WIN32
+        bytes = recv(fd, &val, sizeof(uint64_t), MSG_WAITALL);
+#else
         bytes = read(fd, &val, sizeof(uint64_t));
+#endif
+
         if (bytes <= 0) {
             return;
         }
@@ -226,8 +232,27 @@ int mk_stop(mk_ctx_t *ctx)
     uint64_t val;
     struct mk_server *server = ctx->server;
 
+    /* Send a signal for mk_server_loop_balancer to abort */
     val = MK_SERVER_SIGNAL_STOP;
+#ifdef _WIN32
+    n = send(server->lib_ch_manager[1], &val, sizeof(val), 0); 
+#else
     n = write(server->lib_ch_manager[1], &val, sizeof(val));
+#endif
+    if (n <= 0) {
+        perror("write");
+        return -1;
+    }
+
+    sleep(1);
+
+    /* Send a signal for mk_lib_worker to abort */
+    val = MK_SERVER_SIGNAL_STOP;
+#ifdef _WIN32
+    n = send(server->lib_ch_manager[1], &val, sizeof(val), 0); 
+#else
+    n = write(server->lib_ch_manager[1], &val, sizeof(val));
+#endif
     if (n <= 0) {
         perror("write");
         return -1;

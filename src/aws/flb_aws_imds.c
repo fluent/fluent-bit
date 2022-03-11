@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -238,6 +238,7 @@ flb_sds_t flb_aws_imds_get_vpc_id(struct flb_aws_imds *ctx)
 /* Obtain the IMDS version */
 static int get_imds_version(struct flb_aws_imds *ctx)
 {
+    int ret;
     struct flb_aws_client *client = ctx->ec2_imds_client;
     struct flb_aws_header invalid_token_header;
     struct flb_http_client *c = NULL;
@@ -259,20 +260,49 @@ static int get_imds_version(struct flb_aws_imds *ctx)
                                        &invalid_token_header, 1);
 
     if (!c) {
+        flb_debug("[imds] imds endpoint unavailable");
         return FLB_AWS_IMDS_VERSION_EVALUATE;
     }
 
     /* Unauthorized response means that IMDS version 2 is in use */
     if (c->resp.status == 401) {
         ctx->imds_version = FLB_AWS_IMDS_VERSION_2;
-        refresh_imds_v2_token(ctx);
+        ret = refresh_imds_v2_token(ctx);
+        if (ret == -1) {
+            /*
+             * Token cannot be refreshed, test IMDSv1
+             * If IMDSv1 cannot be used, response will be status 401
+             */
+            flb_http_client_destroy(c);
+            ctx->imds_version = FLB_AWS_IMDS_VERSION_EVALUATE;
+            c = client->client_vtable->request(client, FLB_HTTP_GET, FLB_AWS_IMDS_ROOT,
+                                               NULL, 0, NULL, 0);
+            if (!c) {
+                flb_debug("[imds] imds v1 attempt, endpoint unavailable");
+                return FLB_AWS_IMDS_VERSION_EVALUATE;
+            }
+
+            if (c->resp.status == 200) {
+                flb_info("[imds] to use IMDSv2, set --http-put-response-hop-limit to 2");
+            }
+            else {
+                /* IMDSv1 unavailable. IMDSv2 beyond network hop count */
+                flb_warn("[imds] failed to retrieve IMDSv2 token and IMDSv1 unavailable. "
+                        "This is likely due to instance-metadata-options "
+                        "--http-put-response-hop-limit being set to 1 and --http-tokens "
+                        "set to required. "
+                        "To use IMDSv2, please set --http-put-response-hop-limit to 2 as "
+                        "described https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/"
+                        "configuring-instance-metadata-options.html");
+            }
+        }
     }
 
     /*
      * Success means that IMDS version 1 is in use
-     * (Not Tested, TODO: Must test this on an instance without IMDSv2)
      */
     if (c->resp.status == 200) {
+        flb_warn("[imds] falling back on IMDSv1");
         ctx->imds_version = FLB_AWS_IMDS_VERSION_1;
     }
 

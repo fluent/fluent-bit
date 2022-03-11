@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2020 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -55,6 +54,7 @@ struct flb_hs {
 
 struct flb_hs *flb_hs_create(const char *listen, const char *tcp_port,
                              struct flb_config *config);
+int flb_hs_push_health_metrics(struct flb_hs *hs, void *data, size_t size);
 int flb_hs_push_pipeline_metrics(struct flb_hs *hs, void *data, size_t size);
 int flb_hs_push_storage_metrics(struct flb_hs *hs, void *data, size_t size);
 

@@ -9,13 +9,19 @@ on:
       - '.github/**'
       - 'dockerfiles/**'
       - 'docker_compose/**'
+      - 'packaging/**'
+      - '.gitignore'
+      - 'appveyor.yml'
+      - '**.sh'
     branches:
       - master
       - 1.8
-    types: [opened, edited, synchronize]
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+
 jobs:
   run-unit-tests-amd64:
-    name: Run unit tests on amd64 for ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }}
+    name: ${{ matrix.os }} - ${{ matrix.compiler }} - ${{ matrix.flb_option }} unit tests run on AMD64
     runs-on: ${{ matrix.os }}
     strategy:
       max-parallel: 48
@@ -49,8 +55,8 @@ jobs:
           sudo apt install -yyq gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr
           sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
 
-      - uses: actions/checkout@v2
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
@@ -81,6 +87,7 @@ jobs:
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
 
+  # Required check looks at this so do not remove
   run-all-unit-tests:
     if: ${{ always() }}
     runs-on: ubuntu-latest

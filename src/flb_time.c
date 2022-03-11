@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -18,11 +17,14 @@
  *  limitations under the License.
  */
 
+#include "cmetrics/lib/mpack/src/mpack/mpack.h"
 #include <msgpack.h>
+#include <mpack/mpack.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#include <stdint.h>
 #ifdef FLB_HAVE_CLOCK_GET_TIME
 #  include <mach/clock.h>
 #  include <mach/mach.h>
@@ -142,6 +144,54 @@ int flb_time_diff(struct flb_time *time1,
     return 0;
 }
 
+int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fmt)
+{
+    int ret = 0;
+    struct flb_time l_time;
+    char ext_data[8];
+    uint32_t tmp;
+
+    if (!is_valid_format(fmt)) {
+#ifdef FLB_TIME_FORCE_FMT_INT
+        fmt = FLB_TIME_ETFMT_INT;
+#else
+        fmt = FLB_TIME_ETFMT_V1_FIXEXT;
+#endif
+    }
+
+    if (tm == NULL) {
+      if (fmt == FLB_TIME_ETFMT_INT) {
+         l_time.tm.tv_sec = time(NULL);
+      }
+      else {
+        _flb_time_get(&l_time);
+      }
+      tm = &l_time;
+    }
+
+    switch(fmt) {
+    case FLB_TIME_ETFMT_INT:
+        mpack_write_uint(writer, tm->tm.tv_sec);
+        break;
+
+    case FLB_TIME_ETFMT_V0:
+    case FLB_TIME_ETFMT_V1_EXT:
+        /* We can't set with msgpack-c !! */
+        /* see pack_template.h and msgpack_pack_inline_func(_ext) */
+    case FLB_TIME_ETFMT_V1_FIXEXT:
+        tmp = htonl((uint32_t)tm->tm.tv_sec); /* second from epoch */
+        memcpy(&ext_data, &tmp, 4);
+        tmp = htonl((uint32_t)tm->tm.tv_nsec);/* nanosecond */
+        memcpy(&ext_data[4], &tmp, 4);
+        mpack_write_ext(writer, 8/*fixext8*/, ext_data, sizeof(ext_data));
+        break;
+
+    default:
+        ret = -1;
+    }
+
+    return ret;
+}
 
 int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
 {
@@ -217,6 +267,72 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
     default:
         flb_warn("unknown time format %x", obj->type);
         return -1;
+    }
+
+    return 0;
+}
+
+int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader)
+{
+    mpack_tag_t tag;
+    double d;
+    float f;
+    int64_t i;
+    uint32_t tmp;
+    char extbuf[8];
+    size_t ext_len;
+
+    if (time == NULL) {
+        return -1;
+    }
+
+    tag = mpack_read_tag(reader);
+
+    if (mpack_reader_error(reader) != mpack_ok ||
+        mpack_tag_type(&tag) != mpack_type_array ||
+        mpack_tag_array_count(&tag) == 0) {
+        return -1;
+    }
+
+    tag = mpack_read_tag(reader);
+    switch (mpack_tag_type(&tag)) {
+        case mpack_type_int:
+            i = mpack_tag_int_value(&tag);
+            if (i < 0) {
+                flb_warn("expecting positive integer, got %" PRId64, i);
+                return -1;
+            }
+            time->tm.tv_sec  = i;
+            time->tm.tv_nsec = 0;
+            break;
+        case mpack_type_uint:
+            time->tm.tv_sec  = mpack_tag_uint_value(&tag);
+            time->tm.tv_nsec = 0;
+            break;
+        case mpack_type_float:
+            f = mpack_tag_float_value(&tag);
+            time->tm.tv_sec = f;
+            time->tm.tv_nsec = ((f - time->tm.tv_sec) * ONESEC_IN_NSEC);
+        case mpack_type_double:
+            d = mpack_tag_double_value(&tag);
+            time->tm.tv_sec  = d;
+            time->tm.tv_nsec = ((d - time->tm.tv_sec) * ONESEC_IN_NSEC);
+            break;
+        case mpack_type_ext:
+            ext_len = mpack_tag_ext_length(&tag);
+            if (ext_len != 8) {
+                flb_warn("expecting ext_len is 8, got %" PRId64, ext_len);
+                return -1;
+            }
+            mpack_read_bytes(reader, extbuf, ext_len);
+            memcpy(&tmp, extbuf, 4);
+            time->tm.tv_sec = (uint32_t) ntohl(tmp);
+            memcpy(&tmp, extbuf + 4, 4);
+            time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+            break;
+        default:
+            flb_warn("unknown time format %s", tag.type);
+            return -1;
     }
 
     return 0;

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -97,7 +96,6 @@ static int configure(struct filter_parser_ctx *ctx,
                      struct flb_config *config)
 {
     int ret;
-    const char *tmp;
     struct mk_list *head;
     struct flb_kv *kv;
 
@@ -106,16 +104,17 @@ static int configure(struct filter_parser_ctx *ctx,
     ctx->preserve_key = FLB_FALSE;
     mk_list_init(&ctx->parsers);
 
-    /* Key name */
-    tmp = flb_filter_get_property("key_name", f_ins);
-    if (tmp) {
-        ctx->key_name = flb_strdup(tmp);
-        ctx->key_name_len = strlen(tmp);
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        return -1;
     }
-    else {
+
+    if (ctx->key_name == NULL) {
         flb_plg_error(ctx->ins, "missing 'key_name'");
         return -1;
     }
+    ctx->key_name_len = flb_sds_len(ctx->key_name);
 
     /* Read all Parsers */
     mk_list_foreach(head, &f_ins->properties) {
@@ -123,7 +122,6 @@ static int configure(struct filter_parser_ctx *ctx,
         if (strcasecmp("parser", kv->key) != 0) {
             continue;
         }
-
         ret = add_parser(kv->val, ctx, config);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "requested parser '%s' not found", kv->val);
@@ -133,18 +131,6 @@ static int configure(struct filter_parser_ctx *ctx,
     if (mk_list_size(&ctx->parsers) == 0) {
         flb_plg_error(ctx->ins, "Invalid 'parser'");
         return -1;
-    }
-
-    /* Reserve data */
-    tmp = flb_filter_get_property("reserve_data", f_ins);
-    if (tmp) {
-        ctx->reserve_data = flb_utils_bool(tmp);
-    }
-
-    /* Preserve key */
-    tmp = flb_filter_get_property("preserve_key", f_ins);
-    if (tmp) {
-        ctx->preserve_key = flb_utils_bool(tmp);
     }
 
     return 0;
@@ -282,7 +268,7 @@ static int cb_parser_filter(const void *data, size_t bytes,
                              * holder with the new value, otherwise keep the
                              * original.
                              */
-                            if (flb_time_to_double(&parsed_time) != 0.0) {
+                            if (flb_time_to_nanosec(&parsed_time) != 0L) {
                                 flb_time_copy(&tm, &parsed_time);
                             }
 
@@ -362,10 +348,35 @@ static int cb_parser_exit(void *data, struct flb_config *config)
     }
 
     delete_parsers(ctx);
-    flb_free(ctx->key_name);
     flb_free(ctx);
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "Key_Name", NULL,
+     0, FLB_TRUE, offsetof(struct filter_parser_ctx, key_name),
+     "Specify field name in record to parse."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Parser", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Specify the parser name to interpret the field. "
+     "Multiple Parser entries are allowed (one per line)."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "Preserve_Key", FLB_FALSE,
+     0, FLB_TRUE, offsetof(struct filter_parser_ctx, preserve_key),
+     "Keep original Key_Name field in the parsed result. If false, the field will be removed."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "Reserve_Data", FLB_FALSE,
+     0, FLB_TRUE, offsetof(struct filter_parser_ctx, reserve_data),
+     "Keep all other original fields in the parsed result. "
+     "If false, all other original fields will be removed."
+    },
+    {0}
+};
 
 struct flb_filter_plugin filter_parser_plugin = {
     .name         = "parser",
@@ -373,5 +384,6 @@ struct flb_filter_plugin filter_parser_plugin = {
     .cb_init      = cb_parser_init,
     .cb_filter    = cb_parser_filter,
     .cb_exit      = cb_parser_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

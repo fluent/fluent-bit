@@ -5,9 +5,9 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
-major=`echo $1 | sed -e "s/^\([0-9]*\)\.[0-9]*\.[0-9]*/\1/"`
-minor=`echo $1 | sed -e "s/^[0-9]*\.\([0-9]*\)\.[0-9]*/\1/"`
-patch=`echo $1 | sed -e "s/^[0-9]*\.[0-9]*\.\([0-9]*\)/\1/"`
+major=$(echo "$1" | sed -e "s/^\([0-9]*\)\.[0-9]*\.[0-9]*/\1/")
+minor=$(echo "$1" | sed -e "s/^[0-9]*\.\([0-9]*\)\.[0-9]*/\1/")
+patch=$(echo "$1" | sed -e "s/^[0-9]*\.[0-9]*\.\([0-9]*\)/\1/")
 
 # Build version
 sed -i "s/FLB_VERSION_MAJOR  [0-9]/FLB_VERSION_MAJOR  $major/g" CMakeLists.txt
@@ -30,5 +30,5 @@ git commit -s -m "snap: bump to v$1" snap/snapcraft.yaml
 
 # Bitbake / Yocto
 sed -i "s/PV = \"[0-9].[0-9].[0-9]\"/PV = \"$1\"/g" fluent-bit_*.*.*.bb
-git mv fluent-bit_*.*.*.bb fluent-bit_$1.bb
+git mv fluent-bit_*.*.*.bb "fluent-bit_$1.bb"
 git commit -a -s -m "bitbake: bump to v$1"

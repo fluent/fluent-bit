@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -86,6 +85,7 @@ struct flb_firehose {
     const char *region;
     const char *role_arn;
     const char *log_key;
+    const char *external_id;
     char *sts_endpoint;
     int custom_endpoint;
     int retry_requests;

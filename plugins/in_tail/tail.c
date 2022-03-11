@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -128,16 +127,53 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     int pre_size;
     int pos_size;
     int alter_size = 0;
+    int completed = FLB_FALSE;
+    char s_size[32];
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
     struct flb_tail_file *file;
+    uint64_t pre;
+    uint64_t total_processed = 0;
 
     /* Do a data chunk collection for each file */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
 
+        /*
+         * The list 'files_static' represents all the files that were discovered
+         * on startup that already contains data: these are called 'static files'.
+         *
+         * When processing static files, we don't know what kind of content they
+         * have and what kind of 'latency' might add to process all of them in
+         * a row. Despite we always 'try' to do a full round and process a
+         * fraction of them on every invocation of this function if we have a
+         * huge number of files we will face latency and make the main pipeline
+         * to degrade performance.
+         *
+         * In order to avoid this situation, we added a new option to the plugin
+         * called 'static_batch_size' which basically defines how many bytes can
+         * be processed on every invocation to process the static files.
+         *
+         * When the limit is reached, we just break the loop and as a side effect
+         * we allow other events keep processing.
+         */
+        if (ctx->static_batch_size > 0 &&
+            total_processed >= ctx->static_batch_size) {
+            break;
+        }
+
+        /* get initial offset to calculate the number of processed bytes later */
+        pre = file->offset;
+
+        /* Process the file */
         ret = flb_tail_file_chunk(file);
+
+        /* Update the total number of bytes processed */
+        if (file->offset > pre) {
+            total_processed += (file->offset - pre);
+        }
+
         switch (ret) {
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
@@ -153,7 +189,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             if (file->config->exit_on_eof) {
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
-                if (mk_list_size(&ctx->files_static) == 1) {
+                if (ctx->files_static_count == 1) {
                     flb_engine_exit(config);
                 }
             }
@@ -190,7 +226,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
              * when to stop processing the static list.
              */
             if (alter_size == 0) {
-                pre_size = mk_list_size(&ctx->files_static);
+                pre_size = ctx->files_static_count;
             }
             ret = flb_tail_file_to_event(file);
             if (ret == -1) {
@@ -200,7 +236,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             }
 
             if (alter_size == 0) {
-                pos_size = mk_list_size(&ctx->files_static);
+                pos_size = ctx->files_static_count;
                 if (pre_size == pos_size) {
                     alter_size++;
                 }
@@ -216,6 +252,19 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     if (active == 0 && alter_size == 0) {
         consume_byte(ctx->ch_manager[0]);
         ctx->ch_reads++;
+        completed = FLB_TRUE;
+    }
+
+    /* Debugging number of processed bytes */
+    if (flb_log_check_level(ctx->ins->log_level, FLB_LOG_DEBUG)) {
+        flb_utils_bytes_to_human_readable_size(total_processed,
+                                               s_size, sizeof(s_size));
+        if (completed) {
+            flb_plg_debug(ctx->ins, "[static files] processed %s, done", s_size);
+        }
+        else {
+            flb_plg_debug(ctx->ins, "[static files] processed %s", s_size);
+        }
     }
 
     return 0;
@@ -560,6 +609,14 @@ static struct flb_config_map config_map[] = {
      "needs to be increased (e.g: very long lines), this value is used to "
      "restrict how much the memory buffer can grow. If reading a file exceed "
      "this limit, the file is removed from the monitored file list."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "static_batch_size", FLB_TAIL_STATIC_BATCH_SIZE,
+     0, FLB_TRUE, offsetof(struct flb_tail_config, static_batch_size),
+     "On start, Fluent Bit might process files which already contains data, "
+     "these files are called 'static' files. The configuration property "
+     "in question set's the maximum number of bytes to process per iteration "
+     "for the static files monitored."
     },
     {
      FLB_CONFIG_MAP_BOOL, "skip_long_lines", "false",

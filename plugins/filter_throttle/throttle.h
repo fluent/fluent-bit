@@ -2,8 +2,7 @@
 
 /*  Fluent Bit Throttling
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,10 +28,10 @@
 #define THROTTLE_RET_DROP  1
 
 /* defaults */
-#define THROTTLE_DEFAULT_RATE  1
-#define THROTTLE_DEFAULT_WINDOW  5
+#define THROTTLE_DEFAULT_RATE "1"
+#define THROTTLE_DEFAULT_WINDOW  "5"
 #define THROTTLE_DEFAULT_INTERVAL  "1"
-#define THROTTLE_DEFAULT_STATUS FLB_FALSE;
+#define THROTTLE_DEFAULT_STATUS "false"
 
 struct flb_filter_throttle_ctx {
     double    max_rate;

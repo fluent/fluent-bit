@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -32,7 +31,6 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     size_t size;
     size_t olen;
     const char *tmp;
-    const char *cid = NULL;
     struct flb_upstream *upstream;
     struct flb_azure *ctx;
 
@@ -53,23 +51,14 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    /* config: 'customer_id' */
-    cid = flb_output_get_property("customer_id", ins);
-    if (cid) {
-        ctx->customer_id = flb_sds_create(cid);
-        if (!ctx->customer_id) {
-            flb_errno();
-            flb_free(ctx);
-            return NULL;
-        }
+    if (!ctx->customer_id) {
+        flb_plg_error(ctx->ins, "property 'customer_id' is not defined");
+        flb_azure_conf_destroy(ctx);
+        return NULL;
     }
 
     /* config: 'shared_key' */
-    tmp = flb_output_get_property("shared_key", ins);
-    if (tmp) {
-        ctx->shared_key = flb_sds_create(tmp);
-    }
-    else {
+    if (!ctx->shared_key) {
         flb_plg_error(ctx->ins, "property 'shared_key' is not defined");
         flb_azure_conf_destroy(ctx);
         return NULL;
@@ -94,51 +83,15 @@ struct flb_azure *flb_azure_conf_create(struct flb_output_instance *ins,
     }
     flb_sds_len_set(ctx->dec_shared_key, olen);
 
-    /* config: 'log_type' */
-    tmp = flb_output_get_property("log_type", ins);
-    if (tmp) {
-        ctx->log_type = flb_sds_create(tmp);
-    }
-    else {
-        ctx->log_type = flb_sds_create(FLB_AZURE_LOG_TYPE);
-    }
-    if (!ctx->log_type) {
-        flb_azure_conf_destroy(ctx);
-        return NULL;
-    }
-
-    /* config: 'time_key' */
-    tmp = flb_output_get_property("time_key", ins);
-    if (tmp) {
-        ctx->time_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->time_key = flb_sds_create(FLB_AZURE_TIME_KEY);
-    }
-    if (!ctx->time_key) {
-        flb_azure_conf_destroy(ctx);
-        return NULL;
-    }
-
-    /* config: 'time_generated' */
-    tmp = flb_output_get_property("time_generated", ins);
-    if (tmp) {
-        ctx->time_generated = flb_utils_bool(tmp);
-    }
-    else {
-        ctx->time_generated = FLB_FALSE;
-    }
-
     /* Validate hostname given by command line or 'Host' property */
-    if (!ins->host.name && !cid) {
+    if (!ins->host.name && !ctx->customer_id) {
         flb_plg_error(ctx->ins, "property 'customer_id' is not defined");
         flb_free(ctx);
         return NULL;
     }
 
-
     /* Lookup customer id from given host name */
-    if (!cid) {
+    if (!ctx->customer_id) {
         tmp = strchr(ins->host.name, '.');
         if (!tmp) {
             flb_plg_error(ctx->ins, "invalid hostname");
@@ -226,21 +179,10 @@ int flb_azure_conf_destroy(struct flb_azure *ctx)
         return -1;
     }
 
-    if (ctx->customer_id) {
-        flb_sds_destroy(ctx->customer_id);
-    }
     if (ctx->dec_shared_key) {
         flb_sds_destroy(ctx->dec_shared_key);
     }
-    if (ctx->shared_key) {
-        flb_sds_destroy(ctx->shared_key);
-    }
-    if (ctx->log_type) {
-        flb_sds_destroy(ctx->log_type);
-    }
-    if (ctx->time_key) {
-        flb_sds_destroy(ctx->time_key);
-    }
+
     if (ctx->host) {
         flb_sds_destroy(ctx->host);
     }

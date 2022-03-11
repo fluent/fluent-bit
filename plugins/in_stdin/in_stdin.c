@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -173,7 +172,7 @@ static int in_stdin_collect(struct flb_input_instance *ins,
             ret = flb_parser_do(ctx->parser, ctx->buf, ctx->buf_len,
                                 &out_buf, &out_size, &out_time);
             if (ret >= 0) {
-                if (flb_time_to_double(&out_time) == 0.0) {
+                if (flb_time_to_nanosec(&out_time) == 0L) {
                     flb_time_get(&out_time);
                 }
                 pack_regex(&mp_sbuf, &mp_pck,
@@ -216,37 +215,36 @@ static int in_stdin_config_init(struct flb_in_stdin_config *ctx,
                                struct flb_input_instance *in,
                                struct flb_config *config)
 {
-    const char *pval = NULL;
+    int ret;
 
     ctx->buf_size = DEFAULT_BUF_SIZE;
     ctx->buf = NULL;
     ctx->buf_len = 0;
     ctx->ins = in;
 
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* parser settings */
-    pval = flb_input_get_property("parser", in);
-    if (pval) {
-        ctx->parser = flb_parser_get(pval, config);
+    if (ctx->parser_name) {
+        ctx->parser = flb_parser_get(ctx->parser_name, config);
         if (!ctx->parser) {
-            flb_plg_error(ctx->ins, "requested parser '%s' not found", pval);
+            flb_plg_error(ctx->ins, "requested parser '%s' not found", ctx->parser_name);
             return -1;
         }
     }
 
     /* buffer size setting */
-    pval = flb_input_get_property("buffer_size", in);
-    if (pval != NULL) {
-        ctx->buf_size = (size_t) flb_utils_size_to_bytes(pval);
-
-        if (ctx->buf_size == -1) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' is invalid", pval);
-            return -1;
-        }
-        else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
-            flb_plg_error(ctx->ins, "buffer_size '%s' must be at least %i bytes",
-                          pval, DEFAULT_BUF_SIZE);
-            return -1;
-        }
+    if (ctx->buf_size == -1) {
+        flb_plg_error(ctx->ins, "buffer_size is invalid");
+        return -1;
+    }
+    else if (ctx->buf_size < DEFAULT_BUF_SIZE) {
+        flb_plg_error(ctx->ins, "buffer_size '%d' must be at least %i bytes",
+                      ctx->buf_size, DEFAULT_BUF_SIZE);
+        return -1;
     }
 
     flb_plg_debug(ctx->ins, "buf_size=%zu", ctx->buf_size);
@@ -273,13 +271,13 @@ static int in_stdin_init(struct flb_input_instance *in,
     int fd;
     int ret;
     struct flb_in_stdin_config *ctx;
-    (void) data;
 
     /* Allocate space for the configuration context */
     ctx = flb_malloc(sizeof(struct flb_in_stdin_config));
     if (!ctx) {
         return -1;
     }
+    memset(ctx, 0, sizeof(struct flb_in_stdin_config));
 
     /* Initialize stdin config */
     ret = in_stdin_config_init(ctx, in, config);
@@ -346,6 +344,21 @@ static int in_stdin_exit(void *in_context, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "parser", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_stdin_config, parser_name),
+     "Set and use a fluent-bit parser"
+    },
+    {
+      FLB_CONFIG_MAP_SIZE, "buffer_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_stdin_config, buf_size),
+      "Set the read buffer size"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_stdin_plugin = {
     .name         = "stdin",
@@ -354,5 +367,6 @@ struct flb_input_plugin in_stdin_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_stdin_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_stdin_exit
+    .cb_exit      = in_stdin_exit,
+    .config_map   = config_map
 };

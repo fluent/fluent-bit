@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,8 +25,8 @@
 #include <fluent-bit/flb_utils.h>
 
 /* Default collection time: every 1 second (0 nanoseconds) */
-#define DEFAULT_INTERVAL_SEC    1
-#define DEFAULT_INTERVAL_NSEC   0
+#define DEFAULT_INTERVAL_SEC    "1"
+#define DEFAULT_INTERVAL_NSEC   "0"
 #define IN_CPU_KEY_LEN       16
 
 struct cpu_key {

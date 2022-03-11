@@ -38,6 +38,7 @@ set(FLB_IN_DUMMY              Yes)
 set(FLB_IN_NETIF               No)
 set(FLB_IN_WINLOG             Yes)
 set(FLB_IN_WINSTAT            Yes)
+set(FLB_IN_WINEVTLOG          Yes)
 set(FLB_IN_COLLECTD            No)
 set(FLB_IN_STATSD             Yes)
 set(FLB_IN_STORAGE_BACKLOG    Yes)
@@ -98,4 +99,18 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
     set(FLB_STREAM_PROCESSOR No)
     set(FLB_RECORD_ACCESSOR  No)
   endif()
+endif()
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+  if (MSVC)
+    enable_language(RC)
+    # use English language (0x409) in resource compiler
+    set(rc_flags "/l0x409")
+    set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> ${rc_flags} <DEFINES> /fo <OBJECT> <SOURCE>")
+  endif()
+
+  configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.rc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/src/version.rc
+  @ONLY)
 endif()

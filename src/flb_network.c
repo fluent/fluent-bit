@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -103,10 +102,13 @@ void flb_net_ctx_init(struct flb_net_dns *dns_ctx)
 void flb_net_setup_init(struct flb_net_setup *net)
 {
     net->dns_mode = NULL;
+    net->dns_resolver = NULL;
+    net->dns_prefer_ipv4 = FLB_FALSE;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
     net->connect_timeout = 10;
+    net->io_timeout = 0; /* Infinite time */
     net->source_address = NULL;
 }
 
@@ -216,6 +218,27 @@ int flb_net_socket_blocking(flb_sockfd_t fd)
     if (ioctlsocket(fd, FIONBIO, &off) != 0) {
 #else
     if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK) == -1) {
+#endif
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_net_socket_set_rcvtimeout(flb_sockfd_t fd, int timeout_in_seconds)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    /* WINDOWS */
+    DWORD timeout = timeout_in_seconds * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout)
+        == -1) {
+#else
+    /* LINUX and MAC OS X */
+    struct timeval tv;
+    tv.tv_sec = timeout_in_seconds;
+    tv.tv_usec = 0;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) == -1) {
 #endif
         flb_errno();
         return -1;
@@ -420,6 +443,7 @@ static int net_connect_async(int fd,
                        fd,
                        FLB_ENGINE_EV_THREAD,
                        MK_EVENT_WRITE, &u_conn->event);
+    u_conn->event.priority = FLB_ENGINE_PRIORITY_CONNECT;
     if (ret == -1) {
         /*
          * If we failed here there no much that we can do, just
@@ -444,10 +468,26 @@ static int net_connect_async(int fd,
     /* Save the mask before the event handler do a reset */
     mask = u_conn->event.mask;
 
+    /*
+     * If the socket has been invalidated (e.g: timeout or shutdown), just
+     * print a debug message and return.
+     */
+    if (u_conn->fd == -1) {
+        flb_debug("[net] TCP connection not longer available: %s:%i",
+                  u->tcp_host, u->tcp_port);
+        return -1;
+    }
+
     /* We got a notification, remove the event registered */
     ret = mk_event_del(u_conn->evl, &u_conn->event);
     if (ret == -1) {
         flb_error("[io] connect event handler error");
+        return -1;
+    }
+
+    if (u_conn->net_error == ETIMEDOUT) {
+        flb_debug("[net] TCP connection timed out: %s:%i",
+                  u->tcp_host, u->tcp_port);
         return -1;
     }
 
@@ -546,6 +586,67 @@ static void flb_net_free_translated_addrinfo(struct addrinfo *input)
             flb_free(current_record);
         }
     }
+}
+
+static void flb_net_append_addrinfo_entry(struct addrinfo **head,
+                                          struct addrinfo **tail,
+                                          struct addrinfo  *entry)
+{
+    if (*head == NULL) {
+        *head = entry;
+    }
+    else {
+        (*tail)->ai_next = entry;
+    }
+
+    *tail = entry;
+}
+
+static struct addrinfo *flb_net_sort_addrinfo_list(struct addrinfo *input,
+                                                   int preferred_family)
+{
+    struct addrinfo *preferred_results_head;
+    struct addrinfo *remainder_results_head;
+    struct addrinfo *preferred_results_tail;
+    struct addrinfo *remainder_results_tail;
+    struct addrinfo *current_record;
+    struct addrinfo *next_record;
+
+    remainder_results_head = NULL;
+    preferred_results_head = NULL;
+    remainder_results_tail = NULL;
+    preferred_results_tail = NULL;
+    current_record = NULL;
+    next_record = NULL;
+
+    for (current_record = input ;
+         current_record != NULL ;
+         current_record = next_record) {
+        next_record = current_record->ai_next;
+        current_record->ai_next = NULL;
+
+        if (preferred_family == current_record->ai_family) {
+            flb_net_append_addrinfo_entry(&preferred_results_head,
+                                          &preferred_results_tail,
+                                          current_record);
+        }
+        else
+        {
+            flb_net_append_addrinfo_entry(&remainder_results_head,
+                                          &remainder_results_tail,
+                                          current_record);
+        }
+    }
+
+    if (preferred_results_tail != NULL) {
+        preferred_results_tail->ai_next = remainder_results_head;
+    }
+
+    if (preferred_results_head == NULL) {
+        return remainder_results_head;
+    }
+
+    return preferred_results_head;
 }
 
 static struct addrinfo *flb_net_translate_ares_addrinfo(struct ares_addrinfo *input)
@@ -754,6 +855,7 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
 
     result = mk_event_add(lookup_context->event_loop, sockfd, FLB_ENGINE_EV_CUSTOM,
                           event_mask, &lookup_context->response_event);
+    lookup_context->response_event.priority = FLB_ENGINE_PRIORITY_DNS;
     if (result) {
         flb_socket_close(sockfd);
 
@@ -1074,11 +1176,13 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
                                  struct flb_upstream_conn *u_conn)
 {
     int ret;
+    int use_async_dns;
+    char resolver_initial;
     flb_sockfd_t fd = -1;
     char _port[6];
     char address[41];
     struct addrinfo hints;
-    struct addrinfo *res, *rp;
+    struct addrinfo *sorted_res, *res, *rp;
 
     if (is_async == FLB_TRUE && !u_conn) {
         flb_error("[net] invalid async mode with not set upstream connection");
@@ -1095,8 +1199,18 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     /* fomart the TCP port */
     snprintf(_port, sizeof(_port), "%lu", port);
 
+    use_async_dns = is_async;
+
+    if (u_conn->u->net.dns_resolver != NULL) {
+        resolver_initial = toupper(u_conn->u->net.dns_resolver[0]);
+
+        if (resolver_initial == FLB_DNS_LEGACY) {
+            use_async_dns = FLB_FALSE;
+        }
+    }
+
     /* retrieve DNS info */
-    if (is_async) {
+    if (use_async_dns) {
         ret = flb_net_getaddrinfo(host, _port, &hints, &res,
                                   u_conn->u->net.dns_mode, connect_timeout);
     }
@@ -1105,7 +1219,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (ret) {
-        if (is_async) {
+        if (use_async_dns) {
             flb_warn("[net] getaddrinfo(host='%s', err=%d): %s", host, ret, ares_strerror(ret));
         }
         else {
@@ -1120,7 +1234,7 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
             flb_warn("[net] timeout detected between DNS lookup and connection attempt");
         }
 
-        if (is_async) {
+        if (use_async_dns) {
             flb_net_free_translated_addrinfo(res);
         }
         else {
@@ -1130,11 +1244,30 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         return -1;
     }
 
+    sorted_res = res;
+
+    if (u_conn->u->net.dns_prefer_ipv4) {
+        sorted_res = flb_net_sort_addrinfo_list(res, AF_INET);
+
+        if (sorted_res == NULL) {
+            flb_debug("[net] error sorting getaddrinfo results");
+
+            if (use_async_dns) {
+                flb_net_free_translated_addrinfo(res);
+            }
+            else {
+                freeaddrinfo(res);
+            }
+
+            return -1;
+        }
+    }
+
     /*
      * Try to connect: on this iteration we try to connect to the first
      * available address.
      */
-    for (rp = res; rp != NULL; rp = rp->ai_next) {
+    for (rp = sorted_res; rp != NULL; rp = rp->ai_next) {
         if (u_conn->net_error > 0) {
             if (u_conn->net_error == ETIMEDOUT) {
                 flb_warn("[net] timeout detected between connection attempts");
@@ -1167,6 +1300,9 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         /* Disable Nagle's algorithm */
         flb_net_socket_tcp_nodelay(fd);
 
+        /* Set receive timeout */
+        flb_net_socket_set_rcvtimeout(fd, u_conn->u->net.io_timeout);
+
         if (u_conn) {
             u_conn->fd = fd;
             u_conn->event.fd = fd;
@@ -1182,6 +1318,17 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         else {
             ret = net_connect_sync(fd, rp->ai_addr, rp->ai_addrlen,
                                    (char *) host, port, connect_timeout);
+        }
+
+        if (u_conn->net_error == ETIMEDOUT) {
+            /* flb_upstream_conn_timeouts called prepare_destroy_conn which
+             * closed the file descriptor and removed it from the event so
+             * we can safely ignore it.
+             */
+
+            fd = -1;
+
+            break;
         }
 
         if (ret == -1) {
@@ -1208,11 +1355,11 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
     }
 
     if (fd == -1) {
-        flb_error("[net] could not connect to %s:%s",
+        flb_debug("[net] could not connect to %s:%s",
                   host, _port);
     }
 
-    if (is_async) {
+    if (use_async_dns) {
         flb_net_free_translated_addrinfo(res);
     }
     else {
