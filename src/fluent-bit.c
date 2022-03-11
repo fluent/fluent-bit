@@ -75,8 +75,6 @@ struct flb_stacktrace flb_st;
 #define FLB_HELP_TEXT    0
 #define FLB_HELP_JSON    1
 
-/* JSON Helper version: current '1' */
-#define FLB_HELP_VERSION 1
 
 #define PLUGIN_CUSTOM   0
 #define PLUGIN_INPUT    1
@@ -896,6 +894,7 @@ int flb_main(int argc, char **argv)
 {
     int opt;
     int ret;
+    flb_sds_t json;
 
     /* handle plugin properties:  -1 = none, 0 = input, 1 = output */
     int last_plugin = -1;
@@ -1082,7 +1081,14 @@ int flb_main(int argc, char **argv)
             break;
         case 'J':
             if (last_plugin == -1) {
-                flb_help(EXIT_SUCCESS, config);
+                json = flb_help_build_json_schema(config);
+                if (!json) {
+                    exit(EXIT_FAILURE);
+                }
+
+                printf("%s\n", json);
+                flb_sds_destroy(json);
+                exit(0);
             }
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
