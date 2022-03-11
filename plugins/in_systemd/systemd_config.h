@@ -57,6 +57,7 @@ struct flb_systemd_config {
     int coll_fd_journal;       /* journal, events mode     */
     int coll_fd_pending;       /* pending records          */
     int dynamic_tag;
+    int lowercase;
     int max_fields;            /* max number of fields per record */
     int max_entries;           /* max number of records per iteration */
     int strip_underscores;

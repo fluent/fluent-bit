@@ -145,6 +145,14 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
 
 #endif
 
+    tmp = flb_input_get_property("lowercase", ins);
+    if (tmp != NULL && flb_utils_bool(tmp)) {
+        ctx->lowercase = FLB_TRUE;
+    }
+    else {
+        ctx->lowercase = FLB_FALSE;
+    }
+
     /* Max number of fields per record/entry */
     tmp = flb_input_get_property("max_fields", ins);
     if (tmp) {
@@ -167,16 +175,19 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     if (tmp) {
         if (strcasecmp(tmp, "and") == 0) {
             journal_filter_is_and = FLB_TRUE;
-        } else if (strcasecmp(tmp, "or") == 0) {
+        }
+        else if (strcasecmp(tmp, "or") == 0) {
             journal_filter_is_and = FLB_FALSE;
-        } else {
+        }
+        else {
             flb_plg_error(ctx->ins,
                           "systemd_filter_type must be 'and' or 'or'. Got %s",
                           tmp);
             flb_free(ctx);
             return NULL;
         }
-    } else {
+    }
+    else {
         journal_filter_is_and = FLB_FALSE;
     }
 
@@ -194,7 +205,8 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         sd_journal_add_match(ctx->j, kv->val, 0);
         if (journal_filter_is_and) {
             sd_journal_add_conjunction(ctx->j);
-        } else {
+        }
+        else {
             sd_journal_add_disjunction(ctx->j);
         }
     }
@@ -269,7 +281,8 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     tmp = flb_input_get_property("strip_underscores", ins);
     if (tmp != NULL && flb_utils_bool(tmp)) {
         ctx->strip_underscores = FLB_TRUE;
-    } else {
+    }
+    else {
         ctx->strip_underscores = FLB_FALSE;
     }
 
