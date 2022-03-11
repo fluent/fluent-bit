@@ -1,0 +1,2 @@
+# This file indicates we are building the RHCC image for Calyptia/Fluent-Bit.
+# Primarily to ensure we can make sure this directory is present even if empty.
