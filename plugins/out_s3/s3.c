@@ -127,7 +127,9 @@ int s3_plugin_under_test()
     return FLB_FALSE;
 }
 
-static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_header **headers, int *num_headers)
+int create_headers(struct flb_s3 *ctx, char *body_md5,
+                   struct flb_aws_header **headers, int *num_headers,
+                   int multipart_upload)
 {
     int n = 0;
     int headers_len = 0;
@@ -136,13 +138,13 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && multipart_upload == FLB_FALSE) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
         headers_len++;
     }
-    if (body_md5 != NULL && strlen(body_md5)) {
+    if (body_md5 != NULL && strlen(body_md5) && multipart_upload == FLB_FALSE) {
         headers_len++;
     }
     if (ctx->storage_class != NULL) {
@@ -166,7 +168,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP && multipart_upload == FLB_FALSE) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -176,7 +178,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->canned_acl);
         n++;
     }
-    if (body_md5 != NULL && strlen(body_md5)) {
+    if (body_md5 != NULL && strlen(body_md5) && multipart_upload == FLB_FALSE) {
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
@@ -757,11 +759,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("storage_class", ins);
     if (tmp) {
-        if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when storage_class is specified");
-            return -1;
-        }
         ctx->storage_class = (char *) tmp;
     }
 
@@ -1379,7 +1376,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
     }
     else {
-        ret = create_headers(ctx, final_body_md5, &headers, &num_headers);
+        ret = create_headers(ctx, final_body_md5, &headers, &num_headers, FLB_FALSE);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create headers");
             flb_sds_destroy(uri);
@@ -2412,8 +2409,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "storage_class", NULL,
      0, FLB_FALSE, 0,
-     "Specify the storage class for S3 objects. This option can be enabled "
-     "when use_put_object is on. If this option is not specified, objects "
+     "Specify the storage class for S3 objects. If this option is not specified, objects "
      "will be stored with the default 'STANDARD' storage class."
     },
 
