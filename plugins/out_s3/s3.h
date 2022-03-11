@@ -189,4 +189,8 @@ int s3_plugin_under_test();
 
 int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size);
 
+int create_headers(struct flb_s3 *ctx, char *body_md5,
+                   struct flb_aws_header **headers, int *num_headers,
+                   int multipart_upload);
+
 #endif
