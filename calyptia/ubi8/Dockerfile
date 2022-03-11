@@ -1,6 +1,8 @@
+ARG FLUENT_BIT_VER=1.9.0
+
 FROM registry.access.redhat.com/ubi8/ubi:8.5 as builder
 # hadolint ignore=DL3041
-RUN dnf update -y && dnf install -y cmake3 curl diffutils gcc gcc-c++ libpq-devel m4 make openssl-devel systemd-devel tar unzip && dnf clean all
+RUN dnf update -y && dnf install -y cmake3 curl diffutils gcc gcc-c++ git libpq-devel m4 make openssl-devel systemd-devel tar unzip && dnf clean all
 
 # Provide the dependencies for record accessor built from source
 ARG BISON_VER=3.7
@@ -18,25 +20,19 @@ WORKDIR /flex/flex-${FLEX_VER}/
 RUN ./configure && make && make install
 
 # Fluent Bit version
-ENV FLB_MAJOR 1
-ENV FLB_MINOR 8
-ENV FLB_PATCH 13
-ENV FLB_VERSION 1.8.13
+ENV FLUENTBIT_VERSION=$FLUENT_BIT_VER
 
 # Note we use the upstream source directly here
-ARG FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.tar.gz
-ENV FLB_SOURCE $FLB_TARBALL
-RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log /tmp/fluent-bit-master/
+WORKDIR /source
+RUN git clone -b "$FLUENT_BIT_VER" https://github.com/fluent/fluent-bit.git
 
-RUN curl -L -o "/tmp/fluent-bit.tar.gz" ${FLB_SOURCE} \
-    && mkdir -p /tmp/fluent-bit \
-    && tar zxfv /tmp/fluent-bit.tar.gz -C /tmp/fluent-bit --strip-components=1 \
-    && rm -rf /tmp/fluent-bit/build/*
+# Copy any local source files as needed
+COPY calyptia/ubi8/patches/ /source/fluent-bit/
 
-WORKDIR /tmp/fluent-bit/build/
+WORKDIR /source/fluent-bit/build/
 # IPv6 tests dependent on docker configuration and support so disable
 RUN sed -i '/{ "ipv6_client_server", test_ipv6_client_server},/d' ../tests/internal/network.c
-# TODO check if we need to disable the TD output plugin & Process input plugin as unit test fails
+# Separate layers now for configure and build to allow local caching
 RUN cmake -DFLB_RELEASE=On \
           -DFLB_TRACE=Off \
           -DFLB_JEMALLOC=On \
@@ -50,29 +46,33 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_TESTS_INTERNAL=On \
           -DFLB_TESTS_RUNTIME=On \
           ..
+# Build
+RUN make -j "$(getconf _NPROCESSORS_ONLN)"
+# Install and create all necessary directories
+RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log && \
+    install bin/fluent-bit /fluent-bit/bin/
 
-RUN make -j $(getconf _NPROCESSORS_ONLN)
-RUN install bin/fluent-bit /fluent-bit/bin/
-
+WORKDIR /source/fluent-bit/
 # Configuration files
-RUN cp -f /tmp/fluent-bit/conf/fluent-bit.conf \
-    /tmp/fluent-bit/conf/parsers.conf \
-    /tmp/fluent-bit/conf/parsers_ambassador.conf \
-    /tmp/fluent-bit/conf/parsers_java.conf \
-    /tmp/fluent-bit/conf/parsers_extra.conf \
-    /tmp/fluent-bit/conf/parsers_openstack.conf \
-    /tmp/fluent-bit/conf/parsers_cinder.conf \
-    /tmp/fluent-bit/conf/plugins.conf \
+RUN cp -f conf/fluent-bit.conf \
+    conf/parsers.conf \
+    conf/parsers_ambassador.conf \
+    conf/parsers_java.conf \
+    conf/parsers_extra.conf \
+    conf/parsers_openstack.conf \
+    conf/parsers_cinder.conf \
+    conf/plugins.conf \
     /fluent-bit/etc/
 
+# Primarily to capture test output rather than verify
 FROM builder as test
-WORKDIR /tmp/fluent-bit/build/
+WORKDIR /source/build/
 RUN make test || true
 
+# The release image now
 FROM registry.access.redhat.com/ubi8/ubi-minimal:8.5 as production
 RUN microdnf update && microdnf install -y openssl libpq systemd-libs shadow-utils && microdnf clean all
 
-ARG FLUENT_BIT_VER=1.8.13
 ENV FLUENTBIT_VERSION=$FLUENT_BIT_VER
 
 # https://redhat-connect.gitbook.io/partner-guide-for-red-hat-openshift-and-container/program-on-boarding/technical-prerequisites#dockerfile-requirements
