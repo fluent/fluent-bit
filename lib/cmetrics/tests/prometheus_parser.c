@@ -287,7 +287,6 @@ void test_prometheus_spec_example()
 {
     char errbuf[256];
     int status;
-    size_t offset;
     cmt_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;
@@ -731,7 +730,6 @@ void test_summary()
 void test_null_labels()
 {
     int status;
-    size_t offset;
     cmt_sds_t result;
     struct cmt *cmt;
     struct cmt_decode_prometheus_parse_opts opts;

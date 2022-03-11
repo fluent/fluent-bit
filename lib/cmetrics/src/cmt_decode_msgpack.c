@@ -35,21 +35,6 @@
 #define CMT_SUMMARY_QUANTILE_ELEMENT_LIMIT 5
 #endif
 
-static void destroy_temporary_bucket_list(struct mk_list *bucket_list)
-{
-    struct mk_list                      *tmp;
-    struct mk_list                      *head;
-    struct cmt_msgpack_temporary_bucket *bucket;
-
-    mk_list_foreach_safe(head, tmp, bucket_list) {
-        bucket = mk_list_entry(head, struct cmt_msgpack_temporary_bucket, _head);
-
-        mk_list_del(&bucket->_head);
-
-        free(bucket);
-    }
-}
-
 static int create_counter_instance(struct cmt_map *map)
 {
     struct cmt_counter *counter;
@@ -550,14 +535,10 @@ static int unpack_summary_quantile(mpack_reader_t *reader, size_t index, void *c
 
 static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *context)
 {
-    struct cmt_msgpack_decode_context *decode_context;
-
     if (NULL == reader  ||
         NULL == context ) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
     }
-
-    decode_context = (struct cmt_msgpack_decode_context *) context;
 
     return cmt_mpack_unpack_array(reader, unpack_summary_quantile, context);
 }
@@ -677,7 +658,7 @@ static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
-    return cmt_mpack_unpack_array(reader, unpack_histogram_bucket, context);
+    return cmt_mpack_unpack_array(reader, unpack_histogram_bucket, decode_context);
 }
 
 static int unpack_metric_histogram(mpack_reader_t *reader, size_t index, void *context)
@@ -1052,25 +1033,6 @@ static int unpack_meta_quantiles(mpack_reader_t *reader, size_t index, void *con
     }
 
     return cmt_mpack_unpack_array(reader, unpack_meta_quantile, context);
-}
-
-
-static int initialize_histogram_bucket_list(struct cmt_histogram *histogram,
-                                            double *bucket_list,
-                                            size_t bucket_count)
-{
-    histogram->buckets = calloc(1, sizeof(struct cmt_histogram_buckets));
-
-    if (histogram->buckets == NULL) {
-        cmt_errno();
-
-        return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
-    }
-
-    histogram->buckets->count = bucket_count;
-    histogram->buckets->upper_bounds = bucket_list;
-
-    return CMT_DECODE_MSGPACK_SUCCESS;
 }
 
 static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *context)

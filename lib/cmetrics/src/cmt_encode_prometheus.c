@@ -228,15 +228,12 @@ static void format_metric(struct cmt *cmt,
                           struct prom_fmt *fmt)
 {
     int i;
-    int count = 0;
     int static_labels = 0;
     int defined_labels = 0;
-    int total_labels = 0;
     struct cmt_map_label *label_k;
     struct cmt_map_label *label_v;
     struct mk_list *head;
     struct cmt_opts *opts;
-    struct cmt_label *slabel;
 
     opts = map->opts;
 
@@ -387,7 +384,6 @@ static void format_summary_quantiles(struct cmt *cmt,
     int i;
     cmt_sds_t val;
     struct cmt_summary *summary;
-    struct cmt_histogram_buckets *bucket;
     struct cmt_opts *opts;
     struct prom_fmt fmt = {0};
 

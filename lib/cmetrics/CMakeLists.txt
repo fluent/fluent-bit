@@ -18,6 +18,11 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   message(STATUS "Specifying YY_NO_UNISTD_H")
 endif()
 
+
+if(NOT MSVC)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
+endif()
+
 # CMetrics Version
 set(CMT_VERSION_MAJOR  0)
 set(CMT_VERSION_MINOR  3)

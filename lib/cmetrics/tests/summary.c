@@ -34,8 +34,6 @@ static void prometheus_encode_test(struct cmt *cmt)
 
 void test_set_defaults()
 {
-    int ret;
-    double val;
     double sum;
     uint64_t count;
     uint64_t ts;

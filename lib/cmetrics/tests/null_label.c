@@ -80,7 +80,6 @@ void test_labels()
 void test_encoding()
 {
     cmt_sds_t result;
-    double val;
     struct cmt *cmt;
     struct cmt_counter *c;
 
