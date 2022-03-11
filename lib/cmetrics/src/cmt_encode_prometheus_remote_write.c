@@ -70,11 +70,6 @@ static int pack_metric_metadata(struct cmt_prometheus_remote_write_context *cont
 static int append_metric_to_timeseries(struct cmt_prometheus_time_series *time_series,
                                        struct cmt_metric *metric);
 
-static int pack_metric_sample(struct cmt_prometheus_remote_write_context *context,
-                              struct cmt_map *map,
-                              struct cmt_metric *metric,
-                              int add_metadata);
-
 static int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
                            struct cmt_map *map);
 
@@ -1029,7 +1024,7 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
 
             result = pack_complex_metric_sample(context, map, metric, add_metadata);
 
-            if (result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
                 if (add_metadata == CMT_TRUE) {
                     add_metadata = CMT_FALSE;
                 }
