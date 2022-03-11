@@ -189,6 +189,13 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->config = config;
 
+    ret = flb_output_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return NULL;
+    }
+
     /* Lookup credentials file */
     creds = flb_calloc(1, sizeof(struct flb_bigquery_oauth_credentials));
     if (!creds) {
@@ -198,20 +205,11 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
     ctx->oauth_credentials = creds;
 
-    tmp = flb_output_get_property("google_service_credentials", ins);
-    if (tmp) {
-        ctx->credentials_file = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->credentials_file == NULL) {
         tmp = getenv("GOOGLE_SERVICE_CREDENTIALS");
         if (tmp) {
             ctx->credentials_file = flb_sds_create(tmp);
         }
-    }
-
-    tmp = flb_output_get_property("enable_identity_federation", ins);
-    if (tmp) {
-        ctx->has_identity_federation = flb_utils_bool(tmp);
     }
 
     if (ctx->credentials_file && ctx->has_identity_federation) {
@@ -219,9 +217,7 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    tmp = flb_output_get_property("aws_region", ins);
-    if (tmp) {
-        ctx->aws_region = flb_sds_create(tmp);
+    if (ctx->aws_region) {
         tmp_aws_region = flb_aws_endpoint("sts", ctx->aws_region);
         if (!tmp_aws_region) {
             flb_plg_error(ctx->ins, "Could not create AWS STS regional endpoint");
@@ -229,26 +225,6 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         }
         ctx->aws_sts_endpoint = flb_sds_create(tmp_aws_region);
         flb_free(tmp_aws_region);
-    }
-
-    tmp = flb_output_get_property("project_number", ins);
-    if (tmp) {
-        ctx->project_number = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("pool_id", ins);
-    if (tmp) {
-        ctx->pool_id = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("provider_id", ins);
-    if (tmp) {
-        ctx->provider_id = flb_sds_create(tmp);
-    }
-
-    tmp = flb_output_get_property("google_service_account", ins);
-    if (tmp) {
-        ctx->google_service_account = flb_sds_create(tmp);
     }
 
     if (ctx->has_identity_federation) {
@@ -318,26 +294,26 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
         }
 
         if (!creds->client_email) {
-            flb_plg_error(ctx->ins, "client_email is not defined");
+            flb_plg_error(ctx->ins, "service_account_email/client_email is not defined");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
 
         if (!creds->private_key) {
-            flb_plg_error(ctx->ins, "private_key is not defined");
+            flb_plg_error(ctx->ins, "service_account_secret/private_key is not defined");
             flb_bigquery_conf_destroy(ctx);
             return NULL;
         }
     }
 
     /* config: 'project_id' */
-    tmp = flb_output_get_property("project_id", ins);
-    if (tmp) {
-        ctx->project_id = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->project_id == NULL) {
         if (creds->project_id) {
-            ctx->project_id = flb_sds_create(creds->project_id);
+            /* flb_config_map_destroy uses the pointer within the config_map struct to
+             * free the value so if we assign it here it is safe to free later with the
+             * creds struct. If we do not we will leak here.
+             */
+            ctx->project_id = creds->project_id;
             if (!ctx->project_id) {
                 flb_plg_error(ctx->ins,
                               "failed extracting 'project_id' from credentials.");
@@ -354,43 +330,17 @@ struct flb_bigquery *flb_bigquery_conf_create(struct flb_output_instance *ins,
     }
 
     /* config: 'dataset_id' */
-    tmp = flb_output_get_property("dataset_id", ins);
-    if (tmp) {
-        ctx->dataset_id = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->dataset_id == NULL) {
         flb_plg_error(ctx->ins, "property 'dataset_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
     }
 
     /* config: 'table_id' */
-    tmp = flb_output_get_property("table_id", ins);
-    if (tmp) {
-        ctx->table_id = flb_sds_create(tmp);
-    }
-    else {
+    if (ctx->table_id == NULL) {
         flb_plg_error(ctx->ins, "property 'table_id' is not defined");
         flb_bigquery_conf_destroy(ctx);
         return NULL;
-    }
-
-    /* config: 'skip_invalid_rows' */
-    tmp = flb_output_get_property("skip_invalid_rows", ins);
-    if (tmp && flb_utils_bool(tmp)) {
-        ctx->skip_invalid_rows = FLB_TRUE;
-    }
-    else {
-        ctx->skip_invalid_rows = FLB_FALSE;
-    }
-
-    /* config: 'ignore_unknown_values' */
-    tmp = flb_output_get_property("ignore_unknown_values", ins);
-    if (tmp && flb_utils_bool(tmp)) {
-        ctx->ignore_unknown_values = FLB_TRUE;
-    }
-    else {
-        ctx->ignore_unknown_values = FLB_FALSE;
     }
 
     /* Create the target URI */
@@ -438,8 +388,6 @@ int flb_bigquery_conf_destroy(struct flb_bigquery *ctx)
         return -1;
     }
 
-    flb_sds_destroy(ctx->credentials_file);
-
     flb_bigquery_oauth_credentials_destroy(ctx->oauth_credentials);
 
     if (ctx->aws_sts_upstream) {
@@ -474,16 +422,8 @@ int flb_bigquery_conf_destroy(struct flb_bigquery *ctx)
         flb_tls_destroy(ctx->google_iam_tls);
     }
 
-    flb_sds_destroy(ctx->project_number);
-    flb_sds_destroy(ctx->pool_id);
-    flb_sds_destroy(ctx->provider_id);
-    flb_sds_destroy(ctx->aws_region);
-    flb_sds_destroy(ctx->google_service_account);
     flb_sds_destroy(ctx->aws_sts_endpoint);
     flb_sds_destroy(ctx->sa_token);
-    flb_sds_destroy(ctx->project_id);
-    flb_sds_destroy(ctx->dataset_id);
-    flb_sds_destroy(ctx->table_id);
     flb_sds_destroy(ctx->uri);
 
     if (ctx->o) {
