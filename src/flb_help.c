@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
@@ -126,6 +127,58 @@ int pack_config_map_entry(msgpack_packer *mp_pck, struct flb_config_map *m)
     }
 
     flb_mp_map_header_end(&mh);
+    return 0;
+}
+
+int flb_help_custom(struct flb_custom_instance *ins, void **out_buf, size_t *out_size)
+{
+    struct mk_list *head;
+    struct mk_list *config_map;
+    struct flb_mp_map_header mh;
+    struct flb_config_map *m;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&mp_pck, 4);
+
+    /* plugin type */
+    pack_str(&mp_pck, "type");
+    pack_str(&mp_pck, "input");
+
+    /* plugin name */
+    pack_str(&mp_pck, "name");
+    pack_str(&mp_pck, ins->p->name);
+
+    /* description */
+    pack_str(&mp_pck, "description");
+    pack_str(&mp_pck, ins->p->description);
+
+    /* list of properties */
+    pack_str(&mp_pck, "properties");
+    flb_mp_map_header_init(&mh, &mp_pck);
+
+    /* properties['options']: options exposed by the plugin */
+    if (ins->p->config_map) {
+        flb_mp_map_header_append(&mh);
+        pack_str(&mp_pck, "options");
+
+        config_map = flb_config_map_create(ins->config, ins->p->config_map);
+        msgpack_pack_array(&mp_pck, mk_list_size(config_map));
+        mk_list_foreach(head, config_map) {
+            m = mk_list_entry(head, struct flb_config_map, _head);
+            pack_config_map_entry(&mp_pck, m);
+        }
+        flb_config_map_destroy(config_map);
+    }
+
+    flb_mp_map_header_end(&mh);
+
+    *out_buf = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
     return 0;
 }
 

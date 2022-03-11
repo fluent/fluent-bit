@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
 
+int flb_help_custom(struct flb_custom_instance *ins, void **out_buf, size_t *out_size);
 int flb_help_input(struct flb_input_instance *ins, void **out_buf, size_t *out_size);
 int flb_help_filter(struct flb_filter_instance *ins, void **out_buf, size_t *out_size);
 int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out_size);

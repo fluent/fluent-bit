@@ -72,8 +72,11 @@ volatile sig_atomic_t exit_signal = 0;
 struct flb_stacktrace flb_st;
 #endif
 
-#define FLB_HELP_TEXT   0
-#define FLB_HELP_JSON   1
+#define FLB_HELP_TEXT    0
+#define FLB_HELP_JSON    1
+
+/* JSON Helper version: current '1' */
+#define FLB_HELP_VERSION 1
 
 #define PLUGIN_CUSTOM   0
 #define PLUGIN_INPUT    1
@@ -135,8 +138,9 @@ static void flb_help(int rc, struct flb_config *config)
     print_opt("-D, --dry-run", "dry run");
     print_opt_i("-f, --flush=SECONDS", "flush timeout in seconds",
                 FLB_CONFIG_FLUSH_SECS);
-    print_opt("-F  --filter=FILTER", "set a filter");
+    print_opt("-C, --custom=CUSTOM", "enable a custom plugin");
     print_opt("-i, --input=INPUT", "set an input");
+    print_opt("-F  --filter=FILTER", "set a filter");
     print_opt("-m, --match=MATCH", "set plugin match, same as '-p match=abc'");
     print_opt("-o, --output=OUTPUT", "set an output");
     print_opt("-p, --prop=\"A=B\"", "set plugin configuration property");
@@ -438,6 +442,7 @@ static void flb_help_plugin(int rc, int format,
     void *help_buf;
     size_t help_size;
     char *name;
+    struct flb_custom_instance *c = NULL;
     struct flb_input_instance *i = NULL;
     struct flb_filter_instance *f = NULL;
     struct flb_output_instance *o = NULL;
@@ -449,7 +454,17 @@ static void flb_help_plugin(int rc, int format,
         exit(EXIT_FAILURE);
     }
 
-    if (type == PLUGIN_INPUT) {
+    if (type == PLUGIN_CUSTOM) {
+        c = flb_custom_new(config, name, NULL);
+        if (!c) {
+            fprintf(stderr, "invalid custom plugin '%s'", name);
+            return;
+        }
+        opt = c->p->config_map;
+        flb_help_custom(c, &help_buf, &help_size);
+        flb_custom_instance_destroy(c);
+    }
+    else if (type == PLUGIN_INPUT) {
         i = flb_input_new(config, name, 0, FLB_TRUE);
         if (!i) {
             fprintf(stderr, "invalid input plugin '%s'", name);
