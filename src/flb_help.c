@@ -18,10 +18,17 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_version.h>
+#include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_help.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_custom.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_output.h>
+
+
 
 static inline void pack_str_s(msgpack_packer *mp_pck, char *str, int size)
 {
@@ -146,7 +153,7 @@ int flb_help_custom(struct flb_custom_instance *ins, void **out_buf, size_t *out
 
     /* plugin type */
     pack_str(&mp_pck, "type");
-    pack_str(&mp_pck, "input");
+    pack_str(&mp_pck, "custom");
 
     /* plugin name */
     pack_str(&mp_pck, "name");
@@ -370,4 +377,201 @@ int flb_help_output(struct flb_output_instance *ins, void **out_buf, size_t *out
     *out_size = mp_sbuf.size;
 
     return 0;
+}
+
+static int build_plugin_help(struct flb_config *config, int type, char *name,
+                             char **out_buf, size_t *out_size)
+{
+    void *help_buf;
+    size_t help_size = 0;
+    struct flb_custom_instance *c = NULL;
+    struct flb_input_instance *i = NULL;
+    struct flb_filter_instance *f = NULL;
+    struct flb_output_instance *o = NULL;
+
+    if (type == FLB_HELP_PLUGIN_CUSTOM) {
+        c = flb_custom_new(config, name, NULL);
+        if (!c) {
+            fprintf(stderr, "invalid custom plugin '%s'", name);
+            return -1;
+        }
+        flb_help_custom(c, &help_buf, &help_size);
+        flb_custom_instance_destroy(c);
+    }
+    else if (type == FLB_HELP_PLUGIN_INPUT) {
+        i = flb_input_new(config, name, 0, FLB_TRUE);
+        if (!i) {
+            fprintf(stderr, "invalid input plugin '%s'", name);
+            return -1;
+        }
+        flb_help_input(i, &help_buf, &help_size);
+        flb_input_instance_destroy(i);
+    }
+    else if (type == FLB_HELP_PLUGIN_FILTER) {
+        f = flb_filter_new(config, name, 0);
+        if (!f) {
+            fprintf(stderr, "invalid filter plugin '%s'", name);
+            return -1;
+        }
+        flb_help_filter(f, &help_buf, &help_size);
+        flb_filter_instance_destroy(f);
+    }
+    else if (type == FLB_HELP_PLUGIN_OUTPUT) {
+        o = flb_output_new(config, name, 0, FLB_TRUE);
+        if (!o) {
+            fprintf(stderr, "invalid output plugin '%s'", name);
+            return -1;
+        }
+        flb_help_output(o, &help_buf, &help_size);
+        flb_output_instance_destroy(o);
+    }
+
+    *out_buf = help_buf;
+    *out_size = help_size;
+
+    return 0;
+}
+
+static void pack_map_kv(msgpack_packer *mp_pck, char *key, char *val)
+{
+    int k_len;
+    int v_len;
+
+    k_len = strlen(key);
+    v_len = strlen(val);
+
+    msgpack_pack_str(mp_pck, k_len);
+    msgpack_pack_str_body(mp_pck, key, k_len);
+
+    msgpack_pack_str(mp_pck, v_len);
+    msgpack_pack_str_body(mp_pck, val, v_len);
+
+}
+
+flb_sds_t flb_help_build_json_schema(struct flb_config *config)
+{
+    int ret;
+    char *out_buf;
+    flb_sds_t json;
+    size_t out_size;
+    struct mk_list *head;
+    struct flb_custom_plugin *c;
+    struct flb_input_plugin *i;
+    struct flb_filter_plugin *f;
+    struct flb_output_plugin *o;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer  mp_pck;
+    struct flb_mp_map_header mh;
+
+    /* initialize buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /*
+     * Root map for entries:
+     *
+     * - fluent-bit
+     * - customs
+     * - inputs
+     * - filters
+     * - outputs
+     */
+    msgpack_pack_map(&mp_pck, 5);
+
+    /* Fluent Bit */
+    msgpack_pack_str(&mp_pck, 10);
+    msgpack_pack_str_body(&mp_pck, "fluent-bit", 10);
+
+    /* fluent-bit['version'], fluent-bit['help_version'] and fluent-bit['os'] */
+    msgpack_pack_map(&mp_pck, 3);
+
+    pack_map_kv(&mp_pck, "version",  FLB_VERSION_STR);
+    pack_map_kv(&mp_pck, "schema_version",  FLB_HELP_SCHEMA_VERSION);
+    pack_map_kv(&mp_pck, "os",  (char *) flb_utils_get_os_name());
+
+    /* customs */
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "customs", 7);
+
+    flb_mp_array_header_init(&mh, &mp_pck);
+    mk_list_foreach(head, &config->custom_plugins) {
+        c = mk_list_entry(head, struct flb_custom_plugin, _head);
+        ret = build_plugin_help(config, FLB_HELP_PLUGIN_CUSTOM, c->name,
+                                &out_buf, &out_size);
+        if (ret == -1) {
+            continue;
+        }
+
+        flb_mp_array_header_append(&mh);
+        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+        flb_free(out_buf);
+    }
+    flb_mp_array_header_end(&mh);
+
+
+    /* inputs */
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "inputs", 6);
+
+    flb_mp_array_header_init(&mh, &mp_pck);
+    mk_list_foreach(head, &config->in_plugins) {
+        i = mk_list_entry(head, struct flb_input_plugin, _head);
+        if (i->flags & FLB_INPUT_PRIVATE){
+            continue;
+        }
+        ret = build_plugin_help(config, FLB_HELP_PLUGIN_INPUT, i->name,
+                                &out_buf, &out_size);
+        if (ret == -1) {
+            continue;
+        }
+        flb_mp_array_header_append(&mh);
+        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+        flb_free(out_buf);
+    }
+    flb_mp_array_header_end(&mh);
+
+    /* filters */
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "filters", 7);
+
+    flb_mp_array_header_init(&mh, &mp_pck);
+    mk_list_foreach(head, &config->filter_plugins) {
+        f = mk_list_entry(head, struct flb_filter_plugin, _head);
+        ret = build_plugin_help(config, FLB_HELP_PLUGIN_FILTER, f->name,
+                                &out_buf, &out_size);
+        if (ret == -1) {
+            continue;
+        }
+
+        flb_mp_array_header_append(&mh);
+        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+        flb_free(out_buf);
+    }
+    flb_mp_array_header_end(&mh);
+
+    /* outputs */
+    msgpack_pack_str(&mp_pck, 7);
+    msgpack_pack_str_body(&mp_pck, "outputs", 7);
+
+    flb_mp_array_header_init(&mh, &mp_pck);
+    mk_list_foreach(head, &config->out_plugins) {
+        o = mk_list_entry(head, struct flb_output_plugin, _head);
+        if (o->flags & FLB_OUTPUT_PRIVATE){
+            continue;
+        }
+        ret = build_plugin_help(config, FLB_HELP_PLUGIN_OUTPUT, o->name,
+                                &out_buf, &out_size);
+        if (ret == -1) {
+            continue;
+        }
+        flb_mp_array_header_append(&mh);
+        msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
+        flb_free(out_buf);
+    }
+    flb_mp_array_header_end(&mh);
+
+    json = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    return json;
 }
