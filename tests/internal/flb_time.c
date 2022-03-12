@@ -352,6 +352,46 @@ void test_msgpack_to_time_timestamp_96()
     msgpack_unpacked_destroy(&result);
 }
 
+void test_msgpack_to_time_invalid()
+{
+    struct flb_time tm;
+    char ext_data[5] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee};
+    int ret;
+
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+
+
+    msgpack_object tm_obj;
+
+    /* create int object*/
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_ext(&mp_pck, 5 /* invalid size */, 0);
+    msgpack_pack_ext_body(&mp_pck, ext_data, sizeof(ext_data));
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+
+    tm_obj = result.data;
+
+    /* Check if ext */
+    TEST_CHECK(tm_obj.type == MSGPACK_OBJECT_EXT);
+    TEST_CHECK(tm_obj.via.ext.type == 0);
+    TEST_CHECK(tm_obj.via.ext.size == 5);
+
+    ret = flb_time_msgpack_to_time(&tm, &tm_obj);
+    if(!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_time_msgpack_to_time should fail");
+        exit(EXIT_FAILURE);
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
 void test_append_to_msgpack_eventtime()
 {
     struct flb_time tm;
@@ -449,6 +489,7 @@ TEST_LIST = {
     { "msgpack_to_time_timestamp_32"  , test_msgpack_to_time_timestamp_32},
     { "msgpack_to_time_timestamp_64"  , test_msgpack_to_time_timestamp_64},
     { "msgpack_to_time_timestamp_96"  , test_msgpack_to_time_timestamp_96},
+    { "msgpack_to_time_invalid"       , test_msgpack_to_time_invalid},
     { "append_to_msgpack_eventtime"   , test_append_to_msgpack_eventtime},
     { "append_to_msgpack_timestamp_96", test_append_to_msgpack_timestamp_96},
     { NULL, NULL }
