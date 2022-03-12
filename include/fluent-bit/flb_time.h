@@ -35,12 +35,16 @@ struct flb_time {
    see also
    https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v0#eventtime-ext-format
    https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#eventtime-ext-format
+
+   Timestamp extension type
+   https://github.com/msgpack/msgpack/blob/master/spec.md#timestamp-extension-type
  */
 enum flb_time_eventtime_fmt {
     FLB_TIME_ETFMT_INT = 1,   /* second(integer) only */
     FLB_TIME_ETFMT_V0,        /* EventTime (v0) */
     FLB_TIME_ETFMT_V1_EXT,    /* EventTime (v1 ext) */
     FLB_TIME_ETFMT_V1_FIXEXT, /* EventTime (v1 fixext) */
+    FLB_TIME_EXTENSION,       /* Timestamp extension type */
     FLB_TIME_ETFMT_OTHER,
 };
 

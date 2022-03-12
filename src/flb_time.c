@@ -19,6 +19,7 @@
 
 #include "cmetrics/lib/mpack/src/mpack/mpack.h"
 #include <msgpack.h>
+#include <msgpack/timestamp.h>
 #include <mpack/mpack.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_macros.h>
@@ -201,6 +202,7 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
     struct flb_time l_time;
     char ext_data[8];
     uint32_t tmp;
+    msgpack_timestamp mtm;
 
     if (!is_valid_format(fmt)) {
 #ifdef FLB_TIME_FORCE_FMT_INT
@@ -239,6 +241,12 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
         msgpack_pack_ext_body(pk, ext_data, sizeof(ext_data));
 
         break;
+    case FLB_TIME_EXTENSION:
+        mtm.tv_sec = tm->tm.tv_sec;
+        mtm.tv_nsec = tm->tm.tv_nsec;
+        msgpack_pack_timestamp(pk, &mtm);
+
+        break;
 
     default:
         ret = -1;
@@ -261,10 +269,27 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
         time->tm.tv_nsec = ((obj->via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
         break;
     case MSGPACK_OBJECT_EXT:
-        memcpy(&tmp, &obj->via.ext.ptr[0], 4);
-        time->tm.tv_sec = (uint32_t) ntohl(tmp);
-        memcpy(&tmp, &obj->via.ext.ptr[4], 4);
-        time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+        if (obj->via.ext.type == 0) {
+            /* EventTime Ext Format */
+            memcpy(&tmp, &obj->via.ext.ptr[0], 4);
+            time->tm.tv_sec = (uint32_t) ntohl(tmp);
+            memcpy(&tmp, &obj->via.ext.ptr[4], 4);
+            time->tm.tv_nsec = (uint32_t) ntohl(tmp);
+        }
+        else if (obj->via.ext.type == -1) {
+            /* Timestamp extension type */
+            msgpack_timestamp mtm;
+            if ( !msgpack_object_to_timestamp(obj, &mtm) ) {
+                flb_warn("failed to convert");
+                return -1;
+            }
+            time->tm.tv_sec = mtm.tv_sec;
+            time->tm.tv_nsec = mtm.tv_nsec;
+        }
+        else {
+            flb_warn("unknown ext type %x", obj->via.ext.type);
+            return -1;
+        }
         break;
     default:
         flb_warn("unknown time format %x", obj->type);
