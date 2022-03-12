@@ -271,6 +271,10 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
     case MSGPACK_OBJECT_EXT:
         if (obj->via.ext.type == 0) {
             /* EventTime Ext Format */
+            if (obj->via.ext.size != 8) {
+                flb_warn("invalid ext size=%d", obj->via.ext.size);
+                return -1;
+            }
             memcpy(&tmp, &obj->via.ext.ptr[0], 4);
             time->tm.tv_sec = (uint32_t) ntohl(tmp);
             memcpy(&tmp, &obj->via.ext.ptr[4], 4);
