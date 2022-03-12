@@ -17,6 +17,8 @@ macro(FLB_RT_TEST BUILT src)
 endmacro()
 
 # Input Plugins
+FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
+
 if(FLB_OUT_LIB)
   # These plugins works only on Linux
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
