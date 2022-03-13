@@ -30,8 +30,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define DEFAULT_INTERVAL_SEC  1
-#define DEFAULT_INTERVAL_NSEC 0
+#define DEFAULT_INTERVAL_SEC  "1"
+#define DEFAULT_INTERVAL_NSEC "0"
 
 struct flb_in_random_config {
     /* Config properties */
@@ -90,35 +90,18 @@ static int in_random_collect(struct flb_input_instance *ins,
 static int in_random_config_read(struct flb_in_random_config *ctx,
                                  struct flb_input_instance *in)
 {
-    const char *val = NULL;
-
-    /* samples */
-    val = flb_input_get_property("samples", in);
-    if (val != NULL && atoi(val) >= 0) {
-        ctx->samples = atoi(val);
+    int ret;
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        return -1;
     }
-
+    
     /* interval settings */
-    val = flb_input_get_property("interval_sec", in);
-    if (val != NULL && atoi(val) >= 0) {
-        ctx->interval_sec = atoi(val);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    val = flb_input_get_property("interval_nsec", in);
-    if (val != NULL && atoi(val) >= 0) {
-        ctx->interval_nsec = atoi(val);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
 
@@ -140,7 +123,6 @@ static int in_random_init(struct flb_input_instance *in,
     if (!ctx) {
         return -1;
     }
-    ctx->samples       = -1;
     ctx->samples_count = 0;
     ctx->ins = in;
 
@@ -179,6 +161,30 @@ static int in_random_exit(void *data, struct flb_config *config)
 }
 
 
+static struct flb_config_map config_map[] = {
+    // samples
+    // interval_sec
+    // interval_nsec
+    {
+     FLB_CONFIG_MAP_INT, "samples", "-1",
+     0, FLB_TRUE, offsetof(struct flb_in_random_config, samples),
+     "Number of samples to send, -1 for infinite"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_random_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_random_config, interval_nsec),
+      "Set the collector interval (sub seconds)"
+    },
+    /* EOF */
+    {0}
+    
+};
+
 struct flb_input_plugin in_random_plugin = {
     .name         = "random",
     .description  = "Random",
@@ -186,5 +192,6 @@ struct flb_input_plugin in_random_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = in_random_collect,
     .cb_flush_buf = NULL,
-    .cb_exit      = in_random_exit
+    .cb_exit      = in_random_exit,
+    .config_map   = config_map
 };

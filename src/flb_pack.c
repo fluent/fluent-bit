@@ -799,6 +799,9 @@ int flb_pack_to_json_date_type(const char *str)
     if (strcasecmp(str, "double") == 0) {
         return FLB_PACK_JSON_DATE_DOUBLE;
     }
+    else if (strcasecmp(str, "java_sql_timestamp") == 0) {
+        return FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP;
+    }
     else if (strcasecmp(str, "iso8601") == 0) {
         return FLB_PACK_JSON_DATE_ISO8601;
     }
@@ -907,6 +910,20 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
             switch (date_format) {
             case FLB_PACK_JSON_DATE_DOUBLE:
                 msgpack_pack_double(&tmp_pck, flb_time_to_double(&tms));
+                break;
+            case FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP:
+            /* Format the time, use microsecond precision not nanoseconds */
+                gmtime_r(&tms.tm.tv_sec, &tm);
+                s = strftime(time_formatted, sizeof(time_formatted) - 1,
+                             FLB_PACK_JSON_DATE_JAVA_SQL_TIMESTAMP_FMT, &tm);
+
+                len = snprintf(time_formatted + s,
+                               sizeof(time_formatted) - 1 - s,
+                               ".%06" PRIu64,
+                               (uint64_t) tms.tm.tv_nsec / 1000);
+                s += len;
+                msgpack_pack_str(&tmp_pck, s);
+                msgpack_pack_str_body(&tmp_pck, time_formatted, s);
                 break;
             case FLB_PACK_JSON_DATE_ISO8601:
             /* Format the time, use microsecond precision not nanoseconds */

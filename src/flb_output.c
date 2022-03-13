@@ -194,7 +194,7 @@ int flb_output_task_flush(struct flb_task *task,
         }
     }
     else {
-        /* Direct co-routine handling */
+        /* Queue co-routine handling */
         out_flush = flb_output_flush_create(task,
                                            task->i_ins,
                                            out_ins,
@@ -204,7 +204,12 @@ int flb_output_task_flush(struct flb_task *task,
         }
 
         flb_task_users_inc(task);
-        flb_coro_resume(out_flush->coro);
+        ret = flb_pipe_w(config->ch_self_events[1], &out_flush,
+                        sizeof(struct flb_output_flush*));
+        if (ret == -1) {
+            flb_errno();
+            return -1;
+        }
     }
 
     return 0;
@@ -445,7 +450,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->log_level = -1;
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
-
+    instance->tp_workers = plugin->workers;
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
@@ -814,6 +819,7 @@ int flb_output_init_all(struct flb_config *config)
     struct mk_list *config_map;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    uint64_t ts;
 
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -850,6 +856,9 @@ int flb_output_init_all(struct flb_config *config)
         /* Get name or alias for the instance */
         name = (char *) flb_output_name(ins);
 
+        /* get timestamp */
+        ts = cmt_time_now();
+
         /* CMetrics */
         ins->cmt = cmt_create();
         if (!ins->cmt) {
@@ -857,43 +866,64 @@ int flb_output_init_all(struct flb_config *config)
             return -1;
         }
 
-        /* Register generic output plugin metrics */
+        /*
+         * Register generic output plugin metrics
+         */
+
+        /* fluentbit_output_proc_records_total */
         ins->cmt_proc_records = cmt_counter_create(ins->cmt, "fluentbit",
                                                    "output", "proc_records_total",
                                                    "Number of processed output records.",
                                                    1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_proc_records, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_proc_bytes_total */
         ins->cmt_proc_bytes = cmt_counter_create(ins->cmt, "fluentbit",
                                                  "output", "proc_bytes_total",
                                                  "Number of processed output bytes.",
                                                  1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_proc_bytes, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_errors_total */
         ins->cmt_errors = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "errors_total",
                                              "Number of output errors.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_errors, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_retries_total */
         ins->cmt_retries = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "retries_total",
                                              "Number of output retries.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_retries, ts, 0, 1, (char *[]) {name});
 
+        /* fluentbit_output_retries_failed_total */
         ins->cmt_retries_failed = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "retries_failed_total",
                                              "Number of abandoned batches because "
                                              "the maximum number of re-tries was "
                                              "reached.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_retries_failed, ts, 0, 1, (char *[]) {name});
 
+
+        /* fluentbit_output_dropped_records_total */
         ins->cmt_dropped_records = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "dropped_records_total",
                                              "Number of dropped records.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_dropped_records, ts, 0, 1, (char *[]) {name});
 
+        /* fluentbit_output_retried_records_total */
         ins->cmt_retried_records = cmt_counter_create(ins->cmt, "fluentbit",
                                              "output", "retried_records_total",
                                              "Number of retried records.",
                                              1, (char *[]) {"name"});
+        cmt_counter_set(ins->cmt_retried_records, ts, 0, 1, (char *[]) {name});
 
         /* old API */
         ins->metrics = flb_metrics_create(name);

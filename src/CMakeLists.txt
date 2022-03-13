@@ -23,6 +23,7 @@ set(src
   flb_input.c
   flb_input_chunk.c
   flb_input_metric.c
+  flb_input_thread.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -154,26 +155,6 @@ if(FLB_HTTP_CLIENT_DEBUG)
      )
 endif()
 
-if(FLB_AWS)
-  set(src
-    ${src}
-    "aws/flb_aws_credentials_log.h"
-    "aws/flb_aws_util.c"
-    "aws/flb_aws_credentials.c"
-    "aws/flb_aws_credentials_sts.c"
-    "aws/flb_aws_credentials_ec2.c"
-    "aws/flb_aws_imds.c"
-    "aws/flb_aws_credentials_http.c"
-    "aws/flb_aws_credentials_profile.c"
-    )
-  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
-    set(src
-      ${src}
-      "aws/flb_aws_credentials_process.c"
-      )
-  endif()
-endif()
-
 if (FLB_AWS_ERROR_REPORTER)
   set(src
     ${src}
@@ -186,6 +167,13 @@ if(FLB_LUAJIT)
     ${src}
     "flb_lua.c"
     "flb_luajit.c"
+    )
+endif()
+
+if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+  set(src
+    ${src}
+    "flb_kafka.c"
     )
 endif()
 
@@ -289,6 +277,11 @@ if(FLB_STREAM_PROCESSOR)
   add_subdirectory(stream_processor)
 endif()
 
+# AWS specific
+if(FLB_AWS)
+  add_subdirectory(aws)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   add_subdirectory(http_server)
@@ -358,6 +351,14 @@ set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
   )
+endif()
+
+# AWS specific
+if(FLB_AWS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-aws
+    )
 endif()
 
 # Record Accessor

@@ -25,7 +25,7 @@ ENV STAGING_VERSION=${STAGING_VERSION}
 RUN rpm --import "$AWS_URL/fluentbit.key" && \
     wget -q "$AWS_URL/amazonlinux-2.repo" -O /etc/yum.repos.d/staging.repo && \
     yum update -y && yum install -y fluent-bit && \
-    systemctl fluent-bit
+    systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh

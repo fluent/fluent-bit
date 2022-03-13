@@ -60,6 +60,7 @@ struct flb_out_thread_upstream {
 struct flb_out_thread_instance {
     struct mk_event event;               /* event context to associate events */
     struct mk_event_loop *evl;           /* thread event loop context */
+    struct flb_bucket_queue *evl_bktq;    /* bucket queue for evl track event priority */
     flb_pipefd_t ch_parent_events[2];    /* channel to receive parent notifications */
     flb_pipefd_t ch_thread_events[2];    /* channel to send messages local event loop */
     struct flb_output_instance *ins;     /* output plugin instance */

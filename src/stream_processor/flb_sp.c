@@ -61,7 +61,7 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
     int ret;
     char *name;
     char *exec;
-    const char *cfg = NULL;
+    char *cfg = NULL;
     char tmp[PATH_MAX + 1];
     struct stat st;
     struct mk_list *head;
@@ -84,7 +84,7 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
         }
     }
     else {
-        cfg = file;
+        cfg = (char *) file;
     }
 
     cf = flb_cf_create_from_file(NULL, cfg);

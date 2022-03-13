@@ -22,10 +22,11 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CARES}/include
   ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_CARES}
   ${CMAKE_CURRENT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
+  ${CMAKE_CURRENT_BINARY_DIR}/lib/cmetrics
   ${CMAKE_CURRENT_BINARY_DIR}/include
   )
 
-if(FLB_OUT_KAFKA)
+if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
     include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RDKAFKA}/src/)
 endif()
 

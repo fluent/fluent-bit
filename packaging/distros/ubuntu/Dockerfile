@@ -20,7 +20,7 @@ RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev cmake \
     make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all software-properties-common \
-    software-properties-common \
+    software-properties-common libyaml-dev \
     apt-transport-https ca-certificates && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
          gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -38,7 +38,7 @@ RUN apt-get -qq update && \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
-    software-properties-common \
+    software-properties-common libyaml-dev \
     apt-transport-https ca-certificates && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
          gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -58,7 +58,7 @@ RUN apt-get -qq update && \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
     libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 \
-    software-properties-common \
+    software-properties-common libyaml-dev \
     apt-transport-https ca-certificates && \
     wget -q -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
          gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
@@ -75,7 +75,7 @@ RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # ubuntu/20.04.arm64v8 base image
@@ -89,7 +89,7 @@ RUN apt-get -qq update && \
     apt-get install -y -qq curl ca-certificates build-essential libsystemd-dev \
     cmake make bash wget unzip nano vim valgrind dh-make flex bison \
     libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 && \
+    libsasl2-2 libsasl2-dev openssl libssl-dev libssl1.1 libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
@@ -124,6 +124,7 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_JEMALLOC=On
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 ENV CFLAGS=$CFLAGS
@@ -137,6 +138,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
           -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
           ../
 
 VOLUME [ "/output" ]

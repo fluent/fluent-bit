@@ -102,6 +102,9 @@ struct flb_ml_parser *flb_ml_parser_create(struct flb_config *ctx,
     if (match_str) {
         ml_parser->match_str = flb_sds_create(match_str);
         if (!ml_parser->match_str) {
+            if (ml_parser->name) {
+                flb_sds_destroy(ml_parser->name);
+            }
             flb_free(ml_parser);
             return NULL;
         }

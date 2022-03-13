@@ -43,11 +43,14 @@ int cmt_opts_init(struct cmt_opts *opts,
             return -1;
         }
 
-        tmp = cmt_sds_cat(opts->fqname, "_", 1);
-        if (!tmp) {
-            return -1;
+        if (strlen(ns) > 0) {
+            tmp = cmt_sds_cat(opts->fqname, "_", 1);
+            if (!tmp) {
+                return -1;
+            }
+
+            opts->fqname = tmp;
         }
-        opts->fqname = tmp;
     }
 
     if (subsystem) {
@@ -56,20 +59,22 @@ int cmt_opts_init(struct cmt_opts *opts,
             return -1;
         }
 
-        tmp = cmt_sds_cat(opts->fqname,
-                          opts->subsystem, cmt_sds_len(opts->subsystem));
-        if (!tmp) {
-            return -1;
-            }
-        opts->fqname = tmp;
-
-        len = cmt_sds_len(opts->fqname);
-        if (opts->fqname[len - 1] != '_') {
-            tmp = cmt_sds_cat(opts->fqname, "_", 1);
+        if (strlen(opts->subsystem) > 0) {
+            tmp = cmt_sds_cat(opts->fqname,
+                              opts->subsystem, cmt_sds_len(opts->subsystem));
             if (!tmp) {
                 return -1;
-            }
+                }
             opts->fqname = tmp;
+
+            len = cmt_sds_len(opts->fqname);
+            if (opts->fqname[len - 1] != '_') {
+                tmp = cmt_sds_cat(opts->fqname, "_", 1);
+                if (!tmp) {
+                    return -1;
+                }
+                opts->fqname = tmp;
+            }
         }
     }
 

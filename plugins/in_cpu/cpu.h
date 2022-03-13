@@ -25,8 +25,8 @@
 #include <fluent-bit/flb_utils.h>
 
 /* Default collection time: every 1 second (0 nanoseconds) */
-#define DEFAULT_INTERVAL_SEC    1
-#define DEFAULT_INTERVAL_NSEC   0
+#define DEFAULT_INTERVAL_SEC    "1"
+#define DEFAULT_INTERVAL_NSEC   "0"
 #define IN_CPU_KEY_LEN       16
 
 struct cpu_key {

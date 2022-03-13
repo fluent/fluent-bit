@@ -439,7 +439,6 @@ static void debug_request_response(struct flb_splunk *ctx,
     unsigned char *ptr;
     flb_sds_t req_headers = NULL;
     flb_sds_t req_body = NULL;
-    flb_sds_t res_body = NULL;
 
     if (c->body_len > 3) {
         ptr = (unsigned char *) c->body_buf;
@@ -814,6 +813,7 @@ struct flb_output_plugin out_splunk_plugin = {
     .cb_flush     = cb_splunk_flush,
     .cb_exit      = cb_splunk_exit,
     .config_map   = config_map,
+    .workers      = 2,
 
     /* for testing */
     .test_formatter.callback = cb_splunk_format_test,

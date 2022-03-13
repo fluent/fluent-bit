@@ -1340,6 +1340,7 @@ struct flb_output_plugin out_forward_plugin = {
     .cb_pre_run   = NULL,
     .cb_flush     = cb_forward_flush,
     .cb_exit      = cb_forward_exit,
+    .workers      = 2,
 
     /* Config map validator */
     .config_map   = config_map,

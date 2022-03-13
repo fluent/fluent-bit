@@ -36,15 +36,31 @@
 /* Return the number of msgpack serialized events in the buffer */
 int flb_mp_count(const void *data, size_t bytes)
 {
+    return flb_mp_count_remaining(data, bytes, NULL);
+}
+
+int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes)
+{
+    size_t remaining;
     int count = 0;
     mpack_reader_t reader;
 
     mpack_reader_init_data(&reader, (const char *) data, bytes);
-    while (mpack_reader_remaining(&reader, NULL) > 0) {
-        count++;
+    for (;;) {
+        remaining = mpack_reader_remaining(&reader, NULL);
+        if (!remaining) {
+            break;
+        }
         mpack_discard(&reader);
+        if (mpack_reader_error(&reader)) {
+            break;
+        }
+        count++;
     }
 
+    if (remaining_bytes) {
+        *remaining_bytes = remaining;
+    }
     mpack_reader_destroy(&reader);
     return count;
 }

@@ -706,7 +706,7 @@ static int multiline_parser_conf_file(const char *cfg, struct flb_cf *cf,
     flb_sds_t parser;
     flb_sds_t tmp;
     int flush_timeout;
-    struct flb_parser *parser_ctx;
+    struct flb_parser *parser_ctx = NULL;
     struct mk_list *head;
     struct flb_cf_section *s;
     struct flb_ml_parser *ml_parser;

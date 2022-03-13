@@ -30,6 +30,9 @@ struct prom_exporter {
     /* hash table for metrics reported */
     struct flb_hash *ht_metrics;
 
+    /* add timestamp to every metric */
+    int add_timestamp;
+
     /* config reader for 'add_label' */
     struct mk_list *add_labels;
 

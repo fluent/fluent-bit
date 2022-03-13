@@ -480,6 +480,7 @@ struct flb_output_plugin out_kinesis_streams_plugin = {
     .cb_init      = cb_kinesis_init,
     .cb_flush     = cb_kinesis_flush,
     .cb_exit      = cb_kinesis_exit,
+    .workers      = 1,
     .flags        = 0,
 
     /* Configuration */

@@ -12,6 +12,10 @@ FLB_DISTRO=${FLB_DISTRO:-}
 FLB_OUT_DIR=${FLB_OUT_DIR:-}
 FLB_TARGZ=${FLB_TARGZ:-}
 FLB_NIGHTLY_BUILD=${FLB_NIGHTLY_BUILD:-}
+FLB_JEMALLOC=${FLB_JEMALLOC:-On}
+
+# Use this to pass special arguments to docker build
+FLB_ARG=${FLB_ARG:-}
 
 while getopts "v:d:b:t:o:" option
 do
@@ -36,7 +40,7 @@ fi
 
 if [ -z "$FLB_BRANCH" ]; then
     # The standard tags have a v prefix but we may want to build others
-    if curl -sL --output /dev/null --head --fail "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
+    if curl -sL --output /dev/null --head --fail --retry 3 "http://github.com/fluent/fluent-bit/archive/v$FLB_VERSION.zip" ; then
         FLB_PREFIX="v"
     fi
 fi
@@ -68,10 +72,9 @@ MAIN_IMAGE="flb-$FLB_VERSION-$FLB_DISTRO"
 # For the multistage ones, we pass in the base image to use.
 #
 IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/$FLB_DISTRO"
-FLB_ARG=""
 if [[ ! -d "$SCRIPT_DIR/distros/$FLB_DISTRO" ]]; then
     IMAGE_CONTEXT_DIR="$SCRIPT_DIR/distros/${FLB_DISTRO%%/*}"
-    FLB_ARG="--build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
+    FLB_ARG="$FLB_ARG --build-arg BASE_BUILDER=${FLB_DISTRO%%/*}-${FLB_DISTRO##*/}-base --target builder"
 fi
 
 if [[ ! -f "$IMAGE_CONTEXT_DIR/Dockerfile" ]]; then
@@ -99,15 +102,10 @@ if [ -n "$FLB_TARGZ" ]; then
 else
     # Check we have a valid remote source URL
     FLB_SOURCE_URL="http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip"
-    if ! curl -sL --output /dev/null --head --fail "$FLB_SOURCE_URL" ; then
+    if ! curl -sL --output /dev/null --head --fail --retry 3 "$FLB_SOURCE_URL" ; then
         echo "Unable to download source from URL:$FLB_SOURCE_URL "
         exit 1
     fi
-fi
-
-# The FLB_NIGHTLY_BUILD must not be empty so set to version if not defined
-if [[ -z "$FLB_NIGHTLY_BUILD" ]]; then
-    FLB_NIGHTLY_BUILD="$FLB_VERSION"
 fi
 
 # CMake configuration variables, override via environment rather than parameters
@@ -118,6 +116,7 @@ echo "CMAKE_INSTALL_PREFIX  => $CMAKE_INSTALL_PREFIX"
 echo "FLB_TD                => $FLB_TD"
 echo "FLB_ARG               => $FLB_ARG"
 echo "FLB_NIGHTLY_BUILD     => $FLB_NIGHTLY_BUILD"
+echo "FLB_JEMALLOC          => $FLB_JEMALLOC"
 
 export DOCKER_BUILDKIT=1
 
@@ -129,6 +128,7 @@ if ! docker build \
     --build-arg FLB_VERSION="$FLB_VERSION" \
     --build-arg FLB_PREFIX="$FLB_PREFIX" \
     --build-arg FLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+    --build-arg FLB_JEMALLOC="$FLB_JEMALLOC" \
     $FLB_ARG \
     -t "$MAIN_IMAGE" "$IMAGE_CONTEXT_DIR"
 then

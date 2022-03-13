@@ -1149,6 +1149,10 @@ void flb_tail_file_remove(struct flb_tail_file *file)
         flb_free(file->tag_buf);
     }
 
+    /* remove any potential entry from the hash tables */
+    flb_hash_del(ctx->static_hash, file->hash_key);
+    flb_hash_del(ctx->event_hash, file->hash_key);
+
     flb_free(file->buf_data);
     flb_free(file->name);
     flb_free(file->real_name);
@@ -1175,14 +1179,12 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        flb_hash_del(ctx->static_hash, file->hash_key);
         flb_tail_file_remove(file);
         count++;
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        flb_hash_del(ctx->event_hash, file->hash_key);
         flb_tail_file_remove(file);
         count++;
     }

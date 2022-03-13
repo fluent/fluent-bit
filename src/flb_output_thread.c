@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_output_plugin.h>
@@ -245,7 +246,8 @@ static void output_thread(void *data)
     /* Thread event loop */
     while (running) {
         mk_event_wait(th_ins->evl);
-        mk_event_foreach(event, th_ins->evl) {
+        flb_event_priority_live_foreach(event, th_ins->evl_bktq, th_ins->evl,
+                                      FLB_ENGINE_LOOP_MAX_ITER) {
             /*
              * FIXME
              * -----
@@ -275,7 +277,7 @@ static void output_thread(void *data)
                  * If the address receives 0xdeadbeef, means the thread must
                  * be terminated.
                  */
-                if ((uint64_t) task == 0xdeadbeef) {
+                if (task == (struct flb_task *) 0xdeadbeef) {
                     stopping = FLB_TRUE;
                     flb_plg_info(th_ins->ins, "thread worker #%i stopping...",
                                  thread_id);
@@ -359,6 +361,7 @@ static void output_thread(void *data)
         flb_free(params);
     }
     mk_event_loop_destroy(th_ins->evl);
+    flb_bucket_queue_destroy(th_ins->evl_bktq);
 
     flb_plg_info(ins, "thread worker #%i stopped", thread_id);
 }
@@ -400,6 +403,7 @@ int flb_output_thread_pool_create(struct flb_config *config,
     struct flb_tp *tp;
     struct flb_tp_thread *th;
     struct mk_event_loop *evl;
+    struct flb_bucket_queue *evl_bktq;
     struct flb_out_thread_instance *th_ins;
 
     /* Create the thread pool context */
@@ -442,7 +446,15 @@ int flb_output_thread_pool_create(struct flb_config *config,
             flb_free(th_ins);
             continue;
         }
+        evl_bktq = flb_bucket_queue_create(FLB_ENGINE_PRIORITY_COUNT);
+        if (!evl_bktq) {
+            flb_plg_error(ins, "could not create thread event loop bucket queue");
+            flb_free(evl);
+            flb_free(th_ins);
+            continue;
+        }
         th_ins->evl = evl;
+        th_ins->evl_bktq = evl_bktq;
 
         /*
          * Event loop setup between parent engine and this thread
@@ -460,11 +472,13 @@ int flb_output_thread_pool_create(struct flb_config *config,
         if (ret == -1) {
             flb_plg_error(th_ins->ins, "could not create thread channel");
             mk_event_loop_destroy(th_ins->evl);
+            flb_bucket_queue_destroy(th_ins->evl_bktq);
             flb_free(th_ins);
             continue;
         }
         /* Signal type to indicate a "flush" request */
         th_ins->event.type = FLB_ENGINE_EV_THREAD_OUTPUT;
+        th_ins->event.priority = FLB_ENGINE_PRIORITY_THREAD;
 
         /* Spawn the thread */
         th = flb_tp_thread_create(tp, output_thread, th_ins, config);
@@ -509,7 +523,7 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 {
     int n;
-    uint64_t stop = 0xdeadbeef;
+    struct flb_task *stop = (struct flb_task *) 0xdeadbeef;
     struct flb_tp *tp = ins->tp;
     struct mk_list *head;
     struct flb_out_thread_instance *th_ins;

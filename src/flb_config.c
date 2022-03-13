@@ -42,6 +42,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/flb_bucket_queue.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -440,6 +441,13 @@ void flb_config_exit(struct flb_config *config)
     flb_parser_exit(config);
 #endif
 
+    if (config->dns_mode) {
+        flb_free(config->dns_mode);
+    }
+    if (config->dns_resolver) {
+        flb_free(config->dns_resolver);
+    }
+
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
@@ -460,6 +468,9 @@ void flb_config_exit(struct flb_config *config)
 
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
+    }
+    if (config->evl_bktq) {
+        flb_bucket_queue_destroy(config->evl_bktq);
     }
 
     flb_plugins_unregister(config);

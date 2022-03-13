@@ -17,7 +17,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
-                   postgresql-libs postgresql-devel postgresql-server postgresql && \
+                   postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
     wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     rpm -ivh epel-release-latest-7.noarch.rpm && \
     yum install -y cmake3 && \
@@ -36,7 +36,7 @@ RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib openssl openss-libs openssl-devel \
-                   postgresql-libs postgresql-devel postgresql-server postgresql && \
+                   postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel && \
     wget -q http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     rpm -ivh epel-release-latest-7.noarch.rpm && \
     yum install -y cmake3 && \
@@ -46,6 +46,10 @@ RUN yum -y update && \
 ARG FLB_OUT_PGSQL=Off
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
 
+# Need larger page size
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
+ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
+
 # centos/8 base image
 FROM centos:8 as centos-8-base
 
@@ -53,12 +57,15 @@ FROM centos:8 as centos-8-base
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 
+# Add for the YAML development libraries
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
+
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    postgresql-libs postgresql-devel postgresql-server postgresql \
-                   cyrus-sasl-lib openssl openssl-libs openssl-devel && \
+                   cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
@@ -73,16 +80,23 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 
+# Add for the YAML development libraries
+RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo
+
 # hadolint ignore=DL3033
 RUN yum -y update && \
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
                    wget unzip systemd-devel wget flex bison \
                    postgresql-libs postgresql-devel postgresql-server postgresql \
-                   cyrus-sasl-lib openssl openssl-libs openssl-devel && \
+                   cyrus-sasl-lib openssl openssl-libs openssl-devel libyaml-devel && \
     yum clean all
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+
+# Need larger page size
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
+ENV FLB_JEMALLOC_OPTIONS=$FLB_JEMALLOC_OPTIONS
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
@@ -115,6 +129,7 @@ ARG FLB_TRACE=On
 ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
+ARG FLB_JEMALLOC=On
 
 WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 # cmake3 exists in every image - cmake references the older cmake2 in centos 7
@@ -128,6 +143,8 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
            -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
            -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+           -DFLB_JEMALLOC_OPTIONS="$FLB_JEMALLOC_OPTIONS" \
+           -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
            ../
 
 VOLUME [ "/output" ]

@@ -13,13 +13,13 @@ on:
         required: true
         default: master
       target:
-        description: Only build a specific target
+        description: Only build a specific target, intended for debug/test/quick builds only.
         required: false
         default: ""
 
-  # Run nightly build
-  schedule:
-  - cron: "0 2 * * *"
+  # Run nightly build - disable until after 1.9 release
+  # schedule:
+  # - cron: "0 6 * * *"
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -27,35 +27,40 @@ concurrency: staging-build-release
 
 jobs:
 
-  # This job copes with the variable approach of either being triggered by a tag,
-  # where the data is then in the reference provided, or by a manual event where
-  # the data is then in another structure entirely. We take the manual input if
-  # it is present, otherwise we try to figure it out.
-  staging-build-get-version:
-    name: Get version to build
+  # This job strips off the `v` at the start of any tag provided.
+  # It then provides this metadata for the other jobs to use.
+  staging-build-get-meta:
+    name: Get metadata to build
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
       date: ${{ steps.date.outputs.date }}
     steps:
+
+      - run: |
+          echo "Version: ${{ github.event.inputs.version || github.ref_name }}"
+        shell: bash
+
+      # This step is to consolidate the three different triggers into a single "version"
+      # 1. If manual dispatch - use the version provided.
+      # 2. If cron/regular build - use master.
+      # 3. If tag trigger, use that tag.
       - name: Get the version
         id: get_version
-        # Use the input variable if defined, if not attempt to get a tag
         run: |
             VERSION="${INPUT_VERSION}"
             if [ -z "${VERSION}" ]; then
-              if [ -z "${GITHUB_REF/refs\/tags\//}" ]; then
-                VERSION="${GITHUB_REF/refs\/tags\//}"
-              else
-                echo "Defaulting to master"
-                VERSION=master
-              fi
+              echo "Defaulting to master"
+              VERSION=master
             fi
             echo ::set-output name=VERSION::$VERSION
         shell: bash
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+          # Use the dispatch variable in preference, if empty use the context ref_name which should
+          # only ever be a tag or the master branch for cron builds.
+          INPUT_VERSION: ${{ github.event.inputs.version || github.ref_name }}
 
+      # String the 'v' prefix for tags.
       - uses: frabert/replace-string-action@v2.0
         id: formatted_version
         with:
@@ -64,20 +69,22 @@ jobs:
           replace-with: '$1'
           flags: 'g'
 
+      # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
       - name: Get current date
         id: date
         run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
 
   staging-build-images:
-    needs: staging-build-get-version
+    needs: staging-build-get-meta
     uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
     with:
-      version: ${{ needs.staging-build-get-version.outputs.version }}
+      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      ref: ${{ github.event.inputs.version || github.ref_name }}
       registry: ghcr.io
       username: ${{ github.actor }}
       image: ${{ github.repository }}/staging
       environment: staging
-      unstable: ${{ github.event_name == 'schedule' && needs.staging-build-get-version.outputs.date || '' }}
+      unstable: ${{ github.event_name == 'schedule' && needs.staging-build-get-meta.outputs.date || '' }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -115,13 +122,14 @@ jobs:
         shell: bash
 
   staging-build-packages:
-    needs: [ staging-build-get-version, staging-build-generate-matrix ]
+    needs: [ staging-build-get-meta, staging-build-generate-matrix ]
     uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
-      version: ${{ needs.staging-build-get-version.outputs.version }}
+      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      ref: ${{ github.event.inputs.version || github.ref_name }}
       build_matrix: ${{ needs.staging-build-generate-matrix.outputs.build-matrix }}
       environment: staging
-      unstable: ${{ github.event_name == 'schedule' && needs.staging-build-get-version.outputs.date || '' }}
+      unstable: ${{ github.event_name == 'schedule' && needs.staging-build-get-meta.outputs.date || '' }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
@@ -134,7 +142,7 @@ jobs:
   staging-unstable-release:
     runs-on: ubuntu-latest
     needs:
-      - staging-build-get-version
+      - staging-build-get-meta
       - staging-build-images
       - staging-build-packages
     environment: staging
@@ -147,25 +155,10 @@ jobs:
         with:
           path: artifacts/
 
-      - name: Rename by target
-        # We need to include the directory name in every artefact otherwise the package is always called the same thing.
-        # This then means it is overwritten on release upload.
-        # https://github.com/actions/download-artifact#download-all-artifacts
-        #
-        # We essentially flatten a directory structure:
-        # artifacts/packages-master-debian-buster/debian/buster/master/staging/fluent-bit_1.9.0_amd64.deb ==>
-        # artifacts/packages-master-debian-buster-fluent-bit_1.9.0_amd64.deb
-        #
-        # This guarantees no duplicates even if it is quite verbose.
-        # We can look to remove some of the common strings as well later.
+      - name: Single packages tar
         run: |
-          while IFS= read -r -d '' file; do
-              # Strip off artifacts directory
-              tempfile=${file#artifacts/*}
-              # Concatenate the first directory (before /) and filename (after last /) together.
-              outputfile="artifacts/${tempfile%%/*}-${tempfile##*/}"
-              mv -f "$file" "$outputfile"
-          done < <(find artifacts/ -type f \( -iname '*.rpm' -o -iname '*.deb' \) -print0)
+          mkdir -p release-upload
+          tar -czvf release-upload/packages-unstable-${{ needs.staging-build-get-meta.outputs.version }}.tar.gz -C artifacts/ .
         shell: bash
 
       - name: Log in to the Container registry
@@ -179,16 +172,16 @@ jobs:
         # May not be any/valid so ignore errors
         continue-on-error: true
         run: |
-          docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}
-          docker save --output container-${{ needs.staging-build-get-version.outputs.version }}.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}
-          docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}-debug
-          docker save --output container-${{ needs.staging-build-get-version.outputs.version }}-debug.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-version.outputs.version }}-debug
+          docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}
+          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}
+          docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}-debug
+          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}-debug.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}-debug
         shell: bash
-        working-directory: artifacts
+        working-directory: release-upload
 
-      - name: Display structure of downloaded files
+      - name: Display structure of files to upload
         run: ls -R
-        working-directory: artifacts
+        working-directory: release-upload
         shell: bash
 
       - name: Unstable release on push to master to make it easier to download
@@ -198,6 +191,5 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: 'unstable'
-          rm: true
           files: |
-            artifacts/**/*
+            release-upload/**/*

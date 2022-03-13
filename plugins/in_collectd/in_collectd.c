@@ -40,7 +40,7 @@
 #define DEFAULT_PORT 25826
 
 /* This is where most Linux systems places a default TypesDB */
-#define DEFAULT_TYPESDB "/usr/share/collectd/types.db";
+#define DEFAULT_TYPESDB "/usr/share/collectd/types.db"
 
 static int in_collectd_callback(struct flb_input_instance *i_ins,
                                 struct flb_config *config, void *in_context);
@@ -49,7 +49,6 @@ static int in_collectd_init(struct flb_input_instance *in,
                             struct flb_config *config, void *data)
 {
     int ret;
-    const char *tmp;
     struct flb_in_collectd_config *ctx;
     struct mk_list *tdb;
     char *listen = DEFAULT_LISTEN;
@@ -67,6 +66,14 @@ static int in_collectd_init(struct flb_input_instance *in,
     ctx->buf = flb_malloc(ctx->bufsize);
     if (!ctx->buf) {
         flb_errno();
+        flb_free(ctx);
+        return -1;
+    }
+    
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(in, "unable to load configuration");
         flb_free(ctx);
         return -1;
     }
@@ -89,17 +96,11 @@ static int in_collectd_init(struct flb_input_instance *in,
     }
     snprintf(ctx->port, sizeof(ctx->port), "%hu", (unsigned short) port);
 
-    /* TypesDB */
-    tmp = flb_input_get_property("typesdb", in);
-    if (!tmp) {
-        tmp = DEFAULT_TYPESDB;
-    }
+    flb_plg_debug(ctx->ins, "Loading TypesDB from %s", ctx->types_db);
 
-    flb_plg_debug(ctx->ins, "Loading TypesDB from %s", tmp);
-
-    tdb = typesdb_load_all(ctx, tmp);
+    tdb = typesdb_load_all(ctx, ctx->types_db);
     if (!tdb) {
-        flb_plg_error(ctx->ins, "failed to load '%s'", tmp);
+        flb_plg_error(ctx->ins, "failed to load '%s'", ctx->types_db);
         flb_free(ctx->buf);
         flb_free(ctx);
         return -1;
@@ -184,6 +185,16 @@ static int in_collectd_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "typesdb", DEFAULT_TYPESDB,
+     0, FLB_TRUE, offsetof(struct flb_in_collectd_config, types_db),
+     "Set the types database filename"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_input_plugin in_collectd_plugin = {
     .name         = "collectd",
     .description  = "collectd input plugin",
@@ -193,5 +204,6 @@ struct flb_input_plugin in_collectd_plugin = {
     .cb_flush_buf = NULL,
     .cb_pause     = NULL,
     .cb_resume    = NULL,
+    .config_map   = config_map,
     .cb_exit      = in_collectd_exit
 };

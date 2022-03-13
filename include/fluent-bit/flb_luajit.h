@@ -21,11 +21,11 @@
 #define FLB_LUAJIT_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
-#include <monkey/mk_core/mk_list.h>
 
 /* Lua Context */
 struct flb_luajit {

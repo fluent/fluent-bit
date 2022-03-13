@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_gzip.h>
@@ -36,10 +37,6 @@
 
 #include "s3.h"
 #include "s3_store.h"
-
-#ifdef FLB_HAVE_ARROW
-#include "arrow/compress.h"
-#endif
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
@@ -132,7 +129,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -146,7 +143,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         *headers = s3_headers;
         return 0;
     }
-    
+
     s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
     if (s3_headers == NULL) {
         flb_errno();
@@ -159,7 +156,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == COMPRESS_GZIP) {
+    if (ctx->compression == FLB_AWS_COMPRESS_GZIP) {
         s3_headers[n] = content_encoding_header;
         n++;
     }
@@ -174,7 +171,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
     }
-    
+
     *num_headers = headers_len;
     *headers = s3_headers;
     return 0;
@@ -374,7 +371,7 @@ static int init_seq_index(void *context) {
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
             return -1;
         }
-    } 
+    }
     else {
         ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
         if (ret < 0) {
@@ -725,22 +722,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
-        if (strcmp(tmp, "gzip") == 0) {
-            ctx->compression = COMPRESS_GZIP;
-        }
-#ifdef FLB_HAVE_ARROW
-        else if (strcmp(tmp, "arrow") == 0) {
-            ctx->compression = COMPRESS_ARROW;
-        }
-#endif
-        else {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
             flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
             return -1;
         }
+        ctx->compression = ret;
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -1318,8 +1309,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
     flb_sds_destroy(s3_key);
     uri = tmp;
 
-    if (ctx->compression == COMPRESS_GZIP) {
-        ret = flb_gzip_compress(body, body_size, &compressed_body, &final_body_size);
+    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        ret = flb_aws_compression_compress(ctx->compression, body, body_size,
+                                          &compressed_body, &final_body_size);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
             flb_sds_destroy(uri);
@@ -1327,17 +1319,6 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         }
         final_body = (char *) compressed_body;
     }
-#ifdef FLB_HAVE_ARROW
-    else if (ctx->compression == COMPRESS_ARROW) {
-        ret = out_s3_compress_arrow(body, body_size, &compressed_body, &final_body_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to compress data");
-            flb_sds_destroy(uri);
-            return -1;
-        }
-        final_body = compressed_body;
-    }
-#endif
     else {
         final_body = body;
         final_body_size = body_size;
@@ -1366,7 +1347,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
     }
-    
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
@@ -1381,7 +1362,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
         c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
                                               uri, final_body, final_body_size,
                                               headers, num_headers);
-        if (ctx->compression != COMPRESS_NONE) {
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
              flb_free(compressed_body);
         }
         flb_free(headers);
@@ -1872,7 +1853,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     msgpack_unpacked_init(&result);
-    while (!alloc_error && 
+    while (!alloc_error &&
            msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Each array must have two entries: time and record */
         root = result.data;
@@ -1914,7 +1895,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                 if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
-                    /* 
+                    /*
                      * Copy contents of value into buffer. Necessary to copy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
@@ -1932,7 +1913,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset, 
+                        ret = flb_msgpack_to_json(val_buf + val_offset,
                                                   msgpack_size - val_offset, &val);
                         if (ret < 0) {
                             break;
@@ -1955,7 +1936,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
     /* Throw error once per chunk if at least one log key was not found */
     if (log_key_missing == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records", 
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
 
@@ -2241,7 +2222,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-    "Specifies the format of the date. Supported formats are double, iso8601 and epoch."
+    FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
@@ -2307,9 +2288,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. 'gzip' is currently the only supported value. "
-    "The Content-Encoding HTTP Header will be set to 'gzip'. "
-    "If Apache Arrow was enabled at compile time, you can set 'arrow' to this option."
+    "Compression type for S3 objects. 'gzip' and 'arrow' are the supported values. "
+    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Defaults to no compression. "
+    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
@@ -2412,6 +2394,7 @@ struct flb_output_plugin out_s3_plugin = {
     .cb_init      = cb_s3_init,
     .cb_flush     = cb_s3_flush,
     .cb_exit      = cb_s3_exit,
+    .workers      = 1,
     .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
     .config_map   = config_map
 };

@@ -390,7 +390,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     "Specify the format of the date. Supported formats are 'double' and 'iso8601'"
+     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
@@ -454,4 +454,5 @@ struct flb_output_plugin out_http_plugin = {
     .cb_exit     = cb_http_exit,
     .config_map  = config_map,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .workers     = 2
 };

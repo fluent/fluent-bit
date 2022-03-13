@@ -158,66 +158,22 @@ static pid_t get_pid_from_procname_linux(struct flb_in_proc_config *ctx,
 static int configure(struct flb_in_proc_config *ctx,
                      struct flb_input_instance *in)
 {
-    const char *pval = NULL;
+    int ret;
 
-    /* interval settings */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_sec = atoi(pval);
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(in, "unable to load configuration");
+        return -1;
     }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-
-    pval = flb_input_get_property("interval_nsec", in);
-    if (pval != NULL && atoi(pval) >= 0) {
-        ctx->interval_nsec = atoi(pval);
-    }
-    else {
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-    }
-
+    
     if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
         /* Illegal settings. Override them. */
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-        ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
-    pval = flb_input_get_property("alert", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->alert = FLB_TRUE;
-        }
-    }
-
-    pval = flb_input_get_property("mem", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->mem = FLB_TRUE;
-        }
-        else if (strcasecmp(pval, "false") == 0 || strcasecmp(pval, "off") == 0) {
-            ctx->mem = FLB_FALSE;
-        }
-    }
-
-    pval = flb_input_get_property("fd", in);
-    if (pval) {
-        if (strcasecmp(pval, "true") == 0 || strcasecmp(pval, "on") == 0) {
-            ctx->fds = FLB_TRUE;
-        }
-        else if (strcasecmp(pval, "false") == 0 || strcasecmp(pval, "off") == 0) {
-            ctx->fds = FLB_FALSE;
-        }
-    }
-
-    pval = flb_input_get_property("proc_name", in);
-    if (pval) {
-        ctx->proc_name = (char*)flb_malloc(FLB_CMD_LEN);
-        if (ctx->proc_name == NULL) {
-            return -1;
-        }
-        strncpy(ctx->proc_name, pval, FLB_CMD_LEN);
-        ctx->proc_name[FLB_CMD_LEN-1] = '\0';
+    if (ctx->proc_name != NULL && strcmp(ctx->proc_name, "") != 0) {
         ctx->len_proc_name = strlen(ctx->proc_name);
     }
 
@@ -515,11 +471,45 @@ static int in_proc_exit(void *data, struct flb_config *config)
     }
 
     /* Destroy context */
-    flb_free(ctx->proc_name);
     flb_free(ctx);
 
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_in_proc_config, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_in_proc_config, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "alert", "false",
+     0, FLB_TRUE, offsetof(struct flb_in_proc_config, alert),
+     "Only generate alerts if process is down"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "mem", "true",
+     0, FLB_TRUE, offsetof(struct flb_in_proc_config, mem),
+     "Append memory usage to record"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "fd", "true",
+     0, FLB_TRUE, offsetof(struct flb_in_proc_config, fds),
+     "Append fd count to record"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "proc_name", NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_proc_config, proc_name),
+     "Define process name to health check"
+    },
+    /* EOF */
+    {0}
+};
 
 /* Plugin reference */
 struct flb_input_plugin in_proc_plugin = {
@@ -530,5 +520,6 @@ struct flb_input_plugin in_proc_plugin = {
     .cb_collect   = in_proc_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_proc_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

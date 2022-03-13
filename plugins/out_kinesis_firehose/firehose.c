@@ -34,6 +34,8 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_utils.h>
 
+#include <fluent-bit/aws/flb_aws_compress.h>
+
 #include <monkey/mk_core.h>
 #include <msgpack.h>
 #include <string.h>
@@ -118,6 +120,15 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         ctx->sts_endpoint = (char *) tmp;
     }
 
+    tmp = flb_output_get_property("compression", ins);
+    if (tmp) {
+        ret = flb_aws_compression_get_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+            goto error;
+        }
+        ctx->compression = ret;
+    }
 
     tmp = flb_output_get_property("log_key", ins);
     if (tmp) {
@@ -204,7 +215,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         ctx->aws_provider = flb_sts_provider_create(config,
                                                     ctx->sts_tls,
                                                     ctx->base_aws_provider,
-                                                    ctx->external_id,
+                                                    (char *) ctx->external_id,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
@@ -435,6 +446,15 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "compression", NULL,
+     0, FLB_FALSE, 0,
+    "Compression type for Firehose records. Each log record is individually compressed "
+    "and sent to Firehose. 'gzip' and 'arrow' are the supported values. "
+    "'arrow' is only an available if Apache Arrow was enabled at compile time. "
+    "Defaults to no compression."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "log_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_firehose, log_key),
      "By default, the whole log record will be sent to Firehose. "
@@ -465,6 +485,7 @@ struct flb_output_plugin out_kinesis_firehose_plugin = {
     .cb_init      = cb_firehose_init,
     .cb_flush     = cb_firehose_flush,
     .cb_exit      = cb_firehose_exit,
+    .workers      = 1,
     .flags        = 0,
 
     /* Configuration */
