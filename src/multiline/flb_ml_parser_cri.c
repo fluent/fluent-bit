@@ -22,7 +22,7 @@
 #include <fluent-bit/multiline/flb_ml_parser.h>
 
 #define FLB_ML_CRI_REGEX                                                \
-  "^(?<time>.+) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
+  "^(?<time>.+?) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
 #define FLB_ML_CRI_TIME                         \
   "%Y-%m-%dT%H:%M:%S.%L%z"
 
