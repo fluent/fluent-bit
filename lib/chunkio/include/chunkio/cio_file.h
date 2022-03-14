@@ -24,10 +24,15 @@
 #include <chunkio/cio_file_st.h>
 #include <chunkio/cio_crc32.h>
 
+/* Linux fallocate() strategy */
+#define CIO_FILE_LINUX_FALLOCATE        0
+#define CIO_FILE_LINUX_POSIX_FALLOCATE  1
+
 struct cio_file {
     int fd;                   /* file descriptor      */
     int flags;                /* open flags */
     int synced;               /* sync after latest write ? */
+    int allocate_strategy;    /* linux-only: fallocate strategy */
     size_t fs_size;           /* original size in the file system */
     size_t data_size;         /* number of bytes used */
     size_t alloc_size;        /* allocated size       */
@@ -41,9 +46,11 @@ struct cio_file {
 #endif
     /* cached addr */
     char *st_content;
-    crc_t crc_cur;
+    crc_t crc_cur;            /* crc: current value calculated */
+    int crc_reset;            /* crc: must recalculate from the beginning ? */
 };
 
+size_t cio_file_real_size(struct cio_file *cf);
 struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                struct cio_stream *st,
                                struct cio_chunk *ch,

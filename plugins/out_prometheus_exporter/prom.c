@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -20,10 +19,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_kv.h>
-
-#include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_encode_text.h>
-#include <cmetrics/cmt_decode_msgpack.h>
+#include <fluent-bit/flb_metrics.h>
 
 #include "prom.h"
 #include "prom_http.h"
@@ -69,6 +65,8 @@ static int cb_prom_init(struct flb_output_instance *ins,
     int ret;
     struct prom_exporter *ctx;
 
+    flb_output_net_default("0.0.0.0", 2021 , ins);
+
     ctx = flb_calloc(1, sizeof(struct prom_exporter));
     if (!ctx) {
         flb_errno();
@@ -92,7 +90,7 @@ static int cb_prom_init(struct flb_output_instance *ins,
 
     /* HTTP Server context */
     ctx->http = prom_http_server_create(ctx,
-                                        ctx->listen, ctx->tcp_port, config);
+                                        ins->host.name, ins->host.port, config);
     if (!ctx->http) {
         flb_plg_error(ctx->ins, "could not initialize HTTP server, aborting");
         return -1;
@@ -111,8 +109,8 @@ static int cb_prom_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    flb_plg_info(ctx->ins, "listening iface=%s tcp_port=%s",
-                 ctx->listen, ctx->tcp_port, config);
+    flb_plg_info(ctx->ins, "listening iface=%s tcp_port=%d",
+                 ins->host.name, ins->host.port);
     return 0;
 }
 
@@ -168,12 +166,13 @@ static flb_sds_t hash_format_metrics(struct prom_exporter *ctx)
     return buf;
 }
 
-static void cb_prom_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_prom_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
     int ret;
+    int add_ts;
     size_t off = 0;
     flb_sds_t metrics;
     cmt_sds_t text;
@@ -185,7 +184,9 @@ static void cb_prom_flush(const void *data, size_t bytes,
      * convert to Prometheus text format and store the output in the
      * hash table for metrics.
      */
-    ret = cmt_decode_msgpack_create(&cmt, (char *) data, bytes, &off);
+    ret = cmt_decode_msgpack_create(&cmt,
+                                    (char *) event_chunk->data,
+                                    event_chunk->size, &off);
     if (ret != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -193,13 +194,27 @@ static void cb_prom_flush(const void *data, size_t bytes,
     /* append labels set by config */
     append_labels(ctx, cmt);
 
+    /* add timestamp in the output format ? */
+    if (ctx->add_timestamp) {
+        add_ts = CMT_TRUE;
+    }
+    else {
+        add_ts = CMT_FALSE;
+    }
+
     /* convert to text representation */
-    text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    text = cmt_encode_prometheus_create(cmt, add_ts);
     if (!text) {
         cmt_destroy(cmt);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
     cmt_destroy(cmt);
+
+    if (cmt_sds_len(text) == 0) {
+        flb_plg_debug(ctx->ins, "context without metrics (empty)");
+        cmt_encode_text_destroy(text);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
 
     /* register payload of metrics / override previous one */
     ret = hash_store(ctx, ins, text);
@@ -255,15 +270,9 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
-     FLB_CONFIG_MAP_STR, "listen", "0.0.0.0",
-     0, FLB_TRUE, offsetof(struct prom_exporter, listen),
-     "Listener network interface."
-    },
-
-    {
-     FLB_CONFIG_MAP_STR, "port", "2021",
-     0, FLB_TRUE, offsetof(struct prom_exporter, tcp_port),
-     "TCP port for listening for HTTP connections."
+     FLB_CONFIG_MAP_BOOL, "add_timestamp", "false",
+     0, FLB_TRUE, offsetof(struct prom_exporter, add_timestamp),
+     "Add timestamp to every metric honoring collection time."
     },
 
     {

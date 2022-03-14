@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,12 +20,12 @@
 #ifndef FLB_OUT_STACKDRIVER_H
 #define FLB_OUT_STACKDRIVER_H
 
-#include <fluent-bit/flb_info.h>
-#include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_metrics.h>
 
 /* refresh token every 50 minutes */
 #define FLB_STD_TOKEN_REFRESH 3000
@@ -79,6 +78,22 @@
 #define FLB_STACKDRIVER_FAILED_REQUESTS      1001   /* failed requests */
 #endif
 
+struct flb_stackdriver_oauth_credentials {
+    /* parsed credentials file */
+    flb_sds_t type;
+    flb_sds_t private_key_id;
+    flb_sds_t private_key;
+    flb_sds_t client_email;
+    flb_sds_t client_id;
+    flb_sds_t auth_uri;
+    flb_sds_t token_uri;
+};
+
+struct flb_stackdriver_env {
+    flb_sds_t creds_file;
+    flb_sds_t metadata_server;
+};
+
 struct flb_stackdriver {
     /* credentials */
     flb_sds_t credentials_file;
@@ -112,6 +127,8 @@ struct flb_stackdriver {
     flb_sds_t labels_key;
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
+    /* shadow tag_prefix for safe deallocation */
+    flb_sds_t tag_prefix_k8s;
 
     /* generic resources */
     flb_sds_t location;
@@ -131,6 +148,8 @@ struct flb_stackdriver {
     flb_sds_t severity_key;
     flb_sds_t trace_key;
     flb_sds_t log_name_key;
+    flb_sds_t http_request_key;
+    int http_request_key_size;
     bool autoformat_stackdriver_trace;
 
     flb_sds_t stackdriver_agent;
@@ -142,6 +161,12 @@ struct flb_stackdriver {
     /* oauth2 context */
     struct flb_oauth2 *o;
 
+    /* parsed oauth2 credentials */
+    struct flb_stackdriver_oauth_credentials *creds;
+
+    /* environment variable settings */
+    struct flb_stackdriver_env *env;
+
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
 
@@ -150,6 +175,13 @@ struct flb_stackdriver {
 
     /* upstream context for metadata end-point */
     struct flb_upstream *metadata_u;
+
+#ifdef FLB_HAVE_METRICS
+    /* metrics */
+    struct cmt_counter *cmt_successful_requests;
+    struct cmt_counter *cmt_failed_requests;
+    struct cmt_counter *cmt_requests_total;
+#endif
 
     /* plugin instance */
     struct flb_output_instance *ins;

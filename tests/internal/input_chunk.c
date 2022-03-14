@@ -6,8 +6,10 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fluent-bit/flb_input_chunk.h>
+#include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_router.h>
 #include "flb_tests_internal.h"
-
+#include "chunkio/chunkio.h"
 #include "data/input_chunk/log/test_buffer_drop_chunks.h"
 
 #define DPATH FLB_TESTS_DATA_PATH "data/input_chunk/"
@@ -316,10 +318,182 @@ void flb_test_input_chunk_dropping_chunks()
     flb_destroy(ctx);
 }
 
+/*
+ * When chunk is set to DOWN from memory, data_size is set to 0 and
+ * cio_chunk_get_content_size(1) returns the data_size. fs_chunks_size
+ * is used to track the size of chunks in filesystem so we need to call
+ * cio_chunk_get_real_size to return the original size in the file system
+ */
+static ssize_t flb_input_chunk_get_real_size(struct flb_input_chunk *ic)
+{
+    ssize_t meta_size;
+    ssize_t size;
+
+    size = cio_chunk_get_real_size(ic->chunk);
+
+    if (size != 0) {
+        return size;
+    }
+
+    // Real size is not synced to chunk yet
+    size = flb_input_chunk_get_size(ic);
+    if (size == 0) {
+        flb_debug("[input chunk] no data in the chunk %s",
+                  flb_input_chunk_get_name(ic));
+        return -1;
+    }
+
+    meta_size = cio_meta_size(ic->chunk);
+    size += meta_size
+        /* See https://github.com/edsiper/chunkio#file-layout for more details */
+         + 2    /* HEADER BYTES */
+         + 4    /* CRC32 */
+         + 16   /* PADDING */
+         + 2;   /* METADATA LENGTH BYTES */
+
+    return size;
+}
+
+static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
+{
+    msgpack_unpacked result;
+    msgpack_packer mp_pck;
+
+    msgpack_unpacked_init(&result);
+
+    /* Initialize local msgpack buffer */
+    msgpack_packer_init(&mp_pck, mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_str_body(&mp_pck, buf, buf_size);
+    msgpack_unpacked_destroy(&result);
+
+    return 0;
+}
+
+static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
+                  char *str)
+{
+    if (level == CIO_LOG_ERROR) {
+        flb_error("[fstore] %s", str);
+    }
+    else if (level == CIO_LOG_WARN) {
+        flb_warn("[fstore] %s", str);
+    }
+    else if (level == CIO_LOG_INFO) {
+        flb_info("[fstore] %s", str);
+    }
+    else if (level == CIO_LOG_DEBUG) {
+        flb_debug("[fstore] %s", str);
+    }
+
+    return 0;
+}
+
+/* This tests uses the subsystems of the engine directly
+ * to avoid threading issues when submitting chunks.
+ */
+void flb_test_input_chunk_fs_chunks_size_real()
+{
+    bool have_size_discrepancy = FLB_FALSE;
+    bool has_checked_size = FLB_FALSE;
+    struct flb_input_instance *i_ins;
+    struct flb_output_instance *o_ins;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_chunk *ic;
+    struct flb_task *task;
+    size_t chunk_size = 0;
+    struct flb_config *cfg;
+    struct cio_ctx *cio;
+    msgpack_sbuffer mp_sbuf;
+    char buf[262144];
+    struct mk_event_loop *evl;
+
+    cfg = flb_config_init();
+    evl = mk_event_loop_create(256);
+
+    TEST_CHECK(evl != NULL);
+    cfg->evl = evl;
+
+    flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
+
+    i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);
+    i_ins->storage_type = CIO_STORE_FS;
+    cio = cio_create("/tmp/input-chunk-fs_chunks-size_real", log_cb, CIO_LOG_DEBUG, CIO_OPEN);
+    flb_storage_input_create(cio, i_ins);
+    flb_input_init_all(cfg);
+
+    o_ins = flb_output_new(cfg, "http", NULL, FLB_TRUE);
+    // not the right way to do this
+    o_ins->id = 1;
+    TEST_CHECK_(o_ins != NULL, "unable to instance output");
+    flb_output_set_property(o_ins, "match", "*");
+    flb_output_set_property(o_ins, "storage.total_limit_size", "1M");
+
+    TEST_CHECK_((flb_router_io_set(cfg) != -1), "unable to router");
+
+    /* fill up the chunk ... */
+    memset((void *)buf, 0x41, sizeof(buf));
+    msgpack_sbuffer_init(&mp_sbuf);
+    gen_buf(&mp_sbuf, buf, sizeof(buf));
+    flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, sizeof(buf));
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* then force a realloc? */
+    memset((void *)buf, 0x42, 256);
+    msgpack_sbuffer_init(&mp_sbuf);
+    gen_buf(&mp_sbuf, buf, 256);
+    flb_input_chunk_append_raw(i_ins, "dummy", 4, (void *)buf, 256);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    /* clean up test chunks */
+    mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        if (cio_chunk_get_real_size(ic->chunk) != cio_chunk_get_content_size(ic->chunk)) {
+            have_size_discrepancy = FLB_TRUE;
+        }
+        chunk_size += flb_input_chunk_get_real_size(ic);
+    }
+
+    TEST_CHECK_(have_size_discrepancy == FLB_TRUE, "need a size discrepancy");
+
+    /* check fs_chunks_size for output plugins against logical and
+     *  physical size
+     */
+    mk_list_foreach_safe(head, tmp, &ic->in->config->outputs) {
+        o_ins = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_info("[input chunk test] chunk_size=%d fs_chunk_size=%d", chunk_size,
+                 o_ins->fs_chunks_size);
+        has_checked_size = FLB_TRUE;
+        TEST_CHECK_(chunk_size == o_ins->fs_chunks_size, "fs_chunks_size must match total real size");
+    }
+    TEST_CHECK_(has_checked_size == FLB_TRUE, "need to check size discrepancy");
+
+    /* FORCE clean up test tasks*/
+    mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
+        task = mk_list_entry(head, struct flb_task, _head);
+        flb_info("[task] cleanup test task");
+        flb_task_destroy(task, FLB_TRUE);
+    }
+
+    /* clean up test chunks */
+    mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
+        ic = mk_list_entry(head, struct flb_input_chunk, _head);
+        flb_input_chunk_destroy(ic, FLB_TRUE);
+    }
+
+    cio_destroy(cio);
+    flb_router_exit(cfg);
+    flb_input_exit_all(cfg);
+    flb_output_exit(cfg);
+    flb_config_exit(cfg);
+}
+
 /* Test list */
 TEST_LIST = {
     {"input_chunk_exceed_limit",       flb_test_input_chunk_exceed_limit},
     {"input_chunk_buffer_valid",       flb_test_input_chunk_buffer_valid},
     {"input_chunk_dropping_chunks",    flb_test_input_chunk_dropping_chunks},
+    {"input_chunk_fs_chunk_size_real", flb_test_input_chunk_fs_chunks_size_real},
     {NULL, NULL}
 };

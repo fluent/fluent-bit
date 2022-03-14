@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -249,6 +248,7 @@ int fw_prot_process(struct fw_conn *conn)
     int c = 0;
     size_t chunk_id = -1;
     const char *stag;
+    flb_sds_t out_tag = NULL;
     size_t bytes;
     size_t buf_off = 0;
     size_t recv_len;
@@ -271,6 +271,11 @@ int fw_prot_process(struct fw_conn *conn)
      * [tag, [[time,record], [time,record], ...]]
      */
 
+    out_tag = flb_sds_create_size(1024);
+    if (!out_tag) {
+        return -1;
+    }
+
     unp = msgpack_unpacker_new(1024);
     msgpack_unpacked_init(&result);
     conn->rest = conn->buf_len;
@@ -288,6 +293,7 @@ int fw_prot_process(struct fw_conn *conn)
                         conn->buf_len - all_used);
                 conn->buf_len -= all_used;
             }
+            flb_sds_destroy(out_tag);
             return 0;
         }
 
@@ -312,6 +318,7 @@ int fw_prot_process(struct fw_conn *conn)
             /* Cleanup buffers */
             msgpack_unpacked_destroy(&result);
             msgpack_unpacker_free(unp);
+            flb_sds_destroy(out_tag);
 
             return -1;
         }
@@ -346,6 +353,7 @@ int fw_prot_process(struct fw_conn *conn)
                               root.type);
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
+                flb_sds_destroy(out_tag);
                 return -1;
             }
 
@@ -354,6 +362,7 @@ int fw_prot_process(struct fw_conn *conn)
                               "parser: array of invalid size, skip.");
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
+                flb_sds_destroy(out_tag);
                 return -1;
             }
 
@@ -364,11 +373,19 @@ int fw_prot_process(struct fw_conn *conn)
                               "parser: invalid tag format, skip.");
                 msgpack_unpacked_destroy(&result);
                 msgpack_unpacker_free(unp);
+                flb_sds_destroy(out_tag);
                 return -1;
             }
-
             stag     = tag.via.str.ptr;
             stag_len = tag.via.str.size;
+
+            /* Copy the tag to the new buffer, prefix it if required */
+            flb_sds_len_set(out_tag, 0); /* clear out_tag before using */
+            if (ctx->tag_prefix) {
+                flb_sds_cat_safe(&out_tag,
+                                 ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));
+            }
+            flb_sds_cat_safe(&out_tag, stag, stag_len);
 
             entry = root.via.array.ptr[1];
 
@@ -384,12 +401,14 @@ int fw_prot_process(struct fw_conn *conn)
                     flb_plg_debug(ctx->ins, "invalid options field");
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
                     return -1;
                 }
 
                 /* Process array */
                 fw_process_array(conn->in, conn,
-                                 stag, stag_len, &root, &entry, chunk_id);
+                                 out_tag, flb_sds_len(out_tag),
+                                 &root, &entry, chunk_id);
             }
             else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
                      entry.type == MSGPACK_OBJECT_EXT) {
@@ -402,6 +421,7 @@ int fw_prot_process(struct fw_conn *conn)
                     flb_plg_warn(ctx->ins, "invalid data format, map expected");
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
                     return -1;
                 }
 
@@ -412,6 +432,7 @@ int fw_prot_process(struct fw_conn *conn)
                     flb_plg_debug(ctx->ins, "invalid options field");
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
                     return -1;
                 }
 
@@ -424,7 +445,8 @@ int fw_prot_process(struct fw_conn *conn)
                 msgpack_pack_object(&mp_pck, map);
 
                 /* Register data object */
-                flb_input_chunk_append_raw(conn->in, stag, stag_len,
+                flb_input_chunk_append_raw(conn->in,
+                                           out_tag, flb_sds_len(out_tag),
                                            mp_sbuf.data, mp_sbuf.size);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 c++;
@@ -448,6 +470,7 @@ int fw_prot_process(struct fw_conn *conn)
                     flb_plg_debug(ctx->ins, "invalid options field");
                     msgpack_unpacked_destroy(&result);
                     msgpack_unpacker_free(unp);
+                    flb_sds_destroy(out_tag);
                     return -1;
                 }
 
@@ -466,6 +489,7 @@ int fw_prot_process(struct fw_conn *conn)
                         flb_plg_error(ctx->ins, "invalid 'compressed' option");
                         msgpack_unpacked_destroy(&result);
                         msgpack_unpacker_free(unp);
+                        flb_sds_destroy(out_tag);
                         return -1;
                     }
 
@@ -476,18 +500,19 @@ int fw_prot_process(struct fw_conn *conn)
                             flb_plg_error(ctx->ins, "gzip uncompress failure");
                             msgpack_unpacked_destroy(&result);
                             msgpack_unpacker_free(unp);
+                            flb_sds_destroy(out_tag);
                             return -1;
                         }
 
                         /* Append uncompressed data */
                         flb_input_chunk_append_raw(conn->in,
-                                                   stag, stag_len,
+                                                   out_tag, flb_sds_len(out_tag),
                                                    gz_data, gz_size);
                         flb_free(gz_data);
                     }
                     else {
                         flb_input_chunk_append_raw(conn->in,
-                                                   stag, stag_len,
+                                                   out_tag, flb_sds_len(out_tag),
                                                    data, len);
                     }
 
@@ -512,6 +537,7 @@ int fw_prot_process(struct fw_conn *conn)
 
     msgpack_unpacked_destroy(&result);
     msgpack_unpacker_free(unp);
+    flb_sds_destroy(out_tag);
 
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:

@@ -414,9 +414,9 @@ static int waitpid_timeout(char* name, pid_t pid, int* wstatus)
 struct process {
     int initialized;
     char** args;
-    int stdin;
-    flb_pipefd_t stdout[2];
-    int stderr;
+    int stdin_stream;
+    flb_pipefd_t stdout_stream[2];
+    int stderr_stream;
     pid_t pid;
 };
 
@@ -433,35 +433,35 @@ static int new_process(struct process* p, char** args)
     *p = (struct process) {
         .initialized = FLB_TRUE,
         .args = args,
-        .stdin = -1,
-        .stdout = {-1, -1},
-        .stderr = -1,
+        .stdin_stream = -1,
+        .stdout_stream = {-1, -1},
+        .stderr_stream = -1,
         .pid = -1,
     };
 
-    while ((p->stdin = open(DEV_NULL, O_RDONLY|O_CLOEXEC)) < 0) {
+    while ((p->stdin_stream = open(DEV_NULL, O_RDONLY|O_CLOEXEC)) < 0) {
         if (errno != EINTR) {
             flb_errno();
             return -1;
         }
     }
 
-    if (flb_pipe_create(p->stdout) < 0) {;
+    if (flb_pipe_create(p->stdout_stream) < 0) {;
         flb_errno();
         return -1;
     }
 
-    if (fcntl(p->stdout[0], F_SETFL, O_CLOEXEC) < 0) {
+    if (fcntl(p->stdout_stream[0], F_SETFL, O_CLOEXEC) < 0) {
         flb_errno();
         return -1;
     }
 
-    if (fcntl(p->stdout[1], F_SETFL, O_CLOEXEC) < 0) {
+    if (fcntl(p->stdout_stream[1], F_SETFL, O_CLOEXEC) < 0) {
         flb_errno();
         return -1;
     }
 
-    while ((p->stderr = open(DEV_NULL, O_WRONLY|O_CLOEXEC)) < 0) {
+    while ((p->stderr_stream = open(DEV_NULL, O_WRONLY|O_CLOEXEC)) < 0) {
         if (errno != EINTR) {
             flb_errno();
             return -1;
@@ -479,26 +479,26 @@ static int new_process(struct process* p, char** args)
  */
 static void exec_process_child(struct process* p)
 {
-    while ((dup2(p->stdin, STDIN_FILENO) < 0)) {
+    while ((dup2(p->stdin_stream, STDIN_FILENO) < 0)) {
         if (errno != EINTR) {
             return; 
         }
     }
-    while ((dup2(p->stdout[1], STDOUT_FILENO) < 0)) {
+    while ((dup2(p->stdout_stream[1], STDOUT_FILENO) < 0)) {
         if (errno != EINTR) {
             return;
         }
     }
-    while ((dup2(p->stderr, STDERR_FILENO) < 0)) {
+    while ((dup2(p->stderr_stream, STDERR_FILENO) < 0)) {
         if (errno != EINTR) {
             return; 
         }
     }
 
-    close(p->stdin);
-    flb_pipe_close(p->stdout[0]);
-    flb_pipe_close(p->stdout[1]);
-    close(p->stderr);
+    close(p->stdin_stream);
+    flb_pipe_close(p->stdout_stream[0]);
+    flb_pipe_close(p->stdout_stream[1]);
+    close(p->stderr_stream);
 
     execvp(p->args[0], p->args);
 }
@@ -525,14 +525,14 @@ static int exec_process(struct process* p)
         exit(EXIT_FAILURE);
     }
 
-    close(p->stdin);
-    p->stdin = -1;
+    close(p->stdin_stream);
+    p->stdin_stream = -1;
 
-    flb_pipe_close(p->stdout[1]);
-    p->stdout[1] = -1;
+    flb_pipe_close(p->stdout_stream[1]);
+    p->stdout_stream[1] = -1;
 
-    close(p->stderr);
-    p->stderr = -1;
+    close(p->stderr_stream);
+    p->stderr_stream = -1;
 
     return 0;
 }
@@ -549,7 +549,7 @@ static int read_from_process(struct process* p, struct readbuf* buf)
     struct flb_time start, timeout, deadline, now, remaining;
     int remaining_ms;
 
-    if (fcntl(p->stdout[0], F_SETFL, O_NONBLOCK) < 0) {
+    if (fcntl(p->stdout_stream[0], F_SETFL, O_NONBLOCK) < 0) {
         flb_errno();
         return -1;
     }
@@ -567,7 +567,7 @@ static int read_from_process(struct process* p, struct readbuf* buf)
 
     while (1) {
         pfd = (struct pollfd) {
-            .fd = p->stdout[0],
+            .fd = p->stdout_stream[0],
             .events = POLLIN,
         };
 
@@ -617,7 +617,7 @@ static int read_from_process(struct process* p, struct readbuf* buf)
         }
 
         if ((pfd.revents & POLLIN) == POLLIN || (pfd.revents & POLLHUP) == POLLHUP) {
-            result = read_until_block(p->args[0], p->stdout[0], buf);
+            result = read_until_block(p->args[0], p->stdout_stream[0], buf);
             if (result <= 0) {
                 return result;
             }
@@ -664,21 +664,21 @@ static int wait_process(struct process* p)
 static void destroy_process(struct process* p)
 {
     if (p->initialized) {
-        if (p->stdin >= 0) {
-            close(p->stdin);
-            p->stdin = -1;
+        if (p->stdin_stream >= 0) {
+            close(p->stdin_stream);
+            p->stdin_stream = -1;
         }
-        if (p->stdout[0] >= 0) {
-            close(p->stdout[0]);
-            p->stdout[0] = -1;
+        if (p->stdout_stream[0] >= 0) {
+            close(p->stdout_stream[0]);
+            p->stdout_stream[0] = -1;
         }
-        if (p->stdout[1] >= 0) {
-            close(p->stdout[1]);
-            p->stdout[1] = -1;
+        if (p->stdout_stream[1] >= 0) {
+            close(p->stdout_stream[1]);
+            p->stdout_stream[1] = -1;
         }
-        if (p->stderr >= 0) {
-            close(p->stderr);
-            p->stderr = -1;
+        if (p->stderr_stream >= 0) {
+            close(p->stderr_stream);
+            p->stderr_stream = -1;
         }
 
         if (p->pid > 0) {

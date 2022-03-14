@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -168,7 +167,11 @@ static int collect_metrics(struct flb_me *me)
 
 #ifdef FLB_HAVE_HTTP_SERVER
     if (ctx->http_server == FLB_TRUE) {
+        /* v1 metrics (old) */
         flb_hs_push_pipeline_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+        if (ctx->health_check == FLB_TRUE) {
+            flb_hs_push_health_metrics(ctx->http_ctx, mp_sbuf.data, mp_sbuf.size);
+        }
     }
 #endif
     msgpack_sbuffer_destroy(&mp_sbuf);
@@ -227,4 +230,59 @@ int flb_me_destroy(struct flb_me *me)
     mk_event_timeout_destroy(me->config->evl, &me->event);
     flb_free(me);
     return 0;
+}
+
+/* Export all metrics as CMetrics context */
+struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_instance *i;     /* inputs */
+    struct flb_filter_instance *f;    /* filter */
+    struct flb_output_instance *o;    /* output */
+    struct cmt *cmt;
+
+    cmt = cmt_create();
+    if (!cmt) {
+        return NULL;
+    }
+
+    /* Fluent Bit metrics */
+    flb_metrics_fluentbit_add(ctx, cmt);
+
+    /* Pipeline metrics: input, filters, outputs */
+    mk_list_foreach(head, &ctx->inputs) {
+        i = mk_list_entry(head, struct flb_input_instance, _head);
+        ret = cmt_cat(cmt, i->cmt);
+        if (ret == -1) {
+            flb_error("[metrics exporter] could not append metrics from %s",
+                      flb_input_name(i));
+            cmt_destroy(cmt);
+            return NULL;
+        }
+    }
+
+    mk_list_foreach(head, &ctx->filters) {
+        f = mk_list_entry(head, struct flb_filter_instance, _head);
+        ret = cmt_cat(cmt, f->cmt);
+        if (ret == -1) {
+            flb_error("[metrics exporter] could not append metrics from %s",
+                      flb_filter_name(f));
+            cmt_destroy(cmt);
+            return NULL;
+        }
+    }
+
+    mk_list_foreach(head, &ctx->outputs) {
+        o = mk_list_entry(head, struct flb_output_instance, _head);
+        ret = cmt_cat(cmt, o->cmt);
+        if (ret == -1) {
+            flb_error("[metrics exporter] could not append metrics from %s",
+                      flb_output_name(o));
+            cmt_destroy(cmt);
+            return NULL;
+        }
+    }
+
+    return cmt;
 }

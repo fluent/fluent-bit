@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,22 +27,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline char *flb_strdup(const char *s)
-{
-    int len;
-    char *str;
-
-    len = strlen(s);
-    str = (char *) flb_malloc(len + 1);
-    if (!str) {
-        return NULL;
-    }
-    memcpy(str, s, len);
-    str[len] = '\0';
-
-    return str;
-}
-
 static inline char *flb_strndup(const char *s, size_t n)
 {
     char *str;
@@ -56,6 +39,11 @@ static inline char *flb_strndup(const char *s, size_t n)
     str[n] = '\0';
 
     return str;
+}
+
+static inline char *flb_strdup(const char *s)
+{
+    return flb_strndup(s, strlen(s));
 }
 
 /* emptyval checks whether a string has a non-null value "". */

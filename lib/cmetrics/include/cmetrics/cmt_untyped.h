@@ -31,7 +31,7 @@ struct cmt_untyped {
 };
 
 struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,
-                                       char *namespace, char *subsystem,
+                                       char *ns, char *subsystem,
                                        char *name, char *help,
                                        int label_count, char **label_keys);
 

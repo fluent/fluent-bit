@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,7 +28,7 @@
 void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
                   void *opaque)
 {
-    struct flb_kafka *ctx = (struct flb_kafka *) opaque;
+    struct flb_out_kafka *ctx = (struct flb_out_kafka *) opaque;
 
     if (rkmessage->err) {
         flb_plg_warn(ctx->ins, "message delivery failed: %s",
@@ -45,9 +44,9 @@ void cb_kafka_msg(rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
 void cb_kafka_logger(const rd_kafka_t *rk, int level,
                      const char *fac, const char *buf)
 {
-    struct flb_kafka *ctx;
+    struct flb_out_kafka *ctx;
 
-    ctx = (struct flb_kafka *) rd_kafka_opaque(rk);
+    ctx = (struct flb_out_kafka *) rd_kafka_opaque(rk);
 
     if (level <= FLB_KAFKA_LOG_ERR) {
         flb_plg_error(ctx->ins, "%s: %s",
@@ -71,10 +70,10 @@ static int cb_kafka_init(struct flb_output_instance *ins,
                          struct flb_config *config,
                          void *data)
 {
-    struct flb_kafka *ctx;
+    struct flb_out_kafka *ctx;
 
     /* Configuration */
-    ctx = flb_kafka_conf_create(ins, config);
+    ctx = flb_out_kafka_create(ins, config);
     if (!ctx) {
         flb_plg_error(ins, "failed to initialize");
         return -1;
@@ -86,7 +85,7 @@ static int cb_kafka_init(struct flb_output_instance *ins,
 }
 
 int produce_message(struct flb_time *tm, msgpack_object *map,
-                    struct flb_kafka *ctx, struct flb_config *config)
+                    struct flb_out_kafka *ctx, struct flb_config *config)
 {
     int i;
     int ret;
@@ -421,7 +420,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * issue a full retry of the data chunk.
              */
             flb_time_sleep(1000);
-            rd_kafka_poll(ctx->producer, 0);
+            rd_kafka_poll(ctx->kafka.rk, 0);
 
             /* Issue a re-try */
             queue_full_retries++;
@@ -434,7 +433,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     ctx->blocked = FLB_FALSE;
 
-    rd_kafka_poll(ctx->producer, 0);
+    rd_kafka_poll(ctx->kafka.rk, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON) {
         flb_sds_destroy(s);
     }
@@ -451,8 +450,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     return FLB_OK;
 }
 
-static void cb_kafka_flush(const void *data, size_t bytes,
-                           const char *tag, int tag_len,
+static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
                            void *out_context,
                            struct flb_config *config)
@@ -460,7 +459,7 @@ static void cb_kafka_flush(const void *data, size_t bytes,
 
     int ret;
     size_t off = 0;
-    struct flb_kafka *ctx = out_context;
+    struct flb_out_kafka *ctx = out_context;
     struct flb_time tms;
     msgpack_object *obj;
     msgpack_unpacked result;
@@ -476,7 +475,9 @@ static void cb_kafka_flush(const void *data, size_t bytes,
 
     /* Iterate the original buffer and perform adjustments */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (msgpack_unpack_next(&result,
+                               event_chunk->data,
+                               event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
         flb_time_pop_from_msgpack(&tms, &result, &obj);
 
         ret = produce_message(&tms, obj, ctx, config);
@@ -496,11 +497,119 @@ static void cb_kafka_flush(const void *data, size_t bytes,
 
 static int cb_kafka_exit(void *data, struct flb_config *config)
 {
-    struct flb_kafka *ctx = data;
+    struct flb_out_kafka *ctx = data;
 
-    flb_kafka_conf_destroy(ctx);
+    flb_out_kafka_destroy(ctx);
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+   {
+    FLB_CONFIG_MAP_STR, "topic_key", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, topic_key),
+    "Which record to use as the kafka topic."
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "dynamic_topic", "false",
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, dynamic_topic),
+    "Activate dynamic topics."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "format", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, format_str),
+    "Set the record output format."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "message_key", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, message_key),
+    "Which record key to use as the message data."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "message_key_field", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, message_key_field),
+    "Which record key field to use as the message data."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "timestamp_key", FLB_KAFKA_TS_KEY,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_key),
+    "Set the key for the the timestamp."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "timestamp_format", (char *)NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_format_str),
+    "Set the format the timestamp is in."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "queue_full_retries", FLB_KAFKA_QUEUE_FULL_RETRIES,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_format_str),
+    "Set the format the timestamp is in."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_timestamp_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the timestamp key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_host_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the host key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_short_message_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the short message key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_full_message_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the full message key for gelf  output."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "gelf_level_key", (char *)NULL,
+    0, FLB_FALSE,  0,
+    "Set the level key for gelf  output."
+   },
+#ifdef FLB_HAVE_AVRO_ENCODER
+   {
+    FLB_CONFIG_MAP_STR, "schema_str", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set AVRO schema."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "schema_id", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set AVRO schema ID."
+   },
+#endif
+   {
+    FLB_CONFIG_MAP_STR, "topics", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka topics, delimited by commas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "brokers", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka brokers, delimited by commas."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "client_id", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka client_id."
+   },
+   {
+    FLB_CONFIG_MAP_STR, "group_id", (char *)NULL,
+    0, FLB_FALSE, 0,
+    "Set the kafka group_id."
+   },
+   {
+    FLB_CONFIG_MAP_STR_PREFIX, "rdkafka.", NULL,
+    //FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_out_kafka, rdkafka_opts),
+    0,  FLB_FALSE, 0,
+    "Set the kafka group_id."
+   },
+   /* EOF */
+   {0}
+};
 
 struct flb_output_plugin out_kafka_plugin = {
     .name         = "kafka",
@@ -508,5 +617,6 @@ struct flb_output_plugin out_kafka_plugin = {
     .cb_init      = cb_kafka_init,
     .cb_flush     = cb_kafka_flush,
     .cb_exit      = cb_kafka_exit,
+    .config_map   = config_map,
     .flags        = 0
 };

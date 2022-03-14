@@ -60,7 +60,7 @@ int cmt_errno_print(int errnum, const char *file, int line);
 #ifdef __FILENAME__
 #define cmt_errno() cmt_errno_print(errno, __FILENAME__, __LINE__)
 #else
-#define cmt_errno() cmt_errno_print(errno, __FILENAME__, __LINE__)
+#define cmt_errno() cmt_errno_print(errno, __FILE__, __LINE__)
 #endif
 
 #ifdef _WIN32

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #define PUT_RECORD_BATCH_PAYLOAD_SIZE    4194304
 #define MAX_EVENTS_PER_PUT               500
 #define MAX_EVENT_SIZE                   1024000
+#define MAX_B64_EVENT_SIZE               1365336  /* ceil(1024000 / 3) * 4 */
 
 /* number of characters needed to 'start' a PutRecordBatch payload */
 #define PUT_RECORD_BATCH_HEADER_LEN      42

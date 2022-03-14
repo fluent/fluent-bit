@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -193,6 +192,7 @@ int flb_loki_kv_append(struct flb_loki *ctx, char *key, char *val)
             flb_loki_kv_destroy(kv);
             return -1;
         }
+        /* remove record keys placed as stream labels via 'labels' and 'label_keys' */
         ret = flb_slist_add(&ctx->remove_keys_derived, key);
         if (ret < 0) {
             flb_loki_kv_destroy(kv);
@@ -350,7 +350,7 @@ static flb_sds_t pack_labels(struct flb_loki *ctx,
             /* record accessor type */
             ra_val = flb_ra_translate(kv->ra_val, tag, tag_len, *(map), NULL);
             if (!ra_val || flb_sds_len(ra_val) == 0) {
-                flb_plg_warn(ctx->ins, "could not translate record accessor");
+                flb_plg_debug(ctx->ins, "could not translate record accessor");
             }
             else {
                 flb_mp_map_header_append(&mh);
@@ -577,14 +577,13 @@ static int prepare_remove_keys(struct flb_loki *ctx)
                 return -1;
             }
         }
-    }
-
-    size = mk_list_size(patterns);
-    flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
-    if (size > 0) {
-        ctx->remove_mpa = flb_mp_accessor_create(patterns);
-        if (ctx->remove_mpa == NULL) {
-            return -1;
+        size = mk_list_size(patterns);
+        flb_plg_debug(ctx->ins, "remove_mpa size: %d", size);
+        if (size > 0) {
+            ctx->remove_mpa = flb_mp_accessor_create(patterns);
+            if (ctx->remove_mpa == NULL) {
+                return -1;
+            }
         }
     }
 
@@ -1027,11 +1026,11 @@ static int cb_loki_init(struct flb_output_instance *ins,
 }
 
 static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
+                                      int total_records,
                                       char *tag, int tag_len,
                                       const void *data, size_t bytes)
 {
     int mp_ok = MSGPACK_UNPACK_SUCCESS;
-    int total_records;
     size_t off = 0;
     flb_sds_t json;
     struct flb_time tms;
@@ -1058,9 +1057,6 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
      *   ]
      * }
      */
-
-    /* Count number of records */
-    total_records = flb_mp_count(data, bytes);
 
     /* Initialize msgpack buffers */
     msgpack_unpacked_init(&result);
@@ -1153,8 +1149,8 @@ static flb_sds_t loki_compose_payload(struct flb_loki *ctx,
     return json;
 }
 
-static void cb_loki_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_loki_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -1168,7 +1164,11 @@ static void cb_loki_flush(const void *data, size_t bytes,
     struct flb_http_client *c;
 
     /* Format the data to the expected Newrelic Payload */
-    payload = loki_compose_payload(ctx, (char *) tag, tag_len, data, bytes);
+    payload = loki_compose_payload(ctx,
+                                   event_chunk->total_events,
+                                   (char *) event_chunk->tag,
+                                   flb_sds_len(event_chunk->tag),
+                                   event_chunk->data, event_chunk->size);
     if (!payload) {
         flb_plg_error(ctx->ins, "cannot compose request payload");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1383,10 +1383,15 @@ static int cb_loki_format_test(struct flb_config *config,
                                const void *data, size_t bytes,
                                void **out_data, size_t *out_size)
 {
+    int total_records;
     flb_sds_t payload = NULL;
     struct flb_loki *ctx = plugin_context;
 
-    payload = loki_compose_payload(ctx, (char *) tag, tag_len, data, bytes);
+    /* Count number of records */
+    total_records = flb_mp_count(data, bytes);
+
+    payload = loki_compose_payload(ctx, total_records,
+                                   (char *) tag, tag_len, data, bytes);
     if (payload == NULL) {
         return -1;
     }

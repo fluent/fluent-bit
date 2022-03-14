@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -167,6 +167,28 @@ struct flb_fstore_file *flb_fstore_file_create(struct flb_fstore *fs,
     mk_list_add(&fsf->_head, &fs_stream->files);
 
     return fsf;
+}
+
+/* Lookup file on stream by using it name */
+struct flb_fstore_file *flb_fstore_file_get(struct flb_fstore *fs,
+                                            struct flb_fstore_stream *fs_stream,
+                                            char *name, size_t size)
+{
+    struct mk_list *head;
+    struct flb_fstore_file *fsf;
+
+    mk_list_foreach(head, &fs_stream->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        if (flb_sds_len(fsf->name) != size) {
+            continue;
+        }
+
+        if (strncmp(fsf->name, name, size) == 0) {
+            return fsf;
+        }
+    }
+
+    return NULL;
 }
 
 /*

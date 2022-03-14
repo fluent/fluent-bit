@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -47,11 +46,18 @@ struct prometheus_remote_write_context {
     /* Log the response paylod */
     int log_response_payload;
 
+    /* config reader for 'add_label' */
+    struct mk_list *add_labels;
+
+    /* internal labels ready to append */
+    struct mk_list kv_labels;
+
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
 
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
+
 
     /* instance context */
     struct flb_output_instance *ins;

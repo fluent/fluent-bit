@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -162,6 +161,13 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->create_group = FLB_TRUE;
     }
 
+    ctx->retry_requests = FLB_TRUE;
+    tmp = flb_output_get_property("auto_retry_requests", ins);
+    /* native plugins use On/Off as bool, the old Go plugin used true/false */
+    if (tmp && (strcasecmp(tmp, "Off") == 0 || strcasecmp(tmp, "false") == 0)) {
+        ctx->retry_requests = FLB_FALSE;
+    }
+
     ctx->log_retention_days = 0;
     tmp = flb_output_get_property("log_retention_days", ins);
     if (tmp) {
@@ -257,7 +263,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->aws_provider = flb_sts_provider_create(config,
                                                     ctx->sts_tls,
                                                     ctx->base_aws_provider,
-                                                    NULL,
+                                                    (char *) ctx->external_id,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
@@ -302,6 +308,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     ctx->cw_client->static_headers = &content_type_header;
     ctx->cw_client->static_headers_len = 1;
     ctx->cw_client->extra_user_agent = (char *) ctx->extra_user_agent;
+    ctx->cw_client->retry_requests = ctx->retry_requests;
 
     struct flb_upstream *upstream = flb_upstream_create(config, ctx->endpoint,
                                                         443, FLB_IO_TLS,
@@ -368,8 +375,8 @@ error:
     return -1;
 }
 
-static void cb_cloudwatch_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
+static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
+                                struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
                                 void *out_context,
                                 struct flb_config *config)
@@ -390,12 +397,14 @@ static void cb_cloudwatch_flush(const void *data, size_t bytes,
         }
     }
 
-    stream = get_log_stream(ctx, tag, tag_len);
+    stream = get_log_stream(ctx,
+                            event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!stream) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream, data, bytes);
+    event_count = process_and_send(ctx, i_ins->p->name, ctx->buf, stream,
+                                   event_chunk->data, event_chunk->size);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
         FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -553,6 +562,16 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
+     0, FLB_FALSE, 0,
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
+    },
+
+    {
      FLB_CONFIG_MAP_INT, "log_retention_days", "0",
      0, FLB_FALSE, 0,
      "If set to a number greater than zero, and newly create log group's "
@@ -570,6 +589,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "sts_endpoint", NULL,
      0, FLB_FALSE, 0,
      "Specify a custom endpoint for the STS API, can be used with the role_arn parameter"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, external_id),
+    "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
     },
 
     {

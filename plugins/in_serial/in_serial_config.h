@@ -2,9 +2,8 @@
 
 /*  Serial input plugin for Fluent Bit
  *  ==================================
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *  Copyright (C) 2015-2016 Takeshi HASEGAWA
- *  Copyright (C) 2015-2018 Treasure Data Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -39,15 +38,16 @@ struct flb_in_serial_config {
 
     /* config */
     int min_bytes;
-    const char *file;
-    const char *bitrate;
+    flb_sds_t file;
+    flb_sds_t bitrate;
 
     /* separator */
     int sep_len;
-    const char *separator;
+    flb_sds_t separator;
 
     /* Incoming format: JSON only for now */
     int format;
+    flb_sds_t format_str;
 
     struct termios tio;
     struct termios tio_orig;

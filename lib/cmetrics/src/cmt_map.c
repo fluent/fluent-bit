@@ -25,7 +25,8 @@
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_compat.h>
 
-struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char **labels)
+struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char **labels,
+                               void *parent)
 {
     int i;
     char *name;
@@ -43,6 +44,7 @@ struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts, int count, char 
     }
     map->type = type;
     map->opts = opts;
+    map->parent = parent;
     map->label_count = count;
     mk_list_init(&map->label_keys);
     mk_list_init(&map->metrics);
@@ -103,7 +105,7 @@ static struct cmt_metric *map_metric_create(uint64_t hash,
     struct cmt_metric *metric;
     struct cmt_map_label *label;
 
-    metric = malloc(sizeof(struct cmt_metric));
+    metric = calloc(1, sizeof(struct cmt_metric));
     if (!metric) {
         cmt_errno();
         return NULL;
@@ -149,6 +151,13 @@ static void map_metric_destroy(struct cmt_metric *metric)
         free(label);
     }
 
+    if (metric->hist_buckets) {
+        free(metric->hist_buckets);
+    }
+    if (metric->sum_quantiles) {
+        free(metric->sum_quantiles);
+    }
+
     mk_list_del(&metric->_head);
     free(metric);
 }
@@ -161,7 +170,7 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     int len;
     char *ptr;
     uint64_t hash;
-    XXH64_state_t state;
+    XXH3_state_t state;
     struct cmt_metric *metric = NULL;
 
     /* Enforce zero or exact labels */
@@ -173,7 +182,7 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
      * If the caller wants the no-labeled metric (metric_static_set) make sure
      * it was already pre-defined.
      */
-    if (labels_count == 0 && labels_val == NULL) {
+    if (labels_count == 0) {
         /*
          * if an upcoming 'write operation' will be performed for a default
          * static metric, just initialize it and return it.
@@ -193,18 +202,20 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     }
 
     /* Lookup the metric */
-    XXH64_reset(&state, 0);
-    XXH64_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
+    XXH3_64bits_reset(&state);
+    XXH3_64bits_update(&state, opts->fqname, cmt_sds_len(opts->fqname));
     for (i = 0; i < labels_count; i++) {
         ptr = labels_val[i];
         if (!ptr) {
-            return NULL;
+            XXH3_64bits_update(&state, "_NULL_", 6);
         }
-        len = strlen(ptr);
-        XXH64_update(&state, ptr, len);
+        else {
+            len = strlen(ptr);
+            XXH3_64bits_update(&state, ptr, len);
+        }
     }
 
-    hash = XXH64_digest(&state);
+    hash = XXH3_64bits_digest(&state);
     metric = metric_hash_lookup(map, hash);
 
     if (metric) {
@@ -227,7 +238,6 @@ struct cmt_metric *cmt_map_metric_get(struct cmt_opts *opts, struct cmt_map *map
     mk_list_add(&metric->_head, &map->metrics);
     return metric;
 }
-
 
 int cmt_map_metric_get_val(struct cmt_opts *opts, struct cmt_map *map,
                            int labels_count, char **labels_val,
@@ -265,6 +275,22 @@ void cmt_map_destroy(struct cmt_map *map)
         map_metric_destroy(metric);
     }
 
+    /* histogram and quantile allocation for static metric */
+    if (map->metric_static_set) {
+        metric = &map->metric;
+
+        if (map->type == CMT_HISTOGRAM) {
+            if (metric->hist_buckets) {
+                free(metric->hist_buckets);
+            }
+        }
+        else if (map->type == CMT_SUMMARY) {
+            if (metric->sum_quantiles) {
+                free(metric->sum_quantiles);
+            }
+        }
+    }
+
     free(map);
 }
 
@@ -291,3 +317,4 @@ void destroy_label_list(struct mk_list *label_list)
         free(label);
     }
 }
+

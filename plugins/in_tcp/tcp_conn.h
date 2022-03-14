@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -23,7 +22,7 @@
 
 #include <fluent-bit/flb_pack.h>
 
-#define FLB_IN_TCP_CHUNK 32768
+#define FLB_IN_TCP_CHUNK "32768"
 
 enum {
     TCP_NEW        = 1,  /* it's a new connection                */

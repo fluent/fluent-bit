@@ -116,8 +116,15 @@ struct mk_fifo *mk_fifo_create(pthread_key_t *key, void *data)
 
 
     /* Pthread specifics */
-    ctx->key = key;
-    pthread_key_create(ctx->key, NULL);
+
+    /* We need to isolate this because there is a key that's shared between monkey
+     * instances by design.
+     */
+    if (key != NULL) {
+        ctx->key = key;
+        pthread_key_create(ctx->key, NULL);
+    }
+
     pthread_mutex_init(&ctx->mutex_init, NULL);
 
     return ctx;
@@ -240,8 +247,14 @@ static int mk_fifo_worker_destroy_all(struct mk_fifo *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->workers) {
         fw = mk_list_entry(head, struct mk_fifo_worker, _head);
+
+#ifdef _WIN32
+        evutil_closesocket(fw->channel[0]);
+        evutil_closesocket(fw->channel[1]);
+#else
         close(fw->channel[0]);
         close(fw->channel[1]);
+#endif
         mk_list_del(&fw->_head);
         mk_mem_free(fw->buf_data);
         mk_mem_free(fw);

@@ -113,7 +113,7 @@ static void format_metric(struct cmt *cmt, cmt_sds_t *buf, struct cmt_map *map,
     opts = map->opts;
 
     /* Measurement */
-    cmt_sds_cat_safe(buf, opts->namespace, cmt_sds_len(opts->namespace));
+    cmt_sds_cat_safe(buf, opts->ns, cmt_sds_len(opts->ns));
 
     if (cmt_sds_len(opts->subsystem) > 0) {
         cmt_sds_cat_safe(buf, "_", 1);

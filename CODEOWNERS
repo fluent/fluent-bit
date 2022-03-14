@@ -9,7 +9,7 @@
 
 # Global Owners
 # -------------
-*                        @edsiper @fujimotos @koleini
+*                        @edsiper @leonardo-albertovich @fujimotos @koleini
 
 # Build System & Portability
 # --------------------------
@@ -21,6 +21,7 @@
 /.github/                @niedbalski
 /appveyor.yml            @niedbalski
 /dockerfiles/            @niedbalski
+/packaging/              @niedbalski
 
 # Core: Signv4
 # ------------

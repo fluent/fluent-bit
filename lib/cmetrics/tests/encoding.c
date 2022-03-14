@@ -16,13 +16,20 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+#ifdef __GNUC__
+#define _GNU_SOURCE
+#endif
 
 #include <cmetrics/cmetrics.h>
+#include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <cmetrics/cmt_encode_prometheus.h>
+#include <cmetrics/cmt_encode_opentelemetry.h>
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_influx.h>
 
@@ -30,7 +37,6 @@
 
 static struct cmt *generate_simple_encoder_test_data()
 {
-
     double val;
     uint64_t ts;
     struct cmt *cmt;
@@ -60,19 +66,21 @@ static struct cmt *generate_simple_encoder_test_data()
 
 static struct cmt *generate_encoder_test_data()
 {
-    double val;
-    uint64_t ts;
-    struct cmt *cmt;
-    struct cmt_counter *c1;
-    struct cmt_counter *c2;
-    struct cmt_counter *c3;
-
-    cmt = cmt_create();
-
-    c1 = cmt_counter_create(cmt, "kubernetes", "network", "load", "Network load",
-                            2, (char *[]) {"hostname", "app"});
+    double                        quantiles[5];
+    struct cmt_histogram_buckets *buckets;
+    double                        val;
+    struct cmt                   *cmt;
+    uint64_t                      ts;
+    struct cmt_gauge             *g1;
+    struct cmt_counter           *c1;
+    struct cmt_summary           *s1;
+    struct cmt_histogram         *h1;
 
     ts = 0;
+    cmt = cmt_create();
+
+    c1 = cmt_counter_create(cmt, "kubernetes", "network", "load_counter", "Network load counter",
+                            2, (char *[]) {"hostname", "app"});
 
     cmt_counter_get_val(c1, 0, NULL, &val);
     cmt_counter_inc(c1, ts, 0, NULL);
@@ -86,28 +94,64 @@ static struct cmt *generate_encoder_test_data()
     cmt_counter_set(c1, ts, 12.15, 2, (char *[]) {"localhost", "test"});
     cmt_counter_set(c1, ts, 1, 2, (char *[]) {"localhost", "test"});
 
+    g1 = cmt_gauge_create(cmt, "kubernetes", "network", "load_gauge", "Network load gauge", 0, NULL);
 
-    c2 = cmt_counter_create(cmt, "kubernetes", "network", "cpu", "CPU load",
-                            2, (char *[]) {"hostname", "app"});
+    cmt_gauge_get_val(g1, 0, NULL, &val);
+    cmt_gauge_set(g1, ts, 2.0, 0, NULL);
+    cmt_gauge_get_val(g1, 0, NULL, &val);
+    cmt_gauge_inc(g1, ts, 0, NULL);
+    cmt_gauge_get_val(g1, 0, NULL, &val);
+    cmt_gauge_sub(g1, ts, 2, 0, NULL);
+    cmt_gauge_get_val(g1, 0, NULL, &val);
+    cmt_gauge_dec(g1, ts, 0, NULL);
+    cmt_gauge_get_val(g1, 0, NULL, &val);
+    cmt_gauge_inc(g1, ts, 0, NULL);
 
-    ts = 0;
+    buckets = cmt_histogram_buckets_create(3, 0.05, 5.0, 10.0);
 
-    cmt_counter_get_val(c2, 0, NULL, &val);
-    cmt_counter_inc(c2, ts, 0, NULL);
-    cmt_counter_add(c2, ts, 2, 0, NULL);
-    cmt_counter_get_val(c2, 0, NULL, &val);
+    h1 = cmt_histogram_create(cmt,
+                              "k8s", "network", "load_histogram", "Network load histogram",
+                              buckets,
+                              1, (char *[]) {"my_label"});
 
-    cmt_counter_inc(c2, ts, 2, (char *[]) {"localhost", "cmetrics"});
-    cmt_counter_get_val(c2, 2, (char *[]) {"localhost", "cmetrics"}, &val);
-    cmt_counter_add(c2, ts, 10.55, 2, (char *[]) {"localhost", "test"});
-    cmt_counter_get_val(c2, 2, (char *[]) {"localhost", "test"}, &val);
-    cmt_counter_set(c2, ts, 12.15, 2, (char *[]) {"localhost", "test"});
-    cmt_counter_set(c2, ts, 1, 2, (char *[]) {"localhost", "test"});
+    cmt_histogram_observe(h1, ts, 0.001, 0, NULL);
+    cmt_histogram_observe(h1, ts, 0.020, 0, NULL);
+    cmt_histogram_observe(h1, ts, 5.0, 0, NULL);
+    cmt_histogram_observe(h1, ts, 8.0, 0, NULL);
+    cmt_histogram_observe(h1, ts, 1000, 0, NULL);
 
-    /* a counter without subsystem */
-    c3 = cmt_counter_create(cmt, "kubernetes", "", "cpu", "CPU load",
-                            2, (char *[]) {"hostname", "app"});
-    cmt_counter_set(c2, ts, 10, 0, NULL);
+    cmt_histogram_observe(h1, ts, 0.001, 1, (char *[]) {"my_val"});
+    cmt_histogram_observe(h1, ts, 0.020, 1, (char *[]) {"my_val"});
+    cmt_histogram_observe(h1, ts, 5.0, 1, (char *[]) {"my_val"});
+    cmt_histogram_observe(h1, ts, 8.0, 1, (char *[]) {"my_val"});
+    cmt_histogram_observe(h1, ts, 1000, 1, (char *[]) {"my_val"});;
+
+    quantiles[0] = 0.1;
+    quantiles[1] = 0.2;
+    quantiles[2] = 0.3;
+    quantiles[3] = 0.4;
+    quantiles[4] = 0.5;
+
+    s1 = cmt_summary_create(cmt,
+                            "k8s", "disk", "load_summary", "Disk load summary",
+                            5, quantiles,
+                            1, (char *[]) {"my_label"});
+
+    quantiles[0] = 1.1;
+    quantiles[1] = 2.2;
+    quantiles[2] = 3.3;
+    quantiles[3] = 4.4;
+    quantiles[4] = 5.5;
+
+    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 0, NULL);
+
+    quantiles[0] = 11.11;
+    quantiles[1] = 0;
+    quantiles[2] = 33.33;
+    quantiles[3] = 44.44;
+    quantiles[4] = 55.55;
+
+    cmt_summary_set_default(s1, ts, quantiles, 10, 51.612894511314444, 1, (char *[]) {"my_val"});
 
     return cmt;
 }
@@ -151,12 +195,71 @@ void test_cmt_to_msgpack()
 
     /* Compare msgpacks */
     TEST_CHECK(mp1_size == mp2_size);
-    TEST_CHECK(memcmp(mp1_buf, mp2_buf, mp1_size) == 0);
+    if (mp1_size == mp2_size) {
+        TEST_CHECK(memcmp(mp1_buf, mp2_buf, mp1_size) == 0);
+    }
 
     cmt_destroy(cmt1);
     cmt_decode_msgpack_destroy(cmt2);
     cmt_encode_msgpack_destroy(mp1_buf);
     cmt_encode_msgpack_destroy(mp2_buf);
+}
+
+/*
+ * Encode a context, corrupt the last metric in the msgpack packet
+ * and invoke the decoder to verify if there are any leaks.
+ *
+ * CMT -> MSGPACK -> CMT
+ *
+ * Note: this function is meant to be executed in linux while using
+ * valgrind
+ */
+
+void test_cmt_to_msgpack_cleanup_on_error()
+{
+#ifdef __linux__
+    int ret;
+    size_t offset = 0;
+    char *mp1_buf = NULL;
+    size_t mp1_size = 0;
+    struct cmt *cmt1 = NULL;
+    struct cmt *cmt2 = NULL;
+    char *key_buffer = NULL;
+    char *key_haystack = NULL;
+
+    cmt_initialize();
+
+    /* Generate context with data */
+    cmt1 = generate_encoder_test_data();
+    TEST_CHECK(cmt1 != NULL);
+
+    /* CMT1 -> Msgpack */
+    ret = cmt_encode_msgpack_create(cmt1, &mp1_buf, &mp1_size);
+    TEST_CHECK(ret == 0);
+
+    key_haystack = &mp1_buf[mp1_size - 32];
+    key_buffer = memmem(key_haystack, 32, "hash", 4);
+
+    TEST_CHECK(key_buffer != NULL);
+
+    /* This turns the last 'hash' entry into 'hasq' which causes
+     * the map consumer in the decoder to detect an unprocessed entry
+     * and abort in `unpack_metric` which means a lot of allocations
+     * have been made including but not limited to temporary
+     * histogram bucket arrays and completely decoded histograms
+     */
+    key_buffer[3] = 'q';
+
+    /* Msgpack -> CMT2 */
+    ret = cmt_decode_msgpack_create(&cmt2, mp1_buf, mp1_size, &offset);
+
+    cmt_destroy(cmt1);
+    cmt_encode_msgpack_destroy(mp1_buf);
+
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(cmt2 == NULL);
+
+#endif
 }
 
 /*
@@ -294,6 +397,9 @@ void test_cmt_msgpack_partial_processing()
         if (CMT_DECODE_MSGPACK_INSUFFICIENT_DATA == ret) {
             break;
         }
+        else if (CMT_DECODE_MSGPACK_SUCCESS != ret) {
+            break;
+        }
 
         TEST_CHECK(0 == ret);
 
@@ -400,29 +506,13 @@ void test_cmt_to_msgpack_labels()
 
 void test_prometheus_remote_write()
 {
-    int ret;
-    uint64_t ts;
-    cmt_sds_t payload;
     struct cmt *cmt;
-    struct cmt_counter *c;
-    FILE *sample_file;
+    cmt_sds_t   payload;
+    FILE       *sample_file;
 
     cmt_initialize();
 
-    cmt = cmt_create();
-    TEST_CHECK(cmt != NULL);
-
-    c = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
-                           2, (char *[]) {"host", "app"});
-
-    ts = 0;
-    ret = cmt_counter_inc(c, ts, 0, NULL);
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
-    ret = cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics2"});
-
-    /* append static labels */
-    cmt_label_add(cmt, "dev", "Calyptia");
-    cmt_label_add(cmt, "lang", "C");
+    cmt = generate_encoder_test_data();
 
     payload = cmt_encode_prometheus_remote_write_create(cmt);
     TEST_CHECK(NULL != payload);
@@ -433,15 +523,51 @@ void test_prometheus_remote_write()
         return;
     }
 
-    printf("\n\nDumping remote write payload to payload.bin, in order to test it \
+    printf("\n\nDumping remote write payload to prometheus_remote_write_payload.bin, in order to test it \
 we need to compress it using snappys scmd :\n\
-scmd -c payload.bin payload.snp\n\n\
+scmd -c prometheus_remote_write_payload.bin prometheus_remote_write_payload.snp\n\n\
 and then send it using curl :\n\
 curl -v 'http://localhost:9090/receive' -H 'Content-Type: application/x-protobuf' \
 -H 'X-Prometheus-Remote-Write-Version: 0.1.0' -H 'User-Agent: metrics-worker' \
---data-binary '@payload.snp'\n\n");
+--data-binary '@prometheus_remote_write_payload.snp'\n\n");
 
-    sample_file = fopen("payload.bin", "wb+");
+    sample_file = fopen("prometheus_remote_write_payload.bin", "wb+");
+
+    fwrite(payload, 1, cmt_sds_len(payload), sample_file);
+
+    fclose(sample_file);
+
+    cmt_encode_prometheus_remote_write_destroy(payload);
+
+    cmt_destroy(cmt);
+}
+
+void test_opentelemetry()
+{
+    cmt_sds_t payload;
+    struct cmt *cmt;
+    FILE *sample_file;
+
+    cmt_initialize();
+
+    cmt = generate_encoder_test_data();
+
+    payload = cmt_encode_opentelemetry_create(cmt);
+    TEST_CHECK(NULL != payload);
+
+    if (payload == NULL) {
+        cmt_destroy(cmt);
+
+        return;
+    }
+
+    printf("\n\nDumping remote write payload to opentelemetry_payload.bin, in order to test it \
+we need to send it to our opentelemetry http endpoint using curl :\n\
+curl -v 'http://localhost:9090/v1/metrics' -H 'Content-Type: application/x-protobuf' \
+-H 'User-Agent: metrics-worker' \
+--data-binary '@opentelemetry_payload.bin'\n\n");
+
+    sample_file = fopen("opentelemetry_payload.bin", "wb+");
 
     fwrite(payload, 1, cmt_sds_len(payload), sample_file);
 
@@ -459,28 +585,31 @@ void test_prometheus()
     struct cmt *cmt;
     struct cmt_counter *c;
 
-    char *out1 = "# HELP cmt_labels_test Static labels test\n"
+    char *out1 = "# HELP cmt_labels_test \"Static\\\\ labels \\ntest\n"
                  "# TYPE cmt_labels_test counter\n"
                  "cmt_labels_test 1 0\n"
-                 "cmt_labels_test{host=\"calyptia.com\",app=\"cmetrics\"} 2 0\n";
+                 "cmt_labels_test{host=\"calyptia.com\",app=\"cmetrics\"} 2 0\n"
+                 "cmt_labels_test{host=\"\\\"calyptia.com\\\"\",app=\"cme\\\\tr\\nics\"} 1 0\n";
 
-    char *out2 = "# HELP cmt_labels_test Static labels test\n"
+    char *out2 = "# HELP cmt_labels_test \"Static\\\\ labels \\ntest\n"
         "# TYPE cmt_labels_test counter\n"
-        "cmt_labels_test{dev=\"Calyptia\",lang=\"C\"} 1 0\n"
-        "cmt_labels_test{dev=\"Calyptia\",lang=\"C\",host=\"calyptia.com\",app=\"cmetrics\"} 2 0\n";
+        "cmt_labels_test{dev=\"Calyptia\",lang=\"C\\\"\\\\\\n\"} 1 0\n"
+        "cmt_labels_test{dev=\"Calyptia\",lang=\"C\\\"\\\\\\n\",host=\"calyptia.com\",app=\"cmetrics\"} 2 0\n"
+        "cmt_labels_test{dev=\"Calyptia\",lang=\"C\\\"\\\\\\n\",host=\"\\\"calyptia.com\\\"\",app=\"cme\\\\tr\\nics\"} 1 0\n";
 
     cmt_initialize();
 
     cmt = cmt_create();
     TEST_CHECK(cmt != NULL);
 
-    c = cmt_counter_create(cmt, "cmt", "labels", "test", "Static labels test",
+    c = cmt_counter_create(cmt, "cmt", "labels", "test", "\"Static\\ labels \ntest",
                            2, (char *[]) {"host", "app"});
 
     ts = 0;
     cmt_counter_inc(c, ts, 0, NULL);
     cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
     cmt_counter_inc(c, ts, 2, (char *[]) {"calyptia.com", "cmetrics"});
+    cmt_counter_inc(c, ts, 2, (char *[]) {"\"calyptia.com\"", "cme\\tr\nics"});
 
     /* Encode to prometheus (no static labels) */
     text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
@@ -490,7 +619,7 @@ void test_prometheus()
 
     /* append static labels */
     cmt_label_add(cmt, "dev", "Calyptia");
-    cmt_label_add(cmt, "lang", "C");
+    cmt_label_add(cmt, "lang", "C\"\\\n");
 
     text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
     printf("%s\n", text);
@@ -599,12 +728,14 @@ void test_influx()
 }
 
 TEST_LIST = {
+    {"cmt_msgpack_cleanup_on_error",   test_cmt_to_msgpack_cleanup_on_error},
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"prometheus_remote_write",        test_prometheus_remote_write},
     {"cmt_msgpack_stability",          test_cmt_to_msgpack_stability},
     {"cmt_msgpack_integrity",          test_cmt_to_msgpack_integrity},
     {"cmt_msgpack_labels",             test_cmt_to_msgpack_labels},
     {"cmt_msgpack",                    test_cmt_to_msgpack},
+    {"opentelemetry",                  test_opentelemetry},
     {"prometheus",                     test_prometheus},
     {"text",                           test_text},
     {"influx",                         test_influx},

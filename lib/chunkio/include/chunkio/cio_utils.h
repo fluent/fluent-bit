@@ -20,6 +20,12 @@
 #ifndef CIO_UTILS_H
 #define CIO_UTILS_H
 
+#include <chunkio/cio_info.h>
+
+#ifdef CIO_HAVE_GETPAGESIZE
+int cio_getpagesize();
+#endif
+
 int cio_utils_recursive_delete(const char *dir);
 int cio_utils_read_file(const char *path, char **buf, size_t *size);
 

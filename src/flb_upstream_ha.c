@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +25,8 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_upstream_node.h>
+#include <fluent-bit/flb_config_format.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <ctype.h>
 #include <sys/types.h>
@@ -108,7 +109,8 @@ struct flb_upstream_node *flb_upstream_ha_node_get(struct flb_upstream_ha *ctx)
 }
 
 static struct flb_upstream_node *create_node(int id,
-                                             struct mk_rconf_section *s,
+                                             struct flb_cf *cf,
+                                             struct flb_cf_section *s,
                                              struct flb_config *config)
 {
     int i;
@@ -131,7 +133,7 @@ static struct flb_upstream_node *create_node(int id,
     char *tls_key_file = NULL;
     char *tls_key_passwd = NULL;
     struct mk_list *head;
-    struct mk_rconf_entry *entry;
+    struct flb_kv *entry;
     struct flb_hash *ht;
     const char *known_keys[] = {"name", "host", "port",
                                 "tls", "tls.vhost", "tls.verify", "tls.debug",
@@ -141,7 +143,7 @@ static struct flb_upstream_node *create_node(int id,
     struct flb_upstream_node *node;
 
     /* name */
-    name = mk_rconf_section_get_key(s, "name", MK_RCONF_STR);
+    name = flb_cf_section_property_get(cf, s, "name");
     if (!name) {
         flb_error("[upstream_ha] no 'name' has been set on node #%i",
                   id + 1);
@@ -149,7 +151,7 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     /* host */
-    host = mk_rconf_section_get_key(s, "host", MK_RCONF_STR);
+    host = flb_cf_section_property_get(cf, s, "host");
     if (!host) {
         flb_error("[upstream_ha] no 'host' has been set on node #%i",
                   id + 1);
@@ -157,7 +159,7 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     /* port */
-    port = mk_rconf_section_get_key(s, "port", MK_RCONF_STR);
+    port = flb_cf_section_property_get(cf, s, "port");
     if (!port) {
         flb_error("[upstream_ha] no 'port' has been set on node #%i",
                   id + 1);
@@ -165,44 +167,40 @@ static struct flb_upstream_node *create_node(int id,
     }
 
     /* tls */
-    tmp = mk_rconf_section_get_key(s, "tls", MK_RCONF_STR);
+    tmp = flb_cf_section_property_get(cf, s, "tls");
     if (tmp) {
         tls = flb_utils_bool(tmp);
-        flb_free(tmp);
     }
 
     /* tls.verify */
-    tmp = mk_rconf_section_get_key(s, "tls.verify", MK_RCONF_STR);
+    tmp = flb_cf_section_property_get(cf, s, "tls.verify");
     if (tmp) {
         tls_verify = flb_utils_bool(tmp);
-        flb_free(tmp);
     }
 
     /* tls.debug */
-    tmp = mk_rconf_section_get_key(s, "tls.debug", MK_RCONF_STR);
+    tmp = flb_cf_section_property_get(cf, s, "tls.debug");
     if (tmp) {
         tls_debug = atoi(tmp);
-        flb_free(tmp);
     }
 
     /* tls.vhost */
-    tls_vhost = mk_rconf_section_get_key(s, "tls.vhost", MK_RCONF_STR);
+    tls_vhost = flb_cf_section_property_get(cf, s, "tls.vhost");
 
     /* tls.ca_path */
-    tls_ca_path = mk_rconf_section_get_key(s, "tls.ca_path", MK_RCONF_STR);
+    tls_ca_path = flb_cf_section_property_get(cf, s, "tls.ca_path");
 
     /* tls.ca_file */
-    tls_ca_file = mk_rconf_section_get_key(s, "tls.ca_file", MK_RCONF_STR);
+    tls_ca_file = flb_cf_section_property_get(cf, s, "tls.ca_file");
 
     /* tls.crt_file */
-    tls_crt_file = mk_rconf_section_get_key(s, "tls.crt_file", MK_RCONF_STR);
+    tls_crt_file = flb_cf_section_property_get(cf, s, "tls.crt_file");
 
     /* tls.key_file */
-    tls_key_file = mk_rconf_section_get_key(s, "tls.key_file", MK_RCONF_STR);
+    tls_key_file = flb_cf_section_property_get(cf, s, "tls.key_file");
 
     /* tls.key_file */
-    tls_key_passwd = mk_rconf_section_get_key(s, "tls.key_passwd",
-                                              MK_RCONF_STR);
+    tls_key_passwd = flb_cf_section_property_get(cf, s, "tls.key_passwd");
 
     /*
      * Create hash table to store unknown key/values that might be used
@@ -211,16 +209,15 @@ static struct flb_upstream_node *create_node(int id,
     ht = flb_hash_create(FLB_HASH_EVICT_NONE, 32, 256);
     if (!ht) {
         flb_error("[upstream_ha] error creating hash table");
-        node = NULL;
-        goto error;
+        return NULL;
     }
 
     /*
      * Iterate mk_rconf section internals, find all unknown keys and add
      * them to the hash table associated to the node.
      */
-    mk_list_foreach(head, &s->entries) {
-        entry = mk_list_entry(head, struct mk_rconf_entry, _head);
+    mk_list_foreach(head, &s->properties) {
+        entry = mk_list_entry(head, struct flb_kv, _head);
 
         /* If this is a known entry, just skip it */
         skip = FLB_FALSE;
@@ -234,8 +231,8 @@ static struct flb_upstream_node *create_node(int id,
             continue;
         }
 
-        klen = strlen(entry->key);
-        vlen = strlen(entry->val);
+        klen = flb_sds_len(entry->key);
+        vlen = flb_sds_len(entry->val);
 
         /* Always store keys in lowercase */
         for (i = 0; i < klen; i++) {
@@ -255,11 +252,6 @@ static struct flb_upstream_node *create_node(int id,
                                     tls_debug, tls_vhost, tls_ca_path, tls_ca_file,
                                     tls_crt_file, tls_key_file,
                                     tls_key_passwd, ht, config);
- error:
-    flb_free(name);
-    flb_free(host);
-    flb_free(port);
-
     return node;
 }
 
@@ -272,13 +264,12 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     const char *cfg = NULL;
     char *tmp;
     char path[PATH_MAX + 1];
-    struct mk_rconf_section *u_section;
-    struct mk_rconf_section *n_section;
-    struct mk_rconf *fconf;
     struct stat st;
     struct mk_list *head;
     struct flb_upstream_ha *ups;
     struct flb_upstream_node *node;
+    struct flb_cf *cf = NULL;
+    struct flb_cf_section *section;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -297,70 +288,66 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
         cfg = file;
     }
     flb_debug("[upstream_ha] opening file %s", cfg);
-    fconf = mk_rconf_open(cfg);
+    cf = flb_cf_create_from_file(NULL, (char *) cfg);
 #else
-    fconf = flb_config_static_open(file);
+    //DISABLED/FIXME fconf = flb_config_static_open(file);
 #endif
 
-    if (!fconf) {
+    if (!cf) {
         return NULL;
     }
 
-    /* First section must be [UPSTREAM] */
-    u_section = mk_list_entry_first(&fconf->sections,
-                                    struct mk_rconf_section, _head);
-    if (strcasecmp(u_section->name, "UPSTREAM") != 0) {
-        flb_error("[upstream_ha] invalid first section name, "
-                  "expected UPSTREAM");
-        mk_rconf_free(fconf);
+    /* 'upstream' sections are under enum section_type FLB_CF_OTHER */
+    section = flb_cf_section_get_by_name(cf, "upstream");
+    if (!section) {
+        flb_error("[upstream_ha] section name 'upstream' could not be found");
+        flb_cf_destroy(cf);
         return NULL;
     }
 
-    /* Get Upstream name */
-    tmp = mk_rconf_section_get_key(u_section, "name", MK_RCONF_STR);
+    /* upstream name */
+    tmp = flb_cf_section_property_get(cf, section, "name");
     if (!tmp) {
-        flb_error("[upstream_ha] missing name for upstream at %s", file);
-        mk_rconf_free(fconf);
+        flb_error("[upstream_ha] missing name for upstream at %s", cfg);
+        flb_cf_destroy(cf);
         return NULL;
     }
 
     ups = flb_upstream_ha_create(tmp);
     if (!ups) {
         flb_error("[upstream_ha] cannot create context");
-        mk_rconf_free(fconf);
+        flb_cf_destroy(cf);
         return NULL;
     }
 
-    /* Register [NODE] sections */
-    mk_list_foreach(head, &fconf->sections) {
-        n_section = mk_list_entry(head, struct mk_rconf_section, _head);
-        if (strcasecmp(n_section->name, "NODE") != 0) {
+    /* 'node' sections */
+    mk_list_foreach(head, &cf->sections) {
+        section = mk_list_entry(head, struct flb_cf_section, _head);
+        if (strcasecmp(section->name, "node") != 0) {
             continue;
         }
 
         /* Read section info and create a Node context */
-        node = create_node(c, n_section, config);
+        node = create_node(c, cf, section, config);
         if (!node) {
             flb_error("[upstream_ha] cannot register node on upstream '%s'",
                       tmp);
-            mk_rconf_free(fconf);
             flb_upstream_ha_destroy(ups);
-            flb_free(tmp);
+            flb_cf_destroy(cf);
             return NULL;
         }
 
         flb_upstream_ha_node_add(ups, node);
         c++;
     }
-    flb_free(tmp);
 
     if (c == 0) {
         flb_error("[upstream_ha] no nodes defined");
-        mk_rconf_free(fconf);
         flb_upstream_ha_destroy(ups);
+        flb_cf_destroy(cf);
         return NULL;
     }
 
-    mk_rconf_free(fconf);
+    flb_cf_destroy(cf);
     return ups;
 }

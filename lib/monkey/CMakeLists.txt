@@ -1,5 +1,5 @@
 # Let's have fun!
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(monkey C)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 set(CMAKE_INCLUDE_DIRECTORIES_BEFORE ON)
@@ -176,15 +176,17 @@ if(MK_LINUX_TRACE)
 endif()
 
 # Use old Pthread TLS
-check_c_source_compiles("
-   __thread int a;
-   int main() {
-       __tls_get_addr(0);
-       return 0;
-   }" HAVE_C_TLS)
+if(NOT MK_PTHREAD_TLS)
+  check_c_source_compiles("
+     __thread int a;
+     int main() {
+         __tls_get_addr(0);
+         return 0;
+     }" HAVE_C_TLS)
 
-if(HAVE_C_TLS)
-  MK_DEFINITION(MK_HAVE_C_TLS)
+  if(HAVE_C_TLS)
+    MK_DEFINITION(MK_HAVE_C_TLS)
+  endif()
 endif()
 
 # Valgrind support

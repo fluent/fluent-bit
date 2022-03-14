@@ -1405,6 +1405,104 @@ static void flb_test_not_drop_multi_event()
 
 }
 
+/* to check issue https://github.com/fluent/fluent-bit/issues/4319 */
+static void flb_test_issue_4319()
+{
+    char *p;
+    int len;
+    int ret;
+    int bytes;
+
+    struct filter_test *ctx;
+    struct flb_lib_out_cb cb_data;
+
+
+    clear_output_num();
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"ok\":\"sample\"";
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         /* set key which doesn't exist */
+                         "condition", "key_value_does_not_equal aaa sample",
+                         "rename", "ok error",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+        /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest event */
+    p = "[0, {\"ok\":\"sample\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    sleep(1); /* waiting flush */
+
+    filter_test_destroy(ctx);
+}
+
+
+/* 
+ * to check issue https://github.com/fluent/fluent-bit/issues/4319
+   Key_value_does_not_match case
+*/
+static void flb_test_issue_4319_2()
+{
+    char *p;
+    int len;
+    int ret;
+    int bytes;
+
+    struct filter_test *ctx;
+    struct flb_lib_out_cb cb_data;
+
+
+    clear_output_num();
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"ok\":\"sample\"";
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         /* set key which doesn't exist */
+                         "condition", "key_value_does_not_match aaa sample",
+                         "rename", "ok error",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+        /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest event */
+    p = "[0, {\"ok\":\"sample\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+
+    sleep(1); /* waiting flush */
+
+    filter_test_destroy(ctx);
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
@@ -1446,6 +1544,8 @@ TEST_LIST = {
 
     /* Bug fixes */
     {"multiple events are not dropped", flb_test_not_drop_multi_event },
+    {"cond_key_value_does_not_equal and key does not exist", flb_test_issue_4319 },
+    {"cond_key_value_does_not_matches and key does not exist", flb_test_issue_4319_2 },
 
     {NULL, NULL}
 };

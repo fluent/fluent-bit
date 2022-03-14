@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -303,8 +302,8 @@ static int http_gelf(struct flb_out_http *ctx,
     return ret;
 }
 
-static void cb_http_flush(const void *data, size_t bytes,
-                          const char *tag, int tag_len,
+static void cb_http_flush(struct flb_event_chunk *event_chunk,
+                          struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
                           void *out_context,
                           struct flb_config *config)
@@ -318,20 +317,26 @@ static void cb_http_flush(const void *data, size_t bytes,
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
 
-        json = flb_pack_msgpack_to_json_format(data, bytes,
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                               event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
                                                ctx->date_key);
         if (json != NULL) {
-            ret = http_post(ctx, json, flb_sds_len(json), tag, tag_len);
+            ret = http_post(ctx, json, flb_sds_len(json),
+                            event_chunk->tag, flb_sds_len(event_chunk->tag));
             flb_sds_destroy(json);
         }
     }
     else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
-        ret = http_gelf(ctx, data, bytes, tag, tag_len);
+        ret = http_gelf(ctx,
+                        event_chunk->data, event_chunk->size,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag));
     }
     else {
-        ret = http_post(ctx, data, bytes, tag, tag_len);
+        ret = http_post(ctx,
+                        event_chunk->data, event_chunk->size,
+                        event_chunk->tag, flb_sds_len(event_chunk->tag));
     }
 
     FLB_OUTPUT_RETURN(ret);
@@ -385,7 +390,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
      0, FLB_FALSE, 0,
-     "Specify the format of the date. Supported formats are 'double' and 'iso8601'"
+     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
@@ -449,4 +454,5 @@ struct flb_output_plugin out_http_plugin = {
     .cb_exit     = cb_http_exit,
     .config_map  = config_map,
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
+    .workers     = 2
 };

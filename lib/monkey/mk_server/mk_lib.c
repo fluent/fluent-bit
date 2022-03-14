@@ -32,6 +32,7 @@
 #include <monkey/mk_scheduler.h>
 #include <monkey/mk_fifo.h>
 #include <monkey/mk_utils.h>
+#include <monkey/mk_tls.h>
 
 #define config_eq(a, b) strcasecmp(a, b)
 
@@ -51,7 +52,7 @@ mk_ctx_t *mk_create()
 {
     mk_ctx_t *ctx;
 
-    ctx = mk_mem_alloc(sizeof(mk_ctx_t));
+    ctx = mk_mem_alloc_z(sizeof(mk_ctx_t));
     if (!ctx) {
         return NULL;
     }
@@ -66,7 +67,8 @@ mk_ctx_t *mk_create()
      * for further communication between the caller (user) and HTTP end-point
      * callbacks.
      */
-    ctx->fifo = mk_fifo_create(&mk_server_fifo_key, ctx->server);
+    ctx->fifo = mk_fifo_create(NULL, ctx->server);
+    ctx->fifo->key = &mk_server_fifo_key;
 
     /*
      * FIFO: Set workers callback associated to the Monkey scheduler to prepare them
@@ -96,7 +98,7 @@ static inline int mk_lib_yield(mk_request_t *req)
         return -1;
     }
 
-    th = pthread_getspecific(mk_thread_key);
+    th = MK_TLS_GET(mk_thread);
     channel = req->session->channel;
 
     channel->thread = th;
@@ -152,7 +154,13 @@ static void mk_lib_worker(void *data)
     mk_event_wait(server->lib_evl);
     mk_event_foreach(event, server->lib_evl) {
         fd = event->fd;
+
+#ifdef _WIN32
+        bytes = recv(fd, &val, sizeof(uint64_t), MSG_WAITALL);
+#else
         bytes = read(fd, &val, sizeof(uint64_t));
+#endif
+
         if (bytes <= 0) {
             return;
         }
@@ -224,8 +232,27 @@ int mk_stop(mk_ctx_t *ctx)
     uint64_t val;
     struct mk_server *server = ctx->server;
 
+    /* Send a signal for mk_server_loop_balancer to abort */
     val = MK_SERVER_SIGNAL_STOP;
+#ifdef _WIN32
+    n = send(server->lib_ch_manager[1], &val, sizeof(val), 0); 
+#else
     n = write(server->lib_ch_manager[1], &val, sizeof(val));
+#endif
+    if (n <= 0) {
+        perror("write");
+        return -1;
+    }
+
+    sleep(1);
+
+    /* Send a signal for mk_lib_worker to abort */
+    val = MK_SERVER_SIGNAL_STOP;
+#ifdef _WIN32
+    n = send(server->lib_ch_manager[1], &val, sizeof(val), 0); 
+#else
+    n = write(server->lib_ch_manager[1], &val, sizeof(val));
+#endif
     if (n <= 0) {
         perror("write");
         return -1;

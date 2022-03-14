@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -66,7 +65,11 @@ int flb_http_strip_port_from_host(struct flb_http_client *c)
     struct flb_upstream *u = c->u_conn->u;
 
     if (!c->host) {
-        out_host = u->tcp_host;
+        if (!u->proxied_host) {
+            out_host = u->tcp_host;
+        } else {
+            out_host = u->proxied_host;
+        }
     } else {
         out_host = (char *) c->host;
     }
@@ -659,6 +662,9 @@ struct flb_http_client *flb_http_client(struct flb_upstream_conn *u_conn,
     case FLB_HTTP_CONNECT:
         str_method = "CONNECT";
         break;
+    case FLB_HTTP_PATCH:
+        str_method = "PATCH";
+        break;
     };
 
     buf = flb_calloc(1, FLB_HTTP_BUF_SIZE);
@@ -1149,7 +1155,6 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     }
 #endif
 
-    flb_debug("[http_client] header=%s", c->header_buf);
     /* Write the header */
     ret = flb_io_net_write(c->u_conn,
                            c->header_buf, c->header_len,

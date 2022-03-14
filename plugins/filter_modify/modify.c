@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -120,6 +119,12 @@ static int setup(struct filter_modify_ctx *ctx,
     // --> Setup Rule
     //   - Malloc Rule
     //   - Switch list size
+
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        return -1;
+    }
 
     mk_list_foreach(head, &f_ins->properties) {
         kv = mk_list_entry(head, struct flb_kv, _head);
@@ -681,6 +686,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_EQUAL(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_EQUALS(ctx, map, condition);
 }
 
@@ -715,6 +723,9 @@ bool evaluate_condition_KEY_VALUE_DOES_NOT_MATCH(struct filter_modify_ctx *ctx,
                                                  modify_condition
                                                  *condition)
 {
+    if (!evaluate_condition_KEY_EXISTS(map, condition)) {
+        return false;
+    }
     return !evaluate_condition_KEY_VALUE_MATCHES(ctx, map, condition);
 }
 
@@ -1231,7 +1242,7 @@ static inline int apply_modifying_rules(msgpack_packer *packer,
         // * * Record array item 1/2
         msgpack_pack_object(packer, ts);
 
-        flb_plg_debug(ctx->ins, "Input map size %d elements, output map size "
+        flb_plg_trace(ctx->ins, "Input map size %d elements, output map size "
                       "%d elements", records_in, map.via.map.size);
 
         // * * Record array item 2/2
@@ -1341,11 +1352,74 @@ static int cb_modify_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "Set", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Add a key/value pair with key KEY and value VALUE. "
+     "If KEY already exists, this field is overwritten."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Add", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Add a key/value pair with key KEY and value VALUE if KEY does not exist"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Remove", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Remove a key/value pair with key KEY if it exists"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Remove_wildcard", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Remove all key/value pairs with key matching wildcard KEY"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Remove_regex", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Remove all key/value pairs with key matching regexp KEY"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Rename", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Rename a key/value pair with key KEY to RENAMED_KEY "
+     "if KEY exists AND RENAMED_KEY does not exist"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Hard_Rename", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Rename a key/value pair with key KEY to RENAMED_KEY if KEY exists. "
+     "If RENAMED_KEY already exists, this field is overwritten"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Copy", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Copy a key/value pair with key KEY to COPIED_KEY "
+     "if KEY exists AND COPIED_KEY does not exist"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Hard_copy", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Copy a key/value pair with key KEY to COPIED_KEY if KEY exists. "
+     "If COPIED_KEY already exists, this field is overwritten"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "Condition", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Set the condition to modify. Key_exists, Key_does_not_exist, A_key_matches, "
+     "No_key_matches, Key_value_equals, Key_value_does_not_equal, Key_value_matches, "
+     "Key_value_does_not_match, Matching_keys_have_matching_values "
+     "and Matching_keys_do_not_have_matching_values are supported."
+    },
+    {0}
+};
+
 struct flb_filter_plugin filter_modify_plugin = {
     .name = "modify",
     .description = "modify records by applying rules",
     .cb_init = cb_modify_init,
     .cb_filter = cb_modify_filter,
     .cb_exit = cb_modify_exit,
+    .config_map = config_map,
     .flags = 0
 };

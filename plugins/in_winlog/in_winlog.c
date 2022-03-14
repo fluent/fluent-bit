@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -244,6 +243,12 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct winlog_config, string_inserts),
       "Whether to include StringInserts in output records"
     },
+    {
+      FLB_CONFIG_MAP_BOOL, "use_ansi", "false",
+      0, FLB_TRUE, offsetof(struct winlog_config, use_ansi),
+      "Use ANSI encoding on eventlog messages"
+    },
+
     /* EOF */
     {0}
 };

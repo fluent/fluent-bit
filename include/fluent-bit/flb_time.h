@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +25,7 @@
 
 #include <time.h>
 #include <msgpack.h>
+#include <mpack/mpack.h>
 struct flb_time {
     struct timespec tm;
 };
@@ -80,8 +80,10 @@ int flb_time_add(struct flb_time *base, struct flb_time *duration,
                  struct flb_time *result);
 int flb_time_diff(struct flb_time *time1,
                   struct flb_time *time0, struct flb_time *result);
+int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fmt);
 int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt);
 int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj);
+int flb_time_pop_from_mpack(struct flb_time *time, mpack_reader_t *reader);
 int flb_time_pop_from_msgpack(struct flb_time *time, msgpack_unpacked *upk,
                               msgpack_object **map);
 long flb_time_tz_offset_to_second();

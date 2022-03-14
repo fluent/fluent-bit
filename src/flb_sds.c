@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -29,7 +28,9 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_utf8.h>
+
 #include <stdarg.h>
+#include <ctype.h>
 
 static flb_sds_t sds_alloc(size_t size)
 {
@@ -136,6 +137,67 @@ flb_sds_t flb_sds_cat(flb_sds_t s, const char *str, int len)
     s[head->len] = '\0';
 
     return s;
+}
+
+
+/*
+ * remove empty spaces on left/right from sds buffer 's' and return the new length
+ * of the content.
+ */
+int flb_sds_trim(flb_sds_t s)
+{
+    unsigned int i;
+    unsigned int len;
+    char *left = 0, *right = 0;
+    char *buf;
+
+    if (!s) {
+        return -1;
+    }
+
+    len = flb_sds_len(s);
+    if (len == 0) {
+        return 0;
+    }
+
+    buf = s;
+    left = buf;
+
+    /* left spaces */
+    while (left) {
+        if (isspace(*left)) {
+            left++;
+        }
+        else {
+            break;
+        }
+    }
+
+    right = buf + (len - 1);
+    /* Validate right v/s left */
+    if (right < left) {
+        buf[0] = '\0';
+        return -1;
+    }
+
+    /* Move back */
+    while (right != buf){
+        if (isspace(*right)) {
+            right--;
+        }
+        else {
+            break;
+        }
+    }
+
+    len = (right - left) + 1;
+    for (i=0; i<len; i++) {
+        buf[i] = (char) left[i];
+    }
+    buf[i] = '\0';
+    flb_sds_len_set(buf, i);
+
+    return i;
 }
 
 int flb_sds_cat_safe(flb_sds_t *buf, const char *str, int len)
@@ -406,4 +468,33 @@ void flb_sds_destroy(flb_sds_t s)
 
     head = FLB_SDS_HEADER(s);
     flb_free(head);
+}
+
+/*
+ * flb_sds_snprintf is a wrapper of snprintf.
+ * The difference is that this function can increase the buffer of flb_sds_t.
+ */
+int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
+{
+    va_list va;
+    flb_sds_t tmp;
+    int ret;
+
+ retry_snprintf:
+    va_start(va, fmt);
+    ret = vsnprintf(*str, size, fmt, va);
+    if (ret > size) {
+        tmp = flb_sds_increase(*str, ret-size);
+        if (tmp == NULL) {
+            return -1;
+        }
+        *str = tmp;
+        size = ret;
+        va_end(va);
+        goto retry_snprintf;
+    }
+    va_end(va);
+
+    flb_sds_len_set(*str, ret);
+    return ret;
 }

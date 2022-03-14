@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -80,7 +79,7 @@ static int filefd_update(struct flb_ne *ctx)
             continue;
         }
         else if (parts != 3) {
-            flb_plg_warn(ctx->ins, "/sts/fs/file-nr: invalid number of fields");
+            flb_plg_warn(ctx->ins, "/sys/fs/file-nr: invalid number of fields");
             flb_slist_destroy(&split_list);
             break;
         }

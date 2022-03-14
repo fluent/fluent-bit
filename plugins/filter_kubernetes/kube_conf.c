@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -87,7 +86,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     /* Get Kubernetes API server */
     url = flb_filter_get_property("kube_url", ins);
 
-    if (ctx->use_kubelet) {
+    if (ctx->use_tag_for_meta) {
+        ctx->api_https = FLB_FALSE;
+    }
+    else if (ctx->use_kubelet) {
         ctx->api_host = flb_strdup(FLB_KUBELET_HOST);
         ctx->api_port = ctx->kubelet_port;
         ctx->api_https = FLB_TRUE;
@@ -184,8 +186,10 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         }
     }
 
-    flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
-                 ctx->api_https, ctx->api_host, ctx->api_port);
+    if (!ctx->use_tag_for_meta) {
+        flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
+                     ctx->api_https, ctx->api_host, ctx->api_port);
+    }
     return ctx;
 }
 

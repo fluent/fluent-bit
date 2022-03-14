@@ -138,6 +138,9 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
     }
 
     event->mask = events;
+    event->priority = MK_EVENT_PRIORITY_DEFAULT;
+    event->_priority_head.next = NULL;
+    event->_priority_head.prev = NULL;
     return ret;
 }
 
@@ -145,6 +148,10 @@ static inline int _mk_event_add(struct mk_event_ctx *ctx, int fd,
 static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event)
 {
     int ret;
+
+    if ((event->status & MK_EVENT_REGISTERED) == 0) {
+        return 0;
+    }
 
     ret = epoll_ctl(ctx->efd, EPOLL_CTL_DEL, event->fd, NULL);
     MK_TRACE("[FD %i] Epoll, remove from QUEUE_FD=%i, ret=%i",
@@ -154,6 +161,14 @@ static inline int _mk_event_del(struct mk_event_ctx *ctx, struct mk_event *event
         mk_libc_warn("epoll_ctl");
 #endif
     }
+
+    /* Remove from priority queue */
+    if (event->_priority_head.next != NULL &&
+        event->_priority_head.prev != NULL) {
+        mk_list_del(&event->_priority_head);
+    }
+
+    MK_EVENT_NEW(event);
 
     return ret;
 }
@@ -353,12 +368,51 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
     return 0;
 }
 
-static inline int _mk_event_wait(struct mk_event_loop *loop)
+static inline int _mk_event_inject(struct mk_event_loop *loop,
+                                   struct mk_event *event,
+                                   int mask,
+                                   int prevent_duplication)
+{
+    size_t               index;
+    struct mk_event_ctx *ctx;
+
+    ctx = loop->data;
+
+    if (prevent_duplication) {
+        for (index = 0 ; index < loop->n_events ; index++) {
+            if (ctx->events[index].data.ptr == event) {
+                return 0;
+            }
+        }
+    }
+
+    event->mask = mask;
+
+    ctx->events[loop->n_events].data.ptr = event;
+
+    loop->n_events++;
+
+    return 0;
+}
+
+static inline int _mk_event_wait_2(struct mk_event_loop *loop, int timeout)
 {
     struct mk_event_ctx *ctx = loop->data;
+    int ret = 0;
 
-    loop->n_events = epoll_wait(ctx->efd, ctx->events, ctx->queue_size, -1);
-    return loop->n_events;
+    while(1) {
+        ret = epoll_wait(ctx->efd, ctx->events, ctx->queue_size, timeout);
+        if (ret >= 0) {
+            break;
+        }
+        else if(ret < 0 && errno != EINTR) {
+            mk_libc_error("epoll_wait");
+            break;
+        }
+        /* retry when errno is EINTR */
+    }
+    loop->n_events = ret;
+    return ret;
 }
 
 static inline char *_mk_event_backend()

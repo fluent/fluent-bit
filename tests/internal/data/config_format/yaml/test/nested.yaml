@@ -1,0 +1,7 @@
+service:
+    flush:       ${flush_interval}
+    log_level:   debug
+    http_server: on
+
+includes:
+    - dummy_pipeline.yaml

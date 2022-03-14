@@ -29,17 +29,17 @@ struct mk_event_ctx {
     struct mk_event *fired;    /* used to create iteration array    */
 };
 
-#define mk_event_foreach(event, evl)                                    \
-    int __i;                                                            \
-    struct mk_event_ctx *__ctx = evl->data;                             \
-                                                                        \
-    if (evl->n_events > 0) {                                            \
-        event = __ctx->fired[0].data;                                   \
-    }                                                                   \
-                                                                        \
-    for (__i = 0;                                                       \
-         __i < evl->n_events;                                           \
-         __i++,                                                         \
-             event = __ctx->fired[__i].data                             \
+#define mk_event_foreach(event, evl)                                         \
+    int __i;                                                                 \
+    struct mk_event_ctx *__ctx = evl->data;                                  \
+                                                                             \
+    if (evl->n_events > 0) {                                                 \
+        event = __ctx->fired[0].data;                                        \
+    }                                                                        \
+                                                                             \
+    for (__i = 0;                                                            \
+         __i < evl->n_events;                                                \
+         __i++,                                                              \
+             event = ((__i < evl->n_events) ? __ctx->fired[__i].data : NULL) \
          )
 #endif

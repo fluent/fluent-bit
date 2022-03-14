@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -35,6 +34,7 @@ struct flb_in_collectd_config {
     flb_sockfd_t server_fd;
     flb_pipefd_t coll_fd;
 
+    flb_sds_t types_db;
     struct mk_list *tdb;
 
     /* Plugin input instance */

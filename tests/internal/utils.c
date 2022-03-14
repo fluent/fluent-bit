@@ -16,6 +16,13 @@ struct url_check {
     char *uri;     /* expected uri      */
 };
 
+struct write_str_case {
+    char *input;
+    int input_len;
+    char *output;
+    int ret;
+};
+
 struct url_check url_checks[] = {
     {0, "https://fluentbit.io/something",
      "https", "fluentbit.io", "443", "/something"},
@@ -112,6 +119,54 @@ void test_url_split()
     }
 }
 
+/* test case loop for flb_utils_write_str */
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size);
+static void write_str_test_cases(struct write_str_case *cases) {
+    write_str_test_cases_w_buf_size(cases, 100);
+}
+
+/* test case loop for flb_utils_write_str */
+static void write_str_test_cases_w_buf_size(struct write_str_case *cases, int buf_size) {
+    char *buf = flb_calloc(buf_size + 1, sizeof(char));
+    int size = buf_size + 1;
+    int off;
+    int ret;
+
+    struct write_str_case *tcase = cases;
+    while (!(tcase->input == 0 && tcase->output == 0)) {
+        memset(buf, 0, size);
+        off = 0;
+        ret = flb_utils_write_str(buf, &off, buf_size, tcase->input, tcase->input_len);
+
+        if(!TEST_CHECK(ret == tcase->ret)) {
+            TEST_MSG("Input string: %s", tcase->input);
+            TEST_MSG("| Expected return value: %s", (tcase->ret == FLB_TRUE) ? "FLB_TRUE"
+            : "FLB_FALSE");
+            TEST_MSG("| Produced return value: %s", (ret == FLB_TRUE) ? "FLB_TRUE"
+            : "FLB_FALSE");
+        }
+        if(!TEST_CHECK(memcmp(buf, tcase->output, off) == 0)) {
+            TEST_MSG("Input string: %s", tcase->input);
+            TEST_MSG("| Expected output: %s", tcase->output);
+            TEST_MSG("| Produced output: %s", buf);
+        }
+        if (!TEST_CHECK(strlen(buf) == strlen(tcase->output))) {
+            TEST_MSG("Input string: %s", tcase->input);
+            TEST_MSG("| Expected length: %zu", strlen(tcase->output));
+            TEST_MSG("| Produced length: %zu", strlen(buf));
+            TEST_MSG("| Expected output: %s", tcase->output);
+            TEST_MSG("| Produced output: %s", buf);
+        }
+        if (!TEST_CHECK(buf[size-1] == 0)) {
+            TEST_MSG("Out buffer overwrite detected '%c'", buf[size-1]);
+        }
+
+        ++tcase;
+    }
+
+    flb_free(buf);
+}
+
 void test_write_str()
 {
     char buf[10];
@@ -145,6 +200,162 @@ void test_write_str()
     off = 0;
     ret = flb_utils_write_str(buf, &off, size, "aaaaaaaaaaa", 11);
     TEST_CHECK(ret == FLB_FALSE);
+}
+
+void test_write_str_invalid_trailing_bytes()
+{
+    struct write_str_case cases[] = {
+        /* Invalid unicode (one bad trailing bytes) */
+        {
+            "\xe3\x81\x01""abc", 6,  /* note that 0x01 is an invalid byte */
+            "\xee\x83\xa3" /* e3 fragment */ /* replace invalid unicode */
+            "\xee\x82\x81" /* 81 fragment */
+            "\\u0001abc",
+            FLB_TRUE
+        },
+        /*
+         * Invalid unicode (two bad trailing bytes)
+         */
+        {
+            "\xe3\x01\x01""abc", 6,
+            "\xee\x83\xa3" /* e3 fragment */
+            "\\u0001\\u0001abc",
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+void test_write_str_invalid_leading_byte()
+{
+
+    struct write_str_case cases[] = {
+        /*
+         * Escaped leading hex (two hex, one valid unicode)
+         */
+        {
+            "\x00\x01\xe3\x81\x82""abc", 8,  /* note that 0x01 is an invalid byte */
+            "\\u0000\\u0001""\xe3\x81\x82""abc",  /* escape hex */
+            FLB_TRUE
+        },
+        /*
+         * Invalid unicode fragment (two byte fragment)
+         * note that 0xf3 is a leading byte with 3 trailing bytes. note that 0xe3 is also a
+         * leading byte with 2 trailing bytes. This should not be consumed by 0xf3 invalid
+         * unicode character
+         */
+        {
+            "\xf3\x81\x81\xe3\x81\x82""abc", 9,  /* note that 0xf3 0x81 0x81 is an invalid fragment */
+            "\xee\x83\xb3" /* f3 fragment */ /* replace invalid unicode */
+            "\xee\x82\x81" /* 81 fragment */
+            "\xee\x82\x81" /* 81 fragment */
+            "\xe3\x81\x82""abc", /* valid unicode */
+            FLB_TRUE
+        },
+        /*
+         * Invalid unicode (one bad leading byte + one bad trailing byte)
+         * note that 0xf3 is a leading byte with 3 trailing bytes. 0x01 is an invalid byte
+         */
+        {
+            "\xf3\x81\x01\xe3\x81\x82""abc", 9,  /* note that 0x01 is an invalid byte */
+            "\xee\x83\xb3" /* f3 fragment */ /* replace invalid unicode */
+            "\xee\x82\x81" /* 81 fragment */
+            "\\u0001""\xe3\x81\x82""abc",
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+void test_write_str_invalid_leading_byte_case_2()
+{
+
+    struct write_str_case cases[] = {
+        /* Invalid leading bytes */
+        {
+            "\x81\x82""abc", 5,  /* note that 0x81 & 0x82 are invalid leading bytes */
+            "\xee\x82\x81" /* 81 fragment */ /* replace invalid unicode */
+            "\xee\x82\x82" /* 82 fragment */
+            "abc",
+            FLB_TRUE
+        },
+        /*
+         * Invalid unicode (one bad leading byte + one bad trailing byte + one bad leading byte)
+         * note that 0xf3 is a leading byte with 3 trailing bytes. 0x01 is an invalid byte
+         * 0x81 & 0x82 are invalid leading bytes
+         */
+        {
+            "\xf3\x81\x01\x81\x82""abc", 8,  /* note that 0x81 & 0x82 are invalid leading bytes */
+            "\xee\x83\xb3" /* f3 fragment */ /* replace invalid unicode */
+            "\xee\x82\x81" /* 81 fragment */
+            "\\u0001"      /* 0x01 hex escape */
+            "\xee\x82\x81" /* 81 fragment */
+            "\xee\x82\x82" /* 82 fragment */
+            "abc",
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+void test_write_str_edge_cases()
+{
+    struct write_str_case cases[] = {
+        /* Invalid unicode (one bad leading byte) */
+        {
+            "\xf3", 1,  /* will this buffer overrun? */
+            "",  /* discard invalid unicode */
+            FLB_TRUE
+        },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+void test_write_str_buffer_overrun()
+{
+    struct write_str_case cases[] = {
+        {
+            "aa""\x81", 3,
+            "aa"
+            "\xee\x82\x81", /* just enough space for 81 fragment */
+            FLB_TRUE
+        },
+        {
+            "aaa""\x81", 4, /* out buffer size: 5, needed bytes: 2 + 3 + 3 = 8 */
+            "aaa",
+            /* "\xee\x82\x81", */ /* 81 fragment -- would overrun */
+            FLB_FALSE
+        },
+        {
+            "aaa"
+            "\xe3\x81\x82", 6, /* required is already grater than buffer */
+            "",
+            FLB_FALSE
+        },
+        {
+            "\""
+            "\xe3\x81\x82", 4, /* valid unicode */
+            "\\\"""\xe3\x81\x82", /* just enough space for valid unicode */
+            FLB_TRUE
+        },
+        {
+            "\x81"
+            "\xe3\x81\x82", 4, /* valid unicode */
+            "\xee\x82\x81", /* 81 fragment */
+            /* not enough space for valid unicode fragment "\xe3\x81\x82" */
+            FLB_FALSE
+        },
+        { 0 }
+    };
+    write_str_test_cases_w_buf_size(cases, 5);
 }
 
 struct proxy_url_check {
@@ -264,6 +475,11 @@ TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
     { "write_str", test_write_str },
+    { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
+    { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
+    { "test_write_str_edge_cases", test_write_str_edge_cases },
+    { "test_write_str_invalid_leading_byte_case_2", test_write_str_invalid_leading_byte_case_2 },
+    { "test_write_str_buffer_overrun", test_write_str_buffer_overrun },
     { "proxy_url_split", test_proxy_url_split },
     { 0 }
 };

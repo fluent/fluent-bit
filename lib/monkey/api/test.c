@@ -21,7 +21,6 @@ void cb_worker(void *data)
 
 void cb_sp_test_task_detail(mk_request_t *request, void *data)
 {
-    int i;
     (void) data;
 
     mk_http_status(request, 200);
@@ -31,7 +30,6 @@ void cb_sp_test_task_detail(mk_request_t *request, void *data)
 
 void cb_sp_test_task_main(mk_request_t *request, void *data)
 {
-    int i;
     (void) data;
 
     mk_http_status(request, 200);

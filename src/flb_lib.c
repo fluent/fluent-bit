@@ -2,8 +2,7 @@
 
 /*  Fluent Bit Demo
  *  ===============
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -31,12 +30,11 @@
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_callback.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/tls/flb_tls.h>
 
 #include <signal.h>
 #include <stdarg.h>
-
-#include <cmetrics/cmetrics.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -265,7 +263,7 @@ int flb_output(flb_ctx_t *ctx, const char *output, struct flb_lib_out_cb *cb)
 {
     struct flb_output_instance *o_ins;
 
-    o_ins = flb_output_new(ctx->config, output, cb);
+    o_ins = flb_output_new(ctx->config, output, cb, FLB_TRUE);
     if (!o_ins) {
         return -1;
     }
@@ -630,6 +628,7 @@ static void flb_lib_worker(void *data)
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
+    config->exit_status_code = ret;
     ctx->status = FLB_LIB_NONE;
 }
 
@@ -704,7 +703,15 @@ int flb_stop(flb_ctx_t *ctx)
     int ret;
     pthread_t tid;
 
+    tid = ctx->config->worker;
+
     if (ctx->status == FLB_LIB_NONE || ctx->status == FLB_LIB_ERROR) {
+        /*
+         * There is a chance the worker thread is still active while
+         * the service exited for some reason (plugin action). Always
+         * wait and double check that the child thread is not running.
+         */
+        pthread_join(tid, NULL);
         return 0;
     }
 
@@ -718,9 +725,11 @@ int flb_stop(flb_ctx_t *ctx)
 
     flb_debug("[lib] sending STOP signal to the engine");
 
-    tid = ctx->config->worker;
     flb_engine_exit(ctx->config);
     ret = pthread_join(tid, NULL);
+    if (ret != 0) {
+        flb_errno();
+    }
     flb_debug("[lib] Fluent Bit engine stopped");
 
     return ret;

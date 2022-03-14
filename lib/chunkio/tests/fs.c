@@ -17,8 +17,13 @@
  *  limitations under the License.
  */
 
+#ifndef _WIN32
 #include <sys/mman.h>
 #include <arpa/inet.h>
+#endif
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
@@ -27,11 +32,13 @@
 #include <chunkio/cio_meta.h>
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_utils.h>
+#include <chunkio/cio_error.h>
 
 #include "cio_tests_internal.h"
 
 #define CIO_ENV           "/tmp/cio-fs-test/"
 #define CIO_FILE_400KB    CIO_TESTS_DATA_PATH "/data/400kb.txt"
+
 
 /* Logging callback, once called it just turn on the log_check flag */
 static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
@@ -415,7 +422,13 @@ static void test_issue_51()
         perror("open");
         exit(1);
     }
+
+#ifdef _WIN32
+    _chsize(fd, 1);
+#else
     ftruncate(fd, 1);
+#endif
+
     close(fd);
 
     /* Re-read the content */
@@ -562,6 +575,91 @@ void test_fs_size_chunks_up()
     cio_destroy(ctx);
 }
 
+void test_issue_write_at()
+{
+    int ret;
+    int len;
+    int err;
+    char line[] = "this is a test line\n";
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_stream *stream;
+
+    /* cleanup environment */
+    cio_utils_recursive_delete(CIO_ENV);
+
+    /* create Chunk I/O context */
+    ctx = cio_create(CIO_ENV, log_cb, CIO_LOG_INFO, CIO_CHECKSUM);
+    TEST_CHECK(ctx != NULL);
+
+    /* Set default number of chunks up */
+    cio_set_max_chunks_up(ctx, 50);
+
+    /* create stream */
+    stream = cio_stream_create(ctx, "test_write_at", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+
+    /* create chunk */
+    chunk = cio_chunk_open(ctx, stream, "test", CIO_OPEN, 1000, &err);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        exit(1);
+    }
+
+    len = strlen(line);
+
+    /* Write 3 lines */
+    ret = cio_chunk_write(chunk, line, len);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_write(chunk, line, len);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_write(chunk, line, len);
+    TEST_CHECK(ret == CIO_OK);
+
+    /*
+     * Write some content after the second line: this is the issue, when writing
+     * to a position lowest than the last offset the checksum is not updated, for
+     * hence after putting it down and up again, the checksym validation fails
+     * and we get in the wrong state.
+     */
+    ret = cio_chunk_write_at(chunk, len * 2, "test\n", 5);
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Put the chunk down and up */
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Trigger the 'format check failed' error */
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    /*
+     * Corrupt the CRC manually, alter the current CRC and write a byte
+     * to the chunk to get the checksum corruption. Here we expect two
+     * things:
+     *
+     * - when trying to put the chunk get CIO_CORRUPTED
+     * - check the error number, it must be CIO_ERR_BAD_CHECKSUM
+     * - memory map must be null and file descriptor must be in a closed state
+     */
+    struct cio_file *cf = (struct cio_file *) chunk->backend;
+    cf->crc_cur = 10;
+    cio_chunk_write(chunk, "\0", 1);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+    TEST_CHECK(cio_error_get(chunk) == CIO_ERR_BAD_CHECKSUM);
+
+    cf = (struct cio_file *) chunk->backend;
+    TEST_CHECK(cf->map == NULL);
+    TEST_CHECK(cf->fd <= 0);
+}
+
 TEST_LIST = {
     {"fs_write",   test_fs_write},
     {"fs_checksum",  test_fs_checksum},
@@ -569,5 +667,6 @@ TEST_LIST = {
     {"fs_size_chunks_up", test_fs_size_chunks_up},
     {"issue_51",   test_issue_51},
     {"issue_flb_2025", test_issue_flb_2025},
+    {"issue_write_at", test_issue_write_at},
     { 0 }
 };

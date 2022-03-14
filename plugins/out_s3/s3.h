@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -45,10 +44,6 @@
 #define MAX_FILE_SIZE_PUT_OBJECT         50000000
 
 #define DEFAULT_UPLOAD_TIMEOUT 3600
-
-#define COMPRESS_NONE  0
-#define COMPRESS_GZIP  1
-#define COMPRESS_ARROW 2
 
 /*
  * If we see repeated errors on an upload/chunk, we will discard it
@@ -113,11 +108,15 @@ struct flb_s3 {
     char *canned_acl;
     char *content_type;
     char *log_key;
+    char *external_id;
     int free_endpoint;
+    int retry_requests;
     int use_put_object;
     int send_content_md5;
     int static_file_path;
     int compression;
+    int port;
+    int insecure;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;

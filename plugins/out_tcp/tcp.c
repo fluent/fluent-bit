@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -52,8 +51,8 @@ static int cb_tcp_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static void cb_tcp_flush(const void *data, size_t bytes,
-                         const char *tag, int tag_len,
+static void cb_tcp_flush(struct flb_event_chunk *event_chunk,
+                         struct flb_output_flush *out_flush,
                          struct flb_input_instance *i_ins,
                          void *out_context,
                          struct flb_config *config)
@@ -76,10 +75,13 @@ static void cb_tcp_flush(const void *data, size_t bytes,
     }
 
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_NONE) {
-        ret = flb_io_net_write(u_conn, data, bytes, &bytes_sent);
+        ret = flb_io_net_write(u_conn,
+                               event_chunk->data, event_chunk->size,
+                               &bytes_sent);
     }
     else {
-        json = flb_pack_msgpack_to_json_format(data, bytes,
+        json = flb_pack_msgpack_to_json_format(event_chunk->data,
+                                               event_chunk->size,
                                                ctx->out_format,
                                                ctx->json_date_format,
                                                ctx->date_key);
@@ -122,8 +124,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", "double",
      0, FLB_FALSE, 0,
-     "Specify the format of the date, supported formats: double, iso8601 "
-     "(e.g: 2018-05-30T09:39:52.000681Z) and epoch."
+     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
 
     {
@@ -144,5 +145,6 @@ struct flb_output_plugin out_tcp_plugin = {
     .cb_flush       = cb_tcp_flush,
     .cb_exit        = cb_tcp_exit,
     .config_map     = config_map,
+    .workers        = 2,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

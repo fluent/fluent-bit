@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,12 +25,12 @@
 #include "rdkafka.h"
 
 struct flb_kafka_topic *flb_kafka_topic_create(char *name,
-                                               struct flb_kafka *ctx)
+                                               struct flb_out_kafka *ctx)
 {
     rd_kafka_topic_t *tp;
     struct flb_kafka_topic *topic;
 
-    tp = rd_kafka_topic_new(ctx->producer, name, NULL);
+    tp = rd_kafka_topic_new(ctx->kafka.rk, name, NULL);
     if (!tp) {
         flb_plg_error(ctx->ins, "failed to create topic: %s",
                       rd_kafka_err2str(rd_kafka_last_error()));
@@ -53,7 +52,7 @@ struct flb_kafka_topic *flb_kafka_topic_create(char *name,
 }
 
 int flb_kafka_topic_destroy(struct flb_kafka_topic *topic,
-                            struct flb_kafka *ctx)
+                            struct flb_out_kafka *ctx)
 {
     mk_list_del(&topic->_head);
     rd_kafka_topic_destroy(topic->tp);
@@ -63,7 +62,7 @@ int flb_kafka_topic_destroy(struct flb_kafka_topic *topic,
     return 0;
 }
 
-int flb_kafka_topic_destroy_all(struct flb_kafka *ctx)
+int flb_kafka_topic_destroy_all(struct flb_out_kafka *ctx)
 {
     int c = 0;
     struct mk_list *tmp;
@@ -80,7 +79,7 @@ int flb_kafka_topic_destroy_all(struct flb_kafka *ctx)
 }
 
 /* Get first topic of the list (default topic) */
-struct flb_kafka_topic *flb_kafka_topic_default(struct flb_kafka *ctx)
+struct flb_kafka_topic *flb_kafka_topic_default(struct flb_out_kafka *ctx)
 {
     struct flb_kafka_topic *topic;
 
@@ -95,7 +94,7 @@ struct flb_kafka_topic *flb_kafka_topic_default(struct flb_kafka *ctx)
 
 struct flb_kafka_topic *flb_kafka_topic_lookup(char *name,
                                                int name_len,
-                                               struct flb_kafka *ctx)
+                                               struct flb_out_kafka *ctx)
 {
     struct mk_list *head;
     struct flb_kafka_topic *topic;

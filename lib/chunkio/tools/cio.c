@@ -453,7 +453,7 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
     printf("-  file writes    : %i\n", writes);
 
     cio_bytes_to_human_readable_size(bytes, tmp, sizeof(tmp) - 1);
-    printf("-  bytes written  : %s (%lu bytes)\n" , tmp, bytes);
+    printf("-  bytes written  : %s (%ld bytes)\n" , tmp, bytes);
     printf("-  elapsed time   : %.2f seconds\n", time_to_double(&t_final));
 
     rate = (double) (bytes / time_to_double(&t_final));

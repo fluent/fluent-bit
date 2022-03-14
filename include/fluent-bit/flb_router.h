@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -44,6 +43,11 @@ static inline int flb_router_match_type(int in_event_type,
 
     return FLB_TRUE;
 }
+
+int flb_router_connect(struct flb_input_instance *in,
+                       struct flb_output_instance *out);
+int flb_router_connect_direct(struct flb_input_instance *in,
+                              struct flb_output_instance *out);
 
 int flb_router_match(const char *tag, int tag_len,
                      const char *match, void *match_regex);

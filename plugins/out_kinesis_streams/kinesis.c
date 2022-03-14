@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -212,7 +211,7 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
         ctx->aws_provider = flb_sts_provider_create(config,
                                                     ctx->sts_tls,
                                                     ctx->base_aws_provider,
-                                                    NULL,
+                                                    (char *) ctx->external_id,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
@@ -250,6 +249,7 @@ static int cb_kinesis_init(struct flb_output_instance *ins,
     ctx->kinesis_client->has_auth = FLB_TRUE;
     ctx->kinesis_client->provider = ctx->aws_provider;
     ctx->kinesis_client->region = (char *) ctx->region;
+    ctx->kinesis_client->retry_requests = ctx->retry_requests;
     ctx->kinesis_client->service = "kinesis";
     ctx->kinesis_client->port = 443;
     ctx->kinesis_client->flags = 0;
@@ -315,11 +315,11 @@ static struct flush *new_flush_buffer(const char *tag, int tag_len)
     return buf;
 }
 
-static void cb_kinesis_flush(const void *data, size_t bytes,
-                                const char *tag, int tag_len,
-                                struct flb_input_instance *i_ins,
-                                void *out_context,
-                                struct flb_config *config)
+static void cb_kinesis_flush(struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush,
+                             struct flb_input_instance *i_ins,
+                             void *out_context,
+                             struct flb_config *config)
 {
     struct flb_kinesis *ctx = out_context;
     int ret;
@@ -327,20 +327,22 @@ static void cb_kinesis_flush(const void *data, size_t bytes,
     (void) i_ins;
     (void) config;
 
-    buf = new_flush_buffer(tag, tag_len);
+    buf = new_flush_buffer(event_chunk->tag, flb_sds_len(event_chunk->tag));
     if (!buf) {
         flb_plg_error(ctx->ins, "Failed to construct flush buffer");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    ret = process_and_send_to_kinesis(ctx, buf, data, bytes);
+    ret = process_and_send_to_kinesis(ctx, buf,
+                                      event_chunk->data,
+                                      event_chunk->size);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send records to kinesis");
         kinesis_flush_destroy(buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    flb_plg_info(ctx->ins, "Processed %d records, sent %d to %s",
+    flb_plg_debug(ctx->ins, "Processed %d records, sent %d to %s",
                  buf->records_processed, buf->records_sent, ctx->stream_name);
     kinesis_flush_destroy(buf);
 
@@ -441,6 +443,13 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kinesis, external_id),
+     "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "log_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_kinesis, log_key),
      "By default, the whole log record will be sent to Kinesis. "
@@ -448,6 +457,16 @@ static struct flb_config_map config_map[] = {
      "that key will be sent to Kinesis. For example, if you are using "
      "the Fluentd Docker log driver, you can specify `log_key log` and only "
      "the log message will be sent to Kinesis."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "auto_retry_requests", "true",
+     0, FLB_TRUE, offsetof(struct flb_kinesis, retry_requests),
+     "Immediately retry failed requests to AWS services once. This option "
+     "does not affect the normal Fluent Bit retry mechanism with backoff. "
+     "Instead, it enables an immediate retry with no delay for networking "
+     "errors, which may help improve throughput when there are transient/random "
+     "networking issues."
     },
 
     /* EOF */
@@ -461,6 +480,7 @@ struct flb_output_plugin out_kinesis_streams_plugin = {
     .cb_init      = cb_kinesis_init,
     .cb_flush     = cb_kinesis_flush,
     .cb_exit      = cb_kinesis_exit,
+    .workers      = 1,
     .flags        = 0,
 
     /* Configuration */
