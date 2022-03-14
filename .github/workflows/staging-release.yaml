@@ -137,6 +137,7 @@ jobs:
         server_hostname: ${{ secrets.FLUENTBITIO_HOST }}
         server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
         server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}
+        server_aptly_config: ${{ secrets.FLUENTBITIO_APTLY_CONFIG }}
 
   # Simple skopeo copy jobs to transfer image from staging to release registry with optional GPG key signing.
   # Unfortunately skopeo currently does not support Cosign: https://github.com/containers/skopeo/issues/1533

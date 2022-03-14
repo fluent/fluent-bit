@@ -20,6 +20,10 @@ inputs:
   server_key:
     description: The SSH key to use for authentication.
     required: true
+  server_aptly_config:
+    description: The Aptly config file to use for all repositories.
+    required: false
+    default: "/etc/aptly.conf"
 
 runs:
   using: "composite"
@@ -61,10 +65,14 @@ runs:
       USERNAME: ${{ inputs.server_username }}
     shell: bash
 
-  # We could also automate the final step here eventually to get the packages "live"
-  # - name: Publish on build server
-  #   run: |
-  #     ssh $USERNAME@$HOST /bin/bash /home/$USERNAME/publish_all.sh "$VERSION"
-  #   env:
-  #     VERSION: ${{ inputs.version }}
-  #   shell: bash
+  # Automate the final step here to get the packages "live"
+  - name: Publish on build server
+    run: |
+      scp ./packaging/server/publish-all.sh $USERNAME@$HOST:/home/$USERNAME/publish-all.sh
+      ssh $USERNAME@$HOST APTLY_CONFIG="$APTLY_CONFIG" /bin/bash /home/$USERNAME/publish-all.sh "$VERSION"
+    env:
+      VERSION: ${{ inputs.version }}
+      HOST: ${{ inputs.server_hostname }}
+      USERNAME: ${{ inputs.server_username }}
+      APTLY_CONFIG: ${{ inputs.server_aptly_config || '/etc/aptly.conf' }}
+    shell: bash
