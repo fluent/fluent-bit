@@ -314,10 +314,124 @@ static void flb_test_multiline_unbuffered()
     filter_test_destroy(ctx);
 }
 
-TEST_LIST = {
-    {"multiline_buffered_one_record"            , flb_test_multiline_buffered_one_output_record },
-    {"multiline_buffered_two_record"            , flb_test_multiline_buffered_two_output_record },
-    {"flb_test_multiline_unbuffered"            , flb_test_multiline_unbuffered },
+static void flb_test_multiline_partial_message_concat()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
 
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "multiline.key_content", "log",
+                         "mode", "partial_message",
+                         "buffer", "on",
+                         "debug_flush", "on",
+                         "flush_ms", "666",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    expected.expected_records = 1; /* 1 record with all lines concatenated */
+    expected.expected_pattern = "one..two";
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data samples */
+    p = "[0, {\"log\":\"one..\", \"partial_message\":\"true\", \"partial_id\": \"1\", \"partial_ordinal\": \"1\", \"partial_last\": \"false\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    p = "[0, {\"log\":\"two..\", \"partial_message\":\"true\", \"partial_id\": \"1\", \"partial_ordinal\": \"2\", \"partial_last\": \"false\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    
+    /* check number of outputted records */
+    sleep(2);
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+}
+
+static void flb_test_multiline_partial_message_concat_two_ids()
+{
+    int len;
+    int ret;
+    int bytes;
+    char *p;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    struct filter_test_result expected = { 0 };
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "multiline.key_content", "log",
+                         "mode", "partial_message",
+                         "buffer", "on",
+                         "debug_flush", "on",
+                         "flush_ms", "666",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Prepare output callback with expected result */
+    expected.expected_records = 2; /* 2 records, one for each partial_id*/
+    expected.expected_pattern = "one..two";
+    cb_data.cb = cb_check_result;
+    cb_data.data = (void *) &expected;
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* two different partial IDs, interlaced */
+    p = "[0, {\"log\":\"one..\", \"partial_message\":\"true\", \"partial_id\": \"1\", \"partial_ordinal\": \"1\", \"partial_last\": \"false\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    p = "[0, {\"log\":\"three..\", \"partial_message\":\"true\", \"partial_id\": \"2\", \"partial_ordinal\": \"1\", \"partial_last\": \"false\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    p = "[0, {\"log\":\"two..\", \"partial_message\":\"true\", \"partial_id\": \"1\", \"partial_ordinal\": \"2\", \"partial_last\": \"true\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    p = "[0, {\"log\":\"two..\", \"partial_message\":\"true\", \"partial_id\": \"2\", \"partial_ordinal\": \"2\", \"partial_last\": \"true\"}]";
+    len = strlen(p);
+    bytes = flb_lib_push(ctx->flb, ctx->i_ffd, p, len);
+    TEST_CHECK(bytes == len);
+    
+    /* check number of outputted records */
+    sleep(2);
+    TEST_CHECK(expected.actual_records == expected.expected_records);
+    filter_test_destroy(ctx);
+}
+
+TEST_LIST = {
+    {"multiline_buffered_one_record"                      , flb_test_multiline_buffered_one_output_record },
+    {"multiline_buffered_two_record"                      , flb_test_multiline_buffered_two_output_record },
+    {"flb_test_multiline_unbuffered"                      , flb_test_multiline_unbuffered },
+
+    {"flb_test_multiline_partial_message_concat"          , flb_test_multiline_partial_message_concat },
+    {"flb_test_multiline_partial_message_concat_two_ids"  , flb_test_multiline_partial_message_concat_two_ids },
     {NULL, NULL}
 };
