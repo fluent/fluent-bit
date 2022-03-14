@@ -1069,7 +1069,7 @@ int flb_main(int argc, char **argv)
 
                 printf("%s\n", json);
                 flb_sds_destroy(json);
-                exit(0);
+                exit(EXIT_SUCCESS);
             }
             else {
                 flb_help_plugin(EXIT_SUCCESS, FLB_HELP_JSON, config,
