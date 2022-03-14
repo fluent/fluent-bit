@@ -33,4 +33,6 @@
                              FLB_VERSION_PATCH)
 #define FLB_VERSION_STR     "@FLB_VERSION_STR@"
 
+#define FLB_GIT_HASH        "@FLB_GIT_HASH@"
+
 #endif

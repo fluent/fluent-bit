@@ -38,6 +38,7 @@ RUN apt-get update && \
     curl \
     ca-certificates \
     cmake \
+    git \
     make \
     tar \
     libssl-dev \
