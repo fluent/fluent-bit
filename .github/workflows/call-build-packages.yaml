@@ -20,10 +20,6 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
-      branch:
-        description: The optional source code branch to use for building against.
-        type: string
-        required: false
       unstable:
         description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
         type: string
@@ -81,10 +77,8 @@ jobs:
         run: |
           ./build.sh
         env:
-          FLB_VERSION: ${{ inputs.version }}
           FLB_DISTRO: ${{ matrix.distro }}
           FLB_OUT_DIR: staging
-          FLB_BRANCH: ${{ inputs.branch }}
           FLB_TD: "Off"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
@@ -94,10 +88,8 @@ jobs:
         run: |
           ./build.sh
         env:
-          FLB_VERSION: ${{ inputs.version }}
           FLB_DISTRO: ${{ matrix.distro }}
           FLB_OUT_DIR: staging
-          FLB_BRANCH: ${{ inputs.branch }}
           FLB_TD: "On"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
