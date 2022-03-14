@@ -168,6 +168,8 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
             if (endptr == NULL) {
                 cloud_port = port;
             }
+
+            cloud_host = strtok(cloud_host, ':');
         }
         
         ins->host.name = cloud_host;
