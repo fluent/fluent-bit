@@ -194,7 +194,16 @@ RUN apt-get update && \
         libatomic1 \
         libgcrypt20 \
         libyaml-0-2 \
-        bash gdb valgrind build-essential \
+        # build/code
+        bash gdb valgrind build-essential  \
+        git bash-completion vim tmux jq \
+        # network
+        dnsutils iputils-ping iputils-arping iputils-tracepath iputils-clockdiff \
+        tcpdump curl nmap tcpflow iftop \
+        net-tools mtr netcat-openbsd bridge-utils iperf ngrep \
+        openssl \
+        # processes/io
+        htop atop strace iotop sysstat ltrace ncdu logrotate hdparm pciutils psmisc tree pv \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
