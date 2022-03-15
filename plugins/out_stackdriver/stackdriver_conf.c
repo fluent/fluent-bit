@@ -336,6 +336,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->log_name_key = flb_sds_create(DEFAULT_LOG_NAME_KEY);
     }
 
+    tmp = flb_output_get_property("labels", ins);
+    flb_plg_info(ins, "input labels %s", tmp);
+    if (tmp) {
+        ctx->labels = flb_utils_split(tmp, ',', -1);
+        if (!ctx->labels) {
+            flb_plg_error(ins, "failed to allocate labels list");
+        }
+        flb_plg_info(ins, "size %d", mk_list_size(ctx->labels));
+    }
+
     tmp = flb_output_get_property("http_request_key", ins);
     if (tmp) {
         http_request_key = flb_sds_create(tmp);
@@ -551,6 +561,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
     flb_sds_destroy(ctx->labels_key);
     flb_sds_destroy(ctx->tag_prefix);
     flb_sds_destroy(ctx->custom_k8s_regex);
+
+    if (ctx->labels) {
+        flb_utils_split_free(ctx->labels);
+    }
 
     if (ctx->stackdriver_agent) {
         flb_sds_destroy(ctx->stackdriver_agent);

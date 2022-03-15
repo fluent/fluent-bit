@@ -113,6 +113,10 @@ struct flb_stackdriver {
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
 
+    /* labels */
+    struct mk_list *labels;
+    struct mk_list labels_list;
+
     /* generic resources */
     flb_sds_t location;
     flb_sds_t namespace_id;

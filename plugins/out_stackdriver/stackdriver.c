@@ -911,13 +911,13 @@ static int process_local_resource_id(struct flb_stackdriver *ctx,
     return ret;
 }
 
-/*
- * parse_labels
+/* get_payload_labels
  * - Iterate throught the original payload (obj) and find out the entry that matches
  *   the labels_key
  * - Used to convert all labels under labels_key to root-level `labels` field
  */
-static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
+
+static msgpack_object *get_payload_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
 {
     int i;
     int len;
@@ -939,6 +939,100 @@ static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object 
     //flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload",
     //              ctx->labels_key);
     return NULL;
+}
+
+/*
+ * parse_labels
+ * - Parse labels set in configuration
+ * - Construct root-level `labels` field using configuration and payload labels
+ */
+static int *parse_labels(struct flb_stackdriver *ctx, msgpack_object *payload_labels_ptr)
+{
+    int i;
+    int ret;
+    int len;
+    char *p;
+    flb_sds_t key;
+    flb_sds_t val;
+    struct mk_list *head;
+    struct flb_split_entry *entry;
+    msgpack_object_kv *kv = NULL;
+
+    flb_kv_init(&ctx->labels_list);
+
+    /* add payload labels */
+    if (payload_labels_ptr != NULL && 
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+
+        for (i = 0; i < payload_labels_ptr->via.map.size; i++) {
+            kv = &payload_labels_ptr->via.map.ptr[i];
+            flb_kv_item_create_len(&ctx->labels_list,
+                                   kv->key.via.str.ptr,
+                                   kv->key.via.str.size,
+                                   kv->val.via.str.ptr,
+                                   kv->val.via.str.size);
+        }
+    }
+
+    /* parse configuration labels */
+    if (ctx->labels) {
+        mk_list_foreach(head, ctx->labels) {
+            entry = mk_list_entry(head, struct flb_split_entry, _head);
+
+            p = strchr(entry->value, '=');
+            if (!p) {
+                flb_plg_error(ctx->ins, "invalid key value pair on '%s'",
+                              entry->value);
+                return FLB_FALSE;
+            }
+
+            key = flb_sds_create_size((p - entry->value) + 1);
+            flb_sds_cat(key, entry->value, p - entry->value);
+            val = flb_sds_create(p + 1);
+            if (!key) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->value);
+                return FLB_FALSE;
+            }
+            if (!val || flb_sds_len(val) == 0) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->value);
+                flb_sds_destroy(key);
+                return FLB_FALSE;
+            }
+
+            ret = flb_kv_item_create(&ctx->labels_list, key, val);
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
+
+            if (ret == -1) {
+                return FLB_FALSE;
+            }
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+static void pack_labels(struct flb_stackdriver *ctx, msgpack_packer *mp_pck)
+{
+    struct mk_list *head;
+    struct mk_list *split;
+    struct flb_kv *kv;
+
+    msgpack_pack_map(mp_pck, mk_list_size(&ctx->labels_list));
+    
+    mk_list_foreach(head, &ctx->labels_list){
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        msgpack_pack_str(mp_pck, flb_sds_len(kv->key));
+        msgpack_pack_str_body(mp_pck, kv->key, flb_sds_len(kv->key));
+        msgpack_pack_str(mp_pck, flb_sds_len(kv->val));
+        msgpack_pack_str_body(mp_pck, kv->val, flb_sds_len(kv->val));
+    }
+
+    flb_kv_release(&ctx->labels_list);
 }
 
 static void cb_results(const char *name, const char *value,
@@ -1341,7 +1435,7 @@ static int pack_json_payload(int insert_id_extracted,
 
     /* points back to the beginning of map */
     kv = obj->via.map.ptr;
-    for(; kv != kvend; ++kv	) {
+    for(; kv != kvend; ++kv ) {
         key_not_found = 1;
 
         /* processing logging.googleapis.com/insertId */
@@ -1452,7 +1546,6 @@ static int stackdriver_format(struct flb_config *config,
     const char *newtag;
     const char *new_log_name;
     msgpack_object *obj;
-    msgpack_object *labels_ptr;
     msgpack_unpacked result;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -1988,17 +2081,20 @@ static int stackdriver_format(struct flb_config *config,
             entry_size += 1;
         }
 
-        /* Extract labels */
-        labels_ptr = parse_labels(ctx, obj);
-        if (labels_ptr != NULL) {
-            if (labels_ptr->type != MSGPACK_OBJECT_MAP) {
-                flb_plg_error(ctx->ins, "the type of labels should be map");
-                flb_sds_destroy(operation_id);
-                flb_sds_destroy(operation_producer);
-                msgpack_unpacked_destroy(&result);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return -1;
-            }
+        /* Extract payload labels */
+        payload_labels_ptr = get_payload_labels(ctx, obj);
+        if (payload_labels_ptr != NULL &&
+            payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "the type of labels should be map");
+            flb_sds_destroy(operation_id);
+            flb_sds_destroy(operation_producer);
+            msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return NULL;
+        }
+
+        labels_parsed = parse_labels(ctx, payload_labels_ptr);
+        if (labels_parsed == FLB_TRUE) {
             entry_size += 1;
         }
 
@@ -2056,10 +2152,10 @@ static int stackdriver_format(struct flb_config *config,
         }
 
         /* labels */
-        if (labels_ptr != NULL) {
+        if (labels_parsed == FLB_TRUE) {
             msgpack_pack_str(&mp_pck, 6);
             msgpack_pack_str_body(&mp_pck, "labels", 6);
-            msgpack_pack_object(&mp_pck, *labels_ptr);
+            pack_labels(ctx, &mp_pck);
         }
 
         /* Clean up id and producer if operation extracted */
