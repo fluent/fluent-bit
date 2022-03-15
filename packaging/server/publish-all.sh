@@ -2,7 +2,7 @@
 set -eux
 
 SOURCE_DIR=${SOURCE_DIR:-$HOME/apt}
-APTLY_CONFIG=${APTLY_CONFIG:-$HOME/.aptly.conf}
+APTLY_CONFIG=${APTLY_CONFIG:-/etc/aptly.conf}
 
 if [ -z "$1" ]; then
     echo "Usage: ./publish_all  new_version"
@@ -47,40 +47,68 @@ echo "Publishing Debian 10 Buster"
 # Conflicts otherwise with existing
 find "$SOURCE_DIR/debian/buster/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-debian-buster {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-buster-${VERSION}" from repo flb-debian-buster
-aptly -config="$APTLY_CONFIG" publish switch buster filesystem:debian/buster: "fluent-bit-debian-buster-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch buster filesystem:debian/buster: "fluent-bit-debian-buster-${VERSION}" ; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-buster-${VERSION}"
+    exit 1
+fi
 
 # Debian 11 Bullseye
 echo "Publishing Debian 11 Bullseye"
 find "$SOURCE_DIR/debian/bullseye/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-debian-bullseye {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-bullseye-${VERSION}" from repo flb-debian-bullseye
-aptly -config="$APTLY_CONFIG" publish switch bullseye filesystem:debian/bullseye: "fluent-bit-debian-bullseye-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch bullseye filesystem:debian/bullseye: "fluent-bit-debian-bullseye-${VERSION}"; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-bullseye-${VERSION}"
+    exit 1
+fi
 
 # Raspbian 10 Buster
 echo "Publishing Raspbian 10 Buster"
 find "$SOURCE_DIR/raspbian/buster/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-raspbian-buster {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-raspbian-buster-${VERSION}" from repo flb-raspbian-buster
-aptly -config="$APTLY_CONFIG" publish switch buster filesystem:raspbian/buster: "fluent-bit-raspbian-buster-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch buster filesystem:raspbian/buster: "fluent-bit-raspbian-buster-${VERSION}" ; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-raspbian-buster-${VERSION}"
+    exit 1
+fi
 
 # Raspbian 11 Bullseye
 echo "Publishing Raspbian 11 Bullseye"
 find "$SOURCE_DIR/raspbian/bullseye/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-raspbian-bullseye {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-raspbian-bullseye-${VERSION}" from repo flb-raspbian-bullseye
-aptly -config="$APTLY_CONFIG" publish switch bullseye filesystem:raspbian/bullseye: "fluent-bit-raspbian-bullseye-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch bullseye filesystem:raspbian/bullseye: "fluent-bit-raspbian-bullseye-${VERSION}" ; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-raspbian-bullseye-${VERSION}"
+    exit 1
+fi
 
 # Ubuntu 16.04 Xenial
 echo "Publishing Ubuntu 16.04 Xenial"
 find "$SOURCE_DIR/ubuntu/xenial/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-ubuntu-xenial {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-ubuntu-xenial-${VERSION}" from repo flb-ubuntu-xenial
-aptly -config="$APTLY_CONFIG" publish switch xenial filesystem:ubuntu/xenial: "fluent-bit-ubuntu-xenial-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch xenial filesystem:ubuntu/xenial: "fluent-bit-ubuntu-xenial-${VERSION}" ; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-ubuntu-xenial-${VERSION}"
+    exit 1
+fi
 
 # Ubuntu 18.04 Bionic
 echo "Publishing Ubuntu 18.04 Bionic"
 find "$SOURCE_DIR/ubuntu/bionic/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-ubuntu-bionic {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-ubuntu-bionic-${VERSION}" from repo flb-ubuntu-bionic
-aptly -config="$APTLY_CONFIG" publish switch bionic filesystem:ubuntu/bionic: "fluent-bit-ubuntu-bionic-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch bionic filesystem:ubuntu/bionic: "fluent-bit-ubuntu-bionic-${VERSION}" ; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-ubuntu-bionic-${VERSION}"
+    exit 1
+fi
 
 # Ubuntu 20.04 Focal
 echo "Publishing Ubuntu 20.04 Focal"
 find "$SOURCE_DIR/ubuntu/focal/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-ubuntu-focal {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-ubuntu-focal-${VERSION}" from repo flb-ubuntu-focal
-aptly -config="$APTLY_CONFIG" publish switch focal filesystem:ubuntu/focal: "fluent-bit-ubuntu-focal-${VERSION}"
+if ! aptly -config="$APTLY_CONFIG" publish switch focal filesystem:ubuntu/focal: "fluent-bit-ubuntu-focal-${VERSION}"; then
+    # Cleanup snapshot in case we want to retry later
+    aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-ubuntu-focal-${VERSION}"
+    exit 1
+fi
