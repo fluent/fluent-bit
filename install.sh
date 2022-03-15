@@ -43,7 +43,7 @@ EOF
 yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
-    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora)
+    centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
         sudo sh <<'SCRIPT'
 rpm --import https://packages.fluentbit.io/fluentbit.key
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
