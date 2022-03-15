@@ -1,0 +1,1 @@
+This directory contains the necessary files to support publishing release packages.
