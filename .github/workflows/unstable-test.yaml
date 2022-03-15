@@ -1,0 +1,58 @@
+---
+name: Unstable test
+# The intention is this workflow is triggered either manually or
+# after build has completed.
+on:
+  workflow_run:
+    workflows: ['Unstable build']
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency: integration-test
+
+jobs:
+  unstable-test-images:
+    name: Unstable - test container images
+    # Workflow run always triggers on completion regardless of status
+    # This prevents us from running if build fails.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
+    with:
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/unstable
+      image-tag: latest
+      environment: unstable
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Called workflows cannot be nested
+  unstable-test-images-integration-gcp:
+    name: Unstable - run integration tests on GCP
+    # Wait for other tests to succeed
+    needs: unstable-test-images
+    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
+    with:
+      image_name: ghcr.io/${{ github.repository }}/unstable
+      image_tag: latest
+    secrets:
+      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
+      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
+      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
+      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+
+  # Now need to reconstruct our release into a repo to use.
+  # TODO:
+
+  # unstable-test-packages:
+  #   name: Binary packages unstable test
+  #   # Workflow run always triggers on completion regardless of status
+  #   # This prevents us from running if build fails.
+  #   if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+  #   uses: fluent/fluent-bit/.github/workflows/call-test-packages.yaml@master
+  #   with:
+  #     environment: unstable
+  #   secrets:
+  #     bucket: ${{ secrets.AWS_S3_BUCKET_unstable }}
+  #     token: ${{ secrets.GITHUB_TOKEN }}

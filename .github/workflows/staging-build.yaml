@@ -6,6 +6,12 @@ on:
     tags:
       - '*'
 
+  # When unstable passes, we can then trigger staging
+  workflow_run:
+    workflows: ['Unstable test']
+    types:
+      - completed
+
   workflow_dispatch:
     inputs:
       version:
@@ -17,10 +23,6 @@ on:
         required: false
         default: ""
 
-  # Run nightly build - disable until after 1.9 release
-  # schedule:
-  # - cron: "0 6 * * *"
-
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
 concurrency: staging-build-release
@@ -30,6 +32,9 @@ jobs:
   # This job strips off the `v` at the start of any tag provided.
   # It then provides this metadata for the other jobs to use.
   staging-build-get-meta:
+    # Workflow run always triggers on completion regardless of status
+    # This prevents us from running if build fails.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Get metadata to build
     runs-on: ubuntu-latest
     outputs:
@@ -57,7 +62,7 @@ jobs:
         shell: bash
         env:
           # Use the dispatch variable in preference, if empty use the context ref_name which should
-          # only ever be a tag or the master branch for cron builds.
+          # only ever be a tag or the master branch.
           INPUT_VERSION: ${{ github.event.inputs.version || github.ref_name }}
 
       # String the 'v' prefix for tags.
@@ -84,7 +89,6 @@ jobs:
       username: ${{ github.actor }}
       image: ${{ github.repository }}/staging
       environment: staging
-      unstable: ${{ github.event_name == 'schedule' && needs.staging-build-get-meta.outputs.date || '' }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       cosign_private_key: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -97,29 +101,10 @@ jobs:
       build-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       # Set up the list of target to build so we can pass the JSON to the reusable job
-      - id: set-matrix
-        run: |
-          matrix=$((
-            echo '{ "distro" : ['
-            echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
-            echo '"centos/7", "centos/7.arm64v8", "centos/8", "centos/8.arm64v8",'
-            echo '"debian/buster", "debian/buster.arm64v8", "debian/bullseye", "debian/bullseye.arm64v8",'
-            echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8",'
-            echo '"raspbian/buster", "raspbian/bullseye"'
-            echo ']}'
-          ) | jq -c .)
-          if [ -n "${{ github.event.inputs.target || '' }}" ]; then
-            echo "Overriding matrix to build: ${{ github.event.inputs.target }}"
-            matrix=$((
-              echo '{ "distro" : ['
-              echo '"${{ github.event.inputs.target }}"'
-              echo ']}'
-            ) | jq -c .)
-          fi
-          echo $matrix
-          echo $matrix| jq .
-          echo "::set-output name=matrix::$matrix"
-        shell: bash
+      - uses: ./.github/actions/release-server-sync
+        id: set-matrix
+        with:
+          target: ${{ github.event.inputs.target || '' }}
 
   staging-build-packages:
     needs: [ staging-build-get-meta, staging-build-generate-matrix ]
@@ -129,7 +114,6 @@ jobs:
       ref: ${{ github.event.inputs.version || github.ref_name }}
       build_matrix: ${{ needs.staging-build-generate-matrix.outputs.build-matrix }}
       environment: staging
-      unstable: ${{ github.event_name == 'schedule' && needs.staging-build-get-meta.outputs.date || '' }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
       bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
@@ -137,59 +121,3 @@ jobs:
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
       gpg_private_key_passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
-
-  # We already detain all artefacts as build output so just capture for an unstable release
-  staging-unstable-release:
-    runs-on: ubuntu-latest
-    needs:
-      - staging-build-get-meta
-      - staging-build-images
-      - staging-build-packages
-    environment: staging
-    permissions:
-      contents: write
-    steps:
-      - name: Download all artefacts
-        continue-on-error: true
-        uses: actions/download-artifact@v2
-        with:
-          path: artifacts/
-
-      - name: Single packages tar
-        run: |
-          mkdir -p release-upload
-          tar -czvf release-upload/packages-unstable-${{ needs.staging-build-get-meta.outputs.version }}.tar.gz -C artifacts/ .
-        shell: bash
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull containers as well (single arch only)
-        # May not be any/valid so ignore errors
-        continue-on-error: true
-        run: |
-          docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}
-          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}
-          docker pull ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}-debug
-          docker save --output container-${{ needs.staging-build-get-meta.outputs.version }}-debug.tar ghcr.io/${{ github.repository }}/staging:${{ needs.staging-build-get-meta.outputs.version }}-debug
-        shell: bash
-        working-directory: release-upload
-
-      - name: Display structure of files to upload
-        run: ls -R
-        working-directory: release-upload
-        shell: bash
-
-      - name: Unstable release on push to master to make it easier to download
-        # Ignore failures here as we still want to trigger testing
-        continue-on-error: true
-        uses: pyTooling/Actions/releaser@r0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: 'unstable'
-          files: |
-            release-upload/**/*
