@@ -167,6 +167,11 @@ int flb_aws_imds_request_by_key(struct flb_aws_imds *ctx, const char *metadata_p
         flb_debug("[imds] refreshed IMDSv2 token");
         c = ec2_imds_client->client_vtable->request(
             ec2_imds_client, FLB_HTTP_GET, metadata_path, NULL, 0, &token_header, 1);
+        if (!c) {
+            /* Exit gracefully allowing for retries */
+            flb_warn("[imds] failed to retrieve metadata");
+            return -1;
+        }
     }
 
     if (c->resp.status != 200) {
