@@ -676,3 +676,47 @@ int flb_sched_timer_cleanup(struct flb_sched *sched)
 
     return c;
 }
+
+int flb_sched_retry_now(struct flb_config *config, 
+                        struct flb_task_retry *retry)
+{
+    int ret;
+    struct flb_sched_timer *timer;
+    struct flb_sched_request *request;
+
+    /* Allocate timer context */
+    timer = flb_sched_timer_create(config->sched);
+    if (!timer) {
+        return -1;
+    }
+
+    /* Allocate request node */
+    request = flb_malloc(sizeof(struct flb_sched_request));
+    if (!request) {
+        flb_errno();
+        return -1;
+    }
+
+    /* Link timer references */
+    timer->type = FLB_SCHED_TIMER_REQUEST;
+    timer->data = request;
+    timer->event.mask = MK_EVENT_EMPTY;
+
+    /* Populate request */
+    request->fd      = -1;
+    request->created = time(NULL);
+    request->timeout = 0;
+    request->data    = retry;
+    request->timer   = timer;
+
+    ret = schedule_request_now(0 /* seconds */, timer, request, config);
+    if (ret == -1) {
+        flb_error("[sched] 'retry-now request' could not be created. the "
+                  "system might be running out of memory or file "
+                  "descirptors.");
+        flb_sched_timer_destroy(timer);
+        flb_free(request);
+        return -1;
+    }
+    return 0;
+}
