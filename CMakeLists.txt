@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.0)
 project(fluent-bit)
 
 # Fluent Bit Version
-set(FLB_VERSION_MAJOR  1)
-set(FLB_VERSION_MINOR  9)
+set(FLB_VERSION_MAJOR  2)
+set(FLB_VERSION_MINOR  0)
 set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
