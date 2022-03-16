@@ -2,10 +2,6 @@
 name: Deploy to staging
 
 on:
-  push:
-    tags:
-      - '*'
-
   # When unstable passes, we can then trigger staging
   workflow_run:
     workflows: ['Unstable test']
@@ -39,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
-      date: ${{ steps.date.outputs.date }}
     steps:
 
       - run: |
@@ -74,11 +69,6 @@ jobs:
           replace-with: '$1'
           flags: 'g'
 
-      # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
-      - name: Get current date
-        id: date
-        run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
-
   staging-build-images:
     needs: staging-build-get-meta
     uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
@@ -101,7 +91,7 @@ jobs:
       build-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       # Set up the list of target to build so we can pass the JSON to the reusable job
-      - uses: ./.github/actions/release-server-sync
+      - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
         with:
           target: ${{ github.event.inputs.target || '' }}

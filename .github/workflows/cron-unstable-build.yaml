@@ -46,7 +46,7 @@ jobs:
       build-matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       # Set up the list of target to build so we can pass the JSON to the reusable job
-      - uses: ./.github/actions/release-server-sync
+      - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
 
   unstable-build-packages-master:
