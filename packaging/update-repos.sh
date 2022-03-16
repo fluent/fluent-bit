@@ -45,7 +45,8 @@ DEB_REPO_PATHS=( "debian/bullseye"
                  "ubuntu/xenial"
                  "ubuntu/bionic"
                  "ubuntu/focal"
-                 "raspbian/buster" )
+                 "raspbian/buster"
+                 "raspbian/bullseye" )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     REPO_DIR=$(realpath -sm "$BASE_PATH/$DEB_REPO" )

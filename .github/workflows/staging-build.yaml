@@ -36,11 +36,6 @@ jobs:
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
     steps:
-
-      - run: |
-          echo "Version: ${{ github.event.inputs.version || github.ref_name }}"
-        shell: bash
-
       # This step is to consolidate the three different triggers into a single "version"
       # 1. If manual dispatch - use the version provided.
       # 2. If cron/regular build - use master.
@@ -59,15 +54,6 @@ jobs:
           # Use the dispatch variable in preference, if empty use the context ref_name which should
           # only ever be a tag or the master branch.
           INPUT_VERSION: ${{ github.event.inputs.version || github.ref_name }}
-
-      # String the 'v' prefix for tags.
-      - uses: frabert/replace-string-action@v2.0
-        id: formatted_version
-        with:
-          pattern: '[v]*(.*)$'
-          string: "${{ steps.get_version.outputs.VERSION }}"
-          replace-with: '$1'
-          flags: 'g'
 
   staging-build-images:
     needs: staging-build-get-meta
