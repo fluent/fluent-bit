@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,6 +40,7 @@ struct flb_tail_file {
     int64_t size;
     int64_t offset;
     int64_t last_line;
+    uint64_t  dev_id;
     uint64_t  inode;
     uint64_t  link_inode;
     int   is_link;
@@ -106,6 +106,9 @@ struct flb_tail_file {
 
     /* database reference */
     uint64_t db_id;
+
+    uint64_t hash_bits;
+    flb_sds_t hash_key;
 
     /* reference */
     int tail_mode;

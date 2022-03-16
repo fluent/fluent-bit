@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,6 +37,24 @@
 #define FLB_BIGQUERY_RESOURCE_TEMPLATE  "/bigquery/v2/projects/%s/datasets/%s/tables/%s/insertAll"
 #define FLB_BIGQUERY_URL_BASE           "https://www.googleapis.com"
 
+#define FLB_BIGQUERY_GOOGLE_STS_URL     "https://sts.googleapis.com"
+#define FLB_BIGQUERY_GOOGLE_IAM_URL     "https://iamcredentials.googleapis.com"
+#define FLB_BIGQUERY_AWS_STS_ENDPOINT   "/?Action=GetCallerIdentity&Version=2011-06-15"
+
+#define FLB_BIGQUERY_GOOGLE_CLOUD_TARGET_RESOURCE \
+    "//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s"
+
+#define FLB_BIGQUERY_GOOGLE_STS_TOKEN_GRANT_TYPE            "urn:ietf:params:oauth:grant-type:token-exchange"
+#define FLB_BIGQUERY_GOOGLE_STS_TOKEN_REQUESTED_TOKEN_TYPE  "urn:ietf:params:oauth:token-type:access_token"
+#define FLB_BIGQUERY_GOOGLE_STS_TOKEN_SCOPE                 "https://www.googleapis.com/auth/cloud-platform"
+#define FLB_BIGQUERY_GOOGLE_STS_TOKEN_SUBJECT_TOKEN_TYPE    "urn:ietf:params:aws:token-type:aws4_request"
+#define FLB_BIGQUERY_GOOGLE_CLOUD_TOKEN_ENDPOINT            "/v1/token"
+
+#define FLB_BIGQUERY_GOOGLE_GEN_ACCESS_TOKEN_REQUEST_BODY \
+    "{\"scope\": [\"https://www.googleapis.com/auth/cloud-platform\"]}"
+
+#define FLB_BIGQUERY_GOOGLE_GEN_ACCESS_TOKEN_URL \
+    "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken"
 
 struct flb_bigquery_oauth_credentials {
     /* parsed credentials file */
@@ -56,6 +73,35 @@ struct flb_bigquery {
     flb_sds_t credentials_file;
 
     struct flb_bigquery_oauth_credentials *oauth_credentials;
+
+    /* Workload Identity Federation */
+    int has_identity_federation;
+    flb_sds_t project_number;
+    flb_sds_t pool_id;
+    flb_sds_t provider_id;
+    flb_sds_t aws_region;
+    flb_sds_t google_service_account;
+
+    /* AWS IMDS */
+    struct flb_tls *aws_tls;
+    struct flb_aws_provider *aws_provider;
+
+    /* AWS STS */
+    flb_sds_t aws_sts_endpoint;
+    struct flb_tls *aws_sts_tls;
+    struct flb_upstream *aws_sts_upstream;
+
+    /* Google STS API */
+    struct flb_tls *google_sts_tls;
+    struct flb_upstream *google_sts_upstream;
+
+    /* Google Service Account Credentials API */
+    struct flb_tls *google_iam_tls;
+    struct flb_upstream *google_iam_upstream;
+
+    /* Google OAuth access token for service account, that was exchanged for AWS credentials */
+    flb_sds_t sa_token;
+    time_t sa_token_expiry;
 
     /* bigquery configuration */
     flb_sds_t project_id;

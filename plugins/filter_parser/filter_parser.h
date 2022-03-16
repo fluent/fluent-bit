@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_sds.h>
 
 struct filter_parser {
     struct flb_parser *parser;
@@ -31,7 +31,7 @@ struct filter_parser {
 };
 
 struct filter_parser_ctx {
-    char     *key_name;
+    flb_sds_t key_name;
     int    key_name_len;
     int    reserve_data;
     int    preserve_key;

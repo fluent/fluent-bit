@@ -25,6 +25,13 @@ int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
 {
     TIMEOUT_GUARD
 
+    if (size < 1) {
+        return 0;
+    }
+    unsigned char decider = *data;
+    data++;
+    size--;
+
     /* json packer */
     char *out_buf = NULL;
     size_t out_size;
@@ -45,14 +52,27 @@ int LLVMFuzzerTestOneInput(unsigned char *data, size_t size)
             }
         }
         msgpack_unpacked_destroy(&result);
-
-        flb_sds_t ret_s = flb_pack_msgpack_to_json_format(out_buf, out_size,
-                FLB_PACK_JSON_FORMAT_LINES,
-                FLB_PACK_JSON_DATE_EPOCH, NULL);
-        free(out_buf);
-        if (ret_s != NULL) {
-            flb_sds_destroy(ret_s);
+        flb_sds_t d;
+        d = flb_sds_create("date");
+        if (decider < 0x30) {
+            flb_sds_t ret_s = flb_pack_msgpack_to_json_format(out_buf, out_size,
+                    FLB_PACK_JSON_FORMAT_LINES,
+                    (int)decider, d);
+            free(out_buf);
+            if (ret_s != NULL) {
+                flb_sds_destroy(ret_s);
+            }
         }
+        else {
+            flb_sds_t ret_s = flb_pack_msgpack_to_json_format(out_buf, out_size,
+                    FLB_PACK_JSON_FORMAT_LINES,
+                    FLB_PACK_JSON_DATE_EPOCH, NULL);
+            free(out_buf);
+            if (ret_s != NULL) {
+                flb_sds_destroy(ret_s);
+            }
+        }
+        flb_sds_destroy(d);
     }
 
     return 0;

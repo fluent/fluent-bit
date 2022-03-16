@@ -18,7 +18,7 @@ RUN yum -y update && \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3 && \
+                   cmake3 libyaml-devel && \
     yum clean all
 
 # amazonlinux/2.arm64v8 base image
@@ -32,26 +32,21 @@ RUN yum -y update && \
                    wget unzip systemd-devel wget flex bison \
                    cyrus-sasl-lib cyrus-sasl-devel openssl openss-libs openssl-devel \
                    postgresql-devel postgresql-libs \
-                   cmake3 && \
+                   cmake3 libyaml-devel && \
     yum clean all
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
-ARG FLB_PREFIX
-ARG FLB_VERSION
-ARG FLB_SRC
 
-ENV FLB_PREFIX=$FLB_PREFIX
-ENV FLB_VERSION=$FLB_VERSION
-ENV FLB_SRC=$FLB_SRC
+ARG FLB_NIGHTLY_BUILD
+ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
-ENV FLB_TARBALL http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip
-COPY sources/$FLB_SRC /
+# Docker context must be the base of the repo
+WORKDIR /tmp/fluent-bit/
+COPY . ./
 
-WORKDIR /tmp
-RUN if [ -z "$FLB_SRC" ] ; then wget -q -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
-
+WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 # Unused
 ARG CFLAGS
@@ -64,8 +59,8 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_JEMALLOC=On
 
-WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
            -DFLB_RELEASE="$FLB_RELEASE" \
@@ -75,6 +70,8 @@ RUN cmake3 -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
            -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
            -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
            -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+           -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
            ../
 
 VOLUME [ "/output" ]

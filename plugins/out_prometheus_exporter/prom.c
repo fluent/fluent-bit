@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -173,6 +172,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
                           struct flb_config *config)
 {
     int ret;
+    int add_ts;
     size_t off = 0;
     flb_sds_t metrics;
     cmt_sds_t text;
@@ -194,8 +194,16 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     /* append labels set by config */
     append_labels(ctx, cmt);
 
+    /* add timestamp in the output format ? */
+    if (ctx->add_timestamp) {
+        add_ts = CMT_TRUE;
+    }
+    else {
+        add_ts = CMT_FALSE;
+    }
+
     /* convert to text representation */
-    text = cmt_encode_prometheus_create(cmt, CMT_TRUE);
+    text = cmt_encode_prometheus_create(cmt, add_ts);
     if (!text) {
         cmt_destroy(cmt);
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -261,6 +269,12 @@ static int cb_prom_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "add_timestamp", "false",
+     0, FLB_TRUE, offsetof(struct prom_exporter, add_timestamp),
+     "Add timestamp to every metric honoring collection time."
+    },
+
     {
      FLB_CONFIG_MAP_SLIST_1, "add_label", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct prom_exporter, add_labels),

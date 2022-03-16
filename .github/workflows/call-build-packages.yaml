@@ -5,7 +5,11 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version of the Fluent Bit to build.
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
         type: string
         required: true
       build_matrix:
@@ -16,10 +20,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
-      branch:
-        description: The optional source code branch to use for building against.
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
         type: string
         required: false
+        default: ''
     secrets:
       token:
         description: The Github token or similar to authenticate with.
@@ -36,6 +41,9 @@ on:
       gpg_private_key:
         description: The GPG key to use for signing the packages.
         required: false
+      gpg_private_key_passphrase:
+        description: The GPG key passphrase to use for signing the packages.
+        required: false
 
 jobs:
   call-build-packages:
@@ -47,7 +55,9 @@ jobs:
       matrix: ${{ fromJSON(inputs.build_matrix) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -67,11 +77,10 @@ jobs:
         run: |
           ./build.sh
         env:
-          FLB_VERSION: ${{ inputs.version }}
           FLB_DISTRO: ${{ matrix.distro }}
           FLB_OUT_DIR: staging
-          FLB_BRANCH: ${{ inputs.branch }}
           FLB_TD: "Off"
+          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
         working-directory: packaging
 
@@ -79,11 +88,10 @@ jobs:
         run: |
           ./build.sh
         env:
-          FLB_VERSION: ${{ inputs.version }}
           FLB_DISTRO: ${{ matrix.distro }}
           FLB_OUT_DIR: staging
-          FLB_BRANCH: ${{ inputs.branch }}
           FLB_TD: "On"
+          FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
         working-directory: packaging
 
@@ -153,13 +161,14 @@ jobs:
           sudo apt-get install -y createrepo aptly
 
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Import GPG key for signing
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v4
         with:
           gpg_private_key: ${{ secrets.gpg_private_key }}
+          passphrase: ${{ secrets.gpg_private_key_passphrase }}
 
       - name: Create repositories on staging now
         # We sync down what we have for the release directories.

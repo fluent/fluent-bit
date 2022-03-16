@@ -5,7 +5,11 @@ on:
   workflow_call:
     inputs:
       version:
-        description: The version of the Fluent Bit to build.
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
         type: string
         required: true
       registry:
@@ -24,6 +28,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -35,109 +44,18 @@ on:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
-  call-build-images-matrix:
-    name: ${{ matrix.arch }} container image stage to GHCR
+  call-build-images:
+    name: Multiarch container images to GHCR
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [ amd64, arm64, arm/v7 ]
-        include:
-          - arch: amd64
-            suffix: x86_64
-          - arch: arm/v7
-            suffix: arm32v7
-          - arch: arm64
-            suffix: arm64v8
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v1
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
-
-    - name: Log in to the Container registry
-      uses: docker/login-action@v1
-      with:
-        registry: ${{ inputs.registry }}
-        username: ${{ inputs.username }}
-        password: ${{ secrets.token }}
-
-    - name: Extract metadata from Github
-      id: meta
-      uses: docker/metadata-action@v3
-      with:
-        images: ${{ inputs.registry }}/${{ inputs.image }}
-        tags: |
-          raw,${{ matrix.suffix }}-${{ inputs.version }}
-          raw,${{ matrix.suffix }}-latest
-
-    - name: Build the ${{ matrix.suffix }} staging image
-      uses: docker/build-push-action@v2
-      with:
-        file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
-        context: .
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        platforms: linux/${{ matrix.arch }}
-        push: true
-        load: false
-        build-args: |
-          FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
-
-  call-build-images-debug:
-    name: Build the single-arch debug image
-    runs-on: [ ubuntu-latest ]
-    environment: ${{ inputs.environment }}
-    needs: call-build-images-matrix
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
-
-    - name: Log in to the Container registry
-      uses: docker/login-action@v1
-      with:
-        registry: ${{ inputs.registry }}
-        username: ${{ inputs.username }}
-        password: ${{ secrets.token }}
-
-    - name: Extract metadata from Github
-      id: meta
-      uses: docker/metadata-action@v3
-      with:
-        images: ${{ inputs.registry }}/${{ inputs.image }}
-        tags: |
-          raw,x86_64-${{ inputs.version }}-debug
-          raw,${{ inputs.version }}-debug
-          raw,latest-debug
-
-    - name: Build the debug staging image
-      uses: docker/build-push-action@v2
-      with:
-        file: ./dockerfiles/Dockerfile.x86_64-debug
-        context: .
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        platforms: linux/amd64
-        push: true
-        load: false
-        build-args: |
-          FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
-
-  call-build-images-multiarch:
-    name: Multiarch container images stage to GHCR
-    runs-on: [ ubuntu-latest ]
-    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -156,15 +74,15 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}/multiarch
+          images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.version }}
             raw,latest
 
-      - name: Build the multi-arch images
+      - name: Build the production images
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.multiarch
+          file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -173,12 +91,12 @@ jobs:
           push: true
           load: false
           build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
       - id: debug-meta
         uses: docker/metadata-action@v3
         with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}/multiarch
+          images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.version }}-debug
             raw,latest-debug
@@ -186,7 +104,7 @@ jobs:
       - name: Build the debug multi-arch images
         uses: docker/build-push-action@v2
         with:
-          file: ./dockerfiles/Dockerfile.multiarch
+          file: ./dockerfiles/Dockerfile
           context: .
           tags: ${{ steps.debug-meta.outputs.tags }}
           labels: ${{ steps.debug-meta.outputs.labels }}
@@ -195,47 +113,17 @@ jobs:
           push: true
           load: false
           build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v${{ inputs.version }}.tar.gz
-
-      - name: Multi-arch - run Trivy and Dockle scans
-        uses: azure/container-scan@v0
-        with:
-          image-name: ${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}
-          username: ${{ inputs.username }}
-          password: ${{ secrets.token }}
+            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
   call-build-images-scan:
     name: Trivy + Dockle image scan
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
-    needs: call-build-images-matrix
-    strategy:
-      fail-fast: false
-      matrix:
-        suffix: [ x86_64, arm32v7, arm64v8 ]
-    steps:
-      - name: Checkout code for ignore list
-        uses: actions/checkout@v2
-
-      - name: Single arch - run Trivy and Dockle scans
-        uses: azure/container-scan@v0
-        with:
-          image-name: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.suffix }}-${{ inputs.version }}
-          username: ${{ inputs.username }}
-          password: ${{ secrets.token }}
-
-  call-build-images-push-manifests:
-    name: Deploy multi-arch container image manifests
+    needs: call-build-images
     permissions:
       contents: read
-      packages: write
-    runs-on: [ ubuntu-latest ]
-    environment: ${{ inputs.environment }}
-    needs: call-build-images-matrix
+      packages: read
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
       - name: Log in to the Container registry
         uses: docker/login-action@v1
         with:
@@ -243,29 +131,22 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
-      - name: Pull all the images
-        # Use platform to trigger warnings on invalid image metadata
-        run: |
-          docker pull --platform=linux/amd64 ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }}
-          docker pull --platform=linux/arm64 ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }}
-          docker pull --platform=linux/arm/v7  ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
+      - name: Trivy - multi-arch
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
 
-      - name: Create manifests for images
-        run: |
-          docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
-
-          docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:latest \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }} \
-            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
-
-          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}
-          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:latest
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
+      - name: Dockle - multi-arch
+        uses: hands-lab/dockle-action@v1
+        with:
+          image: '${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}'
+          exit-code: '1'
+          exit-level: WARN
 
   call-build-images-sign:
     name: Deploy and sign multi-arch container image manifests
@@ -277,7 +158,7 @@ jobs:
       id-token: write
     runs-on: [ ubuntu-latest ]
     environment: ${{ inputs.environment }}
-    needs: call-build-images-push-manifests
+    needs: call-build-images
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@main
@@ -295,9 +176,7 @@ jobs:
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:latest" \
-            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}:latest"
         shell: bash
         # Ensure we move on to key-based signing as well
         continue-on-error: true
@@ -316,9 +195,7 @@ jobs:
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}:latest" \
-            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:${{ inputs.version }}" \
-            "${{ inputs.registry }}/${{ inputs.image }}/multiarch:latest"
+            "${{ inputs.registry }}/${{ inputs.image }}:latest"
           rm -f /tmp/my_cosign.key
         shell: bash
         env:

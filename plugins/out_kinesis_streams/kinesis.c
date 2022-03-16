@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -481,6 +480,7 @@ struct flb_output_plugin out_kinesis_streams_plugin = {
     .cb_init      = cb_kinesis_init,
     .cb_flush     = cb_kinesis_flush,
     .cb_exit      = cb_kinesis_exit,
+    .workers      = 1,
     .flags        = 0,
 
     /* Configuration */

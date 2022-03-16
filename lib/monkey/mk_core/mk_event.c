@@ -181,7 +181,17 @@ int mk_event_channel_create(struct mk_event_loop *loop,
 /* Poll events */
 int mk_event_wait(struct mk_event_loop *loop)
 {
-    return _mk_event_wait(loop);
+    return _mk_event_wait_2(loop, -1);
+}
+
+/*
+ * Poll events with timeout in milliseconds
+ * zero timeout for non blocking wait
+ * -1 timeout for infinite wait
+ */
+int mk_event_wait_2(struct mk_event_loop *loop, int timeout)
+{
+    return _mk_event_wait_2(loop, timeout);
 }
 
 /* Return the backend name */

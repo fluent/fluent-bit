@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -190,7 +189,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             if (file->config->exit_on_eof) {
                 flb_plg_info(ctx->ins, "inode=%"PRIu64" file=%s ended, stop",
                              file->inode, file->name);
-                if (mk_list_size(&ctx->files_static) == 1) {
+                if (ctx->files_static_count == 1) {
                     flb_engine_exit(config);
                 }
             }
@@ -227,7 +226,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
              * when to stop processing the static list.
              */
             if (alter_size == 0) {
-                pre_size = mk_list_size(&ctx->files_static);
+                pre_size = ctx->files_static_count;
             }
             ret = flb_tail_file_to_event(file);
             if (ret == -1) {
@@ -237,7 +236,7 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             }
 
             if (alter_size == 0) {
-                pos_size = mk_list_size(&ctx->files_static);
+                pos_size = ctx->files_static_count;
                 if (pre_size == pos_size) {
                     alter_size++;
                 }

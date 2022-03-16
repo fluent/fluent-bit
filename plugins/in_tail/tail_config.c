@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -134,7 +133,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     /* Config: path/pattern to read files */
     if (!ctx->path_list || mk_list_size(ctx->path_list) == 0) {
         flb_plg_error(ctx->ins, "no input 'path' was given");
-        flb_free(ctx);
+        flb_tail_config_destroy(ctx);
         return NULL;
     }
 
@@ -167,7 +166,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
             flb_plg_error(ctx->ins,
                           "invalid 'refresh_interval' config value (%s)",
                       tmp);
-            flb_free(ctx);
+            flb_tail_config_destroy(ctx);
             return NULL;
         }
     }
@@ -220,6 +219,22 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
     mk_list_init(&ctx->files_rotated);
+
+    /* hash table for files lookups */
+    ctx->static_hash = flb_hash_create(FLB_HASH_EVICT_NONE, 1000, 0);
+    if (!ctx->static_hash) {
+        flb_plg_error(ctx->ins, "could not create static hash");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
+    ctx->event_hash = flb_hash_create(FLB_HASH_EVICT_NONE, 1000, 0);
+    if (!ctx->event_hash) {
+        flb_plg_error(ctx->ins, "could not create event hash");
+        flb_tail_config_destroy(ctx);
+        return NULL;
+    }
+
 #ifdef FLB_HAVE_SQLDB
     ctx->db = NULL;
 #endif
@@ -444,6 +459,13 @@ int flb_tail_config_destroy(struct flb_tail_config *config)
         flb_tail_db_close(config->db);
     }
 #endif
+
+    if (config->static_hash) {
+        flb_hash_destroy(config->static_hash);
+    }
+    if (config->event_hash) {
+        flb_hash_destroy(config->event_hash);
+    }
 
     flb_free(config);
     return 0;

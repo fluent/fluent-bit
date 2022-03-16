@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,7 +40,9 @@
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/flb_bucket_queue.h>
 
 const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 
@@ -166,6 +167,8 @@ struct flb_config *flb_config_init()
 {
     int ret;
     struct flb_config *config;
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
 
     config = flb_calloc(1, sizeof(struct flb_config));
     if (!config) {
@@ -182,6 +185,22 @@ struct flb_config *flb_config_init()
 
     /* Is the engine (event loop) actively running ? */
     config->is_running = FLB_TRUE;
+
+    /* Initialize config_format context */
+    cf = flb_cf_create();
+    if (!cf) {
+        return NULL;
+    }
+    config->cf_main = cf;
+
+    section = flb_cf_section_create(cf, "service", 0);
+    if (!section) {
+        flb_cf_destroy(cf);
+        return NULL;
+    }
+
+    /* config_format for parsers */
+    config->cf_parsers = flb_cf_create();
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
@@ -366,7 +385,8 @@ void flb_config_exit(struct flb_config *config)
                 mk_event_timeout_destroy(config->evl, &collector->event);
                 mk_event_closesocket(collector->fd_timer);
             }
-        } else {
+        }
+        else {
             mk_event_del(config->evl, &collector->event);
         }
 
@@ -421,6 +441,13 @@ void flb_config_exit(struct flb_config *config)
     flb_parser_exit(config);
 #endif
 
+    if (config->dns_mode) {
+        flb_free(config->dns_mode);
+    }
+    if (config->dns_resolver) {
+        flb_free(config->dns_resolver);
+    }
+
     if (config->storage_path) {
         flb_free(config->storage_path);
     }
@@ -442,8 +469,18 @@ void flb_config_exit(struct flb_config *config)
     if (config->evl) {
         mk_event_loop_destroy(config->evl);
     }
+    if (config->evl_bktq) {
+        flb_bucket_queue_destroy(config->evl_bktq);
+    }
 
     flb_plugins_unregister(config);
+
+    if (config->cf_main) {
+        flb_cf_destroy(config->cf_main);
+    }
+    if (config->cf_parsers) {
+        flb_cf_destroy(config->cf_parsers);
+    }
     flb_free(config);
 }
 

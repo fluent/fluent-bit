@@ -2,7 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -32,5 +32,7 @@
                              FLB_VERSION_MINOR * 100   \
                              FLB_VERSION_PATCH)
 #define FLB_VERSION_STR     "@FLB_VERSION_STR@"
+
+#define FLB_GIT_HASH        "@FLB_GIT_HASH@"
 
 #endif

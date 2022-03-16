@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +33,7 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #endif
 
+#include <xxhash.h>
 
 /* Metrics */
 #ifdef FLB_HAVE_METRICS
@@ -125,7 +125,7 @@ struct flb_tail_config {
     struct flb_ml *ml_ctx;
     struct mk_list *multiline_parsers;
 
-    /* Lists head for files consumed statically (read) and by events (inotify) */
+    uint64_t files_static_count;   /* number of items in the static file list */
     struct mk_list files_static;
     struct mk_list files_event;
 
@@ -142,6 +142,10 @@ struct flb_tail_config {
     struct cmt_counter *cmt_files_opened;
     struct cmt_counter *cmt_files_closed;
     struct cmt_counter *cmt_files_rotated;
+
+    /* Hash: hash tables for quick acess to registered files */
+    struct flb_hash *static_hash;
+    struct flb_hash *event_hash;
 
     struct flb_config *config;
 };

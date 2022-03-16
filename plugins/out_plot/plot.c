@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -38,7 +37,7 @@ static int cb_plot_init(struct flb_output_instance *ins,
                         struct flb_config *config,
                         void *data)
 {
-    const char *tmp;
+    int ret;
     (void) config;
     (void) data;
     struct flb_plot *ctx;
@@ -50,16 +49,10 @@ static int cb_plot_init(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
 
-    /* Optional 'key' field to obtain the datapoint value */
-    tmp = flb_output_get_property("key", ins);
-    if (tmp) {
-        ctx->key = flb_sds_create(tmp);
-    }
-
-    /* Optional output file name/path */
-    tmp = flb_output_get_property("file", ins);
-    if (tmp) {
-        ctx->out_file = tmp;
+    ret = flb_output_config_map_set(ins, (void *)ctx);
+    if (ret == -1) {
+    	flb_free(ctx);
+    	return -1;
     }
 
     /* Set the context */
@@ -198,11 +191,24 @@ static int cb_plot_exit(void *data, struct flb_config *config)
 {
     struct flb_plot *ctx = data;
 
-    flb_sds_destroy(ctx->key);
     flb_free(ctx);
-
     return 0;
 }
+
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "key", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_plot, key),
+     "set a number of times to generate event."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "file", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_plot, out_file),
+     "set a number of times to generate event."
+    },
+    /* EOF */
+    {0}
+};
 
 struct flb_output_plugin out_plot_plugin = {
     .name         = "plot",
@@ -210,5 +216,6 @@ struct flb_output_plugin out_plot_plugin = {
     .cb_init      = cb_plot_init,
     .cb_flush     = cb_plot_flush,
     .cb_exit      = cb_plot_exit,
+    .config_map   = config_map,
     .flags        = 0,
 };

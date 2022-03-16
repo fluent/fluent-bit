@@ -71,7 +71,8 @@ struct cmt_untyped *cmt_untyped_create(struct cmt *cmt,
     }
 
     /* Create the map */
-    untyped->map = cmt_map_create(CMT_UNTYPED, &untyped->opts, label_count, label_keys);
+    untyped->map = cmt_map_create(CMT_UNTYPED, &untyped->opts, label_count, label_keys,
+                                  (void *) untyped);
     if (!untyped->map) {
         cmt_log_error(cmt, "unable to allocate map for untyped");
         cmt_untyped_destroy(untyped);
