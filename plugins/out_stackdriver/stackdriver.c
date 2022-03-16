@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -947,9 +948,9 @@ static msgpack_object *get_payload_labels(struct flb_stackdriver *ctx, msgpack_o
  * - Construct root-level `labels` field using configuration and payload labels
  */
 
-static int *parse_labels(struct flb_stackdriver *ctx,
-                         msgpack_object *payload_labels_ptr,
-                         struct mk_list *labels_list)
+static int parse_labels(struct flb_stackdriver *ctx,
+                        msgpack_object *payload_labels_ptr,
+                        struct mk_list *labels_list)
 {
     int i;
     int ret;
@@ -1022,7 +1023,6 @@ static void pack_labels(struct flb_stackdriver *ctx,
                         struct mk_list *labels_list)
 {
     struct mk_list *head;
-    struct mk_list *split;
     struct flb_kv *kv;
 
     msgpack_pack_map(mp_pck, mk_list_size(labels_list));
@@ -2096,7 +2096,7 @@ static int stackdriver_format(struct flb_config *config,
             flb_sds_destroy(operation_producer);
             msgpack_unpacked_destroy(&result);
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return NULL;
+            return -1;
         }
 
         /* Parse labels */
