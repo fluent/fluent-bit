@@ -2170,13 +2170,21 @@ static int stackdriver_format_test(struct flb_config *config,
 }
 
 #ifdef FLB_HAVE_METRICS
-void update_http_metrics(struct flb_stackdriver *ctx, uint64_t ts, int http_status)
+static void update_http_metrics(struct flb_stackdriver *ctx,
+                                struct flb_event_chunk *event_chunk,
+                                uint64_t ts,
+                                int http_status)
 {
     char tmp[32];
 
     /* convert status to string format */
     snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
 
+    /* processed records total */
+    cmt_counter_add(ctx->cmt_proc_records_total, ts, event_chunk->total_events,
+                    1, (char *[]) {tmp});
+
+    /* HTTP status */
     cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
 }
 #endif
@@ -2320,7 +2328,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     /* Update metrics counter by using labels/http status code */
     if (ret == 0) {
-        update_http_metrics(ctx, ts, c->resp.status);
+        update_http_metrics(ctx, event_chunk, ts, c->resp.status);
     }
 #endif
 
