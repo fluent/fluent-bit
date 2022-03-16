@@ -115,7 +115,6 @@ struct flb_stackdriver {
 
     /* labels */
     struct mk_list *labels;
-    struct mk_list labels_list;
 
     /* generic resources */
     flb_sds_t location;
