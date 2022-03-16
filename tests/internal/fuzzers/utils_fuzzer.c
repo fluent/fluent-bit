@@ -38,6 +38,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     }
 
+    flb_malloc_p = 0;
+
     uint64_t ran_hash = *(uint64_t *)data;
     char *null_terminated1 = get_null_terminated(25, &data, &size);
     char *null_terminated2 = get_null_terminated(25, &data, &size);
