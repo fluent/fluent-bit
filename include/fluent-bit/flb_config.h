@@ -47,7 +47,12 @@ struct flb_config {
     int is_shutting_down;     /* is the service shutting down ? */
     int is_running;           /* service running ?              */
     double flush;             /* Flush timeout                  */
-    int grace;                /* Maximum grace time on shutdown */
+
+    /* 
+     * Maximum grace time on shutdown. If set to -1, the engine will 
+     * shutdown when all remaining tasks are flushed
+     */
+    int grace; 
     int grace_count;          /* Count of grace shutdown tries  */
     flb_pipefd_t flush_fd;    /* Timer FD associated to flush   */
     int convert_nan_to_null;  /* convert null to nan ?          */
