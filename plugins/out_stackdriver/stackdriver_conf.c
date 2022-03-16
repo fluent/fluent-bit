@@ -337,13 +337,11 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     tmp = flb_output_get_property("labels", ins);
-    flb_plg_info(ins, "input labels %s", tmp);
     if (tmp) {
         ctx->labels = flb_utils_split(tmp, ',', -1);
         if (!ctx->labels) {
             flb_plg_error(ins, "failed to allocate labels list");
         }
-        flb_plg_info(ins, "size %d", mk_list_size(ctx->labels));
     }
 
     tmp = flb_output_get_property("http_request_key", ins);
