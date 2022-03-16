@@ -286,8 +286,13 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->data = request;
     timer->event.mask = MK_EVENT_EMPTY;
 
-    /* Get suggested wait_time for this request */
-    seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, tries);
+    /* Get suggested wait_time for this request. If shutting down, set to 0. */
+    if (config->is_shutting_down == FLB_TRUE) {
+        seconds = 0;
+    } else {
+        seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, 
+                                      tries);
+    }
     seconds += 1;
 
     /* Populare request */
