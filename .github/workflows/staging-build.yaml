@@ -88,7 +88,7 @@ jobs:
     name: Staging build matrix
     runs-on: ubuntu-latest
     outputs:
-      build-matrix: ${{ steps.set-matrix.outputs.matrix }}
+      build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
     steps:
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
