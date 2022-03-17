@@ -56,25 +56,25 @@ struct split_message_packer {
     struct mk_list _head;
 };
 
-msgpack_object_kv *get_key(msgpack_object *map, char *check_for_key);
-int is_partial(msgpack_object *map);
-int is_partial_last(msgpack_object *map);
-int get_partial_id(msgpack_object *map, 
-                   char **partial_id_str,
-                   size_t *partial_id_size);
-struct split_message_packer *get_packer(struct mk_list *packers, const char *tag, 
-                                        char *input_name, 
-                                        char *partial_id_str, size_t partial_id_size);
-struct split_message_packer *create_packer(const char *tag, char *input_name, 
-                                           char *partial_id_str, size_t partial_id_size,
-                                           msgpack_object *map, char *multiline_key_content,
-                                           struct flb_time *tm);
-int split_message_packer_write(struct split_message_packer *packer, 
-                               msgpack_object *map, char *multiline_key_content);
-void split_message_packer_complete(struct split_message_packer *packer);
-void split_message_packer_destroy(struct split_message_packer *packer);
-void append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck);
-unsigned long long current_timestamp();
+msgpack_object_kv *ml_get_key(msgpack_object *map, char *check_for_key);
+int ml_is_partial(msgpack_object *map);
+int ml_is_partial_last(msgpack_object *map);
+int ml_get_partial_id(msgpack_object *map, 
+                      char **partial_id_str,
+                      size_t *partial_id_size);
+struct split_message_packer *ml_get_packer(struct mk_list *packers, const char *tag, 
+                                           char *input_name, 
+                                           char *partial_id_str, size_t partial_id_size);
+struct split_message_packer *ml_create_packer(const char *tag, char *input_name, 
+                                              char *partial_id_str, size_t partial_id_size,
+                                              msgpack_object *map, char *multiline_key_content,
+                                              struct flb_time *tm);
+int ml_split_message_packer_write(struct split_message_packer *packer, 
+                                  msgpack_object *map, char *multiline_key_content);
+void ml_split_message_packer_complete(struct split_message_packer *packer);
+void ml_split_message_packer_destroy(struct split_message_packer *packer);
+void ml_append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck);
+unsigned long long ml_current_timestamp();
 
 
 #endif

@@ -502,7 +502,7 @@ static void partial_timer_cb(struct flb_config *config, void *data)
     unsigned long long diff;
     int ret; 
 
-    now = current_timestamp();
+    now = ml_current_timestamp();
 
     mk_list_foreach_safe(head, tmp, &ctx->split_message_packers) {
         packer = mk_list_entry(head, struct split_message_packer, _head);
@@ -513,7 +513,7 @@ static void partial_timer_cb(struct flb_config *config, void *data)
         }
         
         mk_list_del(&packer->_head);
-        split_message_packer_complete(packer);
+        ml_split_message_packer_complete(packer);
         /* re-emit record with original tag */
         flb_plg_trace(ctx->ins, "emitting from %s to %s", packer->input_name, packer->tag);
         ret = in_emitter_add_record(packer->tag, flb_sds_len(packer->tag), 
@@ -524,7 +524,7 @@ static void partial_timer_cb(struct flb_config *config, void *data)
             flb_plg_warn(ctx->ins, "Couldn't send concatenated record of size %zu bytes to in_emitter %s",
                          packer->mp_sbuf.size, ctx->ins_emitter->name);
         }
-        split_message_packer_destroy(packer);
+        ml_split_message_packer_destroy(packer);
     }
 
 }
@@ -571,7 +571,8 @@ static int ml_filter_partial(const void *data, size_t bytes,
         sched = flb_sched_ctx_get();
 
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->flush_ms, partial_timer_cb, ctx, NULL);
+                                        ctx->flush_ms / 2, partial_timer_cb, 
+                                        ctx, NULL);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Failed to create flush timer");
         } else {
@@ -591,22 +592,22 @@ static int ml_filter_partial(const void *data, size_t bytes,
         total_records++;
         flb_time_pop_from_msgpack(&tm, &result, &obj);
         
-        partial = is_partial(obj);
+        partial = ml_is_partial(obj);
         if (partial == FLB_TRUE) {
             partial_records++;
-            ret = get_partial_id(obj, &partial_id_str, &partial_id_size);
+            ret = ml_get_partial_id(obj, &partial_id_str, &partial_id_size);
             if (ret == -1) {
                 flb_plg_warn(ctx->ins, "Could not find partial_id but partial_message key is FLB_TRUE for record with tag %s", tag);
                 /* handle this record as non-partial */
                 partial_records--;
                 goto pack_non_partial;
             }
-            packer = get_packer(&ctx->split_message_packers, tag, 
-                                i_ins->name, partial_id_str, partial_id_size);
+            packer = ml_get_packer(&ctx->split_message_packers, tag, 
+                                   i_ins->name, partial_id_str, partial_id_size);
             if (packer == NULL) {
                 flb_plg_trace(ctx->ins, "Found new partial record with tag %s", tag);
-                packer = create_packer(tag, i_ins->name, partial_id_str, partial_id_size,
-                                       obj, "log", &tm);
+                packer = ml_create_packer(tag, i_ins->name, partial_id_str, partial_id_size,
+                                          obj, ctx->key_content, &tm);
                 if (packer == NULL) {
                     flb_plg_warn(ctx->ins, "Could not create packer for partial record with tag %s", tag);
                     /* handle this record as non-partial */
@@ -615,21 +616,21 @@ static int ml_filter_partial(const void *data, size_t bytes,
                 }
                 mk_list_add(&packer->_head, &ctx->split_message_packers);
             }
-            ret = split_message_packer_write(packer, obj, "log");
+            ret = ml_split_message_packer_write(packer, obj, ctx->key_content);
             if (ret < 0) {
                 flb_plg_warn(ctx->ins, "Could not append content for partial record with tag %s", tag);
                 /* handle this record as non-partial */
                 partial_records--;
                 goto pack_non_partial;
             }
-            is_last_partial = is_partial_last(obj);
+            is_last_partial = ml_is_partial_last(obj);
             if (is_last_partial == FLB_TRUE) {
                 /* emit the record in this filter invocation */
                 return_records++;
-                split_message_packer_complete(packer);
-                append_complete_record(packer->mp_sbuf.data, packer->mp_sbuf.size, &tmp_pck);
+                ml_split_message_packer_complete(packer);
+                ml_append_complete_record(packer->mp_sbuf.data, packer->mp_sbuf.size, &tmp_pck);
                 mk_list_del(&packer->_head);
-                split_message_packer_destroy(packer);
+                ml_split_message_packer_destroy(packer);
             }
         } else {
 
