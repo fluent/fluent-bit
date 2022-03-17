@@ -7,6 +7,16 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      ref:
+        description: The commit, tag or branch to checkout for testing scripts.
+        type: string
+        default: master
+        required: false
+      release-name:
+        description: The URL of where to pull packages from.
+        required: false
+        type: string
+        default: ''
     secrets:
       token:
         description: The Github token or similar to authenticate with.
@@ -24,6 +34,18 @@ jobs:
     name: ${{ matrix.distro }} package tests
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    # Run a local Minio service for non-staging tests to use
+    services:
+      minio:
+        image: lazybit/minio
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+        volumes:
+          - ${{ github.workspace }}/data:/data
+        options: --name=minio --health-cmd "curl http://localhost:9000/minio/health/live"
     env:
         AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
     strategy:
@@ -31,20 +53,40 @@ jobs:
       matrix:
         distro: [ amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004 ]
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || 'master' }}
 
-    - name: Get the version
-      id: get_version
-      run: |
-        curl --fail -LO "$AWS_URL/latest-version.txt"
-        VERSION=$(cat latest-version.txt)
-        echo ::set-output name=VERSION::$VERSION
-      shell: bash
+      - name: Run package installation tests from Minio
+        if: inputs.release-name != ''
+        run: |
+          gh release download ${{ inputs.release-name }}
+          if [[ ! -f "packages-${{ inputs.release-name }}.tar.gz" ]] ; then
+            echo "Unable to find packages for release: "
+            exit 1
+          fi
+          mkdir -p $LOCAL_RELEASE_DIR
+          tar -xzvf packages-${{ inputs.release-name }}.tar.gz -C $LOCAL_RELEASE_DIR
 
-    - name: Run package installation tests
-      run: |
-        packaging/testing/smoke/packages/run-package-tests.sh
-      env:
-        PACKAGE_TEST: ${{ matrix.distro }}
-        RELEASE_URL: https://packages.fluentbit.io
+          export AWS_ACCESS_KEY_ID=minioadmin
+          export AWS_SECRET_ACCESS_KEY=minioadmin
+          export AWS_EC2_METADATA_DISABLED=true
+
+          aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://${{ secrets.bucket }}
+          aws --endpoint-url http://127.0.0.1:9000/ s3 sync "$LOCAL_RELEASE_DIR" "s3://${{ secrets.bucket }} --follow-symlinks --no-progress
+
+          export AWS_URL=http://127.0.0.1:9000
+          packaging/testing/smoke/packages/run-package-tests.sh
+        shell: bash
+        env:
+          LOCAL_RELEASE_DIR: local-release
+
+      - name: Run package installation tests from AWS
+        if: inputs.release-name != ''
+        run: |
+          packaging/testing/smoke/packages/run-package-tests.sh
+        env:
+          AWS_URL: https://${{ secrets.bucket }}.s3.amazonaws.com
+          PACKAGE_TEST: ${{ matrix.distro }}
+          RELEASE_URL: https://packages.fluentbit.io

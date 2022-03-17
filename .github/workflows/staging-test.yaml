@@ -12,11 +12,20 @@ on:
 concurrency: integration-test
 
 jobs:
-  staging-test-images:
-    name: Container images staging tests
+  staging-test-preflight-checks:
     # Workflow run always triggers on completion regardless of status
     # This prevents us from running if build fails.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Staging build completed"
+        if: github.event_name != 'workflow_dispatch'
+      - run: echo "Staging test manually initiated"
+        if: github.event_name == 'workflow_dispatch'
+
+  staging-test-images:
+    name: Container images staging tests
+    needs: staging-test-preflight-checks
     uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
     with:
       registry: ghcr.io
@@ -45,12 +54,10 @@ jobs:
 
   staging-test-packages:
     name: Binary packages staging test
-    # Workflow run always triggers on completion regardless of status
-    # This prevents us from running if build fails.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    needs: staging-test-preflight-checks
     uses: fluent/fluent-bit/.github/workflows/call-test-packages.yaml@master
     with:
       environment: staging
     secrets:
-      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      url: https://${{ secrets.AWS_S3_BUCKET_STAGING }}.s3.amazonaws.com
       token: ${{ secrets.GITHUB_TOKEN }}
