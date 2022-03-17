@@ -166,7 +166,7 @@ struct flb_parser *flb_parser_create(const char *name, const char *format,
     /* Iterate current parsers and make sure the new one don't exists */
     mk_list_foreach(head, &config->parsers) {
         p = mk_list_entry(head, struct flb_parser, _head);
-        if (strcmp(p->name, name) == 0) {
+        if (p->name && strcmp(p->name, name) == 0) {
             flb_error("[parser] parser named '%s' already exists, skip.",
                       name);
             return NULL;
