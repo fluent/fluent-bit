@@ -12,4 +12,4 @@ find "$BASE_PATH" -type f \( -iname "*-bit-${VERSION}*.rpm" -o -iname "*-bit-${V
 
 # Update the repo metadata now
 # VERSION is only used to find the RPM to sign so without it will skip signing
-"$SCRIPT_DIR/update-repos.sh" "$VERSION" "$BASE_PATH"
+"$SCRIPT_DIR/update-repos.sh" "$BASE_PATH"
