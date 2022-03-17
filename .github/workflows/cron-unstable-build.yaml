@@ -129,6 +129,48 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
+  unstable-build-windows-package:
+    needs:
+      - unstable-build-get-meta
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+
+    - name: Get dependencies
+      run: |
+        Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
+        Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+        Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+        Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+        echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+      env:
+        WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+      shell: pwsh
+
+    - name: Set up Visual Studio shell
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
+
+    - name: Build Fluent Bit packages
+      run: |
+        cmake -G "NMake Makefiles" ../
+        cmake --build .
+        cpack
+      working-directory: build
+
+    - name: Upload build packages
+      uses: actions/upload-artifact@v2
+      with:
+        name: windows-packages
+        path: |
+          build/fluent-bit-*.exe
+          build/fluent-bit-*.zip
+        if-no-files-found: error
+
   # We already detain all artefacts as build output so just capture for an unstable release
   unstable-release:
     runs-on: ubuntu-latest
@@ -136,6 +178,7 @@ jobs:
       - unstable-build-get-meta
       - unstable-build-images
       - unstable-build-packages
+      - unstable-build-windows-package
     environment: unstable
     permissions:
       contents: write
