@@ -104,6 +104,41 @@ int flb_engine_destroy_tasks(struct mk_list *tasks)
     return c;
 }
 
+void flb_engine_reschedule_retries(struct flb_config *config)
+{
+    int ret;
+    struct mk_list *head;
+    struct mk_list *t_head;
+    struct mk_list *rt_head;
+    struct mk_list *tmp_task;
+    struct mk_list *tmp_retry_task;
+    struct flb_task *task;
+    struct flb_input_instance *ins;
+    struct flb_task_retry *retry;
+
+    /* Invalidate and reschedule all retry tasks to be retried immediately */
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        mk_list_foreach_safe(t_head, tmp_task, &ins->tasks) {
+            task = mk_list_entry(t_head, struct flb_task, _head);
+            mk_list_foreach_safe(rt_head, tmp_retry_task, &task->retries) {
+                retry = mk_list_entry(rt_head, struct flb_task_retry, _head);
+                flb_sched_request_invalidate(config, retry);
+                ret = flb_sched_retry_now(config, retry);
+                if (ret == -1) {
+                    /* Can't do much here, just continue on */
+                    flb_warn("[engine] failed to immediately re-schedule retry=%p "
+                             "for task %i. Err: %d", retry, task->id, flb_errno());
+                    continue;
+                } else {
+                    flb_debug("[engine] re-scheduled retry=%p for task %i",
+                        retry, task->id);
+                }
+            }
+        }
+    }
+}
+
 int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force)
 {
@@ -272,7 +307,7 @@ static inline int handle_output_event(flb_pipefd_t fd, uint64_t ts,
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
-    else if (ret == FLB_RETRY && config->is_running && !config->is_shutting_down) {
+    else if (ret == FLB_RETRY) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             /* cmetrics: output_dropped_records_total */
             cmt_counter_add(ins->cmt_dropped_records, ts, task->records,
@@ -809,8 +844,15 @@ int flb_engine_start(struct flb_config *config)
                 ret = flb_engine_handle_event(event->fd, event->mask, config);
                 if (ret == FLB_ENGINE_STOP) {
                     if (config->grace_count == 0) {
-                        flb_warn("[engine] service will shutdown in max %u seconds",
+                        if (config->grace >= 0) {
+                            flb_warn("[engine] service will shutdown in max %u seconds",
                                  config->grace);
+                        } else {
+                            flb_warn("[engine] service will shutdown when all remaining tasks are flushed");
+                        }
+
+                        /* Reschedule retry tasks to be retried immediately */
+                        flb_engine_reschedule_retries(config);
                     }
 
                     /* mark the runtime as the ingestion is not active and that we are in shutting down mode */
@@ -853,14 +895,16 @@ int flb_engine_start(struct flb_config *config)
                     config->grace_count++;
 
                     /*
-                     * Grace period has finished, but we need to check if there is
+                     * Grace timeout has finished, but we need to check if there is
                      * any pending running task. A running task is associated to an
                      * output co-routine, since we don't know what's the state or
                      * resources allocated by that co-routine, the best thing is to
                      * wait again for the grace period and re-check again.
+                     * If grace period is set to -1, keep trying to shut down until all
+                     * tasks and retries get flushed.
                      */
                     ret = flb_task_running_count(config);
-                    if (ret > 0 && config->grace_count < config->grace) {
+                    if (ret > 0 && (config->grace_count < config->grace || config->grace == -1)) {
                         if (config->grace_count == 1) {
                             flb_task_running_print(config);
                         }
