@@ -5,6 +5,7 @@ set -eux
 BASE_PATH=${BASE_PATH:-$1}
 if [[ ! -d "$BASE_PATH" ]]; then
     echo "Invalid base path: $BASE_PATH"
+    exit 1
 fi
 
 # Set true to prevent signing
