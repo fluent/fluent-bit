@@ -1,7 +1,12 @@
 #!/bin/bash
 set -eux
+
 # Where the base of all the repos is
 BASE_PATH=${BASE_PATH:-$1}
+if [[ ! -d "$BASE_PATH" ]]; then
+    echo "Invalid base path: $BASE_PATH"
+fi
+
 # Set true to prevent signing
 DISABLE_SIGNING=${DISABLE_SIGNING:-false}
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
