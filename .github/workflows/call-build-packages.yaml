@@ -185,7 +185,7 @@ jobs:
           gpg --export -a "${{ steps.import_gpg.outputs.name }}" > ./latest/fluentbit.key
           rpm --import ./latest/fluentbit.key
 
-          ./update-repos.sh "${{ inputs.version }}" "./latest/"
+          ./update-repos.sh "./latest/"
           echo "${{ inputs.version }}" > "./latest/latest-version.txt"
           aws s3 sync "./latest/" "s3://$AWS_S3_BUCKET" --delete --follow-symlinks --no-progress ${ENDPOINT}
         env:

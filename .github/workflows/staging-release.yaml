@@ -96,7 +96,7 @@ jobs:
       run: |
         rm -f packaging/releases/*.repo
         LATEST_VERSION=$(cat packaging/releases/latest-version.txt)
-        packaging/update-repos.sh "$VERSION" packaging/releases/
+        packaging/update-repos.sh packaging/releases/
         rm -f packaging/releases/latest-version.txt
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
