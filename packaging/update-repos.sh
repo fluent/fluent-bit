@@ -74,8 +74,13 @@ EOF
         -component="main" \
         -distribution="$CODENAME" \
         "$APTLY_REPO_NAME"
-
-    aptly -config="$APTLY_CONFIG" repo add "$APTLY_REPO_NAME" "$REPO_DIR/"
+    # Check if any files to add
+    count=$(find "$REPO_DIR" -maxdepth 1 -type f -name "*.deb" | wc -l)
+    if [[ $count != 0 ]] ; then
+        aptly -config="$APTLY_CONFIG" repo add -remove-files -force-replace "$APTLY_REPO_NAME" "$REPO_DIR/"
+    else
+        echo "No files to add in $DEB_REPO for $CODENAME"
+    fi
     aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
     if [[ "$DISABLE_SIGNING" != "true" ]]; then
         aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
