@@ -65,8 +65,7 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
 
     cat << EOF > "$APTLY_CONFIG"
 {
-    "rootDir": "$APTLY_ROOTDIR/",
-    "gpgDisableSign": $DISABLE_SIGNING,
+    "rootDir": "$APTLY_ROOTDIR/"
 }
 EOF
     cat "$APTLY_CONFIG"
@@ -75,10 +74,19 @@ EOF
         -component="main" \
         -distribution="$CODENAME" \
         "$APTLY_REPO_NAME"
-
-    aptly -config="$APTLY_CONFIG" repo add "$APTLY_REPO_NAME" "$REPO_DIR/"
+    # Check if any files to add
+    count=$(find "$REPO_DIR" -maxdepth 1 -type f -name "*.deb" | wc -l)
+    if [[ $count != 0 ]] ; then
+        aptly -config="$APTLY_CONFIG" repo add -remove-files -force-replace "$APTLY_REPO_NAME" "$REPO_DIR/"
+    else
+        echo "No files to add in $DEB_REPO for $CODENAME"
+    fi
     aptly -config="$APTLY_CONFIG" repo show "$APTLY_REPO_NAME"
-    aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
+    if [[ "$DISABLE_SIGNING" != "true" ]]; then
+        aptly -config="$APTLY_CONFIG" publish repo -gpg-key="$GPG_KEY" "$APTLY_REPO_NAME"
+    else
+        aptly -config="$APTLY_CONFIG" publish repo --skip-signing "$APTLY_REPO_NAME"
+    fi
     rsync -av "$APTLY_ROOTDIR"/public/* "$REPO_DIR"
     # Remove unnecessary files
     rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
