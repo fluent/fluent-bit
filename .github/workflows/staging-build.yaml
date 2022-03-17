@@ -108,7 +108,7 @@ jobs:
         run: |
           aws --region "$AWS_REGION" s3 sync . "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --no-progress ${ENDPOINT}
         env:
-          DEST_DIR: "${{ inputs.version }}/"
+          DEST_DIR: "${{ needs.staging-build-get-meta.outputs.version }}/"
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
