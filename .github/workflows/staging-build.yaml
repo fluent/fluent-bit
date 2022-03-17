@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.formatted_version.outputs.replaced }}
-      date: ${{ steps.date.outputs.date }}
     steps:
 
       - run: |
