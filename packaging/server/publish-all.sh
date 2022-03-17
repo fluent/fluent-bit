@@ -114,4 +114,4 @@ if ! aptly -config="$APTLY_CONFIG" publish switch focal filesystem:ubuntu/focal:
 fi
 
 # Sign YUM repo meta-data
-find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign --armor -u "releases@fluentbit.io" {} \;
+find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign --armor --yes -u "releases@fluentbit.io" {} \;
