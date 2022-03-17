@@ -259,7 +259,7 @@ static struct flb_task *task_alloc(struct flb_config *config)
     return task;
 }
 
-/* Return the number of tasks with 'running status' */
+/* Return the number of tasks with 'running status' or tasks with retries */
 int flb_task_running_count(struct flb_config *config)
 {
     int count = 0;
@@ -272,7 +272,7 @@ int flb_task_running_count(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         mk_list_foreach(t_head, &ins->tasks) {
             task = mk_list_entry(t_head, struct flb_task, _head);
-            if (task->users > 0) {
+            if (task->users > 0 || mk_list_size(&task->retries) > 0) {
                 count++;
             }
         }
