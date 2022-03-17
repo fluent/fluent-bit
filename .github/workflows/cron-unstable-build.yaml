@@ -1,0 +1,234 @@
+---
+name: Unstable build
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: The branch to create an unstable release for/from.
+        type: string
+        default: master
+        required: true
+
+  # Run nightly build at this time, bit of trial and error but this seems good.
+  schedule:
+  - cron: "0 6 * * *"   # master build
+  - cron: "0 12 * * *"  # 1.9 build
+  - cron: "0 18 * * *"  # 1.8 build
+
+# We do not want a new unstable build to run whilst we are releasing the current unstable build.
+concurrency: unstable-build-release
+
+jobs:
+
+  # This job provides this metadata for the other jobs to use.
+  unstable-build-get-meta:
+    name: Get metadata to add to build
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.date.outputs.date }}
+      branch: ${{ steps.branch.outputs.branch }}
+    steps:
+      # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
+
+      # Now we need to determine which branch to build
+      - name: Manual run - get branch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::set-env name=cron_branch::${{ github.event.inputs.branch }}"
+        shell: bash
+
+      - name: master run
+        if:  github.event_name == 'schedule' && github.event.schedule=='*/6 * * * *'         # set-env value
+        run: |
+          echo "::set-env name=cron_branch::master"
+        shell: bash
+
+      - name: 1.9 run
+        if:  github.event_name == 'schedule' && github.event.schedule=='*/12 * * * *'   # set env value
+        run: |
+          echo "::set-env name=cron_branch::1.9"
+        shell: bash
+
+      - name: 1.8 run
+        if:  github.event_name == 'schedule' && github.event.schedule=='*/18 * * * *'   # set env value
+        run: |
+          echo "::set-env name=cron_branch::1.8"
+        shell: bash
+
+      - name: Output the branch to use
+        id: branch
+        run: |
+          echo "$cron_branch"
+          echo "::set-output name=branch::$cron_branch"
+        shell: bash
+
+  unstable-build-images:
+    needs: unstable-build-get-meta
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    with:
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/unstable
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  unstable-build-generate-schema:
+    # Not available for 1.8
+    if: github.event.schedule != '*/18 * * * *'
+    needs:
+      - unstable-build-get-meta
+      - unstable-build-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: |
+          docker run --rm -it ${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }} -J > fluent-bit-schema.json
+          cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty.json
+        shell: bash
+
+      - name: Upload the schema
+        uses: actions/upload-artifact@v2
+        with:
+          path: ./
+          name: fluent-bit-schema*.json
+          if-no-files-found: error
+
+  unstable-build-generate-matrix:
+    name: unstable build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
+    steps:
+      # Set up the list of target to build so we can pass the JSON to the reusable job
+      - uses: ./.github/actions/generate-package-build-matrix
+        id: set-matrix
+
+  unstable-build-packages:
+    needs:
+      - unstable-build-get-meta
+      - unstable-build-generate-matrix
+    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      build_matrix: ${{ needs.unstable-build-generate-matrix.outputs.build-matrix }}
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  unstable-build-windows-package:
+    needs:
+      - unstable-build-get-meta
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+
+    - name: Get dependencies
+      run: |
+        Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
+        Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+        Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+        Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+        echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+      env:
+        WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+      shell: pwsh
+
+    - name: Set up Visual Studio shell
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
+
+    - name: Build Fluent Bit packages
+      run: |
+        cmake -G "NMake Makefiles" ../
+        cmake --build .
+        cpack
+      working-directory: build
+
+    - name: Upload build packages
+      uses: actions/upload-artifact@v2
+      with:
+        name: windows-packages
+        path: |
+          build/fluent-bit-*.exe
+          build/fluent-bit-*.zip
+        if-no-files-found: error
+
+  # We already detain all artefacts as build output so just capture for an unstable release
+  unstable-release:
+    runs-on: ubuntu-latest
+    needs:
+      - unstable-build-get-meta
+      - unstable-build-images
+      - unstable-build-packages
+      - unstable-build-windows-package
+    environment: unstable
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artefacts
+        continue-on-error: true
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts/
+
+      - name: Single packages tar
+        run: |
+          mkdir -p release-upload
+          mv -f artifacts/*.json release-upload/
+          tar -czvf release-upload/packages-unstable-${{ needs.unstable-build-get-meta.outputs.branch }}.tar.gz -C artifacts/ .
+        shell: bash
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull containers as well (single arch only)
+        # May not be any/valid so ignore errors
+        continue-on-error: true
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}.tar ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
+          docker pull ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}-debug
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}-debug.tar ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}-debug
+        shell: bash
+        working-directory: release-upload
+
+      - name: Display structure of files to upload
+        run: ls -R
+        working-directory: release-upload
+        shell: bash
+
+      - name: Remove any existing release
+        continue-on-error: true
+        run: gh release delete unstable-${{ needs.unstable-build-get-meta.outputs.branch }} --yes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+
+      - name: Create Release
+        run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash

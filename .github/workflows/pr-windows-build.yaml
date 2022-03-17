@@ -15,10 +15,6 @@ on:
       - opened
       - reopened
       - synchronize
-  push:
-    branches:
-      - "master"
-      - "1.8"
 
 jobs:
   windows-build-package:
