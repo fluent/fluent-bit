@@ -31,7 +31,7 @@
 
 #include "ml_concat.h"
 
-msgpack_object_kv *get_key(msgpack_object *map, char *check_for_key)
+msgpack_object_kv *ml_get_key(msgpack_object *map, char *check_for_key)
 {
     int i;
     char *key_str = NULL;
@@ -66,13 +66,13 @@ msgpack_object_kv *get_key(msgpack_object *map, char *check_for_key)
     return NULL;
 }
 
-int is_partial(msgpack_object *map)
+int ml_is_partial(msgpack_object *map)
 {
     char *val_str = NULL;
     msgpack_object_kv *kv;
     msgpack_object  val;
     
-    kv = get_key(map, FLB_MULTILINE_PARTIAL_MESSAGE_KEY);
+    kv = ml_get_key(map, FLB_MULTILINE_PARTIAL_MESSAGE_KEY);
 
     if (kv == NULL) {
         return FLB_FALSE;
@@ -92,13 +92,13 @@ int is_partial(msgpack_object *map)
     return FLB_FALSE;
 }
 
-int is_partial_last(msgpack_object *map)
+int ml_is_partial_last(msgpack_object *map)
 {
     char *val_str = NULL;
     msgpack_object_kv *kv;
     msgpack_object  val;
     
-    kv = get_key(map, FLB_MULTILINE_PARTIAL_LAST_KEY);
+    kv = ml_get_key(map, FLB_MULTILINE_PARTIAL_LAST_KEY);
 
     if (kv == NULL) {
         return FLB_FALSE;
@@ -118,7 +118,7 @@ int is_partial_last(msgpack_object *map)
     return FLB_FALSE;
 }
 
-int get_partial_id(msgpack_object *map, 
+int ml_get_partial_id(msgpack_object *map, 
                      char **partial_id_str,
                      size_t *partial_id_size)
 {
@@ -127,7 +127,7 @@ int get_partial_id(msgpack_object *map,
     msgpack_object_kv *kv;
     msgpack_object  val;
     
-    kv = get_key(map, FLB_MULTILINE_PARTIAL_ID_KEY);
+    kv = ml_get_key(map, FLB_MULTILINE_PARTIAL_ID_KEY);
 
     if (kv == NULL) {
         return -1;
@@ -149,9 +149,9 @@ int get_partial_id(msgpack_object *map,
     return 0;
 }
 
-struct split_message_packer *get_packer(struct mk_list *packers, const char *tag, 
-                                        char *input_name, 
-                                        char *partial_id_str, size_t partial_id_size)
+struct split_message_packer *ml_get_packer(struct mk_list *packers, const char *tag, 
+                                           char *input_name, 
+                                           char *partial_id_str, size_t partial_id_size)
 {
     struct mk_list *tmp;
     struct mk_list *head;
@@ -180,10 +180,10 @@ struct split_message_packer *get_packer(struct mk_list *packers, const char *tag
     return NULL;
 }
 
-struct split_message_packer *create_packer(const char *tag, char *input_name, 
-                                           char *partial_id_str, size_t partial_id_size,
-                                           msgpack_object *map, char *multiline_key_content,
-                                           struct flb_time *tm)
+struct split_message_packer *ml_create_packer(const char *tag, char *input_name, 
+                                              char *partial_id_str, size_t partial_id_size,
+                                              msgpack_object *map, char *multiline_key_content,
+                                              struct flb_time *tm)
 {
     struct split_message_packer *packer;
     msgpack_object_kv *kv;
@@ -214,7 +214,7 @@ struct split_message_packer *create_packer(const char *tag, char *input_name,
     tmp = flb_sds_create(tag);
     if (!tmp) {
         flb_errno();
-        split_message_packer_destroy(packer);
+        ml_split_message_packer_destroy(packer);
         return NULL;
     }
     packer->tag = tmp;
@@ -222,7 +222,7 @@ struct split_message_packer *create_packer(const char *tag, char *input_name,
     tmp = flb_sds_create_len(partial_id_str, partial_id_size);
     if (!tmp) {
         flb_errno();
-        split_message_packer_destroy(packer);
+        ml_split_message_packer_destroy(packer);
         return NULL;
     }
     packer->partial_id = tmp;
@@ -230,7 +230,7 @@ struct split_message_packer *create_packer(const char *tag, char *input_name,
     packer->buf = flb_sds_create_size(FLB_MULTILINE_PARTIAL_BUF_SIZE);
     if (!packer->buf) {
         flb_errno();
-        split_message_packer_destroy(packer);
+        ml_split_message_packer_destroy(packer);
         return NULL;
     }
 
@@ -238,10 +238,10 @@ struct split_message_packer *create_packer(const char *tag, char *input_name,
     msgpack_packer_init(&packer->mp_pck, &packer->mp_sbuf, msgpack_sbuffer_write);
 
     /* get the key that is split */
-    split_kv = get_key(map, multiline_key_content);
+    split_kv = ml_get_key(map, multiline_key_content);
     if (split_kv == NULL) {
         flb_error("[partial message concat] Could not find key %s in record", multiline_key_content);
-        split_message_packer_destroy(packer);
+        ml_split_message_packer_destroy(packer);
         return NULL;
     }
 
@@ -324,7 +324,7 @@ struct split_message_packer *create_packer(const char *tag, char *input_name,
     return packer;
 }
 
-unsigned long long current_timestamp() {
+unsigned long long ml_current_timestamp() {
     struct timeval te; 
     unsigned long long milliseconds;
     gettimeofday(&te, NULL); 
@@ -332,15 +332,15 @@ unsigned long long current_timestamp() {
     return milliseconds;
 }
 
-int split_message_packer_write(struct split_message_packer *packer, 
-                               msgpack_object *map, char *multiline_key_content)
+int ml_split_message_packer_write(struct split_message_packer *packer, 
+                                  msgpack_object *map, char *multiline_key_content)
 {   
     char *val_str = NULL;
     size_t val_str_size = 0;
     msgpack_object_kv *kv;
     msgpack_object  val;
     
-    kv = get_key(map, multiline_key_content);
+    kv = ml_get_key(map, multiline_key_content);
 
     if (kv == NULL) {
         flb_error("[partial message concat] Could not find key %s in record", multiline_key_content);
@@ -351,19 +351,22 @@ int split_message_packer_write(struct split_message_packer *packer,
     if (val.type == MSGPACK_OBJECT_BIN) {
         val_str  = (char *) val.via.bin.ptr;
         val_str_size = val.via.bin.size;
-    }
-    if (val.type == MSGPACK_OBJECT_STR) {
+    } else if (val.type == MSGPACK_OBJECT_STR) {
         val_str  = (char *) val.via.str.ptr;
         val_str_size = val.via.str.size;
+    } else {
+        return -1;
     }
 
+
+
     flb_sds_cat_safe(&packer->buf, val_str, val_str_size);
-    packer->last_write_time = current_timestamp();
+    packer->last_write_time = ml_current_timestamp();
 
     return 0;
 }
 
-void split_message_packer_complete(struct split_message_packer *packer)
+void ml_split_message_packer_complete(struct split_message_packer *packer)
 {
     int len;
     len = flb_sds_len(packer->buf);
@@ -371,7 +374,7 @@ void split_message_packer_complete(struct split_message_packer *packer)
     msgpack_pack_str_body(&packer->mp_pck, packer->buf, len);
 }
 
-void append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck)
+void ml_append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck)
 {
     int ok = MSGPACK_UNPACK_SUCCESS;
     size_t off = 0;
@@ -388,7 +391,7 @@ void append_complete_record(char *data, size_t bytes, msgpack_packer *tmp_pck)
     }
 }
 
-void split_message_packer_destroy(struct split_message_packer *packer)
+void ml_split_message_packer_destroy(struct split_message_packer *packer)
 {
     if (!packer) {
         return;
