@@ -38,25 +38,25 @@ jobs:
       - name: Manual run - get branch
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "::set-env name=cron_branch::${{ github.event.inputs.branch }}"
+          echo "cron_branch=${{ github.event.inputs.branch }}" >> $GITHUB_ENV
         shell: bash
 
       - name: master run
         if:  github.event_name == 'schedule' && github.event.schedule=='*/6 * * * *'         # set-env value
         run: |
-          echo "::set-env name=cron_branch::master"
+          echo "cron_branch=master" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.9 run
         if:  github.event_name == 'schedule' && github.event.schedule=='*/12 * * * *'   # set env value
         run: |
-          echo "::set-env name=cron_branch::1.9"
+          echo "cron_branch=1.9" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.8 run
         if:  github.event_name == 'schedule' && github.event.schedule=='*/18 * * * *'   # set env value
         run: |
-          echo "::set-env name=cron_branch::1.8"
+          echo "cron_branch=1.8" >> $GITHUB_ENV
         shell: bash
 
       - name: Output the branch to use
@@ -113,6 +113,8 @@ jobs:
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
