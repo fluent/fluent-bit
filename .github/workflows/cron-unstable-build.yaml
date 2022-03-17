@@ -70,6 +70,7 @@ jobs:
     needs: unstable-build-get-meta
     uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
     with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
       registry: ghcr.io
       username: ${{ github.actor }}
