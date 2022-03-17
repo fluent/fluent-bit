@@ -7,6 +7,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      ref:
+        description: The commit, tag or branch to checkout for testing scripts.
+        type: string
+        default: master
+        required: false
     secrets:
       token:
         description: The Github token or similar to authenticate with.
