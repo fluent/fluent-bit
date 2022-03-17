@@ -1,23 +1,25 @@
 #!/bin/bash
 set -eux
-# VERSION must be defined
-VERSION=${VERSION:-$1}
 # Where the base of all the repos is
-BASE_PATH=${BASE_PATH:-$2}
+BASE_PATH=${BASE_PATH:-$1}
+# Set true to prevent signing
+DISABLE_SIGNING=${DISABLE_SIGNING:-false}
+if [[ "$DISABLE_SIGNING" != "true" ]]; then
+    echo "RPM signing configuration"
+    rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
+fi
 
 RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8")
-
-echo "RPM signing configuration"
-rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
 
 for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
     echo "Updating $RPM_REPO"
     REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
     [[ ! -d "$REPO_DIR" ]] && continue
 
-    # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
-    find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
-
+    if [[ "$DISABLE_SIGNING" != "true" ]]; then
+        # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
+        find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
+    fi
     # Create full metadata for all RPMs in the directory
     createrepo -dvp "$REPO_DIR"
 
@@ -40,12 +42,12 @@ EOF
 done
 
 DEB_REPO_PATHS=( "debian/bullseye"
-                 "debian/stretch"
                  "debian/buster"
                  "ubuntu/xenial"
                  "ubuntu/bionic"
                  "ubuntu/focal"
-                 "raspbian/buster" )
+                 "raspbian/buster"
+                 "raspbian/bullseye" )
 
 for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     REPO_DIR=$(realpath -sm "$BASE_PATH/$DEB_REPO" )
@@ -63,7 +65,8 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
 
     cat << EOF > "$APTLY_CONFIG"
 {
-    "rootDir": "$APTLY_ROOTDIR/"
+    "rootDir": "$APTLY_ROOTDIR/",
+    "gpgDisableSign": $DISABLE_SIGNING,
 }
 EOF
     cat "$APTLY_CONFIG"
