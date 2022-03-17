@@ -1030,6 +1030,10 @@ int flb_output_init_all(struct flb_config *config)
 
         /* TLS config map (just for 'help' formatting purposes) */
         ins->tls_config_map = flb_tls_get_config_map(config);
+        if (!ins->tls_config_map) {
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
 
         /* Override first configmap value based on it plugin flag */
         m = mk_list_entry_first(ins->tls_config_map, struct flb_config_map, _head);
