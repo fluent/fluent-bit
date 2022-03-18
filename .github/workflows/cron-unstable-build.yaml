@@ -63,6 +63,10 @@ jobs:
         id: branch
         run: |
           echo "$cron_branch"
+          if [[ -z "$cron_branch" ]]; then
+            echo "Unable to determine branch to use"
+            exit 1
+          fi
           echo "::set-output name=branch::$cron_branch"
         shell: bash
 
