@@ -18,7 +18,7 @@ runs:
   using: "composite"
   steps:
     - name: master/1.9 targets
-      if: fluent-bit-version != '1.8'
+      if: inputs.fluent-bit-version != '1.8'
       run: |
         matrix=$((
           echo '{ "distro" : ['
@@ -41,7 +41,7 @@ runs:
       shell: bash
 
     - name: 1.8 targets
-      if: fluent-bit-version == '1.8'
+      if: inputs.fluent-bit-version == '1.8'
       run: |
         matrix=$((
           echo '{ "distro" : ['
