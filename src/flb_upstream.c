@@ -780,7 +780,7 @@ int flb_upstream_conn_release(struct flb_upstream_conn *conn)
             flb_debug("[upstream] KA count %i exceeded configured limit "
                       "of %i: closing.",
                       conn->ka_count, conn->u->net.keepalive_max_recycle);
-            return prepare_destroy_conn(conn);
+            return prepare_destroy_conn_safe(conn);
         }
 
         return 0;
