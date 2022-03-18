@@ -1,5 +1,5 @@
 name: CIFuzz
-on: 
+on:
   pull_request:
     # Only fuzz when C source files change
     paths:
