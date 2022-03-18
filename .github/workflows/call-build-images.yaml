@@ -134,7 +134,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64
-          target: production
           push: true
           load: false
           build-args: |
