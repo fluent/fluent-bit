@@ -101,10 +101,21 @@ static int configure(struct record_modifier_ctx *ctx,
         sentry = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
         mod_record->key_len = flb_sds_len(sentry->str);
         mod_record->key = flb_strndup(sentry->str, mod_record->key_len);
+        if (mod_record->key == NULL) {
+            flb_errno();
+            flb_free(mod_record);
+            continue;
+        }
 
         sentry = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
         mod_record->val_len = flb_sds_len(sentry->str);
         mod_record->val = flb_strndup(sentry->str, mod_record->val_len);
+        if (mod_record->val == NULL) {
+            flb_errno();
+            flb_free(mod_record->key);
+            flb_free(mod_record);
+            continue;
+        }
 
         mk_list_add(&mod_record->_head, &ctx->records);
         ctx->records_num++;
