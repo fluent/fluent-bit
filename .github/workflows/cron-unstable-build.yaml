@@ -34,6 +34,9 @@ jobs:
         id: date
         run: echo "::set-output name=date::$(date '+%Y-%m-%d-%H_%M_%S')"
 
+      - name: Debug event output
+        uses: hmarr/debug-action@v2
+
       # Now we need to determine which branch to build
       - name: Manual run - get branch
         if: github.event_name == 'workflow_dispatch'
@@ -42,19 +45,19 @@ jobs:
         shell: bash
 
       - name: master run
-        if:  github.event_name == 'schedule' && github.event.schedule=='*/6 * * * *'         # set-env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 6 * * *'         # set-env value
         run: |
           echo "cron_branch=master" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.9 run
-        if:  github.event_name == 'schedule' && github.event.schedule=='*/12 * * * *'   # set env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'   # set env value
         run: |
           echo "cron_branch=1.9" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.8 run
-        if:  github.event_name == 'schedule' && github.event.schedule=='*/18 * * * *'   # set env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'   # set env value
         run: |
           echo "cron_branch=1.8" >> $GITHUB_ENV
         shell: bash
@@ -63,6 +66,10 @@ jobs:
         id: branch
         run: |
           echo "$cron_branch"
+          if [[ -z "$cron_branch" ]]; then
+            echo "Unable to determine branch to use"
+            exit 1
+          fi
           echo "::set-output name=branch::$cron_branch"
         shell: bash
 

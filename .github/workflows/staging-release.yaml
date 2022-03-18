@@ -97,8 +97,6 @@ jobs:
         rm -f packaging/releases/*.repo
         rm -f packaging/releases/latest-version.txt
         packaging/update-repos.sh packaging/releases/
-        # Sign repo meta-data
-        find "$REPO_DIR" -name repomd.xml -exec gpg --detach-sign --armor -u "$GPG_KEY" --passphrase "${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}" --batch --yes {} \;
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
