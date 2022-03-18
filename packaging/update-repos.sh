@@ -106,5 +106,5 @@ if [[ "$DISABLE_SIGNING" != "true" ]]; then
     fi
     # We do want splitting here for parameters
     # shellcheck disable=SC2086
-    find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign $GPG_PARAMS {} \;
+    find "$BASE_PATH" -name repomd.xml -exec gpg --detach-sign $GPG_PARAMS {} \;
 fi
