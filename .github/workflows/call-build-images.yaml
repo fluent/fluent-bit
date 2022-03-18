@@ -46,16 +46,24 @@ on:
 jobs:
   call-build-images:
     name: Multiarch container images to GHCR
-    runs-on: [ ubuntu-latest ]
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout code
+        if: inputs.ref != '1.8'
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Checkout the docker build repo
+        if: inputs.ref == '1.8'
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-docker-image
+          ref: '1.8'
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -80,6 +88,7 @@ jobs:
             raw,latest
 
       - name: Build the production images
+        if: inputs.ref != '1.8'
         uses: docker/build-push-action@v2
         with:
           file: ./dockerfiles/Dockerfile
@@ -102,6 +111,7 @@ jobs:
             raw,latest-debug
 
       - name: Build the debug multi-arch images
+        if: inputs.ref != '1.8'
         uses: docker/build-push-action@v2
         with:
           file: ./dockerfiles/Dockerfile
@@ -115,9 +125,24 @@ jobs:
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
+      - name: Build the legacy image
+        if: inputs.ref == '1.8'
+        uses: docker/build-push-action@v2
+        with:
+          file: ./dockerfiles/Dockerfile.x86_64
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          target: production
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
   call-build-images-scan:
     name: Trivy + Dockle image scan
-    runs-on: [ ubuntu-latest ]
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     needs: call-build-images
     permissions:
@@ -156,7 +181,7 @@ jobs:
       # This is used to complete the identity challenge
       # with sigstore/fulcio when running outside of PRs.
       id-token: write
-    runs-on: [ ubuntu-latest ]
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     needs: call-build-images
     steps:
