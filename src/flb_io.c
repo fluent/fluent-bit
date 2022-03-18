@@ -276,8 +276,7 @@ static FLB_INLINE int net_io_write_async(struct flb_coro *co,
     /* Update counters */
     total += bytes;
     if (total < len) {
-        if (u_conn->event.status == MK_EVENT_NONE) {
-            u_conn->event.mask = MK_EVENT_EMPTY;
+        if ((u_conn->event.mask & MK_EVENT_WRITE) == 0) {
             ret = mk_event_add(u_conn->evl,
                                u_conn->fd,
                                FLB_ENGINE_EV_THREAD,
