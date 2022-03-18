@@ -297,6 +297,13 @@ struct mk_list *flb_config_map_create(struct flb_config *config,
 
             /* Translate the value */
             env = flb_env_var_translate(config->env, m->def_value);
+            if (env == NULL) {
+                flb_errno();
+                flb_sds_destroy(new->name);
+                flb_free(new);
+                flb_config_map_destroy(list);
+                return NULL;
+            }
             new->def_value = env;
             flb_env_warn_unused(config->env, FLB_TRUE);
         }
