@@ -97,3 +97,14 @@ EOF
     # Remove unnecessary files
     rm -rf "$REPO_DIR/conf/" "$REPO_DIR/db/" "$APTLY_ROOTDIR" "$APTLY_CONFIG"
 done
+
+# Ensure we sign the Yum repo meta-data
+if [[ "$DISABLE_SIGNING" != "true" ]]; then
+    GPG_PARAMS="--batch --armor --yes -u $GPG_KEY"
+    if [[ -n "$GPG_KEY_PASSPHRASE" ]]; then
+        GPG_PARAMS="$GPG_PARAMS --passphrase $GPG_KEY_PASSPHRASE"
+    fi
+    # We do want splitting here for parameters
+    # shellcheck disable=SC2086
+    find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign $GPG_PARAMS {} \;
+fi
