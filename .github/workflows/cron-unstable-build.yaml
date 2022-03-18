@@ -13,8 +13,10 @@ on:
   # Run nightly build at this time, bit of trial and error but this seems good.
   schedule:
   - cron: "0 6 * * *"   # master build
-  - cron: "0 12 * * *"  # 1.9 build
-  - cron: "0 18 * * *"  # 1.8 build
+  # - cron: "0 12 * * *"  # 1.9 build
+  # Not available currently
+  # - cron: "0 18 * * *"  # 1.8 build
+  # A 1.8 build requires merging all the changes from master to handle packaging from local
 
 # We do not want a new unstable build to run whilst we are releasing the current unstable build.
 concurrency: unstable-build-release
@@ -45,19 +47,19 @@ jobs:
         shell: bash
 
       - name: master run
-        if:  github.event_name == 'schedule' && github.event.schedule=='0 6 * * *'         # set-env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 6 * * *'
         run: |
           echo "cron_branch=master" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.9 run
-        if:  github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'   # set env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'
         run: |
           echo "cron_branch=1.9" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.8 run
-        if:  github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'   # set env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'
         run: |
           echo "cron_branch=1.8" >> $GITHUB_ENV
         shell: bash
@@ -89,7 +91,7 @@ jobs:
 
   unstable-build-generate-schema:
     # Not available for 1.8
-    if: github.event.schedule != '*/18 * * * *'
+    if: github.event.schedule != '*18 * * * *'
     needs:
       - unstable-build-get-meta
       - unstable-build-images
