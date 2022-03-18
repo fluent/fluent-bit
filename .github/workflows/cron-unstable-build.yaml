@@ -118,6 +118,8 @@ jobs:
 
   unstable-build-generate-matrix:
     name: unstable build matrix
+    needs:
+      - unstable-build-get-meta
     runs-on: ubuntu-latest
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
