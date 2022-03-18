@@ -100,7 +100,7 @@ done
 
 # Ensure we sign the Yum repo meta-data
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
-    GPG_PARAMS="--armor --yes -u $GPG_KEY"
+    GPG_PARAMS="--batch --armor --yes -u $GPG_KEY"
     if [[ -n "$GPG_KEY_PASSPHRASE" ]]; then
         GPG_PARAMS="$GPG_PARAMS --passphrase $GPG_KEY_PASSPHRASE"
     fi

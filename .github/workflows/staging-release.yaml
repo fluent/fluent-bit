@@ -99,7 +99,6 @@ jobs:
         packaging/update-repos.sh packaging/releases/
       env:
         GPG_KEY: ${{ steps.import_gpg.outputs.name }}
-        GPG_KEY_PASSPHRASE: ${{ secrets.gpg_private_key_passphrase }}
         AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
         VERSION: ${{ github.event.inputs.version }}
       shell: bash
