@@ -6,6 +6,10 @@ inputs:
   target:
     description: Override to build a single target for debug/test only.
     required: false
+  fluent-bit-version:
+    description: The version of Fluent Bit to build.
+    required: false
+    default: 'master'
 outputs:
   build-matrix:
     description: The build matrix we have created.
@@ -13,7 +17,8 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - id: set-matrix
+    - name: master/1.9 targets
+      if: fluent-bit-version != '1.8'
       run: |
         matrix=$((
           echo '{ "distro" : ['
@@ -32,7 +37,35 @@ runs:
             echo ']}'
           ) | jq -c .)
         fi
-        echo $matrix
-        echo $matrix| jq .
-        echo "::set-output name=matrix::$matrix"
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+      shell: bash
+
+    - name: 1.8 targets
+      if: fluent-bit-version == '1.8'
+      run: |
+        matrix=$((
+          echo '{ "distro" : ['
+          echo '"amazonlinux/2", "amazonlinux/2.arm64v8",'
+          echo '"centos/7", "centos/7.arm64v8",'
+          echo '"debian/stretch", "debian/stretch.arm64v8", "debian/buster", "debian/buster.arm64v8",'
+          echo '"ubuntu/16.04", "ubuntu/18.04", "ubuntu/20.04", "ubuntu/18.04.arm64v8", "ubuntu/20.04.arm64v8",'
+          echo '"raspbian/buster"'
+          echo ']}'
+        ) | jq -c .)
+        if [ -n "${{ inputs.target || '' }}" ]; then
+          echo "Overriding matrix to build: ${{ inputs.target }}"
+          matrix=$((
+            echo '{ "distro" : ['
+            echo '"${{ inputs.target }}"'
+            echo ']}'
+          ) | jq -c .)
+        fi
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+      shell: bash
+
+    - id: set-matrix
+      run: |
+        echo $MATRIX
+        echo $MATRIX| jq .
+        echo "::set-output name=matrix::$MATRIX"
       shell: bash
