@@ -77,7 +77,7 @@ jobs:
 
   unstable-build-images:
     needs: unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@4875_support_version_in_ci_parameter
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -136,7 +136,7 @@ jobs:
     needs:
       - unstable-build-get-meta
       - unstable-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@4875_support_version_in_ci_parameter
+    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
