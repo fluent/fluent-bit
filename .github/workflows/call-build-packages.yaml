@@ -179,7 +179,6 @@ jobs:
     environment: ${{ inputs.environment }}
     needs:
       - call-build-packages
-      - call-build-packages-legacy
     steps:
       - name: Install dependencies
         run: |
