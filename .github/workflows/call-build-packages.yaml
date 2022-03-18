@@ -190,6 +190,7 @@ jobs:
           aws s3 sync "./latest/" "s3://$AWS_S3_BUCKET" --delete --follow-symlinks --no-progress ${ENDPOINT}
         env:
           GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+          GPG_KEY_PASSPHRASE: ${{ secrets.gpg_private_key_passphrase }}
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
