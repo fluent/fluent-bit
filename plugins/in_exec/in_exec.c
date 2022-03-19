@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_parser.h>
 #include <msgpack.h>
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,6 +134,9 @@ static int in_exec_collect(struct flb_input_instance *ins,
     if(cmdp != NULL){
         pclose(cmdp);
     }
+    if (ctx->exit == FLB_TRUE) {
+        kill(getpid(), SIGINT);
+    }
 
     return ret;
 }
@@ -180,13 +184,17 @@ static int in_exec_config_read(struct flb_exec *ctx,
         ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
     }
 
+    if (ctx->exit) {
+        ctx->oneshot = FLB_TRUE;
+    }
+
     if (ctx->oneshot) {
         ctx->interval_sec = -1;
         ctx->interval_nsec = -1;
     }
 
-    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i buf_size=%d",
-              ctx->interval_sec, ctx->interval_nsec, ctx->oneshot, ctx->buf_size);
+    flb_plg_debug(in, "interval_sec=%d interval_nsec=%d oneshot=%i exit=%i buf_size=%d",
+              ctx->interval_sec, ctx->interval_nsec, ctx->oneshot, ctx->exit, ctx->buf_size);
 
     return 0;
 }
@@ -335,7 +343,12 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_BOOL, "bool", "false",
       0, FLB_TRUE, offsetof(struct flb_exec, oneshot),
-      "execute the command only once"
+      "Execute the command only once"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "exit", "false",
+      0, FLB_TRUE, offsetof(struct flb_exec, exit),
+      "Exit after the command finishes (implies oneshot=true)"
     },
     /* EOF */
     {0}
