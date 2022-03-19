@@ -54,7 +54,7 @@ int flb_malloc_p;
 
 static inline int flb_fuzz_get_probability(int val) {
   flb_malloc_p += 1;
-  flb_malloc_p = flb_malloc_p % 2500;
+  flb_malloc_p = flb_malloc_p % 25000;
   if (val > flb_malloc_p) {
     return 1;
   }
