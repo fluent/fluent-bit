@@ -132,7 +132,7 @@ void test_multiline_parser(msgpack_object *root2, int rand_val) {
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     TIMEOUT_GUARD
-
+    flb_malloc_p = 0;
     /* Ensure there's enough data */
     if (size < 250) {
         return 0;
