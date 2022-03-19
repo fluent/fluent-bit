@@ -30,6 +30,7 @@
 struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
                                            struct flb_config *config)
 {
+    int ret;
     const char *tmp;
     char errstr[512];
     struct mk_list *head;
@@ -45,6 +46,13 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
     ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
+
+    ret = flb_output_config_map_set(ins, (void*) ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to load configuration.");
+        flb_free(ctx);
+        return -1;
+    }
 
     /* rdkafka config context */
     ctx->conf = flb_kafka_conf_create(&ctx->kafka, &ins->properties, 0);
