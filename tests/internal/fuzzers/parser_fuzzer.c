@@ -42,6 +42,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     int time_keep = 0;
     int types_len = 0;
 
+    flb_malloc_p = 0;
+
     if (size < 100) {
         return 0;
     }

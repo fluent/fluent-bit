@@ -27,7 +27,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
-
+    flb_malloc_p = 0;
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
     in_ffd = flb_input(ctx, (char *) "lib", NULL);

@@ -24,6 +24,8 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    flb_malloc_p = 0;
+
     /* Limit the size of the config files to 32KB. */
     if (size > 32768) {
         return 0;

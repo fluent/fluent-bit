@@ -14,6 +14,7 @@ extern int fuzz_check_connection(struct flb_http_client *c);
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    flb_malloc_p = 0;
     struct flb_upstream *u;
     struct flb_upstream_conn *u_conn = NULL;
     struct flb_http_client *c;
