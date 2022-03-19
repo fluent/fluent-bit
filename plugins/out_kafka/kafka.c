@@ -541,8 +541,8 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_INT, "queue_full_retries", FLB_KAFKA_QUEUE_FULL_RETRIES,
-    0, FLB_TRUE, offsetof(struct flb_out_kafka, timestamp_format_str),
-    "Set the format the timestamp is in."
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, queue_full_retries),
+    "Set the number of local retries to enqueue the data."
    },
    {
     FLB_CONFIG_MAP_STR, "gelf_timestamp_key", (char *)NULL,
