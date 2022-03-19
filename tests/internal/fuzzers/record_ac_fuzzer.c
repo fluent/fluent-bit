@@ -22,6 +22,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     size_t off = 0;
     msgpack_object map;
 
+    flb_malloc_p = 0;
+
     if (size < 100) {
        return 0;
     }

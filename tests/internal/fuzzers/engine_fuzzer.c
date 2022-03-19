@@ -121,7 +121,7 @@ struct flb_lib_out_cb cb;
 
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
-
+    flb_malloc_p = 0;
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "0", "Grace", 
                     "0", "Log_Level", "debug", NULL);

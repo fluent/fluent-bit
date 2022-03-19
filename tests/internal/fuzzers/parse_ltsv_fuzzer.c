@@ -11,6 +11,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     struct flb_config *fuzz_config;
     struct flb_parser *fuzz_parser;
 
+    flb_malloc_p = 0;
+
     /* ltsvc parser */
     fuzz_config = flb_config_init();
     fuzz_parser = flb_parser_create("fuzzer", "ltsv", NULL, FLB_TRUE,

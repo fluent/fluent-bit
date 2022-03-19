@@ -24,12 +24,12 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     TIMEOUT_GUARD
-
     void *out_buf = NULL;
     size_t out_size = 0;
     struct flb_time out_time;
     struct flb_config *fuzz_config;
     struct flb_parser *fuzz_parser;
+    flb_malloc_p = 0;
 
     /* json parser */
     fuzz_config = flb_config_init();

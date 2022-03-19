@@ -155,6 +155,7 @@ struct flb_config_map *configs[] = {config_map_mult, config_map};
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    flb_malloc_p = 0;
     if (size < 40) {
         return 0;
     }
