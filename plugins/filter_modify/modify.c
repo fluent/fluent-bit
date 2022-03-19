@@ -161,7 +161,25 @@ static int setup(struct filter_modify_ctx *ctx,
             condition->b_is_regex = false;
             condition->ra_a = NULL;
             condition->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            if (condition->raw_k == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "condition->raw_k");
+                teardown(ctx);
+                condition_free(condition);
+                flb_utils_split_free(split);
+                return -1;
+            }
             condition->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (condition->raw_v == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                              "condition->raw_v");
+                teardown(ctx);
+                condition_free(condition);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
@@ -230,6 +248,15 @@ static int setup(struct filter_modify_ctx *ctx,
                 sentry =
                     mk_list_entry_last(split, struct flb_split_entry, _head);
                 condition->b = flb_strndup(sentry->value, sentry->len);
+                if (condition->b == NULL) {
+                    flb_errno();
+                    flb_plg_error(ctx->ins, "Unable to allocate memory for "
+                                  "condition->b");
+                    teardown(ctx);
+                    condition_free(condition);
+                    flb_utils_split_free(split);
+                    return -1;
+                }
                 condition->b_len = sentry->len;
             }
             else {
@@ -296,15 +323,53 @@ static int setup(struct filter_modify_ctx *ctx,
             rule->key_is_regex = false;
             rule->val_is_regex = false;
             rule->raw_k = flb_strndup(kv->key, flb_sds_len(kv->key));
+            if (rule->raw_k == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_k");
+                teardown(ctx);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->raw_v = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (rule->raw_v == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->raw_v");
+                teardown(ctx);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             sentry =
                 mk_list_entry_first(split, struct flb_split_entry, _head);
             rule->key = flb_strndup(sentry->value, sentry->len);
+            if (rule->key == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->key");
+                teardown(ctx);
+                flb_free(rule->raw_v);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->key_len = sentry->len;
 
             sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
             rule->val = flb_strndup(sentry->value, sentry->len);
+            if (rule->val == NULL) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "Unable to allocate memory for rule->val");
+                teardown(ctx);
+                flb_free(rule->key);
+                flb_free(rule->raw_v);
+                flb_free(rule->raw_k);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
             rule->val_len = sentry->len;
 
             flb_utils_split_free(split);
