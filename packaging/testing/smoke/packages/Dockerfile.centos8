@@ -23,16 +23,15 @@ FROM ${STAGING_BASE} as staging-install
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 
-ARG AWS_URL
+ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
-RUN rpm --import "$AWS_URL/fluentbit.key"
-RUN wget "$AWS_URL/centos-8.repo" -O /etc/yum.repos.d/staging.repo
+RUN rpm --import "$STAGING_URL/fluentbit.key"
+RUN wget "$STAGING_URL/centos-8.repo" -O /etc/yum.repos.d/staging.repo
 # hadolint ignore=DL3032
 RUN yum update -y && yum install -y fluent-bit
 RUN systemctl enable fluent-bit
 
-ENV SKIP_TEST=no
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 

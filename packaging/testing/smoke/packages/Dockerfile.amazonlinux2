@@ -16,12 +16,12 @@ FROM official-install as staging-upgrade-prep
 RUN rm -f /etc/yum.repos.d/td-agent-bit.repo
 
 FROM ${STAGING_BASE} as staging-install
-ARG AWS_URL
+ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
 # hadolint ignore=DL3032
-RUN rpm --import "$AWS_URL/fluentbit.key" && \
-    wget -q "$AWS_URL/amazonlinux-2.repo" -O /etc/yum.repos.d/staging.repo && \
+RUN rpm --import "$STAGING_URL/fluentbit.key" && \
+    wget -q "$STAGING_URL/amazonlinux-2.repo" -O /etc/yum.repos.d/staging.repo && \
     yum update -y && yum install -y fluent-bit && \
     systemctl enable fluent-bit
 
