@@ -11,7 +11,7 @@ COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
 FROM official-install as staging-upgrade-prep
-RUN head -n -1 /etc/apt/sources.list > /tmp/sources.list && mv /tmp/sources.list /etc/apt/sources.list
+RUN rm -f /etc/apt/sources.list.d/fluent-bit.list
 
 FROM ${STAGING_BASE} as staging-install
 ARG AWS_URL

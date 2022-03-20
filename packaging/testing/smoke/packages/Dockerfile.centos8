@@ -9,13 +9,9 @@ RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
 ARG RELEASE_URL
 RUN rpm --import $RELEASE_URL/fluentbit.key
 
-# No official packages available yet
-# RUN echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/centos/\$releasever/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo
-# hadolint ignore=DL3032
-# RUN yum update -y && yum install -y td-agent-bit
-# RUN systemctl enable td-agent-bit
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
-ENV SKIP_TEST=yes
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 

@@ -5,11 +5,9 @@ FROM dokken/amazonlinux-2 as official-install
 ARG RELEASE_URL
 # For echo flags
 SHELL ["/bin/bash", "-c"]
-# hadolint ignore=DL3032
-RUN rpm --import $RELEASE_URL/fluentbit.key && \
-    echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/amazonlinux/2/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo && \
-    yum update -y && yum install -y td-agent-bit && \
-    systemctl enable td-agent-bit
+
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
