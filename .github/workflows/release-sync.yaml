@@ -4,6 +4,10 @@ name: Release sync from server to bucket
 # This is only expected to be invoked on-demand.
 on:
   workflow_dispatch:
+    mode:
+      description: Optionally run in various modes to exercise the download but not upload, etc.
+      required: false
+      default: ''
 
 concurrency: release-sync
 
@@ -24,4 +28,4 @@ jobs:
           server_hostname: ${{ secrets.FLUENTBITIO_HOST }}
           server_username: ${{ secrets.FLUENTBITIO_USERNAME }}
           server_key: ${{ secrets.FLUENTBITIO_SSHKEY }}
-          ref: ${{ github.ref_name }}
+          mode: ${{ github.event.inputs.mode }}

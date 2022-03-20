@@ -19,12 +19,12 @@ inputs:
   server_key:
     description: The SSH key to use for authentication.
     required: true
-  ref:
-    description: The Git commit, branch or tag to checkout for the packaging code.
-    required: false
-    default: "master"
   version:
     description: A single version to sync rather than everything from the server.
+    required: false
+    default: ''
+  mode:
+    description: Optionally run in various modes to exercise the download but not upload, etc.
     required: false
     default: ''
 
@@ -49,11 +49,6 @@ runs:
       key: ${{ inputs.server_key }}
       known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
 
-  - name: Checkout code
-    uses: actions/checkout@v3
-    with:
-      ref: ${{ inputs.ref }}
-
   - name: Sync packages from release bucket on S3
     run: packaging/sync-releases-to-bucket.sh
     env:
@@ -64,4 +59,11 @@ runs:
       RELEASE_SERVER: ${{ inputs.server_hostname }}
       RELEASE_SERVER_USERNAME: ${{ inputs.server_username }}
       SYNC_VERSION: ${{ inputs.version }}
+      MODE: ${{ inputs.mode }}
     shell: bash
+
+  - name: Upload artefacts
+    if: mode != '' || failure()
+    uses: actions/upload-artifact
+    with:
+      path: packaging/aws-release-sync

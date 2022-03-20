@@ -25,6 +25,10 @@ RSYNC_CMD=${RSYNC_CMD:-rsync -chavzP --prune-empty-dirs}
 # Used to speed up rsync from server by specifying a particular release you want only downloaded.
 # We still have to grab all of AWS to reconstruct.
 SYNC_VERSION=${SYNC_VERSION:-}
+# Run only segments of this script before exiting
+# DOWNLOAD_ONLY - download from AWS and the server only
+# DISABLE_UPLOAD - run everything except the final sync to $OUTPUT_BUCKET
+MODE=${MODE:-}
 
 # We download everything from AWS but only artefacts from the server.
 # We then massage them into a common format ready to recreate the repository metadata from.
@@ -68,7 +72,7 @@ for LEGACY_REPO in "${LEGACY_REPOS[@]}"; do
 done
 echo "Legacy APT repository download complete"
 
-if [[ -n "${DISABLE_METADATA_CONSTRUCTION:-}" ]]; then
+if [[ "$MODE" == "DOWNLOAD_ONLY" ]]; then
     echo "Download only specified so skipping metadata construction and upload"
     exit 0
 fi
@@ -114,7 +118,7 @@ fi
 "$SCRIPT_DIR/update-repos.sh" "$BASE_PATH"
 echo "Repository metadata construction complete"
 
-if [[ -n "${DISABLE_UPLOAD:-}" ]]; then
+if [[ "$MODE" == "DISABLE_UPLOAD" ]]; then
     echo "Skipping upload as requested"
     exit 0
 fi
