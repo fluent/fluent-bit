@@ -5,7 +5,7 @@ on:
     paths:
       - '**.c'
       - '**.h'
-      - '**/CMakeLists.txt'
+      - 'CMakeLists.txt'
       - 'cmake/*'
   workflow_dispatch:
 
