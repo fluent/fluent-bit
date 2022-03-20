@@ -91,7 +91,8 @@ jobs:
 
   unstable-build-generate-schema:
     # Not available for 1.8
-    if: github.event.schedule != '*18 * * * *'
+    # Handle manually initiated
+    if: needs.unstable-build-get-meta.outputs.branch != '1.8'
     needs:
       - unstable-build-get-meta
       - unstable-build-images
@@ -105,7 +106,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - run: |
-          docker run --rm -it ${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }} -J > fluent-bit-schema.json
+          docker run --rm -t ${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }} -J > fluent-bit-schema.json
           cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty.json
         shell: bash
 
@@ -209,7 +210,8 @@ jobs:
       - name: Single packages tar
         run: |
           mkdir -p release-upload
-          mv -f artifacts/*.json release-upload/
+          # Optional JSON schema so ignore failure
+          mv -f artifacts/*.json release-upload/ || true
           tar -czvf release-upload/packages-unstable-${{ needs.unstable-build-get-meta.outputs.branch }}.tar.gz -C artifacts/ .
         shell: bash
 
