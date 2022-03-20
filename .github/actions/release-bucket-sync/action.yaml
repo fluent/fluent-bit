@@ -63,7 +63,7 @@ runs:
     shell: bash
 
   - name: Upload artefacts
-    if: mode != '' || failure()
+    if: inputs.mode != '' || failure()
     uses: actions/upload-artifact
     with:
       path: packaging/aws-release-sync
