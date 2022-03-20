@@ -3,8 +3,7 @@ ARG STAGING_BASE=dokken/debian-11
 
 FROM dokken/debian-11 as official-install
 ARG RELEASE_URL
-RUN wget -qO - $RELEASE_URL/fluentbit.key | apt-key add -
-
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
 RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
@@ -18,6 +17,7 @@ FROM ${STAGING_BASE} as staging-install
 ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN wget -qO - $STAGING_URL/fluentbit.key | apt-key add -
 RUN echo "deb $STAGING_URL/debian/bullseye bullseye main" >> /etc/apt/sources.list
 RUN apt-get update && apt-get install -y td-agent-bit

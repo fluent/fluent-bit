@@ -17,6 +17,7 @@ FROM ${STAGING_BASE} as staging-install
 ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN wget -qO - $STAGING_URL/fluentbit.key | apt-key add -
 RUN echo "deb $STAGING_URL/ubuntu/focal focal main" >> /etc/apt/sources.list
 RUN apt-get update && apt-get install -y td-agent-bit

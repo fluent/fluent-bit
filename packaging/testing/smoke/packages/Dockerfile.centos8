@@ -9,6 +9,7 @@ RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
 ARG RELEASE_URL
 RUN rpm --import $RELEASE_URL/fluentbit.key
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
 RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 

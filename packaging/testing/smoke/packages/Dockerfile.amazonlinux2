@@ -3,9 +3,8 @@ ARG STAGING_BASE=dokken/amazonlinux-2
 
 FROM dokken/amazonlinux-2 as official-install
 ARG RELEASE_URL
-# For echo flags
-SHELL ["/bin/bash", "-c"]
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
 RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
