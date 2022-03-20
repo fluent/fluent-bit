@@ -3,6 +3,7 @@
 | Workflow file                                         | Description               | Run event                                         |
 | :---------------------------------------------------- | ------------------------  | ------------------------------------------------- |
 | [build-master-packages](./build-master-packages.yaml) | Builds packages using `master` for certain targets | on new commit/push on master / manual |
+| [cron-unstable-build](./cron-unstable-build.yaml) | Automated nightly builds of each supported branch | Scheduled/manual trigger |
 | [master-integration-test](./master-integration-test.yaml)     | Runs the integration testing suite on master | on new commit/push on master |
 | [staging-build](./staging-build.yaml)            | Builds the distro packages and docker images from a tagged release into staging (S3 and GHCR) | on new release/tag |
 | [staging-test](./staging-test.yaml)            | Test the staging distro packages and docker images| manually or when `staging-build` completes successfully |
@@ -42,7 +43,8 @@ These are only required for Cosign of the container images, will be skipped if n
 
 ## Environments
 
-Two environments are used:
+These environments are used:
+* `unstable` for all nightly builds
 * `staging` for all staging builds
 * `release` for running the promotion of staging to release, this can have additional approvals added
 
