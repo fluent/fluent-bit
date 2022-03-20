@@ -37,6 +37,7 @@ cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 name = Fluent Bit
 baseurl = https://packages.fluentbit.io/amazonlinux/\$releasever/\$basearch/
 gpgcheck=1
+repo_gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
 EOF
@@ -51,6 +52,7 @@ cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 name = Fluent Bit
 baseurl = https://packages.fluentbit.io/centos/\$releasever/\$basearch/
 gpgcheck=1
+repo_gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
 EOF
