@@ -4,10 +4,11 @@ name: Release sync from server to bucket
 # This is only expected to be invoked on-demand.
 on:
   workflow_dispatch:
-    mode:
-      description: Optionally run in various modes to exercise the download but not upload, etc.
-      required: false
-      default: ''
+    inputs:
+      mode:
+        description: Optionally run in various modes to exercise the download but not upload, etc.
+        required: false
+        default: ''
 
 concurrency: release-sync
 

@@ -43,6 +43,7 @@ baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
 enabled=1
 gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
 gpgcheck=1
+repo_gpgcheck=1
 EOF
     fi
 done
