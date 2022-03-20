@@ -139,6 +139,35 @@ jobs:
           build-args: |
             FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
 
+  call-build-images-generate-schema:
+    if: inputs.ref != '1.8'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs: call-build-images
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Generate schema
+        run: |
+          docker run --rm -t ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} -J > fluent-bit-schema.json
+          cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty.json
+        shell: bash
+
+      - name: Upload the schema
+        uses: actions/upload-artifact@v2
+        with:
+          path: ./
+          name: fluent-bit-schema*.json
+          if-no-files-found: error
+
   call-build-images-scan:
     name: Trivy + Dockle image scan
     runs-on: ubuntu-latest

@@ -90,35 +90,6 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
-  unstable-build-generate-schema:
-    # Not available for 1.8
-    # Handle manually initiated
-    if: needs.unstable-build-get-meta.outputs.branch != '1.8'
-    needs:
-      - unstable-build-get-meta
-      - unstable-build-images
-    runs-on: ubuntu-latest
-    environment: unstable
-    steps:
-      - name: Log in to the Container registry
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - run: |
-          docker run --rm -t ${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }} -J > fluent-bit-schema.json
-          cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty.json
-        shell: bash
-
-      - name: Upload the schema
-        uses: actions/upload-artifact@v2
-        with:
-          path: ./
-          name: fluent-bit-schema*.json
-          if-no-files-found: error
-
   unstable-build-generate-matrix:
     name: unstable build matrix
     needs:
@@ -230,12 +201,14 @@ jobs:
         # May not be any/valid so ignore errors
         continue-on-error: true
         run: |
-          docker pull ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
-          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}.tar ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
-          docker pull ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}-debug
-          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}-debug.tar ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}-debug
+          docker pull $IMAGE
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}.tar $IMAGE
+          docker pull $IMAGE-debug
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}-debug.tar $IMAGE-debug
         shell: bash
         working-directory: release-upload
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
 
       - name: Display structure of files to upload
         run: ls -R
