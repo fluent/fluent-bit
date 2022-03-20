@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code for action at least
         uses: actions/checkout@v3
 
-      - uses: ./.github/actions/release-server-sync
+      - uses: ./.github/actions/release-bucket-sync
         with:
           bucket: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
           access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
