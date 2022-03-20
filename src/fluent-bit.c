@@ -89,6 +89,30 @@ struct flb_stacktrace flb_st;
 #define n_get_key(a, b, c)   (intptr_t) get_key(a, b, c)
 #define s_get_key(a, b, c)   (char *) get_key(a, b, c)
 
+#ifdef FLB_LOG_NO_CONTROL_CHARS
+
+#undef ANSI_RESET
+#undef ANSI_BOLD
+#undef ANSI_CYAN
+#undef ANSI_MAGENTA
+#undef ANSI_RED
+#undef ANSI_YELLOW
+#undef ANSI_BLUE
+#undef ANSI_GREEN
+#undef ANSI_WHITE
+
+#define ANSI_RESET    ""
+#define ANSI_BOLD     ""
+#define ANSI_CYAN     ""
+#define ANSI_MAGENTA  ""
+#define ANSI_RED      ""
+#define ANSI_YELLOW   ""
+#define ANSI_BLUE     ""
+#define ANSI_GREEN    ""
+#define ANSI_WHITE    ""
+
+#endif // FLB_LOG_NO_CONTROL_CHARS
+
 static void flb_version()
 {
 #ifdef FLB_NIGHTLY_BUILD

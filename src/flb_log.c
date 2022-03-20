@@ -339,6 +339,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     va_start(args, fmt);
 
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+        header_color = "";
+        bold_color = "";
+        reset_color = "";
+    #else
     switch (type) {
     case FLB_LOG_HELP:
         header_title = "help";
@@ -376,6 +381,7 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         bold_color = "";
         reset_color = "";
     }
+    #endif // FLB_LOG_NO_CONTROL_CHARS
 
     now = time(NULL);
     current = localtime_r(&now, &result);

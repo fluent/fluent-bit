@@ -71,6 +71,7 @@ RUN cmake -DFLB_RELEASE=On \
           -DFLB_OUT_KAFKA=On \
           -DFLB_OUT_PGSQL=On \
           -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_LOG_NO_CONTROL_CHARS=On \
           ..
 
 RUN make -j "$(getconf _NPROCESSORS_ONLN)"

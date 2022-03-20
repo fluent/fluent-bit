@@ -547,6 +547,11 @@ if(FLB_TRACE)
   FLB_DEFINITION(FLB_HAVE_TRACE)
 endif()
 
+# Disable colors and any other control characters in the output
+if (FLB_LOG_NO_CONTROL_CHARS)
+  FLB_DEFINITION(FLB_LOG_NO_CONTROL_CHARS)
+endif()
+
 if(FLB_HTTP_SERVER)
   FLB_OPTION(FLB_METRICS ON)
   FLB_DEFINITION(FLB_HAVE_METRICS)
