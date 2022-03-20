@@ -22,6 +22,9 @@ GPG_KEY=${GPG_KEY:?}
 BASE_PATH=${BASE_PATH:-$SCRIPT_DIR/aws-release-sync}
 # Rsync command info: https://explainshell.com/explain?cmd=rsync+-chavzP+--prune-empty-dirs
 RSYNC_CMD=${RSYNC_CMD:-rsync -chavzP --prune-empty-dirs}
+# Used to speed up rsync from server by specifying a particular release you want only downloaded.
+# We still have to grab all of AWS to reconstruct.
+SYNC_VERSION=${SYNC_VERSION:-}
 
 # We download everything from AWS but only artefacts from the server.
 # We then massage them into a common format ready to recreate the repository metadata from.
@@ -32,9 +35,43 @@ aws-cli s3 sync "s3://$BUCKET" "$BASE_PATH"
 echo "AWS download complete"
 
 # Grab Linux packages from the release server
-$RSYNC_CMD --include='*.rpm' --include='*.deb' --include='*.key' --include='*/' --exclude '*' \
-    "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_PATH"/ "$BASE_PATH"
+if [[ -z "$SYNC_VERSION" ]]; then
+    $RSYNC_CMD --include='*.rpm' --include='*.deb' --include='*.key' --include='*/' --exclude '*' \
+        "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_PATH"/ "$BASE_PATH"
+else
+    echo "Syncing only version: $SYNC_VERSION"
+    $RSYNC_CMD --include="*$SYNC_VERSION*.rpm" --include="*$SYNC_VERSION*.deb" --include='*.key' --include='*/' --exclude '*' \
+        "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_PATH"/ "$BASE_PATH"
+fi
 echo "Server artefact download complete"
+
+# Grab Windows packages
+mkdir -p "$BASE_PATH"/windows
+if [[ -z "$SYNC_VERSION" ]]; then
+    $RSYNC_CMD --include='*win32.*' --include='*win64.*' --include='*/' --exclude '*' \
+        "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_WINDOWS_PATH"/ "$BASE_PATH"/windows
+else
+    $RSYNC_CMD --include="*$SYNC_VERSION*win32.*" --include="*$SYNC_VERSION*win64.*" --include='*/' --exclude '*' \
+        "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_WINDOWS_PATH"/ "$BASE_PATH"/windows
+fi
+echo "Windows package download complete"
+
+# Generate checksums for all Windows releases
+find "$BASE_PATH"/windows -type f -name "*win*.*" -exec sh -c 'cd "${1%/*}";sha256sum "${1##*/}" > "$1".sha256' _ {} \;
+echo "Windows checksum creation complete"
+
+# Now grab the repos we do not process to leave as-is
+LEGACY_REPOS=( "debian/jessie"
+                "debian/stretch" )
+for LEGACY_REPO in "${LEGACY_REPOS[@]}"; do
+    $RSYNC_CMD "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_PATH"/"$LEGACY_REPO" "$BASE_PATH/$LEGACY_REPO"
+done
+echo "Legacy APT repository download complete"
+
+if [[ -n "${DISABLE_METADATA_CONSTRUCTION:-}" ]]; then
+    echo "Download only specified so skipping metadata construction and upload"
+    exit 0
+fi
 
 # Remove duplicates for Yum repos and generally consolidate everything so RPMs are at
 # the root of the repo rather than in architecture-specific subdirectories.
@@ -66,29 +103,6 @@ for DEB_REPO in "${DEB_REPO_PATHS[@]}"; do
     rm -rf "$REPO_DIR"/pool "$REPO_DIR"/dists "${REPO_DIR:?}/$CODENAME"
 done
 echo "APT repository construction complete"
-
-# Now grab the repos we do not process to leave as-is
-LEGACY_REPOS=( "debian/jessie"
-                "debian/stretch" )
-for LEGACY_REPO in "${LEGACY_REPOS[@]}"; do
-    $RSYNC_CMD "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_PATH"/"$LEGACY_REPO" "$BASE_PATH/$LEGACY_REPO"
-done
-echo "Legacy APT repository download complete"
-
-# Grab Windows packages
-mkdir -p "$BASE_PATH"/windows
-$RSYNC_CMD --include='*win32.*' --include='*win64.*' --include='*/' --exclude '*' \
-    "$RELEASE_SERVER_USERNAME"@"$RELEASE_SERVER":"$RELEASE_SERVER_WINDOWS_PATH"/ "$BASE_PATH"/windows
-echo "Windows package download complete"
-
-# Generate checksums for all Windows releases
-find "$BASE_PATH"/windows -type f -name "*win*.*" -exec sh -c 'cd "${1%/*}";sha256sum "${1##*/}" > "$1".sha256' _ {} \;
-echo "Windows checksum creation complete"
-
-if [[ -n "${DISABLE_METADATA_CONSTRUCTION:-}" ]]; then
-    echo "Download only specified so skipping metadata construction and upload"
-    exit 0
-fi
 
 # Update metadata now - have to use Ubuntu 18.04 for 'createrepo' to be available
 if ! command -v createrepo ; then
