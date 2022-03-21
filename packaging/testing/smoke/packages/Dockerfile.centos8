@@ -9,13 +9,10 @@ RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
 ARG RELEASE_URL
 RUN rpm --import $RELEASE_URL/fluentbit.key
 
-# No official packages available yet
-# RUN echo -e "[td-agent-bit]\nname = Ttd-agent-bit\nbaseurl = $RELEASE_URL/centos/\$releasever/\$basearch/\ngpgcheck=1\ngpgkey=$RELEASE_URL/fluentbit.key\nenabled=1" > /etc/yum.repos.d/td-agent-bit.repo
-# hadolint ignore=DL3032
-# RUN yum update -y && yum install -y td-agent-bit
-# RUN systemctl enable td-agent-bit
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
-ENV SKIP_TEST=yes
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
@@ -27,16 +24,15 @@ FROM ${STAGING_BASE} as staging-install
 RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-* && \
     sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 
-ARG AWS_URL
+ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
-RUN rpm --import "$AWS_URL/fluentbit.key"
-RUN wget "$AWS_URL/centos-8.repo" -O /etc/yum.repos.d/staging.repo
+RUN rpm --import "$STAGING_URL/fluentbit.key" && \
+    wget -nv "$STAGING_URL/centos-8.repo" -O /etc/yum.repos.d/staging.repo
 # hadolint ignore=DL3032
-RUN yum update -y && yum install -y fluent-bit
-RUN systemctl enable fluent-bit
+RUN yum update -y && yum install -y fluent-bit && \
+    systemctl enable fluent-bit
 
-ENV SKIP_TEST=no
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 

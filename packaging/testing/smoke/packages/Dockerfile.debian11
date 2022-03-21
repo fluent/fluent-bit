@@ -3,30 +3,26 @@ ARG STAGING_BASE=dokken/debian-11
 
 FROM dokken/debian-11 as official-install
 ARG RELEASE_URL
-RUN wget -qO - $RELEASE_URL/fluentbit.key | apt-key add -
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
-# No official packages yet
-# RUN echo "deb $RELEASE_URL/debian/bullseye bullseye main" >> /etc/apt/sources.list
-# RUN apt-get update && apt-get install -y td-agent-bit
-# RUN systemctl enable td-agent-bit
-
-ENV SKIP_TEST=yes
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
 FROM official-install as staging-upgrade-prep
-RUN head -n -1 /etc/apt/sources.list > /tmp/sources.list && mv /tmp/sources.list /etc/apt/sources.list
+RUN rm -f /etc/apt/sources.list.d/fluent-bit.list
 
 FROM ${STAGING_BASE} as staging-install
-ARG AWS_URL
+ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
-RUN wget -qO - $AWS_URL/fluentbit.key | apt-key add -
-RUN echo "deb $AWS_URL/debian/bullseye bullseye main" >> /etc/apt/sources.list
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN wget -qO - $STAGING_URL/fluentbit.key | apt-key add -
+RUN echo "deb $STAGING_URL/debian/bullseye bullseye main" >> /etc/apt/sources.list
 RUN apt-get update && apt-get install -y td-agent-bit
 RUN systemctl enable td-agent-bit
 
-ENV SKIP_TEST=no
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
