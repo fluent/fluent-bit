@@ -90,7 +90,7 @@ jobs:
           ./build.sh
         env:
           FLB_DISTRO: ${{ matrix.distro }}
-          FLB_OUT_DIR: staging
+          FLB_OUT_DIR: staging/${{ inputs.version }}
           FLB_TD: "Off"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
@@ -102,7 +102,7 @@ jobs:
           ./build.sh
         env:
           FLB_DISTRO: ${{ matrix.distro }}
-          FLB_OUT_DIR: staging
+          FLB_OUT_DIR: staging/${{ inputs.version }}
           FLB_TD: "On"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
@@ -116,7 +116,7 @@ jobs:
           FLB_VERSION: ${{ inputs.ref }}
           FLB_BRANCH: ${{ inputs.ref }}
           FLB_DISTRO: ${{ matrix.distro }}
-          FLB_OUT_DIR: staging
+          FLB_OUT_DIR: staging/${{ inputs.version }}
         working-directory: packaging
 
       - name: Upload the ${{ matrix.distro }} artifacts
