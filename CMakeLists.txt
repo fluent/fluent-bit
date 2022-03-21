@@ -101,6 +101,7 @@ option(FLB_CORO_STACK_SIZE     "Set coroutine stack size")
 option(FLB_AVRO_ENCODER        "Build with Avro encoding support" No)
 option(FLB_AWS_ERROR_REPORTER  "Build with aws error reporting support" No)
 option(FLB_ARROW               "Build with Apache Arrow support"  No)
+option(FLB_WINDOWS_DEFAULTS    "Build with predefined Windows settings"  Yes)
 
 # Native Metrics Support (cmetrics)
 option(FLB_METRICS            "Enable metrics support"       Yes)
@@ -298,7 +299,7 @@ include(cmake/libraries.cmake)
 include(cmake/headers.cmake)
 
 # Tweak build targets for Windows
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+if(FLB_SYSTEM_WINDOWS)
   include(cmake/windows-setup.cmake)
 endif()
 
