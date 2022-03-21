@@ -1,15 +1,12 @@
 name: 'Pull requests compile checks'
 on:
   pull_request:
-    # Only trigger if there is a code change
+    # Only trigger if there is a code change or a CMake change that (could) affect code
     paths:
-      - '**.h'
       - '**.c'
-    types:
-      - opened
-      - edited
-      - reopened
-      - synchronize
+      - '**.h'
+      - 'CMakeLists.txt'
+      - 'cmake/*'
   workflow_dispatch:
 
 jobs:
