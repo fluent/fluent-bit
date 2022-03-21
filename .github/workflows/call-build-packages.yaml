@@ -91,7 +91,7 @@ jobs:
         env:
           FLB_DISTRO: ${{ matrix.distro }}
           # Align with 1.8 output
-          FLB_OUT_DIR: staging/${{ inputs.version }}
+          FLB_OUT_DIR: ${{ inputs.version }}/staging
           FLB_TD: "Off"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/fluent-bit/
@@ -104,7 +104,7 @@ jobs:
         env:
           FLB_DISTRO: ${{ matrix.distro }}
           # Align with 1.8 output
-          FLB_OUT_DIR: staging/${{ inputs.version }}
+          FLB_OUT_DIR: ${{ inputs.version }}/staging
           FLB_TD: "On"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
