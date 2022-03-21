@@ -14,14 +14,14 @@ FROM official-install as staging-upgrade-prep
 RUN rm -f /etc/yum.repos.d/*-bit.repo
 
 FROM ${STAGING_BASE} as staging-install
-ARG AWS_URL
+ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
-RUN rpm --import "$AWS_URL/fluentbit.key"
-RUN wget "$AWS_URL/centos-7.repo" -O /etc/yum.repos.d/staging.repo
+RUN rpm --import "$STAGING_URL/fluentbit.key" && \
+    wget -nv "$STAGING_URL/centos-7.repo" -O /etc/yum.repos.d/staging.repo
 # hadolint ignore=DL3032
-RUN yum update -y && yum install -y fluent-bit
-RUN systemctl enable fluent-bit
+RUN yum update -y && yum install -y fluent-bit && \
+    systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
