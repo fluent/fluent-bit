@@ -210,8 +210,9 @@ static int extract_array_fields(struct nested_obj *cur, struct mk_list *stack,
     msgpack_object *item;
     struct nested_obj *new_obj;
     struct payload *pl;
+    int i;
 
-    for (int i = cur->cur_index; i < cur->obj->via.array.size; i++) {
+    for (i = cur->cur_index; i < cur->obj->via.array.size; i++) {
         item = &cur->obj->via.array.ptr[i];
         if (item->type == MSGPACK_OBJECT_MAP || item->type == MSGPACK_OBJECT_ARRAY) {
             /* A nested object, so add to stack and return to DFS to process immediately */
@@ -258,8 +259,9 @@ static int extract_map_fields(struct nested_obj *cur, struct mk_list *stack,
     msgpack_object *k;
     msgpack_object *v;
     struct payload *pl;
+    int i;
 
-    for (int i = cur->cur_index; i < cur->obj->via.map.size; i++) {
+    for (i = cur->cur_index; i < cur->obj->via.map.size; i++) {
         k = &cur->obj->via.map.ptr[i].key;
         if (!cur->start_at_val) {
             /* Handle the key of this kv pair */
@@ -347,10 +349,12 @@ static int extract_map_fields(struct nested_obj *cur, struct mk_list *stack,
 static int get_map_val(msgpack_object m, char *key, msgpack_object *ret) 
 {
     msgpack_object_kv kv;
+    int i;
+
     if (m.type != MSGPACK_OBJECT_MAP) {
         return -1;
     }
-    for (int i = 0; i < m.via.map.size; i++) {
+    for (i = 0; i < m.via.map.size; i++) {
         kv = m.via.map.ptr[i];
         if (kv.key.via.str.size == strlen(key) && 
             !strncmp(kv.key.via.str.ptr, key, strlen(key))) {
@@ -371,6 +375,7 @@ static int process_response(const char *resp, size_t resp_size,
     msgpack_unpacked resp_unpacked;
     size_t off = 0;
     int ret;
+    int i, j, k;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
 
@@ -411,7 +416,7 @@ static int process_response(const char *resp, size_t resp_size,
         }
         msgpack_pack_array(&mp_pck, findings_list.via.array.size);
 
-        for (int i = 0; i < findings_list.via.array.size; i++) {
+        for (i = 0; i < findings_list.via.array.size; i++) {
             findings = findings_list.via.array.ptr[i];
             msgpack_pack_array(&mp_pck, findings.via.array.size);
 
@@ -419,7 +424,7 @@ static int process_response(const char *resp, size_t resp_size,
                 *is_sensitive = FLB_TRUE;
             }
 
-            for (int j = 0; j < findings.via.array.size; j++) {
+            for (j = 0; j < findings.via.array.size; j++) {
                 finding = findings.via.array.ptr[j];
                 ret = get_map_val(finding, "location", &location);
                 if (ret != 0) {
@@ -440,7 +445,7 @@ static int process_response(const char *resp, size_t resp_size,
                 }
 
                 msgpack_pack_array(&mp_pck, byteRange.via.map.size);
-                for (int k = 0; k < byteRange.via.map.size; k++) {
+                for (k = 0; k < byteRange.via.map.size; k++) {
                     msgpack_pack_int64(&mp_pck, byteRange.via.map.ptr[k].val.via.i64);
                 }
             }
