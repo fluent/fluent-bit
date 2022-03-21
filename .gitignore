@@ -20,6 +20,7 @@ packaging/packages
 packaging/distros/**/sources/
 packaging/releases
 packaging/latest/
+packaging/aws-release-sync/
 workflow/
 *.key
 *.log
