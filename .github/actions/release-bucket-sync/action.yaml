@@ -1,0 +1,69 @@
+name: Composite action to sync releases from server to bucket
+
+inputs:
+  bucket:
+    description: The name of the S3 (US-East) bucket to use.
+    required: true
+  access_key_id:
+    description: The S3 access key id for the bucket.
+    required: true
+  secret_access_key:
+    description: The S3 secret access key for the bucket.
+    required: true
+  server_hostname:
+    description: The server hostname to sync from.
+    required: true
+  server_username:
+    description: The username to authenticate with on the server.
+    required: true
+  server_key:
+    description: The SSH key to use for authentication.
+    required: true
+  version:
+    description: A single version to sync rather than everything from the server.
+    required: false
+    default: ''
+  mode:
+    description: Optionally run in various modes to exercise the download but not upload, etc.
+    required: false
+    default: ''
+
+runs:
+  using: "composite"
+  steps:
+  - name: Setup runner (Ubuntu 18.04 required for now)
+    run: |
+      sudo apt-get install debsigs createrepo aptly rsync
+    shell: bash
+
+  - name: Hashed known hosts value
+    id: known_hosts
+    run: |
+      OUTPUT=$(ssh-keyscan -H ${{ inputs.server_hostname }})
+      echo ::set-output name=OUTPUT::$OUTPUT
+    shell: bash
+
+  - name: Install SSH Key
+    uses: shimataro/ssh-key-action@v2
+    with:
+      key: ${{ inputs.server_key }}
+      known_hosts: ${{ steps.known_hosts.outputs.OUTPUT }}
+
+  - name: Sync packages from release bucket on S3
+    run: packaging/sync-releases-to-bucket.sh
+    env:
+      AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}
+      AWS_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
+      INPUT_BUCKET: ${{ inputs.bucket }}
+      GPG_KEY: ${{ steps.import_gpg.outputs.name }}
+      RELEASE_SERVER: ${{ inputs.server_hostname }}
+      RELEASE_SERVER_USERNAME: ${{ inputs.server_username }}
+      SYNC_VERSION: ${{ inputs.version }}
+      MODE: ${{ inputs.mode }}
+    shell: bash
+
+  - name: Upload artefacts
+    if: inputs.mode != '' || failure()
+    uses: actions/upload-artifact
+    with:
+      path: packaging/aws-release-sync
