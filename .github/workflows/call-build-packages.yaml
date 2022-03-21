@@ -118,7 +118,7 @@ jobs:
           FLB_VERSION: ${{ inputs.ref }}
           FLB_BRANCH: ${{ inputs.ref }}
           FLB_DISTRO: ${{ matrix.distro }}
-          FLB_OUT_DIR: staging/${{ inputs.version }}
+          FLB_OUT_DIR: staging
         working-directory: packaging
 
       - name: Upload the ${{ matrix.distro }} artifacts
