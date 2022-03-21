@@ -14,7 +14,9 @@ on:
   schedule:
   - cron: "0 6 * * *"   # master build
   - cron: "0 12 * * *"  # 1.9 build
+  # Not available currently so will fail until it is
   - cron: "0 18 * * *"  # 1.8 build
+  # A 1.8 build requires merging all the changes from master to handle packaging from local
 
 # We do not want a new unstable build to run whilst we are releasing the current unstable build.
 concurrency: unstable-build-release
@@ -25,6 +27,7 @@ jobs:
   unstable-build-get-meta:
     name: Get metadata to add to build
     runs-on: ubuntu-latest
+    environment: unstable
     outputs:
       date: ${{ steps.date.outputs.date }}
       branch: ${{ steps.branch.outputs.branch }}
@@ -45,19 +48,19 @@ jobs:
         shell: bash
 
       - name: master run
-        if:  github.event_name == 'schedule' && github.event.schedule=='0 6 * * *'         # set-env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 6 * * *'
         run: |
           echo "cron_branch=master" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.9 run
-        if:  github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'   # set env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 12 * * *'
         run: |
           echo "cron_branch=1.9" >> $GITHUB_ENV
         shell: bash
 
       - name: 1.8 run
-        if:  github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'   # set env value
+        if:  github.event_name == 'schedule' && github.event.schedule=='0 18 * * *'
         run: |
           echo "cron_branch=1.8" >> $GITHUB_ENV
         shell: bash
@@ -87,44 +90,22 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
-  unstable-build-generate-schema:
-    # Not available for 1.8
-    if: github.event.schedule != '*/18 * * * *'
-    needs:
-      - unstable-build-get-meta
-      - unstable-build-images
-    runs-on: ubuntu-latest
-    steps:
-      - name: Log in to the Container registry
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - run: |
-          docker run --rm -it ${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }} -J > fluent-bit-schema.json
-          cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty.json
-        shell: bash
-
-      - name: Upload the schema
-        uses: actions/upload-artifact@v2
-        with:
-          path: ./
-          name: fluent-bit-schema*.json
-          if-no-files-found: error
-
   unstable-build-generate-matrix:
     name: unstable build matrix
+    needs:
+      - unstable-build-get-meta
     runs-on: ubuntu-latest
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
+    environment: unstable
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
+        with:
+          fluent-bit-version: ${{ needs.unstable-build-get-meta.outputs.branch }}
 
   unstable-build-packages:
     needs:
@@ -144,43 +125,44 @@ jobs:
     needs:
       - unstable-build-get-meta
     runs-on: windows-latest
+    environment: unstable
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
 
-    - name: Get dependencies
-      run: |
-        Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
-        Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
-        Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
-        Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
-        echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
-      env:
-        WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
-      shell: pwsh
+      - name: Get dependencies
+        run: |
+          Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
+          Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
+          Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
+          Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
+          echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
+        env:
+          WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
+        shell: pwsh
 
-    - name: Set up Visual Studio shell
-      uses: egor-tensin/vs-shell@v2
-      with:
-        arch: x64
+      - name: Set up Visual Studio shell
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: x64
 
-    - name: Build Fluent Bit packages
-      run: |
-        cmake -G "NMake Makefiles" ../
-        cmake --build .
-        cpack
-      working-directory: build
+      - name: Build Fluent Bit packages
+        run: |
+          cmake -G "NMake Makefiles" ../
+          cmake --build .
+          cpack
+        working-directory: build
 
-    - name: Upload build packages
-      uses: actions/upload-artifact@v2
-      with:
-        name: windows-packages
-        path: |
-          build/fluent-bit-*.exe
-          build/fluent-bit-*.zip
-        if-no-files-found: error
+      - name: Upload build packages
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows-packages
+          path: |
+            build/fluent-bit-*.exe
+            build/fluent-bit-*.zip
+          if-no-files-found: error
 
   # We already detain all artefacts as build output so just capture for an unstable release
   unstable-release:
@@ -194,6 +176,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Required to make a release later
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Download all artefacts
         continue-on-error: true
         uses: actions/download-artifact@v2
@@ -203,7 +189,8 @@ jobs:
       - name: Single packages tar
         run: |
           mkdir -p release-upload
-          mv -f artifacts/*.json release-upload/
+          # Optional JSON schema so ignore failure
+          mv -f artifacts/*.json release-upload/ || true
           tar -czvf release-upload/packages-unstable-${{ needs.unstable-build-get-meta.outputs.branch }}.tar.gz -C artifacts/ .
         shell: bash
 
@@ -218,12 +205,14 @@ jobs:
         # May not be any/valid so ignore errors
         continue-on-error: true
         run: |
-          docker pull ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
-          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}.tar ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
-          docker pull ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}-debug
-          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}-debug.tar ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}-debug
+          docker pull $IMAGE
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}.tar $IMAGE
+          docker pull $IMAGE-debug
+          docker save --output container-${{ needs.unstable-build-get-meta.outputs.branch }}-debug.tar $IMAGE-debug
         shell: bash
         working-directory: release-upload
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/unstable:${{ needs.unstable-build-get-meta.outputs.branch }}
 
       - name: Display structure of files to upload
         run: ls -R

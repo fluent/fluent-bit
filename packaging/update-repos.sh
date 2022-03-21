@@ -43,6 +43,7 @@ baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
 enabled=1
 gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
 gpgcheck=1
+repo_gpgcheck=1
 EOF
     fi
 done
@@ -101,7 +102,7 @@ done
 # Ensure we sign the Yum repo meta-data
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
     GPG_PARAMS="--batch --armor --yes -u $GPG_KEY"
-    if [[ -n "$GPG_KEY_PASSPHRASE" ]]; then
+    if [[ -n "${GPG_KEY_PASSPHRASE:-}" ]]; then
         GPG_PARAMS="$GPG_PARAMS --passphrase $GPG_KEY_PASSPHRASE"
     fi
     # We do want splitting here for parameters
