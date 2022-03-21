@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - 1.9
       - 1.8
   pull_request:
     paths-ignore:
@@ -15,6 +16,7 @@ on:
       - '**.sh'
     branches:
       - master
+      - 1.9
       - 1.8
     types: [opened, reopened, synchronize]
   workflow_dispatch:
