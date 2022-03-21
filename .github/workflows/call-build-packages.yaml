@@ -90,6 +90,7 @@ jobs:
           ./build.sh
         env:
           FLB_DISTRO: ${{ matrix.distro }}
+          # Align with 1.8 output
           FLB_OUT_DIR: staging/${{ inputs.version }}
           FLB_TD: "Off"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
@@ -102,6 +103,7 @@ jobs:
           ./build.sh
         env:
           FLB_DISTRO: ${{ matrix.distro }}
+          # Align with 1.8 output
           FLB_OUT_DIR: staging/${{ inputs.version }}
           FLB_TD: "On"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
