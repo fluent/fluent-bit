@@ -46,6 +46,9 @@ on:
         required: false
 
 jobs:
+
+  # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
+  # code and workflow together. We need to run the dependent job after this as well.
   call-build-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
@@ -55,9 +58,17 @@ jobs:
       matrix: ${{ fromJSON(inputs.build_matrix) }}
     steps:
       - name: Checkout code
+        if: inputs.ref != '1.8'
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Checkout packaging code
+        if: inputs.ref == '1.8'
+        uses: actions/checkout@v3
+        with:
+          repository: fluent/fluent-bit-packaging
+          path: packaging
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -74,6 +85,7 @@ jobs:
           flags: 'g'
 
       - name: fluent-bit - ${{ matrix.distro }} artifacts
+        if: inputs.ref != '1.8'
         run: |
           ./build.sh
         env:
@@ -85,6 +97,7 @@ jobs:
         working-directory: packaging
 
       - name: td-agent-bit - ${{ matrix.distro }} artifacts
+        if: inputs.ref != '1.8'
         run: |
           ./build.sh
         env:
@@ -93,6 +106,17 @@ jobs:
           FLB_TD: "On"
           FLB_NIGHTLY_BUILD: ${{ inputs.unstable }}
           CMAKE_INSTALL_PREFIX: /opt/td-agent-bit/
+        working-directory: packaging
+
+      - name: Legacy td-agent-bit - ${{ matrix.distro }} artifacts
+        if: inputs.ref == '1.8'
+        run: |
+          ./build.sh -v $FLB_VERSION -b $FLB_BRANCH -d $FLB_DISTRO
+        env:
+          FLB_VERSION: ${{ inputs.ref }}
+          FLB_BRANCH: ${{ inputs.ref }}
+          FLB_DISTRO: ${{ matrix.distro }}
+          FLB_OUT_DIR: staging
         working-directory: packaging
 
       - name: Upload the ${{ matrix.distro }} artifacts
@@ -153,14 +177,15 @@ jobs:
     # Need to use 18.04 as 20.04 has no createrepo available
     runs-on: ubuntu-18.04
     environment: ${{ inputs.environment }}
-    needs: call-build-packages
+    needs:
+      - call-build-packages
     steps:
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y createrepo aptly
 
-      - name: Checkout code
+      - name: Checkout code for repo metadata construction - always latest
         uses: actions/checkout@v3
 
       - name: Import GPG key for signing

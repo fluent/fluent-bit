@@ -5,6 +5,9 @@ on:
   push:
     tags:
       - '*'
+    branches:
+      - master
+      - '1.9'
 
   workflow_dispatch:
     inputs:

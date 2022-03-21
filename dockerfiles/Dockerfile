@@ -18,12 +18,6 @@ FROM debian:bullseye-slim as builder
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
 
-# Fluent Bit version
-ENV FLB_MAJOR 1
-ENV FLB_MINOR 9
-ENV FLB_PATCH 0
-ENV FLB_VERSION 1.9.0
-
 ARG FLB_NIGHTLY_BUILD
 ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
