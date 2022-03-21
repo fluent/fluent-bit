@@ -232,8 +232,9 @@ static int redact_array_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
 {
     msgpack_object *item;
     struct nested_obj *new_obj;
+    int i;
 
-    for (int i = cur->cur_index; i < cur->obj->via.array.size; i++) {
+    for (i = cur->cur_index; i < cur->obj->via.array.size; i++) {
         item = &cur->obj->via.array.ptr[i];
         if (item->type == MSGPACK_OBJECT_MAP || item->type == MSGPACK_OBJECT_ARRAY) {
             /* A nested object, so add to stack and return to DFS to process immediately */
@@ -288,8 +289,9 @@ static int redact_map_fields(msgpack_packer *new_rec_pk, int *to_redact_index,
     msgpack_object *k;
     msgpack_object *v;
     struct nested_obj *new_obj;
+    int i;
 
-    for (int i = cur->cur_index; i < cur->obj->via.map.size; i++) {
+    for (i = cur->cur_index; i < cur->obj->via.map.size; i++) {
         k = &cur->obj->via.map.ptr[i].key;
         if (!cur->start_at_val) {
             /* Handle the key of this kv pair */
@@ -399,6 +401,8 @@ static void maybe_redact_field(msgpack_packer *new_rec_pk, msgpack_object *field
     msgpack_object_array content_range;
     int64_t content_start;
     int64_t content_end;
+    int i;
+    int64_t replace_i;
 
     /* 
      * Should not happen under normal circumstances as len of to_redact should be the
@@ -430,14 +434,14 @@ static void maybe_redact_field(msgpack_packer *new_rec_pk, msgpack_object *field
 
     /* If field is a string redact only the sensitive parts */
     cur_str = flb_sds_create_len(field->via.str.ptr, field->via.str.size);
-    for (int i = 0; i < to_redact->ptr[*to_redact_i].via.array.size; i++) {
+    for (i = 0; i < to_redact->ptr[*to_redact_i].via.array.size; i++) {
         content_range = to_redact->ptr[*to_redact_i].via.array.ptr[i].via.array;
         content_start = content_range.ptr[0].via.i64 - byte_offset;
         if (content_start < 0) {
             content_start = 0;
         }
         content_end = content_range.ptr[1].via.i64 - byte_offset;
-        for (int64_t replace_i = content_start; replace_i < content_end &&
+        for (replace_i = content_start; replace_i < content_end &&
              replace_i < flb_sds_len(cur_str); replace_i++) {
             cur_str[replace_i] = '*';
         }
