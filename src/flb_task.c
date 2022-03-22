@@ -192,14 +192,12 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     struct mk_list *head;
     struct flb_task_retry *retry;
     struct flb_output_instance *o_ins;
-    struct flb_output_flush *out_flush;
 
-    out_flush = (struct flb_output_flush *) FLB_CORO_DATA(data);
-    o_ins = out_flush->o_ins;
+    o_ins = (struct flb_output_instance *) data;
 
-    /* Delete 'retries' only associated with the output instance */
     mk_list_foreach(head, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
+
         if (retry->o_ins == o_ins) {
             return retry->attempts;
         }
