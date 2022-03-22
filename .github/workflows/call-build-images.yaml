@@ -164,8 +164,8 @@ jobs:
       - name: Upload the schema
         uses: actions/upload-artifact@v2
         with:
-          path: ./
-          name: fluent-bit-schema*.json
+          path: ./fluent-bit-schema*.json
+          name: fluent-bit-schema-${{ inputs.version }}
           if-no-files-found: error
 
   call-build-images-scan:
