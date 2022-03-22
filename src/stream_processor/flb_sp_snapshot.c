@@ -183,7 +183,7 @@ int flb_sp_snapshot_update(struct flb_sp_task *task, const char *buf_data,
 }
 
 int flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
-                          char **out_buf_data, size_t *out_buf_size)
+                          char **out_buf_data, size_t *out_buf_size, bool dynamic)
 {
     size_t off;
     size_t page_size;
@@ -199,7 +199,12 @@ int flb_sp_snapshot_flush(struct flb_sp *sp, struct flb_sp_task *task,
 
     off = 0;
     cmd = task->cmd;
-    snapshot_name = flb_sp_snapshot_name_from_flush(cmd->stream_name);
+    if (dynamic) {
+        snapshot_name = cmd->stream_name;
+    }
+    else {
+        snapshot_name = flb_sp_snapshot_name_from_flush(cmd->stream_name);
+    }
 
     /* Lookup Tasks that matches the incoming instance data */
     mk_list_foreach(head, &sp->tasks) {

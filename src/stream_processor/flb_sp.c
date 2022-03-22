@@ -1635,7 +1635,7 @@ int sp_process_data(const char *tag, int tag_len,
         /* Flush the snapshot if condition holds */
         if (cmd->type == FLB_SP_FLUSH_SNAPSHOT) {
             if (flb_sp_snapshot_flush(sp, task, &snapshot_out_buffer,
-                                      &snapshot_out_size) == -1) {
+                                      &snapshot_out_size, false) == -1) {
                 msgpack_unpacked_destroy(&result);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 return -1;

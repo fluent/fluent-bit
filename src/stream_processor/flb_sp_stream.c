@@ -160,8 +160,23 @@ int flb_sp_stream_append_data(const char *buf_data, size_t buf_size,
 
 void flb_sp_stream_destroy(struct flb_sp_stream *stream, struct flb_sp *sp)
 {
+    struct mk_list *head;
+    struct flb_input_collector *coll;
+    struct flb_input_instance *in;
+
     flb_sds_destroy(stream->name);
     flb_sds_destroy(stream->tag);
+
+    in = stream->in;
+    mk_list_foreach(head, &in->collectors) {
+        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
+
+        if (flb_input_collector_pause(coll->id, in) == -1) {
+            flb_error("[input] error pausing collector #%i: %s",
+                      coll->id, in->name);
+        }
+    }
+
     flb_input_instance_exit(stream->in, sp->config);
     flb_input_instance_destroy(stream->in);
     flb_free(stream);

@@ -4,6 +4,7 @@ set(src
   metrics.c
   storage.c
   plugins.c
+  sp_query.c
   register.c
   health.c
   )
