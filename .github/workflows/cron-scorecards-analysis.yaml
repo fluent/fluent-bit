@@ -32,7 +32,7 @@ jobs:
       - name: "Run analysis"
         uses: ossf/scorecard-action@b614d455ee90608b5e36e3299cd50d457eb37d5f
         with:
-          results_file: results.sarif
+          results_file: scorecard-results.sarif
           results_format: sarif
           # Read-only PAT token. To create it,
           # follow the steps in https://github.com/ossf/scorecard-action#pat-token-creation.
