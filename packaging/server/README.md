@@ -19,12 +19,12 @@ For YUM repos, it is:
 For APT repos, it is:
 1. Add Debs to the repo: `aptly repo add flb-debian-buster "*-bit_$VERSION*.deb"`
 2. Create a snapshot for the version: `aptly snapshot create "fluent-bit-debian-buster-${VERSION}" from repo flb-debian-buster`
-3. Publish the snapshot: `aptly publish switch buster filesystem:debian/buster: "fluent-bit-debian-buster-${VERSION}"`
+3. Publish the snapshot: `aptly publish switch -gpg-key="$GPG_KEY" buster filesystem:debian/buster: "fluent-bit-debian-buster-${VERSION}"`
 
 The [publish-all.sh](./publish-all.sh) script just does this so refer to that.
 
 For signing, the [update-repos.sh](../update-repos.sh) script carries this out during build so also refer to that.
-For RPMs they are explicitly signed but for DEBs Aptly handles this in its configuration, ensure its GPG key is set appropriately.
+For RPMs they are explicitly signed but for DEBs Aptly handles this in its [configuration](https://www.aptly.info/doc/aptly/publish/switch/), ensure the GPG key is [set appropriately](https://www.aptly.info/doc/aptly/publish/).
 
 ## New distributions
 
