@@ -82,7 +82,7 @@ COPY conf/fluent-bit.conf \
      /fluent-bit/etc/
 
 # Generate schema and include as part of the container image
-RUN /fluent/bin/fluent-bit -J > /fluent-bit/etc/schema.json
+RUN /fluent-bit/bin/fluent-bit -J > /fluent-bit/etc/schema.json
 
 # Simple example of how to properly extract packages for reuse in distroless
 # Taken from: https://github.com/GoogleContainerTools/distroless/issues/863
