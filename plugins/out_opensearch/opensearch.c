@@ -569,7 +569,6 @@ static int opensearch_format(struct flb_config *config,
             return -1;
 
         }
-        flb_sds_destroy(j_index);
 
         if (strcasecmp(ctx->write_operation, FLB_OS_WRITE_OP_UPDATE) == 0) {
             write_op_update = FLB_TRUE;
@@ -595,6 +594,7 @@ static int opensearch_format(struct flb_config *config,
             msgpack_unpacked_destroy(&result);
             *out_size = 0;
             flb_sds_destroy(bulk);
+            flb_sds_destroy(j_index);
             flb_sds_destroy(out_buf);
             return -1;
         }
@@ -622,6 +622,7 @@ static int opensearch_format(struct flb_config *config,
         fwrite(*out_data, 1, *out_size, stdout);
         fflush(stdout);
     }
+    flb_sds_destroy(j_index);
     return 0;
 }
 
