@@ -137,6 +137,9 @@ struct flb_stackdriver {
     /* shadow tag_prefix for safe deallocation */
     flb_sds_t tag_prefix_k8s;
 
+    /* labels */
+    struct mk_list *labels;
+
     /* generic resources */
     flb_sds_t location;
     flb_sds_t namespace_id;
