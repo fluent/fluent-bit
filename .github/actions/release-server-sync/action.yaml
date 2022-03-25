@@ -77,8 +77,10 @@ runs:
   # Automate the final step here to get the packages "live"
   - name: Publish on build server
     run: |
-      scp ./packaging/server/publish-all.sh $USERNAME@$HOST:/home/$USERNAME/publish-all.sh
-      ssh $USERNAME@$HOST APTLY_CONFIG="$APTLY_CONFIG" /bin/bash /home/$USERNAME/publish-all.sh "$VERSION"
+      ssh $USERNAME@$HOST mkdir -p /home/$USERNAME/publish-support
+      rsync -amvz packaging/server/ $USERNAME@$HOST:/home/$USERNAME/publish-support
+      # TODO: need user access for gpg keys and output directories, currently doing it manually
+      # ssh $USERNAME@$HOST APTLY_CONFIG="$APTLY_CONFIG" /bin/bash /home/$USERNAME/publish-support/publish-all.sh "$VERSION"
     env:
       VERSION: ${{ inputs.version }}
       HOST: ${{ inputs.server_hostname }}
