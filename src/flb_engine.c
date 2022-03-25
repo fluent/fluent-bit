@@ -47,6 +47,7 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_version.h>
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -596,7 +597,8 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    flb_info("[engine] started (pid=%i)", getpid());
+    flb_info("[fluent bit] version=%s, commit=%.10s, pid=%i",
+             FLB_VERSION_STR, FLB_GIT_HASH, getpid());
 
     /* Debug coroutine stack size */
     flb_utils_bytes_to_human_readable_size(config->coro_stack_size,
