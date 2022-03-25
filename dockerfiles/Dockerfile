@@ -175,7 +175,7 @@ CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
 FROM debian:bullseye-slim as debug
 ARG RELEASE_VERSION
-LABEL description="Fluent Bit multi-architecture container image" \
+LABEL description="Fluent Bit multi-architecture debug container image" \
       vendor="Fluent Organization" \
       version="${RELEASE_VERSION}-debug" \
       author="Eduardo Silva <eduardo@calyptia.com>" \
