@@ -351,8 +351,10 @@ void flb_kube_prop_destroy(struct flb_kube_props *props)
 {
     if (props->stdout_parser) {
         flb_sds_destroy(props->stdout_parser);
+        props->stdout_parser = NULL;
     }
     if (props->stderr_parser) {
         flb_sds_destroy(props->stderr_parser);
+        props->stderr_parser = NULL;
     }
 }
