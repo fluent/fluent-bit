@@ -18,9 +18,9 @@
 
 # CI 
 # -------------------------
-/.github/                @niedbalski
-/appveyor.yml            @niedbalski
-/dockerfiles/            @niedbalski
+/.github/                @niedbalski @patrick-stephens
+/appveyor.yml            @niedbalski @patrick-stephens
+/dockerfiles/            @niedbalski @patrick-stephens
 
 # Core: Signv4
 # ------------
