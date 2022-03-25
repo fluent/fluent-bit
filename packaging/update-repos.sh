@@ -101,6 +101,12 @@ done
 
 # Ensure we sign the Yum repo meta-data
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
-    # We use this form of find to fail on error
-    find "$BASE_PATH" -name repomd.xml -exec gpg --detach-sign --batch --armor --yes -u "$GPG_KEY" {} +
+    # We use this form to fail on error during the find, otherwise -exec will succeed or just do one file with +
+    while IFS= read -r -d '' REPO_METADATA_FILE
+    do
+        echo "Signing $REPO_METADATA_FILE"
+        gpg --detach-sign --batch --armor --yes -u "$GPG_KEY" "$REPO_METADATA_FILE"
+    done < <(find "$BASE_PATH" -name repomd.xml -print0)
+    # Debug ouput for checking
+    find "$BASE_PATH" -name "repomd.xml*" -exec ls -l {} \;
 fi
