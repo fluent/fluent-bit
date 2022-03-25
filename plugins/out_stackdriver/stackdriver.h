@@ -131,14 +131,15 @@ struct flb_stackdriver {
     flb_sds_t node_name;
     bool is_k8s_resource_type;
 
-    flb_sds_t labels_key;
     flb_sds_t local_resource_id;
     flb_sds_t tag_prefix;
     /* shadow tag_prefix for safe deallocation */
     flb_sds_t tag_prefix_k8s;
 
     /* labels */
+    flb_sds_t labels_key;
     struct mk_list *labels;
+    struct mk_list config_labels; 
 
     /* generic resources */
     flb_sds_t location;
