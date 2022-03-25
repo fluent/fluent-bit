@@ -324,17 +324,16 @@ static int sort_chunk_cmp(const void *a_arg, const void *b_arg)
 
 static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
 {
+    char *type;
     char *sync;
     char *checksum;
     struct flb_input_instance *in;
 
-    flb_info("[storage] version=%s, initializing...", cio_version());
-
     if (cio->root_path) {
-        flb_info("[storage] root path '%s'", cio->root_path);
+        type = "memory+filesystem";
     }
     else {
-        flb_info("[storage] in-memory");
+        type = "memory-only";
     }
 
     if (cio->flags & CIO_FULL_SYNC) {
@@ -351,8 +350,8 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         checksum = "disabled";
     }
 
-    flb_info("[storage] %s synchronization mode, checksum %s, max_chunks_up=%i",
-             sync, checksum, ctx->storage_max_chunks_up);
+    flb_info("[storage] version=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
+             cio_version(), type, sync, checksum, ctx->storage_max_chunks_up);
 
     /* Storage input plugin */
     if (ctx->storage_input_plugin) {
