@@ -101,11 +101,6 @@ done
 
 # Ensure we sign the Yum repo meta-data
 if [[ "$DISABLE_SIGNING" != "true" ]]; then
-    GPG_PARAMS="--batch --armor --yes -u $GPG_KEY"
-    if [[ -n "${GPG_KEY_PASSPHRASE:-}" ]]; then
-        GPG_PARAMS="$GPG_PARAMS --passphrase $GPG_KEY_PASSPHRASE"
-    fi
-    # We do want splitting here for parameters
-    # shellcheck disable=SC2086
-    find "$BASE_PATH" -name repomd.xml -exec gpg --detach-sign $GPG_PARAMS {} \;
+    # We use this form of find to fail on error
+    find "$BASE_PATH" -name repomd.xml -exec gpg --detach-sign --batch --armor --yes -u "$GPG_KEY" {} +
 fi
