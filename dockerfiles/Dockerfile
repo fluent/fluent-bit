@@ -10,6 +10,10 @@
 # docker buildx inspect --bootstrap
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
+# Set this to the current release version
+ARG RELEASE_VERSION=1.9.1
+
+# For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm as qemu-arm32
 FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu-arm64
 
@@ -140,17 +144,18 @@ RUN find /dpkg/ -type d -empty -delete && \
 # We want latest at time of build
 # hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian11 as production
+ARG RELEASE_VERSION
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
-      version="1.9.0" \
+      version="${RELEASE_VERSION}" \
       author="Eduardo Silva <eduardo@calyptia.com>" \
       org.opencontainers.image.description="Fluent Bit container image" \
       org.opencontainers.image.title="Fluent Bit" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="Fluent Organization" \
-      org.opencontainers.image.version="1.9.0" \
+      org.opencontainers.image.version="${RELEASE_VERSION}" \
       org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
-      org.opencontainers.image.documentation="https://docs.fluentbit.io/manual/" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
       org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 # Copy the libraries from the extractor stage into root
@@ -169,10 +174,19 @@ ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
 
 FROM debian:bullseye-slim as debug
+ARG RELEASE_VERSION
 LABEL description="Fluent Bit multi-architecture container image" \
       vendor="Fluent Organization" \
-      version="1.9.0" \
-      author="Eduardo Silva <eduardo@calyptia.com>"
+      version="${RELEASE_VERSION}-debug" \
+      author="Eduardo Silva <eduardo@calyptia.com>" \
+      org.opencontainers.image.description="Fluent Bit debug container image" \
+      org.opencontainers.image.title="Fluent Bit Debug" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.vendor="Fluent Organization" \
+      org.opencontainers.image.version="${RELEASE_VERSION}-debug" \
+      org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
+      org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
+      org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
 
 COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
 COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
