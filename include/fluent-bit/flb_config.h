@@ -72,7 +72,7 @@ struct flb_config {
 
     /* main configuration */
     struct flb_cf *cf_main;
-    struct flb_cf *cf_parsers;
+    struct mk_list cf_parsers_list;
 
     flb_sds_t program_name;      /* argv[0] */
 
