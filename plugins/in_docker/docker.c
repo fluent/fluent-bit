@@ -843,6 +843,16 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_docker, interval_nsec),
       "Set the collector interval (nanoseconds)"
     },
+    {
+      FLB_CONFIG_MAP_STR, "include", NULL,
+      0, FLB_FALSE, 0,
+      "A space-separated list of containers to include"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "exclude", NULL,
+      0, FLB_FALSE, 0,
+      "A space-separated list of containers to exclude"
+    },
     /* EOF */
     {0}
 };
