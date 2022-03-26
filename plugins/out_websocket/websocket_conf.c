@@ -53,7 +53,7 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
-    //flb_output_net_default("127.0.0.1", 8080, ins);
+    flb_output_net_default("127.0.0.1", 80, ins);
 
     /* Check if SSL/TLS is enabled */
 #ifdef FLB_HAVE_TLS
@@ -97,15 +97,6 @@ struct flb_out_ws *flb_ws_conf_create(struct flb_output_instance *ins,
         else {
             ctx->json_date_format = ret;
         }
-    }
-
-    /* Date key for JSON output */
-    tmp = flb_output_get_property("json_date_key", ins);
-    if (tmp) {
-        ctx->json_date_key = flb_sds_create(tmp);
-    }
-    else {
-        ctx->json_date_key = flb_sds_create("date");
     }
 
     if (ins->host.uri) {
@@ -163,9 +154,6 @@ void flb_ws_conf_destroy(struct flb_out_ws *ctx)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->json_date_key) {
-        flb_sds_destroy(ctx->json_date_key);
-    }
     flb_free(ctx->uri);
     flb_free(ctx);
 }
