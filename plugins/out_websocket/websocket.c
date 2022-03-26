@@ -305,6 +305,16 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Set desired payload format: json, json_stream, json_lines, gelf or msgpack"
     },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", "double",
+     0, FLB_FALSE, 0,
+     "Specify the format of the date"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_out_ws, json_date_key),
+     "Specify the name of the date field in output"
+    },
     /* EOF */
     {0}
 };
