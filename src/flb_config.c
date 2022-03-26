@@ -199,9 +199,6 @@ struct flb_config *flb_config_init()
         return NULL;
     }
 
-    /* config_format for parsers */
-    config->cf_parsers = flb_cf_create();
-
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
     config->daemon       = FLB_FALSE;
@@ -284,6 +281,7 @@ struct flb_config *flb_config_init()
     mk_list_init(&config->workers);
     mk_list_init(&config->upstreams);
     mk_list_init(&config->cmetrics);
+    mk_list_init(&config->cf_parsers_list);
 
     memset(&config->tasks_map, '\0', sizeof(config->tasks_map));
 
@@ -326,6 +324,7 @@ void flb_config_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct flb_cf *cf;
     struct flb_input_collector *collector;
 
     if (config->log_file) {
@@ -478,9 +477,14 @@ void flb_config_exit(struct flb_config *config)
     if (config->cf_main) {
         flb_cf_destroy(config->cf_main);
     }
-    if (config->cf_parsers) {
-        flb_cf_destroy(config->cf_parsers);
+
+    /* remove parsers */
+    mk_list_foreach_safe(head, tmp, &config->cf_parsers_list) {
+        cf = mk_list_entry(head, struct flb_cf, _head);
+        mk_list_del(&cf->_head);
+        flb_cf_destroy(cf);
     }
+
     flb_free(config);
 }
 
