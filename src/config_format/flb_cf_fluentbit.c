@@ -742,6 +742,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
 
     if (ret == -1 && created) {
         flb_cf_destroy(cf);
+        return NULL;
     }
 
     return cf;
