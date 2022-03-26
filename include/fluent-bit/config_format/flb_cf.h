@@ -102,6 +102,10 @@ struct flb_cf {
 
     /* set the last error found */
     char *error_str;
+
+
+    /* a list head entry in case the caller want's to link contexts */
+    struct mk_list _head;
 };
 
 
