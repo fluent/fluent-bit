@@ -3,13 +3,15 @@
     In this example, it increments the record with plus 3 values up to 6 values
     so record with data key M:1 gets NAME 1 - LAT 1 - COUNTRY 1 values, key M:4 gets NAME 4 - LAT 4 - COUNTRY 4 and so on.
 
-    With illustrative purposes, we created a basic CSV table with 6 columns and a sample record with timestamp and data fields only:
+    For the sake of illustrative purposes, we created a basic CSV table with 6 columns in FILE variable
+
+    We also created a sample record with timestamp and data fields only:
        timestamp: 1530239065.807368
        data:      IP:192.168.0.1 - M:4 - I:Any logged data - S:IGNORED_EVENT
 
-    We will use M:4 as key, but you can change the regex to match any value you desire.
+    We will use M:4 as key, but you can change key_regex var to match any value you need.
     
-    WARNING: Make sure you have ONLY UNIQUE KEYS in your key columns at your CSV or you will always get the first value found.
+    WARNING: Make sure you have ONLY UNIQUE KEYS in your key columns at your CSV or you will only get the first value it hits.
 --]]
 
 --sample record in: [1530239065.807368, {"data":"IP:192.168.0.1 - M:4 - I:Any logged data - S:IGNORED_EVENT"}]
@@ -17,7 +19,7 @@ record = {}
 record["datetime"] = 1530239065.807368
 record["data"] = "IP:192.168.0.1 - M:4 - I:Any logged data - S:IGNORED_EVENT"
 
---comma separated csv lookup table example that you can point to your csv file
+--comma separated csv lookup table example file that you can set directly to your csv file path instead of writing it all here.
 file = [[1,"John Johnz",40.431,116.570,"Mutian Valley","Beijing",China
 2,"Clark Kent",-25.694,-54.435,"Iguaçu","Paraná",Brazil
 3,"Bruce Wayne",25.197,55.274,"Downtown","Dubai","United Emirates"
@@ -44,13 +46,13 @@ function get_matches(key_id)
          end
 end
 
---function that finds an key from a record using a regex
+--function that finds a key from a record using a regex
 function extract_id(record)
          key_id = string.match(record["data"], key_regex)
-         --condition to skip record if regex with lookup table key value returns null so we save processing
+         --condition to skip and leave this record untouched if key_regex returns no value so we save processing
          if key_id ~= nil then
                   get_matches(key_id)
-        	        --print(record["data"],record["heroname"],record["country"])
+        	       --print(record["data"],record["heroname"],record["country"])
                   return 2, record["datetime"], record
          else
                  -- print("Couldn't find ID in this record so we'll keep it original")
