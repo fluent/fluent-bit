@@ -830,7 +830,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     char tmp[PATH_MAX + 1];
     char *cfg = NULL;
     struct stat st;
-    struct flb_cf *cf;
+    struct flb_cf *cf = NULL;
 
 #ifndef FLB_HAVE_STATIC_CONF
     ret = stat(file, &st);
@@ -850,15 +850,9 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         cfg = (char *) file;
     }
 
-    cf = flb_cf_create_from_file(config->cf_parsers, cfg);
+    cf = flb_cf_create_from_file(NULL, cfg);
 #else
     cf = flb_config_static_open(file);
-    if (cf) {
-        if (config->cf_parsers) {
-            flb_cf_destroy(config->cf_parsers);
-        }
-        config->cf_parsers = cf;
-    }
 #endif
 
     if (!cf) {
@@ -868,15 +862,19 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
     /* process 'parser' sections */
     ret = parser_conf_file(cfg, cf, config);
     if (ret == -1) {
+        flb_cf_destroy(cf);
         return -1;
     }
 
     /* processs 'multiline_parser' sections */
     ret = multiline_parser_conf_file(cfg, cf, config);
     if (ret == -1) {
+        flb_cf_destroy(cf);
         return -1;
     }
 
+    /* link the 'cf parser' context to the config list */
+    mk_list_add(&cf->_head, &config->cf_parsers_list);
     return 0;
 }
 
