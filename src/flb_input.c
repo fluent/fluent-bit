@@ -311,7 +311,6 @@ int flb_input_coro_finished(struct flb_config *config, int ins_id)
     /* Look for input coroutines that needs to be destroyed */
     mk_list_foreach_safe(head, tmp, &ins->input_coro_list_destroy) {
         input_coro = mk_list_entry(head, struct flb_input_coro, _head);
-        printf("coro destroy!: coro_id=%i\n", input_coro->id);
         flb_input_coro_destroy(input_coro);
     }
 
