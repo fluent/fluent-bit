@@ -3,7 +3,7 @@
     In this example, it increments the record with plus 3 values up to 6 values
     so record with data key M:1 gets NAME 1 - LAT 1 - COUNTRY 1 values, key M:4 gets NAME 4 - LAT 4 - COUNTRY 4 and so on.
 
-    For the sake of illustrative purposes, we created a basic CSV table with 6 columns in FILE variable
+    For illustrative purposes, we created a basic CSV table with 6 columns in FILE variable
 
     We also created a sample record with timestamp and data fields only:
        timestamp: 1530239065.807368
@@ -14,10 +14,10 @@
     WARNING: Make sure you have ONLY UNIQUE KEYS in your key columns at your CSV or you will only get the first value it hits.
 --]]
 
---sample record in: [1530239065.807368, {"data":"IP:192.168.0.1 - M:4 - I:Any logged data - S:IGNORED_EVENT"}]
+--sample record in: [1530239065.807368, {"data":"IP:192.168.0.1 - M:150 - I:Any logged data - S:IGNORED_EVENT"}]
 record = {}
 record["datetime"] = 1530239065.807368
-record["data"] = "IP:192.168.0.1 - M:100 - I:Any logged data - S:IGNORED_EVENT"
+record["data"] = "IP:192.168.0.1 - M:150 - I:Any logged data - S:IGNORED_EVENT"
 
 --comma separated csv lookup table example file that you can set directly to your csv file path instead of writing it all here.
 file = [[1,"John Johnz",40.431,116.570,"Mutian Valley","Beijing",China
