@@ -89,35 +89,7 @@ struct flb_stacktrace flb_st;
 #define n_get_key(a, b, c)   (intptr_t) get_key(a, b, c)
 #define s_get_key(a, b, c)   (char *) get_key(a, b, c)
 
-static void flb_version()
-{
-#ifdef FLB_NIGHTLY_BUILD
-    printf("Fluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!\n",
-           FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD));
-#else
-    printf("Fluent Bit v%s\n", FLB_VERSION_STR);
-#endif
-    printf("Git commit: %s\n", FLB_GIT_HASH);
-
-    exit(EXIT_SUCCESS);
-}
-
-static void flb_banner()
-{
-#ifdef FLB_NIGHTLY_BUILD
-    fprintf(stderr,
-            "%sFluent Bit v%s | NIGHTLY_BUILD=%s - DO NOT USE IN PRODUCTION!"
-            "%s\n", ANSI_BOLD, FLB_VERSION_STR, STR(FLB_NIGHTLY_BUILD), ANSI_RESET);
-#else
-    fprintf(stderr,
-            "%sFluent Bit v%s%s\n", ANSI_BOLD, FLB_VERSION_STR, ANSI_RESET);
-#endif
-    fprintf(stderr, "* %sCopyright (C) 2015-2021 The Fluent Bit Authors%s\n",
-            ANSI_BOLD ANSI_YELLOW, ANSI_RESET);
-    fprintf(stderr, "* Fluent Bit is a CNCF sub-project under the "
-            "umbrella of Fluentd\n");
-    fprintf(stderr, "* https://fluentbit.io\n\n");
-}
+static char *prog_name;
 
 static void flb_help(int rc, struct flb_config *config)
 {
@@ -126,7 +98,7 @@ static void flb_help(int rc, struct flb_config *config)
     struct flb_output_plugin *out;
     struct flb_filter_plugin *filter;
 
-    printf("Usage: fluent-bit [OPTION]\n\n");
+    printf("Usage: %s [OPTION]\n\n", prog_name);
     printf("%sAvailable Options%s\n", ANSI_BOLD, ANSI_RESET);
     print_opt("-b  --storage_path=PATH", "specify a storage buffering path");
     print_opt("-c  --config=FILE", "specify an optional configuration file");
@@ -445,7 +417,7 @@ static void flb_help_plugin(int rc, int format,
     struct flb_filter_instance *f = NULL;
     struct flb_output_instance *o = NULL;
 
-    flb_banner();
+    flb_version_banner();
 
     name = flb_cf_section_property_get(cf, s, "name");
     if (!name) {
@@ -908,6 +880,8 @@ int flb_main(int argc, char **argv)
     struct flb_cf_section *service;
     struct flb_cf_section *s;
 
+    prog_name = argv[0];
+
 #ifdef FLB_HAVE_LIBBACKTRACE
     flb_stacktrace_init(argv[0], &flb_st);
 #endif
@@ -1139,7 +1113,7 @@ int flb_main(int argc, char **argv)
     set_log_level_from_env(config);
 
     if (config->verbose != FLB_LOG_OFF) {
-        flb_banner();
+        flb_version_banner();
     }
 
     /* Program name */
