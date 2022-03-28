@@ -76,6 +76,28 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->topic_key_len = strlen(ctx->topic_key);
     }
 
+    /* Config: Hash */
+    if (ctx->hash) {
+        ctx->hash_key_len = strlen(ctx->hash_key);
+    }
+    if (ctx->hash_key) {
+        ctx->hash_key_len = strlen(ctx->hash_key);
+    }
+    else {
+        ctx->hash_key_len = 0;
+    }
+
+    /* Config: Hash_Key */
+    tmp = flb_output_get_property("hash_key", ins);
+    if (tmp) {
+        ctx->hash_key = flb_strdup(tmp);
+        ctx->hash_key_len = strlen(tmp);
+    }
+    else {
+        ctx->hash_key = FLB_KAFKA_HASH_KEY;
+        ctx->hash_key_len = strlen(FLB_KAFKA_HASH_KEY);
+    }
+
     /* Config: Format */
     if (ctx->format_str) {
         if (strcasecmp(ctx->format_str, "json") == 0) {
@@ -230,6 +252,10 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 
     if (ctx->message_key_field) {
         flb_free(ctx->message_key_field);
+    }
+
+    if (ctx->hash_key) {
+        flb_free(ctx->hash_key);
     }
 
     flb_sds_destroy(ctx->gelf_fields.timestamp_key);
