@@ -17,13 +17,13 @@
 --sample record in: [1530239065.807368, {"data":"IP:192.168.0.1 - M:4 - I:Any logged data - S:IGNORED_EVENT"}]
 record = {}
 record["datetime"] = 1530239065.807368
-record["data"] = "IP:192.168.0.1 - M:4 - I:Any logged data - S:IGNORED_EVENT"
+record["data"] = "IP:192.168.0.1 - M:100 - I:Any logged data - S:IGNORED_EVENT"
 
 --comma separated csv lookup table example file that you can set directly to your csv file path instead of writing it all here.
 file = [[1,"John Johnz",40.431,116.570,"Mutian Valley","Beijing",China
 2,"Clark Kent",-25.694,-54.435,"Iguaçu","Paraná",Brazil
-3,"Bruce Wayne",25.197,55.274,"Downtown","Dubai","United Emirates"
-4,"Diana Prince",37.971,23.726,"Partenon","Atena",Greece]]
+100,"Bruce Wayne",25.197,55.274,"Downtown","Dubai","United Emirates"
+150,"Diana Prince",37.971,23.726,"Partenon","Atena",Greece]]
 
 --regex to get key value from record data so we have a field to search for
 key_regex = "[^M]+M:([0-9]+)"
@@ -38,6 +38,7 @@ function get_matches(key_id)
                   id_regex = key_id .. csv_regex
                   name,lat,lon,city,state,country = string.match(line,id_regex)
                   if name ~= nil then
+                          --You should customize these following fields based on values you get from your regex
                           record["heroname"] = name
                           record["secret_lat"] = lat
                           record["country"] = country
@@ -52,8 +53,14 @@ function extract_id(record)
          --condition to skip and leave this record untouched if key_regex returns no value so we save processing
          if key_id ~= nil then
                   get_matches(key_id)
-        	       --print(record["data"],record["heroname"],record["country"])
-                  return 2, record["datetime"], record
+                  --Here we filter out values that are not populated, so we don't create empty fields - you should use some relevant value here
+                  if record["heroname"] ~= nil then
+                           --print(record["data"],record["heroname"],record["country"])
+                           return 2, record["datetime"], record
+                  else
+                           -- print("Couldn't lookup for a record with key ID " .. key_id)
+                           return 0, 0, 0
+                  end
          else
                  -- print("Couldn't find ID in this record so we'll keep it original")
                  return 0, 0, 0 
