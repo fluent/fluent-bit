@@ -4906,6 +4906,8 @@ TEST_LIST = {
     {"resource_k8s_pod_no_local_resource_id", flb_test_resource_k8s_pod_no_local_resource_id },
     {"default_labels", flb_test_default_labels },
     {"custom_labels", flb_test_custom_labels },
+    {"config_labels_conflict", flb_test_config_labels_conflict },
+    {"config_labels_no_conflict", flb_test_config_labels_no_conflict },
     {"default_labels_k8s_resource_type", flb_test_default_labels_k8s_resource_type },
     {"custom_labels_k8s_resource_type", flb_test_custom_labels_k8s_resource_type },
 
