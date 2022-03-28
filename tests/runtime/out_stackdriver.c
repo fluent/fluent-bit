@@ -1155,6 +1155,65 @@ static void cb_check_custom_labels(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_config_labels_no_conflict(void *ctx, int ffd,
+                                   int res_ret, void *res_data, size_t res_size,
+                                   void *data)
+{
+    int ret;
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testC']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_config_labels_conflict(void *ctx, int ffd,
+                                   int res_ret, void *res_data, size_t res_size,
+                                   void *data)
+{
+    int ret;
+
+    /* check 'labels' field has been added to root-level of log entry */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check fields inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testA']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check field inside 'labels' field */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['labels']['testB']");
+    TEST_CHECK(ret == FLB_TRUE);
+
+    /* check static 'labels' override value */
+    ret = mp_kv_cmp(res_data, res_size, "$entries[0]['labels']['testB']", "valC");
+    TEST_CHECK(ret == FLB_TRUE);
+
+
+    /* check `labels_key` has been removed from jsonPayload */
+    ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/labels']");
+    TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_default_labels_k8s_resource_type(void *ctx, int ffd,
                                                       int res_ret, void *res_data, size_t res_size,
                                                       void *data)
@@ -3382,6 +3441,90 @@ void flb_test_custom_labels()
 
     /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) CUSTOM_LABELS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_config_labels_conflict()
+{
+    int ret;
+    int size = sizeof(CUSTOM_LABELS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "labels", "testB=valC",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_config_labels_conflict,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_config_labels_no_conflict()
+{
+    int ret;
+    int size = sizeof(CUSTOM_LABELS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "labels", "testC=valC",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_config_labels_no_conflict,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) DEFAULT_LABELS, size);
 
     sleep(2);
     flb_stop(ctx);
