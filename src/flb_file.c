@@ -49,7 +49,7 @@ flb_sds_t flb_file_read(const char *path)
         goto err;
     }
 
-    result = flb_sds_create_size(flen);
+    result = flb_sds_create_size(flen + 1);
     if (!result) {
         goto err;
     }
@@ -58,6 +58,7 @@ flb_sds_t flb_file_read(const char *path)
         goto err;
     }
 
+    result[flen] = 0;
     flb_sds_len_set(result, flen);
     fclose(f);
     return result;
