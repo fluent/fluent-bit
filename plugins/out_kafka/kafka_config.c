@@ -94,7 +94,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         ctx->hash_key_len = strlen(tmp);
     }
     else {
-        ctx->hash_key = FLB_KAFKA_HASH_KEY;
+        ctx->hash_key = flb_strdup(FLB_KAFKA_HASH_KEY);
         ctx->hash_key_len = strlen(FLB_KAFKA_HASH_KEY);
     }
 
