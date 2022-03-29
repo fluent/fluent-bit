@@ -53,11 +53,11 @@ if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.i
     exit 1
 fi
 
-# Debian 11 Bullseye
+# Debian 11 Bullseye - notice tweak in repo location
 echo "Publishing Debian 11 Bullseye"
 find "$SOURCE_DIR/debian/bullseye/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-debian-bullseye {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-debian-bullseye-${VERSION}" from repo flb-debian-bullseye
-if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bullseye filesystem:debian/bullseye: "fluent-bit-debian-bullseye-${VERSION}"; then
+if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bullseye filesystem:debian/bullseye:bullseye "fluent-bit-debian-bullseye-${VERSION}"; then
     # Cleanup snapshot in case we want to retry later
     aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-debian-bullseye-${VERSION}"
     exit 1
@@ -73,11 +73,11 @@ if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.i
     exit 1
 fi
 
-# Raspbian 11 Bullseye
+# Raspbian 11 Bullseye - notice tweak in repo location
 echo "Publishing Raspbian 11 Bullseye"
 find "$SOURCE_DIR/raspbian/bullseye/" -iname "*-bit_$VERSION*.deb" -exec aptly -config="$APTLY_CONFIG" repo add flb-raspbian-bullseye {} \;
 aptly -config="$APTLY_CONFIG" snapshot create "fluent-bit-raspbian-bullseye-${VERSION}" from repo flb-raspbian-bullseye
-if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bullseye filesystem:raspbian/bullseye: "fluent-bit-raspbian-bullseye-${VERSION}" ; then
+if ! aptly -config="$APTLY_CONFIG" publish switch -gpg-key="releases@fluentbit.io" bullseye filesystem:raspbian/bullseye:bullseye "fluent-bit-raspbian-bullseye-${VERSION}" ; then
     # Cleanup snapshot in case we want to retry later
     aptly -config="$APTLY_CONFIG" snapshot drop "fluent-bit-raspbian-bullseye-${VERSION}"
     exit 1
