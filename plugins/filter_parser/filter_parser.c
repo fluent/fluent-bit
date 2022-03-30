@@ -375,6 +375,11 @@ static struct flb_config_map config_map[] = {
      "Keep all other original fields in the parsed result. "
      "If false, all other original fields will be removed."
     },
+    {
+     FLB_CONFIG_MAP_DEPRECATED, "Unescape_key", NULL,
+     0, FLB_FALSE, 0,
+     "(deprecated)"
+    },
     {0}
 };
 
