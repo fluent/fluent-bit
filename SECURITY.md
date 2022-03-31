@@ -16,4 +16,4 @@ Thank you in advance for helping to keep Fluent-bit secure.
 
 ## Announcements
 
-For related CVEs that may or not affect Fluent Bit we'll be doing the corresponding announcement through [discussions](https://github.com/fluent/fluent-bit/discussions).
+For related CVEs that may or not affect Fluent Bit we'll be doing the corresponding announcement through [discussions](https://github.com/fluent/fluent-bit/discussions?discussions_q=label%3Asecurity).
