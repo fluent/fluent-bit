@@ -31,6 +31,8 @@
 
 static struct ml_stream *get_by_id(struct ml_ctx *ctx, uint64_t stream_id);
 
+static void pause_callback(void *data, struct flb_config *config);
+
 /* Create an emitter input instance */
 static int emitter_create(struct ml_ctx *ctx)
 {
@@ -44,7 +46,11 @@ static int emitter_create(struct ml_ctx *ctx)
         return -1;
     }
 
-    ins = flb_input_new(ctx->config, "emitter", NULL, FLB_FALSE);
+    /* setup pause callback for emitter */
+    ctx->emitter_cb.data = ctx;
+    ctx->emitter_cb.pause = pause_callback;
+
+    ins = flb_input_new(ctx->config, "emitter", &ctx->emitter_cb, FLB_FALSE);
     if (!ins) {
         flb_plg_error(ctx->ins, "cannot create emitter instance");
         return -1;
@@ -141,6 +147,16 @@ static int multiline_load_parsers(struct ml_ctx *ctx)
     }
 
     return 0;
+}
+
+static void pause_callback(void *data, struct flb_config *config)
+{
+    struct ml_ctx *ctx = data;
+
+    flb_plg_debug(ctx->ins, "flushing pending records now...");
+
+    /* force any pending records to flush */
+    flb_ml_flush_pending_now(ctx->m);
 }
 
 static int flush_callback(struct flb_ml_parser *parser,

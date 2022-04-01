@@ -26,6 +26,20 @@
 #define FLB_MULTILINE_MEM_BUF_LIMIT_DEFAULT  "10M"
 #define FLB_MULTILINE_METRIC_EMITTED    200
 
+/* Register external function to emit records, check 'plugins/in_emitter' */
+int in_emitter_add_record(const char *tag, int tag_len,
+                          const char *buf_data, size_t buf_size,
+                          struct flb_input_instance *in);
+
+/* Register optional pause callback for in_emitter, check 'plugins/in_emitter' */
+typedef void(flb_in_emitter_pause_cb)(void *data, struct flb_config *config);
+
+struct flb_emitter_callbacks {
+    flb_in_emitter_pause_cb *pause;
+
+    void *data;
+};
+
 /* 
  * input instance + tag is the unique identifier
  * for a multiline stream
@@ -58,6 +72,8 @@ struct ml_ctx {
 
     struct flb_filter_instance *ins;
 
+    struct flb_emitter_callbacks emitter_cb;
+
     /* emitter */
     flb_sds_t emitter_name;                 /* emitter input plugin name */
     flb_sds_t emitter_storage_type;         /* emitter storage type */
@@ -69,10 +85,5 @@ struct ml_ctx {
     struct cmt_counter *cmt_emitted;
 #endif
 };
-
-/* Register external function to emit records, check 'plugins/in_emitter' */
-int in_emitter_add_record(const char *tag, int tag_len,
-                          const char *buf_data, size_t buf_size,
-                          struct flb_input_instance *in);
 
 #endif
