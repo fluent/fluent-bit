@@ -36,9 +36,6 @@
 struct grep_ctx {
     struct mk_list rules;
     struct flb_filter_instance *ins;
-    /* config map */
-    struct mk_list *regex_map;
-    struct mk_list *exclude_map;
 };
 
 struct grep_rule {
