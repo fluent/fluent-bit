@@ -186,6 +186,12 @@ static int cb_grep_init(struct flb_filter_instance *f_ins,
         flb_errno();
         return -1;
     }
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        flb_free(ctx);
+        return -1;
+    }
     mk_list_init(&ctx->rules);
     ctx->ins = f_ins;
 
@@ -275,11 +281,26 @@ static int cb_grep_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "regex", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY matches the regular expression."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "exclude", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Exclude records in which the content of KEY matches the regular expression."
+    },
+    {0}
+};
+
 struct flb_filter_plugin filter_grep_plugin = {
     .name         = "grep",
     .description  = "grep events by specified field values",
     .cb_init      = cb_grep_init,
     .cb_filter    = cb_grep_filter,
     .cb_exit      = cb_grep_exit,
+    .config_map   = config_map,
     .flags        = 0
 };
