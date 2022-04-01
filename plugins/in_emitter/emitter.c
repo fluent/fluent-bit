@@ -15,7 +15,7 @@
  *  distributed under the License is distributed on an "AS IS" BASIS,
  *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  limitations under the License
  */
 
 #include <fluent-bit/flb_compat.h>
@@ -38,6 +38,24 @@ struct em_chunk {
 struct flb_emitter {
     struct mk_list chunks;              /* list of all pending chunks */
     struct flb_input_instance *ins;     /* input instance */
+};
+
+
+/* 
+ * Internal code that uses the in_emitter may want to register a
+ * pause callback to be invoked when the emitter input's pause is invoked.
+ */ 
+typedef void(flb_in_emitter_pause_cb)(void *data, struct flb_config *config);
+
+
+/* 
+ * Optional callbacks for client code that uses in_emitter
+ * Right now, only a pause callback is implemented
+ */ 
+struct flb_emitter_callbacks {
+    flb_in_emitter_pause_cb *pause;
+
+    void *data;
 };
 
 struct em_chunk *em_chunk_create(const char *tag, int tag_len,
@@ -77,7 +95,7 @@ static void em_chunk_destroy(struct em_chunk *ec)
 
 /*
  * Function used by filters to ingest custom records with custom tags, at the
- * moment it's only used by rewrite_tag filter.
+ * moment it's only used by rewrite_tag and multiline filters.
  */
 int in_emitter_add_record(const char *tag, int tag_len,
                           const char *buf_data, size_t buf_size,
@@ -150,6 +168,22 @@ static int cb_emitter_init(struct flb_input_instance *in,
     return 0;
 }
 
+static void cb_emitter_pause(void *data, struct flb_config *config)
+{
+    struct flb_emitter *ctx = data;
+    struct flb_emitter_callbacks *callbacks;
+
+    /* client code that uses emitter can pass in an optional callback */
+    if (ctx->ins->data != NULL) {
+        callbacks = (struct flb_emitter_callbacks *) ctx->ins->data;
+
+        if (callbacks->pause != NULL) {
+            callbacks->pause(callbacks->data, config);
+        }
+    }
+
+}
+
 static int cb_emitter_exit(void *data, struct flb_config *config)
 {
     struct mk_list *tmp;
@@ -176,7 +210,7 @@ struct flb_input_plugin in_emitter_plugin = {
     .cb_collect   = NULL,
     .cb_ingest    = NULL,
     .cb_flush_buf = NULL,
-    .cb_pause     = NULL,
+    .cb_pause     = cb_emitter_pause,
     .cb_resume    = NULL,
     .cb_exit      = cb_emitter_exit,
 
