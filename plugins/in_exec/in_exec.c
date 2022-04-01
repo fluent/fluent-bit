@@ -140,9 +140,7 @@ static int in_exec_collect(struct flb_input_instance *ins,
 /* read config file and*/
 static int in_exec_config_read(struct flb_exec *ctx,
                                struct flb_input_instance *in,
-                               struct flb_config *config,
-                               int *interval_sec,
-                               int *interval_nsec
+                               struct flb_config *config
 )
 {
     int ret;
@@ -219,8 +217,6 @@ static int in_exec_init(struct flb_input_instance *in,
 {
     struct flb_exec *ctx = NULL;
     int ret = -1;
-    int interval_sec = 0;
-    int interval_nsec = 0;
 
     /* Allocate space for the configuration */
     ctx = flb_malloc(sizeof(struct flb_exec));
@@ -230,7 +226,7 @@ static int in_exec_init(struct flb_input_instance *in,
     ctx->parser = NULL;
 
     /* Initialize exec config */
-    ret = in_exec_config_read(ctx, in, config, &interval_sec, &interval_nsec);
+    ret = in_exec_config_read(ctx, in, config);
     if (ret < 0) {
         goto init_error;
     }
@@ -259,8 +255,8 @@ static int in_exec_init(struct flb_input_instance *in,
     else {
         ret = flb_input_set_collector_time(in,
                                            in_exec_collect,
-                                           interval_sec,
-                                           interval_nsec, config);
+                                           ctx->interval_sec,
+                                           ctx->interval_nsec, config);
     }
     if (ret < 0) {
         flb_plg_error(in, "could not set collector for exec input plugin");
