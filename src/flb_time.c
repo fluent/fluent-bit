@@ -183,7 +183,9 @@ int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fm
         memcpy(&ext_data, &tmp, 4);
         tmp = htonl((uint32_t)tm->tm.tv_nsec);/* nanosecond */
         memcpy(&ext_data[4], &tmp, 4);
-        mpack_write_ext(writer, 8/*fixext8*/, ext_data, sizeof(ext_data));
+
+        /* https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#eventtime-ext-format */
+        mpack_write_ext(writer, 0 /*ext type=0 */, ext_data, sizeof(ext_data));
         break;
 
     default:
