@@ -495,6 +495,26 @@ static int flb_engine_log_start(struct flb_config *config)
     return 0;
 }
 
+static int chunkio_fallback_logger(struct cio_ctx *ctx,
+                                   int level, const char *file, int line,
+                                   char *str)
+{
+    if (level == CIO_LOG_ERROR) {
+        flb_error("[chunkio] %s", str);
+    }
+    else if (level == CIO_LOG_WARN) {
+        flb_warn("[chunkio] %s", str);
+    }
+    else if (level == CIO_LOG_INFO) {
+        flb_info("[chunkio] %s", str);
+    }
+    else if (level == CIO_LOG_DEBUG) {
+        flb_debug("[chunkio] %s", str);
+    }
+
+    return 0;
+}
+
 extern int sb_segregate_chunks(struct flb_config *config);
 
 int flb_engine_start(struct flb_config *config)
@@ -557,6 +577,12 @@ int flb_engine_start(struct flb_config *config)
     /* Initialize custom plugins */
     ret = flb_custom_init_all(config);
     if (ret == -1) {
+        return -1;
+    }
+
+    /* Initialize chunkio */
+    ret = cio_init(chunkio_fallback_logger);
+    if (ret != CIO_OK) {
         return -1;
     }
 
