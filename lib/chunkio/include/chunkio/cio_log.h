@@ -24,6 +24,8 @@
 
 #define CIO_LOG_BUF_SIZE  256
 
+void cio_log_set_fallback_callback(void (*log_cb));
+
 void cio_log_print(void *ctx, int level, const char *file, int line,
                      const char *fmt, ...);
 int cio_errno_print(int errnum, const char *file, int line);

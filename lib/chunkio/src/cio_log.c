@@ -25,20 +25,33 @@
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
 
+cio_log_callback fallback_log_callback = NULL;
+
+void cio_log_set_fallback_callback(void (*log_cb))
+{
+    fallback_log_callback = (cio_log_callback) log_cb;
+}
+
 void cio_log_print(void *ctx, int level, const char *file, int line,
                    const char *fmt, ...)
 {
     int ret;
     char buf[CIO_LOG_BUF_SIZE];
     va_list args;
-    struct cio_ctx *cio = ctx;
+    struct cio_ctx *cio;
+    cio_log_callback logger;
 
-    if (!cio->log_cb) {
-       return;
+    if (ctx != NULL) {
+        cio = (struct cio_ctx *) ctx;
+
+        if (level > cio->log_level) {
+            return;
+        }
+
+        logger = cio->log_cb;
     }
-
-    if (level > cio->log_level) {
-        return;
+    else {
+        logger = fallback_log_callback;
     }
 
     va_start(args, fmt);
@@ -49,7 +62,12 @@ void cio_log_print(void *ctx, int level, const char *file, int line,
     }
     va_end(args);
 
-    cio->log_cb(ctx, level, file, line, buf);
+    if (logger != NULL) {
+        logger(ctx, level, file, line, buf);
+    }
+    else {
+        fprintf(stderr, "%s\n", buf);
+    }
 }
 
 int cio_errno_print(int errnum, const char *file, int line)
@@ -57,8 +75,10 @@ int cio_errno_print(int errnum, const char *file, int line)
     char buf[256];
 
     strerror_r(errnum, buf, sizeof(buf) - 1);
-    fprintf(stderr, "[%s:%i errno=%i] %s\n",
-            file, line, errnum, buf);
+
+    cio_log_print(NULL, CIO_LOG_INFO, file, line,
+                  "[%s:%d] [errno=%i] %s", file, line, errnum, buf);
+
     return 0;
 }
 

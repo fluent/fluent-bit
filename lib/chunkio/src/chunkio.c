@@ -31,6 +31,14 @@
 
 #include <monkey/mk_core/mk_list.h>
 
+
+int cio_init(void (*fallback_log_cb))
+{
+    cio_log_set_fallback_callback(fallback_log_cb);
+
+    return CIO_OK;
+}
+
 /*
  * Validate if root_path exists, if don't, create it, otherwise
  * check if we have write access to it.
@@ -116,6 +124,10 @@ struct cio_ctx *cio_create(const char *root_path,
     else {
         ctx->root_path = NULL;
     }
+
+    cio_log_trace(ctx,
+                  "[chunkio] context initialized for root path : %s\n",
+                  root_path);
 
     return ctx;
 }

@@ -54,6 +54,8 @@
 /* defaults */
 #define CIO_MAX_CHUNKS_UP  64   /* default limit for cio_ctx->max_chunks_up */
 
+typedef void (*cio_log_callback)(void *, int, const char *, int, const char *);
+
 struct cio_ctx {
     int flags;
     int page_size;
@@ -61,7 +63,7 @@ struct cio_ctx {
 
     /* logging */
     int log_level;
-    void (*log_cb)(void *, int, const char *, int, const char *);
+    cio_log_callback log_cb;
 
     /*
      * Internal counters
@@ -83,6 +85,8 @@ struct cio_ctx {
 
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_chunk.h>
+
+int cio_init(void (*fallback_log_cb));
 
 struct cio_ctx *cio_create(const char *root_path,
                            void (*log_cb), int log_level, int flags);
