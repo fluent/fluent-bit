@@ -20,10 +20,19 @@
 #ifndef FLB_OUT_STDOUT
 #define FLB_OUT_STDOUT
 
+
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_sds.h>
 
 struct flb_stdout {
+    // to check in_row_msgpack
+    int check_in_raw_msgpack_fd;
+
+    // to measure time
+    uint64_t bytes_received;
+    uint64_t ts_begin;
+    uint64_t ts_end;
+
     int out_format;
     int json_date_format;
     flb_sds_t json_date_key;
