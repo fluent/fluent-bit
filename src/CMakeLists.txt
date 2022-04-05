@@ -113,6 +113,11 @@ endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
+  configure_file(
+    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c.in"
+    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c"
+    )
+
   # Register the TLS interface and functions
   set(src
     ${src}
