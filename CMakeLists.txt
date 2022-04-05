@@ -16,6 +16,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   add_definitions(-DFLB_SYSTEM_WINDOWS)
 endif()
 
+# Define macro to identify macOS system
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  set(FLB_SYSTEM_MACOS On)
+  add_definitions(-DFLB_SYSTEM_MACOS)
+endif()
+
 # Update CFLAGS
 if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
@@ -315,6 +321,26 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     message(STATUS "Found Homebrew at ${HOMEBREW_PREFIX}")
     include(cmake/homebrew.cmake)
   endif()
+
+  # Create rootcert on macOS
+  set(MACOS_ROOT_CERT ${CMAKE_CURRENT_BINARY_DIR}/certs/rootcert.pem)
+  execute_process(
+    COMMAND security find-certificate -a -p /Library/Keychains/System.keychain
+    RESULT_VARIABLE SECURITY_SYSTEM_RESULT
+    OUTPUT_VARIABLE SECURITY_SYSTEM_CERTS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  file(WRITE ${MACOS_ROOT_CERT} ${SECURITY_SYSTEM_CERTS})
+
+  execute_process(
+    COMMAND security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain
+    RESULT_VARIABLE SECURITY_ROOT_RESULT
+    OUTPUT_VARIABLE SECURITY_ROOT_CERTS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  file(APPEND ${MACOS_ROOT_CERT} ${SECURITY_ROOT_CERTS})
+
+  install(FILES ${MACOS_ROOT_CERT} COMPONENT binary DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/certs)
 endif()
 
 # Extract Git commit information for debug output.
