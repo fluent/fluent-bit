@@ -107,7 +107,7 @@ static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
 #ifdef FLB_SYSTEM_MACOS
-    const char ca_path[] = "/usr/local/etc/certs/";
+    const char ca_path[] = "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/certs/";
 #else
     const char ca_path[] = "/etc/ssl/certs/";
 #endif
