@@ -106,7 +106,11 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 static int load_system_certificates(struct tls_context *ctx)
 {
     int ret;
+#ifdef FLB_SYSTEM_MACOS
+    const char ca_path[] = "/usr/local/etc/certs/";
+#else
     const char ca_path[] = "/etc/ssl/certs/";
+#endif
 
     /* For Windows use specific API to read the certs store */
 #ifdef _MSC_VER
