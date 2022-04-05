@@ -46,7 +46,6 @@
 
 /* Default Resource type */
 #define FLB_SDS_RESOURCE_TYPE "global"
-
 #define OPERATION_FIELD_IN_JSON "logging.googleapis.com/operation"
 #define MONITORED_RESOURCE_KEY "logging.googleapis.com/monitored_resource"
 #define LOCAL_RESOURCE_ID_KEY "logging.googleapis.com/local_resource_id"
@@ -62,6 +61,14 @@
 #define OPERATION_KEY_SIZE 32
 #define SOURCE_LOCATION_SIZE 37
 #define HTTP_REQUEST_KEY_SIZE 35
+
+/*
+ * Stackdriver implements a specific HTTP status code that is used internally in clients to keep
+ * track of networking errors that could happen before a successful HTTP request/response. For
+ * metrics counting purposes, every failed networking connection will use a 502 HTTP status code
+ * that can be used later to query the metrics by using labels with that value.
+ */
+#define STACKDRIVER_NET_ERROR  502
 
 #define K8S_CONTAINER "k8s_container"
 #define K8S_NODE      "k8s_node"
