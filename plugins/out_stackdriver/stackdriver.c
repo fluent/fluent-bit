@@ -2185,7 +2185,9 @@ static void update_http_metrics(struct flb_stackdriver *ctx,
                     1, (char *[]) {tmp});
 
     /* HTTP status */
-    cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+    if (http_status != STACKDRIVER_NET_ERROR) {
+        cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+    }
 }
 #endif
 
@@ -2213,13 +2215,15 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
-    if (!u_conn) {
+    if (u_conn) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
                         ts, 1, (char *[]) {name});
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+
+        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2283,6 +2287,9 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
         ret_code = FLB_RETRY;
+#ifdef FLB_HAVE_METRICS
+        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+#endif
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
