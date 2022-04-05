@@ -529,3 +529,7 @@ if(FLB_BINARY)
     DESTINATION ${FLB_INSTALL_CONFDIR})
 
 endif()
+
+if(FLB_RAW_MSGPACK_API)
+  add_subdirectory(raw_msgpack_api)
+endif()
