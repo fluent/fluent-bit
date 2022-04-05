@@ -295,6 +295,8 @@ if(FLB_LUAJIT)
   REGISTER_FILTER_PLUGIN("filter_lua")
 endif()
 
+REGISTER_FILTER_PLUGIN("filter_csv")
+
 REGISTER_FILTER_PLUGIN("filter_stdout")
 
 REGISTER_FILTER_PLUGIN("filter_geoip2")
