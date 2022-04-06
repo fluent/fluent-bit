@@ -1088,7 +1088,7 @@ if(FLB_SYSTEM_MACOS)
 
   if (CPACK_GENERATOR MATCHES "productbuild")
     set(CPACK_SET_DESTDIR "ON")
-    configure_file(cpack/description ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
+    configure_file(cpack/macos/welcome.txt.cmakein ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
     configure_file(cpack/macos/fluent-bit.plist.cmakein ${CMAKE_CURRENT_BINARY_DIR}/${FLB_OUT_NAME}.plist)
     configure_file(LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
     find_program(CONVERTER textutil)
