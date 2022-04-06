@@ -79,7 +79,7 @@ jobs:
 
       - name: Push packages to S3
         # Only upload for staging
-        if: ${{ inputs.environment == 'staging' }}
+        if: inputs.environment == 'staging'
         # Make sure not to do a --delete on sync as it will remove the other architecture
         run: |
           if [ -n "${AWS_S3_ENDPOINT}" ]; then

@@ -52,7 +52,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Determine build type
-        id: determine_build_type
+        id: determine-build-type
         run: |
           BUILD_TYPE="legacy"
           if [[ -f "conf/fluent-bit-macos.conf" ]]; then
@@ -92,7 +92,7 @@ jobs:
 
       - name: Push packages to S3
         # Only upload for staging
-        if: ${{ inputs.environment == 'staging' }}
+        if: inputs.environment == 'staging'
         # Make sure not to do a --delete on sync as it will remove the other architecture
         run: |
           if [ -n "${AWS_S3_ENDPOINT}" ]; then

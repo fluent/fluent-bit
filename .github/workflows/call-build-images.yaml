@@ -60,7 +60,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Determine build type
-        id: determine_build_type
+        id: determine-build-type
         run: |
           BUILD_TYPE="1.8"
           if [[ -f "dockerfiles/Dockerfile" ]]; then
