@@ -328,8 +328,13 @@ static int tls_net_read(struct flb_upstream_conn *u_conn,
     struct tls_session *session = (struct tls_session *) u_conn->tls_session;
 
     ret = mbedtls_ssl_read(&session->ssl, buf, len);
-    if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+    if (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+        ret == MBEDTLS_ERR_SSL_ASYNC_IN_PROGRESS ||
+        ret == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
         return FLB_TLS_WANT_READ;
+    }
+    else if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+        return FLB_TLS_WANT_WRITE;
     }
     else if (ret < 0) {
         mbedtls_strerror(ret, err_buf, sizeof(err_buf));
@@ -355,7 +360,9 @@ static int tls_net_write(struct flb_upstream_conn *u_conn,
     ret = mbedtls_ssl_write(&session->ssl,
                             (unsigned char *) data + total,
                             len - total);
-    if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+    if (ret == MBEDTLS_ERR_SSL_WANT_WRITE ||
+        ret == MBEDTLS_ERR_SSL_ASYNC_IN_PROGRESS ||
+        ret == MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS) {
         return FLB_TLS_WANT_WRITE;
     }
     else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
