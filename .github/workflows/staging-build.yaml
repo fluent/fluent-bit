@@ -142,7 +142,7 @@ jobs:
   staging-build-windows-packages:
     needs:
       - staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-windows-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
       ref: ${{ github.event.inputs.version || github.ref_name }}
@@ -156,7 +156,7 @@ jobs:
   staging-build-macos-packages:
     needs:
       - staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-macos-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-macos.yaml@master
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
       ref: ${{ github.event.inputs.version || github.ref_name }}

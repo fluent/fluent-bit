@@ -124,7 +124,7 @@ jobs:
   unstable-build-windows-package:
     needs:
       - unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@5241_ci_updates_1_8_branch_builds
+    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@5241_ci_updates_1_8_branch_builds
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
@@ -136,7 +136,7 @@ jobs:
   unstable-build-macos-package:
     needs:
       - unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-macos-packages.yaml@5241_ci_updates_1_8_branch_builds
+    uses: fluent/fluent-bit/.github/workflows/call-build-macos.yaml@5241_ci_updates_1_8_branch_builds
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
