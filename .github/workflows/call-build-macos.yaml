@@ -36,45 +36,58 @@ on:
         required: false
 
 jobs:
-  call-build-windows-package:
-    runs-on: windows-latest
+  call-build-macos-legacy-check:
+    # Requires https://github.com/fluent/fluent-bit/pull/5247 so will not build for previous branches
+    name: Extract any supporting metadata
+    outputs:
+      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine build type
+        id: determine_build_type
+        run: |
+          BUILD_TYPE="legacy"
+          if [[ -f "conf/fluent-bit-macos.conf" ]]; then
+            BUILD_TYPE="modern"
+          fi
+          echo "Detected type: $BUILD_TYPE"
+          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        shell: bash
+
+  call-build-macos-package:
+    if: needs.call-build-legacy-check.outputs.build-type == 'modern'
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-macos-legacy-check
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Get dependencies
-        run: |
-          Invoke-WebRequest -O winflexbison.zip $env:WINFLEXBISON
-          Expand-Archive winflexbison.zip -Destination C:\WinFlexBison
-          Copy-Item -Path C:\WinFlexBison/win_bison.exe C:\WinFlexBison/bison.exe
-          Copy-Item -Path C:\WinFlexBison/win_flex.exe C:\WinFlexBison/flex.exe
-          echo "C:\WinFlexBison" | Out-File -FilePath $env:GITHUB_PATH -Append
-        env:
-          WINFLEXBISON: https://github.com/lexxmark/winflexbison/releases/download/v2.5.22/win_flex_bison-2.5.22.zip
-        shell: pwsh
-
-      - name: Set up Visual Studio shell
-        uses: egor-tensin/vs-shell@v2
-        with:
-          arch: x64
-
       - name: Build Fluent Bit packages
         run: |
-          cmake -G "NMake Makefiles" -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
+          cmake -G "productbuild" -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
           cmake --build .
-          cpack
+          cpack -G productbuild
         working-directory: build
 
       - name: Upload build packages
         uses: actions/upload-artifact@v2
         with:
-          name: windows-packages
+          name: macos-packages
           path: |
-            build/fluent-bit-*.exe
-            build/fluent-bit-*.zip
+            build/fluent-bit-*-apple
+            build/fluent-bit-*-intel
           if-no-files-found: error
 
       - name: Push packages to S3
@@ -85,10 +98,10 @@ jobs:
           if [ -n "${AWS_S3_ENDPOINT}" ]; then
             ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
           fi
-          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*.exe" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
-          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*.zip" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*-apple" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*-intel" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
         env:
-          DEST_DIR: "${{ inputs.version }}/windows/"
+          DEST_DIR: "${{ inputs.version }}/macos/"
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}

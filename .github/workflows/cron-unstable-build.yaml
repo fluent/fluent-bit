@@ -133,6 +133,18 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
+  unstable-build-macos-package:
+    needs:
+      - unstable-build-get-meta
+    uses: fluent/fluent-bit/.github/workflows/call-build-macos-packages.yaml@master
+    with:
+      version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
+      environment: unstable
+      unstable: ${{ needs.unstable-build-get-meta.outputs.date }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
   # We already detain all artefacts as build output so just capture for an unstable release
   unstable-release:
     runs-on: ubuntu-latest
@@ -141,6 +153,7 @@ jobs:
       - unstable-build-images
       - unstable-build-packages
       - unstable-build-windows-package
+      - unstable-build-macos-package
     environment: unstable
     permissions:
       contents: write

@@ -152,3 +152,17 @@ jobs:
       bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
       access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  staging-build-macos-packages:
+    needs:
+      - staging-build-get-meta
+    uses: fluent/fluent-bit/.github/workflows/call-build-macos-packages.yaml@master
+    with:
+      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      ref: ${{ github.event.inputs.version || github.ref_name }}
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
