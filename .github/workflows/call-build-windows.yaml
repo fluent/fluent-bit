@@ -75,8 +75,8 @@ jobs:
         with:
           name: windows-packages
           path: |
-            build/fluent-bit-*.exe
-            build/fluent-bit-*.zip
+            build/*-bit-*.exe
+            build/*-bit-*.zip
           if-no-files-found: error
 
       - name: Push packages to S3
@@ -87,8 +87,8 @@ jobs:
           if [ -n "${AWS_S3_ENDPOINT}" ]; then
             ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
           fi
-          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*.exe" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
-          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*.zip" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+          aws --region "$AWS_REGION" s3 sync "build/*-bit-*.exe" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+          aws --region "$AWS_REGION" s3 sync "build/*-bit-*.zip" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
         env:
           DEST_DIR: "${{ inputs.version }}/windows/"
           AWS_REGION: "us-east-1"
