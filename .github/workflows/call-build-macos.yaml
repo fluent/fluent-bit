@@ -78,7 +78,7 @@ jobs:
 
       - name: Build Fluent Bit packages
         run: |
-          cmake -G "productbuild" -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
+          cmake -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
           cmake --build .
           cpack -G productbuild
         working-directory: build
