@@ -39,6 +39,8 @@ jobs:
   call-build-windows-package:
     runs-on: windows-latest
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

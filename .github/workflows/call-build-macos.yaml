@@ -68,6 +68,8 @@ jobs:
     environment: ${{ inputs.environment }}
     needs:
       - call-build-macos-legacy-check
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
