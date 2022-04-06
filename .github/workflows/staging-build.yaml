@@ -121,6 +121,7 @@ jobs:
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
         with:
+          ref: ${{ github.event.inputs.version || github.ref_name }}
           target: ${{ github.event.inputs.target || '' }}
 
   staging-build-packages:

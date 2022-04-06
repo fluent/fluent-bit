@@ -6,10 +6,10 @@ inputs:
   target:
     description: Override to build a single target for debug/test only.
     required: false
-  fluent-bit-version:
-    description: The version of Fluent Bit to build.
-    required: false
-    default: 'master'
+    default: ''
+  ref:
+    description: The commit, tag or branch of Fluent Bit to checkout for building we then use to determine version for.
+    required: true
 outputs:
   build-matrix:
     description: The build matrix we have created.
@@ -17,8 +17,27 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: master/1.9 targets
-      if: inputs.fluent-bit-version != '1.8'
+    - name: Checkout code for version check
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.ref }}
+        path: version-check
+
+    - name: Determine target type
+      id: determine-build-type
+      run: |
+        ls -l
+        BUILD_TYPE="1.8"
+        if [[ -d "packaging" ]]; then
+          BUILD_TYPE="1.9"
+        fi
+        echo "Detected type: $BUILD_TYPE"
+        echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+      shell: bash
+      working-directory: version-check
+
+    - name: 1.9 targets
+      if: steps.determine-build-type.outputs.BUILD_TYPE == '1.9'
       run: |
         matrix=$((
           echo '{ "distro" : ['
@@ -29,19 +48,11 @@ runs:
           echo '"raspbian/buster", "raspbian/bullseye"'
           echo ']}'
         ) | jq -c .)
-        if [ -n "${{ inputs.target || '' }}" ]; then
-          echo "Overriding matrix to build: ${{ inputs.target }}"
-          matrix=$((
-            echo '{ "distro" : ['
-            echo '"${{ inputs.target }}"'
-            echo ']}'
-          ) | jq -c .)
-        fi
         echo "MATRIX=$matrix" >> $GITHUB_ENV
       shell: bash
 
     - name: 1.8 targets
-      if: inputs.fluent-bit-version == '1.8'
+      if: steps.determine-build-type.outputs.BUILD_TYPE == '1.8'
       run: |
         matrix=$((
           echo '{ "distro" : ['
@@ -52,6 +63,12 @@ runs:
           echo '"raspbian/buster"'
           echo ']}'
         ) | jq -c .)
+        echo "MATRIX=$matrix" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Manual override of target
+      if: inputs.target != ''
+      run: |
         if [ -n "${{ inputs.target || '' }}" ]; then
           echo "Overriding matrix to build: ${{ inputs.target }}"
           matrix=$((

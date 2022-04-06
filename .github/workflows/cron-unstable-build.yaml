@@ -99,13 +99,14 @@ jobs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
     environment: unstable
     steps:
-      - name: Checkout repository
+      - name: Checkout repository, always latest for action
         uses: actions/checkout@v3
+
       # Set up the list of target to build so we can pass the JSON to the reusable job
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
         with:
-          fluent-bit-version: ${{ needs.unstable-build-get-meta.outputs.branch }}
+          ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
 
   unstable-build-packages:
     needs:
