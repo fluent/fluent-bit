@@ -63,7 +63,7 @@ jobs:
         shell: bash
 
   call-build-macos-package:
-    if: needs.call-build-legacy-check.outputs.build-type == 'modern'
+    if: needs.call-build-macos-legacy-check.outputs.build-type == 'modern'
     runs-on: macos-latest
     environment: ${{ inputs.environment }}
     needs:
