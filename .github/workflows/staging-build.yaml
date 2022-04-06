@@ -125,7 +125,7 @@ jobs:
 
   staging-build-packages:
     needs: [ staging-build-get-meta, staging-build-generate-matrix ]
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
       ref: ${{ github.event.inputs.version || github.ref_name }}

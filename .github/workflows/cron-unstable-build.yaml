@@ -111,7 +111,7 @@ jobs:
     needs:
       - unstable-build-get-meta
       - unstable-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}

@@ -49,7 +49,7 @@ jobs:
 
   # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
   # code and workflow together. We need to run the dependent job after this as well.
-  call-build-packages:
+  call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
@@ -172,7 +172,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_S3_BUCKET: ${{ secrets.bucket }}
 
-  call-build-packages-repo:
+  call-build-linux-packages-repo:
     name: Create repo metadata in S3
     # Only upload for staging
     if: ${{ inputs.environment == 'staging' }}
@@ -180,7 +180,7 @@ jobs:
     runs-on: ubuntu-18.04
     environment: ${{ inputs.environment }}
     needs:
-      - call-build-packages
+      - call-build-linux-packages
     steps:
       - name: Install dependencies
         run: |

@@ -42,7 +42,7 @@ jobs:
 
   master-build-packages:
     needs: master-build-generate-matrix
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
     with:
       version: master
       ref: master
