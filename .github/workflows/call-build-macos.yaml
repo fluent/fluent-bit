@@ -1,0 +1,110 @@
+---
+name: Reusable workflow to build Windows packages optionally into S3 bucket
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version of Fluent Bit to create.
+        type: string
+        required: true
+      ref:
+        description: The commit, tag or branch of Fluent Bit to checkout for building that creates the version above.
+        type: string
+        required: true
+      environment:
+        description: The Github environment to run this workflow on.
+        type: string
+        required: false
+      unstable:
+        description: Optionally add metadata to build to indicate an unstable build, set to the contents you want to add.
+        type: string
+        required: false
+        default: ''
+    secrets:
+      token:
+        description: The Github token or similar to authenticate with.
+        required: true
+      bucket:
+        description: The name of the S3 (US-East) bucket to push packages into.
+        required: false
+      access_key_id:
+        description: The S3 access key id for the bucket.
+        required: false
+      secret_access_key:
+        description: The S3 secret access key for the bucket.
+        required: false
+
+jobs:
+  call-build-macos-legacy-check:
+    # Requires https://github.com/fluent/fluent-bit/pull/5247 so will not build for previous branches
+    name: Extract any supporting metadata
+    outputs:
+      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine build type
+        id: determine-build-type
+        run: |
+          BUILD_TYPE="legacy"
+          if [[ -f "conf/fluent-bit-macos.conf" ]]; then
+            BUILD_TYPE="modern"
+          fi
+          echo "Detected type: $BUILD_TYPE"
+          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        shell: bash
+
+  call-build-macos-package:
+    if: needs.call-build-macos-legacy-check.outputs.build-type == 'modern'
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-macos-legacy-check
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Build Fluent Bit packages
+        run: |
+          cmake -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
+          cmake --build .
+          cpack -G productbuild
+        working-directory: build
+
+      - name: Upload build packages
+        uses: actions/upload-artifact@v2
+        with:
+          name: macos-packages
+          path: |
+            build/fluent-bit-*-apple
+            build/fluent-bit-*-intel
+          if-no-files-found: error
+
+      - name: Push packages to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        # Make sure not to do a --delete on sync as it will remove the other architecture
+        run: |
+          if [ -n "${AWS_S3_ENDPOINT}" ]; then
+            ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+          fi
+          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*-apple" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+          aws --region "$AWS_REGION" s3 sync "build/fluent-bit-*-intel" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+        env:
+          DEST_DIR: "${{ inputs.version }}/macos/"
+          AWS_REGION: "us-east-1"
+          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
+          AWS_S3_BUCKET: ${{ secrets.bucket }}

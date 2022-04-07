@@ -13,7 +13,7 @@ on:
         required: true
         default: master
       target:
-        description: Only build a specific target, intended for debug/test/quick builds only.
+        description: Only build a specific Linux target, intended for debug/test/quick builds only.
         required: false
         default: ""
 
@@ -121,11 +121,12 @@ jobs:
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
         with:
+          ref: ${{ github.event.inputs.version || github.ref_name }}
           target: ${{ github.event.inputs.target || '' }}
 
   staging-build-packages:
     needs: [ staging-build-get-meta, staging-build-generate-matrix ]
-    uses: fluent/fluent-bit/.github/workflows/call-build-packages.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-linux-packages.yaml@master
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
       ref: ${{ github.event.inputs.version || github.ref_name }}
@@ -138,3 +139,31 @@ jobs:
       secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
       gpg_private_key_passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
+
+  staging-build-windows-packages:
+    needs:
+      - staging-build-get-meta
+    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    with:
+      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      ref: ${{ github.event.inputs.version || github.ref_name }}
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+  staging-build-macos-packages:
+    needs:
+      - staging-build-get-meta
+    uses: fluent/fluent-bit/.github/workflows/call-build-macos.yaml@master
+    with:
+      version: ${{ needs.staging-build-get-meta.outputs.version }}
+      ref: ${{ github.event.inputs.version || github.ref_name }}
+      environment: staging
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+      access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

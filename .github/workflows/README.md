@@ -58,6 +58,13 @@ For some reason this is not automatically done via permission inheritance or sim
 2. Once this is working locally, you should then be able to set up action permissions for the repository. If you already have a package no need to push a test one.
 3. Go to `https://github.com/users/USER/packages/container/fluent-bit/settings` and ensure the repository has access to `Write`.
 
+## Version-specific targets
+
+Each major version (e.g. 1.8 & 1.9) supports different targets to build for, e.g. 1.9 includes a CentOS 8 target and 1.8 has some other legacy targets.
+
+This is all handled by the [build matrix generation composite action](../actions/generate-package-build-matrix/action.yaml) so make sure to update appropriately.
+The build matrix is then fed into the reusable job that builds packages which will then fire for the appropriate targets.
+
 ## Releases
 
 Currently the process is as follows:
