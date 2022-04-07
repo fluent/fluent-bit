@@ -20,6 +20,7 @@
 #ifndef FLB_FILTER_AVRO_H
 #define FLB_FILTER_AVRO_H
 
+#include "avro/value.h"
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_sds.h>
@@ -35,9 +36,6 @@ struct filter_avro_tag_state {
     avro_schema_t aschema;
     avro_value_iface_t *aclass;
     avro_value_t record;
-    char *avro_write_buffer;
-    size_t avro_write_buffer_size;
-    avro_writer_t awriter;
     size_t record_field_index;
     flb_sds_t avro_schema_json;
     bool used;
@@ -47,6 +45,11 @@ struct filter_avro {
     struct filter_avro_tag_state states[FILTER_AVRO_MAX_TAG_COUNT];
     bool convert_to_avro;
     struct flb_filter_instance *ins;
+    avro_writer_t awriter;
+    char *avro_write_buffer;
+    size_t avro_write_buffer_size;
+    avro_schema_t outer_schema;
+    avro_value_iface_t *outer_class;
     flb_sds_t packbuf;
 };
 

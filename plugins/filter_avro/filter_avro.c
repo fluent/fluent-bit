@@ -33,6 +33,8 @@
 #include "avro/errors.h"
 #include "avro/io.h"
 #include "avro/schema.h"
+#include "avro/src/avro/errors.h"
+#include "avro/src/avro/generic.h"
 #include "avro/src/avro/io.h"
 #include "avro/src/avro/value.h"
 #include "avro/src/schema.h"
@@ -43,6 +45,57 @@
 #include "fluent-bit/flb_str.h"
 #include "fluent-bit/flb_time.h"
 #include "mpack/mpack.h"
+
+struct avro_union_data {
+    const char *field;
+    size_t field_len;
+    int discriminant;
+    int type;
+};
+
+static int create_outer_avro_schema(struct filter_avro *ctx)
+{
+    avro_schema_t schema;
+    avro_schema_t field, item;
+
+    schema = avro_schema_record("LogEvent", NULL);
+
+    field = avro_schema_bytes();
+    if (avro_schema_record_field_append(schema, "metadata", field)) {
+        return -1;
+    }
+    avro_schema_decref(field);
+
+    field = avro_schema_string();
+    if (avro_schema_record_field_append(schema, "avro_schema", field)) {
+        return -1;
+    }
+    avro_schema_decref(field);
+
+    field = avro_schema_int();
+    if (avro_schema_record_field_append(schema, "max_size", field)) {
+        return -1;
+    }
+    avro_schema_decref(field);
+
+    item = avro_schema_bytes();
+    field = avro_schema_array(item);
+    if (avro_schema_record_field_append(schema, "payload", field)) {
+        return -1;
+    }
+
+    avro_schema_decref(field);
+    avro_schema_decref(item);
+
+    ctx->outer_schema = schema;
+
+    ctx->outer_class = avro_generic_class_from_schema(ctx->outer_schema);
+    if (!ctx->outer_class) {
+        return -1;
+    }
+
+    return 0;
+}
 
 static int cb_avro_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
@@ -74,6 +127,25 @@ static int cb_avro_init(struct flb_filter_instance *f_ins,
     ctx->packbuf = flb_sds_create_size(1024);
     if (!ctx->packbuf) {
         flb_error("[filter_avro] failed to allocate packbuf");
+        return -1;
+    }
+
+    if (create_outer_avro_schema(ctx)) {
+        flb_plg_error(ctx->ins, "failed to allocate avro outer schema");
+        return -1;
+    }
+
+    ctx->avro_write_buffer_size = 1024;
+    ctx->avro_write_buffer = flb_malloc(ctx->avro_write_buffer_size);
+    if (!ctx->avro_write_buffer) {
+        flb_plg_error(ctx->ins, "Unable to allocate avro write buffer");
+        return -1;
+    }
+
+    ctx->awriter = avro_writer_memory(ctx->avro_write_buffer,
+            ctx->avro_write_buffer_size);
+    if (!ctx->awriter) {
+        flb_plg_error(ctx->ins, "failed to allocate avro writer");
         return -1;
     }
 
@@ -131,21 +203,6 @@ static struct filter_avro_tag_state *get_tag_state(
                 return NULL;
             }
 
-            state->avro_write_buffer_size = 1024;
-            state->avro_write_buffer = flb_malloc(state->avro_write_buffer_size);
-            if (!state->avro_write_buffer) {
-                flb_plg_error(ctx->ins, "Unable to allocate avro write buffer");
-                return NULL;
-            }
-
-            state->awriter = avro_writer_memory(
-                    state->avro_write_buffer,
-                    state->avro_write_buffer_size);
-            if (!state->awriter) {
-                flb_plg_error(ctx->ins, "failed to allocate avro writer");
-                return NULL;
-            }
-
             return state;
         }
     }
@@ -168,10 +225,9 @@ static int collect_lines(
     struct flb_time t;
     mpack_reader_t reader;
     mpack_tag_t mtag;
-    size_t strl;
+    size_t len;
 
     mpack_reader_init_data(&reader, data, bytes);
-
 
     while (bytes > 0) {
         const char *record_start = reader.data;
@@ -200,9 +256,9 @@ static int collect_lines(
             /* failed to parse */
             return FLB_FILTER_NOTOUCH;
         }
-        strl = mpack_tag_bytes(&mtag);
-        flb_sds_cat_safe(&state->row_buffer, reader.data, strl);
-        reader.data += strl;
+        len = mpack_tag_bytes(&mtag);
+        flb_sds_cat_safe(&state->row_buffer, reader.data, len);
+        reader.data += len;
         flb_sds_cat_safe(&state->row_buffer, "\n", 1);
         record_size = reader.data - record_start;
         bytes -= record_size;
@@ -210,79 +266,6 @@ static int collect_lines(
 
     return 0;
 }
-
-static void write_mpack_field(void *data, const char *field, size_t field_len)
-{
-    mpack_writer_t *writer = data;
-    mpack_write_str(writer, field, field_len);
-}
-
-static int csv_to_mpack(struct filter_avro *ctx, struct filter_avro_tag_state *state)
-{
-    int ret;
-    struct flb_time t = {0};
-    char *bufptr;
-    char *bufptrstart;
-    size_t buflen;
-    size_t buflenstart;
-    size_t field_count;
-    char writebuf[1024];
-    mpack_writer_t writer;
-
-    mpack_writer_init(&writer, writebuf, sizeof(writebuf));
-    mpack_writer_set_context(&writer, ctx);
-    mpack_writer_set_flush(&writer, mpack_buffer_flush);
-
-    bufptr = state->row_buffer;
-    buflen = flb_sds_len(state->row_buffer);
-    /* parse all csv records */
-    while (buflen) {
-        bufptrstart = bufptr;
-        buflenstart = buflen;
-        /* We parse two times. First we do a simple pass to calculate the
-         * csv field count */
-        ret = flb_csv_parse_record(&state->state, &bufptr, &buflen,
-                &field_count);
-        if (ret) {
-            break;
-        }
-
-        mpack_write_tag(&writer, mpack_tag_array(2));
-        flb_time_append_to_mpack(&writer, &t, 0);
-        mpack_write_tag(&writer, mpack_tag_map(1));
-        mpack_write_cstr(&writer, "csv");
-        mpack_write_tag(&writer, mpack_tag_array(field_count));
-
-        /* Now that we created the array tag, run again to write the field
-         * values */
-        state->state.field_callback = write_mpack_field;
-        state->state.data = &writer;
-        ret = flb_csv_parse_record(&state->state, &bufptrstart, &buflenstart,
-                &field_count);
-        state->state.field_callback = NULL;
-        state->state.data = NULL;
-    }
-
-    mpack_writer_flush_message(&writer);
-    mpack_writer_destroy(&writer);
-
-    if (ret == FLB_CSV_EOF) {
-        /* move the incomplete csv record to the beginning of the buffer */
-        memmove(state->row_buffer, bufptrstart, buflenstart);
-        flb_sds_len_set(state->row_buffer, buflenstart);
-    } else {
-        flb_sds_len_set(state->row_buffer, 0);
-    }
-
-    return 0;
-}
-
-struct avro_union_data {
-    const char *field;
-    size_t field_len;
-    int discriminant;
-    int type;
-};
 
 static int extract_union_type_it(int i, avro_schema_t schema, void *arg)
 {
@@ -300,7 +283,8 @@ static int extract_union_type_it(int i, avro_schema_t schema, void *arg)
             if (data->field_len &&
                     (data->discriminant == -1 || type == AVRO_STRING)) {
                 /* in the case of a union with more than 2 types,
-                 * give preference to string */
+                 * give preference to string if present, else use the
+                 * first one */
                 data->discriminant = i;
                 data->type = type;
             }
@@ -433,7 +417,6 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
 
     switch (extract_avro_type(&avalue, field, field_len)) {
         case AVRO_STRING:
-        case AVRO_BYTES:
             avro_value_set_string_len(&avalue, field, field_len + 1);
             break;
         case AVRO_BOOLEAN:
@@ -458,22 +441,59 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
     state->record_field_index++;
 }
 
-static int write_avro_value(
+static ssize_t serialize_avro_value(
         struct filter_avro *ctx,
-        struct filter_avro_tag_state *state,
-        mpack_writer_t *writer)
+        avro_value_t *value)
 {
-    size_t payload_size;
+    int ret;
 
-    if (avro_value_write(state->awriter, &state->record)) {
-        flb_plg_error(ctx->ins, "failed to write avro value: %s", avro_strerror());
+    while ((ret = avro_value_write(ctx->awriter, value)) == ENOSPC) {
+        ctx->avro_write_buffer_size *= 2;
+        ctx->avro_write_buffer = flb_realloc(ctx->avro_write_buffer,
+                ctx->avro_write_buffer_size);
+        if (!ctx->avro_write_buffer) {
+            flb_plg_error(ctx->ins, "Unable to allocate avro write buffer");
+            return -1;
+        }
+        avro_writer_memory_set_dest(ctx->awriter, ctx->avro_write_buffer,
+                ctx->avro_write_buffer_size);
+    }
+
+    if (ret) {
+        flb_plg_error(ctx->ins, "Failed to serialize avro: %s", avro_strerror());
         return -1;
     }
 
-    payload_size = avro_writer_tell(state->awriter);
-    mpack_write_bin(writer, state->avro_write_buffer, payload_size);
-    avro_writer_memory_set_dest(state->awriter, state->avro_write_buffer,
-            state->avro_write_buffer_size);
+    return avro_writer_tell(ctx->awriter);
+}
+
+static int write_avro_value(
+        struct filter_avro *ctx,
+        struct filter_avro_tag_state *state,
+        avro_value_t *payload_array)
+{
+    ssize_t payload_size;
+    avro_value_t payload;
+
+    payload_size = serialize_avro_value(ctx, &state->record);
+    if (payload_size < 0) {
+        return -1;
+    }
+
+    if (avro_value_append(payload_array, &payload, NULL)) {
+        flb_plg_error(ctx->ins, "failed to append avro payload to array: %s", 
+                avro_strerror());
+        return -1;
+    }
+
+    if (avro_value_set_bytes(&payload, ctx->avro_write_buffer, payload_size)) {
+        flb_plg_error(ctx->ins, "failed to write avro payload: %s", avro_strerror());
+        return -1;
+    }
+
+    /* reset avro writer pointer */
+    avro_writer_memory_set_dest(ctx->awriter, ctx->avro_write_buffer,
+            ctx->avro_write_buffer_size);
 
     return 0;
 }
@@ -481,24 +501,18 @@ static int write_avro_value(
 
 static int csv_to_avro(
         struct filter_avro *ctx,
-        struct filter_avro_tag_state *state)
+        struct filter_avro_tag_state *state,
+        avro_value_t *payload_array)
 {
     int ret;
-    struct flb_time t = {0};
     char *bufptr;
     char *bufptrstart;
     size_t buflen;
     size_t buflenstart;
     size_t field_count;
-    char writebuf[1024];
-    mpack_writer_t writer;
 
     state->state.field_callback = write_avro_field;
     state->state.data = state;
-
-    mpack_writer_init(&writer, writebuf, sizeof(writebuf));
-    mpack_writer_set_context(&writer, ctx);
-    mpack_writer_set_flush(&writer, mpack_buffer_flush);
 
     bufptr = state->row_buffer;
     buflen = flb_sds_len(state->row_buffer);
@@ -514,19 +528,12 @@ static int csv_to_avro(
             break;
         }
 
-        mpack_write_tag(&writer, mpack_tag_array(2));
-        flb_time_append_to_mpack(&writer, &t, 0);
-        mpack_write_tag(&writer, mpack_tag_map(1));
-        mpack_write_cstr(&writer, "payload");
-        if (write_avro_value(ctx, state, &writer)) {
+        if (write_avro_value(ctx, state, payload_array)) {
             return FLB_FILTER_NOTOUCH;
         }
         
         state->record_field_index = 0;
     }
-
-    mpack_writer_flush_message(&writer);
-    mpack_writer_destroy(&writer);
 
     if (ret == FLB_CSV_EOF) {
         /* move the incomplete csv record to the beginning of the buffer */
@@ -535,6 +542,41 @@ static int csv_to_avro(
     } else {
         flb_sds_len_set(state->row_buffer, 0);
     }
+
+    return 0;
+}
+
+static int pack_avro(
+        struct filter_avro *ctx,
+        struct filter_avro_tag_state *state,
+        avro_value_t *outer)
+
+{
+    ssize_t payload_size;
+    struct flb_time t = {0};
+    char writebuf[1024];
+    mpack_writer_t writer;
+
+    payload_size = serialize_avro_value(ctx, outer);
+    if (payload_size < 0) {
+        return -1;
+    }
+
+    mpack_writer_init(&writer, writebuf, sizeof(writebuf));
+    mpack_writer_set_context(&writer, ctx);
+    mpack_writer_set_flush(&writer, mpack_buffer_flush);
+
+    mpack_write_tag(&writer, mpack_tag_array(2));
+    flb_time_append_to_mpack(&writer, &t, 0);
+    mpack_write_tag(&writer, mpack_tag_map(1));
+    mpack_write_cstr(&writer, "avro");
+    mpack_write_bin(&writer, ctx->avro_write_buffer, payload_size);
+
+    avro_writer_memory_set_dest(ctx->awriter, ctx->avro_write_buffer,
+            ctx->avro_write_buffer_size);
+
+    mpack_writer_flush_message(&writer);
+    mpack_writer_destroy(&writer);
 
     return 0;
 }
@@ -550,6 +592,8 @@ static int cb_avro_filter(const void *data, size_t bytes,
     struct filter_avro *ctx;
     struct filter_avro_tag_state *state;
     char *outbuf;
+    avro_value_t outer;
+    avro_value_t value;
 
     ctx = filter_context;
     flb_sds_len_set(ctx->packbuf, 0);
@@ -563,15 +607,50 @@ static int cb_avro_filter(const void *data, size_t bytes,
 
     collect_lines(ctx, state, data, bytes);
 
-    if (ctx->convert_to_avro) {
-        ret = csv_to_avro(ctx, state);
-    } else {
-        ret = csv_to_mpack(ctx, state);
+    if (avro_generic_value_new(ctx->outer_class, &outer)) {
+        return -1;
     }
 
+    if (avro_value_get_by_name(&outer, "payload", &value, NULL)) {
+        flb_plg_error(ctx->ins, "failed to get avro payload array: %s", avro_strerror());
+        return -1;
+    }
+
+    ret = csv_to_avro(ctx, state, &value);
+
     if (ret) {
+        avro_value_decref(&outer);
         return ret;
     }
+
+    if (avro_value_get_by_name(&outer, "metadata", &value, NULL)) {
+        flb_plg_error(ctx->ins, "failed to get avro metadata: %s", avro_strerror());
+        return -1;
+    }
+
+    if (avro_value_set_bytes(&value, "", 0)) {
+        flb_plg_error(ctx->ins, "failed to set avro metadata: %s", avro_strerror());
+        return -1;
+    }
+
+    if (avro_value_get_by_name(&outer, "avro_schema", &value, NULL)) {
+        flb_plg_error(ctx->ins, "failed to get avro schema: %s", avro_strerror());
+        return -1;
+    }
+
+    if (avro_value_set_string_len(&value, state->avro_schema_json,
+                flb_sds_len(state->avro_schema_json))) {
+        flb_plg_error(ctx->ins, "failed to set avro schema: %s", avro_strerror());
+        return -1;
+    }
+
+
+    if (pack_avro(ctx, state, &outer)) {
+        avro_value_decref(&outer);
+        flb_plg_error(ctx->ins, "failed to pack outer avro object");
+        return FLB_FILTER_NOTOUCH;
+    }
+    avro_value_decref(&outer);
 
     /* allocate outbuf that contains the modified chunks */
     outbuf = flb_malloc(flb_sds_len(ctx->packbuf));
@@ -601,10 +680,13 @@ static int cb_avro_exit(void *data, struct flb_config *config)
             avro_value_decref(&state->record);
             avro_value_iface_decref(state->aclass);
             avro_schema_decref(state->aschema);
-            flb_free(state->avro_write_buffer);
-            avro_writer_free(state->awriter);
         }
     }
+
+    flb_free(ctx->avro_write_buffer);
+    avro_writer_free(ctx->awriter);
+    avro_value_iface_decref(ctx->outer_class);
+    avro_schema_decref(ctx->outer_schema);
 
     flb_sds_destroy(ctx->packbuf);
     flb_free(ctx);
