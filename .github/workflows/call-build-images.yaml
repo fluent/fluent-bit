@@ -45,10 +45,10 @@ on:
         required: false
 jobs:
   call-build-images-meta:
-    # Determine if this is a 1.8 type of build which is different
     name: Extract any supporting metadata
     outputs:
       build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
+      major-version: ${{ steps.determine-major-version.outputs.replaced }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
@@ -59,6 +59,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # Determine if this is a 1.8 type of build which is different
       - name: Determine build type
         id: determine-build-type
         run: |
@@ -69,6 +70,17 @@ jobs:
           echo "Detected type: $BUILD_TYPE"
           echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
         shell: bash
+
+      # For main branch/releases we want to also tag with the major version.
+      # E.g. if we build version 1.9.2 we want to tag with 1.9.2 and 1.9.
+      - name: Determine major version tag
+        id: determine-major-version
+        uses: frabert/replace-string-action@v2.0
+        with:
+          pattern: '^(\d+\.\d+).*$'
+          string: ${{ inputs.version }}
+          replace-with: '$1'
+          flags: 'g'
 
   # For 1.8 builds it is a little more complex so we have this build matrix to handle it.
   # This creates separate images for each architecture.
@@ -166,6 +178,7 @@ jobs:
           docker pull --platform=linux/arm/v7  ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
 
       - name: Create manifests for images
+        # Latest is 1.9, not 1.8 now
         run: |
           docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} \
             --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
@@ -174,6 +187,15 @@ jobs:
           docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}
         env:
           DOCKER_CLI_EXPERIMENTAL: enabled
+        shell: bash
+
+      - name: Create major version manifest
+        if: needs.call-build-images-meta.outputs.major-version != inputs.version
+        run: |
+          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
+        shell: bash
 
       - id: debug-meta
         uses: docker/metadata-action@v3
@@ -181,6 +203,7 @@ jobs:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.version }}-debug
+            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
 
       - name: Build the legacy x86_64 debug image
         uses: docker/build-push-action@v2
@@ -234,6 +257,7 @@ jobs:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.version }}
+            raw,${{ needs.call-build-images-meta.outputs.major-version }}
             raw,latest
 
       - name: Build the production images
@@ -256,6 +280,7 @@ jobs:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
             raw,${{ inputs.version }}-debug
+            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
             raw,latest-debug
 
       - name: Build the debug multi-arch images
@@ -370,6 +395,7 @@ jobs:
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:latest"
         shell: bash
         # Ensure we move on to key-based signing as well
@@ -389,6 +415,7 @@ jobs:
             -a "ref=${{ github.sha }}" \
             -a "release=${{ inputs.version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}" \
+            "${{ inputs.registry }}/${{ inputs.image }}:${{ needs.call-build-images-meta.outputs.major-version }}" \
             "${{ inputs.registry }}/${{ inputs.image }}:latest"
           rm -f /tmp/my_cosign.key
         shell: bash
