@@ -46,25 +46,54 @@ on:
         required: false
 
 jobs:
+  call-build-legacy-check:
+    # Determine if this is a 1.8 type of build which is different
+    name: Extract any supporting metadata
+    outputs:
+      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine build type
+        id: determine-build-type
+        run: |
+          BUILD_TYPE="1.8"
+          if [[ -f "dockerfiles/Dockerfile" ]]; then
+            BUILD_TYPE="modern"
+          fi
+          echo "Detected type: $BUILD_TYPE"
+          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        shell: bash
 
   # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
   # code and workflow together. We need to run the dependent job after this as well.
-  call-build-packages:
+  call-build-linux-packages:
     name: ${{ matrix.distro }} package build and stage to S3
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
+    needs:
+      - call-build-legacy-check
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.build_matrix) }}
     steps:
       - name: Checkout code
-        if: inputs.ref != '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Checkout packaging code
-        if: inputs.ref == '1.8'
+      - name: Checkout legacy packaging code
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-packaging
@@ -85,7 +114,7 @@ jobs:
           flags: 'g'
 
       - name: fluent-bit - ${{ matrix.distro }} artifacts
-        if: inputs.ref != '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         run: |
           ./build.sh
         env:
@@ -98,7 +127,7 @@ jobs:
         working-directory: packaging
 
       - name: td-agent-bit - ${{ matrix.distro }} artifacts
-        if: inputs.ref != '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         run: |
           ./build.sh
         env:
@@ -111,7 +140,7 @@ jobs:
         working-directory: packaging
 
       - name: Legacy td-agent-bit - ${{ matrix.distro }} artifacts
-        if: inputs.ref == '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
         run: |
           ./build.sh -v $FLB_VERSION -b $FLB_BRANCH -d $FLB_DISTRO
         env:
@@ -153,7 +182,7 @@ jobs:
 
       - name: Push packages to S3
         # Only upload for staging
-        if: ${{ inputs.environment == 'staging' }}
+        if: inputs.environment == 'staging'
         # Make sure not to do a --delete on sync as it will remove the other architecture
         run: |
           if [ -z "${{ steps.get-target-info.outputs.target }}" ]; then
@@ -172,15 +201,15 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_S3_BUCKET: ${{ secrets.bucket }}
 
-  call-build-packages-repo:
+  call-build-linux-packages-repo:
     name: Create repo metadata in S3
     # Only upload for staging
-    if: ${{ inputs.environment == 'staging' }}
+    if: inputs.environment == 'staging'
     # Need to use 18.04 as 20.04 has no createrepo available
     runs-on: ubuntu-18.04
     environment: ${{ inputs.environment }}
     needs:
-      - call-build-packages
+      - call-build-linux-packages
     steps:
       - name: Install dependencies
         run: |

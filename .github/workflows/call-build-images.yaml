@@ -44,26 +44,54 @@ on:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
-  call-build-images:
-    name: Multiarch container images to GHCR
+  call-build-legacy-check:
+    # Determine if this is a 1.8 type of build which is different
+    name: Extract any supporting metadata
+    outputs:
+      build-type: ${{ steps.determine-build-type.outputs.BUILD_TYPE }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
       contents: read
-      packages: write
     steps:
       - name: Checkout code
-        if: inputs.ref != '1.8'
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Checkout the docker build repo
-        if: inputs.ref == '1.8'
+      - name: Determine build type
+        id: determine-build-type
+        run: |
+          BUILD_TYPE="1.8"
+          if [[ -f "dockerfiles/Dockerfile" ]]; then
+            BUILD_TYPE="modern"
+          fi
+          echo "Detected type: $BUILD_TYPE"
+          echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
+        shell: bash
+
+  call-build-images:
+    name: Multiarch container images to GHCR
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-legacy-check
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code for modern style builds
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout the docker build repo for legacy builds
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-docker-image
-          ref: '1.8'
+          ref: '1.8' # Fixed to this branch
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -88,7 +116,7 @@ jobs:
             raw,latest
 
       - name: Build the production images
-        if: inputs.ref != '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         uses: docker/build-push-action@v2
         with:
           file: ./dockerfiles/Dockerfile
@@ -111,7 +139,7 @@ jobs:
             raw,latest-debug
 
       - name: Build the debug multi-arch images
-        if: inputs.ref != '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         uses: docker/build-push-action@v2
         with:
           file: ./dockerfiles/Dockerfile
@@ -126,7 +154,7 @@ jobs:
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
 
       - name: Build the legacy image
-        if: inputs.ref == '1.8'
+        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
         uses: docker/build-push-action@v2
         with:
           file: Dockerfile.x86_64
@@ -140,10 +168,12 @@ jobs:
             FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
 
   call-build-images-generate-schema:
-    if: inputs.ref != '1.8'
+    needs:
+      - call-build-legacy-check
+      - call-build-images
+    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    needs: call-build-images
     permissions:
       contents: read
       packages: read
