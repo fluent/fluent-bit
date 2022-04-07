@@ -2215,7 +2215,7 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
-    if (u_conn) {
+    if (!u_conn) {
 #ifdef FLB_HAVE_METRICS
         cmt_counter_inc(ctx->cmt_failed_requests,
                         ts, 1, (char *[]) {name});
