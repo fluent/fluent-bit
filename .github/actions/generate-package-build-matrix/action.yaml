@@ -2,6 +2,9 @@
 name: Composite action to generate the matrix of targets to build packages for.
 description: Remove any duplication of this information so we only have to update in one place.
 
+# Remember to add any new checks and target creation required.
+# For example, when 2.0 comes out we should detect it and add any target changes.
+
 inputs:
   target:
     description: Override to build a single target for debug/test only.
@@ -24,6 +27,7 @@ runs:
         path: version-check
 
     - name: Determine target type
+      # TODO: probably switch to a sentinel file with the version in rather than checking for specific changes, or git branch tests.
       id: determine-build-type
       run: |
         ls -l
