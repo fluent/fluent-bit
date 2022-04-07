@@ -640,7 +640,7 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_STR, "Wildcard", NULL,
-    0, FLB_FALSE, 0,
+    FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
     "Nest records which field matches the wildcard"
    },
    {
