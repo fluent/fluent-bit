@@ -70,24 +70,32 @@ jobs:
           echo ::set-output name=BUILD_TYPE::$BUILD_TYPE
         shell: bash
 
-  call-build-images:
-    name: Multiarch container images to GHCR
+  # For 1.8 builds it is a little more complex so we have this build matrix to handle it.
+  # This creates separate images for each architecture.
+  # The later step then creates a multi-arch manifest for all of these.
+  call-build-legacy-images-matrix:
+    if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+    name: Build single arch legacy images
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     needs:
       - call-build-legacy-check
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ amd64, arm64, arm/v7 ]
+        include:
+          - arch: amd64
+            suffix: x86_64
+          - arch: arm/v7
+            suffix: arm32v7
+          - arch: arm64
+            suffix: arm64v8
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Checkout code for modern style builds
-        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ inputs.ref }}
-
       - name: Checkout the docker build repo for legacy builds
-        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
         uses: actions/checkout@v3
         with:
           repository: fluent/fluent-bit-docker-image
@@ -112,11 +120,123 @@ jobs:
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
+            raw,${{ matrix.suffix }}-${{ inputs.version }}
+
+      - name: Build the legacy ${{ matrix.arch }} image
+        uses: docker/build-push-action@v2
+        with:
+          file: ./dockerfiles/Dockerfile.${{ matrix.suffix }}
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
+  # Create a multi-arch manifest for the separate 1.8 images.
+  call-build-legacy-image-manifests:
+    if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+    name: Deploy multi-arch container image manifests
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-legacy-check
+      - call-build-legacy-images-matrix
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Pull all the images
+        # Use platform to trigger warnings on invalid image metadata
+        run: |
+          docker pull --platform=linux/amd64 ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }}
+          docker pull --platform=linux/arm64 ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }}
+          docker pull --platform=linux/arm/v7  ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
+
+      - name: Create manifests for images
+        run: |
+          docker manifest create ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:x86_64-${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm64v8-${{ inputs.version }} \
+            --amend ${{ inputs.registry }}/${{ inputs.image }}:arm32v7-${{ inputs.version }}
+          docker manifest push --purge ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
+
+      - id: debug-meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image }}
+          tags: |
+            raw,${{ inputs.version }}-debug
+
+      - name: Build the legacy x86_64 debug image
+        uses: docker/build-push-action@v2
+        with:
+          file: ./dockerfiles/Dockerfile.x86_64-debug
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
+  # This is the intended approach to multi-arch image and all the other checks scanning,
+  # signing, etc only trigger from this.
+  # 1.8 images are legacy and were not scanned or signed previously so this keeps it simple.
+  call-build-images:
+    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    needs:
+      - call-build-legacy-check
+    name: Multiarch container images to GHCR
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code for modern style builds
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Extract metadata from Github
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image }}
+          tags: |
             raw,${{ inputs.version }}
             raw,latest
 
       - name: Build the production images
-        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         uses: docker/build-push-action@v2
         with:
           file: ./dockerfiles/Dockerfile
@@ -139,7 +259,6 @@ jobs:
             raw,latest-debug
 
       - name: Build the debug multi-arch images
-        if: needs.call-build-legacy-check.outputs.build-type != '1.8'
         uses: docker/build-push-action@v2
         with:
           file: ./dockerfiles/Dockerfile
@@ -152,20 +271,6 @@ jobs:
           load: false
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
-
-      - name: Build the legacy image
-        if: needs.call-build-legacy-check.outputs.build-type == '1.8'
-        uses: docker/build-push-action@v2
-        with:
-          file: Dockerfile.x86_64
-          context: .
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64
-          push: true
-          load: false
-          build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
 
   call-build-images-generate-schema:
     needs:
@@ -199,10 +304,13 @@ jobs:
           if-no-files-found: error
 
   call-build-images-scan:
+    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    needs:
+      - call-build-legacy-check
+      - call-build-images
     name: Trivy + Dockle image scan
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    needs: call-build-images
     permissions:
       contents: read
       packages: read
@@ -232,6 +340,10 @@ jobs:
           exit-level: WARN
 
   call-build-images-sign:
+    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    needs:
+      - call-build-legacy-check
+      - call-build-images
     name: Deploy and sign multi-arch container image manifests
     permissions:
       contents: read
@@ -241,7 +353,6 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    needs: call-build-images
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@main
