@@ -44,7 +44,7 @@ on:
         description: If the Cosign key requires a password then specify here, otherwise not required.
         required: false
 jobs:
-  call-build-legacy-check:
+  call-build-images-meta:
     # Determine if this is a 1.8 type of build which is different
     name: Extract any supporting metadata
     outputs:
@@ -74,12 +74,12 @@ jobs:
   # This creates separate images for each architecture.
   # The later step then creates a multi-arch manifest for all of these.
   call-build-legacy-images-matrix:
-    if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+    if: needs.call-build-images-meta.outputs.build-type == '1.8'
     name: Build single arch legacy images
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
     strategy:
       fail-fast: false
       matrix:
@@ -137,7 +137,7 @@ jobs:
 
   # Create a multi-arch manifest for the separate 1.8 images.
   call-build-legacy-image-manifests:
-    if: needs.call-build-legacy-check.outputs.build-type == '1.8'
+    if: needs.call-build-images-meta.outputs.build-type == '1.8'
     name: Deploy multi-arch container image manifests
     permissions:
       contents: read
@@ -145,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
       - call-build-legacy-images-matrix
     steps:
       - name: Set up Docker Buildx
@@ -199,9 +199,9 @@ jobs:
   # signing, etc only trigger from this.
   # 1.8 images are legacy and were not scanned or signed previously so this keeps it simple.
   call-build-images:
-    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
     name: Multiarch container images to GHCR
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -274,9 +274,9 @@ jobs:
 
   call-build-images-generate-schema:
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
       - call-build-images
-    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
@@ -304,9 +304,9 @@ jobs:
           if-no-files-found: error
 
   call-build-images-scan:
-    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
       - call-build-images
     name: Trivy + Dockle image scan
     runs-on: ubuntu-latest
@@ -340,9 +340,9 @@ jobs:
           exit-level: WARN
 
   call-build-images-sign:
-    if: needs.call-build-legacy-check.outputs.build-type != '1.8'
+    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
       - call-build-images
     name: Deploy and sign multi-arch container image manifests
     permissions:
