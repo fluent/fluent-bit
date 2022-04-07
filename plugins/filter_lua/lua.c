@@ -97,9 +97,11 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
                                const char *tag, int tag_len,
                                void **out_buf, size_t *out_bytes,
                                struct flb_filter_instance *f_ins,
+                               struct flb_input_instance *i_ins,
                                void *filter_context,
                                struct flb_config *config)
 {
+    (void) i_ins;
     int ret;
     struct flb_time t_orig;
     struct flb_time t;
