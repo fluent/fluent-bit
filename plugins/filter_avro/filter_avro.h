@@ -17,8 +17,8 @@
  *  limitations under the License.
  */
 
-#ifndef FLB_FILTER_CSV_H
-#define FLB_FILTER_CSV_H
+#ifndef FLB_FILTER_AVRO_H
+#define FLB_FILTER_AVRO_H
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_filter.h>
@@ -26,9 +26,9 @@
 #include <fluent-bit/flb_csv.h>
 #include <avro.h>
 
-#define FILTER_CSV_MAX_TAG_COUNT 1024
+#define FILTER_AVRO_MAX_TAG_COUNT 1024
 
-struct filter_csv_tag_state {
+struct filter_avro_tag_state {
     struct flb_csv_state state;
     char *tag;
     flb_sds_t row_buffer;
@@ -43,8 +43,8 @@ struct filter_csv_tag_state {
     bool used;
 };
 
-struct filter_csv {
-    struct filter_csv_tag_state states[FILTER_CSV_MAX_TAG_COUNT];
+struct filter_avro {
+    struct filter_avro_tag_state states[FILTER_AVRO_MAX_TAG_COUNT];
     bool convert_to_avro;
     struct flb_filter_instance *ins;
     flb_sds_t packbuf;

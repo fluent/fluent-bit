@@ -38,23 +38,23 @@
 #include "avro/src/schema.h"
 #include "avro/src/st.h"
 #include "avro/value.h"
-#include "csv.h"
+#include "filter_avro.h"
 #include "fluent-bit/flb_mem.h"
 #include "fluent-bit/flb_str.h"
 #include "fluent-bit/flb_time.h"
 #include "mpack/mpack.h"
 
-static int cb_csv_init(struct flb_filter_instance *f_ins,
+static int cb_avro_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
 {
     (void) data;
-    struct filter_csv *ctx;
+    struct filter_avro *ctx;
 
     /* Create context */
     ctx = flb_malloc(sizeof *ctx);
     if (!ctx) {
-        flb_error("[filter_csv] filter cannot be loaded");
+        flb_error("[filter_avro] filter cannot be loaded");
         return -1;
     }
 
@@ -73,28 +73,28 @@ static int cb_csv_init(struct flb_filter_instance *f_ins,
 
     ctx->packbuf = flb_sds_create_size(1024);
     if (!ctx->packbuf) {
-        flb_error("[filter_csv] failed to allocate packbuf");
+        flb_error("[filter_avro] failed to allocate packbuf");
         return -1;
     }
 
     return 0;
 }
 
-static struct filter_csv_tag_state *get_tag_state(
-        struct filter_csv *ctx,
+static struct filter_avro_tag_state *get_tag_state(
+        struct filter_avro *ctx,
         const char *tag) {
     int i;
     char fname[1024];
 
-    for (i = 0; i < FILTER_CSV_MAX_TAG_COUNT; i++) {
-        struct filter_csv_tag_state *state = ctx->states + i;
+    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
+        struct filter_avro_tag_state *state = ctx->states + i;
         if (state->used && !strcmp(state->tag, tag)) {
             return state;
         }
     }
     /* not found, initialize for first use */
-    for (i = 0; i < FILTER_CSV_MAX_TAG_COUNT; i++) {
-        struct filter_csv_tag_state *state = ctx->states + i;
+    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
+        struct filter_avro_tag_state *state = ctx->states + i;
         if (!state->used) {
             state->used = true;
             state->tag = flb_strdup(tag);
@@ -155,13 +155,13 @@ static struct filter_csv_tag_state *get_tag_state(
 
 static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_t count)
 {
-    struct filter_csv *ctx = writer->context;
+    struct filter_avro *ctx = writer->context;
     flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
 static int collect_lines(
-        struct filter_csv *ctx,
-        struct filter_csv_tag_state *state,
+        struct filter_avro *ctx,
+        struct filter_avro_tag_state *state,
         const char *data,
         size_t bytes)
 {
@@ -217,7 +217,7 @@ static void write_mpack_field(void *data, const char *field, size_t field_len)
     mpack_write_str(writer, field, field_len);
 }
 
-static int csv_to_mpack(struct filter_csv *ctx, struct filter_csv_tag_state *state)
+static int csv_to_mpack(struct filter_avro *ctx, struct filter_avro_tag_state *state)
 {
     int ret;
     struct flb_time t = {0};
@@ -277,32 +277,58 @@ static int csv_to_mpack(struct filter_csv *ctx, struct filter_csv_tag_state *sta
     return 0;
 }
 
+struct avro_union_data {
+    const char *field;
+    size_t field_len;
+    int discriminant;
+    int type;
+};
+
 static int extract_union_type_it(int i, avro_schema_t schema, void *arg)
 {
-    int *type_disc = arg;
+    struct avro_union_data *data = arg;
     int type = avro_typeof(schema);
 
     switch (type) {
         case AVRO_NULL:
-            return ST_CONTINUE;
+            if (!data->field_len) {
+                data->discriminant = i;
+                data->type = type;
+            }
+            break;
         default:
-            *type_disc = (type << 16) + i;
-            return ST_STOP;
+            if (data->field_len &&
+                    (data->discriminant == -1 || type == AVRO_STRING)) {
+                /* in the case of a union with more than 2 types,
+                 * give preference to string */
+                data->discriminant = i;
+                data->type = type;
+            }
+            break;
     }
+
+    return ST_CONTINUE;
 }
 
-static int extract_union_type(avro_value_t *value)
+static int extract_union_type(avro_value_t *value,
+        const char *field, size_t field_len)
 {
-    int type_disc;
+    struct avro_union_data data = {
+        .field = field,
+        .field_len = field_len,
+        .discriminant = -1,
+        .type = -1
+    };
     avro_schema_t schema = avro_value_get_schema(value);
     struct avro_union_schema_t *uschema = avro_schema_to_union(schema);
     st_foreach(uschema->branches, HASH_FUNCTION_CAST extract_union_type_it,
-            (st_data_t)&type_disc);
-    avro_value_set_branch(value, type_disc & 0xffff, value);
-    return type_disc >> 16;
+            (st_data_t)&data);
+    avro_value_set_branch(value, data.discriminant, value);
+    return data.type;
 }
 
-static int extract_avro_type(avro_value_t *value)
+static int extract_avro_type(avro_value_t *value,
+        const char *field, size_t field_len)
 {
     int type = avro_value_get_type(value);
     switch (type) {
@@ -317,7 +343,7 @@ static int extract_avro_type(avro_value_t *value)
         case AVRO_NULL:
             return type;
         case AVRO_UNION:
-            return extract_union_type(value);
+            return extract_union_type(value, field, field_len);
         default:
             flb_error("unsupported avro type");
             return -1;
@@ -397,7 +423,7 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
     int ret;
     bool boolean_val;
     avro_value_t avalue;
-    struct filter_csv_tag_state *state = data;
+    struct filter_avro_tag_state *state = data;
 
     ret = avro_value_get_by_index(
             &state->record,
@@ -405,7 +431,7 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
             &avalue,
             NULL);
 
-    switch (extract_avro_type(&avalue)) {
+    switch (extract_avro_type(&avalue, field, field_len)) {
         case AVRO_STRING:
         case AVRO_BYTES:
             avro_value_set_string_len(&avalue, field, field_len + 1);
@@ -422,6 +448,9 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
         case AVRO_DOUBLE:
             write_avro_float_value(field, field_len, &avalue);
             break;
+        case AVRO_NULL:
+            avro_value_set_null(&avalue);
+            break;
         default:
             flb_error("unsupported avro type");
             break;
@@ -430,8 +459,8 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
 }
 
 static int write_avro_value(
-        struct filter_csv *ctx,
-        struct filter_csv_tag_state *state,
+        struct filter_avro *ctx,
+        struct filter_avro_tag_state *state,
         mpack_writer_t *writer)
 {
     size_t payload_size;
@@ -451,8 +480,8 @@ static int write_avro_value(
 
 
 static int csv_to_avro(
-        struct filter_csv *ctx,
-        struct filter_csv_tag_state *state)
+        struct filter_avro *ctx,
+        struct filter_avro_tag_state *state)
 {
     int ret;
     struct flb_time t = {0};
@@ -510,7 +539,7 @@ static int csv_to_avro(
     return 0;
 }
 
-static int cb_csv_filter(const void *data, size_t bytes,
+static int cb_avro_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
                          struct flb_filter_instance *f_ins,
@@ -518,8 +547,8 @@ static int cb_csv_filter(const void *data, size_t bytes,
                          struct flb_config *config)
 {
     int ret;
-    struct filter_csv *ctx;
-    struct filter_csv_tag_state *state;
+    struct filter_avro *ctx;
+    struct filter_avro_tag_state *state;
     char *outbuf;
 
     ctx = filter_context;
@@ -557,13 +586,13 @@ static int cb_csv_filter(const void *data, size_t bytes,
     return FLB_FILTER_MODIFIED;
 }
 
-static int cb_csv_exit(void *data, struct flb_config *config)
+static int cb_avro_exit(void *data, struct flb_config *config)
 {
     int i;
-    struct filter_csv *ctx = data;
+    struct filter_avro *ctx = data;
 
-    for (i = 0; i < FILTER_CSV_MAX_TAG_COUNT; i++) {
-        struct filter_csv_tag_state *state = ctx->states + i;
+    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
+        struct filter_avro_tag_state *state = ctx->states + i;
         if (state->used) {
             flb_csv_destroy(&state->state);
             flb_free(state->tag);
@@ -586,18 +615,18 @@ static int cb_csv_exit(void *data, struct flb_config *config)
 static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "convert_to_avro", "false",
-     0, FLB_TRUE, offsetof(struct filter_csv, convert_to_avro),
+     0, FLB_TRUE, offsetof(struct filter_avro, convert_to_avro),
      "If enabled, convert CSV records into avro, using tag path to find schema "
     },
     {0}
 };
 
-struct flb_filter_plugin filter_csv_plugin = {
-    .name         = "csv",
-    .description  = "CSV filter plugin",
-    .cb_init      = cb_csv_init,
-    .cb_filter    = cb_csv_filter,
-    .cb_exit      = cb_csv_exit,
+struct flb_filter_plugin filter_avro_plugin = {
+    .name         = "avro",
+    .description  = "AVRO filter plugin",
+    .cb_init      = cb_avro_init,
+    .cb_filter    = cb_avro_filter,
+    .cb_exit      = cb_avro_exit,
     .config_map   = config_map,
     .flags        = 0
 };
