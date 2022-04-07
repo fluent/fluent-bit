@@ -210,8 +210,8 @@ jobs:
         with:
           file: ./dockerfiles/Dockerfile.x86_64-debug
           context: .
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.debug-meta.outputs.tags }}
+          labels: ${{ steps.debug-meta.outputs.labels }}
           platforms: linux/amd64
           push: true
           load: false
