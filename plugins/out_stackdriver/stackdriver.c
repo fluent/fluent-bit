@@ -947,13 +947,19 @@ static void pack_labels(struct flb_stackdriver *ctx,
 {
     int i;
     int ret;
-    int labels_size;
+    int labels_size = 0;
     char *val;
     struct mk_list *head;
     struct flb_kv *list_kv;
     msgpack_object_kv *obj_kv = NULL;
 
-    labels_size = mk_list_size(&ctx->config_labels) + payload_labels_ptr->via.map.size;
+    /* Determine size of labels map */
+    labels_size = mk_list_size(&ctx->config_labels);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+        labels_size += payload_labels_ptr->via.map.size;
+    }
+
     msgpack_pack_map(mp_pck, labels_size);
 
     /* pack labels from the payload */
@@ -2030,7 +2036,13 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             return -1;
         }
 
-        labels_size = mk_list_size(&ctx->config_labels) + payload_labels_ptr->via.map.size;
+        /* Number of parsed labels */
+        labels_size = mk_list_size(&ctx->config_labels);
+        if (payload_labels_ptr != NULL &&
+            payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+            labels_size += payload_labels_ptr->via.map.size;
+        }
+
         if (labels_size > 0) {
             entry_size += 1;
         }
