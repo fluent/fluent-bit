@@ -339,11 +339,6 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
 
     va_start(args, fmt);
 
-    #ifdef FLB_LOG_NO_CONTROL_CHARS
-        header_color = "";
-        bold_color = "";
-        reset_color = "";
-    #else
     switch (type) {
     case FLB_LOG_HELP:
         header_title = "help";
@@ -375,6 +370,11 @@ void flb_log_print(int type, const char *file, int line, const char *fmt, ...)
         break;
     }
 
+    #ifdef FLB_LOG_NO_CONTROL_CHARS
+    header_color = "";
+    bold_color = "";
+    reset_color = "";
+    #else
     /* Only print colors to a terminal */
     if (!isatty(STDOUT_FILENO)) {
         header_color = "";
