@@ -242,6 +242,13 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
         mpack_writer_destroy(&writer);
     }
 
+    if (flb_sds_len(ctx->packbuf) == 0) {
+        /* All records are removed */
+        *out_buf = NULL;
+        *out_bytes = 0;
+        return FLB_FILTER_MODIFIED;
+    }
+
     /* allocate outbuf that contains the modified chunks */
     outbuf = flb_malloc(flb_sds_len(ctx->packbuf));
     if (!outbuf) {
