@@ -349,7 +349,10 @@ int sb_segregate_chunks(struct flb_config *config)
             chunk = mk_list_entry(chunk_iterator, struct cio_chunk, _head);
 
             if (!cio_chunk_is_up(chunk)) {
-                cio_chunk_up_force(chunk);
+                ret = cio_chunk_up_force(chunk);
+                if (ret == CIO_CORRUPTED) {
+                    continue;
+                }
             }
 
             if (!cio_chunk_is_up(chunk)) {
