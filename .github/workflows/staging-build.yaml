@@ -92,16 +92,18 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: fluent-bit-schema-${{ needs.staging-build-get-meta.outputs.version }}
+          path: artifacts/
 
       - name: Display structure of downloaded files
-        run: ls -R
+        run: |
+          ls -R
         shell: bash
 
       - name: Push schema to S3 bucket
         # We may have no schema so ignore that failure
         continue-on-error: true
         run: |
-          aws s3 sync "*.json" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --no-progress ${ENDPOINT}
+          aws s3 sync "artifacts/" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --no-progress
         env:
           DEST_DIR: "${{ needs.staging-build-get-meta.outputs.version }}/"
           AWS_REGION: "us-east-1"
