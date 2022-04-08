@@ -178,14 +178,15 @@ static struct filter_avro_tag_state *get_tag_state(
         struct filter_avro_tag_state *state = ctx->states + i;
         if (!state->used) {
             state->ctx = ctx;
-            state->used = true;
-            state->tag = flb_strdup(tag);
-            state->row_buffer = flb_sds_create("");
-            flb_csv_init(&state->state, write_avro_field, state);
-
             /* read avro schema */
             snprintf(fname, sizeof(fname), "%s.json", tag);
             json_root_str = flb_file_read(fname);
+
+            if (!json_root_str) {
+                flb_plg_error(ctx->ins,
+                        "Cannot read json schema file \"%s\"", fname);
+                return NULL;
+            }
 
             json_root = json_loads(json_root_str, JSON_DECODE_ANY,
                     &json_error);
@@ -242,6 +243,11 @@ static struct filter_avro_tag_state *get_tag_state(
                         avro_strerror());
                 return NULL;
             }
+
+            state->used = true;
+            state->tag = flb_strdup(tag);
+            state->row_buffer = flb_sds_create("");
+            flb_csv_init(&state->state, write_avro_field, state);
 
             return state;
         }
@@ -461,9 +467,16 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
  
     if (debug) {
         char csvfieldbuf[256];
-        size_t count = MIN(field_len, sizeof(csvfieldbuf) - 1);
+        size_t count = MIN(field_len, sizeof(csvfieldbuf) - 4);
         memcpy(csvfieldbuf, field, count);
-        csvfieldbuf[count] = 0;
+        if (count == sizeof(csvfieldbuf) - 4) {
+            csvfieldbuf[count] = '.';
+            csvfieldbuf[count+1] = '.';
+            csvfieldbuf[count+2] = '.';
+            csvfieldbuf[count+3] = 0;
+        } else {
+            csvfieldbuf[count] = 0;
+        }
         flb_plg_trace(state->ctx->ins, "csv field (%s): \"%s\"",
                 field_name, csvfieldbuf);
     }
