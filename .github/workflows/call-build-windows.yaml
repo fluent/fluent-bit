@@ -82,16 +82,14 @@ jobs:
       - name: Push packages to S3
         # Only upload for staging
         if: inputs.environment == 'staging'
-        # Make sure not to do a --delete on sync as it will remove the other architecture
         run: |
-          if [ -n "${AWS_S3_ENDPOINT}" ]; then
-            ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
-          fi
-          aws --region "$AWS_REGION" s3 sync "build/*-bit-*.exe" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
-          aws --region "$AWS_REGION" s3 sync "build/*-bit-*.zip" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+          aws s3 sync "build/*-bit-*.exe" "s3://${{ secrets.bucket }}/${{ inputs.version }}/windows/" --follow-symlinks --no-progress --delete
+          aws s3 sync "build/*-bit-*.zip" "s3://${{ secrets.bucket }}/${{ inputs.version }}/windows/" --follow-symlinks --no-progress
         env:
           DEST_DIR: "${{ inputs.version }}/windows/"
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
           AWS_S3_BUCKET: ${{ secrets.bucket }}
+          # To use with Minio locally (or update to whatever endpoint you want)
+          # AWS_S3_ENDPOINT: '--endpoint http://localhost:9000'
