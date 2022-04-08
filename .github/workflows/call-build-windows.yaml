@@ -83,8 +83,8 @@ jobs:
         # Only upload for staging
         if: inputs.environment == 'staging'
         run: |
-          aws s3 sync "build/*-bit-*.exe" "s3://${{ secrets.bucket }}/${{ inputs.version }}/windows/" --follow-symlinks --no-progress --delete
-          aws s3 sync "build/*-bit-*.zip" "s3://${{ secrets.bucket }}/${{ inputs.version }}/windows/" --follow-symlinks --no-progress
+          aws s3 sync "build\*-bit-*.exe" "s3://${{ secrets.bucket }}/${{ inputs.version }}/windows/" --follow-symlinks --no-progress --delete
+          aws s3 sync "build\*-bit-*.zip" "s3://${{ secrets.bucket }}/${{ inputs.version }}/windows/" --follow-symlinks --no-progress
         env:
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
