@@ -177,6 +177,7 @@ static int cb_type_converter_filter(const void *data, size_t bytes,
                                     const char *tag, int tag_len,
                                     void **out_buf, size_t *out_bytes,
                                     struct flb_filter_instance *ins,
+                                    struct flb_input_instance *i_ins,
                                     void *filter_context,
                                     struct flb_config *config)
 {
