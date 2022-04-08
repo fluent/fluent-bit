@@ -101,7 +101,7 @@ jobs:
         # We may have no schema so ignore that failure
         continue-on-error: true
         run: |
-          aws --region "$AWS_REGION" s3 sync "*.json" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --no-progress ${ENDPOINT}
+          aws s3 sync "*.json" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --no-progress ${ENDPOINT}
         env:
           DEST_DIR: "${{ needs.staging-build-get-meta.outputs.version }}/"
           AWS_REGION: "us-east-1"
