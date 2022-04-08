@@ -29,6 +29,8 @@
 
 #define FILTER_AVRO_MAX_TAG_COUNT 1024
 
+struct filter_avro;
+
 struct filter_avro_tag_state {
     struct flb_csv_state state;
     char *tag;
@@ -39,6 +41,7 @@ struct filter_avro_tag_state {
     size_t record_field_index;
     flb_sds_t avro_schema_json;
     bool used;
+    struct filter_avro *ctx;
 };
 
 struct filter_avro {

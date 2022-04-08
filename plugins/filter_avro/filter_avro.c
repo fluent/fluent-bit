@@ -29,6 +29,7 @@
 #include <string.h>
 #include <avro.h>
 #include <jansson.h>
+#include <sys/param.h>
 
 #include "avro/basics.h"
 #include "avro/errors.h"
@@ -53,6 +54,8 @@ struct avro_union_data {
     int discriminant;
     int type;
 };
+
+static void write_avro_field(void *data, const char *field, size_t field_len);
 
 static int create_outer_avro_schema(struct filter_avro *ctx)
 {
@@ -174,10 +177,11 @@ static struct filter_avro_tag_state *get_tag_state(
     for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
         struct filter_avro_tag_state *state = ctx->states + i;
         if (!state->used) {
+            state->ctx = ctx;
             state->used = true;
             state->tag = flb_strdup(tag);
             state->row_buffer = flb_sds_create("");
-            flb_csv_init(&state->state, NULL, NULL);
+            flb_csv_init(&state->state, write_avro_field, state);
 
             /* read avro schema */
             snprintf(fname, sizeof(fname), "%s.json", tag);
@@ -444,12 +448,25 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
     bool boolean_val;
     avro_value_t avalue;
     struct filter_avro_tag_state *state = data;
+    const char *field_name;
+    bool debug;
+
+    debug = flb_log_check_level(state->ctx->ins->log_level, FLB_LOG_TRACE);
 
     ret = avro_value_get_by_index(
             &state->record,
             state->record_field_index,
             &avalue,
-            NULL);
+            debug ? &field_name : NULL);
+ 
+    if (debug) {
+        char csvfieldbuf[256];
+        size_t count = MIN(field_len, sizeof(csvfieldbuf) - 1);
+        memcpy(csvfieldbuf, field, count);
+        csvfieldbuf[count] = 0;
+        flb_plg_trace(state->ctx->ins, "csv field (%s): \"%s\"",
+                field_name, csvfieldbuf);
+    }
 
     switch (extract_avro_type(&avalue, field, field_len)) {
         case AVRO_STRING:
@@ -547,9 +564,6 @@ static int csv_to_avro(
     size_t buflenstart;
     size_t field_count;
 
-    state->state.field_callback = write_avro_field;
-    state->state.data = state;
-
     bufptr = state->row_buffer;
     buflen = flb_sds_len(state->row_buffer);
     /* parse all csv records */
@@ -568,6 +582,7 @@ static int csv_to_avro(
             return FLB_FILTER_NOTOUCH;
         }
         
+        flb_plg_trace(state->ctx->ins, "=== csv record end ===");
         state->record_field_index = 0;
     }
 
