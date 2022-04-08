@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <avro.h>
+#include <jansson.h>
 
 #include "avro/basics.h"
 #include "avro/errors.h"
@@ -155,6 +156,11 @@ static int cb_avro_init(struct flb_filter_instance *f_ins,
 static struct filter_avro_tag_state *get_tag_state(
         struct filter_avro *ctx,
         const char *tag) {
+    char *avro_schema_json;
+    flb_sds_t json_root_str;
+    json_t *json_root;
+    json_t *schema_root;
+    json_error_t json_error;
     int i;
     char fname[1024];
 
@@ -175,7 +181,37 @@ static struct filter_avro_tag_state *get_tag_state(
 
             /* read avro schema */
             snprintf(fname, sizeof(fname), "%s.json", tag);
-            state->avro_schema_json = flb_file_read(fname);
+            json_root_str = flb_file_read(fname);
+
+            json_root = json_loads(json_root_str, JSON_DECODE_ANY,
+                    &json_error);
+            if (!json_root) {
+                flb_plg_error(ctx->ins,
+                        "Unable to parse json schema:%s:error:%s:\n",
+                        state->avro_schema_json,
+                        json_error.text);
+                return NULL;
+            }
+
+            flb_sds_destroy(json_root_str);
+            schema_root = json_object_get(json_root, "avro_schema");
+            if (!schema_root) {
+                flb_plg_error(ctx->ins,
+                        "Unable to find avro_schema key",
+                        state->avro_schema_json);
+                return NULL;
+            }
+
+            avro_schema_json = json_dumps(schema_root, JSON_ENCODE_ANY);
+            state->avro_schema_json = flb_sds_create(avro_schema_json);
+            if (!avro_schema_json || !state->avro_schema_json) {
+                flb_plg_error(ctx->ins,
+                        "To serialize avro_schema key");
+                return NULL;
+            }
+
+            flb_free(avro_schema_json);
+            json_decref(json_root);
 
             if (avro_schema_from_json_length(state->avro_schema_json,
                         flb_sds_len(state->avro_schema_json), &state->aschema)) {
