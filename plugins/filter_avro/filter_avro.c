@@ -556,6 +556,7 @@ static int write_avro_value(
         flb_plg_error(ctx->ins, "failed to write avro payload: %s", avro_strerror());
         return -1;
     }
+    ctx->payloads_total_size += payload_size;
 
     /* reset avro writer pointer */
     avro_writer_memory_set_dest(ctx->awriter, ctx->avro_write_buffer,
@@ -577,6 +578,7 @@ static int csv_to_avro(
     size_t buflenstart;
     size_t field_count;
 
+    ctx->payloads_total_size = 0;
     bufptr = state->row_buffer;
     buflen = flb_sds_len(state->row_buffer);
     /* parse all csv records */
@@ -697,6 +699,15 @@ static int cb_avro_filter(const void *data, size_t bytes,
         return -1;
     }
 
+    if (avro_value_get_by_name(&outer, "max_size", &value, NULL)) {
+        flb_plg_error(ctx->ins, "failed to get avro metadata: %s", avro_strerror());
+        return -1;
+    }
+
+    if (avro_value_set_int(&value, ctx->payloads_total_size)) {
+        return -1;
+    }
+
     if (avro_value_get_by_name(&outer, "avro_schema", &value, NULL)) {
         flb_plg_error(ctx->ins, "failed to get avro schema: %s", avro_strerror());
         return -1;
@@ -707,7 +718,6 @@ static int cb_avro_filter(const void *data, size_t bytes,
         flb_plg_error(ctx->ins, "failed to set avro schema: %s", avro_strerror());
         return -1;
     }
-
 
     if (pack_avro(ctx, state, &outer)) {
         avro_value_decref(&outer);

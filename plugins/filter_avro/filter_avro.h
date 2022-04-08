@@ -54,6 +54,7 @@ struct filter_avro {
     avro_schema_t outer_schema;
     avro_value_iface_t *outer_class;
     flb_sds_t packbuf;
+    size_t payloads_total_size;
 };
 
 #endif
