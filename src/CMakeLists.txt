@@ -503,6 +503,12 @@ if(FLB_BINARY)
       DESTINATION ${FLB_INSTALL_CONFDIR}
       COMPONENT binary
       RENAME "${FLB_OUT_NAME}.conf")
+  elseif(FLB_SYSTEM_MACOS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-macos.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
   else()
     install(FILES
       "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
