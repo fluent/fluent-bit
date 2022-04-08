@@ -17,36 +17,36 @@ fi
 
 RPM_REPO_PATHS=("amazonlinux/2" "centos/7" "centos/8")
 
-for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
-    echo "Updating $RPM_REPO"
-    REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
-    [[ ! -d "$REPO_DIR" ]] && continue
+# for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
+#     echo "Updating $RPM_REPO"
+#     REPO_DIR=$( realpath -sm "$BASE_PATH/$RPM_REPO" )
+#     [[ ! -d "$REPO_DIR" ]] && continue
 
-    if [[ "$DISABLE_SIGNING" != "true" ]]; then
-        # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
-        find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
-    fi
-    # Create full metadata for all RPMs in the directory
-    createrepo -dvp "$REPO_DIR"
+#     if [[ "$DISABLE_SIGNING" != "true" ]]; then
+#         # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
+#         find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
+#     fi
+#     # Create full metadata for all RPMs in the directory
+#     createrepo -dvp "$REPO_DIR"
 
-    # Set up repo info
-    if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
-        # Create top-level file so replace path separator with dash
-        # centos/8 --> centos-8.repo
-        # This way we make sure not to have a mixed repo or overwrite files for each target.
-        REPO_TYPE=${RPM_REPO/\//-}
-        echo "Setting up $BASE_PATH/$REPO_TYPE.repo"
-        cat << EOF > "$BASE_PATH/$REPO_TYPE.repo"
-[Fluent-Bit]
-name=Fluent Bit Packages - $REPO_TYPE - \$basearch
-baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
-enabled=1
-gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
-gpgcheck=1
-repo_gpgcheck=1
-EOF
-    fi
-done
+#     # Set up repo info
+#     if [[ -n "${AWS_S3_BUCKET:-}" ]]; then
+#         # Create top-level file so replace path separator with dash
+#         # centos/8 --> centos-8.repo
+#         # This way we make sure not to have a mixed repo or overwrite files for each target.
+#         REPO_TYPE=${RPM_REPO/\//-}
+#         echo "Setting up $BASE_PATH/$REPO_TYPE.repo"
+#         cat << EOF > "$BASE_PATH/$REPO_TYPE.repo"
+# [Fluent-Bit]
+# name=Fluent Bit Packages - $REPO_TYPE - \$basearch
+# baseurl=https://$AWS_S3_BUCKET.s3.amazonaws.com/$RPM_REPO/
+# enabled=1
+# gpgkey=https://$AWS_S3_BUCKET.s3.amazonaws.com/fluentbit.key
+# gpgcheck=1
+# repo_gpgcheck=1
+# EOF
+#     fi
+# done
 
 DEB_REPO_PATHS=( "debian/bullseye"
                  "debian/buster"
@@ -84,7 +84,7 @@ EOF
     # Check if any files to add
     count=$(find "$REPO_DIR" -maxdepth 1 -type f -name "*.deb" | wc -l)
     if [[ $count != 0 ]] ; then
-        aptly -config="$APTLY_CONFIG" repo add -remove-files -force-replace "$APTLY_REPO_NAME" "$REPO_DIR/"
+        aptly -config="$APTLY_CONFIG" repo add -force-replace "$APTLY_REPO_NAME" "$REPO_DIR/"
     else
         echo "No files to add in $DEB_REPO for $CODENAME"
     fi
