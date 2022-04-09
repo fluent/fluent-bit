@@ -299,7 +299,7 @@ static int process_payload(struct flb_http *ctx, struct http_conn *conn,
         return -1;
     }
 
-    if (header->val.len == 16 &&
+    if (header->val.len >= 16 &&
         strncasecmp(header->val.data, "application/json", 16) == 0) {
         type = HTTP_CONTENT_JSON;
     }
