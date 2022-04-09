@@ -35,6 +35,7 @@ endif()
 
 # Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
+  FLB_RT_TEST(FLB_FILTER_CHECKLIST       "filter_checklist.c")
   FLB_RT_TEST(FLB_FILTER_STDOUT          "filter_stdout.c")
   FLB_RT_TEST(FLB_FILTER_GREP            "filter_grep.c")
   FLB_RT_TEST(FLB_FILTER_THROTTLE        "filter_throttle.c")
