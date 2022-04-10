@@ -43,6 +43,7 @@
 #include "avro/src/st.h"
 #include "avro/value.h"
 #include "filter_avro.h"
+#include "fluent-bit/flb_config.h"
 #include "fluent-bit/flb_mem.h"
 #include "fluent-bit/flb_str.h"
 #include "fluent-bit/flb_time.h"
@@ -156,6 +157,23 @@ static int cb_avro_init(struct flb_filter_instance *f_ins,
     return 0;
 }
 
+static flb_sds_t read_schema(const char *csv_file)
+{
+    char fname[4096];
+    char *ext;
+
+    strncpy(fname, csv_file, sizeof(fname));
+
+    ext = strrchr(fname, '.');
+    if (!ext) {
+        return NULL;
+    }
+
+    strncpy(ext, ".json", sizeof(fname) - (ext - fname));
+
+    return flb_file_read(fname);
+}
+
 static struct filter_avro_tag_state *get_tag_state(
         struct filter_avro *ctx,
         const char *tag) {
@@ -165,7 +183,6 @@ static struct filter_avro_tag_state *get_tag_state(
     json_t *schema_root;
     json_error_t json_error;
     int i;
-    char fname[1024];
 
     for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
         struct filter_avro_tag_state *state = ctx->states + i;
@@ -179,12 +196,11 @@ static struct filter_avro_tag_state *get_tag_state(
         if (!state->used) {
             state->ctx = ctx;
             /* read avro schema */
-            snprintf(fname, sizeof(fname), "%s.json", tag);
-            json_root_str = flb_file_read(fname);
+            json_root_str = read_schema(tag);
 
             if (!json_root_str) {
                 flb_plg_error(ctx->ins,
-                        "Cannot read json schema file \"%s\"", fname);
+                        "Cannot find schema file for \"%s\"", tag);
                 return NULL;
             }
 
@@ -262,6 +278,33 @@ static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_
     flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
+static int find_log_key(mpack_reader_t *reader, size_t key_count)
+{
+    size_t i;
+    mpack_tag_t mtag;
+
+    for (i = 0; i < key_count; i++) {
+        mtag = mpack_read_tag(reader);
+        if (mtag.type != mpack_type_str) {
+            return FLB_FILTER_NOTOUCH;
+        }
+
+        if (mpack_tag_bytes(&mtag) != 3 || memcmp(reader->data, "log", 3)) {
+            /* not the correct key, skip it */
+            reader->data += mpack_tag_bytes(&mtag);
+            /* also skip the value */
+            mtag = mpack_read_tag(reader);
+            reader->data += mpack_tag_bytes(&mtag);
+            continue;
+        }
+
+        reader->data += mpack_tag_bytes(&mtag);
+        return 0;
+    }
+
+    return FLB_FILTER_NOTOUCH;
+}
+
 static int collect_lines(
         struct filter_avro *ctx,
         struct filter_avro_tag_state *state,
@@ -290,13 +333,11 @@ static int collect_lines(
             return FLB_FILTER_NOTOUCH;
         }
 
-        mtag = mpack_read_tag(&reader);
-        if (mtag.type != mpack_type_str) {
+        if (find_log_key(&reader, mpack_tag_map_count(&mtag))) {
             /* failed to parse */
             return FLB_FILTER_NOTOUCH;
         }
 
-        reader.data += mpack_tag_bytes(&mtag);
         mtag = mpack_read_tag(&reader);
         if (mtag.type != mpack_type_str) {
             /* failed to parse */
@@ -671,7 +712,10 @@ static int cb_avro_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
-    collect_lines(ctx, state, data, bytes);
+    ret = collect_lines(ctx, state, data, bytes);
+    if (ret) {
+        return ret;
+    }
 
     if (avro_generic_value_new(ctx->outer_class, &outer)) {
         return -1;
