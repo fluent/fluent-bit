@@ -114,6 +114,12 @@ static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_inst
         flb_plg_error(f_ins, "unable to load configuration");
         return -1;
     }
+    if (ctx->max_rate <= 1.0) {
+        ctx->max_rate = strtod(THROTTLE_DEFAULT_RATE, NULL);
+    }
+    if (ctx->window_size <= 1) {
+        ctx->window_size = strtoul(THROTTLE_DEFAULT_WINDOW, NULL, 10);
+    }
 
     return 0;
 }
