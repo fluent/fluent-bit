@@ -278,10 +278,21 @@ static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_
     flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
-static int find_log_key(mpack_reader_t *reader, size_t key_count)
+static int read_line(struct filter_avro_tag_state *state, mpack_reader_t *reader)
 {
+    bool is_log_key;
     size_t i;
+    size_t len;
+    size_t key_count;
     mpack_tag_t mtag;
+
+    mtag = mpack_read_tag(reader);
+    if (mtag.type != mpack_type_map) {
+        /* failed to parse */
+        return FLB_FILTER_NOTOUCH;
+    }
+
+    key_count = mpack_tag_map_count(&mtag);
 
     for (i = 0; i < key_count; i++) {
         mtag = mpack_read_tag(reader);
@@ -289,20 +300,22 @@ static int find_log_key(mpack_reader_t *reader, size_t key_count)
             return FLB_FILTER_NOTOUCH;
         }
 
-        if (mpack_tag_bytes(&mtag) != 3 || memcmp(reader->data, "log", 3)) {
-            /* not the correct key, skip it */
-            reader->data += mpack_tag_bytes(&mtag);
-            /* also skip the value */
-            mtag = mpack_read_tag(reader);
-            reader->data += mpack_tag_bytes(&mtag);
-            continue;
-        }
-
+        is_log_key = mpack_tag_bytes(&mtag) == 3 &&
+            !memcmp(reader->data, "log", 3);
         reader->data += mpack_tag_bytes(&mtag);
-        return 0;
+        mtag = mpack_read_tag(reader);
+        if (mtag.type != mpack_type_str) {
+            return FLB_FILTER_NOTOUCH;
+        }
+        len = mpack_tag_bytes(&mtag);
+        if (is_log_key) {
+            flb_sds_cat_safe(&state->row_buffer, reader->data, len);
+            flb_sds_cat_safe(&state->row_buffer, "\n", 1);
+        }
+        reader->data += len;
     }
 
-    return FLB_FILTER_NOTOUCH;
+    return 0;
 }
 
 static int collect_lines(
@@ -311,10 +324,9 @@ static int collect_lines(
         const char *data,
         size_t bytes)
 {
+    int ret;
     struct flb_time t;
     mpack_reader_t reader;
-    mpack_tag_t mtag;
-    size_t len;
 
     mpack_reader_init_data(&reader, data, bytes);
 
@@ -322,31 +334,16 @@ static int collect_lines(
         const char *record_start = reader.data;
         size_t record_size = 0;
 
-        if (flb_time_pop_from_mpack(&t, &reader)) {
-            /* failed to parse */
-            return FLB_FILTER_NOTOUCH;
+        ret = flb_time_pop_from_mpack(&t, &reader);
+        if (ret) {
+            return ret;
         }
 
-        mtag = mpack_read_tag(&reader);
-        if (mtag.type != mpack_type_map) {
-            /* failed to parse */
-            return FLB_FILTER_NOTOUCH;
+        ret = read_line(state, &reader);
+        if (ret) {
+            return ret;
         }
 
-        if (find_log_key(&reader, mpack_tag_map_count(&mtag))) {
-            /* failed to parse */
-            return FLB_FILTER_NOTOUCH;
-        }
-
-        mtag = mpack_read_tag(&reader);
-        if (mtag.type != mpack_type_str) {
-            /* failed to parse */
-            return FLB_FILTER_NOTOUCH;
-        }
-        len = mpack_tag_bytes(&mtag);
-        flb_sds_cat_safe(&state->row_buffer, reader.data, len);
-        reader.data += len;
-        flb_sds_cat_safe(&state->row_buffer, "\n", 1);
         record_size = reader.data - record_start;
         bytes -= record_size;
     }
