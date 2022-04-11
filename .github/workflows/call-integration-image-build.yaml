@@ -79,7 +79,7 @@ jobs:
         shell: bash
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: pr-${{ github.event.pull_request.number }}-image
           path: /tmp/pr-image.tar

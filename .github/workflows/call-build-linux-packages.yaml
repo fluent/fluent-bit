@@ -151,7 +151,7 @@ jobs:
         working-directory: packaging
 
       - name: Upload the ${{ matrix.distro }} artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
           path: packaging/packages/
