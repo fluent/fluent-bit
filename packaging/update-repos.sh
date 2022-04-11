@@ -24,7 +24,7 @@ for RPM_REPO in "${RPM_REPO_PATHS[@]}"; do
 
     if [[ "$DISABLE_SIGNING" != "true" ]]; then
         # Sign all RPMs created for this target, cover both fluent-bit and td-agent-bit packages
-        find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --addsign {} \;
+        find "$REPO_DIR" -name "*-bit-*.rpm" -exec rpm --define "_gpg_name $GPG_KEY" --define "_gpg_digest_algo sha256" --addsign {} \;
     fi
     # Create full metadata for all RPMs in the directory
     createrepo -dvp "$REPO_DIR"
