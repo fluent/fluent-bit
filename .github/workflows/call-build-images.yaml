@@ -311,17 +311,17 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
-      - name: Extract metadata from Github
-        id: meta
-        uses: docker/metadata-action@v3
-        with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}
-          tags: |
-            raw,windows-2019-${{ inputs.version }}
-            raw,windows-2019
+      # - name: Extract metadata from Github
+      #   id: meta
+      #   uses: docker/metadata-action@v3
+      #   with:
+      #     images: ${{ inputs.registry }}/${{ inputs.image }}
+      #     tags: |
+      #       raw,windows-2019-${{ inputs.version }}
+      #       raw,windows-2019
 
       - name: Build the production images
-        run:
+        run: |
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
           docker tag ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} ${{ inputs.registry }}/${{ inputs.image }}:windows-2019
