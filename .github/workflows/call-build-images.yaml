@@ -322,8 +322,10 @@ jobs:
 
       - name: Build the production images
         run:
-          docker build -t ${{ steps.meta.outputs.tags }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
-          docker push ${{ steps.meta.outputs.tags }}
+          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
+          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
+          docker tag ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} ${{ inputs.registry }}/${{ inputs.image }}:windows-2019
+          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019
         env:
           DOCKER_BUILDKIT: 1
         # We cannot use this action as it requires privileged mode
