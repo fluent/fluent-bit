@@ -136,7 +136,14 @@ static int http_post(struct flb_out_http *ctx,
     c->cb_ctx = ctx->ins->callback;
 
     /* Append headers */
-    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+    if (ctx->content_type) {
+        flb_http_add_header(c,
+                            FLB_HTTP_CONTENT_TYPE,
+                            sizeof(FLB_HTTP_CONTENT_TYPE) - 1,
+                            ctx->content_type,
+                            flb_sds_len(ctx->content_type));
+    }
+    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
@@ -335,6 +342,67 @@ static int http_gelf(struct flb_out_http *ctx,
     return ret;
 }
 
+static int extract_body_key(const char *data, size_t size,
+                            flb_sds_t body_key,
+                            const char **out_body, size_t *out_size)
+{
+    int ret;
+    struct flb_time t;
+    mpack_tag_t mtag;
+    mpack_reader_t reader;
+    size_t key_count;
+    size_t i;
+    bool key_found;
+    size_t len;
+
+    mpack_reader_init_data(&reader, data, size);
+
+    while (size > 0) {
+        const char *record_start = reader.data;
+        size_t record_size = 0;
+
+        ret = flb_time_pop_from_mpack(&t, &reader);
+        if (ret) {
+            return ret;
+        }
+
+        mtag = mpack_read_tag(&reader);
+        if (mtag.type != mpack_type_map) {
+            return -1;
+        }
+
+        key_count = mpack_tag_map_count(&mtag);
+
+        for (i = 0; i < key_count; i++) {
+            mtag = mpack_read_tag(&reader);
+            if (mtag.type != mpack_type_str && mtag.type != mpack_type_bin) {
+                return -1;
+            }
+
+            len = mpack_tag_bytes(&mtag);
+            key_found = len == flb_sds_len(body_key) &&
+                !memcmp(reader.data, body_key, len);
+            reader.data += len;
+            mtag = mpack_read_tag(&reader);
+            if (mtag.type != mpack_type_str && mtag.type != mpack_type_bin) {
+                return -1;
+            }
+            len = mpack_tag_bytes(&mtag);
+            if (key_found) {
+                *out_size = len;
+                *out_body = reader.data;
+                return 0;
+            }
+            reader.data += len;
+        }
+
+        record_size = reader.data - record_start;
+        size -= record_size;
+    }
+
+    return -1;
+}
+
 static void cb_http_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -345,8 +413,22 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t json;
     struct flb_out_http *ctx = out_context;
     (void) i_ins;
+    const char *body;
+    size_t body_size;
 
-    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+    if (ctx->body_key) {
+        ret = extract_body_key(event_chunk->data, event_chunk->size,
+                               ctx->body_key, &body, &body_size);
+        if (ret) {
+            flb_plg_error(ctx->ins,
+                          "failed to extract body key \"%s\"", ctx->body_key);
+        }
+        else {
+            ret = http_post(ctx, body, body_size,
+                    event_chunk->tag, flb_sds_len(event_chunk->tag));
+        }
+    }
+    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
 
@@ -486,6 +568,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "gelf_level_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
      "Specify the key to use for the 'level' in gelf format"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "body_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, body_key),
+     "Specify the key which contains the body"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "content_type", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, content_type),
+     "Override Content-Type HTTP header"
     },
 
     /* EOF */

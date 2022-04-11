@@ -68,6 +68,12 @@ struct flb_out_http {
     /* GELF fields */
     struct flb_gelf_fields gelf_fields;
 
+    /* which record key to use as body */
+    flb_sds_t body_key;
+
+    /* override content-type */
+    flb_sds_t content_type;
+
     /* Include tag in header */
     flb_sds_t header_tag;
 
