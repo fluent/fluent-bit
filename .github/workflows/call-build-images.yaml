@@ -321,16 +321,24 @@ jobs:
             raw,windows-2019
 
       - name: Build the production images
-        uses: docker/build-push-action@v2
-        with:
-          file: ./dockerfiles/Dockerfile.windows
-          context: .
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: windows/amd64
-          target: runtime
-          push: true
-          load: false
-          build-args: |
-            FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
-            WINDOWS_VERSION=ltsc2019
+        run:
+          docker build -t ${{ steps.meta.outputs.tags }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
+          docker push ${{ steps.meta.outputs.tags }}
+        env:
+          DOCKER_BUILDKIT: 1
+        # We cannot use this action as it requires privileged mode
+        # uses: docker/build-push-action@v2
+        # with:
+        #   file: ./dockerfiles/Dockerfile.windows
+        #   context: .
+        #   tags: ${{ steps.meta.outputs.tags }}
+        #   labels: ${{ steps.meta.outputs.labels }}
+        #   platforms: windows/amd64
+        #   target: runtime
+        #   push: true
+        #   load: false
+        #   build-args: |
+        #     FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+        #     WINDOWS_VERSION=ltsc2019
+
+
