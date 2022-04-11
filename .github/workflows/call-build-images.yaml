@@ -312,8 +312,6 @@ jobs:
         run: |
           docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
           docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
-          docker tag ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} ${{ inputs.registry }}/${{ inputs.image }}:windows-2019
-          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019
         # We cannot use this action as it requires privileged mode
         # uses: docker/build-push-action@v2
         # with:
