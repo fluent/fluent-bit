@@ -110,7 +110,7 @@ jobs:
           location: ${{ steps.get-k8s-cluster-location.outputs.stdout }}
           credentials: ${{ secrets.GCP_SA_KEY }}
 
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v3
         with:
           go-version: '1.16' # The Go version to download (if necessary) and use.
 
