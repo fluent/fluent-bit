@@ -3450,7 +3450,7 @@ void flb_test_custom_labels()
 void flb_test_config_labels_conflict()
 {
     int ret;
-    int size = sizeof(CUSTOM_LABELS) - 1;
+    int size = sizeof(DEFAULT_LABELS) - 1;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -3492,7 +3492,7 @@ void flb_test_config_labels_conflict()
 void flb_test_config_labels_no_conflict()
 {
     int ret;
-    int size = sizeof(CUSTOM_LABELS) - 1;
+    int size = sizeof(DEFAULT_LABELS) - 1;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
