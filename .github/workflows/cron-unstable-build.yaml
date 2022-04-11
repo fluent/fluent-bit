@@ -151,7 +151,7 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   # We already detain all artefacts as build output so just capture for an unstable release.
-  # We make all of these on https://github.com/fluent/fluent-bit-release-notifications to prevent notification spam.
+  # We make all of these on a separate repo to prevent notification spam.
   unstable-release:
     runs-on: ubuntu-latest
     needs:
@@ -209,13 +209,13 @@ jobs:
 
       - name: Remove any existing release
         continue-on-error: true
-        run: gh release delete unstable-${{ needs.unstable-build-get-meta.outputs.branch }} --yes --repo fluent/fluent-bit-release-notifications
+        run: gh release delete unstable-${{ needs.unstable-build-get-meta.outputs.branch }} --yes --repo ${{ secrets.RELEASE_REPO }}
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         shell: bash
 
       - name: Create Release
-        run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --repo fluent/fluent-bit-release-notifications --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
+        run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --repo ${{ secrets.RELEASE_REPO }} --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         shell: bash
