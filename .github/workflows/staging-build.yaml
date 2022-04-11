@@ -66,7 +66,7 @@ jobs:
 
   staging-build-images:
     needs: staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@5196_windows_release_artefacts
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
       ref: ${{ github.event.inputs.version || github.ref_name }}
@@ -145,7 +145,7 @@ jobs:
   staging-build-windows-packages:
     needs:
       - staging-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@5196_windows_release_artefacts
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
       ref: ${{ github.event.inputs.version || github.ref_name }}
