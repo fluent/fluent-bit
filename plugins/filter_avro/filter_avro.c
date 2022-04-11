@@ -755,7 +755,7 @@ static int cb_avro_filter(const void *data, size_t bytes,
     }
 
     if (avro_value_set_string_len(&value, state->avro_schema_json,
-                flb_sds_len(state->avro_schema_json))) {
+                flb_sds_len(state->avro_schema_json) + 1)) {
         flb_plg_error(ctx->ins, "failed to set avro schema: %s", avro_strerror());
         return -1;
     }
