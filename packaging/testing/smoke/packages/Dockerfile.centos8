@@ -34,6 +34,7 @@ RUN yum update -y && yum install -y fluent-bit && \
     systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
-RUN chmod a+x /test.sh
+COPY ./centos8 /extra-tests
+RUN chmod a+x /*.sh
 
 FROM staging-install as staging-upgrade

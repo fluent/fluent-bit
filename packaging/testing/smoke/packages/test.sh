@@ -18,3 +18,8 @@ done
 
 echo "Check service running"
 systemctl status -q --no-pager fluent-bit || systemctl status -q --no-pager td-agent-bit
+
+# Allow for per-target extra tests
+if [ -d "/extra-tests" ]; then
+    /extra-tests/additional-tests.sh
+fi
