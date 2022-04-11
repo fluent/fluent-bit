@@ -79,7 +79,7 @@ jobs:
             build/*-bit-*.zip
           if-no-files-found: error
 
-  call-build-windows-s3:
+  call-build-windows-s3-upload:
     name: Handle upload to S3
     runs-on: ubuntu-latest
     needs:
@@ -98,15 +98,15 @@ jobs:
 
       - name: Set up Windows checksums
         run: |
-          ls -lR artifacts/
           packaging/windows-checksums.sh
+          ls -lR artifacts/
         shell: bash
         env:
           SOURCE_DIR: artifacts
 
       - name: Push Windows packages to S3
-        if: inputs.environment == 'staging'
         # Only upload for staging
+        if: inputs.environment == 'staging'
         run: |
           aws s3 sync "$SOURCE_DIR" "s3://$DEST_DIR" --follow-symlinks --no-progress
         env:
