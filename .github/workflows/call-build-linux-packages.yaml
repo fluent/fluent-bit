@@ -190,16 +190,17 @@ jobs:
           fi
         shell: bash
 
-      - name: Checkout code for action
-        if: inputs.environment == 'staging'
-        uses: actions/checkout@v3
-        with:
-          path: latest
+      # - name: Checkout code for action
+      #   if: inputs.environment == 'staging'
+      #   uses: actions/checkout@v3
+      #   with:
+      #     path: latest
 
       - name: Push packages to S3
         # Only upload for staging
         if: inputs.environment == 'staging'
-        uses: ./latest/.github/actions/sync-to-bucket
+        # uses: ./latest/.github/actions/sync-to-bucket
+        uses: ./.github/actions/sync-to-bucket
         with:
           bucket: ${{ secrets.bucket }}
           access_key_id: ${{ secrets.access_key_id }}
