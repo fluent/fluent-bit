@@ -425,11 +425,12 @@ jobs:
 
   # This takes a long time...
   call-build-windows-container:
+    if: needs.call-build-images-meta.outputs.build-type != '1.8'
     name: Windows container image
     runs-on: windows-2019
     environment: ${{ inputs.environment }}
     needs:
-      - call-build-legacy-check
+      - call-build-images-meta
     permissions:
       contents: read
       packages: write
