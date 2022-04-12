@@ -180,26 +180,33 @@ jobs:
           DISTRO: ${{ matrix.distro }}
         shell: bash
 
-      - name: Push packages to S3
+      - name: Verify output target
         # Only upload for staging
-        if: inputs.environment == 'staging'
         # Make sure not to do a --delete on sync as it will remove the other architecture
         run: |
           if [ -z "${{ steps.get-target-info.outputs.target }}" ]; then
             echo "Invalid (empty) target defined"
             exit 1
           fi
-          if [ -n "${AWS_S3_ENDPOINT}" ]; then
-            ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
-          fi
-          aws --region "$AWS_REGION" s3 sync "${SOURCE_DIR}" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
-        env:
-          SOURCE_DIR: "packaging/packages/${{ matrix.distro }}/${{ inputs.version }}/staging/"
-          DEST_DIR: "${{ inputs.version }}/${{ steps.get-target-info.outputs.target }}/"
-          AWS_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
-          AWS_S3_BUCKET: ${{ secrets.bucket }}
+        shell: bash
+
+      - name: Checkout code for action
+        if: inputs.environment == 'staging'
+        uses: actions/checkout@v3
+        with:
+          path: latest
+
+      - name: Push packages to S3
+        # Only upload for staging
+        if: inputs.environment == 'staging'
+        uses: latest/.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/${{ steps.get-target-info.outputs.target }}/"
+          source-directory: "packaging/packages/${{ matrix.distro }}/${{ inputs.version }}/staging/"
+
 
   call-build-linux-packages-repo:
     name: Create repo metadata in S3

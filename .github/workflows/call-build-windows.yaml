@@ -108,14 +108,10 @@ jobs:
       - name: Push Windows packages to S3
         # Only upload for staging
         if: inputs.environment == 'staging'
-        run: |
-          aws s3 sync "$SOURCE_DIR" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress
-        env:
-          SOURCE_DIR: "artifacts/"
-          DEST_DIR: "${{ inputs.version }}/windows/"
-          AWS_S3_BUCKET: ${{ secrets.bucket }}
-          AWS_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
-          # To use with Minio locally (or update to whatever endpoint you want)
-          # AWS_S3_ENDPOINT: '--endpoint http://localhost:9000'
+        uses: ./.github/actions/sync-to-bucket
+        with:
+          bucket: ${{ secrets.bucket }}
+          access_key_id: ${{ secrets.access_key_id }}
+          secret_access_key: ${{ secrets.secret_access_key }}
+          bucket-directory: "${{ inputs.version }}/windows/"
+          source-directory: "artifacts/"
