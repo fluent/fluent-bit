@@ -114,7 +114,7 @@ jobs:
           name: macos-packages
           path: artifacts/
 
-      - name: Push Windows packages to S3
+      - name: Push MacOS packages to S3
         # Only upload for staging
         if: inputs.environment == 'staging'
         run: |
