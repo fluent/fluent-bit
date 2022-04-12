@@ -422,3 +422,45 @@ jobs:
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.cosign_private_key }}
           COSIGN_PASSWORD: ${{ secrets.cosign_private_key_password }} # optional
+
+  # This takes a long time...
+  call-build-windows-container:
+    name: Windows container image
+    runs-on: windows-2019
+    environment: ${{ inputs.environment }}
+    needs:
+      - call-build-legacy-check
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ inputs.username }}
+          password: ${{ secrets.token }}
+
+      - name: Build the production images
+        run: |
+          docker build -t ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }} --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc2019 -f ./dockerfiles/Dockerfile.windows .
+          docker push ${{ inputs.registry }}/${{ inputs.image }}:windows-2019-${{ inputs.version }}
+        # We cannot use this action as it requires privileged mode
+        # uses: docker/build-push-action@v2
+        # with:
+        #   file: ./dockerfiles/Dockerfile.windows
+        #   context: .
+        #   tags: ${{ steps.meta.outputs.tags }}
+        #   labels: ${{ steps.meta.outputs.labels }}
+        #   platforms: windows/amd64
+        #   target: runtime
+        #   push: true
+        #   load: false
+        #   build-args: |
+        #     FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
+        #     WINDOWS_VERSION=ltsc2019

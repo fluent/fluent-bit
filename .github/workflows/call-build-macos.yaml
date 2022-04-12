@@ -81,6 +81,7 @@ jobs:
           brew install bison flex || true
       - name: Build Fluent Bit packages
         run: |
+          export LIBRARY_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib:$LIBRARY_PATH
           cmake -DCPACK_GENERATOR=productbuild -DFLB_NIGHTLY_BUILD=${{ inputs.unstable }} ../
           cmake --build .
           cpack -G productbuild
