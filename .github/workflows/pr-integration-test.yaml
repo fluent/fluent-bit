@@ -12,7 +12,7 @@ on:
 
 jobs:
   pr-integration-test-build:
-    name: PR - GCP build
+    name: PR - integration build
     # We only need to test this once as the rest are chained from it.
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test')
     uses: fluent/fluent-bit/.github/workflows/call-integration-image-build.yaml@master
@@ -27,7 +27,7 @@ jobs:
       token: ${{ secrets.GITHUB_TOKEN }}
 
   pr-integration-test-build-complete:
-    name: PR - GCP build complete
+    name: PR - integration build complete
     runs-on: ubuntu-latest
     needs: pr-integration-test-build
     steps:
@@ -39,7 +39,7 @@ jobs:
           number: ${{ github.event.pull_request.number }}
 
   pr-integration-test-run-integration:
-    name: PR - GCP integration test
+    name: PR - K8S integration test
     needs: pr-integration-test-build
     uses: fluent/fluent-bit/.github/workflows/call-integration-test.yaml@master
     with:
@@ -47,7 +47,7 @@ jobs:
       image_tag: ${{ github.sha }}
 
   pr-integration-test-run-integration-post-label:
-    name: PR - GCP test complete
+    name: PR - integration test complete
     runs-on: ubuntu-latest
     needs: pr-integration-test-run-integration-gcp
     steps:
