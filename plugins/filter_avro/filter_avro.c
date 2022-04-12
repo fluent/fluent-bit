@@ -865,6 +865,10 @@ static int cb_avro_exit(void *data, struct flb_config *config)
     avro_value_iface_decref(ctx->logev_class);
     avro_schema_decref(ctx->logev_schema);
 
+    avro_value_decref(&ctx->meta_value);
+    avro_value_iface_decref(ctx->meta_class);
+    avro_schema_decref(ctx->meta_schema);
+
     flb_sds_destroy(ctx->packbuf);
     flb_free(ctx);
 
