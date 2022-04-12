@@ -58,53 +58,87 @@ struct avro_union_data {
 
 static void write_avro_field(void *data, const char *field, size_t field_len);
 
-static int create_outer_avro_schema(struct filter_avro *ctx)
+static const char logev_schema[] =
+"{"
+"  \"type\":\"record\","
+"  \"name\":\"LogEvent\","
+"  \"fields\":["
+"    {\"name\":\"metadata\",\"type\":\"bytes\"},"
+"    {\"name\":\"avro_schema\",\"type\":\"string\"},"
+"    {\"name\":\"max_size\",\"type\":\"int\"},"
+"    {\"name\":\"payload\",\"type\":{\"type\":\"array\",\"items\":\"bytes\"}}"
+"  ]"
+"}";
+
+static const char meta_schema[] =
+"{"
+"  \"type\":\"record\","
+"  \"name\":\"metadata\","
+"  \"fields\":["
+"    {\"name\":\"wd_platform\",\"type\":\"string\"},"
+"    {\"name\":\"wd_env_physical\",\"type\":\"string\"},"
+"    {\"name\":\"wd_dc_physical\",\"type\":\"string\"},"
+"    {\"name\":\"wd_env_logical\",\"type\":\"string\"},"
+"    {\"name\":\"wd_service\",\"type\":\"string\"},"
+"    {\"name\":\"wd_owner\",\"type\":\"string\"},"
+"    {\"name\":\"wd_datatype\",\"type\":\"string\"},"
+"    {\"name\":\"wd_objectname\",\"type\":\"string\"},"
+"    {\"name\":\"wd_solas\",\"type\":\"string\"},"
+"    {\"name\":\"swh_server\",\"type\":\"string\"},"
+"    {\"name\":\"wd_service_instance\",\"type\":\"string\"}"
+"  ]"
+"}";
+
+static int create_avro_schemas(struct filter_avro *ctx)
 {
-    avro_schema_t schema;
-    avro_schema_t field, item;
+    char hostname[256];
+    avro_value_t value;
+    size_t field_count;
+    size_t i;
 
-    schema = avro_schema_record("LogEvent", NULL);
-
-    field = avro_schema_bytes();
-    if (avro_schema_record_field_append(schema, "metadata", field)) {
-        return -1;
-    }
-    avro_schema_decref(field);
-
-    field = avro_schema_string();
-    if (avro_schema_record_field_append(schema, "avro_schema", field)) {
-        return -1;
-    }
-    avro_schema_decref(field);
-
-    field = avro_schema_int();
-    if (avro_schema_record_field_append(schema, "max_size", field)) {
-        return -1;
-    }
-    avro_schema_decref(field);
-
-    item = avro_schema_bytes();
-    field = avro_schema_array(item);
-    if (avro_schema_record_field_append(schema, "payload", field)) {
+    if (avro_schema_from_json_literal(logev_schema, &ctx->logev_schema)) {
         return -1;
     }
 
-    avro_schema_decref(field);
-    avro_schema_decref(item);
-
-    ctx->outer_schema = schema;
-
-    ctx->outer_class = avro_generic_class_from_schema(ctx->outer_schema);
-    if (!ctx->outer_class) {
+    ctx->logev_class = avro_generic_class_from_schema(ctx->logev_schema);
+    if (!ctx->logev_class) {
         return -1;
+    }
+
+    if (avro_schema_from_json_literal(meta_schema, &ctx->meta_schema)) {
+        return -1;
+    }
+
+    ctx->meta_class = avro_generic_class_from_schema(ctx->meta_schema);
+    if (!ctx->meta_class) {
+        return -1;
+    }
+
+    if (avro_generic_value_new(ctx->meta_class, &ctx->meta_value)) {
+        return -1;
+    }
+
+    /* set default values for all metadata fields */
+    field_count = avro_schema_record_size(ctx->meta_schema);
+
+    for (i = 0; i < field_count; i++) {
+        if (!avro_value_get_by_index(&ctx->meta_value, i, &value, NULL)) {
+            avro_value_set_string_len(&value, "", 1);
+        }
+    }
+
+    if (!gethostname(hostname, sizeof(hostname))) {
+        if (!avro_value_get_by_name(&ctx->meta_value, "swh_server", &value, NULL)) {
+            avro_value_set_string_len(&value, hostname, strlen(hostname) + 1);
+        }
     }
 
     return 0;
 }
 
 static int cb_avro_init(struct flb_filter_instance *f_ins,
-                       struct flb_config *config,
-                       void *data)
+                        struct flb_config *config,
+                        void *data)
 {
     (void) data;
     struct filter_avro *ctx;
@@ -135,8 +169,8 @@ static int cb_avro_init(struct flb_filter_instance *f_ins,
         return -1;
     }
 
-    if (create_outer_avro_schema(ctx)) {
-        flb_plg_error(ctx->ins, "failed to allocate avro outer schema");
+    if (create_avro_schemas(ctx)) {
+        flb_plg_error(ctx->ins, "failed to allocate avro lovev/meta schemas");
         return -1;
     }
 
@@ -604,6 +638,32 @@ static int write_avro_value(
 }
 
 
+static int metadata_to_avro(
+        struct filter_avro *ctx,
+        struct filter_avro_tag_state *state,
+        avro_value_t *metadata)
+{
+    size_t payload_size;
+    avro_value_t value;
+
+    payload_size = serialize_avro_value(ctx, &ctx->meta_value);
+    if (payload_size < 0) {
+        flb_plg_error(ctx->ins, "serialize metadata: %s", avro_strerror());
+        return -1;
+    }
+    /* reset avro writer pointer */
+    avro_writer_memory_set_dest(ctx->awriter, ctx->avro_write_buffer,
+            ctx->avro_write_buffer_size);
+
+    if (avro_value_set_bytes(metadata, ctx->avro_write_buffer, payload_size)) {
+        flb_plg_error(ctx->ins, "failed to write serialized metadata: %s",
+                avro_strerror());
+        return -1;
+    }
+
+    return 0;
+}
+
 static int csv_to_avro(
         struct filter_avro *ctx,
         struct filter_avro_tag_state *state,
@@ -653,7 +713,7 @@ static int csv_to_avro(
 static int pack_avro(
         struct filter_avro *ctx,
         struct filter_avro_tag_state *state,
-        avro_value_t *outer)
+        avro_value_t *logev)
 
 {
     ssize_t payload_size;
@@ -661,7 +721,7 @@ static int pack_avro(
     char writebuf[1024];
     mpack_writer_t writer;
 
-    payload_size = serialize_avro_value(ctx, outer);
+    payload_size = serialize_avro_value(ctx, logev);
     if (payload_size < 0) {
         return -1;
     }
@@ -696,7 +756,7 @@ static int cb_avro_filter(const void *data, size_t bytes,
     struct filter_avro *ctx;
     struct filter_avro_tag_state *state;
     char *outbuf;
-    avro_value_t outer;
+    avro_value_t logev;
     avro_value_t value;
 
     ctx = filter_context;
@@ -714,11 +774,11 @@ static int cb_avro_filter(const void *data, size_t bytes,
         return ret;
     }
 
-    if (avro_generic_value_new(ctx->outer_class, &outer)) {
+    if (avro_generic_value_new(ctx->logev_class, &logev)) {
         return -1;
     }
 
-    if (avro_value_get_by_name(&outer, "payload", &value, NULL)) {
+    if (avro_value_get_by_name(&logev, "payload", &value, NULL)) {
         flb_plg_error(ctx->ins, "failed to get avro payload array: %s", avro_strerror());
         return -1;
     }
@@ -726,21 +786,23 @@ static int cb_avro_filter(const void *data, size_t bytes,
     ret = csv_to_avro(ctx, state, &value);
 
     if (ret) {
-        avro_value_decref(&outer);
+        avro_value_decref(&logev);
         return ret;
     }
 
-    if (avro_value_get_by_name(&outer, "metadata", &value, NULL)) {
+    if (avro_value_get_by_name(&logev, "metadata", &value, NULL)) {
         flb_plg_error(ctx->ins, "failed to get avro metadata: %s", avro_strerror());
         return -1;
     }
 
-    if (avro_value_set_bytes(&value, "", 0)) {
-        flb_plg_error(ctx->ins, "failed to set avro metadata: %s", avro_strerror());
-        return -1;
+    ret = metadata_to_avro(ctx, state, &value);
+
+    if (ret) {
+        avro_value_decref(&logev);
+        return ret;
     }
 
-    if (avro_value_get_by_name(&outer, "max_size", &value, NULL)) {
+    if (avro_value_get_by_name(&logev, "max_size", &value, NULL)) {
         flb_plg_error(ctx->ins, "failed to get avro metadata: %s", avro_strerror());
         return -1;
     }
@@ -749,7 +811,7 @@ static int cb_avro_filter(const void *data, size_t bytes,
         return -1;
     }
 
-    if (avro_value_get_by_name(&outer, "avro_schema", &value, NULL)) {
+    if (avro_value_get_by_name(&logev, "avro_schema", &value, NULL)) {
         flb_plg_error(ctx->ins, "failed to get avro schema: %s", avro_strerror());
         return -1;
     }
@@ -760,12 +822,12 @@ static int cb_avro_filter(const void *data, size_t bytes,
         return -1;
     }
 
-    if (pack_avro(ctx, state, &outer)) {
-        avro_value_decref(&outer);
-        flb_plg_error(ctx->ins, "failed to pack outer avro object");
+    if (pack_avro(ctx, state, &logev)) {
+        avro_value_decref(&logev);
+        flb_plg_error(ctx->ins, "failed to pack logev avro object");
         return FLB_FILTER_NOTOUCH;
     }
-    avro_value_decref(&outer);
+    avro_value_decref(&logev);
 
     /* allocate outbuf that contains the modified chunks */
     outbuf = flb_malloc(flb_sds_len(ctx->packbuf));
@@ -800,8 +862,8 @@ static int cb_avro_exit(void *data, struct flb_config *config)
 
     flb_free(ctx->avro_write_buffer);
     avro_writer_free(ctx->awriter);
-    avro_value_iface_decref(ctx->outer_class);
-    avro_schema_decref(ctx->outer_schema);
+    avro_value_iface_decref(ctx->logev_class);
+    avro_schema_decref(ctx->logev_schema);
 
     flb_sds_destroy(ctx->packbuf);
     flb_free(ctx);

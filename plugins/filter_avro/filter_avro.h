@@ -51,8 +51,11 @@ struct filter_avro {
     avro_writer_t awriter;
     char *avro_write_buffer;
     size_t avro_write_buffer_size;
-    avro_schema_t outer_schema;
-    avro_value_iface_t *outer_class;
+    avro_schema_t logev_schema;
+    avro_schema_t meta_schema;
+    avro_value_iface_t *logev_class;
+    avro_value_iface_t *meta_class;
+    avro_value_t meta_value;
     flb_sds_t packbuf;
     size_t payloads_total_size;
 };
