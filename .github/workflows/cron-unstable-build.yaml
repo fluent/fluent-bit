@@ -80,7 +80,7 @@ jobs:
 
   unstable-build-images:
     needs: unstable-build-get-meta
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@1_9_2_resolve_ci_failures
     with:
       version: ${{ needs.unstable-build-get-meta.outputs.branch }}
       ref: ${{ needs.unstable-build-get-meta.outputs.branch }}
