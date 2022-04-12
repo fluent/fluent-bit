@@ -49,6 +49,8 @@ jobs:
           fi
           echo "$AWS_S3_BUCKET bucket is defined"
         shell: bash
+        env:
+          AWS_S3_BUCKET: ${{ secrets.bucket }}
 
   call-build-windows-package:
     runs-on: windows-latest
