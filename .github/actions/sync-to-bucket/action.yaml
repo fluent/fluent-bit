@@ -52,7 +52,7 @@ runs:
 
         # Check for non-empty values
         if [ -z "$AWS_S3_BUCKET" ]; then
-          echo "Invalid (empty) bucket defined"
+          echo "Invalid (empty) bucket defined, check running on right environment to allow access to any secrets"
           exit 1
         fi
         echo "$AWS_S3_BUCKET bucket is defined"
@@ -78,6 +78,8 @@ runs:
       env:
         SOURCE_DIR: ${{ inputs.source-directory }}
         DEST_DIR: ${{ inputs.bucket-directory }}
+        # Make sure to run in an environment with access to any secrets that are passed in.
+        # Otherwise they will be empty.
         AWS_S3_BUCKET: ${{ inputs.bucket }}
         AWS_REGION: ${{ inputs.aws-region }}
         AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}

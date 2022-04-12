@@ -46,23 +46,6 @@ on:
         required: false
 
 jobs:
-  call-test:
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    permissions:
-      contents: read
-    steps:
-      - run: |
-          # Check for non-empty values
-          if [ -z "$AWS_S3_BUCKET" ]; then
-            echo "Invalid (empty) bucket defined"
-            exit 1
-          fi
-          echo "$AWS_S3_BUCKET bucket is defined"
-        shell: bash
-        env:
-          AWS_S3_BUCKET: ${{ secrets.bucket }}
-
   call-build-legacy-check:
     # Determine if this is a 1.8 type of build which is different
     name: Extract any supporting metadata
