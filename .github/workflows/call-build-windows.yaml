@@ -38,6 +38,7 @@ on:
 jobs:
   call-test:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
     steps:
@@ -99,6 +100,7 @@ jobs:
 
   call-build-windows-s3-upload:
     name: Handle upload to S3
+    environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     needs:
       - call-build-windows-package
