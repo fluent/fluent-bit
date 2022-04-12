@@ -81,10 +81,11 @@ jobs:
 
   call-build-windows-s3-upload:
     name: Handle upload to S3
-    # Must use this to prevent weird AWS failures
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     needs:
       - call-build-windows-package
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

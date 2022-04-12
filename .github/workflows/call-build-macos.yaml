@@ -100,10 +100,11 @@ jobs:
     name: Handle upload to S3
     # Only upload for staging
     if: inputs.environment == 'staging'
-    # Must use this to prevent weird AWS failures
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     needs:
       - call-build-macos-package
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
