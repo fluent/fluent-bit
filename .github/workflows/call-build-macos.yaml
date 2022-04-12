@@ -1,5 +1,5 @@
 ---
-name: Reusable workflow to build Windows packages optionally into S3 bucket
+name: Reusable workflow to build MacOS packages optionally into S3 bucket
 
 on:
   workflow_call:
