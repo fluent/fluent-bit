@@ -98,6 +98,8 @@ jobs:
 
   call-build-macos-s3-upload:
     name: Handle upload to S3
+    # Only upload for staging
+    if: inputs.environment == 'staging'
     runs-on: ubuntu-latest
     needs:
       - call-build-macos-package
@@ -115,8 +117,6 @@ jobs:
           path: artifacts/
 
       - name: Push MacOS packages to S3
-        # Only upload for staging
-        if: inputs.environment == 'staging'
         uses: ./.github/actions/sync-to-bucket
         with:
           bucket: ${{ secrets.bucket }}

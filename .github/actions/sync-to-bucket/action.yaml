@@ -30,7 +30,20 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Check and sync
+    - name: Local - Check and sync
+      run: |
+        if [[ ! -d "$SOURCE_DIR" ]]; then
+          echo "No source directory: $SOURCE_DIR"
+          ls -lR
+          exit 1
+        fi
+        echo "Valid source directory: $SOURCE_DIR"
+        ls -lR "$SOURCE_DIR"
+      env:
+        SOURCE_DIR: ${{ inputs.source-directory }}
+      shell: bash
+
+    - name: AWS - Check and sync
       run: |
         # For Minio, etc.
         if [ -n "${AWS_S3_ENDPOINT}" ]; then
@@ -47,16 +60,13 @@ runs:
         # Verify bucket access
         bucketstatus=$(aws --region "$AWS_REGION" s3api head-bucket --bucket "${AWS_S3_BUCKET}" ${ENDPOINT} 2>&1)
         echo "Response: $bucketstatus"
-        if echo "${bucketstatus}" | grep 'Not Found';
-        then
+        if echo "${bucketstatus}" | grep 'Not Found'; then
           echo "$AWS_S3_BUCKET: bucket does not exist";
           exit 1
-        elif echo "${bucketstatus}" | grep 'Forbidden';
-        then
+        elif echo "${bucketstatus}" | grep 'Forbidden'; then
           echo "$AWS_S3_BUCKET: bucket exists but not owned"
           exit 1
-        elif echo "${bucketstatus}" | grep 'Bad Request';
-        then
+        elif echo "${bucketstatus}" | grep 'Bad Request'; then
           echo "$AWS_S3_BUCKET: bucket name specified is less than 3 or greater than 63 characters"
           exit 1
         else
@@ -73,3 +83,4 @@ runs:
         AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}
         AWS_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
         AWS_S3_ENDPOINT: ${{ inputs.aws-custom-endpoint }}
+      shell: bash
