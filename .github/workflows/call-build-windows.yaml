@@ -102,7 +102,7 @@ jobs:
           ls -lR artifacts/
         shell: bash
         env:
-          SOURCE_DIR: artifacts
+          SOURCE_DIR: artifacts/windows-packages
 
       - name: Push Windows packages to S3
         # Only upload for staging
