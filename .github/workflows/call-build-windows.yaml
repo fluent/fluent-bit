@@ -81,7 +81,8 @@ jobs:
 
   call-build-windows-s3-upload:
     name: Handle upload to S3
-    runs-on: ubuntu-latest
+    # Must use this to prevent weird AWS failures
+    runs-on: ubuntu-18.04
     needs:
       - call-build-windows-package
     steps:
