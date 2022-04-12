@@ -199,7 +199,7 @@ jobs:
       - name: Push packages to S3
         # Only upload for staging
         if: inputs.environment == 'staging'
-        uses: latest/.github/actions/sync-to-bucket
+        uses: ./latest/.github/actions/sync-to-bucket
         with:
           bucket: ${{ secrets.bucket }}
           access_key_id: ${{ secrets.access_key_id }}
