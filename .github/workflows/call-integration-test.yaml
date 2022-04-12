@@ -16,21 +16,8 @@ on:
 
 jobs:
 
-  call-run-integration-test-images-exist:
-    name: Test image exists
-    # Non-matrix, test images exist first
-    runs-on: ubuntu-latest
-    env:
-      IMAGE: ${{ inputs.image_name }}:${{ inputs.image_tag }}
-    permissions:
-      contents: none
-    steps:
-      - run: docker pull $IMAGE
-
   call-run-integration-kind:
     name: Run integration tests on KIND
-    needs:
-      - call-run-integration-test-images-exist
     # Can test for multiple K8S versions with KIND
     strategy:
       fail-fast: false
@@ -38,8 +25,11 @@ jobs:
         k8s-release: [ 'v1.23.5', 'v1.22.7', 'v1.21.10' ]
     runs-on: ubuntu-latest
     permissions:
-      contents: none
+      packages: read
     steps:
+      - name: Test image exists and cache locally
+        run: docker pull ${{ inputs.image_name }}:${{ inputs.image_tag }}
+
       - uses: actions/checkout@v3
         with:
           repository: calyptia/fluent-bit-ci
@@ -65,5 +55,10 @@ jobs:
 
       - name: Run tests
         run:  |
+          kind load docker-image ${{ inputs.image_name }}:${{ inputs.image_tag }}
           ./run-tests.sh
         shell: bash
+        env:
+          FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
+          FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
+
