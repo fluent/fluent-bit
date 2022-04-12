@@ -36,9 +36,25 @@ on:
         required: false
 
 jobs:
+  call-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: |
+          # Check for non-empty values
+          if [ -z "$AWS_S3_BUCKET" ]; then
+            echo "Invalid (empty) bucket defined"
+            exit 1
+          fi
+          echo "$AWS_S3_BUCKET bucket is defined"
+        shell: bash
+
   call-build-windows-package:
     runs-on: windows-latest
     environment: ${{ inputs.environment }}
+    needs:
+      - call-test
     permissions:
       contents: read
     steps:
