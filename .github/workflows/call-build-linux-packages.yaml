@@ -46,6 +46,22 @@ on:
         required: false
 
 jobs:
+  call-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: |
+          # Check for non-empty values
+          if [ -z "$AWS_S3_BUCKET" ]; then
+            echo "Invalid (empty) bucket defined"
+            exit 1
+          fi
+          echo "$AWS_S3_BUCKET bucket is defined"
+        shell: bash
+        env:
+          AWS_S3_BUCKET: ${{ secrets.bucket }}
+
   call-build-legacy-check:
     # Determine if this is a 1.8 type of build which is different
     name: Extract any supporting metadata
@@ -190,17 +206,17 @@ jobs:
           fi
         shell: bash
 
-      # - name: Checkout code for action
-      #   if: inputs.environment == 'staging'
-      #   uses: actions/checkout@v3
-      #   with:
-      #     path: latest
+      # Required to support 1.8 style builds which will not have it
+      - name: Checkout code for action
+        if: inputs.environment == 'staging'
+        uses: actions/checkout@v3
+        with:
+          path: action-support
 
       - name: Push packages to S3
         # Only upload for staging
         if: inputs.environment == 'staging'
-        # uses: ./latest/.github/actions/sync-to-bucket
-        uses: ./.github/actions/sync-to-bucket
+        uses: ./action-support/.github/actions/sync-to-bucket
         with:
           bucket: ${{ secrets.bucket }}
           access_key_id: ${{ secrets.access_key_id }}
