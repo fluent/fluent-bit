@@ -39,8 +39,6 @@ jobs:
   call-build-windows-package:
     runs-on: windows-latest
     environment: ${{ inputs.environment }}
-    needs:
-      - call-test
     permissions:
       contents: read
     steps:
