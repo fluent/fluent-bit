@@ -1,0 +1,88 @@
+name: Composite action to sync S3 buckets
+description: Carry out all the tasks to sync to a bucket and make reusable.
+
+inputs:
+  bucket:
+    description: The name of the S3 (US-East) bucket to sync packages from.
+    required: true
+  access_key_id:
+    description: The S3 access key id for the bucket.
+    required: true
+  secret_access_key:
+    description: The S3 secret access key for the bucket.
+    required: true
+  bucket-directory:
+    description: The directory in the bucket to sync to.
+    required: true
+  source-directory:
+    description: The source directory to sync from.
+    required: true
+  aws-region:
+    description: The default region to use.
+    required: false
+    default: "us-east-1"
+  aws-custom-endpoint:
+    # To use with Minio locally (or update to whatever endpoint you want)
+    # '--endpoint http://localhost:9000'
+    description: A custom endpoint for S3 commands, e.g. for Minio.
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Local - Check and sync
+      run: |
+        if [[ ! -d "$SOURCE_DIR" ]]; then
+          echo "No source directory: $SOURCE_DIR"
+          ls -lR
+          exit 1
+        fi
+        echo "Valid source directory: $SOURCE_DIR"
+        ls -lR "$SOURCE_DIR"
+      env:
+        SOURCE_DIR: ${{ inputs.source-directory }}
+      shell: bash
+
+    - name: AWS - Check and sync
+      run: |
+        # For Minio, etc.
+        if [ -n "${AWS_S3_ENDPOINT}" ]; then
+          ENDPOINT="--endpoint-url ${AWS_S3_ENDPOINT}"
+        fi
+
+        # Check for non-empty values
+        if [ -z "$AWS_S3_BUCKET" ]; then
+          echo "Invalid (empty) bucket defined, check running on right environment to allow access to any secrets"
+          exit 1
+        fi
+        echo "$AWS_S3_BUCKET bucket is defined"
+
+        # Verify bucket access
+        bucketstatus=$(aws --region "$AWS_REGION" s3api head-bucket --bucket "${AWS_S3_BUCKET}" ${ENDPOINT} 2>&1)
+        echo "Response: $bucketstatus"
+        if echo "${bucketstatus}" | grep 'Not Found'; then
+          echo "$AWS_S3_BUCKET: bucket does not exist";
+          exit 1
+        elif echo "${bucketstatus}" | grep 'Forbidden'; then
+          echo "$AWS_S3_BUCKET: bucket exists but not owned"
+          exit 1
+        elif echo "${bucketstatus}" | grep 'Bad Request'; then
+          echo "$AWS_S3_BUCKET: bucket name specified is less than 3 or greater than 63 characters"
+          exit 1
+        else
+          echo "$AWS_S3_BUCKET: bucket owned and exists";
+        fi
+
+        # Sync to bucket
+        aws --region "$AWS_REGION" s3 sync "${SOURCE_DIR}" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress ${ENDPOINT}
+      env:
+        SOURCE_DIR: ${{ inputs.source-directory }}
+        DEST_DIR: ${{ inputs.bucket-directory }}
+        # Make sure to run in an environment with access to any secrets that are passed in.
+        # Otherwise they will be empty.
+        AWS_S3_BUCKET: ${{ inputs.bucket }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.access_key_id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.secret_access_key }}
+        AWS_S3_ENDPOINT: ${{ inputs.aws-custom-endpoint }}
+      shell: bash
