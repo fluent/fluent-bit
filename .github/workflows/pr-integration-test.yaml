@@ -10,8 +10,6 @@ on:
       - reopened
       - synchronize
 
-concurrency: integration-test
-
 jobs:
   pr-integration-test-build:
     name: PR - GCP build
@@ -39,6 +37,14 @@ jobs:
           labels: ci/integration-docker-ok
           github_token: ${{ secrets.GITHUB_TOKEN }}
           number: ${{ github.event.pull_request.number }}
+
+  pr-integration-test-run-integration:
+    name: PR - GCP integration test
+    needs: pr-integration-test-build
+    uses: fluent/fluent-bit/.github/workflows/call-integration-test.yaml@master
+    with:
+      image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
+      image_tag: ${{ github.sha }}
 
   pr-integration-test-run-integration-gcp:
     name: PR - GCP integration test
