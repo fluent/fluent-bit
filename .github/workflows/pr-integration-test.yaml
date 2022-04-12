@@ -46,19 +46,6 @@ jobs:
       image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
       image_tag: ${{ github.sha }}
 
-  pr-integration-test-run-integration-gcp:
-    name: PR - GCP integration test
-    needs: pr-integration-test-build
-    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
-    with:
-      image_name: ghcr.io/${{ github.repository }}/pr-${{ github.event.pull_request.number }}
-      image_tag: ${{ github.sha }}
-    secrets:
-      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
-      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
-      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
-      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
-
   pr-integration-test-run-integration-post-label:
     name: PR - GCP test complete
     runs-on: ubuntu-latest

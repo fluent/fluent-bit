@@ -35,6 +35,9 @@ jobs:
     name: Integration test container image build
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v3
         with:
@@ -110,6 +113,9 @@ jobs:
     needs: call-integration-image-build-container
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
