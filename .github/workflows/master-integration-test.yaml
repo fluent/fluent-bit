@@ -4,8 +4,6 @@ on:
     branches:
       - master
 
-concurrency: integration-test
-
 jobs:
   master-integration-test-build:
     name: Master - integration build
@@ -20,24 +18,10 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
-  master-integration-test-build-complete:
-    name: Master - annotate Grafana Cloud with commit ID now build complete
-    needs: master-integration-test-build
-    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-grafana-cloud-annotation.yaml@main
-    with:
-      ref: ${{ github.sha }}
-    secrets:
-      grafana_cloud_token: ${{ secrets.GRAFANA_CLOUD_TOKEN }}
-
-  master-integration-test-run-integration-gcp:
+  master-integration-test-run-integration:
     name: Master - integration test
     needs: master-integration-test-build
-    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
+    uses: fluent/fluent-bit/.github/workflows/call-integration-test.yaml@master
     with:
       image_name: ghcr.io/${{ github.repository }}/master
       image_tag: x86_64
-    secrets:
-      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
-      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
-      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
-      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}

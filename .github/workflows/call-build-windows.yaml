@@ -94,6 +94,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v2
         with:
+          name: windows-packages
           path: artifacts/
 
       - name: Set up Windows checksums
@@ -110,7 +111,7 @@ jobs:
         run: |
           aws s3 sync "$SOURCE_DIR" "s3://$DEST_DIR" --follow-symlinks --no-progress
         env:
-          SOURCE_DIR: "artifacts"
+          SOURCE_DIR: "artifacts/"
           DEST_DIR: "${{ secrets.bucket }}/${{ inputs.version }}/windows/"
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
