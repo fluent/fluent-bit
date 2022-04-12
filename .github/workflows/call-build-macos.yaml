@@ -118,10 +118,11 @@ jobs:
         # Only upload for staging
         if: inputs.environment == 'staging'
         run: |
-          aws s3 sync "$SOURCE_DIR" "s3://$DEST_DIR" --follow-symlinks --no-progress
+          aws s3 sync "$SOURCE_DIR" "s3://${AWS_S3_BUCKET}/${DEST_DIR}" --follow-symlinks --no-progress --delete
         env:
           SOURCE_DIR: "artifacts"
-          DEST_DIR: "${{ secrets.bucket }}/${{ inputs.version }}/macos/"
+          DEST_DIR: "${{ inputs.version }}/macos/"
+          AWS_S3_BUCKET: ${{ secrets.bucket }}
           AWS_REGION: "us-east-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.secret_access_key }}
