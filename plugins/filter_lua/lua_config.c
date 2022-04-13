@@ -67,47 +67,54 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     lf->ins = ins;
     lf->script = NULL;
 
-    /* Config: script */
-    script = flb_filter_get_property("script", ins);
-    if (!script) {
-        flb_plg_error(lf->ins, "no script path defined");
-        flb_free(lf);
-        return NULL;
+    /* config: code */
+    tmp = flb_filter_get_property("code", ins);
+    if (tmp) {
+        lf->code = flb_sds_create(tmp);
     }
+    else {
+        /* Config: script */
+        script = flb_filter_get_property("script", ins);
+        if (!script) {
+            flb_plg_error(lf->ins, "no script path defined");
+            flb_free(lf);
+            return NULL;
+        }
 
-    /* Compose path */
-    ret = stat(script, &st);
-    if (ret == -1 && errno == ENOENT) {
-        if (script[0] == '/') {
+        /* Compose path */
+        ret = stat(script, &st);
+        if (ret == -1 && errno == ENOENT) {
+            if (script[0] == '/') {
+                flb_plg_error(lf->ins, "cannot access script '%s'", script);
+                flb_free(lf);
+                return NULL;
+            }
+
+            if (config->conf_path) {
+                snprintf(buf, sizeof(buf) - 1, "%s%s",
+                         config->conf_path, script);
+                script = buf;
+            }
+        }
+
+        /* Validate script path */
+        ret = access(script, R_OK);
+        if (ret == -1) {
             flb_plg_error(lf->ins, "cannot access script '%s'", script);
             flb_free(lf);
             return NULL;
         }
 
-        if (config->conf_path) {
-            snprintf(buf, sizeof(buf) - 1, "%s%s",
-                     config->conf_path, script);
-            script = buf;
+        lf->script = flb_sds_create(script);
+        if (!lf->script) {
+            flb_plg_error(lf->ins, "could not allocate string");
+            flb_free(lf);
+            return NULL;
         }
     }
 
-    /* Validate script path */
-    ret = access(script, R_OK);
-    if (ret == -1) {
-        flb_plg_error(lf->ins, "cannot access script '%s'", script);
-        flb_free(lf);
-        return NULL;
-    }
-
-    lf->script = flb_sds_create(script);
-    if (!lf->script) {
-        flb_plg_error(lf->ins, "could not allocate string");
-        flb_free(lf);
-        return NULL;
-    }
-
     if (!lf->call) {
-        flb_plg_error(lf->ins, "could not allocate call");
+        flb_plg_error(lf->ins, "function name defined by 'call' is not set");
         lua_config_destroy(lf);
         return NULL;
     }
@@ -171,9 +178,14 @@ void lua_config_destroy(struct lua_filter *lf)
         return;
     }
 
+    if (lf->code) {
+        flb_sds_destroy(lf->code);
+    }
+
     if (lf->script) {
         flb_sds_destroy(lf->script);
     }
+
     if (lf->buffer) {
         flb_sds_destroy(lf->buffer);
     }
