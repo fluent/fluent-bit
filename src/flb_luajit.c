@@ -59,6 +59,20 @@ int flb_luajit_load_script(struct flb_luajit *lj, char *script)
     return 0;
 }
 
+int flb_luajit_load_buffer(struct flb_luajit *lj, char *string, size_t len, char *name)
+{
+    int ret;
+
+    ret = luaL_loadbuffer(lj->state, string, len, name);
+    if (ret != 0) {
+        flb_error("[luajit] error loading buffer: %s",
+                  lua_tostring(lj->state, -1));
+        return -1;
+    }
+
+    return 0;
+}
+
 void flb_luajit_destroy(struct flb_luajit *lj)
 {
     lua_close(lj->state);

@@ -36,6 +36,8 @@ struct flb_luajit {
 
 struct flb_luajit *flb_luajit_create();
 int flb_luajit_load_script(struct flb_luajit *lj, char *script);
+int flb_luajit_load_buffer(struct flb_luajit *lj, char *string, size_t len, char *name);
+
 void flb_luajit_destroy(struct flb_luajit *lj);
 int flb_luajit_destroy_all(struct flb_config *ctx);
 
