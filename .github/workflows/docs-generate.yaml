@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - master
-      - '1.9'
 jobs:
   update_diagram:
     name: Update the codebase structure diagram
@@ -30,7 +29,7 @@ jobs:
         with:
           commit_message: 'ci: update repo-visualizer diagram'
           signoff: true
-          branch-suffix: random
+          branch: ci_update_diagram
           delete-branch: true
           title: 'ci: update repo-visualizer diagram'
           reviewers: 'patrick-stephens,niedbalski'
