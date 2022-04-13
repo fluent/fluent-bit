@@ -169,6 +169,7 @@ Fluent Bit is fully supported on Windows environments, get started with [these i
 
 If you are interested in contributing to Fluent bit with bug fixes, new features or coding in general, please refer to the code [CONTRIBUTING](CONTRIBUTING.md) guidelines. You can also refer the Beginners Guide to contributing to Fluent Bit [here.](DEVELOPER_GUIDE.md)
 
+![Visualization of the codebase](./codebase-structure.svg)
 ## Community & Contact
 
 Feel free to join us on our Slack channel, Mailing List or IRC:
