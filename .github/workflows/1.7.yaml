@@ -148,7 +148,7 @@ jobs:
         with:
           go-version: '1.16' # The Go version to download (if necessary) and use.
 
-      - uses: azure/setup-helm@v2.0
+      - uses: azure/setup-helm@v2.1
         id: install
 
       - run: go mod download
