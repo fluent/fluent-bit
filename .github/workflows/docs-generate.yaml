@@ -27,7 +27,7 @@ jobs:
       - name: Generate PR for updates
         uses: peter-evans/create-pull-request@v4
         with:
-          commit_message: 'ci: update repo-visualizer diagram'
+          commit-message: 'ci: update repo-visualizer diagram'
           signoff: true
           branch: ci_update_diagram
           delete-branch: true
