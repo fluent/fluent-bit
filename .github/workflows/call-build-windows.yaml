@@ -97,7 +97,7 @@ jobs:
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: windows-packages
           path: artifacts/
