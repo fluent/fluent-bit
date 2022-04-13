@@ -29,6 +29,7 @@
 #define LUA_BUFFER_CHUNK    1024 * 8  /* 8K should be enough to get started */
 
 struct lua_filter {
+    flb_sds_t code;                   /* lua script source code */
     flb_sds_t script;                 /* lua script path */
     flb_sds_t call;                   /* function name   */
     flb_sds_t buffer;                 /* json dec buffer */
