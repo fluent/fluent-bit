@@ -1,0 +1,37 @@
+
+name: Documentation and diagram generation
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - '1.9'
+jobs:
+  update_diagram:
+    name: Update the codebase structure diagram
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Update diagram
+        # TODO: still not "official" enough for a proper semantic release version
+        uses: githubocto/repo-visualizer@main
+        with:
+          excluded_paths: "ignore,.github"
+          output_file: codebase-structure.svg
+          should_push: false
+
+      - name: Generate PR for updates
+        with:
+          commit_message: 'ci: update repo-visualizer diagram'
+          signoff: true
+          branch-suffix: random
+          delete-branch: true
+          title: 'ci: update repo-visualizer diagram'
+          reviewers: 'patrick-stephens,niedbalski'
+          add-paths: |
+            codebase-structure.svg
