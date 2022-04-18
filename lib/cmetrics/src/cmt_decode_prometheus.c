@@ -223,6 +223,34 @@ static int parse_double(const char *in, double *out)
     return 0;
 }
 
+static int parse_timestamp(struct cmt_decode_prometheus_context *context,
+                           char *data_source, uint64_t *timestamp)
+{
+    int result;
+
+    result = CMT_DECODE_PROMETHEUS_SUCCESS;
+
+    if (data_source != NULL && strlen(data_source) > 0) {
+        result = parse_uint64(data_source, timestamp);
+
+        if (result) {
+            result = report_error(context,
+                                  CMT_DECODE_PROMETHEUS_PARSE_TIMESTAMP_FAILED,
+                                  "failed to parse sample: \"%s\" is not a valid "
+                                  "timestamp", data_source);
+        }
+        else {
+            /* prometheus text format timestamps are expressed in milliseconds,
+             * while cmetrics expresses them in nanoseconds, so multiply by 10e5
+             */
+
+            *timestamp *= 10e5;
+        }
+    }
+
+    return result;
+}
+
 static int parse_value_timestamp(
         struct cmt_decode_prometheus_context *context,
         struct cmt_decode_prometheus_context_sample *sample,
@@ -413,12 +441,14 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
     cmt_sds_t *labels_without_le = NULL;
     cmt_sds_t *values_without_le = NULL;
     int label_i;
+    uint64_t timestamp;
 
     // bucket_count = sample count - 3:
     // - "Inf" bucket
     // - sum
     // - count
     bucket_count = mk_list_size(&context->metric.samples) - 3;
+    timestamp = 0;
 
     bucket_defaults = calloc(bucket_count + 1, sizeof(*bucket_defaults));
     if (!bucket_defaults) {
@@ -486,6 +516,15 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                     goto end;
                 }
                 bucket_index++;
+
+                if (!timestamp) {
+                    ret = parse_timestamp(context, sample->value2, &timestamp);
+
+                    if (ret) {
+                        goto end;
+                    }
+                }
+
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
                 if (parse_double(sample->value1, &sum)) {
@@ -494,6 +533,15 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                             "failed to parse sum");
                     goto end;
                 }
+
+                if (!timestamp) {
+                    ret = parse_timestamp(context, sample->value2, &timestamp);
+
+                    if (ret) {
+                        goto end;
+                    }
+                }
+
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
                 if (parse_uint64(sample->value1, &count)) {
@@ -503,8 +551,22 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
                     goto end;
                 }
                 bucket_defaults[bucket_index] = count;
+
+                if (!timestamp) {
+                    ret = parse_timestamp(context, sample->value2, &timestamp);
+
+                    if (ret) {
+                        goto end;
+                    }
+                }
+
                 break;
         }
+    }
+
+    if (!timestamp) {
+        // No timestamp was specified, use default value
+        timestamp = context->opts.default_timestamp;
     }
 
     cmt_buckets = cmt_histogram_buckets_create_size(buckets, bucket_count);
@@ -575,11 +637,13 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
     cmt_sds_t *labels_without_quantile = NULL;
     cmt_sds_t *values_without_quantile = NULL;
     int label_i;
+    uint64_t timestamp;
 
     // quantile_count = sample count - 2:
     // - sum
     // - count
     quantile_count = mk_list_size(&context->metric.samples) - 2;
+    timestamp = 0;
 
     quantile_defaults = calloc(quantile_count, sizeof(*quantile_defaults));
     if (!quantile_defaults) {
@@ -645,6 +709,15 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
                     goto end;
                 }
                 quantile_index++;
+
+                if (!timestamp) {
+                    ret = parse_timestamp(context, sample->value2, &timestamp);
+
+                    if (ret) {
+                        goto end;
+                    }
+                }
+
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
                 if (parse_double(sample->value1, &sum)) {
@@ -653,6 +726,15 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
                             "failed to parse summary sum");
                     goto end;
                 }
+
+                if (!timestamp) {
+                    ret = parse_timestamp(context, sample->value2, &timestamp);
+
+                    if (ret) {
+                        goto end;
+                    }
+                }
+
                 break;
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
                 if (parse_uint64(sample->value1, &count)) {
@@ -661,8 +743,22 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
                             "failed to parse summary count");
                     goto end;
                 }
+
+                if (!timestamp) {
+                    ret = parse_timestamp(context, sample->value2, &timestamp);
+
+                    if (ret) {
+                        goto end;
+                    }
+                }
+
                 break;
         }
+    }
+
+    if (!timestamp) {
+        // No timestamp was specified, use default value
+        timestamp = context->opts.default_timestamp;
     }
 
     s = cmt_summary_create(context->cmt,
@@ -682,7 +778,7 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
         goto end;
     }
 
-    if (cmt_summary_set_default(s, 0, quantile_defaults, sum, count,
+    if (cmt_summary_set_default(s, timestamp, quantile_defaults, sum, count,
                 label_i,
                 label_i ? values_without_quantile : NULL)) {
         ret = report_error(context,
