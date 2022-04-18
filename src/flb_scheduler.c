@@ -287,7 +287,7 @@ int flb_sched_request_create(struct flb_config *config, void *data, int tries)
     timer->event.mask = MK_EVENT_EMPTY;
 
     /* Get suggested wait_time for this request. If shutting down, set to 0. */
-    if (config->is_shutting_down == FLB_TRUE) {
+    if (config->is_shutting_down) {
         seconds = 0;
     } else {
         seconds = backoff_full_jitter((int)config->sched_base, (int)config->sched_cap, 
@@ -699,6 +699,7 @@ int flb_sched_retry_now(struct flb_config *config,
     request = flb_malloc(sizeof(struct flb_sched_request));
     if (!request) {
         flb_errno();
+        flb_sched_timer_destroy(timer); 
         return -1;
     }
 

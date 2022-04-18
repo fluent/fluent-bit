@@ -126,7 +126,6 @@ void flb_engine_reschedule_retries(struct flb_config *config)
                     /* Can't do much here, just continue on */
                     flb_warn("[engine] failed to immediately re-schedule retry=%p "
                              "for task %i. Err: %d", retry, task->id, flb_errno());
-                    continue;
                 } else {
                     flb_debug("[engine] re-scheduled retry=%p for task %i",
                         retry, task->id);
