@@ -243,7 +243,8 @@ static int configure_logd(struct flb_logcat *ctx)
     /* Logcat defaults */
     const int lids[] = { LOG_ID_MAIN, LOG_ID_SYSTEM, LOG_ID_CRASH };
 
-    for (int i = 0; i < sizeof(lids) / sizeof(lids[0]); i++) {
+    int i;
+    for (i = 0; i < sizeof(lids) / sizeof(lids[0]); i++) {
         char buf[MAX_COMMAND_LEN];
         snprintf(buf, sizeof(buf), "setLogSize %d %d", lids[i],
                  ctx->log_buffer_size);

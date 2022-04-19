@@ -92,7 +92,8 @@ int parseLogEntry(log_msg * buf, int length, AndroidLogEntry * entry,
     char *msgStart = memchr(msg, '\0', buf->entry.len) + 1;
     if (msgStart == NULL) {
         /* +++ LOG: malformed log message, DYB */
-        for (int i = 1; i < buf->entry.len; i++) {
+        int i;
+        for (i = 1; i < buf->entry.len; i++) {
             /* odd characters in tag? */
             if ((msg[i] <= ' ') || (msg[i] == ':') || (msg[i] >= 0x7f)) {
                 msg[i] = '\0';
