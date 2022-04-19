@@ -241,6 +241,14 @@ void test_json_pack_mult_iter()
     flb_free(buf);
 }
 
+/* Validate default values of macros used in flb_msgpack_raw_to_json_sds */
+void test_msgpack_to_json_macros()
+{
+    /* Verify default values */
+    TEST_CHECK(FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE == 2.0);
+    TEST_CHECK(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE == 0.10);
+}
+
 /* Validate that duplicated keys are removed */
 void test_json_dup_keys()
 {
@@ -632,6 +640,7 @@ TEST_LIST = {
     { "json_pack_iter"     , test_json_pack_iter},
     { "json_pack_mult"     , test_json_pack_mult},
     { "json_pack_mult_iter", test_json_pack_mult_iter},
+    { "json_macros"        , test_msgpack_to_json_macros},
     { "json_dup_keys"      , test_json_dup_keys},
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
