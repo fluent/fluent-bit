@@ -103,6 +103,11 @@ static int configure(struct filter_nest_ctx *ctx,
             }
 
             wildcard->key = flb_strndup(kv->val, flb_sds_len(kv->val));
+            if (wildcard->key == NULL) {
+                flb_errno();
+                flb_free(wildcard);
+                return -1;
+            }
             wildcard->key_len = flb_sds_len(kv->val);
 
             if (wildcard->key[wildcard->key_len - 1] == '*') {
