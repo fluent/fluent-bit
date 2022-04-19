@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_jsmn.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -167,6 +168,63 @@ static int read_credentials_file(const char *cred_file, struct flb_stackdriver *
     return 0;
 }
 
+/*
+ * parse_configuration_labels
+ * - Parse labels set in configuration
+ * - Returns the number of configuration labels
+ */
+
+static int parse_configuration_labels(struct flb_stackdriver *ctx)
+{
+    int ret;
+    char *p;
+    flb_sds_t key;
+    flb_sds_t val;
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+    msgpack_object_kv *kv = NULL;
+
+    if (ctx->labels) {
+        mk_list_foreach(head, ctx->labels) {
+            entry = mk_list_entry(head, struct flb_slist_entry, _head);
+
+            p = strchr(entry->str, '=');
+            if (!p) {
+                flb_plg_error(ctx->ins, "invalid key value pair on '%s'",
+                              entry->str);
+                return -1;
+            }
+
+            key = flb_sds_create_size((p - entry->str) + 1);
+            flb_sds_cat(key, entry->str, p - entry->str);
+            val = flb_sds_create(p + 1);
+            if (!key) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->str);
+                return -1;
+            }
+            if (!val || flb_sds_len(val) == 0) {
+                flb_plg_error(ctx->ins,
+                              "invalid key value pair on '%s'",
+                              entry->str);
+                flb_sds_destroy(key);
+                return -1;
+            }
+
+            ret = flb_kv_item_create(&ctx->config_labels, key, val);
+            flb_sds_destroy(key);
+            flb_sds_destroy(val);
+
+            if (ret == -1) {
+                return -1;
+            }
+        }
+    }
+
+    return mk_list_size(&ctx->config_labels);
+}
+
 struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *ins,
                                                     struct flb_config *config)
 {
@@ -188,6 +246,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     ret = flb_output_config_map_set(ins, (void *)ctx);
     if (ret == -1) {
         flb_plg_error(ins, "unable to load configuration");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* labels */
+    flb_kv_init(&ctx->config_labels);
+    ret = parse_configuration_labels((void *)ctx);
+    if (ret == -1) {
+        flb_plg_error(ins, "unable to parse configuration labels");
+        flb_kv_release(&ctx->config_labels);
         flb_free(ctx);
         return NULL;
     }
@@ -533,6 +601,7 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         flb_sds_destroy(ctx->tag_prefix_k8s);
     }
 
+    flb_kv_release(&ctx->config_labels);
     flb_free(ctx);
 
     return 0;
