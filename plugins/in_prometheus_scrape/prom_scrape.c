@@ -75,8 +75,8 @@ static int collect_metrics(struct prom_scrape *ctx)
     /* get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->upstream);
     if (!u_conn) {
-        flb_plg_error(ctx->ins, "could not get an upstream connection to %s:%s",
-                      ctx->ins->host.port, ctx->ins->host.port);
+        flb_plg_error(ctx->ins, "could not get an upstream connection to %s:%u",
+                      ctx->ins->host.name, ctx->ins->host.port);
         return -1;
     }
 
