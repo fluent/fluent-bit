@@ -58,6 +58,7 @@ flb_sds_t flb_file_read(const char *path)
         goto err;
     }
 
+    result[flen] = 0;
     flb_sds_len_set(result, flen);
     fclose(f);
     return result;
