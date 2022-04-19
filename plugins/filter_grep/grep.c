@@ -113,6 +113,13 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         /* Get remaining content (regular expression) */
         sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
         rule->regex_pattern = flb_strndup(sentry->value, sentry->len);
+        if (rule->regex_pattern == NULL) {
+            flb_errno();
+            delete_rules(ctx);
+            flb_free(rule);
+            flb_utils_split_free(split);
+            return -1;
+        }
 
         /* Release split */
         flb_utils_split_free(split);
