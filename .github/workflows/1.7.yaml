@@ -72,7 +72,7 @@ jobs:
           k8s_release: ${{ matrix.k8s-release }}
           k8s_release_formatted: ${{ steps.formatted_release.outputs.replaced }}
 
-      - uses: hashicorp/setup-terraform@v1
+      - uses: hashicorp/setup-terraform@v2
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
