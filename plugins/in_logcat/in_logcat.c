@@ -112,9 +112,8 @@ static int output_log_entry(const AndroidLogEntry * logEntry,
     msgpack_pack_str(&mp_pck, path_len);
     msgpack_pack_str_body(&mp_pck, ctx->path, path_len);
 
-    int ret =
-        flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data,
-                                   mp_sbuf.size);
+    int ret = flb_input_chunk_append_raw(ctx->ins, NULL, 0, mp_sbuf.data,
+                                         mp_sbuf.size);
     msgpack_sbuffer_destroy(&mp_sbuf);
 
     if (ext_buf_used) {
