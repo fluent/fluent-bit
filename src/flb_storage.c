@@ -79,6 +79,9 @@ static void metrics_append_input(msgpack_packer *mp_pck,
     char buf[32];
     ssize_t size;
 
+    /* global status */
+    int any_overlimit;
+
     /* chunks */
     int up;
     int down;
@@ -94,6 +97,8 @@ static void metrics_append_input(msgpack_packer *mp_pck,
     msgpack_pack_str_body(mp_pck, "input_chunks", 12);
     msgpack_pack_map(mp_pck, mk_list_size(&ctx->inputs));
 
+    any_overlimit = FLB_FALSE;
+
     /* Input Plugins Ingestion */
     mk_list_foreach(head, &ctx->inputs) {
         i = mk_list_entry(head, struct flb_input_instance, _head);
@@ -104,27 +109,24 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         msgpack_pack_str(mp_pck, len);
         msgpack_pack_str_body(mp_pck, tmp, len);
 
-        /* Map for 'status' and 'chunks' */
-        msgpack_pack_map(mp_pck, 2);
+        /* 'status' map has 5 keys: overlimit, mem_size_bytes, mem_size, mem_limit_bytes and mem_limit */
+        /* 'chunks' has 6 keys: total, up, down, busy, busy_size_bytes and busy_size */
+        msgpack_pack_map(mp_pck, 11);
 
         /*
          * Status
          * ======
          */
-        msgpack_pack_str(mp_pck, 6);
-        msgpack_pack_str_body(mp_pck, "status", 6);
-
-        /* 'status' map has 2 keys: overlimit and chunks */
-        msgpack_pack_map(mp_pck, 3);
 
         /* status['overlimit'] */
-        msgpack_pack_str(mp_pck, 9);
-        msgpack_pack_str_body(mp_pck, "overlimit", 9);
+        msgpack_pack_str(mp_pck, 16);
+        msgpack_pack_str_body(mp_pck, "status_overlimit", 16);
 
         ret = FLB_FALSE;
         if (i->mem_buf_limit > 0) {
             if (i->mem_chunks_size >= i->mem_buf_limit) {
                 ret = FLB_TRUE;
+                any_overlimit = FLB_TRUE;
             }
         }
         if (ret == FLB_TRUE) {
@@ -134,9 +136,14 @@ static void metrics_append_input(msgpack_packer *mp_pck,
             msgpack_pack_false(mp_pck);
         }
 
+        /* status['mem_size_bytes'] */
+        msgpack_pack_str(mp_pck, 21);
+        msgpack_pack_str_body(mp_pck, "status_mem_size_bytes", 21);
+        msgpack_pack_uint64(mp_pck, i->mem_chunks_size);
+
         /* status['mem_size'] */
-        msgpack_pack_str(mp_pck, 8);
-        msgpack_pack_str_body(mp_pck, "mem_size", 8);
+        msgpack_pack_str(mp_pck, 15);
+        msgpack_pack_str_body(mp_pck, "status_mem_size", 15);
 
         /* Current memory size used based on last ingestion */
         flb_utils_bytes_to_human_readable_size(i->mem_chunks_size,
@@ -145,9 +152,14 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         msgpack_pack_str(mp_pck, len);
         msgpack_pack_str_body(mp_pck, buf, len);
 
+        /* status['mem_limit_bytes'] */
+        msgpack_pack_str(mp_pck, 22);
+        msgpack_pack_str_body(mp_pck, "status_mem_limit_bytes", 22);
+        msgpack_pack_uint64(mp_pck, i->mem_buf_limit);
+
         /* status['mem_limit'] */
-        msgpack_pack_str(mp_pck, 9);
-        msgpack_pack_str_body(mp_pck, "mem_limit", 9);
+        msgpack_pack_str(mp_pck, 16);
+        msgpack_pack_str_body(mp_pck, "status_mem_limit", 16);
 
         flb_utils_bytes_to_human_readable_size(i->mem_buf_limit,
                                                buf, sizeof(buf) - 1);
@@ -159,15 +171,10 @@ static void metrics_append_input(msgpack_packer *mp_pck,
          * Chunks
          * ======
          */
-        msgpack_pack_str(mp_pck, 6);
-        msgpack_pack_str_body(mp_pck, "chunks", 6);
-
-        /* 'chunks' has 3 keys: total, up, down, busy and busy_size */
-        msgpack_pack_map(mp_pck, 5);
 
         /* chunks['total_chunks'] */
-        msgpack_pack_str(mp_pck, 5);
-        msgpack_pack_str_body(mp_pck, "total", 5);
+        msgpack_pack_str(mp_pck, 12);
+        msgpack_pack_str_body(mp_pck, "chunks_total", 12);
         msgpack_pack_uint64(mp_pck, mk_list_size(&i->chunks));
 
         /*
@@ -206,29 +213,47 @@ static void metrics_append_input(msgpack_packer *mp_pck,
         }
 
         /* chunks['up'] */
-        msgpack_pack_str(mp_pck, 2);
-        msgpack_pack_str_body(mp_pck, "up", 2);
+        msgpack_pack_str(mp_pck, 9);
+        msgpack_pack_str_body(mp_pck, "chunks_up", 9);
         msgpack_pack_uint64(mp_pck, up);
 
         /* chunks['down'] */
-        msgpack_pack_str(mp_pck, 4);
-        msgpack_pack_str_body(mp_pck, "down", 4);
+        msgpack_pack_str(mp_pck, 11);
+        msgpack_pack_str_body(mp_pck, "chunks_down", 11);
         msgpack_pack_uint64(mp_pck, down);
 
         /* chunks['busy'] */
-        msgpack_pack_str(mp_pck, 4);
-        msgpack_pack_str_body(mp_pck, "busy", 4);
+        msgpack_pack_str(mp_pck, 11);
+        msgpack_pack_str_body(mp_pck, "chunks_busy", 11);
         msgpack_pack_uint64(mp_pck, busy);
 
+        /* chunks['busy_size_bytes'] */
+        msgpack_pack_str(mp_pck, 22);
+        msgpack_pack_str_body(mp_pck, "chunks_busy_size_bytes", 22);
+        msgpack_pack_uint64(mp_pck, busy_size);
+
         /* chunks['busy_size'] */
-        msgpack_pack_str(mp_pck, 9);
-        msgpack_pack_str_body(mp_pck, "busy_size", 9);
+        msgpack_pack_str(mp_pck, 16);
+        msgpack_pack_str_body(mp_pck, "chunks_busy_size", 16);
 
         flb_utils_bytes_to_human_readable_size(busy_size, buf, sizeof(buf) - 1);
         len = strlen(buf);
         msgpack_pack_str(mp_pck, len);
         msgpack_pack_str_body(mp_pck, buf, len);
     }
+
+    /* global_status['overlimit'] */
+    msgpack_pack_str(mp_pck, 6);
+    msgpack_pack_str_body(mp_pck, "global", 6);
+    msgpack_pack_map(mp_pck, 1);
+
+    msgpack_pack_str(mp_pck, 6);
+    msgpack_pack_str_body(mp_pck, "status", 6);
+    msgpack_pack_map(mp_pck, 1);
+
+    msgpack_pack_str(mp_pck, 9);
+    msgpack_pack_str_body(mp_pck, "overlimit", 9);
+    msgpack_pack_uint64(mp_pck, any_overlimit);
 }
 
 static void cb_storage_metrics_collect(struct flb_config *ctx, void *data)
@@ -241,7 +266,7 @@ static void cb_storage_metrics_collect(struct flb_config *ctx, void *data)
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     /* Pack main map and append relevant data */
-    msgpack_pack_map(&mp_pck, 2);
+    msgpack_pack_map(&mp_pck, 3);
     metrics_append_general(&mp_pck, ctx, data);
     metrics_append_input(&mp_pck, ctx, data);
 

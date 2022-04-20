@@ -135,6 +135,12 @@ static void cb_mq_storage_metrics_exit(mk_mq_t *queue, void *data)
 }
 */
 
+/* API: expose metrics in Prometheus format /api/v1/metrics/prometheus */
+void cb_storage_prometheus(mk_request_t *request, void *data)
+{
+    flb_hs_cb_metrics_prometheus(request, data, storage_metrics_get_latest());
+}
+
 /* API: expose built-in storage metrics /api/v1/storage */
 static void cb_storage(mk_request_t *request, void *data)
 {
@@ -198,6 +204,7 @@ int api_v1_storage_metrics(struct flb_hs *hs)
                                    NULL);
 
     /* HTTP end-point */
+    mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/storage/prometheus", cb_storage_prometheus, hs);
     mk_vhost_handler(hs->ctx, hs->vid, "/api/v1/storage", cb_storage, hs);
 
     return 0;

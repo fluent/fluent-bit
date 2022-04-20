@@ -17,16 +17,12 @@
  *  limitations under the License.
  */
 
-#include <fluent-bit/flb_info.h>
-#ifdef FLB_HAVE_HTTP_SERVER
+#ifndef FLB_HS_PROMETHEUS_H
+#define FLB_HS_PROMETHEUS_H
 
-#ifndef FLB_HTTP_SERVER_H
-#define FLB_HTTP_SERVER_H
-#include "http_server/flb_hs.h"
-#include "http_server/flb_hs_utils.h"
-#include "http_server/flb_hs_prometheus.h"
-#include "http_server/flb_hs_endpoints.h"
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_version.h>
+
+void flb_hs_cb_metrics_prometheus(mk_request_t *request, void *data, struct flb_hs_buf *buf);
 
 #endif
-
-#endif /* !FLB_HAVE_HTTP_SERVER */
