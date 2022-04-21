@@ -723,8 +723,8 @@ flb_sds_t flb_msgpack_raw_to_json_sds(const void *in_buf, size_t in_size)
     flb_sds_t tmp_buf;
 
     /* buffer size strategy */
-    out_size = in_size * 2;
-    realloc_size = in_size * 0.10;
+    out_size = in_size * FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE;
+    realloc_size = in_size * FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE;
     if (realloc_size < 256) {
         realloc_size = 256;
     }

@@ -311,37 +311,8 @@ if(FLB_SYSTEM_WINDOWS)
 endif()
 
 # Tweak build targets for macOS
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    execute_process(
-    COMMAND brew --prefix
-    RESULT_VARIABLE HOMEBREW
-    OUTPUT_VARIABLE HOMEBREW_PREFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if (HOMEBREW EQUAL 0 AND EXISTS "${HOMEBREW_PREFIX}")
-    message(STATUS "Found Homebrew at ${HOMEBREW_PREFIX}")
-    include(cmake/homebrew.cmake)
-  endif()
-
-  # Create rootcert on macOS
-  set(MACOS_ROOT_CERT ${CMAKE_CURRENT_BINARY_DIR}/certs/rootcert.pem)
-  execute_process(
-    COMMAND security find-certificate -a -p /Library/Keychains/System.keychain
-    RESULT_VARIABLE SECURITY_SYSTEM_RESULT
-    OUTPUT_VARIABLE SECURITY_SYSTEM_CERTS
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-  file(WRITE ${MACOS_ROOT_CERT} ${SECURITY_SYSTEM_CERTS})
-
-  execute_process(
-    COMMAND security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain
-    RESULT_VARIABLE SECURITY_ROOT_RESULT
-    OUTPUT_VARIABLE SECURITY_ROOT_CERTS
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-  file(APPEND ${MACOS_ROOT_CERT} ${SECURITY_ROOT_CERTS})
-
-  install(FILES ${MACOS_ROOT_CERT} COMPONENT binary DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/certs)
+if (FLB_SYSTEM_MACOS)
+  include(cmake/macos-setup.cmake)
 endif()
 
 # Extract Git commit information for debug output.
@@ -709,6 +680,19 @@ if(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
   FLB_DEFINITION(FLB_HAVE_ATTRIBUTE_ALLOC_SIZE)
 endif()
 
+# parameters for flb_msgpack_raw_to_json_sds buffer strategy
+if (NOT DEFINED FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE)
+  FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE 2.0)
+else()
+  FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE ${FLB_MSGPACK_TO_JSON_INIT_BUFFER_SIZE})
+endif()
+
+if (NOT DEFINED FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE)
+  FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE 0.10)
+else()
+  FLB_DEFINITION_VAL(FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE ${FLB_MSGPACK_TO_JSON_REALLOC_BUFFER_SIZE})
+endif()
+
 # Build tools/xxd-c
 add_subdirectory(tools/xxd-c)
 
@@ -989,6 +973,7 @@ endif()
 # Enable components
 set(CPACK_DEB_COMPONENT_INSTALL ON)
 set(CPACK_RPM_COMPONENT_INSTALL ON)
+set(CPACK_productbuild_COMPONENT_INSTALL ON)
 set(CPACK_COMPONENTS_ALL ${CPACK_COMPONENTS_ALL} binary library headers headers-extra)
 set(CPACK_COMPONENTS_GROUPING "ONE_PER_GROUP")
 
@@ -1067,6 +1052,45 @@ if(CPACK_GENERATOR MATCHES "NSIS")
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "td-agent-bit")
   else()
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "fluent-bit")
+  endif()
+endif()
+
+if(FLB_SYSTEM_MACOS)
+  # Determine the platform suffix
+  execute_process(
+    COMMAND uname -m
+    RESULT_VARIABLE UNAME_M_RESULT
+    OUTPUT_VARIABLE UNAME_ARCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  if (UNAME_M_RESULT EQUAL 0 AND UNAME_ARCH STREQUAL "arm64")
+    set(FLUENT_BIT_PKG ${CMAKE_CURRENT_BINARY_DIR}/fluent-bit-${FLB_VERSION_STR}-apple)
+  elseif(UNAME_M_RESULT EQUAL 0 AND UNAME_ARCH STREQUAL "x86_64")
+    set(FLUENT_BIT_PKG ${CMAKE_CURRENT_BINARY_DIR}/fluent-bit-${FLB_VERSION_STR}-intel)
+  else()
+    set(FLUENT_BIT_PKG ${CMAKE_CURRENT_BINARY_DIR}/fluent-bit-${FLB_VERSION_STR}-${UNAME_ARCH})
+  endif()
+
+  if (CPACK_GENERATOR MATCHES "productbuild")
+    set(CPACK_SET_DESTDIR "ON")
+    configure_file(cpack/macos/welcome.txt.cmakein ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
+    configure_file(cpack/macos/fluent-bit.plist.cmakein ${CMAKE_CURRENT_BINARY_DIR}/${FLB_OUT_NAME}.plist)
+    configure_file(LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
+    find_program(CONVERTER textutil)
+    if (NOT CONVERTER)
+      message(FATAL_ERROR "textutil not found.")
+    endif()
+    if (CONVERTER)
+      execute_process(COMMAND ${CONVERTER} -convert html "${CMAKE_SOURCE_DIR}/README.md" -output "${CMAKE_BINARY_DIR}/README.html")
+    endif()
+    set(CPACK_PACKAGE_FILE_NAME "${FLUENT_BIT_PKG}")
+    set(CPACK_RESOURCE_FILE_WELCOME ${CMAKE_CURRENT_BINARY_DIR}/welcome.txt)
+    set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_BINARY_DIR}/LICENSE.txt)
+    set(CPACK_RESOURCE_FILE_README ${CMAKE_CURRENT_BINARY_DIR}/README.html)
+    set(CPACK_PRODUCTBUILD_IDENTIFIER "io.fluentbit.${FLB_OUT_NAME}")
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${FLB_OUT_NAME}.plist
+      COMPONENT binary
+      DESTINATION /Library/LaunchDaemons)
   endif()
 endif()
 

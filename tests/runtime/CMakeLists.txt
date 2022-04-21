@@ -31,10 +31,12 @@ if(FLB_OUT_LIB)
   FLB_RT_TEST(FLB_IN_DUMMY_THREAD  "in_dummy_thread.c")
   FLB_RT_TEST(FLB_IN_RANDOM        "in_random.c")
   FLB_RT_TEST(FLB_IN_TAIL          "in_tail.c")
+  FLB_RT_TEST(FLB_IN_FORWARD       "in_forward.c")
 endif()
 
 # Filter Plugins
 if(FLB_IN_LIB AND FLB_OUT_LIB)
+  FLB_RT_TEST(FLB_FILTER_CHECKLIST       "filter_checklist.c")
   FLB_RT_TEST(FLB_FILTER_STDOUT          "filter_stdout.c")
   FLB_RT_TEST(FLB_FILTER_GREP            "filter_grep.c")
   FLB_RT_TEST(FLB_FILTER_THROTTLE        "filter_throttle.c")
@@ -47,6 +49,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_LUA        "filter_lua.c")
   FLB_RT_TEST(FLB_FILTER_TYPE_CONVERTER "filter_type_converter.c")
   FLB_RT_TEST(FLB_FILTER_RECORD_MODIFIER "filter_record_modifier.c")
+  FLB_RT_TEST(FLB_FILTER_MULTILINE       "filter_multiline.c")
 endif()
 
 

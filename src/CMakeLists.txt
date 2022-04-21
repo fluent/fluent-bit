@@ -6,6 +6,7 @@ set(src
   flb_mp.c
   flb_kv.c
   flb_api.c
+  flb_csv.c
   flb_lib.c
   flb_log.c
   flb_env.c
@@ -500,6 +501,12 @@ if(FLB_BINARY)
   if(FLB_SYSTEM_WINDOWS)
     install(FILES
       "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  elseif(FLB_SYSTEM_MACOS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-macos.conf"
       DESTINATION ${FLB_INSTALL_CONFDIR}
       COMPONENT binary
       RENAME "${FLB_OUT_NAME}.conf")

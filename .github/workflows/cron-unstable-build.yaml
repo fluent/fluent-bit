@@ -31,6 +31,8 @@ jobs:
     outputs:
       date: ${{ steps.date.outputs.date }}
       branch: ${{ steps.branch.outputs.branch }}
+    permissions:
+      contents: none
     steps:
       # For cron builds, i.e. nightly, we provide date and time as extra parameter to distinguish them.
       - name: Get current date
@@ -98,6 +100,8 @@ jobs:
     outputs:
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
     environment: unstable
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository, always latest for action
         uses: actions/checkout@v3
@@ -146,7 +150,8 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
-  # We already detain all artefacts as build output so just capture for an unstable release
+  # We already detain all artefacts as build output so just capture for an unstable release.
+  # We make all of these on a separate repo to prevent notification spam.
   unstable-release:
     runs-on: ubuntu-latest
     needs:
@@ -157,7 +162,7 @@ jobs:
       - unstable-build-macos-package
     environment: unstable
     permissions:
-      contents: write
+      contents: read
     steps:
       # Required to make a release later
       - name: Checkout repository
@@ -165,7 +170,7 @@ jobs:
 
       - name: Download all artefacts
         continue-on-error: true
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: artifacts/
 
@@ -204,13 +209,13 @@ jobs:
 
       - name: Remove any existing release
         continue-on-error: true
-        run: gh release delete unstable-${{ needs.unstable-build-get-meta.outputs.branch }} --yes
+        run: gh release delete unstable-${{ needs.unstable-build-get-meta.outputs.branch }} --yes --repo ${{ secrets.RELEASE_REPO }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         shell: bash
 
       - name: Create Release
-        run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
+        run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --repo ${{ secrets.RELEASE_REPO }} --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         shell: bash

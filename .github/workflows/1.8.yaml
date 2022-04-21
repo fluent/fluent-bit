@@ -76,7 +76,7 @@ jobs:
           k8s_release: ${{ matrix.k8s-release }}
           k8s_release_formatted: ${{ steps.formatted_release.outputs.replaced }}
 
-      - uses: hashicorp/setup-terraform@v1
+      - uses: hashicorp/setup-terraform@v2
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -148,11 +148,11 @@ jobs:
           location: ${{ steps.get-k8s-cluster-location.outputs.stdout }}
           credentials: ${{ secrets.GCP_SA_KEY }}
 
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v3
         with:
           go-version: '1.16' # The Go version to download (if necessary) and use.
 
-      - uses: azure/setup-helm@v2.0
+      - uses: azure/setup-helm@v2.1
         id: install
 
       - run: go mod download
