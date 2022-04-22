@@ -232,7 +232,7 @@ static char *get_config_file(struct flb_docker *ctx, char *id)
 
 static char *extract_name(char *line, char *start)
 {
-    int skip = 9;
+    int skip = sizeof(DOCKER_NAME_ARG)-1;
     int len = 0;
     char *name;
     char buff[256];
