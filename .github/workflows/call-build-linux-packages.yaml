@@ -137,7 +137,7 @@ jobs:
           bucket: ${{ secrets.bucket }}
           access_key_id: ${{ secrets.access_key_id }}
           secret_access_key: ${{ secrets.secret_access_key }}
-          bucket-directory: "${{ inputs.version }}/"
+          bucket-directory: "${{ inputs.version }}/source"
           source-directory: "source-packages/"
 
   # We build both master/1.9 and 1.8 style packages in a single job as it is simpler to keep all the custom
