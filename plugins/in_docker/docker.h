@@ -38,7 +38,7 @@
 #define DOCKER_CPU_USAGE_FILE "cpuacct.usage"
 #define DOCKER_LIB_ROOT       "/var/lib/docker/containers"
 #define DOCKER_CONFIG_JSON    "config.v2.json"
-#define DOCKER_NAME_ARG       "\"Name\""
+#define DOCKER_NAME_ARG       "\"Name\":\"/"
 #define DEFAULT_INTERVAL_SEC  "1"
 #define DEFAULT_INTERVAL_NSEC "0"
 
