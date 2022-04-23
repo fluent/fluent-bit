@@ -43,6 +43,7 @@ struct flb_in_tcp_config *tcp_config_init(struct flb_input_instance *ins)
     }
     ctx->ins = ins;
     ctx->format = FLB_TCP_FMT_JSON;
+    ctx->server_fd = -1;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *)ctx);
@@ -126,6 +127,9 @@ int tcp_config_destroy(struct flb_in_tcp_config *ctx)
 {
     flb_sds_destroy(ctx->separator);
     flb_free(ctx->tcp_port);
+    if (ctx->server_fd > 0) {
+        flb_socket_close(ctx->server_fd);
+    }
     flb_free(ctx);
 
     return 0;
