@@ -81,10 +81,10 @@ void *time_ticker(void *args)
 
         if (t->ctx->print_status) {
             flb_plg_info(ctx->ins,
-                         "%ld: limit is %0.2f per %s with window size of %i, "
+                         "%ld: limit is %0.2f per %s with window size of %i, retain is %d, "
                          "current rate is: %i per interval",
                          timestamp, t->ctx->max_rate, t->ctx->slide_interval,
-                         t->ctx->window_size,
+                         t->ctx->window_size,  t->ctx->retain_data,
                          t->ctx->hash->total / t->ctx->hash->size);
         }
         sleep(t->seconds);
@@ -103,6 +103,15 @@ static inline int throttle_data(struct flb_filter_throttle_ctx *ctx)
     window_add(ctx->hash, ctx->hash->current_timestamp, 1);
 
     return THROTTLE_RET_KEEP;
+}
+
+static inline bool get_retain(struct flb_filter_throttle_ctx *ctx)
+{
+    if (ctx->retain_data) {
+        return true;
+    }
+
+    return false;
 }
 
 static int configure(struct flb_filter_throttle_ctx *ctx, struct flb_filter_instance *f_ins)
@@ -200,6 +209,8 @@ static int cb_throttle_filter(const void *data, size_t bytes,
                               struct flb_config *config)
 {
     int ret;
+    /* Do not drop some messages if rate limit is exceeded */
+    bool retain = false;
     int old_size = 0;
     int new_size = 0;
     msgpack_unpacked result;
@@ -227,12 +238,18 @@ static int cb_throttle_filter(const void *data, size_t bytes,
         old_size++;
 
         ret = throttle_data(context);
+        retain = get_retain(context);
         if (ret == THROTTLE_RET_KEEP) {
             msgpack_pack_object(&tmp_pck, root);
             new_size++;
         }
         else if (ret == THROTTLE_RET_DROP) {
-            /* Do nothing */
+            /* If Retain is false, Do nothing */
+            if (retain) {
+                usleep(10 * 1000);
+                msgpack_pack_object(&tmp_pck, root);
+                new_size++;
+            }
         }
     }
     msgpack_unpacked_destroy(&result);
@@ -265,6 +282,7 @@ static struct flb_config_map config_map[] = {
     // rate
     // window
     // print_status
+    // retain
     // interval
     {
      FLB_CONFIG_MAP_DOUBLE, "rate", THROTTLE_DEFAULT_RATE,
@@ -280,6 +298,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "print_status", THROTTLE_DEFAULT_STATUS,
      0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, print_status),
      "Set whether or not to print status information"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "retain", THROTTLE_DEFAULT_RETAIN,
+     0, FLB_TRUE, offsetof(struct flb_filter_throttle_ctx, retain_data),
+     "Set whether or not to drop some messages if rate limit is exceeded"
     },
     {
      FLB_CONFIG_MAP_STR, "interval", THROTTLE_DEFAULT_INTERVAL,
