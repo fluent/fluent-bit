@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include <winsock2.h>
 #include <windows.h>
+#include <aclapi.h>
 #include <io.h>
 #include <direct.h>
 #pragma comment(lib, "ws2_32.lib")

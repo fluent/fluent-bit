@@ -28,7 +28,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <limits.h>
-
+#include <pwd.h>
+#include <grp.h>
 
 #include <chunkio/chunkio.h>
 #include <chunkio/chunkio_compat.h>
@@ -123,7 +124,7 @@ static int adjust_layout(struct cio_chunk *ch,
     cio_file_st_set_meta_len(cf->map, (uint16_t) meta_size);
 
     /* Update checksum */
-    if (ch->ctx->flags & CIO_CHECKSUM) {
+    if (ch->ctx->options.flags & CIO_CHECKSUM) {
         /* reset current crc since we are calculating from zero */
         cf->crc_cur = cio_crc32_init();
         cio_file_calculate_checksum(cf, &cf->crc_cur);
@@ -141,7 +142,7 @@ static void write_init_header(struct cio_chunk *ch, struct cio_file *cf)
     memcpy(cf->map, cio_file_init_bytes, sizeof(cio_file_init_bytes));
 
     /* If no checksum is enabled, reset the initial crc32 bytes */
-    if (!(ch->ctx->flags & CIO_CHECKSUM)) {
+    if (!(ch->ctx->options.flags & CIO_CHECKSUM)) {
         cf->map[2] = 0;
         cf->map[3] = 0;
         cf->map[4] = 0;
@@ -199,7 +200,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         write_init_header(ch, cf);
 
         /* Write checksum in context (note: crc32 not finalized) */
-        if (ch->ctx->flags & CIO_CHECKSUM) {
+        if (ch->ctx->options.flags & CIO_CHECKSUM) {
             cio_file_calculate_checksum(cf, &cf->crc_cur);
         }
     }
@@ -213,7 +214,7 @@ static int cio_file_format_check(struct cio_chunk *ch,
         }
 
         /* Checksum */
-        if (ch->ctx->flags & CIO_CHECKSUM) {
+        if (ch->ctx->options.flags & CIO_CHECKSUM) {
             /* Initialize CRC variable */
             cf->crc_cur = cio_crc32_init();
 
@@ -358,6 +359,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
         cio_log_debug(ctx, "%s:%s adjusting size OK", ch->st->name, ch->name);
     }
+    cf->alloc_size = size;
 
     /* Map the file */
     size = ROUND_UP(size, ctx->page_size);
@@ -368,7 +370,6 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         cio_log_error(ctx, "cannot mmap/read chunk '%s'", cf->path);
         return CIO_ERROR;
     }
-    cf->alloc_size = size;
 
     /* check content data size */
     if (fs_size > 0) {
@@ -410,6 +411,195 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     return CIO_OK;
 }
 
+int cio_file_lookup_user(char *user, void **result)
+{
+    long           query_buffer_size;
+    struct passwd *query_result;
+    char          *query_buffer;
+    struct passwd  passwd_entry;
+    int            api_result;
+
+    if (user == NULL) {
+        *result = calloc(1, sizeof(uid_t));
+
+        if (*result == NULL) {
+            cio_errno();
+
+            return CIO_ERROR;
+        }
+
+        **(uid_t **) result = (uid_t) -1;
+    }
+
+    query_buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+
+    if (query_buffer_size == -1) {
+        query_buffer_size = 4096 * 10;
+    }
+
+    query_buffer = calloc(1, query_buffer_size);
+
+    if (query_buffer == NULL) {
+        return CIO_ERROR;
+    }
+
+    query_result = NULL;
+
+    api_result = getpwnam_r(user, &passwd_entry, query_buffer,
+                            query_buffer_size, &query_result);
+
+    if (api_result != 0 || query_result == NULL) {
+        cio_errno();
+
+        free(query_buffer);
+
+        return CIO_ERROR;
+    }
+
+    *result = calloc(1, sizeof(uid_t));
+
+    if (*result == NULL) {
+        cio_errno();
+
+        free(query_buffer);
+
+        return CIO_ERROR;
+    }
+
+    **(uid_t **) result = query_result->pw_uid;
+
+    free(query_buffer);
+
+    return CIO_OK;
+}
+
+int cio_file_lookup_group(char *group, void **result)
+{
+    long           query_buffer_size;
+    struct group  *query_result;
+    char          *query_buffer;
+    struct group   group_entry;
+    int            api_result;
+
+    if (group == NULL) {
+        *result = calloc(1, sizeof(gid_t));
+
+        if (*result == NULL) {
+            cio_errno();
+
+            return CIO_ERROR;
+        }
+
+        **(gid_t **) result = (gid_t) -1;
+    }
+
+    query_buffer_size = sysconf(_SC_GETGR_R_SIZE_MAX);
+
+    if (query_buffer_size == -1) {
+        query_buffer_size = 4096 * 10;
+    }
+
+    query_buffer = calloc(1, query_buffer_size);
+
+    if (query_buffer == NULL) {
+        return CIO_ERROR;
+    }
+
+    query_result = NULL;
+
+    api_result = getgrnam_r(group, &group_entry, query_buffer,
+                            query_buffer_size, &query_result);
+
+    if (api_result != 0 || query_result == NULL) {
+        cio_errno();
+
+        free(query_buffer);
+
+        return CIO_ERROR;
+    }
+
+    *result = calloc(1, sizeof(gid_t));
+
+    if (*result == NULL) {
+        cio_errno();
+
+        free(query_buffer);
+
+        return CIO_ERROR;
+    }
+
+    **(gid_t **) result = query_result->gr_gid;
+
+    free(query_buffer);
+
+    return CIO_OK;
+}
+
+static int apply_file_ownership_and_acl_settings(struct cio_ctx *ctx, char *path)
+{
+    mode_t filesystem_acl;
+    gid_t  numeric_group;
+    uid_t  numeric_user;
+    char  *connector;
+    int    result;
+    char  *group;
+    char  *user;
+
+    numeric_group = -1;
+    numeric_user = -1;
+
+    if (ctx->processed_user != NULL) {
+        numeric_user = *(uid_t *) ctx->processed_user;
+    }
+
+    if (ctx->processed_group != NULL) {
+        numeric_group = *(gid_t *) ctx->processed_group;
+    }
+
+    if (numeric_user != -1 || numeric_group != -1) {
+        result = chown(path, numeric_user, numeric_group);
+
+        if (result == -1) {
+            cio_errno();
+
+            user = ctx->options.user;
+            group = ctx->options.group;
+            connector = "with group";
+
+            if (user == NULL) {
+                user = "";
+                connector = "";
+            }
+
+            if (group == NULL) {
+                group = "";
+                connector = "";
+            }
+
+            cio_log_error(ctx, "cannot change ownership of %s to %s %s %s",
+                          path, user, connector, group);
+
+            return CIO_ERROR;
+        }
+    }
+
+    if (ctx->options.chmod != NULL) {
+        filesystem_acl = strtoul(ctx->options.chmod, NULL, 8);
+
+        result = chmod(path, filesystem_acl);
+
+        if (result == -1) {
+            cio_errno();
+            cio_log_error(ctx, "cannot change acl of %s to %s",
+                          path, ctx->options.user);
+
+            return CIO_ERROR;
+        }
+    }
+
+    return CIO_OK;
+}
+
 /* Open file system file, set file descriptor and file size */
 static int file_open(struct cio_ctx *ctx, struct cio_file *cf)
 {
@@ -431,6 +621,14 @@ static int file_open(struct cio_ctx *ctx, struct cio_file *cf)
     if (cf->fd == -1) {
         cio_errno();
         cio_log_error(ctx, "cannot open/create %s", cf->path);
+        return -1;
+    }
+
+    ret = apply_file_ownership_and_acl_settings(ctx, cf->path);
+    if (ret == CIO_ERROR) {
+        cio_errno();
+        close(cf->fd);
+        cf->fd = -1;
         return -1;
     }
 
@@ -574,7 +772,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     }
 
     /* Compose path for the file */
-    psize = strlen(ctx->root_path) + strlen(st->name) + strlen(ch->name);
+    psize = strlen(ctx->options.root_path) + strlen(st->name) + strlen(ch->name);
     psize += 8;
 
     path = malloc(psize);
@@ -584,7 +782,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     }
 
     ret = snprintf(path, psize, "%s/%s/%s",
-                   ctx->root_path, st->name, ch->name);
+                   ctx->options.root_path, st->name, ch->name);
     if (ret == -1) {
         cio_errno();
         free(path);
@@ -877,7 +1075,7 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
         cf->alloc_size = new_size;
     }
 
-    if (ch->ctx->flags & CIO_CHECKSUM) {
+    if (ch->ctx->options.flags & CIO_CHECKSUM) {
         update_checksum(cf, (unsigned char *) buf, count);
     }
 
@@ -1061,12 +1259,12 @@ int cio_file_sync(struct cio_chunk *ch)
     }
 
     /* Finalize CRC32 checksum */
-    if (ch->ctx->flags & CIO_CHECKSUM) {
+    if (ch->ctx->options.flags & CIO_CHECKSUM) {
         finalize_checksum(cf);
     }
 
     /* Sync mode */
-    if (ch->ctx->flags & CIO_FULL_SYNC) {
+    if (ch->ctx->options.flags & CIO_FULL_SYNC) {
         sync_mode = MS_SYNC;
     }
     else {
@@ -1154,7 +1352,7 @@ char *cio_file_hash(struct cio_file *cf)
 
 void cio_file_hash_print(struct cio_file *cf)
 {
-    printf("crc cur=%ld\n", cf->crc_cur);
+    printf("crc cur=%u\n", cf->crc_cur);
     printf("%08lx\n", (long unsigned int ) cf->crc_cur);
 }
 
@@ -1198,7 +1396,7 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
          * the crc32 specified in the file is stored in 'val' now, if
          * checksum mode is enabled we have to verify it.
          */
-        if (ctx->flags & CIO_CHECKSUM) {
+        if (ctx->options.flags & CIO_CHECKSUM) {
             cio_file_calculate_checksum(cf, &crc);
 
             /*

@@ -50,11 +50,19 @@ static void test_stream_delete()
     struct cio_ctx *ctx;
     struct cio_chunk *chunk;
     struct cio_stream *stream;
+    struct cio_options cio_opts;
 
     cio_utils_recursive_delete("tmp");
 
+    memset(&cio_opts, 0, sizeof(cio_opts));
+
+    cio_opts.root_path = "tmp";
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = CIO_LOG_DEBUG;
+    cio_opts.flags = CIO_CHECKSUM;
+
     /* Create a temporal storage */
-    ctx = cio_create("tmp", log_cb, CIO_LOG_DEBUG, CIO_CHECKSUM);
+    ctx = cio_create(&cio_opts);
     stream = cio_stream_create(ctx, "test", CIO_STORE_FS);
     chunk = cio_chunk_open(ctx, stream, "c", CIO_OPEN, 1000, &err);
     TEST_CHECK(chunk != NULL);

@@ -194,7 +194,7 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
         dcolor = ANSI_YELLOW;
     }
 
-    if (ctx->log_level > CIO_LOG_INFO) {
+    if (ctx->options.log_level > CIO_LOG_INFO) {
         printf("%s[%s]%s %-60s => %s%s:%i%s\n",
                dcolor, dtitle, ANSI_RESET, str,
                dcolor, file, line, ANSI_RESET);
@@ -443,9 +443,9 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
     cio_bytes_to_human_readable_size(bytes, tmp, sizeof(tmp) - 1);
     printf("=== perf write === \n");
     printf("-  crc32 checksum : %s\n",
-           ctx->flags & CIO_CHECKSUM ? "enabled" : "disabled");
+           ctx->options.flags & CIO_CHECKSUM ? "enabled" : "disabled");
     printf("-  fs sync mode   : %s\n",
-           ctx->flags & CIO_FULL_SYNC ? "full" : "normal");
+           ctx->options.flags & CIO_FULL_SYNC ? "full" : "normal");
 
     cio_bytes_to_human_readable_size(in_size, tmp, sizeof(tmp) - 1);
     printf("-  file size      : %s (%lu bytes)\n", tmp, in_size);
@@ -453,7 +453,7 @@ static void cb_cmd_perf(struct cio_ctx *ctx, int opt_buffer, char *pfile,
     printf("-  file writes    : %i\n", writes);
 
     cio_bytes_to_human_readable_size(bytes, tmp, sizeof(tmp) - 1);
-    printf("-  bytes written  : %s (%ld bytes)\n" , tmp, bytes);
+    printf("-  bytes written  : %s (%" PRIu64 " bytes)\n" , tmp, bytes);
     printf("-  elapsed time   : %.2f seconds\n", time_to_double(&t_final));
 
     rate = (double) (bytes / time_to_double(&t_final));
@@ -486,6 +486,7 @@ int main(int argc, char **argv)
     char *root_path = NULL;
     char tmp[PATH_MAX];
     struct cio_ctx *ctx;
+    struct cio_options cio_opts;
 
     static const struct option long_opts[] = {
         {"full-sync"  , no_argument      , NULL, 'F'},
@@ -590,8 +591,15 @@ int main(int argc, char **argv)
         verbose = 0;
     }
 
+    memset(&cio_opts, 0, sizeof(cio_opts));
+
+    cio_opts.root_path = root_path;
+    cio_opts.flags = flags;
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = verbose;
+
     /* Create CIO instance */
-    ctx = cio_create(root_path, log_cb, verbose, flags);
+    ctx = cio_create(&cio_opts);
     if (root_path) {
         free(root_path);
     }
@@ -602,7 +610,7 @@ int main(int argc, char **argv)
 
     /* Load */
     cio_load(ctx, chunk_ext);
-    cio_log_info(ctx, "root_path => %s", ctx->root_path);
+    cio_log_info(ctx, "root_path => %s", ctx->options.root_path);
 
     /*
      * Process commands and options

@@ -86,14 +86,22 @@ static void test_memfs_write()
     struct cio_stream *stream;
     struct cio_chunk *chunk;
     struct cio_chunk **carr;
+    struct cio_options cio_opts;
 
     /* Dummy break line for clarity on acutest output */
     printf("\n");
 
     flags = CIO_CHECKSUM;
 
+    memset(&cio_opts, 0, sizeof(cio_opts));
+
+    cio_opts.root_path = NULL;
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = CIO_LOG_INFO;
+    cio_opts.flags = flags;
+
     /* Create main context */
-    ctx = cio_create(NULL, log_cb, CIO_LOG_INFO, flags);
+    ctx = cio_create(&cio_opts);
     TEST_CHECK(ctx != NULL);
 
     /* Try to create a file with an invalid stream */

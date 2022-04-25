@@ -75,5 +75,7 @@ int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);
 int cio_file_down(struct cio_chunk *ch);
 int cio_file_up(struct cio_chunk *ch);
 int cio_file_up_force(struct cio_chunk *ch);
+int cio_file_lookup_user(char *user, void **result);
+int cio_file_lookup_group(char *group, void **result);
 
 #endif
