@@ -417,11 +417,16 @@ struct flb_fstore *flb_fstore_create(char *path, int store_type)
     int flags;
     struct cio_ctx *cio;
     struct flb_fstore *fs;
-
+    struct cio_options opts = {0};
     flags = CIO_OPEN;
 
     /* Create Chunk I/O context */
-    cio = cio_create(path, log_cb, CIO_LOG_DEBUG, flags);
+    opts.root_path = path;
+    opts.log_cb = log_cb;
+    opts.flags = flags;
+    opts.log_level = CIO_LOG_INFO;
+
+    cio = cio_create(&opts);
     if (!cio) {
         flb_error("[fstore] error initializing on path '%s'", path);
         return NULL;
@@ -442,7 +447,7 @@ struct flb_fstore *flb_fstore_create(char *path, int store_type)
         return NULL;
     }
     fs->cio = cio;
-    fs->root_path = cio->root_path;
+    fs->root_path = cio->options.root_path;
     fs->store_type = store_type;
     mk_list_init(&fs->streams);
 
