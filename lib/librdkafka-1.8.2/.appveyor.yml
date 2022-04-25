@@ -1,0 +1,105 @@
+version: 1.8.0-R-post{build}
+pull_requests:
+  do_not_increment_build_number: true
+image: Visual Studio 2015
+configuration: Release
+environment:
+  runtime: v140
+  matrix:
+  - platform: x64
+    arch: x64
+  - platform: win32
+    arch: x86
+install:
+- ps: "& .\\win32\\install-coapp.ps1"
+  # Update vcpkg (is outdated on the VS 2015 image)
+- cmd: |
+    cd "C:\Tools\vcpkg"
+    git pull -q
+    .\bootstrap-vcpkg.bat
+    cd %appveyor_build_folder%
+cache:
+ - c:\tools\vcpkg\installed
+ - C:\Users\appveyor\AppData\Local\vcpkg\archives
+ - C:\Users\appveyor\AppData\Local\vcpkg\installed
+nuget:
+  account_feed: true
+  project_feed: true
+  disable_publish_on_pr: true
+before_build:
+ - cmd: vcpkg --feature-flags=versions install --triplet %arch%-windows
+build:
+  project: win32/librdkafka.sln
+  publish_nuget: true
+  publish_nuget_symbols: true
+  include_nuget_references: true
+  parallel: true
+  verbosity: normal
+test_script:
+- cmd: cd tests && ..\win32\outdir\%runtime%\%PLATFORM%\%CONFIGURATION%\tests.exe -l -Q -p1 && cd ..
+artifacts:
+- path: test_report*.json
+  name: Test report
+- path: '*.nupkg'
+  name: Packages
+- path: '**\*.dll'
+  name: Libraries
+- path: '**\*.lib'
+  name: Libraries
+- path: '**\*.pdb'
+  name: Libraries
+- path: '**\*.exe'
+  name: Executables
+#before_deploy:
+after_test:
+- ps: >-
+    # FIXME: Add to Deployment condition above:
+
+    # APPVEYOR_REPO_TAG = true
+
+
+
+    # This is the CoApp .autopkg file to create.
+
+    $autopkgFile = "win32/librdkafka.autopkg"
+
+    pwd
+
+
+    ls $autopkgFile
+
+
+
+    # Get the ".autopkg.template" file, replace "@version" with the Appveyor version number, then save to the ".autopkg" file.
+
+    cat ($autopkgFile + ".template") | % { $_ -replace "@version", $env:appveyor_build_version } > $autopkgFile
+
+
+    # Use the CoApp tools to create NuGet native packages from the .autopkg.
+
+    Write-NuGetPackage $autopkgFile
+
+
+    # Push all newly created .nupkg files as Appveyor artifacts for later deployment.
+
+    Get-ChildItem .\*.nupkg | % { Push-AppveyorArtifact $_.FullName -FileName $_.Name }
+deploy:
+- provider: S3
+  access_key_id:
+    secure: 3SmFFB3J1WWjLqxouvH8zLdcmrFNVHHbkROb+2BBVJE=
+  secret_access_key:
+    secure: VT0D5uzlaJI6gfZbemKCnf0MMh6qnlcmioVADK0oCkW6syz+n17VzWScRjvAifPm
+  region: us-west-1
+  bucket: librdkafka-ci-packages
+  folder: librdkafka/p-librdkafka__bld-appveyor__plat-windows__arch-$(platform)__bldtype-$(configuration)__tag-$(APPVEYOR_REPO_TAG_NAME)__sha-$(APPVEYOR_REPO_COMMIT)__bid-$(APPVEYOR_BUILD_ID)
+  artifact: /.*\.(nupkg)/
+  max_error_retry: 3
+  on:
+    APPVEYOR_REPO_TAG: true
+notifications:
+- provider: Email
+  to:
+  - magnus@edenhill.se
+  on_build_success: false
+  on_build_failure: true
+  on_build_status_changed: true
