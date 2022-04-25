@@ -118,6 +118,9 @@ option(FLB_PROXY_GO           "Enable Go plugins support"   Yes)
 # Built-in Custom Plugins
 option(FLB_CUSTOM_CALYPTIA    "Enable Calyptia Support"      Yes)
 
+# Config formats
+option(FLB_CONFIG_YAML        "Enable YAML config format"    Yes)
+
 # Built-in Plugins
 option(FLB_IN_CPU             "Enable CPU input plugin"             Yes)
 option(FLB_IN_THERMAL         "Enable Thermal plugin"               Yes)
@@ -654,14 +657,25 @@ if(FLB_HAVE_UNIX_SOCKET)
   FLB_DEFINITION(FLB_HAVE_UNIX_SOCKET)
 endif()
 
-# libyaml support
+# Configuration file YAML format support
+if(FLB_CONFIG_YAML)
+# Requies libyaml support
 check_c_source_compiles("
   #include <yaml.h>
   int main() {
     yaml_parser_t parser;
     return 0;
   }" FLB_HAVE_LIBYAML)
-if(FLB_HAVE_LIBYAML)
+
+  if(NOT FLB_HAVE_LIBYAML)
+    message(FATAL_ERROR
+      "YAML development dependencies required for YAML configuration format handling.\n"
+      "This is a build time dependency, you can either install the "
+      "dependencies or disable the feature setting the CMake option "
+      "-DFLB_CONFIG_YAML=Off ."
+      )
+  endif()
+
   FLB_DEFINITION(FLB_HAVE_LIBYAML)
 endif()
 
