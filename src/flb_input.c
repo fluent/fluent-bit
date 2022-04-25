@@ -526,6 +526,14 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         flb_hash_destroy(ins->ht_metric_chunks);
     }
 
+    if (ins->ch_events[0] > 0) {
+        mk_event_closesocket(ins->ch_events[0]);
+    }
+
+    if (ins->ch_events[1] > 0) {
+        mk_event_closesocket(ins->ch_events[1]);
+    }
+
     /* Unlink and release */
     mk_list_del(&ins->_head);
 
