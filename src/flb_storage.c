@@ -329,21 +329,21 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
     char *checksum;
     struct flb_input_instance *in;
 
-    if (cio->root_path) {
+    if (cio->options.root_path) {
         type = "memory+filesystem";
     }
     else {
         type = "memory-only";
     }
 
-    if (cio->flags & CIO_FULL_SYNC) {
+    if (cio->options.flags & CIO_FULL_SYNC) {
         sync = "full";
     }
     else {
         sync = "normal";
     }
 
-    if (cio->flags & CIO_CHECKSUM) {
+    if (cio->options.flags & CIO_CHECKSUM) {
         checksum = "enabled";
     }
     else {
@@ -390,7 +390,7 @@ int flb_storage_input_create(struct cio_ctx *cio,
         in->storage_type = CIO_STORE_MEM;
     }
 
-    if (in->storage_type == CIO_STORE_FS && cio->root_path == NULL) {
+    if (in->storage_type == CIO_STORE_FS && cio->options.root_path == NULL) {
         flb_error("[storage] instance '%s' requested filesystem storage "
                   "but no filesystem path was defined.",
                   flb_input_name(in));
@@ -480,6 +480,7 @@ int flb_storage_create(struct flb_config *ctx)
     int flags;
     struct flb_input_instance *in = NULL;
     struct cio_ctx *cio;
+    struct cio_options opts = {0};
 
     /* always use read/write mode */
     flags = CIO_OPEN;
@@ -503,8 +504,14 @@ int flb_storage_create(struct flb_config *ctx)
         flags |= CIO_CHECKSUM;
     }
 
+    /* chunkio options */
+    opts.root_path = ctx->storage_path;
+    opts.flags = flags;
+    opts.log_cb = log_cb;
+    opts.log_level = CIO_LOG_INFO;
+
     /* Create chunkio context */
-    cio = cio_create(ctx->storage_path, log_cb, CIO_LOG_DEBUG, flags);
+    cio = cio_create(&opts);
     if (!cio) {
         flb_error("[storage] error initializing storage engine");
         return -1;
