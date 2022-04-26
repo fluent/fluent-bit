@@ -137,6 +137,10 @@ int flb_systemd_db_init_cursor(struct flb_systemd_config *ctx, const char *curso
     ret = flb_sqldb_query(ctx->db,
                           SQL_GET_CURSOR, cb_cursor_check, &qs);
 
+    if (ret != FLB_OK) {
+        return -1;
+    }
+
     if (qs.rows == 0) {
         /* Register the cursor */
         snprintf(query, sizeof(query) - 1,
