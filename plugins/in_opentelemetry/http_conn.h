@@ -25,6 +25,8 @@
 #include <monkey/mk_http_parser.h>
 #include <monkey/mk_utils.h>
 
+#include "opentelemetry.h"
+
 struct http_conn {
     struct mk_event event;      /* Built-in event data for mk_events */
     int fd;                     /* socket connection */
