@@ -477,6 +477,7 @@ static bool is_exists(struct mk_list *list, char *id)
     return result;
 }
 
+static void free_snapshots(struct mk_list *snaps);
 /* Returns dockers CPU/Memory metrics. */
 static struct mk_list *get_docker_stats(struct flb_docker *ctx, struct mk_list *dockers)
 {
@@ -499,9 +500,35 @@ static struct mk_list *get_docker_stats(struct flb_docker *ctx, struct mk_list *
     mk_list_foreach(head, dockers) {
         docker = mk_list_entry(head, docker_info, _head);
         snapshot = init_snapshot(docker->id);
+        if (snapshot == NULL) {
+            free_snapshots(snapshots);
+            return NULL;
+        }
         snapshot->name = get_container_name(ctx, docker->id);
+        if (snapshot->name == NULL) {
+            free_snapshots(snapshots);
+            flb_free(snapshot->id);
+            flb_free(snapshot);
+            return NULL;
+        }
         snapshot->cpu = get_docker_cpu_snapshot(ctx, docker->id);
+        if (snapshot->cpu == NULL) {
+            free_snapshots(snapshots);
+            flb_free(snapshot->name);
+            flb_free(snapshot->id);
+            flb_free(snapshot);
+            return NULL;
+        }
         snapshot->mem = get_docker_mem_snapshot(ctx, docker->id);
+        if (snapshot->mem == NULL) {
+            free_snapshots(snapshots);
+            flb_free(snapshot->cpu);
+            flb_free(snapshot->name);
+            flb_free(snapshot->id);
+            flb_free(snapshot);
+            return NULL;
+        }
+
         mk_list_add(&snapshot->_head, snapshots);
     }
 
@@ -791,7 +818,12 @@ static int cb_docker_collect(struct flb_input_instance *ins,
     snaps = get_docker_stats(ctx, filtered);
     if (!snaps) {
         free_docker_list(active);
-        free_docker_list(filtered);
+        if (active != filtered) {
+            /* apply_filters can return the address of acive.
+             * In that case, filtered is already freed.
+             */
+            free_docker_list(filtered);
+        }
         return 0;
     }
 
