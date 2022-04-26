@@ -13,7 +13,22 @@ on:
         required: false
         default: x86_64
         type: string
-
+      opensearch_aws_access_id:
+        description: AWS access ID to use within the opensearch integration tests.
+        type: string
+        required: true
+      opensearch_aws_secret_key:
+        description: AWS secret key to use within the opensearch integration tests.
+        type: string
+        required: true
+      opensearch_admin_password:
+        description: Default admin password use within the opensearch integration tests.
+        type: string
+        required: true
+      terraform_api_token:
+        description: Default terraform API token to use when running integration tests.
+        type: string
+        required: true
 jobs:
 
   call-run-integration-kind:
@@ -32,7 +47,43 @@ jobs:
 
       - uses: actions/checkout@v3
         with:
-          repository: calyptia/fluent-bit-ci
+          repository: fluent/fluent-bit-ci
+          path: ci
+
+      - uses: hashicorp/setup-terraform@v1
+        with:
+          cli_config_credentials_hostname: 'app.terraform.io'
+          cli_config_credentials_token: ${{ inputs.terraform_api_token }}
+
+      - name: Replace terraform variables.
+        run: |
+          sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ inputs.opensearch_aws_access_id }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ inputs.opensearch_aws_secret_key }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ inputs.opensearch_admin_password }}|g" default.auto.tfvars
+        working-directory: ci/terraform/
+        shell: bash
+
+      - name: Terraform init
+        run: terraform init
+        working-directory: ci/terraform/
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+        working-directory: ci/terraform/
+
+      - name: Terraform plan
+        run: terraform plan
+        working-directory: ci/terraform/
+
+      - name: Terraform apply
+        if: ${{ github.event_name != 'pull_request' }}
+        run: terraform apply -input=false -auto-approve
+        working-directory: ci/terraform/
+
+      - name: Get the AWS OpenSearch endpoint
+        id: aws-opensearch-endpoint
+        run: terraform output -no-color -raw aws-opensearch-endpoint
+        working-directory: ci/terraform/
 
       - name: Setup BATS
         uses: mig4/setup-bats@v1
@@ -61,4 +112,7 @@ jobs:
         env:
           FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
           FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
-
+          HOSTED_OPENSEARCH_HOST: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
+          HOSTED_OPENSEARCH_PORT: 443
+          HOSTED_OPENSEARCH_USERNAME: admin
+          HOSTED_OPENSEARCH_PASSWORD: ${{ inputs.opensearch_admin_password }}
