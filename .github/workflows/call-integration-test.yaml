@@ -50,7 +50,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v1
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
-          cli_config_credentials_token: ${{ inputs.terraform_api_token }}
+          cli_config_credentials_token: ${{ secrets.terraform_api_token }}
 
       - name: Replace terraform variables.
         run: |
