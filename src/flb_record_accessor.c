@@ -599,6 +599,21 @@ int flb_ra_regex_match(struct flb_record_accessor *ra, msgpack_object map,
                                   regex, result);
 }
 
+
+static struct flb_ra_parser* get_ra_parser(struct flb_record_accessor *ra)
+{
+    struct flb_ra_parser *rp = NULL;
+
+    if (mk_list_size(&ra->list) == 0) {
+        return NULL;
+    }
+    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
+    if (!rp->key) {
+        return NULL;
+    }
+    return rp;
+}
+
 /*
  * If 'record accessor' pattern matches an entry in the 'map', set the
  * reference in 'out_key' and 'out_val' for the entries in question.
@@ -612,12 +627,8 @@ int flb_ra_get_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
 {
     struct flb_ra_parser *rp;
 
-    if (mk_list_size(&ra->list) == 0) {
-        return -1;
-    }
-
-    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
-    if (!rp->key) {
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
         return FLB_FALSE;
     }
 
@@ -630,14 +641,70 @@ struct flb_ra_value *flb_ra_get_value_object(struct flb_record_accessor *ra,
 {
     struct flb_ra_parser *rp;
 
-    if (mk_list_size(&ra->list) == 0) {
-        return NULL;
-    }
-
-    rp = mk_list_entry_first(&ra->list, struct flb_ra_parser, _head);
-    if (!rp->key) {
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
         return NULL;
     }
 
     return flb_ra_key_to_value(rp->key->name, map, rp->key->subkeys);
+}
+
+/**
+ *  Update key and/or value of the map using record accessor.
+ *
+ *  @param ra   the record accessor to specify key/value pair
+ *  @param map  the original map.
+ *  @param in_key   the pointer to overwrite key. If NULL, key will not be updated.
+ *  @param in_val   the pointer to overwrite val. If NULL, val will not be updated.
+ *  @param out_map  the updated map. If the API fails, out_map will be NULL.
+ *
+ *  @return result of the API. 0:success, -1:fail
+ */
+
+int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                          void **out_map, size_t *out_size,
+                          msgpack_object *in_key, msgpack_object *in_val)
+{
+    struct flb_ra_parser *rp;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    int ret;
+
+    msgpack_object *s_key;
+    msgpack_object *o_key;
+    msgpack_object *o_val;
+
+    if (in_key == NULL && in_val == NULL) {
+        /* no key and value. nothing to do */
+        flb_error("%s: no inputs", __FUNCTION__);
+        return -1;
+    }
+    else if (ra == NULL || out_map == NULL) {
+        /* invalid input */
+        flb_error("%s: invalid input", __FUNCTION__);
+        return -1;
+    }
+    else if ( flb_ra_get_kv_pair(ra, map, &s_key, &o_key, &o_val) != 0) {
+        /* key and value are not found */
+        flb_error("%s: no value", __FUNCTION__);
+        return -1;
+    }
+
+    rp = get_ra_parser(ra);
+    if (rp == NULL) {
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    ret = flb_ra_key_value_update(rp, map, in_key, in_val, &mp_pck);
+    if (ret < 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+    *out_map  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
 }
