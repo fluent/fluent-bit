@@ -54,9 +54,9 @@ jobs:
 
       - name: Replace terraform variables.
         run: |
-          sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ inputs.opensearch_aws_access_id }}|g" default.auto.tfvars
-          sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ inputs.opensearch_aws_secret_key }}|g" default.auto.tfvars
-          sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ inputs.opensearch_admin_password }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ secrets.opensearch_aws_access_id }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ secrets.opensearch_aws_secret_key }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ secrets.opensearch_admin_password }}|g" default.auto.tfvars
         working-directory: ci/terraform/
         shell: bash
 
@@ -112,4 +112,4 @@ jobs:
           HOSTED_OPENSEARCH_HOST: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
           HOSTED_OPENSEARCH_PORT: 443
           HOSTED_OPENSEARCH_USERNAME: admin
-          HOSTED_OPENSEARCH_PASSWORD: ${{ inputs.opensearch_admin_password }}
+          HOSTED_OPENSEARCH_PASSWORD: ${{ secrets.opensearch_admin_password }}
