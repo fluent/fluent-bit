@@ -2,6 +2,19 @@
 name: Reusable workflow to run integration tests with specific images
 on:
   workflow_call:
+    secrets:
+      opensearch_aws_access_id:
+        description: AWS access ID to use within the opensearch integration tests.
+        required: true
+      opensearch_aws_secret_key:
+        description: AWS secret key to use within the opensearch integration tests.
+        required: true
+      opensearch_admin_password:
+        description: Default admin password use within the opensearch integration tests.
+        required: true
+      terraform_api_token:
+        description: Default terraform API token to use when running integration tests.
+        required: true
     inputs:
       image_name:
         description: The image repository and name to use.
@@ -13,22 +26,6 @@ on:
         required: false
         default: x86_64
         type: string
-      opensearch_aws_access_id:
-        description: AWS access ID to use within the opensearch integration tests.
-        type: string
-        required: true
-      opensearch_aws_secret_key:
-        description: AWS secret key to use within the opensearch integration tests.
-        type: string
-        required: true
-      opensearch_admin_password:
-        description: Default admin password use within the opensearch integration tests.
-        type: string
-        required: true
-      terraform_api_token:
-        description: Default terraform API token to use when running integration tests.
-        type: string
-        required: true
 jobs:
 
   call-run-integration-kind:
