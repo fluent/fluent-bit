@@ -39,7 +39,7 @@ jobs:
       image_tag: latest
     secrets:
       opensearch_aws_access_id: ${{ secrets.OPENSEARCH_AWS_ACCESS_ID }}
-      opensearch_aws_access_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
+      opensearch_aws_secret_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
       opensearch_admin_password: ${{ secrets.OPENSEARCH_ADMIN_PASSWORD }}
       terraform_api_password: ${{ secrets.TF_API_TOKEN }}
 
