@@ -2,6 +2,19 @@
 name: Reusable workflow to run integration tests with specific images
 on:
   workflow_call:
+    secrets:
+      opensearch_aws_access_id:
+        description: AWS access ID to use within the opensearch integration tests.
+        required: true
+      opensearch_aws_secret_key:
+        description: AWS secret key to use within the opensearch integration tests.
+        required: true
+      opensearch_admin_password:
+        description: Default admin password use within the opensearch integration tests.
+        required: true
+      terraform_api_token:
+        description: Default terraform API token to use when running integration tests.
+        required: true
     inputs:
       image_name:
         description: The image repository and name to use.
@@ -13,22 +26,6 @@ on:
         required: false
         default: x86_64
         type: string
-      opensearch_aws_access_id:
-        description: AWS access ID to use within the opensearch integration tests.
-        type: string
-        required: true
-      opensearch_aws_secret_key:
-        description: AWS secret key to use within the opensearch integration tests.
-        type: string
-        required: true
-      opensearch_admin_password:
-        description: Default admin password use within the opensearch integration tests.
-        type: string
-        required: true
-      terraform_api_token:
-        description: Default terraform API token to use when running integration tests.
-        type: string
-        required: true
 jobs:
 
   call-run-integration-kind:
@@ -53,13 +50,13 @@ jobs:
       - uses: hashicorp/setup-terraform@v1
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
-          cli_config_credentials_token: ${{ inputs.terraform_api_token }}
+          cli_config_credentials_token: ${{ secrets.terraform_api_token }}
 
       - name: Replace terraform variables.
         run: |
-          sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ inputs.opensearch_aws_access_id }}|g" default.auto.tfvars
-          sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ inputs.opensearch_aws_secret_key }}|g" default.auto.tfvars
-          sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ inputs.opensearch_admin_password }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_AWS_ACCESS_ID|${{ secrets.opensearch_aws_access_id }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_AWS_SECRET_KEY|${{ secrets.opensearch_aws_secret_key }}|g" default.auto.tfvars
+          sed -i -e "s|\$OPENSEARCH_ADMIN_PASSWORD|${{ secrets.opensearch_admin_password }}|g" default.auto.tfvars
         working-directory: ci/terraform/
         shell: bash
 
@@ -115,4 +112,4 @@ jobs:
           HOSTED_OPENSEARCH_HOST: ${{ steps.aws-opensearch-endpoint.outputs.stdout }}
           HOSTED_OPENSEARCH_PORT: 443
           HOSTED_OPENSEARCH_USERNAME: admin
-          HOSTED_OPENSEARCH_PASSWORD: ${{ inputs.opensearch_admin_password }}
+          HOSTED_OPENSEARCH_PASSWORD: ${{ secrets.opensearch_admin_password }}
