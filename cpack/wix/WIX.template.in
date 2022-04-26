@@ -54,5 +54,33 @@
 
         <?include "properties.wxi"?>
         <?include "product_fragment.wxi"?>
+
+        <Property Id="CreateFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetCreateFluentBitWinSvcCommand" Property="CreateFluentBitWinSvc" Value="&quot;sc.exe&quot; create $(var.CPACK_PACKAGE_NAME) binpath= &quot;\&quot;[INSTALL_ROOT]bin\fluent-bit.exe\&quot; -c \&quot;[INSTALL_ROOT]conf\fluent-bit.conf\&quot;&quot; start= delayed-auto" Execute="immediate" />
+        <CustomAction Id="CreateFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="check" Impersonate="no" />
+
+        <Property Id="LaunchFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetLaunchFluentBitWinSvcCommand" Property="LaunchFluentBitWinSvc" Value="&quot;sc.exe&quot; start $(var.CPACK_PACKAGE_NAME)" Execute="immediate" />
+        <CustomAction Id="LaunchFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="check" Impersonate="no" />
+
+        <Property Id="StopFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetStopFluentBitWinSvcCommand" Property="StopFluentBitWinSvc" Value="&quot;sc.exe&quot; stop $(var.CPACK_PACKAGE_NAME)" Execute="immediate" />
+        <CustomAction Id="StopFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="ignore" Impersonate="no" />
+
+        <Property Id="DeleteFluentBitWinSvc" Value=" "/>
+        <CustomAction Id="SetDeleteFluentBitWinSvcCommand" Property="DeleteFluentBitWinSvc" Value="&quot;sc.exe&quot; delete $(var.CPACK_PACKAGE_NAME)" Execute="immediate" />
+        <CustomAction Id="DeleteFluentBitWinSvc" BinaryKey="WixCA" DllEntry="CAQuietExec" Execute="deferred" Return="check" Impersonate="no" />
+
+        <InstallExecuteSequence>
+            <Custom Action="SetCreateFluentBitWinSvcCommand" After="InstallFiles">NOT Installed</Custom>
+            <Custom Action="CreateFluentBitWinSvc" After="SetCreateFluentBitWinSvcCommand">NOT Installed</Custom>
+            <Custom Action="SetLaunchFluentBitWinSvcCommand" After="CreateFluentBitWinSvc">NOT Installed</Custom>
+            <Custom Action="LaunchFluentBitWinSvc" After="SetLaunchFluentBitWinSvcCommand">NOT Installed</Custom>
+
+            <Custom Action="SetStopFluentBitWinSvcCommand" After="InstallInitialize">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="StopFluentBitWinSvc" After="SetStopFluentBitWinSvcCommand">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="SetDeleteFluentBitWinSvcCommand" After="StopFluentBitWinSvc">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="DeleteFluentBitWinSvc" After="SetDeleteFluentBitWinSvcCommand">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+        </InstallExecuteSequence>
     </Product>
 </Wix>
