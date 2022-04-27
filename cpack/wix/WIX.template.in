@@ -35,6 +35,26 @@
         <WixVariable Id="WixUILicenseRtf" Value="$(var.CPACK_WIX_LICENSE_RTF)"/>
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALL_ROOT"/>
 
+        <!-- PropertyRef of the account users for setting InstallDir permission explicitly -->
+        <PropertyRef Id="WIX_ACCOUNT_LOCALSYSTEM" />
+        <PropertyRef Id="WIX_ACCOUNT_USERS" />
+        <PropertyRef Id="WIX_ACCOUNT_ADMINISTRATORS" />
+
+        <DirectoryRef Id="INSTALL_ROOT">
+            <!-- Create component for setting the install directory permission explicitly -->
+            <Component Id="FluentBitAcl" Guid="{6779b04e-70a5-4973-888d-06865155e9f5}">
+                <CreateFolder>
+                    <!--
+                        Read/Execute: Builtin Users
+                        All:: Builtin Administrators, Service, System account(by default)
+                    -->
+                    <Permission User="[WIX_ACCOUNT_USERS]" GenericExecute="yes" GenericRead="yes" Traverse="yes"/>
+                    <Permission User="[WIX_ACCOUNT_ADMINISTRATORS]" GenericAll="yes" Traverse="yes"/>
+                    <Permission User="[WIX_ACCOUNT_LOCALSYSTEM]" GenericAll="yes" Traverse="yes"/>
+                </CreateFolder>
+            </Component>
+        </DirectoryRef>
+
         <?ifdef CPACK_WIX_PRODUCT_ICON?>
         <Property Id="ARPPRODUCTICON">ProductIcon.ico</Property>
         <Icon Id="ProductIcon.ico" SourceFile="$(var.CPACK_WIX_PRODUCT_ICON)"/>
@@ -48,7 +68,9 @@
         <WixVariable Id="WixUIDialogBmp" Value="$(var.CPACK_WIX_UI_DIALOG)"/>
         <?endif?>
 
-        <FeatureRef Id="ProductFeature"/>
+        <FeatureRef Id="ProductFeature">
+            <ComponentRef Id="FluentBitAcl"/>
+        </FeatureRef>
 
         <UIRef Id="$(var.CPACK_WIX_UI_REF)" />
 
