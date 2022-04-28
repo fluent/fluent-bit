@@ -19,6 +19,7 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
