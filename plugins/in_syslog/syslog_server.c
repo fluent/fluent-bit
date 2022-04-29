@@ -144,7 +144,6 @@ int syslog_server_destroy(struct flb_syslog *ctx)
     if (ctx->mode == FLB_SYSLOG_UNIX_TCP || ctx->mode == FLB_SYSLOG_UNIX_UDP) {
         if (ctx->unix_path) {
             unlink(ctx->unix_path);
-            flb_free(ctx->unix_path);
         }
     }
     else {
