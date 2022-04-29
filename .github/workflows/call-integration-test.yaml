@@ -106,6 +106,7 @@ jobs:
           kind load docker-image ${{ inputs.image_name }}:${{ inputs.image_tag }}
           ./run-tests.sh
         shell: bash
+        working-directory: ci/
         env:
           FLUENTBIT_IMAGE_REPOSITORY: ${{ inputs.image_name }}
           FLUENTBIT_IMAGE_TAG: ${{ inputs.image_tag }}
