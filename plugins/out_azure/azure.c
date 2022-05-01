@@ -366,7 +366,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_STR, "time_key", FLB_AZURE_TIME_KEY,
-     0, FLB_TRUE, offsetof(struct flb_azure, log_type),
+     0, FLB_TRUE, offsetof(struct flb_azure, time_key),
     "Optional parameter to specify the key name where the timestamp will be stored."
     },
 
