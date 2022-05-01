@@ -547,6 +547,32 @@ int flb_ra_key_value_update(struct flb_ra_parser *rp, msgpack_object map,
     map_size = map.via.map.size;
 
     msgpack_pack_map(mp_pck, map_size);
+    if (levels == 0) {
+        /* no subkeys */
+        for (i=0; i<map_size; i++) {
+            if (i != kv_id) {
+                /* pack original key/val */
+                msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
+                msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
+                continue;
+            }
+
+            /* update key/val */
+            if (in_key != NULL) {
+                msgpack_pack_object(mp_pck, *in_key);
+            }
+            else {
+                msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
+            }
+            if (in_val != NULL) {
+                msgpack_pack_object(mp_pck, *in_val);
+            }
+            else {
+                msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
+            }
+        }
+        return 0;
+    }
 
     for (i=0; i<map_size; i++) {
         msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
