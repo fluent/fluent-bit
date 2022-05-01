@@ -405,14 +405,14 @@ static int update_subkey_array(msgpack_object *obj, struct mk_list *subkeys,
 
     /* check the current msgpack object is an array */
     if (obj->type != MSGPACK_OBJECT_ARRAY) {
-        flb_error("%s: object is not map", __FUNCTION__);
+        flb_error("%s: object is not array", __FUNCTION__);
         return -1;
     }
     size = obj->via.array.size;
     /* Index limit and ensure no overflow */
     if (entry->array_id == INT_MAX ||
         size < entry->array_id + 1) {
-        flb_error("%s: out of index", __FUNCTION__);
+        flb_trace("%s: out of index", __FUNCTION__);
             return -1;
     }
 
@@ -431,7 +431,7 @@ static int update_subkey_array(msgpack_object *obj, struct mk_list *subkeys,
         }
 
         if (subkeys->next == NULL) {
-            flb_error("%s: end of subkey", __FUNCTION__);
+            flb_trace("%s: end of subkey", __FUNCTION__);
             return -1;
         }
         ret = update_subkey(&obj->via.array.ptr[i], subkeys->next,
@@ -459,14 +459,14 @@ static int update_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
     entry = mk_list_entry_first(subkeys, struct flb_ra_subentry, _head);
     /* check the current msgpack object is a map */
     if (obj->type != MSGPACK_OBJECT_MAP) {
-        flb_error("%s: object is not map", __FUNCTION__);
+        flb_trace("%s: object is not map", __FUNCTION__);
         return -1;
     }
     size = obj->via.map.size;
 
     ret_id = ra_key_val_id(entry->str, *obj);
     if (ret_id < 0) {
-        flb_error("%s: not found", __FUNCTION__);
+        flb_trace("%s: not found", __FUNCTION__);
         return -1;
     }
 
@@ -494,7 +494,7 @@ static int update_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
             continue;
         }
         if (subkeys->next == NULL) {
-            flb_error("%s: end of subkey", __FUNCTION__);
+            flb_trace("%s: end of subkey", __FUNCTION__);
             return -1;
         }
         msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
@@ -583,6 +583,207 @@ int flb_ra_key_value_update(struct flb_ra_parser *rp, msgpack_object map,
         ret = update_subkey(&(map.via.map.ptr[i].val), rp->key->subkeys,
                             levels, &matched,
                       in_key, in_val, mp_pck);
+        if (ret < 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int append_subkey(msgpack_object *obj, struct mk_list *subkeys,
+                         int levels, int *matched,
+                         msgpack_object *in_val,
+                         msgpack_packer *mp_pck);
+
+
+static int append_subkey_array(msgpack_object *obj, struct mk_list *subkeys,
+                               int levels, int *matched,
+                               msgpack_object *in_val,
+                               msgpack_packer *mp_pck)
+{
+    struct flb_ra_subentry *entry;
+    int i;
+    int ret;
+    int size;
+
+    /* check the current msgpack object is an array */
+    if (obj->type != MSGPACK_OBJECT_ARRAY) {
+        flb_trace("%s: object is not array", __FUNCTION__);
+        return -1;
+    }
+    size = obj->via.array.size;
+    entry = mk_list_entry_first(subkeys, struct flb_ra_subentry, _head);
+
+    if (levels == *matched) {
+        /* append val */
+        msgpack_pack_array(mp_pck, size+1);
+        for (i=0; i<size; i++) {
+            msgpack_pack_object(mp_pck, obj->via.array.ptr[i]);
+        }
+        msgpack_pack_object(mp_pck, *in_val);
+
+        *matched = -1;
+        return 0;
+    }
+
+    /* Index limit and ensure no overflow */
+    if (entry->array_id == INT_MAX ||
+        size < entry->array_id + 1) {
+        flb_trace("%s: out of index", __FUNCTION__);
+            return -1;
+    }
+
+    msgpack_pack_array(mp_pck, size);
+    for (i=0; i<size; i++) {
+        if (i != entry->array_id) {
+            msgpack_pack_object(mp_pck, obj->via.array.ptr[i]);
+            continue;
+        }
+        if (*matched >= 0) {
+            *matched += 1;
+        }
+        if (subkeys->next == NULL) {
+            flb_trace("%s: end of subkey", __FUNCTION__);
+            return -1;
+        }
+        ret = append_subkey(&obj->via.array.ptr[i], subkeys->next,
+                            levels, matched,
+                            in_val, mp_pck);
+        if (ret < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int append_subkey_map(msgpack_object *obj, struct mk_list *subkeys,
+                             int levels, int *matched,
+                             msgpack_object *in_val,
+                             msgpack_packer *mp_pck)
+{
+    struct flb_ra_subentry *entry;
+    int i;
+    int ret_id;
+    int size;
+    int ret;
+
+    /* check the current msgpack object is a map */
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+        flb_trace("%s: object is not map", __FUNCTION__);
+        return -1;
+    }
+    size = obj->via.map.size;
+    entry = mk_list_entry_first(subkeys, struct flb_ra_subentry, _head);
+
+    if (levels == *matched) {
+        /* append val */
+        msgpack_pack_map(mp_pck, size+1);
+        for (i=0; i<size; i++) {
+            msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
+            msgpack_pack_object(mp_pck, obj->via.map.ptr[i].val);
+        }
+        msgpack_pack_str(mp_pck, flb_sds_len(entry->str));
+        msgpack_pack_str_body(mp_pck, entry->str, flb_sds_len(entry->str));
+        msgpack_pack_object(mp_pck, *in_val);
+
+        *matched = -1;
+        return 0;
+    }
+
+
+    ret_id = ra_key_val_id(entry->str, *obj);
+    if (ret_id < 0) {
+        flb_trace("%s: not found", __FUNCTION__);
+        return -1;
+    }
+
+    msgpack_pack_map(mp_pck, size);
+    for (i=0; i<size; i++) {
+        if (i != ret_id) {
+            msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
+            msgpack_pack_object(mp_pck, obj->via.map.ptr[i].val);
+            continue;
+        }
+
+        if (*matched >= 0) {
+            *matched += 1;
+        }
+        if (subkeys->next == NULL) {
+            flb_trace("%s: end of subkey", __FUNCTION__);
+            return -1;
+        }
+        msgpack_pack_object(mp_pck, obj->via.map.ptr[i].key);
+        ret = append_subkey(&(obj->via.map.ptr[i].val), subkeys->next,
+                            levels, matched,
+                            in_val, mp_pck);
+        if (ret < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int append_subkey(msgpack_object *obj, struct mk_list *subkeys,
+                         int levels, int *matched,
+                         msgpack_object *in_val,
+                         msgpack_packer *mp_pck)
+{
+    struct flb_ra_subentry *entry;
+
+    entry = mk_list_entry_first(subkeys, struct flb_ra_subentry, _head);
+
+    if (entry->type == FLB_RA_PARSER_ARRAY_ID) {
+        return append_subkey_array(obj, subkeys,
+                                   levels, matched,
+                                   in_val, mp_pck);
+    }
+    return append_subkey_map(obj, subkeys, levels, matched, in_val, mp_pck);
+}
+
+int flb_ra_key_value_append(struct flb_ra_parser *rp, msgpack_object map,
+                            msgpack_object *in_val, msgpack_packer *mp_pck)
+{
+    int ref_level;
+    int map_size;
+    int i;
+    int kv_id;
+    int ret;
+    int matched = 0;
+
+    map_size = map.via.map.size;
+
+    /* Decrement since the last key doesn't exist */
+    ref_level = mk_list_size(rp->key->subkeys) - 1;
+    if (ref_level < 0) {
+        /* no subkeys */
+        msgpack_pack_map(mp_pck, map_size+1);
+        for (i=0; i<map_size; i++) {
+            msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
+            msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
+        }
+        msgpack_pack_str(mp_pck, flb_sds_len(rp->key->name));
+        msgpack_pack_str_body(mp_pck, rp->key->name, flb_sds_len(rp->key->name));
+        msgpack_pack_object(mp_pck, *in_val);
+        return 0;
+    }
+
+    /* Get the key position in the map */
+    kv_id = ra_key_val_id(rp->key->name, map);
+    if (kv_id == -1) {
+        return -1;
+    }
+
+    msgpack_pack_map(mp_pck, map_size);
+    for (i=0; i<map_size; i++) {
+        msgpack_pack_object(mp_pck, map.via.map.ptr[i].key);
+        if (i != kv_id) {
+            msgpack_pack_object(mp_pck, map.via.map.ptr[i].val);
+            continue;
+        }
+        ret = append_subkey(&(map.via.map.ptr[i].val), rp->key->subkeys,
+                            ref_level, &matched,
+                            in_val, mp_pck);
         if (ret < 0) {
             return -1;
         }
