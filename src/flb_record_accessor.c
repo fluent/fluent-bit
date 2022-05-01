@@ -679,7 +679,7 @@ int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
         flb_error("%s: no inputs", __FUNCTION__);
         return -1;
     }
-    else if (ra == NULL || out_map == NULL) {
+    else if (ra == NULL || out_map == NULL || out_size == NULL) {
         /* invalid input */
         flb_error("%s: invalid input", __FUNCTION__);
         return -1;
