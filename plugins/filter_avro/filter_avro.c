@@ -312,9 +312,13 @@ static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_
     flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
-static int read_line(struct filter_avro_tag_state *state, mpack_reader_t *reader)
+static int read_key(
+        mpack_reader_t *reader,
+        const char *key,
+        flb_sds_t *out)
 {
-    bool is_log_key;
+    bool key_found;
+    size_t key_len;
     size_t i;
     size_t len;
     size_t key_count;
@@ -326,6 +330,7 @@ static int read_line(struct filter_avro_tag_state *state, mpack_reader_t *reader
         return FLB_FILTER_NOTOUCH;
     }
 
+    key_len = strlen(key);
     key_count = mpack_tag_map_count(&mtag);
 
     for (i = 0; i < key_count; i++) {
@@ -334,17 +339,16 @@ static int read_line(struct filter_avro_tag_state *state, mpack_reader_t *reader
             return FLB_FILTER_NOTOUCH;
         }
 
-        is_log_key = mpack_tag_bytes(&mtag) == 3 &&
-            !memcmp(reader->data, "log", 3);
+        key_found = mpack_tag_bytes(&mtag) == key_len &&
+            !memcmp(reader->data, key, key_len);
         reader->data += mpack_tag_bytes(&mtag);
         mtag = mpack_read_tag(reader);
         if (mtag.type != mpack_type_str) {
             return FLB_FILTER_NOTOUCH;
         }
         len = mpack_tag_bytes(&mtag);
-        if (is_log_key) {
-            flb_sds_cat_safe(&state->row_buffer, reader->data, len);
-            flb_sds_cat_safe(&state->row_buffer, "\n", 1);
+        if (key_found) {
+            flb_sds_cat_safe(out, reader->data, len);
         }
         reader->data += len;
     }
@@ -373,11 +377,12 @@ static int collect_lines(
             return ret;
         }
 
-        ret = read_line(state, &reader);
+        ret = read_key(&reader, "log", &state->row_buffer);
         if (ret) {
             return ret;
         }
 
+        flb_sds_cat_safe(&state->row_buffer, "\n", 1);
         record_size = reader.data - record_start;
         bytes -= record_size;
     }
