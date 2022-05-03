@@ -208,110 +208,6 @@ static flb_sds_t read_schema(const char *csv_file)
     return flb_file_read(fname);
 }
 
-static struct filter_avro_tag_state *get_tag_state(
-        struct filter_avro *ctx,
-        const char *tag) {
-    char *avro_schema_json;
-    flb_sds_t json_root_str;
-    json_t *json_root;
-    json_t *schema_root;
-    json_error_t json_error;
-    int i;
-
-    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
-        struct filter_avro_tag_state *state = ctx->states + i;
-        if (state->used && !strcmp(state->tag, tag)) {
-            return state;
-        }
-    }
-    /* not found, initialize for first use */
-    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
-        struct filter_avro_tag_state *state = ctx->states + i;
-        if (!state->used) {
-            state->ctx = ctx;
-            /* read avro schema */
-            json_root_str = read_schema(tag);
-
-            if (!json_root_str) {
-                flb_plg_error(ctx->ins,
-                        "Cannot find schema file for \"%s\"", tag);
-                return NULL;
-            }
-
-            json_root = json_loads(json_root_str, JSON_DECODE_ANY,
-                    &json_error);
-            if (!json_root) {
-                flb_plg_error(ctx->ins,
-                        "Unable to parse json schema:%s:error:%s:\n",
-                        state->avro_schema_json,
-                        json_error.text);
-                return NULL;
-            }
-
-            flb_sds_destroy(json_root_str);
-            schema_root = json_object_get(json_root, "avro_schema");
-            if (!schema_root) {
-                flb_plg_error(ctx->ins,
-                        "Unable to find avro_schema key",
-                        state->avro_schema_json);
-                return NULL;
-            }
-
-            avro_schema_json = json_dumps(schema_root, JSON_ENCODE_ANY);
-            state->avro_schema_json = flb_sds_create(avro_schema_json);
-            if (!avro_schema_json || !state->avro_schema_json) {
-                flb_plg_error(ctx->ins,
-                        "To serialize avro_schema key");
-                return NULL;
-            }
-
-            flb_free(avro_schema_json);
-            json_decref(json_root);
-
-            if (avro_schema_from_json_length(state->avro_schema_json,
-                        flb_sds_len(state->avro_schema_json), &state->aschema)) {
-                flb_plg_error(ctx->ins,
-                        "Unable to parse aobject schema:%s:error:%s:\n",
-                        state->avro_schema_json,
-                        avro_strerror());
-                return NULL;
-            }
-
-            state->aclass = avro_generic_class_from_schema(state->aschema);
-            if (!state->aclass) {
-                flb_plg_error(
-                        ctx->ins,
-                        "Unable to instantiate class from schema:%s:\n",
-                        avro_strerror());
-                return NULL;
-            }
-
-            if (avro_generic_value_new(state->aclass, &state->record)) {
-                flb_plg_error(
-                        ctx->ins,
-                        "Unable to allocate new avro value:%s:\n", avro_strerror(),
-                        avro_strerror());
-                return NULL;
-            }
-
-            state->used = true;
-            state->tag = flb_strdup(tag);
-            state->row_buffer = flb_sds_create("");
-            flb_csv_init(&state->state, write_avro_field, state);
-
-            return state;
-        }
-    }
-
-    return NULL;
-}
-
-static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_t count)
-{
-    struct filter_avro *ctx = writer->context;
-    flb_sds_cat_safe(&ctx->packbuf, buffer, count);
-}
-
 static int read_key(
         mpack_reader_t *reader,
         const char *key,
@@ -354,6 +250,163 @@ static int read_key(
     }
 
     return 0;
+}
+
+
+static flb_sds_t read_tag(
+        const char *data,
+        size_t bytes)
+
+{
+    int ret;
+    struct flb_time t;
+    mpack_reader_t reader;
+    flb_sds_t tag = flb_sds_create("");
+
+    if (!tag) {
+        return NULL;
+    }
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    while (bytes > 0) {
+        ret = flb_time_pop_from_mpack(&t, &reader);
+        if (ret) {
+            goto err;
+        }
+
+        ret = read_key(&reader, "file_name", &tag);
+        if (ret) {
+            goto err;
+        }
+
+        if (!flb_sds_len(tag)) {
+            goto err;
+        }
+
+        return tag;
+    }
+
+err:
+    flb_sds_destroy(tag);
+    return NULL;
+}
+
+static struct filter_avro_tag_state *get_tag_state(
+        struct filter_avro *ctx,
+        const char *data,
+        size_t bytes) {
+    char *avro_schema_json;
+    flb_sds_t json_root_str;
+    json_t *json_root;
+    json_t *schema_root;
+    json_error_t json_error;
+    int i;
+    flb_sds_t tag;
+
+    tag = read_tag(data, bytes);
+    if (!tag) {
+        flb_plg_error(ctx->ins,
+                "Cannot read tag from \"file_name\" key");
+        return NULL;
+    }
+
+    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
+        struct filter_avro_tag_state *state = ctx->states + i;
+        if (state->used && !strcmp(state->tag, tag)) {
+            flb_sds_destroy(tag);
+            return state;
+        }
+    }
+    /* not found, initialize for first use */
+    for (i = 0; i < FILTER_AVRO_MAX_TAG_COUNT; i++) {
+        struct filter_avro_tag_state *state = ctx->states + i;
+        if (!state->used) {
+            state->ctx = ctx;
+            /* read avro schema */
+            json_root_str = read_schema(tag);
+
+            if (!json_root_str) {
+                flb_plg_error(ctx->ins,
+                        "Cannot find schema file for \"%s\"", tag);
+                goto err;
+            }
+
+            json_root = json_loads(json_root_str, JSON_DECODE_ANY,
+                    &json_error);
+            if (!json_root) {
+                flb_plg_error(ctx->ins,
+                        "Unable to parse json schema:%s:error:%s:\n",
+                        state->avro_schema_json,
+                        json_error.text);
+                goto err;
+            }
+
+            flb_sds_destroy(json_root_str);
+            schema_root = json_object_get(json_root, "avro_schema");
+            if (!schema_root) {
+                flb_plg_error(ctx->ins,
+                        "Unable to find avro_schema key",
+                        state->avro_schema_json);
+                goto err;
+            }
+
+            avro_schema_json = json_dumps(schema_root, JSON_ENCODE_ANY);
+            state->avro_schema_json = flb_sds_create(avro_schema_json);
+            if (!avro_schema_json || !state->avro_schema_json) {
+                flb_plg_error(ctx->ins,
+                        "To serialize avro_schema key");
+                goto err;
+            }
+
+            flb_free(avro_schema_json);
+            json_decref(json_root);
+
+            if (avro_schema_from_json_length(state->avro_schema_json,
+                        flb_sds_len(state->avro_schema_json), &state->aschema)) {
+                flb_plg_error(ctx->ins,
+                        "Unable to parse aobject schema:%s:error:%s:\n",
+                        state->avro_schema_json,
+                        avro_strerror());
+                goto err;
+            }
+
+            state->aclass = avro_generic_class_from_schema(state->aschema);
+            if (!state->aclass) {
+                flb_plg_error(
+                        ctx->ins,
+                        "Unable to instantiate class from schema:%s:\n",
+                        avro_strerror());
+                goto err;
+            }
+
+            if (avro_generic_value_new(state->aclass, &state->record)) {
+                flb_plg_error(
+                        ctx->ins,
+                        "Unable to allocate new avro value:%s:\n", avro_strerror(),
+                        avro_strerror());
+                goto err;
+            }
+
+            state->used = true;
+            state->tag = flb_strdup(tag);
+            state->row_buffer = flb_sds_create("");
+            flb_csv_init(&state->state, write_avro_field, state);
+            flb_sds_destroy(tag);
+
+            return state;
+        }
+    }
+
+err:
+    flb_sds_destroy(tag);
+    return NULL;
+}
+
+static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_t count)
+{
+    struct filter_avro *ctx = writer->context;
+    flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
 static int collect_lines(
@@ -767,7 +820,7 @@ static int cb_avro_filter(const void *data, size_t bytes,
     ctx = filter_context;
     flb_sds_len_set(ctx->packbuf, 0);
 
-    state = get_tag_state(ctx, tag);
+    state = get_tag_state(ctx, data, bytes);
 
     if (!state) {
         flb_plg_error(ctx->ins, "max number of tag exceeded");
