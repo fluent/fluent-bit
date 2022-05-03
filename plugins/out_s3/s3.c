@@ -1863,6 +1863,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     /* Iterate the original buffer and perform adjustments */
     records = flb_mp_count(data, bytes);
     if (records <= 0) {
+        printf("records <= 0. Returning NULL");
         return NULL;
     }
 
@@ -1969,6 +1970,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
         flb_free(val_buf);
+        printf("nothing was read. Returning NULL");
         return NULL;
     }
     val_buf[val_offset] = '\0';
@@ -2079,11 +2081,13 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     /* Process chunk */
     if (ctx->log_key) {
+        printf("process chunk. ctx->log_key");
         chunk = flb_pack_msgpack_extract_log_key(ctx,
                                                  event_chunk->data,
                                                  event_chunk->size);
     }
     else {
+        printf("process chunk. else");
         chunk = flb_pack_msgpack_to_json_format(event_chunk->data,
                                                 event_chunk->size,
                                                 FLB_PACK_JSON_FORMAT_LINES,
