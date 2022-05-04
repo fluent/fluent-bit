@@ -844,6 +844,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         json_format == FLB_PACK_JSON_FORMAT_STREAM) {
         out_buf = flb_sds_create_size(bytes + bytes / 4);
         if (!out_buf) {
+            flb_info("failed in pre-allocated buffer");
             flb_errno();
             return NULL;
         }
@@ -868,6 +869,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         if (records <= 0) {
             flb_sds_destroy(out_buf);
             msgpack_sbuffer_destroy(&tmp_sbuf);
+            flb_info("json_format FLB_PACK_JSON_FORMAT_JSON. Returning NULL");
             return NULL;
         }
         msgpack_pack_array(&tmp_pck, records);
@@ -984,6 +986,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 flb_sds_destroy(out_buf);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
                 msgpack_unpacked_destroy(&result);
+                flb_info("encode record into json. Returning NULL");
                 return NULL;
             }
 
@@ -997,6 +1000,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                 flb_sds_destroy(out_buf);
                 msgpack_sbuffer_destroy(&tmp_sbuf);
                 msgpack_unpacked_destroy(&result);
+                flb_info("one map record converted. Returning NULL");
                 return NULL;
             }
 
@@ -1015,6 +1019,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
                     flb_sds_destroy(out_buf);
                     msgpack_sbuffer_destroy(&tmp_sbuf);
                     msgpack_unpacked_destroy(&result);
+                    flb_info("append the breakline. Returning NULL");
                     return NULL;
                 }
                 if (out_tmp != out_buf) {
@@ -1034,6 +1039,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
         msgpack_sbuffer_destroy(&tmp_sbuf);
 
         if (!out_buf) {
+            flb_info("format to json. 2. Returning NULL");
             return NULL;
         }
     }
@@ -1043,6 +1049,7 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 
     if (out_buf && flb_sds_len(out_buf) == 0) {
         flb_sds_destroy(out_buf);
+        flb_info("out_buf size 0. Returning NULL");
         return NULL;
     }
 

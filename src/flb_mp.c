@@ -49,10 +49,12 @@ int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_byt
     for (;;) {
         remaining = mpack_reader_remaining(&reader, NULL);
         if (!remaining) {
+            flb_info("No remaining. Break");
             break;
         }
         mpack_discard(&reader);
         if (mpack_reader_error(&reader)) {
+            flb_info("error after mpack_discard. Break");
             break;
         }
         count++;
