@@ -20,7 +20,7 @@
 #ifndef MK_SLEEP_H
 #define MK_SLEEP_H
 
-#include "mk_core_info.h"
+#include <mk_core/mk_core_info.h>
 
 #ifdef __GNUC__      /* Heaven */
 #include <time.h>

@@ -20,7 +20,7 @@
 #ifndef MK_PIPE_H
 #define MK_PIPE_H
 
-#include "mk_core_info.h"
+#include <mk_core/mk_core_info.h>
 
 /* For Windows we need a workaround to play with pipe(2) */
 #ifdef _WIN32

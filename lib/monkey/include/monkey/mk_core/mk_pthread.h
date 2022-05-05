@@ -20,7 +20,7 @@
 #ifndef MK_PTHREAD_H
 #define MK_PTHREAD_H
 
-#include "mk_core_info.h"
+#include <mk_core/mk_core_info.h>
 
 #if defined (MK_THREADS_POSIX)    /* Heaven */
 #include <pthread.h>

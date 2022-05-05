@@ -443,6 +443,7 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
     if (pthread_create(&tid, &attr, mk_sched_launch_worker_loop,
                        (void *) thconf) != 0) {
         mk_libc_error("pthread_create");
+        pthread_mutex_unlock(&server->pth_mutex);
         return -1;
     }
 

@@ -20,7 +20,7 @@
 #ifndef MK_UNISTD_H
 #define MK_UNISTD_H
 
-#include "mk_core_info.h"
+#include <mk_core/mk_core_info.h>
 
 #ifdef MK_HAVE_UNISTD_H
 #include <unistd.h>

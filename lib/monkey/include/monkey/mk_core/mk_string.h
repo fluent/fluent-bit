@@ -21,7 +21,7 @@
 #define MK_STR_H
 
 #include <stdint.h>
-#include "mk_core_info.h"
+#include <mk_core/mk_core_info.h>
 #include "mk_memory.h"
 #include "mk_list.h"
 #include "mk_macros.h"
