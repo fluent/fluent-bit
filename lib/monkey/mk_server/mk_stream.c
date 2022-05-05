@@ -38,6 +38,7 @@ struct mk_channel *mk_channel_new(int type, int fd)
 int mk_channel_release(struct mk_channel *channel)
 {
     mk_mem_free(channel);
+    return 0;
 }
 
 static inline size_t channel_write_in_file(struct mk_channel *channel,
