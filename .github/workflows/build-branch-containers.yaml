@@ -1,3 +1,4 @@
+name: Build containers for a specific branch
 on:
   workflow_dispatch:
     inputs:
