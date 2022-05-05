@@ -361,24 +361,33 @@ int flb_pack_json_state(const char *js, size_t len,
          * are OK in the array of tokens, if any, process them and adjust
          * the JSMN context/buffers.
          */
+
+        /*
+         * jsmn_parse updates jsmn_parser members. (state->parser)
+         * A member 'toknext' points next incomplete object token.
+         * We use toknext - 1 as an index of last member of complete JSON.
+         */
         int i;
         int found = 0;
 
-        for (i = 1; i < state->tokens_count; i++) {
+        if (state->parser.toknext == 0) {
+            return ret;
+        }
+
+        for (i = (int)state->parser.toknext - 1; i >= 1; i--) {
             t = &state->tokens[i];
 
             if (t->parent == -1 && (t->end != 0)) {
                 found++;
                 delim = i;
+                break;
             }
         }
 
-        if (found > 0) {
-            state->tokens_count += delim;
+        if (found == 0) {
+            return ret; /* FLB_ERR_JSON_PART */
         }
-        else {
-            return ret;
-        }
+        state->tokens_count += delim;
     }
     else if (ret != 0) {
         return ret;
