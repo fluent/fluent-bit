@@ -1,0 +1,19 @@
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of Fluent Bit to build, commit, branch, etc.
+        required: false
+        default: master
+jobs:
+  build-branch-containers:
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    with:
+      version: ${{ github.event.inputs.version }}
+      ref: ${{ github.event.inputs.version }}
+      registry: ghcr.io
+      username: ${{ github.actor }}
+      image: ${{ github.repository }}/${{ github.event.inputs.version }}
+      unstable: ${{ github.event.inputs.version }}
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
