@@ -208,7 +208,7 @@ jobs:
       - name: Build the legacy x86_64 debug image
         uses: docker/build-push-action@v2
         with:
-          file: ./Dockerfile.x86_64-debug
+          file: ./Dockerfile.x86_64.debug
           context: .
           tags: ${{ steps.debug-meta.outputs.tags }}
           labels: ${{ steps.debug-meta.outputs.labels }}
