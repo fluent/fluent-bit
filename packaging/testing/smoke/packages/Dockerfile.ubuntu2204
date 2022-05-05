@@ -1,7 +1,7 @@
 # For staging upgrade we use the 'official-install' as the base
-ARG STAGING_BASE=dokken/ubuntu-22.04
+ARG STAGING_BASE=dokken/ubuntu-22.04:latest
 
-FROM dokken/ubuntu-22.04 as official-install
+FROM ${STAGING_BASE} as official-install
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Use the one-line install
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
@@ -20,7 +20,9 @@ ENV STAGING_VERSION=${STAGING_VERSION}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN wget -qO - $STAGING_URL/fluentbit.key | apt-key add -
 RUN echo "deb $STAGING_URL/ubuntu/focal focal main" >> /etc/apt/sources.list
-RUN apt-get update && apt-get install -y td-agent-bit
+RUN apt-get update && apt-get install --no-install-recommends -y td-agent-bit \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 RUN systemctl enable td-agent-bit
 
 COPY ./test.sh /test.sh
