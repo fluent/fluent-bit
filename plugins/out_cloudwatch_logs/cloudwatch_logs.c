@@ -617,6 +617,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
     .flags        = 0,
+    .workers      = 1,
 
     /* Configuration */
     .config_map     = config_map,
