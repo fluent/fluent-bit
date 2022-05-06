@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version of Fluent Bit to build, commit, branch, etc.
-        required: false
+        description: Version of Fluent Bit to build, commit, branch, etc. The container image will be ghcr.io/fluent/fluent-bit/test/<this value>.
+        required: true
         default: master
 jobs:
   build-branch-containers:
@@ -14,7 +14,7 @@ jobs:
       ref: ${{ github.event.inputs.version }}
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}/${{ github.event.inputs.version }}
+      image: ${{ github.repository }}/test/${{ github.event.inputs.version }}
       unstable: ${{ github.event.inputs.version }}
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
