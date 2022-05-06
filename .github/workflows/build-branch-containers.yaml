@@ -8,7 +8,7 @@ on:
         default: master
 jobs:
   build-branch-containers:
-    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@master
+    uses: fluent/fluent-bit/.github/workflows/call-build-images.yaml@fix_debug_container_builds_1_8
     with:
       version: ${{ github.event.inputs.version }}
       ref: ${{ github.event.inputs.version }}
