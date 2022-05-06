@@ -126,6 +126,28 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
+      - id: debug-meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ inputs.registry }}/${{ inputs.image }}
+          tags: |
+            raw,${{ inputs.version }}-debug
+            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
+
+      - name: Build the legacy x86_64 debug image
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@v2
+        with:
+          file: ./Dockerfile.x86_64.debug
+          context: .
+          tags: ${{ steps.debug-meta.outputs.tags }}
+          labels: ${{ steps.debug-meta.outputs.labels }}
+          platforms: linux/amd64
+          push: true
+          load: false
+          build-args: |
+            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
+
       - name: Extract metadata from Github
         id: meta
         uses: docker/metadata-action@v3
@@ -196,27 +218,6 @@ jobs:
         env:
           DOCKER_CLI_EXPERIMENTAL: enabled
         shell: bash
-
-      - id: debug-meta
-        uses: docker/metadata-action@v3
-        with:
-          images: ${{ inputs.registry }}/${{ inputs.image }}
-          tags: |
-            raw,${{ inputs.version }}-debug
-            raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
-
-      - name: Build the legacy x86_64 debug image
-        uses: docker/build-push-action@v2
-        with:
-          file: ./Dockerfile.x86_64.debug
-          context: .
-          tags: ${{ steps.debug-meta.outputs.tags }}
-          labels: ${{ steps.debug-meta.outputs.labels }}
-          platforms: linux/amd64
-          push: true
-          load: false
-          build-args: |
-            FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/${{ inputs.ref }}
 
   # This is the intended approach to multi-arch image and all the other checks scanning,
   # signing, etc only trigger from this.
