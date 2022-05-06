@@ -545,7 +545,7 @@ static struct flb_config_map config_map[] = {
     },
 #ifdef FLB_HAVE_SQLDB
     {
-      FLB_CONFIG_MAP_STR, "db_sync", (char *)NULL,
+      FLB_CONFIG_MAP_STR, "db.sync", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_systemd_config, db_sync_mode),
       "Set the database sync mode: extra, full, normal or off"
     },
