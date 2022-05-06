@@ -135,7 +135,7 @@ jobs:
             raw,${{ needs.call-build-images-meta.outputs.major-version }}-debug
 
       - name: Build the legacy x86_64 debug image
-        if: arch == 'amd64'
+        if: matrix.arch == 'amd64'
         uses: docker/build-push-action@v2
         with:
           file: ./Dockerfile.x86_64.debug
