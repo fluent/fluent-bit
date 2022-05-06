@@ -215,6 +215,8 @@ jobs:
         shell: bash
 
       - name: Create Release
+        # Do not fail the job here
+        continue-on-error: true
         run: gh release create unstable-${{ needs.unstable-build-get-meta.outputs.branch }} release-upload/*.* --repo ${{ secrets.RELEASE_REPO }} --generate-notes --prerelease --target ${{ needs.unstable-build-get-meta.outputs.branch }} --title "Nightly unstable ${{ needs.unstable-build-get-meta.outputs.branch }} build"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
