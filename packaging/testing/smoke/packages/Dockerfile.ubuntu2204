@@ -1,7 +1,6 @@
 # For staging upgrade we use the 'official-install' as the base
-ARG STAGING_BASE=dokken/ubuntu-22.04:latest
 
-FROM ${STAGING_BASE} as official-install
+FROM dokken/ubuntu-22.04:latest as official-install
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Use the one-line install
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
@@ -13,7 +12,7 @@ RUN chmod a+x /test.sh
 FROM official-install as staging-upgrade-prep
 RUN rm -f /etc/apt/sources.list.d/fluent-bit.list
 
-FROM ${STAGING_BASE} as staging-install
+FROM dokken/ubuntu-22.04:latest as staging-install
 ARG STAGING_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
