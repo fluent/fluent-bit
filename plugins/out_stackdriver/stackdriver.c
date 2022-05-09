@@ -2150,7 +2150,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         const char *HEX = "0123456789abcdef";
         char *encoded_log_name[strlen(new_log_name) * 3 + 1];
         int position = 0;
-        for (chr = new_log_name; *chr != '\0'; chr++) {
+        for (char *chr = new_log_name; *chr != '\0'; chr++) {
             if (*chr == '.' || *chr == '_' || *chr == '-' || *chr == '/') {
                 encoded_log_name[position++] = '%';
                 encoded_log_name[position++] = HEX[*chr >> 4];
