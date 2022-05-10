@@ -275,6 +275,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
             ctx->env->metadata_server = flb_sds_create(tmp);
             ctx->metadata_server = ctx->env->metadata_server;
         }
+        else {
+            ctx->metadata_server = flb_sds_create(FLB_STD_METADATA_SERVER);
+        }
     }
     flb_plg_info(ctx->ins, "metadata_server set to %s", ctx->metadata_server);
 
