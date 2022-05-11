@@ -59,6 +59,18 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    if (ctx->headers_key && !ctx->body_key) {
+        flb_plg_error(ctx->ins, "when setting headers_key, body_key is also required");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->body_key && !ctx->headers_key) {
+        flb_plg_error(ctx->ins, "when setting body_key, headers_key is also required");
+        flb_free(ctx);
+        return NULL;
+    }
+
     /*
      * Check if a Proxy have been set, if so the Upstream manager will use
      * the Proxy end-point and then we let the HTTP client know about it, so
