@@ -61,7 +61,7 @@ jobs:
 
   windows-build-container:
     # Only build on push as takes a long time and not needed for PRs
-    if: github.event_name != 'pull_request'
+    # if: github.event_name != 'pull_request'
     # Need to match the container base image
     runs-on: windows-2019
     steps:
