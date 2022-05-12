@@ -38,8 +38,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN wget -qO - $FLUENT_BIT_PACKAGES_KEY | apt-key add -
 RUN echo "deb $FLUENT_BIT_PACKAGES_URL/ubuntu/bionic bionic main" >> /etc/apt/sources.list
-RUN apt-get update && apt-get install -y td-agent-bit
-RUN systemctl enable td-agent-bit
+RUN apt-get update && apt-get install -y fluent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
