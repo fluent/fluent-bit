@@ -1017,14 +1017,17 @@ int cio_file_sync(struct cio_chunk *ch)
     av_size = get_available_size(cf, &meta_len);
     if (av_size > 0) {
         size = cf->alloc_size - av_size;
-        ret = cio_file_fs_size_change(cf, size);
-        if (ret == -1) {
-            cio_errno();
-            cio_log_error(ch->ctx,
-                          "[cio file sync] error adjusting size at: "
-                          " %s/%s", ch->st->name, ch->name);
+
+        if (size >= ch->ctx->page_size) {
+            ret = cio_file_fs_size_change(cf, size);
+            if (ret == -1) {
+                cio_errno();
+                cio_log_error(ch->ctx,
+                              "[cio file sync] error adjusting size at: "
+                              " %s/%s", ch->st->name, ch->name);
+            }
+            cf->alloc_size = size;
         }
-        cf->alloc_size = size;
     }
     else if (cf->alloc_size > fst.st_size) {
         ret = cio_file_fs_size_change(cf, cf->alloc_size);
