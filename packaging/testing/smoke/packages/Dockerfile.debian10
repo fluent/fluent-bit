@@ -13,6 +13,7 @@ ARG RELEASE_KEY
 ENV FLUENT_BIT_PACKAGES_KEY=${RELEASE_KEY}
 
 # Use the one-line install
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
 RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
