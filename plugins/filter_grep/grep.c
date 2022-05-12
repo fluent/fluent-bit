@@ -30,9 +30,21 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_record_accessor.h>
+#include <fluent-bit/flb_ra_key.h>
 #include <msgpack.h>
 
 #include "grep.h"
+
+static inline int is_numeric_type(int type)
+{
+    return
+    type == GREP_NUMBER_EQUAL ||
+    type == GREP_NUMBER_NOT_EQUAL ||
+    type == GREP_NUMBER_LESS_THAN ||
+    type == GREP_NUMBER_LESS_THAN_OR_EQUAL ||
+    type == GREP_NUMBER_GREATER_THAN ||
+    type == GREP_NUMBER_GREATER_THAN_OR_EQUAL;
+}
 
 static void delete_rules(struct grep_ctx *ctx)
 {
@@ -78,6 +90,24 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
         else if (strcasecmp(kv->key, "exclude") == 0) {
             rule->type = GREP_EXCLUDE;
         }
+        else if (strcasecmp(kv->key, "number_equal") == 0) {
+            rule->type = GREP_NUMBER_EQUAL;
+        }
+        else if (strcasecmp(kv->key, "number_not_equal") == 0) {
+            rule->type = GREP_NUMBER_NOT_EQUAL;
+        }
+        else if (strcasecmp(kv->key, "number_less_than") == 0) {
+            rule->type = GREP_NUMBER_LESS_THAN;
+        }
+        else if (strcasecmp(kv->key, "number_less_than_or_equal") == 0) {
+            rule->type = GREP_NUMBER_LESS_THAN_OR_EQUAL;
+        }
+        else if (strcasecmp(kv->key, "number_greater_than") == 0) {
+            rule->type = GREP_NUMBER_GREATER_THAN;
+        }
+        else if (strcasecmp(kv->key, "number_greater_than_or_equal") == 0) {
+            rule->type = GREP_NUMBER_GREATER_THAN_OR_EQUAL;
+        }
         else {
             flb_plg_error(ctx->ins, "unknown rule type '%s'", kv->key);
             delete_rules(ctx);
@@ -121,6 +151,22 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
             return -1;
         }
 
+        /* parses the numeric value if needed */
+        if (is_numeric_type(rule->type)){
+            int retval = sscanf(sentry->value, "%lf", &(rule->numeric_value));
+            if (retval == EOF) {
+                /* this should not happen, for sscanf should write zero if it can parse a double */
+                flb_plg_error(ctx->ins,
+                            "invalid numerical value");
+                delete_rules(ctx);
+                flb_free(rule);
+                flb_utils_split_free(split);
+                return -1;
+            }
+        } else {
+            rule->numeric_value = 0;
+        }
+
         /* Release split */
         flb_utils_split_free(split);
 
@@ -150,6 +196,48 @@ static int set_rules(struct grep_ctx *ctx, struct flb_filter_instance *f_ins)
     return 0;
 }
 
+static inline int numeric_validation(struct grep_rule *rule, msgpack_object map)
+{
+    struct flb_ra_value *value_obj;
+    double value;
+
+    value_obj = flb_ra_get_value_object(rule->ra, map);
+
+    if (value_obj->type == FLB_RA_BOOL){
+        value = value_obj->val.boolean;
+    }
+    else if (value_obj->type == FLB_RA_INT){
+        value = value_obj->val.i64;
+    }
+    else if (value_obj->type == FLB_RA_FLOAT){
+        value = value_obj->val.f64;
+    }
+    else {
+        // non numeric type
+        return GREP_RET_EXCLUDE;
+    }
+
+    switch(rule->type){
+        case GREP_NUMBER_EQUAL:
+            // we can't compare floats
+            return abs(value - rule->numeric_value) < 0.0001 ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+        case GREP_NUMBER_NOT_EQUAL:
+            return value != rule->numeric_value ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+        case GREP_NUMBER_LESS_THAN:
+            return value <  rule->numeric_value ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+        case GREP_NUMBER_LESS_THAN_OR_EQUAL:
+            return value <= rule->numeric_value ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+        case GREP_NUMBER_GREATER_THAN:
+            return value >  rule->numeric_value ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+        case GREP_NUMBER_GREATER_THAN_OR_EQUAL:
+            return value >= rule->numeric_value ? GREP_RET_KEEP : GREP_RET_EXCLUDE;
+        default:
+            return GREP_RET_EXCLUDE;
+    }
+    return GREP_RET_EXCLUDE;
+}
+
+
 /* Given a msgpack record, do some filter action based on the defined rules */
 static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
 {
@@ -160,6 +248,10 @@ static inline int grep_filter_data(msgpack_object map, struct grep_ctx *ctx)
     /* For each rule, validate against map fields */
     mk_list_foreach(head, &ctx->rules) {
         rule = mk_list_entry(head, struct grep_rule, _head);
+
+        if (is_numeric_type(rule->type)){
+            return numeric_validation(rule, map);
+        }
 
         ret = flb_ra_regex_match(rule->ra, map, rule->regex, NULL);
         if (ret <= 0) { /* no match */
@@ -300,6 +392,36 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "exclude", NULL,
      FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
      "Exclude records in which the content of KEY matches the regular expression."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "number_equal", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY is EQUAL to a number."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "number_not_equal", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY is NOT EQUAL to a number."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "number_less_than", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY is LESS THEN a number."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "number_less_than_or_equal", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY is LESS THEN or EQUAL to a number."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "number_greater_than", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY is GREATHER THAN a number."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "number_greater_than_or_equal", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_FALSE, 0,
+     "Keep records in which the content of KEY is GREATHER THAN OR EQUAL to a number."
     },
     {0}
 };
