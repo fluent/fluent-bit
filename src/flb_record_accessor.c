@@ -679,7 +679,7 @@ int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
         flb_error("%s: no inputs", __FUNCTION__);
         return -1;
     }
-    else if (ra == NULL || out_map == NULL) {
+    else if (ra == NULL || out_map == NULL || out_size == NULL) {
         /* invalid input */
         flb_error("%s: invalid input", __FUNCTION__);
         return -1;
@@ -703,6 +703,69 @@ int flb_ra_update_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
         msgpack_sbuffer_destroy(&mp_sbuf);
         return -1;
     }
+    *out_map  = mp_sbuf.data;
+    *out_size = mp_sbuf.size;
+
+    return 0;
+}
+
+/**
+ *  Add key and/or value of the map using record accessor.
+ *  If key already exists, the API fails.
+ *
+ *  @param ra   the record accessor to specify key.
+ *  @param map  the original map.
+ *  @param in_val   the pointer to add val.
+ *  @param out_map  the updated map. If the API fails, out_map will be NULL.
+ *
+ *  @return result of the API. 0:success, -1:fail
+ */
+
+int flb_ra_append_kv_pair(struct flb_record_accessor *ra, msgpack_object map,
+                          void **out_map, size_t *out_size,
+                          msgpack_object *in_val)
+{
+    struct flb_ra_parser *rp;
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    int ret;
+
+    msgpack_object *s_key = NULL;
+    msgpack_object *o_key = NULL;
+    msgpack_object *o_val = NULL;
+
+    if (in_val == NULL) {
+        /* no key and value. nothing to do */
+        flb_error("%s: no value", __FUNCTION__);
+        return -1;
+    }
+    else if (ra == NULL || out_map == NULL|| out_size == NULL) {
+        /* invalid input */
+        flb_error("%s: invalid input", __FUNCTION__);
+        return -1;
+    }
+
+    flb_ra_get_kv_pair(ra, map, &s_key, &o_key, &o_val);
+    if (o_key != NULL && o_val != NULL) {
+        /* key and value already exist */
+        flb_error("%s: already exist", __FUNCTION__);
+        return -1;
+    }
+
+    rp = get_ra_parser(ra);
+    if (rp == NULL || rp->key == NULL) {
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    ret = flb_ra_key_value_append(rp, map, in_val, &mp_pck);
+    if (ret < 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
+    }
+
     *out_map  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
