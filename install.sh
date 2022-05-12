@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
+# Provided primarily to simplify testing for staging, etc.
+RELEASE_URL=${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}
+RELEASE_KEY=${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}
+
 echo "================================"
 echo " Fluent Bit Installation Script "
 echo "================================"
@@ -31,14 +35,14 @@ sudo -k
 case ${OS} in
     amzn|amazonlinux)
         sudo sh <<'SCRIPT'
-rpm --import https://packages.fluentbit.io/fluentbit.key
+rpm --import $RELEASE_KEY
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 [fluent-bit]
 name = Fluent Bit
-baseurl = https://packages.fluentbit.io/amazonlinux/\$releasever/\$basearch/
+baseurl = $RELEASE_URL/amazonlinux/\$releasever/\$basearch/
 gpgcheck=1
 repo_gpgcheck=1
-gpgkey=https://packages.fluentbit.io/fluentbit.key
+gpgkey=$RELEASE_KEY
 enabled=1
 EOF
 yum -y install fluent-bit || yum -y install td-agent-bit
@@ -46,14 +50,14 @@ SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
         sudo sh <<'SCRIPT'
-rpm --import https://packages.fluentbit.io/fluentbit.key
+rpm --import $RELEASE_KEY
 cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 [fluent-bit]
 name = Fluent Bit
-baseurl = https://packages.fluentbit.io/centos/\$releasever/\$basearch/
+baseurl = $RELEASE_URL/centos/\$releasever/\$basearch/
 gpgcheck=1
 repo_gpgcheck=1
-gpgkey=https://packages.fluentbit.io/fluentbit.key
+gpgkey=$RELEASE_KEY
 enabled=1
 EOF
 yum -y install fluent-bit || yum -y install td-agent-bit
@@ -65,9 +69,9 @@ SCRIPT
         sudo sh <<SCRIPT
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/share/keyrings/
-curl https://packages.fluentbit.io/fluentbit.key | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
+curl $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
 cat > /etc/apt/sources.list.d/fluent-bit.list <<EOF
-deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/${OS}/${CODENAME} ${CODENAME} main
+deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${CODENAME} ${CODENAME} main
 EOF
 apt-get -y update
 apt-get -y install fluent-bit || apt-get -y install td-agent-bit
