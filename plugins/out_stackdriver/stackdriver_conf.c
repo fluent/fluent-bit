@@ -563,8 +563,19 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
         }
         if (ctx->env->metadata_server) {
             flb_sds_destroy(ctx->env->metadata_server);
+            /*
+             * If ctx->env is not NULL,
+             * ctx->metadata_server points ctx->env->metadata_server.
+             *
+             * We set ctx->metadata_server to NULL to prevent double free.
+             */
+            ctx->metadata_server = NULL;
         }
         flb_free(ctx->env);
+    }
+
+    if (ctx->metadata_server) {
+        flb_sds_destroy(ctx->metadata_server);
     }
     
     if (ctx->is_k8s_resource_type){
