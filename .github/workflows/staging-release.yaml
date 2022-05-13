@@ -282,6 +282,7 @@ jobs:
     environment: release
     needs:
       - staging-release-packages-server
+      - staging-release-images
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
