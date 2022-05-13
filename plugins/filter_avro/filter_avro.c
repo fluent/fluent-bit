@@ -352,50 +352,49 @@ static int read_metadata(json_t *schema, struct filter_avro_metadata *md)
     return 0;
 }
 
-static flb_sds_t read_tag(mpack_reader_t *reader)
+static flb_sds_t read_filename(mpack_reader_t *reader)
 {
-    flb_sds_t tag = NULL;
+    flb_sds_t filename = NULL;
 
-    if (!read_key(reader, "file_name", &tag)) {
+    if (!read_key(reader, "file_name", &filename)) {
         goto err;
     }
 
-    if (!tag) {
+    if (!filename) {
         goto err;
     }
 
-    return tag;
+    return filename;
 
 err:
-    flb_sds_destroy(tag);
+    flb_sds_destroy(filename);
     return NULL;
 }
 
-static struct filter_avro_tag_state *get_tag_state(struct filter_avro *ctx,
-                                                   mpack_reader_t *reader)
+static struct filter_avro_file_state *get_file_state(struct filter_avro *ctx,
+                                                    mpack_reader_t *reader)
 {
     struct mk_list *head;
     struct mk_list *tmp;
-    struct filter_avro_tag_state *state;
+    struct filter_avro_file_state *state;
     char *avro_schema_json;
     flb_sds_t json_root_str;
     json_t *json_root;
     json_t *schema_root;
-    json_t *metadata_str;
     json_error_t json_error;
-    flb_sds_t tag;
+    flb_sds_t filename;
 
-    tag = read_tag(reader);
-    if (!tag) {
+    filename = read_filename(reader);
+    if (!filename) {
         flb_plg_error(ctx->ins,
-                "Cannot read tag from \"file_name\" key");
+                "Cannot read filename from \"file_name\" key");
         return NULL;
     }
 
     mk_list_foreach_safe(head, tmp, &ctx->states) {
-        state = mk_list_entry(head, struct filter_avro_tag_state, _head);
-        if (!strcmp(state->tag, tag)) {
-            flb_sds_destroy(tag);
+        state = mk_list_entry(head, struct filter_avro_file_state, _head);
+        if (!strcmp(state->filename, filename)) {
+            flb_sds_destroy(filename);
             return state;
         }
     }
@@ -411,11 +410,11 @@ static struct filter_avro_tag_state *get_tag_state(struct filter_avro *ctx,
 
     state->ctx = ctx;
     /* read avro schema */
-    json_root_str = read_schema(tag);
+    json_root_str = read_schema(filename);
 
     if (!json_root_str) {
         flb_plg_error(ctx->ins,
-                "Cannot find schema file for \"%s\"", tag);
+                "Cannot find schema file for \"%s\"", filename);
         goto err;
     }
 
@@ -484,17 +483,17 @@ static struct filter_avro_tag_state *get_tag_state(struct filter_avro *ctx,
         goto err;
     }
 
-    state->tag = flb_strdup(tag);
+    state->filename = flb_strdup(filename);
     state->row_buffer = flb_sds_create("");
     flb_csv_init(&state->state, write_avro_field, state);
-    flb_sds_destroy(tag);
+    flb_sds_destroy(filename);
 
     mk_list_add(&state->_head, &ctx->states);
 
     return state;
 
 err:
-    flb_sds_destroy(tag);
+    flb_sds_destroy(filename);
     return NULL;
 }
 
@@ -648,7 +647,7 @@ static void write_avro_field(void *data, const char *field, size_t field_len)
     int ret;
     bool boolean_val;
     avro_value_t avalue;
-    struct filter_avro_tag_state *state = data;
+    struct filter_avro_file_state *state = data;
     const char *field_name;
     bool debug;
 
@@ -738,7 +737,7 @@ static ssize_t serialize_avro_value(
 
 static int write_avro_value(
         struct filter_avro *ctx,
-        struct filter_avro_tag_state *state,
+        struct filter_avro_file_state *state,
         avro_value_t *payload_array)
 {
     ssize_t payload_size;
@@ -770,7 +769,7 @@ static int write_avro_value(
 
 static int metadata_to_avro(
         struct filter_avro *ctx,
-        struct filter_avro_tag_state *state,
+        struct filter_avro_file_state *state,
         avro_value_t *metadata)
 {
     size_t payload_size;
@@ -822,7 +821,7 @@ static int metadata_to_avro(
 
 static int csv_to_avro(
         struct filter_avro *ctx,
-        struct filter_avro_tag_state *state,
+        struct filter_avro_file_state *state,
         avro_value_t *payload_array)
 {
     int ret;
@@ -867,7 +866,7 @@ static int csv_to_avro(
 
 static int pack_avro(
         struct filter_avro *ctx,
-        struct filter_avro_tag_state *state,
+        struct filter_avro_file_state *state,
         avro_value_t *logev)
 
 {
@@ -939,7 +938,7 @@ static int pack_avro(
     return 0;
 }
 
-static int check_csv_record_available(struct filter_avro_tag_state *state)
+static int check_csv_record_available(struct filter_avro_file_state *state)
 {
     int ret;
     char *bufptr;
@@ -971,7 +970,7 @@ static int cb_avro_filter(const void *data, size_t bytes,
 {
     int ret;
     struct filter_avro *ctx;
-    struct filter_avro_tag_state *state;
+    struct filter_avro_file_state *state;
     struct flb_time t;
     mpack_reader_t reader;
     char *outbuf;
@@ -993,10 +992,10 @@ static int cb_avro_filter(const void *data, size_t bytes,
             return ret;
         }
 
-        state = get_tag_state(ctx, &reader);
+        state = get_file_state(ctx, &reader);
 
         if (!state) {
-            flb_plg_error(ctx->ins, "max number of tag exceeded");
+            flb_plg_error(ctx->ins, "failed to get state for current file");
             return FLB_FILTER_NOTOUCH;
         }
 
@@ -1087,17 +1086,17 @@ static int cb_avro_filter(const void *data, size_t bytes,
 
 static int cb_avro_exit(void *data, struct flb_config *config)
 {
-    struct filter_avro_tag_state *state;
+    struct filter_avro_file_state *state;
     struct filter_avro *ctx = data;
 
 
     while (mk_list_is_empty(&ctx->states) != 0) {
         state = mk_list_entry_first(&ctx->states,
-                                    struct filter_avro_tag_state,
+                                    struct filter_avro_file_state,
                                     _head);
         flb_csv_destroy(&state->state);
         destroy_metadata(&state->metadata);
-        flb_free(state->tag);
+        flb_free(state->filename);
         flb_sds_destroy(state->row_buffer);
         flb_sds_destroy(state->avro_schema_json);
         avro_value_decref(&state->record);
@@ -1123,11 +1122,11 @@ static int cb_avro_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
-    {
-     FLB_CONFIG_MAP_BOOL, "convert_to_avro", "false",
-     0, FLB_TRUE, offsetof(struct filter_avro, convert_to_avro),
-     "If enabled, convert CSV records into avro, using tag path to find schema "
-    },
+    // {
+    //  FLB_CONFIG_MAP_BOOL, "convert_to_avro", "false",
+    //  0, FLB_TRUE, offsetof(struct filter_avro, convert_to_avro),
+    //  "If enabled, convert CSV records into avro, using tag path to find schema "
+    // },
     {0}
 };
 

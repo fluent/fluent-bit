@@ -45,9 +45,9 @@ struct filter_avro_metadata {
     flb_sds_t swh_server;
 };
 
-struct filter_avro_tag_state {
+struct filter_avro_file_state {
     struct flb_csv_state state;
-    char *tag;
+    char *filename;
     flb_sds_t row_buffer;
     avro_schema_t aschema;
     avro_value_iface_t *aclass;
