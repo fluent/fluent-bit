@@ -938,26 +938,45 @@ static int pack_avro(
     return 0;
 }
 
-static int check_csv_record_available(struct filter_avro_file_state *state)
+static struct filter_avro_file_state *collect_lines_for_file(
+        struct filter_avro *ctx,
+        mpack_reader_t *reader,
+        size_t *bytes)
 {
-    int ret;
-    char *bufptr;
-    size_t buflen;
-    size_t field_count;
-    flb_csv_field_parsed_callback callback;
+    const char *record_start;
+    size_t record_size;
+    struct flb_time t;
+    struct filter_avro_file_state *state = NULL;
+    struct filter_avro_file_state *next_state = NULL;
 
-    bufptr = state->row_buffer;
-    buflen = flb_sds_len(state->row_buffer);
+    while (*bytes > 0) {
+        record_start = reader->data;
+        record_size = 0;
 
-    /* temporarily remove callback since we only want to scan */
-    callback = state->state.field_callback;
-    state->state.field_callback = NULL;
+        if (flb_time_pop_from_mpack(&t, reader)) {
+            return NULL;
+        }
 
-    ret = flb_csv_parse_record(&state->state, &bufptr, &buflen, &field_count);
+        next_state = get_file_state(ctx, reader);
 
-    state->state.field_callback = callback;
+        if (state && next_state != state) {
+            /* different file, flush the collected records */
+            reader->data = record_start;
+            break;
+        }
 
-    return ret;
+        state = next_state;
+        if (!read_key(reader, "log", &state->row_buffer)) {
+            return NULL;
+        }
+
+        mpack_discard(reader);
+        flb_sds_cat_safe(&state->row_buffer, "\n", 1);
+        record_size = reader->data - record_start;
+        *bytes -= record_size;
+    }
+
+    return state;
 }
 
 static int cb_avro_filter(const void *data, size_t bytes,
@@ -971,13 +990,10 @@ static int cb_avro_filter(const void *data, size_t bytes,
     int ret;
     struct filter_avro *ctx;
     struct filter_avro_file_state *state;
-    struct flb_time t;
     mpack_reader_t reader;
     char *outbuf;
     avro_value_t logev;
     avro_value_t value;
-    const char *record_start;
-    size_t record_size;
 
     ctx = filter_context;
     flb_sds_len_set(ctx->packbuf, 0);
@@ -985,37 +1001,12 @@ static int cb_avro_filter(const void *data, size_t bytes,
     mpack_reader_init_data(&reader, data, bytes);
 
     while (bytes > 0) {
-        record_start = reader.data;
-        record_size = 0;
-
-        if (flb_time_pop_from_mpack(&t, &reader)) {
-            return ret;
-        }
-
-        state = get_file_state(ctx, &reader);
+        state = collect_lines_for_file(ctx, &reader, &bytes);
 
         if (!state) {
             flb_plg_error(ctx->ins, "failed to get state for current file");
             return FLB_FILTER_NOTOUCH;
         }
-
-        if (!read_key(&reader, "log", &state->row_buffer)) {
-            return -1;
-        }
-
-        flb_sds_cat_safe(&state->row_buffer, "\n", 1);
-
-        ret = check_csv_record_available(state);
-        if (ret) {
-            mpack_discard(&reader);
-            record_size = reader.data - record_start;
-            bytes -= record_size;
-            continue;
-        }
-
-        mpack_discard(&reader);
-        record_size = reader.data - record_start;
-        bytes -= record_size;
 
         if (avro_generic_value_new(ctx->logev_class, &logev)) {
             return -1;
