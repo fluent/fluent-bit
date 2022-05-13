@@ -272,3 +272,28 @@ jobs:
         shell: bash
         env:
           COSIGN_EXPERIMENTAL: "true"
+
+  # This will require a sign off so can be done after packages are updated to confirm
+  staging-release-smoke-test:
+    name: Run smoke tests on release artefacts
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    environment: release
+    needs:
+      - staging-release-packages-server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Test release packages
+        run: |
+          ./packaging/test-release-packages.sh
+        shell: bash
+
+      - name: Test containers
+        run: |
+          ./packaging/testing/smoke/container/container-smoke-test.sh
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.version }}
