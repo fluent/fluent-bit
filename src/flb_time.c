@@ -247,6 +247,14 @@ int flb_time_append_to_msgpack(struct flb_time *tm, msgpack_packer *pk, int fmt)
     return ret;
 }
 
+static inline int is_eventtime(msgpack_object *obj)
+{
+    if (obj->via.ext.type != 0 || obj->via.ext.size != 8) {
+        return FLB_FALSE;
+    }
+    return FLB_TRUE;
+}
+
 int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
 {
     uint32_t tmp;
@@ -261,6 +269,11 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
         time->tm.tv_nsec = ((obj->via.f64 - time->tm.tv_sec) * ONESEC_IN_NSEC);
         break;
     case MSGPACK_OBJECT_EXT:
+        if (is_eventtime(obj) != FLB_TRUE) {
+            flb_warn("[time] unknown ext type. type=%d size=%d",
+                     obj->via.ext.type, obj->via.ext.size);
+            return -1;
+        }
         memcpy(&tmp, &obj->via.ext.ptr[0], 4);
         time->tm.tv_sec = (uint32_t) ntohl(tmp);
         memcpy(&tmp, &obj->via.ext.ptr[4], 4);
