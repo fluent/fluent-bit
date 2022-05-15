@@ -116,6 +116,9 @@ struct flb_s3 {
     int use_put_object;
     int send_content_md5;
     int static_file_path;
+    int compression;
+    int port;
+    int insecure;
 
     struct flb_aws_provider *provider;
     struct flb_aws_provider *base_provider;

@@ -38,6 +38,13 @@
 #include "s3.h"
 #include "s3_store.h"
 
+#ifdef FLB_HAVE_ARROW
+#include "arrow/compress.h"
+#endif
+
+#define DEFAULT_S3_PORT 443
+#define DEFAULT_S3_INSECURE_PORT 80
+
 static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     struct s3_file *chunk,
                                     char **out_buf, size_t *out_size);
@@ -140,7 +147,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         *headers = s3_headers;
         return 0;
     }
-    
+
     s3_headers = flb_malloc(sizeof(struct flb_aws_header) * headers_len);
     if (s3_headers == NULL) {
         flb_errno();
@@ -168,7 +175,7 @@ static int create_headers(struct flb_s3 *ctx, char *body_md5, struct flb_aws_hea
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
     }
-    
+
     *num_headers = headers_len;
     *headers = s3_headers;
     return 0;
@@ -368,7 +375,7 @@ static int init_seq_index(void *context) {
             flb_plg_error(ctx->ins, "Failed to write to sequential index metadata file");
             return -1;
         }
-    } 
+    }
     else {
         ret = read_seq_index(ctx->seq_index_file, &ctx->seq_index);
         if (ret < 0) {
@@ -493,6 +500,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
     struct flb_aws_client_generator *generator;
     (void) config;
     (void) data;
+    char *ep;
+    struct flb_split_entry *tok;
+    struct mk_list *split;
+    int list_size;
 
     ctx = flb_calloc(1, sizeof(struct flb_s3));
     if (!ctx) {
@@ -653,12 +664,48 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("endpoint", ins);
     if (tmp) {
-        ctx->endpoint = removeProtocol((char *) tmp, "https://");
-        ctx->free_endpoint = FLB_FALSE;
+        ctx->insecure = strncmp(tmp, "http://", 7) == 0 ? FLB_TRUE : FLB_FALSE;
+        if (ctx->insecure == FLB_TRUE) {
+          ep = removeProtocol((char *) tmp, "http://");
+        }
+        else {
+          ep = removeProtocol((char *) tmp, "https://");
+        }
+
+        split = flb_utils_split((const char *)ep, ':', 1);
+        if (!split) {
+          flb_errno();
+          return -1;
+        }
+        list_size = mk_list_size(split);
+        if (list_size > 2) {
+          flb_plg_error(ctx->ins, "Failed to split endpoint");
+          flb_utils_split_free(split);
+          return -1;
+        }
+
+        tok = mk_list_entry_first(split, struct flb_split_entry, _head);
+        ctx->endpoint = flb_strndup(tok->value, tok->len);
+        if (!ctx->endpoint) {
+            flb_errno();
+            flb_utils_split_free(split);
+            return -1;
+        }
+        ctx->free_endpoint = FLB_TRUE;
+        if (list_size == 2) {
+          tok = mk_list_entry_next(&tok->_head, struct flb_split_entry, _head, split);
+          ctx->port = atoi(tok->value);
+        }
+        else {
+          ctx->port = ctx->insecure == FLB_TRUE ? DEFAULT_S3_INSECURE_PORT : DEFAULT_S3_PORT;
+        }
+        flb_utils_split_free(split);
     }
     else {
         /* default endpoint for the given region */
         ctx->endpoint = flb_aws_endpoint("s3", ctx->region);
+        ctx->insecure = FLB_FALSE;
+        ctx->port = DEFAULT_S3_PORT;
         ctx->free_endpoint = FLB_TRUE;
         if (!ctx->endpoint) {
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
@@ -679,15 +726,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
         if (strcmp((char *) tmp, "gzip") != 0) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "'gzip' is currently the only supported value for 'compression'");
             return -1;
         } else if (ctx->use_put_object == FLB_FALSE) {
-            flb_plg_error(ctx->ins, 
+            flb_plg_error(ctx->ins,
                           "use_put_object must be enabled when compression is enabled");
             return -1;
         }
-        
+
         ctx->compression = (char *) tmp;
     }
 
@@ -695,18 +742,20 @@ static int cb_s3_init(struct flb_output_instance *ins,
     if (tmp) {
         ctx->content_type = (char *) tmp;
     }
-    
-    ctx->client_tls = flb_tls_create(FLB_TRUE,
-                                     ins->tls_debug,
-                                     ins->tls_vhost,
-                                     ins->tls_ca_path,
-                                     ins->tls_ca_file,
-                                     ins->tls_crt_file,
-                                     ins->tls_key_file,
-                                     ins->tls_key_passwd);
-    if (!ctx->client_tls) {
-        flb_plg_error(ctx->ins, "Failed to create tls context");
-        return -1;
+
+    if (ctx->insecure == FLB_FALSE) {
+        ctx->client_tls = flb_tls_create(ins->tls_verify,
+                                         ins->tls_debug,
+                                         ins->tls_vhost,
+                                         ins->tls_ca_path,
+                                         ins->tls_ca_file,
+                                         ins->tls_crt_file,
+                                         ins->tls_key_file,
+                                         ins->tls_key_passwd);
+        if (!ctx->client_tls) {
+            flb_plg_error(ctx->ins, "Failed to create tls context");
+            return -1;
+        }
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -805,18 +854,24 @@ static int cb_s3_init(struct flb_output_instance *ins,
     ctx->s3_client->provider = ctx->provider;
     ctx->s3_client->region = ctx->region;
     ctx->s3_client->service = "s3";
-    ctx->s3_client->port = 443;
+    ctx->s3_client->port = ctx->port;
     ctx->s3_client->flags = 0;
     ctx->s3_client->proxy = NULL;
     ctx->s3_client->s3_mode = S3_MODE_SIGNED_PAYLOAD;
     ctx->s3_client->retry_requests = ctx->retry_requests;
 
-    ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, 443,
-                                                   FLB_IO_TLS, ctx->client_tls);
+    if (ctx->insecure == FLB_TRUE) {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TCP, NULL);
+    } else {
+        ctx->s3_client->upstream = flb_upstream_create(config, ctx->endpoint, ctx->port,
+                                                       FLB_IO_TLS, ctx->client_tls);
+    }
     if (!ctx->s3_client->upstream) {
         flb_plg_error(ctx->ins, "Connection initialization error");
         return -1;
     }
+
     flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
 
     ctx->s3_client->host = ctx->endpoint;
@@ -1294,7 +1349,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t create_time
             return -1;
         }
     }
-    
+
     s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
@@ -1800,7 +1855,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     }
 
     msgpack_unpacked_init(&result);
-    while (!alloc_error && 
+    while (!alloc_error &&
            msgpack_unpack_next(&result, data, bytes, &off) == MSGPACK_UNPACK_SUCCESS) {
         /* Each array must have two entries: time and record */
         root = result.data;
@@ -1842,7 +1897,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                 if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
-                    /* 
+                    /*
                      * Copy contents of value into buffer. Necessary to copy
                      * strings because flb_msgpack_to_json does not handle nested
                      * JSON gracefully and double escapes them.
@@ -1860,7 +1915,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
                         val_offset++;
                     }
                     else {
-                        ret = flb_msgpack_to_json(val_buf + val_offset, 
+                        ret = flb_msgpack_to_json(val_buf + val_offset,
                                                   msgpack_size - val_offset, &val);
                         if (ret < 0) {
                             break;
@@ -1883,7 +1938,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
 
     /* Throw error once per chunk if at least one log key was not found */
     if (log_key_missing == FLB_TRUE) {
-        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records", 
+        flb_plg_error(ctx->ins, "Could not find log_key '%s' in %d records",
                       ctx->log_key, log_key_missing);
     }
 
