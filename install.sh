@@ -36,7 +36,7 @@ case ${OS} in
     amzn|amazonlinux)
         sudo sh <<'SCRIPT'
 rpm --import $RELEASE_KEY
-cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
+cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
 baseurl = $RELEASE_URL/amazonlinux/\$releasever/\$basearch/
@@ -51,7 +51,7 @@ SCRIPT
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
         sudo sh <<'SCRIPT'
 rpm --import $RELEASE_KEY
-cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
+cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
 baseurl = $RELEASE_URL/centos/\$releasever/\$basearch/
