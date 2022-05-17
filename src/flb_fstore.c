@@ -76,12 +76,32 @@ int flb_fstore_file_meta_set(struct flb_fstore *fs,
                              void *meta, size_t size)
 {
     int ret;
+    int set_down = FLB_FALSE;
+
+    /* Check if the chunk is up */
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_error("[fstore] error loading up file chunk");
+            return -1;
+        }
+        set_down = FLB_TRUE;
+    }
 
     ret = cio_meta_write(fsf->chunk, meta, size);
     if (ret == -1) {
         flb_error("[fstore] could not write metadata to file: %s:%s",
                   fsf->stream->name, fsf->chunk->name);
+
+        if (set_down == FLB_TRUE) {
+            cio_chunk_down(fsf->chunk);
+        }
+
         return -1;
+    }
+
+    if (set_down == FLB_TRUE) {
+        cio_chunk_down(fsf->chunk);
     }
 
     return meta_set(fsf, meta, size);
@@ -254,11 +274,31 @@ int flb_fstore_file_content_copy(struct flb_fstore *fs,
 int flb_fstore_file_append(struct flb_fstore_file *fsf, void *data, size_t size)
 {
     int ret;
+    int set_down = FLB_FALSE;
+
+    /* Check if the chunk is up */
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_error("[fstore] error loading up file chunk");
+            return -1;
+        }
+        set_down = FLB_TRUE;
+    }
 
     ret = cio_chunk_write(fsf->chunk, data, size);
     if (ret != CIO_OK) {
         flb_error("[fstore] could not write data to file %s", fsf->name);
+
+        if (set_down == FLB_TRUE) {
+            cio_chunk_down(fsf->chunk);
+        }
+
         return -1;
+    }
+
+    if (set_down == FLB_TRUE) {
+        cio_chunk_down(fsf->chunk);
     }
 
     return 0;
