@@ -2427,7 +2427,7 @@ static struct flb_config_map config_map[] = {
     },
     {
      FLB_CONFIG_MAP_STR, "metadata_server", (char *)NULL,
-     0, FLB_TRUE, offsetof(struct flb_stackdriver, metadata_server),
+     0, FLB_FALSE, 0,
      "Set the metadata server"
     },
     {
