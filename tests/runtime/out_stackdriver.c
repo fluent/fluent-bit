@@ -2256,6 +2256,47 @@ void flb_test_trace_stackdriver_autoformat()
     flb_destroy(ctx);
 }
 
+void flb_test_set_metadata_server()
+{
+    int ret;
+    int size = sizeof(JSON) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   "metadata_server", "http://metadata.google.internal",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_gce_instance,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) JSON, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_log_name_override()
 {
     int ret;
@@ -4857,6 +4898,9 @@ TEST_LIST = {
     /* test trace */
     {"trace_no_autoformat", flb_test_trace_no_autoformat},
     {"trace_stackdriver_autoformat", flb_test_trace_stackdriver_autoformat},
+
+    /* test metadata server */
+    {"set_metadata_server", flb_test_set_metadata_server},
 
     /* test log name */
     {"log_name_override", flb_test_log_name_override},
