@@ -13,7 +13,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 VERSION="$1"
-MAJOR_VERSION=${MAJOR_VERSION:-VERSION##\.*}
+MAJOR_VERSION=${MAJOR_VERSION:-$VERSION##\.*}
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
     echo "Missing source directory: $SOURCE_DIR"
@@ -117,5 +117,9 @@ fi
 # Sign YUM repo meta-data
 find "/var/www/apt.fluentbit.io" -name repomd.xml -exec gpg --detach-sign --armor --yes -u "releases@fluentbit.io" {} \;
 
-# Windows
-cp -v "$SOURCE_DIR/windows/*$VERSION*" /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"/
+# Windows - we do want word splitting and ensure some files exist
+if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then
+    echo "Copying Windows artefacts"
+    # shellcheck disable=SC2086
+    cp -vf "$SOURCE_DIR"/windows/*$VERSION* /var/www/releases.fluentbit.io/releases/"$MAJOR_VERSION"/
+fi
