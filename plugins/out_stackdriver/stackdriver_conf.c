@@ -261,7 +261,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
     }
 
     /* Lookup metadata server URL */
-    if (ctx->metadata_server == NULL) {
+    ctx->metadata_server = NULL;
+    tmp = flb_output_get_property("metadata_server", ins);
+    if (tmp == NULL) {
         tmp = getenv("METADATA_SERVER");
         if(tmp) {
             if (ctx->env == NULL) {
@@ -278,6 +280,9 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         else {
             ctx->metadata_server = flb_sds_create(FLB_STD_METADATA_SERVER);
         }
+    }
+    else {
+        ctx->metadata_server = flb_sds_create(tmp);
     }
     flb_plg_info(ctx->ins, "metadata_server set to %s", ctx->metadata_server);
 
