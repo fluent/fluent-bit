@@ -120,6 +120,41 @@ int cmt_mpack_consume_string_tag(mpack_reader_t *reader, cmt_sds_t *output_buffe
     return CMT_MPACK_SUCCESS;
 }
 
+static size_t indent = 99999;
+static char   indent_buffer[1024];
+
+static void indent_init()
+{
+    if (indent == 99999) {
+        indent = 0;
+
+        memset(indent_buffer, ' ', sizeof(indent_buffer));
+
+        indent_buffer[sizeof(indent_buffer) - 1] = '\0';
+    }
+}
+
+static void indent_incr()
+{
+    indent_buffer[indent*2] = ' ';
+
+    indent++;
+}
+
+static void indent_decr()
+{
+    indent_buffer[indent*2] = '\0';
+
+    indent--;
+}
+
+static char *indent_get()
+{
+    indent_buffer[indent*2] = '\0';
+
+    return indent_buffer;
+}
+
 int cmt_mpack_unpack_map(mpack_reader_t *reader,
                          struct cmt_mpack_map_entry_callback_t *callback_list,
                          void *context)
@@ -131,13 +166,19 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
     int                                    result;
     mpack_tag_t                            tag;
 
+indent_init();
+
+indent_incr();
+
     tag = mpack_read_tag(reader);
 
     if (mpack_ok != mpack_reader_error(reader)) {
+indent_decr();
         return CMT_MPACK_ENGINE_ERROR;
     }
 
     if (mpack_type_map != mpack_tag_type(&tag)) {
+indent_decr();
         return CMT_MPACK_UNEXPECTED_DATA_TYPE_ERROR;
     }
 
@@ -151,6 +192,7 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
      */
 
     if (CMT_MPACK_MAX_MAP_ENTRY_COUNT < entry_count) {
+indent_decr();
         return CMT_MPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
@@ -158,6 +200,8 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
 
     for (entry_index = 0 ; 0 == result && entry_index < entry_count ; entry_index++) {
         result = cmt_mpack_consume_string_tag(reader, &key_name);
+
+        // printf("%s %d -> %s (result = %d)\n", indent_get(), entry_index, key_name, result);
 
         if (CMT_MPACK_SUCCESS == result) {
             callback_entry = callback_list;
@@ -182,9 +226,12 @@ int cmt_mpack_unpack_map(mpack_reader_t *reader,
 
         if (mpack_ok != mpack_reader_error(reader))
         {
+indent_decr();
             return CMT_MPACK_PENDING_MAP_ENTRIES;
         }
     }
+
+indent_decr();
 
     return result;
 }
@@ -198,14 +245,19 @@ int cmt_mpack_unpack_array(mpack_reader_t *reader,
     mpack_tag_t           tag;
     int                   result;
 
+indent_init();
+
+indent_incr();
+
     tag = mpack_read_tag(reader);
 
-    if (mpack_ok != mpack_reader_error(reader))
-    {
+    if (mpack_ok != mpack_reader_error(reader)) {
+indent_decr();
         return CMT_MPACK_ENGINE_ERROR;
     }
 
     if (mpack_type_array != mpack_tag_type(&tag)) {
+indent_decr();
         return CMT_MPACK_UNEXPECTED_DATA_TYPE_ERROR;
     }
 
@@ -225,6 +277,7 @@ int cmt_mpack_unpack_array(mpack_reader_t *reader,
      */
 
     if (CMT_MPACK_MAX_ARRAY_ENTRY_COUNT < entry_count) {
+indent_decr();
         return CMT_MPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
@@ -233,6 +286,9 @@ int cmt_mpack_unpack_array(mpack_reader_t *reader,
     for (entry_index = 0 ;
          CMT_MPACK_SUCCESS == result && entry_index < entry_count ;
          entry_index++) {
+
+        // printf("%s => %d\n", indent_get(), entry_index);
+
         result = entry_processor_callback(reader, entry_index, context);
     }
 
@@ -241,10 +297,12 @@ int cmt_mpack_unpack_array(mpack_reader_t *reader,
 
         if (mpack_ok != mpack_reader_error(reader))
         {
+indent_decr();
             return CMT_MPACK_PENDING_ARRAY_ENTRIES;
         }
     }
 
+indent_decr();
     return result;
 }
 

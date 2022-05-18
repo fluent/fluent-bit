@@ -22,6 +22,8 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
+#include <cmetrics/cmt_encode_text.h>
+#include <cmetrics/cmt_encode_influx.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
@@ -120,6 +122,90 @@ static struct cmt *generate_encoder_test_data()
     return cmt;
 }
 
+void test_opentelemetry_aditya()
+{
+    static char payload_data[1024 * 100];
+    struct cmt *msgpack_decoded_context;
+    size_t      msgpack_payload_size;
+    char       *msgpack_payload;
+    struct cmt *decoded_context;
+    char       *influx_payload;
+    size_t      payload_size;
+    FILE       *payload_file;
+    size_t      offset;
+    int         result;
+
+    printf("\n\n");
+
+    payload_file = fopen("/root/payload.bin", "rb");
+
+    if (payload_file == NULL) {
+        printf("Error loading payload\n");
+        return;
+    }
+
+    fseek(payload_file, 0, SEEK_END);
+    payload_size = ftell(payload_file);
+    fseek(payload_file, 0, SEEK_SET);
+
+    fread(payload_data, 1, payload_size, payload_file);
+
+    fclose(payload_file);
+
+    printf("READ : %zu\n", payload_size);
+
+    printf("\n\n");
+
+    offset = 0;
+    result = cmt_decode_opentelemetry_create(&decoded_context, payload_data, payload_size, &offset);
+
+    if (result != CMT_DECODE_OPENTELEMETRY_SUCCESS) {
+        printf("Error decoding context : %d\n", result);
+        return;
+    }
+
+    offset = 0;
+
+    result = cmt_encode_msgpack_create(decoded_context, &msgpack_payload, &msgpack_payload_size);
+
+    if (result != 0) {
+        printf("Msgpack encode error : %d\n", result);
+        return;
+    }
+
+// {
+//     FILE *sample_file;
+//     sample_file = fopen("msgpack_dump.bin", "wb+");
+
+//     fwrite(msgpack_payload, 1, msgpack_payload_size, sample_file);
+
+//     fclose(sample_file);
+// }
+
+    result = cmt_decode_msgpack_create(&msgpack_decoded_context, (char *) msgpack_payload, msgpack_payload_size, &offset);
+
+    if (result != 0) {
+        printf("Msgpack decode error : %d\n", result);
+        return;
+    }
+
+    influx_payload = cmt_encode_text_create(decoded_context);
+
+    if (influx_payload != NULL) {
+        printf("%s\n", influx_payload);
+
+        cmt_encode_text_destroy(influx_payload);
+    }
+    else {
+        printf("Errror encoding as influx\n");
+    }
+
+    printf("\n\n");
+
+    cmt_decode_msgpack_destroy(msgpack_decoded_context);
+    cmt_encode_msgpack_destroy(msgpack_payload);
+}
+
 void test_opentelemetry()
 {
     cmt_sds_t   reference_prometheus_context;
@@ -174,6 +260,7 @@ void test_opentelemetry()
 }
 
 TEST_LIST = {
-    {"opentelemetry", test_opentelemetry},
+    // {"opentelemetry", test_opentelemetry},
+    {"opentelemetry_aditya", test_opentelemetry_aditya},
     { 0 }
 };
