@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -437,6 +436,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                           const char *tag, int tag_len,
                           void **out_buf, size_t *out_bytes,
                           struct flb_filter_instance *f_ins,
+                          struct flb_input_instance *i_ins,
                           void *filter_context,
                           struct flb_config *config)
 {
@@ -458,6 +458,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
     struct flb_kube_props props = {0};
     struct flb_time time_lookup;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
 
     if (ctx->use_journal == FLB_FALSE || ctx->dummy_meta == FLB_TRUE) {
@@ -521,6 +522,7 @@ static int cb_kube_filter(const void *data, size_t bytes,
                     /* Skip this record */
                     if (ctx->use_journal == FLB_TRUE) {
                         flb_kube_meta_release(&meta);
+                        flb_kube_prop_destroy(&props);
                     }
                     continue;
                 }
@@ -532,6 +534,11 @@ static int cb_kube_filter(const void *data, size_t bytes,
         case FLB_KUBE_PROP_STREAM_STDERR:
             {
                 if (props.stderr_exclude == FLB_TRUE) {
+                    /* Skip this record */
+                    if (ctx->use_journal == FLB_TRUE) {
+                        flb_kube_meta_release(&meta);
+                        flb_kube_prop_destroy(&props);
+                    }
                     continue;
                 }
                 if (props.stderr_parser != NULL) {

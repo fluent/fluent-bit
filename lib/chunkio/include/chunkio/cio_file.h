@@ -24,10 +24,15 @@
 #include <chunkio/cio_file_st.h>
 #include <chunkio/cio_crc32.h>
 
+/* Linux fallocate() strategy */
+#define CIO_FILE_LINUX_FALLOCATE        0
+#define CIO_FILE_LINUX_POSIX_FALLOCATE  1
+
 struct cio_file {
     int fd;                   /* file descriptor      */
     int flags;                /* open flags */
     int synced;               /* sync after latest write ? */
+    int allocate_strategy;    /* linux-only: fallocate strategy */
     size_t fs_size;           /* original size in the file system */
     size_t data_size;         /* number of bytes used */
     size_t alloc_size;        /* allocated size       */
@@ -70,5 +75,7 @@ int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);
 int cio_file_down(struct cio_chunk *ch);
 int cio_file_up(struct cio_chunk *ch);
 int cio_file_up_force(struct cio_chunk *ch);
+int cio_file_lookup_user(char *user, void **result);
+int cio_file_lookup_group(char *group, void **result);
 
 #endif

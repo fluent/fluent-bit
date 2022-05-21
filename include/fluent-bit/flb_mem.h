@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -47,8 +46,32 @@
     #define FLB_ALLOCSZ_ATTR(x,...)
 #endif
 
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+/*
+ * Return 1 or 0 based on a probability.
+ */
+int flb_malloc_p;
+
+static inline int flb_fuzz_get_probability(int val) {
+  flb_malloc_p += 1;
+  flb_malloc_p = flb_malloc_p % 25000;
+  if (val > flb_malloc_p) {
+    return 1;
+  }
+  return 0;
+}
+#endif
+
 static inline FLB_ALLOCSZ_ATTR(1)
 void *flb_malloc(const size_t size) {
+
+#ifdef FLB_HAVE_TESTS_OSSFUZZ
+   // 1% chance of failure
+   if (flb_fuzz_get_probability(1)) {
+     return NULL;
+   }
+#endif
+
     if (size == 0) {
         return NULL;
     }

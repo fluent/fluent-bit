@@ -23,6 +23,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      ref:
+        description: The commit, tag or branch to checkout for testing scripts.
+        type: string
+        default: master
+        required: false
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -40,7 +45,7 @@ jobs:
         uses: sigstore/cosign-installer@main
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -82,7 +87,7 @@ jobs:
             expected: arm
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -126,10 +131,12 @@ jobs:
         arch: [ linux/amd64, linux/arm64, linux/arm/v7 ]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -137,7 +144,7 @@ jobs:
 
       - name: Set up QEMU using standard action
         if: ${{ matrix.arch != 'linux/arm64' }}
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       # Without this QEMU fails for ARM64
       - name: Set up binary emulation for QEMU
@@ -151,7 +158,7 @@ jobs:
           docker run --rm --platform=${{ matrix.arch }} alpine uname -a
 
       - name: Test the HTTP server is responding
-        timeout-minutes: 2
+        timeout-minutes: 10
         run: |
           packaging/testing/smoke/container/container-smoke-test.sh
         shell: bash
@@ -170,21 +177,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.2.0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v1
+        uses: azure/setup-helm@v2.1
         with:
           version: v3.6.3
 
       - name: Set up Kubectl
-        uses: azure/setup-kubectl@v2.0
+        uses: azure/setup-kubectl@v2.1
 
       - name: Test the HTTP server is responding
-        timeout-minutes: 2
+        timeout-minutes: 5
         run: |
           packaging/testing/smoke/k8s/k8s-smoke-test.sh
         shell: bash

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -30,6 +29,7 @@
 #define LUA_BUFFER_CHUNK    1024 * 8  /* 8K should be enough to get started */
 
 struct lua_filter {
+    flb_sds_t code;                   /* lua script source code */
     flb_sds_t script;                 /* lua script path */
     flb_sds_t call;                   /* function name   */
     flb_sds_t buffer;                 /* json dec buffer */

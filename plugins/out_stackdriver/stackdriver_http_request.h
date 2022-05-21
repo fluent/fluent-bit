@@ -1,7 +1,6 @@
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -91,7 +90,9 @@ void add_http_request_field(struct http_request_field *http_request,
  *  If the httpRequest field exists, return TRUE and store the subfields.
  *  If there are extra subfields, count the number.
  */
-int extract_http_request(struct http_request_field *http_request, 
+int extract_http_request(struct http_request_field *http_request,
+                         flb_sds_t http_request_key,
+                         int http_request_key_size,
                          msgpack_object *obj, int *extra_subfields);
 
 /*

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -39,6 +38,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
 {
+    int err;
     int ret;
     (void) data;
     struct lua_filter *ctx;
@@ -59,13 +59,31 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
     ctx->lua = lj;
 
-    /* Load Script */
-    ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    /* Lua script source code */
+    if (ctx->code) {
+        ret = flb_luajit_load_buffer(ctx->lua,
+                                     ctx->code, flb_sds_len(ctx->code),
+                                     "fluentbit.lua");
+    }
+    else {
+        /* Load Script / file path*/
+        ret = flb_luajit_load_script(ctx->lua, ctx->script);
+    }
+
     if (ret == -1) {
         lua_config_destroy(ctx);
         return -1;
     }
-    lua_pcall(ctx->lua->state, 0, 0, 0);
+
+    err = lua_pcall(ctx->lua->state, 0, 0, 0);
+    if (err != 0) {
+        flb_error("[luajit] invalid lua content, error=%d: %s",
+                  err, lua_tostring(lj->state, -1));
+        lua_pop(lj->state, 1);
+        lua_config_destroy(ctx);
+        return -1;
+    }
+
 
     if (flb_lua_is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
         flb_plg_error(ctx->ins, "function %s is not found", ctx->call);
@@ -98,9 +116,11 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
                                const char *tag, int tag_len,
                                void **out_buf, size_t *out_bytes,
                                struct flb_filter_instance *f_ins,
+                               struct flb_input_instance *i_ins,
                                void *filter_context,
                                struct flb_config *config)
 {
+    (void) i_ins;
     int ret;
     struct flb_time t_orig;
     struct flb_time t;
@@ -243,6 +263,13 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
         mpack_writer_destroy(&writer);
     }
 
+    if (flb_sds_len(ctx->packbuf) == 0) {
+        /* All records are removed */
+        *out_buf = NULL;
+        *out_bytes = 0;
+        return FLB_FILTER_MODIFIED;
+    }
+
     /* allocate outbuf that contains the modified chunks */
     outbuf = flb_malloc(flb_sds_len(ctx->packbuf));
     if (!outbuf) {
@@ -336,12 +363,14 @@ static int cb_lua_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
                          struct flb_filter_instance *f_ins,
+                         struct flb_input_instance *i_ins,
                          void *filter_context,
                          struct flb_config *config)
 {
     int ret;
     size_t off = 0;
     (void) f_ins;
+    (void) i_ins;
     (void) config;
     double ts = 0;
     msgpack_object *p;
@@ -502,6 +531,11 @@ static struct flb_config_map config_map[] = {
      "The path of lua script."
     },
     {
+     FLB_CONFIG_MAP_STR, "code", NULL,
+     0, FLB_FALSE, 0,
+     "String that contains the Lua script source code"
+    },
+    {
      FLB_CONFIG_MAP_STR, "call", NULL,
      0, FLB_TRUE, offsetof(struct lua_filter, call),
      "Lua function name that will be triggered to do filtering."
@@ -530,6 +564,7 @@ static struct flb_config_map config_map[] = {
      "If enabled, Fluent-bit will pass the timestamp as a Lua table "
      "with keys \"sec\" for seconds since epoch and \"nsec\" for nanoseconds."
     },
+
     {0}
 };
 

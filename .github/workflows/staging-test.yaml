@@ -9,6 +9,8 @@ on:
       - completed
   workflow_dispatch:
 
+concurrency: integration-test
+
 jobs:
   staging-test-images:
     name: Container images staging tests
@@ -19,7 +21,7 @@ jobs:
     with:
       registry: ghcr.io
       username: ${{ github.actor }}
-      image: ${{ github.repository }}
+      image: ${{ github.repository }}/staging
       image-tag: latest
       environment: staging
     secrets:
@@ -27,19 +29,19 @@ jobs:
       cosign_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
 
   # Called workflows cannot be nested
-  staging-test-images-integration-gcp:
+  staging-test-images-integration:
     name: run integration tests on GCP
     # Wait for other tests to succeed
     needs: staging-test-images
-    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
+    uses: fluent/fluent-bit/.github/workflows/call-integration-test.yaml@master
     with:
-      image_name: ghcr.io/${{ github.repository }}
+      image_name: ghcr.io/${{ github.repository }}/staging
       image_tag: latest
     secrets:
-      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
+      opensearch_aws_access_id: ${{ secrets.OPENSEARCH_AWS_ACCESS_ID }}
+      opensearch_aws_secret_key: ${{ secrets.OPENSEARCH_AWS_SECRET_KEY }}
+      opensearch_admin_password: ${{ secrets.OPENSEARCH_ADMIN_PASSWORD }}
       terraform_api_token: ${{ secrets.TF_API_TOKEN }}
-      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
-      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
 
   staging-test-packages:
     name: Binary packages staging test
@@ -52,33 +54,3 @@ jobs:
     secrets:
       bucket: ${{ secrets.AWS_S3_BUCKET_STAGING }}
       token: ${{ secrets.GITHUB_TOKEN }}
-
-  staging-test-multiarch-images:
-    name: Multi-arch images staging tests
-    # Workflow run always triggers on completion regardless of status
-    # This prevents us from running if build fails.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    uses: fluent/fluent-bit/.github/workflows/call-test-images.yaml@master
-    with:
-      registry: ghcr.io
-      username: ${{ github.actor }}
-      image: ${{ github.repository }}/multiarch
-      image-tag: latest
-      environment: staging
-    secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
-      cosign_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
-
-  staging-test-images-multiarch-integration-gcp:
-    name: Multi-arch - run integration tests on GCP
-    # Wait for other tests to succeed
-    needs: staging-test-images
-    uses: calyptia/fluent-bit-ci/.github/workflows/reusable-integration-test-gcp.yaml@main
-    with:
-      image_name: ghcr.io/${{ github.repository }}/multiarch
-      image_tag: latest
-    secrets:
-      grafana_username: ${{ secrets.GRAFANA_USERNAME }}
-      terraform_api_token: ${{ secrets.TF_API_TOKEN }}
-      gcp_service_account_key: ${{ secrets.GCP_SA_KEY }}
-      grafana_password: ${{ secrets.GRAFANA_PASSWORD }}

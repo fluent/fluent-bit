@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>io.fluentbit.@FLB_OUT_NAME@</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@CMAKE_INSTALL_FULL_BINDIR@/@FLB_OUT_NAME@</string>
+		<string>--config</string>
+		<string>@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_SYSCONFDIR@/@FLB_OUT_NAME@/@FLB_OUT_NAME@.conf</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -499,12 +498,11 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     /* Package the content */
     ret = package_content(mst, full_map, buf, size, tm,
                           val_content, val_pattern, val_group);
-    if (ret == FLB_FALSE) {
-        return -1;
-    }
-
     if (unpacked) {
         msgpack_unpacked_destroy(&result);
+    }
+    if (ret == FLB_FALSE) {
+        return -1;
     }
     return 0;
 }
@@ -636,7 +634,7 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
         break;
 
     default:
-        flb_error("%s: unknown type=%d", type);
+        flb_error("[multiline] unknown type=%d", type);
         return -1;
     }
 

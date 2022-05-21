@@ -15,10 +15,10 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 #
 
 # Ensure this is updated for new targets
-declare -a TARGETS=("centos/7" "centos/7.arm64v8" "centos/8" "centos/8.arm64v8"
-"debian/stretch" "debian/stretch.arm64v8" "debian/buster" "debian/buster.arm64v8" "debian/bullseye" "debian/bullseye.arm64v8"
-"raspbian/buster" "raspbian/bullseye"
-"ubuntu/16.04" "ubuntu/18.04" "ubuntu/18.04.arm64v8" "ubuntu/20.04" "ubuntu/20.04.arm64v8"
+# We do the arm64 targets at the end as ideally the amd64 ones trigger any issues with dependencies.
+declare -a TARGETS=("amazonlinux/2"
+"centos/7" "centos/8" "debian/buster" "debian/bullseye" "raspbian/buster" "raspbian/bullseye" "ubuntu/16.04" "ubuntu/18.04" "ubuntu/20.04"
+"amazonlinux/2.arm64v8" "centos/7.arm64v8" "centos/8.arm64v8" "debian/buster.arm64v8" "debian/bullseye.arm64v8" "ubuntu/18.04.arm64v8" "ubuntu/20.04.arm64v8"
 )
 
 # Output checks are easier plus do not want to fill up git
@@ -26,17 +26,14 @@ PACKAGING_OUTPUT_DIR=${PACKAGING_OUTPUT_DIR:-test}
 echo "Cleaning any existing output"
 rm -rf "${PACKAGING_OUTPUT_DIR:?}/*"
 
-# We need a version of the source code to build
-FLB_VERSION=${FLB_VERSION:-1.8.11}
-
 # Iterate over each target and attempt to build it.
 # Verify that an RPM or DEB is created.
 for DISTRO in "${TARGETS[@]}"
 do
     echo "$DISTRO"
-    FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" -v "$FLB_VERSION" "$@"
-    if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$FLB_VERSION/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-*.rpm" -o -iname "*-bit-*.deb" \) | head -n1) ]]; then
-        echo "Unable to find any $FLB_VERSION binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$FLB_VERSION/$PACKAGING_OUTPUT_DIR"
+    FLB_OUT_DIR="$PACKAGING_OUTPUT_DIR" /bin/bash "$SCRIPT_DIR"/build.sh -d "$DISTRO" "$@"
+    if [[ -z $(find "${SCRIPT_DIR}/packages/$DISTRO/$PACKAGING_OUTPUT_DIR/" -type f \( -iname "*-bit-*.rpm" -o -iname "*-bit-*.deb" \) | head -n1) ]]; then
+        echo "Unable to find any binary packages in: ${SCRIPT_DIR}/packages/$DISTRO/$PACKAGING_OUTPUT_DIR"
         exit 1
     fi
 done

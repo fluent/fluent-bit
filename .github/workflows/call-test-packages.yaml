@@ -7,6 +7,11 @@ on:
         description: The Github environment to run this workflow on.
         type: string
         required: false
+      ref:
+        description: The commit, tag or branch to checkout for testing scripts.
+        type: string
+        default: master
+        required: false
     secrets:
       token:
         description: The Github token or similar to authenticate with.
@@ -32,7 +37,7 @@ jobs:
         distro: [ amazonlinux2, centos7, centos8, debian10, debian11, ubuntu1804, ubuntu2004 ]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Get the version
       id: get_version

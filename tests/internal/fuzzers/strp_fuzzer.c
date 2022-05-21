@@ -19,6 +19,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     }
 
+    flb_malloc_p = 0;
+
     char *fmt = get_null_terminated(size - 30, &data, &size);
     char *buf = get_null_terminated(size, &data, &size);
 
@@ -27,4 +29,5 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     flb_free(buf);
     flb_free(fmt);
+    return 0;
 }

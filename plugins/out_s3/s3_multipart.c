@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -36,24 +35,6 @@
 #define COMPLETE_MULTIPART_UPLOAD_PART_LEN 124
 
 flb_sds_t get_etag(char *response, size_t size);
-
-static struct flb_aws_header *create_canned_acl_header(char *canned_acl)
-{
-    struct flb_aws_header *acl_header = NULL;
-    
-    acl_header = flb_malloc(sizeof(struct flb_aws_header));
-    if (acl_header == NULL) {
-        flb_errno();
-        return NULL;
-    } 
-   
-    acl_header->key = "x-amz-acl";
-    acl_header->key_len = 9;
-    acl_header->val = canned_acl;
-    acl_header->val_len = strlen(canned_acl);
-
-    return acl_header;
-};
 
 static inline int try_to_write(char *buf, int *off, size_t left,
                                const char *str, size_t str_len)
@@ -502,7 +483,9 @@ int create_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t tmp;
     struct flb_http_client *c = NULL;
     struct flb_aws_client *s3_client;
-    struct flb_aws_header *canned_acl_header;
+    struct flb_aws_header *headers = NULL;
+    int num_headers = 0;
+    int ret;
 
     uri = flb_sds_create_size(flb_sds_len(m_upload->s3_key) + 8);
     if (!uri) {
@@ -522,20 +505,16 @@ int create_multipart_upload(struct flb_s3 *ctx,
         c = mock_s3_call("TEST_CREATE_MULTIPART_UPLOAD_ERROR", "CreateMultipartUpload");
     }
     else {
-        if (ctx->canned_acl == NULL) {
-            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
-                                                  uri, NULL, 0, NULL, 0);
+        ret = create_headers(ctx, NULL, &headers, &num_headers, FLB_TRUE);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to create headers");
+            flb_sds_destroy(uri);
+            return -1;
         }
-        else {
-            canned_acl_header = create_canned_acl_header(ctx->canned_acl);
-            if (canned_acl_header == NULL) {
-                flb_sds_destroy(uri);
-                flb_plg_error(ctx->ins, "Failed to create canned ACL header");
-                return -1;
-            }
-            c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
-                                                  uri, NULL, 0, canned_acl_header, 1);
-            flb_free(canned_acl_header);
+        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+                                              uri, NULL, 0, headers, num_headers);
+        if (headers) {
+           flb_free(headers);
         }
     }
     flb_sds_destroy(uri);

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_slist.h>
+#include <fluent-bit/flb_kv.h>
 #include "flb_fuzz_header.h"
 
 /* A sample of configurations */
@@ -313,12 +314,13 @@ char conf_file[] = "# Parser: no_year\n"
 "    name          exception_test\n"
 "    type          regex\n"
 "    flush_timeout 1000\n"
-"    rule          \"start_state\"  \"/(Dec \d+ \d+\:\d+\:\d+)(.*)/\" \"cont\"\n"
-"    rule          \"cont\" \"/^\s+at.*/\" \"cont\"\n";
+"    rule          \"start_state\"  \"/(Dec \\d+ \\d+\\:\\d+\\:\\d+)(.*)/\" \"cont\"\n"
+"    rule          \"cont\" \"/^\\s+at.*/\" \"cont\"\n";
 
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    flb_malloc_p = 0;
     /* Limit the size of the config files to 32KB. */
     if (size > 32768) {
         return 0;
@@ -347,7 +349,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             struct flb_parser *parser = NULL;
             struct flb_time out_time;
             parser = mk_list_entry(head, struct flb_parser, _head);
-            flb_parser_do(parser, data, size, &out_buf,
+            flb_parser_do(parser, (const char*)data, size, (void **)&out_buf,
                           &out_size, &out_time);
             if (out_buf != NULL) {
                 free(out_buf);
@@ -388,7 +390,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
                 struct flb_time out_time;
                 
                 parser = mk_list_entry(head, struct flb_parser, _head);
-                flb_parser_do(parser, data, size, &out_buf,
+                flb_parser_do(parser, (const char*)data, size, (void **)&out_buf,
                               &out_size, &out_time);
                 if (out_buf != NULL) {
                     free(out_buf);

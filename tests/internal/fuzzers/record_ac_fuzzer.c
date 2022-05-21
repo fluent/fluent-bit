@@ -22,6 +22,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     size_t off = 0;
     msgpack_object map;
 
+    flb_malloc_p = 0;
+
     if (size < 100) {
        return 0;
     }
@@ -62,6 +64,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (!str) {
         flb_ra_destroy(ra);
         flb_sds_destroy(ra_str);
+        msgpack_unpacked_destroy(&result);
 
         /* General cleanup */
         flb_free(null_terminated);

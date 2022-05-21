@@ -1,27 +1,44 @@
 # For staging upgrade we use the 'official-install' as the base
 ARG STAGING_BASE=dokken/debian-10
 
+ARG RELEASE_URL=https://packages.fluentbit.io
+ARG RELEASE_KEY=https://packages.fluentbit.io/fluentbit.key
+
 FROM dokken/debian-10 as official-install
+
 ARG RELEASE_URL
-RUN wget -qO - $RELEASE_URL/fluentbit.key | apt-key add -
-RUN echo "deb $RELEASE_URL/debian/buster buster main" >> /etc/apt/sources.list
-RUN apt-get update && apt-get install -y td-agent-bit
-RUN systemctl enable td-agent-bit
+ENV FLUENT_BIT_PACKAGES_URL=${RELEASE_URL}
+
+ARG RELEASE_KEY
+ENV FLUENT_BIT_PACKAGES_KEY=${RELEASE_KEY}
+
+# Use the one-line install
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh
+RUN systemctl enable fluent-bit || systemctl enable td-agent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh
 
 FROM official-install as staging-upgrade-prep
-RUN head -n -1 /etc/apt/sources.list > /tmp/sources.list && mv /tmp/sources.list /etc/apt/sources.list
+RUN rm -f /etc/apt/sources.list.d/fluent-bit.list
 
 FROM ${STAGING_BASE} as staging-install
-ARG AWS_URL
 ARG STAGING_VERSION
 ENV STAGING_VERSION=${STAGING_VERSION}
-RUN wget -qO - $AWS_URL/fluentbit.key | apt-key add -
-RUN echo "deb $AWS_URL/debian/buster buster main" >> /etc/apt/sources.list
-RUN apt-get update && apt-get install -y td-agent-bit
-RUN systemctl enable td-agent-bit
+
+ARG STAGING_URL
+ENV FLUENT_BIT_PACKAGES_URL=${STAGING_URL}
+
+ARG STAGING_KEY=${STAGING_URL}/fluentbit.key
+ENV FLUENT_BIT_PACKAGES_KEY=${STAGING_KEY}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN wget -qO - $FLUENT_BIT_PACKAGES_KEY | apt-key add -
+RUN echo "deb $FLUENT_BIT_PACKAGES_URL/debian/buster buster main" >> /etc/apt/sources.list
+# hadolint ignore=DL3015,DL3008,DL3009
+RUN apt-get update && apt-get install -y fluent-bit
+RUN systemctl enable fluent-bit
 
 COPY ./test.sh /test.sh
 RUN chmod a+x /test.sh

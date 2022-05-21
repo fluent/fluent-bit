@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -118,6 +117,31 @@ static int in_tcp_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "format", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_tcp_config, format_name),
+     "Set the format: json or none"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "separator", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_tcp_config, raw_separator),
+     "Set separator"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "chunk_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_tcp_config, chunk_size_str),
+      "Set the chunk size"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "buffer_size", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_in_tcp_config, buffer_size_str),
+      "Set the buffer size"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_tcp_plugin = {
     .name         = "tcp",
@@ -127,5 +151,6 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_collect   = in_tcp_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = in_tcp_exit,
+    .config_map   = config_map,
     .flags        = FLB_INPUT_NET,
 };

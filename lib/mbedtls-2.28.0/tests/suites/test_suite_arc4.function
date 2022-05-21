@@ -1,0 +1,37 @@
+/* BEGIN_HEADER */
+#include "mbedtls/arc4.h"
+/* END_HEADER */
+
+/* BEGIN_DEPENDENCIES
+ * depends_on:MBEDTLS_ARC4_C
+ * END_DEPENDENCIES
+ */
+
+/* BEGIN_CASE */
+void mbedtls_arc4_crypt( data_t * src_str, data_t * key_str, data_t * dst )
+{
+    unsigned char dst_str[1000];
+    mbedtls_arc4_context ctx;
+
+    memset(dst_str, 0x00, 1000);
+    mbedtls_arc4_init( &ctx );
+
+
+    mbedtls_arc4_setup(&ctx, key_str->x, key_str->len);
+    TEST_ASSERT( mbedtls_arc4_crypt(&ctx, src_str->len,
+                                    src_str->x, dst_str ) == 0 );
+
+    TEST_ASSERT( mbedtls_test_hexcmp( dst_str, dst->x,
+                                      src_str->len, dst->len ) == 0 );
+
+exit:
+    mbedtls_arc4_free( &ctx );
+}
+/* END_CASE */
+
+/* BEGIN_CASE depends_on:MBEDTLS_SELF_TEST */
+void arc4_selftest(  )
+{
+    TEST_ASSERT( mbedtls_arc4_self_test( 1 ) == 0 );
+}
+/* END_CASE */

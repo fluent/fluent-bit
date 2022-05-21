@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -53,6 +52,20 @@ int flb_luajit_load_script(struct flb_luajit *lj, char *script)
     ret = luaL_loadfile(lj->state, script);
     if (ret != 0) {
         flb_error("[luajit] error loading script: %s",
+                  lua_tostring(lj->state, -1));
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_luajit_load_buffer(struct flb_luajit *lj, char *string, size_t len, char *name)
+{
+    int ret;
+
+    ret = luaL_loadbuffer(lj->state, string, len, name);
+    if (ret != 0) {
+        flb_error("[luajit] error loading buffer: %s",
                   lua_tostring(lj->state, -1));
         return -1;
     }

@@ -26,7 +26,12 @@
 #define CMT_COUNTER   0
 #define CMT_GAUGE     1
 #define CMT_HISTOGRAM 2
-#define CMT_UNTYPED   3
+#define CMT_SUMMARY   3
+#define CMT_UNTYPED   4
+
+#define CMT_AGGREGATION_TYPE_UNSPECIFIED 0
+#define CMT_AGGREGATION_TYPE_DELTA       1
+#define CMT_AGGREGATION_TYPE_CUMULATIVE  2
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +44,9 @@
 #include <cmetrics/cmt_time.h>
 #include <cmetrics/cmt_sds.h>
 #include <cmetrics/cmt_label.h>
+#include <cmetrics/cmt_array.h>
+#include <cmetrics/cmt_kvlist.h>
+#include <cmetrics/cmt_variant.h>
 #include <cmetrics/cmt_version.h>
 
 struct cmt {
@@ -46,14 +54,21 @@ struct cmt {
     int log_level;
     void (*log_cb)(void *, int, const char *, int, const char *);
 
+    /* cmetrics metadata */
+    struct cmt_kvlist *internal_metadata;
+
+    /* third party metadata (ie. otlp resource & instrumentation library) */
+    struct cmt_kvlist *external_metadata;
+
     /* static labels */
     struct cmt_labels *static_labels;
 
     /* Metrics list */
     struct mk_list counters;
     struct mk_list gauges;
-    struct mk_list untypeds;
     struct mk_list histograms;
+    struct mk_list summaries;
+    struct mk_list untypeds;
 };
 
 void cmt_initialize();

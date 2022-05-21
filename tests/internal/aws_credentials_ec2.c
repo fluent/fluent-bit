@@ -290,6 +290,153 @@ static void test_ec2_provider_v1()
     cleanup_test();
 }
 
+/*
+ * IMDSv1 -- IMDSv2 Timeout, Fallback Test Summary
+ *  First call to get_credentials():
+ *  -> 1 requests is made to test for IMDSv2 (IMDSv2)
+ *  -> 1 request made to get token (Timeout failure)
+ *  -> 1 request made to check IMDSv1 fallback (Failure - IMDSv1 not allowed)
+ *
+ * Second call to get_credentials():
+ *  -> 1 requests is made to test for IMDSv2 (IMDSv2)
+ *  -> 1 request made to get token (Timeout failure)
+ *  -> 1 request made to check IMDSv1 fallback (Success)
+ *  -> 2 requests are made to access credentials
+ *  Second call to get_credentials() hits cache
+ *  -> 0 requests are made
+ *  refresh():
+ *  -> 2 requests are made to access credentials
+ */
+static void test_ec2_provider_v1_v2_timeout()
+{
+    setup_test(FLB_AWS_CLIENT_MOCK(
+        /* First call to get_credentials() */
+        response(
+            expect(URI, "/"),
+            expect(HEADER, "X-aws-ec2-metadata-token", "INVALID"),
+            expect(HEADER_COUNT, 1),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 401)
+        ),
+        response(
+            expect(URI, "/latest/api/token"),
+            expect(HEADER, "X-aws-ec2-metadata-token-ttl-seconds", "21600"),  /* 6 hours */
+            expect(METHOD, FLB_HTTP_PUT),
+            config(REPLACE, (struct flb_http_client *) NULL) /* Replicate timeout failure */
+        ),
+        response(
+            expect(URI, "/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 401) /* IMDSv1 not allowed */
+        ),
+
+        /* Second call to get_credentials() */
+        response(
+            expect(URI, "/"),
+            expect(HEADER, "X-aws-ec2-metadata-token", "INVALID"),
+            expect(HEADER_COUNT, 1),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 401)
+        ),
+        response(
+            expect(URI, "/latest/api/token"),
+            expect(HEADER, "X-aws-ec2-metadata-token-ttl-seconds", "21600"),  /* 6 hours */
+            expect(METHOD, FLB_HTTP_PUT),
+            config(REPLACE, (struct flb_http_client *) NULL) /* Replicate timeout failure */
+        ),
+        response(
+            expect(URI, "/"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200) /* IMDSv1 is allowed */
+        ),
+        response(
+            expect(URI, "/latest/meta-data/iam/security-credentials/"),
+            expect(METHOD, FLB_HTTP_GET),
+            expect(HEADER_COUNT, 0),
+            set(STATUS, 200),
+            set(PAYLOAD, "My_Instance_Name"),
+            set(PAYLOAD_SIZE, 16)
+        ),
+        response(
+            expect(URI, "/latest/meta-data/iam/security-credentials/My_Instance_Name"),
+            expect(METHOD, FLB_HTTP_GET),
+            expect(HEADER_COUNT, 0),
+            set(STATUS, 200),
+            set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
+                "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"XACCESSEC2XXX\",\n  \"SecretAccessKey\""
+                " : \"XSECRETEC2XXXXXXXXXXXXXX\",\n  \"Token\" : \"XTOKENEC2XXXXXXXXXXXXXXX==\",\n"
+                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),  /* Expires Year 3021 */
+            set(PAYLOAD_SIZE, 257)
+        ),
+
+        /* Second call to get_credentials() hits cache */
+
+        /* Refresh credentials (No token refesh) */
+        response(
+            expect(URI, "/latest/meta-data/iam/security-credentials/"),
+            expect(METHOD, FLB_HTTP_GET),
+            expect(HEADER_COUNT, 0),
+            set(STATUS, 200),
+            set(PAYLOAD, "My_Instance_Name_New"),
+            set(PAYLOAD_SIZE, 20)
+        ),
+        response(
+            expect(URI, "/latest/meta-data/iam/security-credentials/My_Instance_Name_New"),
+            expect(METHOD, FLB_HTTP_GET),
+            expect(HEADER_COUNT, 0),
+            set(STATUS, 200),
+            set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
+                "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"YACCESSEC2XXX\",\n  \"SecretAccessKey\""
+                " : \"YSECRETEC2XXXXXXXXXXXXXX\",\n  \"Token\" : \"YTOKENEC2XXXXXXXXXXXXXXX==\",\n"
+                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"), // Expires Year 3021
+            set(PAYLOAD_SIZE, 257)
+        )
+    ));
+
+    /* First call: IMDSv1 and IMDSv2 not accessible */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds == NULL);
+
+    /*
+     * Second call: IMDSv2 timeout, IMDSv1 accessible
+     * Repeated calls to get credentials should return the same set
+     */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds != NULL);
+    TEST_CHECK(strcmp("XACCESSEC2XXX", creds->access_key_id) == 0);
+    TEST_CHECK(strcmp("XSECRETEC2XXXXXXXXXXXXXX", creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp("XTOKENEC2XXXXXXXXXXXXXXX==", creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* Retrieve from cache */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds != NULL);
+    TEST_CHECK(strcmp("XACCESSEC2XXX", creds->access_key_id) == 0);
+    TEST_CHECK(strcmp("XSECRETEC2XXXXXXXXXXXXXX", creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp("XTOKENEC2XXXXXXXXXXXXXXX==", creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* refresh should return 0 (success) */
+    ret = provider->provider_vtable->refresh(provider);
+    TEST_CHECK(ret == 0);
+
+    /* Retrieve refreshed credentials from cache */
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_ASSERT(creds != NULL);
+    TEST_CHECK(strcmp("YACCESSEC2XXX", creds->access_key_id) == 0);
+    TEST_CHECK(strcmp("YSECRETEC2XXXXXXXXXXXXXX", creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp("YTOKENEC2XXXXXXXXXXXXXXX==", creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+
+    /* Check we have exhausted our response list */
+    TEST_CHECK(flb_aws_client_mock_generator_count_unused_requests() == 0);
+
+    cleanup_test();
+}
+
 
 /*
  * IMDS Version Detection Error -- Test Summary
@@ -397,8 +544,7 @@ static void test_ec2_provider_version_detection_error()
  *  First call to get_credentials():
  *  -> 1 request made to test for IMDSv2 (Success)
  *  -> 1 request made to obtain IMDSv2 token (Fails) <-* Aquire token error
- *  -> 1 requests are made to access credential (Invalid token)
- *  -> 1 request made to obtain IMDSv2 token (Fails) <-* Aquire token error
+ *  -> 1 request made to check IMDSv1 fallback (Unauthorized)
  *  Second call to get_credentials():
  *  -> 1 request made to access instance name (Invalid token)
  *  -> 1 request made to obtain IMDSv2 token (Success)
@@ -428,8 +574,7 @@ static void test_ec2_provider_acquire_token_error()
          *  First call to get_credentials():
          *  -> 1 request made to test for IMDSv2 (Success)
          *  -> 1 request made to obtain IMDSv2 token (Fails) <-* Aquire token error
-         *  -> 1 requests are made to access credential (Invalid token)
-         *  -> 1 request made to obtain IMDSv2 token (Fails) <-* Aquire token error
+         *  -> 1 request made to check IMDSv1 fallback (Unauthorized)
          */
         response(
             expect(URI, "/"),
@@ -445,22 +590,15 @@ static void test_ec2_provider_acquire_token_error()
             config(REPLACE, NULL) /* HTTP Client is null */
         ),
         response(
-            expect(URI, "/latest/meta-data/iam/security-credentials/"),
+            expect(URI, "/"),
             expect(METHOD, FLB_HTTP_GET),
-            expect(HEADER, "X-aws-ec2-metadata-token", "INVALID_TOKEN"), /* Token failed to be set */
-            set(STATUS, 401) /* Unauthorized, bad token */
-        ),
-        response(
-            expect(URI, "/latest/api/token"),
-            expect(HEADER, "X-aws-ec2-metadata-token-ttl-seconds", "21600"),  /* 6 hours */
-            expect(METHOD, FLB_HTTP_PUT),
-            set(STATUS, 200), /* Unauthorized, bad token */
-            set(PAYLOAD, ""),
-            set(PAYLOAD_SIZE, 0) /* Aquire token failure 2: no token in response */
+            set(STATUS, 401) /* IMDSv1 not allowed */
         ),
 
         /*
          *  Second call to get_credentials():
+         *  -> 1 request made to test for IMDSv2 (Success)
+         *  -> 1 request made to obtain IMDSv2 token (Success) <-* Bad token
          *  -> 1 request made to access instance name (Invalid token)
          *  -> 1 request made to obtain IMDSv2 token (Success)
          *  -> 1 request made to access instance name (Success)
@@ -468,9 +606,24 @@ static void test_ec2_provider_acquire_token_error()
          *  -> 1 request made to obtain IMDSv2 token (Fails) <-* Aquire token error
          */
         response(
+            expect(URI, "/"),
+            expect(HEADER, "X-aws-ec2-metadata-token", "INVALID"), /* Why is this not invalid_token? */
+            expect(HEADER_COUNT, 1),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 401) /* IMDSv2 */
+        ),
+        response(
+            expect(URI, "/latest/api/token"),
+            expect(HEADER, "X-aws-ec2-metadata-token-ttl-seconds", "21600"),  /* 6 hours */
+            expect(METHOD, FLB_HTTP_PUT),
+            set(STATUS, 200),
+            set(PAYLOAD, "BAD_ANjUxxxxxxXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX_Q=="),
+            set(PAYLOAD_SIZE, 56)
+        ),
+        response(
             expect(URI, "/latest/meta-data/iam/security-credentials/"),
             expect(METHOD, FLB_HTTP_GET),
-            expect(HEADER, "X-aws-ec2-metadata-token", "INVALID_TOKEN"), /* Token failed to be set */
+            expect(HEADER, "X-aws-ec2-metadata-token", "BAD_ANjUxxxxxxXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX_Q=="), /* Token failed to be set */
             set(STATUS, 401) /* Unauthorized, bad token */
         ),
         response(
@@ -875,6 +1028,7 @@ static void test_ec2_imds_create_and_destroy()
 TEST_LIST = {
     { "test_ec2_provider_v2" , test_ec2_provider_v2},
     { "test_ec2_provider_v1" , test_ec2_provider_v1},
+    { "test_ec2_provider_v1_v2_timeout" , test_ec2_provider_v1_v2_timeout},
     { "test_ec2_provider_version_detection_error" , test_ec2_provider_version_detection_error},
     { "test_ec2_provider_acquire_token_error" , test_ec2_provider_acquire_token_error},
     { "test_ec2_provider_metadata_request_error" , test_ec2_provider_metadata_request_error},

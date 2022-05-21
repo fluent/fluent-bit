@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,11 +21,11 @@
 #define FLB_LUAJIT_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
 
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
-#include <monkey/mk_core/mk_list.h>
 
 /* Lua Context */
 struct flb_luajit {
@@ -37,6 +36,8 @@ struct flb_luajit {
 
 struct flb_luajit *flb_luajit_create();
 int flb_luajit_load_script(struct flb_luajit *lj, char *script);
+int flb_luajit_load_buffer(struct flb_luajit *lj, char *string, size_t len, char *name);
+
 void flb_luajit_destroy(struct flb_luajit *lj);
 int flb_luajit_destroy_all(struct flb_config *ctx);
 

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -28,10 +27,26 @@
 #define FLB_HTTP_MIME_MSGPACK   "application/msgpack"
 #define FLB_HTTP_MIME_JSON      "application/json"
 
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+#define FLB_HTTP_AWS_CREDENTIAL_PREFIX "aws_"
+#endif
+#endif
+
 struct flb_out_http {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+
+    /* AWS Auth */
+#ifdef FLB_HAVE_SIGNV4
+#ifdef FLB_HAVE_AWS
+    int has_aws_auth;
+    struct flb_aws_provider *aws_provider;
+    const char *aws_region;
+    const char *aws_service;
+#endif
+#endif
 
     /* Proxy */
     const char *proxy;

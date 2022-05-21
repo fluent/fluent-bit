@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -52,78 +51,80 @@ static int delete_conv_entry(struct conv_entry *conv)
     return 0;
 }
 
+static int config_rule(struct type_converter_ctx *ctx, char* type_name,
+                       struct flb_config_map_val *mv)
+{
+    struct conv_entry      *entry = NULL;
+    struct flb_slist_entry *sentry = NULL;
+
+    if (ctx == NULL || mv == NULL) {
+        return -1;
+    }
+
+    entry = flb_malloc(sizeof(struct conv_entry));
+    if (entry == NULL) {
+        flb_errno();
+        return -1;
+    }
+    entry->rule = NULL;
+    if (mk_list_size(mv->val.list) != 3) {
+        flb_plg_error(ctx->ins, "invalid record parameters, "
+                      "expects 'from_key to_key type' %d", mk_list_size(mv->val.list));
+        flb_free(entry);
+        return -1;
+    }
+    /* from_key name */
+    sentry          = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+    entry->from_key = flb_sds_create_len(sentry->str, flb_sds_len(sentry->str));
+
+    /* to_key name */
+    sentry = mk_list_entry_next(&sentry->_head, struct flb_slist_entry,
+                                _head, mv->val.list);
+    entry->to_key   = flb_sds_create_len(sentry->str, flb_sds_len(sentry->str));
+
+    sentry = mk_list_entry_last(mv->val.list, struct flb_slist_entry, _head);
+    entry->rule = flb_typecast_rule_create(type_name, strlen(type_name),
+                                           sentry->str,
+                                           flb_sds_len(sentry->str));
+    entry->from_ra = flb_ra_create(entry->from_key, FLB_FALSE);
+    if (entry->rule == NULL || entry->from_ra == NULL) {
+        flb_plg_error(ctx->ins,
+                      "configuration error. ignore the key=%s",
+                      entry->from_key);
+        delete_conv_entry(entry);
+        return -1;
+    }
+    mk_list_add(&entry->_head, &ctx->conv_entries);
+
+    return 0;
+}
+
 static int configure(struct type_converter_ctx *ctx,
                      struct flb_filter_instance *f_ins)
 {
-    struct flb_kv          *kv = NULL;
     struct mk_list         *head = NULL;
-    struct conv_entry      *entry = NULL;
-    struct mk_list         *split = NULL;
-    struct flb_split_entry *sentry = NULL;
+    struct flb_config_map_val *mv = NULL;
 
-    /* Iterate all filter properties */
-    mk_list_foreach(head, &f_ins->properties) {
-        kv = mk_list_entry(head, struct flb_kv, _head);
-        if ((!strcasecmp(kv->key, "int_key")) || (!strcasecmp(kv->key, "str_key")) || 
-            !strcasecmp(kv->key, "uint_key") ||(!strcasecmp(kv->key, "float_key"))) {
-            entry = flb_malloc(sizeof(struct conv_entry));
-            if (entry == NULL) {
-                flb_errno();
-                continue;
-            }
-            entry->rule = NULL;
-
-            split = flb_utils_split(kv->val, ' ', 3);
-            if (mk_list_size(split) != 3) {
-                flb_plg_error(ctx->ins, "invalid record parameters, "
-                              "expects 'from_key to_key type' %d", mk_list_size(split));
-                flb_free(entry);
-                flb_utils_split_free(split);
-                continue;
-            }
-            /* from_key name */
-            sentry          = mk_list_entry_first(split, struct flb_split_entry, _head);
-            entry->from_key = flb_sds_create_len(sentry->value, sentry->len);
-
-            /* to_key name */
-            sentry = mk_list_entry_next(&sentry->_head, struct flb_split_entry,
-                                        _head, split);
-            entry->to_key   = flb_sds_create_len(sentry->value, sentry->len);
-
-            sentry = mk_list_entry_last(split, struct flb_split_entry, _head);
-            if (!strcasecmp(kv->key, "int_key")) {
-                entry->rule = flb_typecast_rule_create("int", 3,
-                                                       sentry->value,
-                                                       sentry->len);
-            }
-            else if (!strcasecmp(kv->key, "uint_key")) {
-                entry->rule = flb_typecast_rule_create("uint", 4,
-                                                       sentry->value,
-                                                       sentry->len);
-            }
-            else if(!strcasecmp(kv->key, "float_key")) {
-                entry->rule = flb_typecast_rule_create("float", 5,
-                                                       sentry->value,
-                                                       sentry->len);
-            }
-            else if(!strcasecmp(kv->key, "str_key")) {
-                entry->rule = flb_typecast_rule_create("string", 6,
-                                                       sentry->value,
-                                                       sentry->len);
-            }
-            entry->from_ra = flb_ra_create(entry->from_key, FLB_FALSE);
-            if (entry->rule == NULL || entry->from_ra == NULL) {
-                flb_plg_error(ctx->ins,
-                              "configuration error. ignore the key=%s",
-                              entry->from_key);
-                flb_utils_split_free(split);
-                delete_conv_entry(entry);
-                continue;
-            }
-            flb_utils_split_free(split);
-            mk_list_add(&entry->_head, &ctx->conv_entries);
-        }
+    if (flb_filter_config_map_set(f_ins, ctx) < 0) {
+        flb_errno();
+        flb_plg_error(f_ins, "configuration error");
+        return -1;
     }
+
+    /* Create rules for each type */
+    flb_config_map_foreach(head, mv, ctx->str_keys) {
+        config_rule(ctx, "string", mv);
+    }
+    flb_config_map_foreach(head, mv, ctx->int_keys) {
+        config_rule(ctx, "int", mv);
+    }
+    flb_config_map_foreach(head, mv, ctx->uint_keys) {
+        config_rule(ctx, "uint", mv);
+    }
+    flb_config_map_foreach(head, mv, ctx->float_keys) {
+        config_rule(ctx, "float", mv);
+    }
+
     if (mk_list_size(&ctx->conv_entries) == 0) {
         flb_plg_error(ctx->ins, "no rules");
         return -1;
@@ -176,6 +177,7 @@ static int cb_type_converter_filter(const void *data, size_t bytes,
                                     const char *tag, int tag_len,
                                     void **out_buf, size_t *out_bytes,
                                     struct flb_filter_instance *ins,
+                                    struct flb_input_instance *i_ins,
                                     void *filter_context,
                                     struct flb_config *config)
 {
@@ -275,6 +277,29 @@ static int cb_type_converter_exit(void *data, struct flb_config *config) {
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_SLIST_3, "int_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct type_converter_ctx, int_keys),
+     "Convert integer to other type. e.g. int_key id id_str string"
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_3, "uint_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct type_converter_ctx, uint_keys),
+     "Convert unsinged integer to other type. e.g. uint_key id id_str string"
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_3, "float_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct type_converter_ctx, float_keys),
+     "Convert float to other type. e.g. float_key ratio id_str string"
+    },
+    {
+     FLB_CONFIG_MAP_SLIST_3, "str_key", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct type_converter_ctx, str_keys),
+     "Convert string to other type. e.g. str_key id id_val integer"
+    },
+    {0}
+};
   
 
 struct flb_filter_plugin filter_type_converter_plugin = {
@@ -283,5 +308,6 @@ struct flb_filter_plugin filter_type_converter_plugin = {
     .cb_init     = cb_type_converter_init,
     .cb_filter   = cb_type_converter_filter,
     .cb_exit     = cb_type_converter_exit,
+    .config_map  = config_map,
     .flags       = 0,
 };

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -22,14 +21,14 @@
 #define FLB_KAFKA_TOPIC_H
 
 struct flb_kafka_topic *flb_kafka_topic_create(char *name,
-                                               struct flb_kafka *ctx);
+                                               struct flb_out_kafka *ctx);
 int flb_kafka_topic_destroy(struct flb_kafka_topic *topic,
-                            struct flb_kafka *ctx);
-int flb_kafka_topic_destroy_all(struct flb_kafka *ctx);
-struct flb_kafka_topic *flb_kafka_topic_default(struct flb_kafka *ctx);
+                            struct flb_out_kafka *ctx);
+int flb_kafka_topic_destroy_all(struct flb_out_kafka *ctx);
+struct flb_kafka_topic *flb_kafka_topic_default(struct flb_out_kafka *ctx);
 
 struct flb_kafka_topic *flb_kafka_topic_lookup(char *name,
                                                int name_len,
-                                               struct flb_kafka *ctx);
+                                               struct flb_out_kafka *ctx);
 
 #endif

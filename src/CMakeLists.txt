@@ -6,9 +6,11 @@ set(src
   flb_mp.c
   flb_kv.c
   flb_api.c
+  flb_csv.c
   flb_lib.c
   flb_log.c
   flb_env.c
+  flb_file.c
   flb_uri.c
   flb_hash.c
   flb_help.c
@@ -22,6 +24,7 @@ set(src
   flb_input.c
   flb_input_chunk.c
   flb_input_metric.c
+  flb_input_thread.c
   flb_filter.c
   flb_output.c
   flb_output_thread.c
@@ -59,7 +62,21 @@ set(src
   flb_routes_mask.c
   flb_typecast.c
   flb_event.c
+  flb_base64.c
   )
+
+# Config format
+set(src
+  ${src}
+  config_format/flb_config_format.c
+  config_format/flb_cf_fluentbit.c
+)
+if(FLB_HAVE_LIBYAML)
+  set(src
+    ${src}
+    config_format/flb_cf_yaml.c
+    )
+endif()
 
 # Multiline subsystem
 add_subdirectory(multiline)
@@ -97,6 +114,11 @@ endif()
 
 # Fluent Bit have TLS support
 if(FLB_TLS)
+  configure_file(
+    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c.in"
+    "${PROJECT_SOURCE_DIR}/src/tls/mbedtls.c"
+    )
+
   # Register the TLS interface and functions
   set(src
     ${src}
@@ -139,26 +161,6 @@ if(FLB_HTTP_CLIENT_DEBUG)
      )
 endif()
 
-if(FLB_AWS)
-  set(src
-    ${src}
-    "aws/flb_aws_credentials_log.h"
-    "aws/flb_aws_util.c"
-    "aws/flb_aws_credentials.c"
-    "aws/flb_aws_credentials_sts.c"
-    "aws/flb_aws_credentials_ec2.c"
-    "aws/flb_aws_imds.c"
-    "aws/flb_aws_credentials_http.c"
-    "aws/flb_aws_credentials_profile.c"
-    )
-  if(FLB_HAVE_AWS_CREDENTIAL_PROCESS)
-    set(src
-      ${src}
-      "aws/flb_aws_credentials_process.c"
-      )
-  endif()
-endif()
-
 if (FLB_AWS_ERROR_REPORTER)
   set(src
     ${src}
@@ -171,6 +173,13 @@ if(FLB_LUAJIT)
     ${src}
     "flb_lua.c"
     "flb_luajit.c"
+    )
+endif()
+
+if(FLB_IN_KAFKA OR FLB_OUT_KAFKA)
+  set(src
+    ${src}
+    "flb_kafka.c"
     )
 endif()
 
@@ -274,6 +283,11 @@ if(FLB_STREAM_PROCESSOR)
   add_subdirectory(stream_processor)
 endif()
 
+# AWS specific
+if(FLB_AWS)
+  add_subdirectory(aws)
+endif()
+
 # HTTP Server
 if(FLB_HTTP_SERVER)
   add_subdirectory(http_server)
@@ -329,12 +343,28 @@ if(OPENSSL_FOUND)
     )
 endif()
 
+# libyaml
+if(FLB_HAVE_LIBYAML)
+set(FLB_DEPS
+  ${FLB_DEPS}
+  yaml
+  )
+endif()
+
 # UTF8 Encoding
 if(FLB_UTF8_ENCODER)
 set(FLB_DEPS
   ${FLB_DEPS}
   tutf8e
   )
+endif()
+
+# AWS specific
+if(FLB_AWS)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    flb-aws
+    )
 endif()
 
 # Record Accessor
@@ -468,11 +498,25 @@ if(FLB_BINARY)
     # FIXME: should we support Sysv init script ?
   endif()
 
-  install(FILES
-    "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
-    DESTINATION ${FLB_INSTALL_CONFDIR}
-    COMPONENT binary
-    RENAME "${FLB_OUT_NAME}.conf")
+  if(FLB_SYSTEM_WINDOWS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-win32.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  elseif(FLB_SYSTEM_MACOS)
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit-macos.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  else()
+    install(FILES
+      "${PROJECT_SOURCE_DIR}/conf/fluent-bit.conf"
+      DESTINATION ${FLB_INSTALL_CONFDIR}
+      COMPONENT binary
+      RENAME "${FLB_OUT_NAME}.conf")
+  endif()
 
   install(FILES
     "${PROJECT_SOURCE_DIR}/conf/parsers.conf"

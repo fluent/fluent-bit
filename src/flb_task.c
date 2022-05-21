@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -193,14 +192,12 @@ int flb_task_retry_count(struct flb_task *task, void *data)
     struct mk_list *head;
     struct flb_task_retry *retry;
     struct flb_output_instance *o_ins;
-    struct flb_output_flush *out_flush;
 
-    out_flush = (struct flb_output_flush *) FLB_CORO_DATA(data);
-    o_ins = out_flush->o_ins;
+    o_ins = (struct flb_output_instance *) data;
 
-    /* Delete 'retries' only associated with the output instance */
     mk_list_foreach(head, &task->retries) {
         retry = mk_list_entry(head, struct flb_task_retry, _head);
+
         if (retry->o_ins == o_ins) {
             return retry->attempts;
         }

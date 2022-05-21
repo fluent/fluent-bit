@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -261,6 +260,10 @@ int http_conn_del(struct http_conn *conn)
     struct flb_http *ctx;
 
     ctx = conn->ctx;
+
+    if (conn->session.channel != NULL) {
+        mk_channel_release(conn->session.channel);
+    }
 
     mk_event_del(ctx->evl, &conn->event);
     mk_list_del(&conn->_head);

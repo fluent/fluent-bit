@@ -2,17 +2,18 @@ on:
   push:
     branches:
       - 1.8
+  workflow_dispatch:
 
 name: Build and publish for branch 1.8
 jobs:
   docker_build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/checkout@v2
+      - name: Checkout the docker build repo
+        uses: actions/checkout@v3
         with:
-          repository: calyptia/fluent-bit-ci
-          path: ci
+          repository: fluent/fluent-bit-docker-image
+          ref: '1.8'
 
       - name: Setup environment
         run: |
@@ -21,24 +22,27 @@ jobs:
           sudo systemctl unmask docker && sudo systemctl start docker
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build a docker image for master branch
+      - name: Build a docker image for 1.8 branch
         run: |
-          DOCKER_BUILDKIT=1 docker build --no-cache -f ./dockerfiles/Dockerfile.${{ env.arch }}-1_8 -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-1_8 .
+          docker build --no-cache -f ./Dockerfile.${{ env.arch }} -t ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-1_8 --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/tarball/1.8 .
         env:
+          DOCKER_BUILDKIT: 1
           arch: x86_64
           dockerhub_organization: fluentbitdev
 
       - name: Push image to Docker Hub
         run: |
-          DOCKER_BUILDKIT=1 docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-1_8
+          docker push ${{ env.dockerhub_organization }}/fluent-bit:${{ env.arch }}-1_8
         env:
+          DOCKER_BUILDKIT: 1
           arch: x86_64
           dockerhub_organization: fluentbitdev
+
   run-integration-tests:
     name: run integration tests on GCP - k8s ${{ matrix.k8s-release }} for 1.8 branch
     needs: docker_build
@@ -46,10 +50,10 @@ jobs:
       max-parallel: 3
       fail-fast: false
       matrix:
-        k8s-release: [ '1.19' ] #, '1.20' ] #, 1.19/stable, 1.18/stable ]
+        k8s-release: [ '1.19' ]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           repository: calyptia/fluent-bit-ci
           path: ci
@@ -72,7 +76,7 @@ jobs:
           k8s_release: ${{ matrix.k8s-release }}
           k8s_release_formatted: ${{ steps.formatted_release.outputs.replaced }}
 
-      - uses: hashicorp/setup-terraform@v1
+      - uses: hashicorp/setup-terraform@v2
         with:
           cli_config_credentials_hostname: 'app.terraform.io'
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -144,11 +148,11 @@ jobs:
           location: ${{ steps.get-k8s-cluster-location.outputs.stdout }}
           credentials: ${{ secrets.GCP_SA_KEY }}
 
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v3
         with:
           go-version: '1.16' # The Go version to download (if necessary) and use.
 
-      - uses: azure/setup-helm@v1
+      - uses: azure/setup-helm@v2.1
         id: install
 
       - run: go mod download

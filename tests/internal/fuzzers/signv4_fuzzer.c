@@ -19,6 +19,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     }
 
+    flb_malloc_p = 0;
+
     char s3_mode = data[0];
     MOVE_INPUT(1)
     int method = (int)data[0];

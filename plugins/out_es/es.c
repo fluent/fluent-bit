@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -1139,6 +1138,7 @@ struct flb_output_plugin out_es_plugin = {
     .cb_pre_run     = NULL,
     .cb_flush       = cb_es_flush,
     .cb_exit        = cb_es_exit,
+    .workers        = 2,
 
     /* Configuration */
     .config_map     = config_map,

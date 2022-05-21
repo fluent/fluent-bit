@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -125,8 +124,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "json_date_format", "double",
      0, FLB_FALSE, 0,
-     "Specify the format of the date, supported formats: double, iso8601 "
-     "(e.g: 2018-05-30T09:39:52.000681Z) and epoch."
+     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
     },
 
     {
@@ -147,5 +145,6 @@ struct flb_output_plugin out_tcp_plugin = {
     .cb_flush       = cb_tcp_flush,
     .cb_exit        = cb_tcp_exit,
     .config_map     = config_map,
+    .workers        = 2,
     .flags          = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
 };

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -478,6 +477,7 @@ static bool is_exists(struct mk_list *list, char *id)
     return result;
 }
 
+static void free_snapshots(struct mk_list *snaps);
 /* Returns dockers CPU/Memory metrics. */
 static struct mk_list *get_docker_stats(struct flb_docker *ctx, struct mk_list *dockers)
 {
@@ -500,9 +500,35 @@ static struct mk_list *get_docker_stats(struct flb_docker *ctx, struct mk_list *
     mk_list_foreach(head, dockers) {
         docker = mk_list_entry(head, docker_info, _head);
         snapshot = init_snapshot(docker->id);
+        if (snapshot == NULL) {
+            free_snapshots(snapshots);
+            return NULL;
+        }
         snapshot->name = get_container_name(ctx, docker->id);
+        if (snapshot->name == NULL) {
+            free_snapshots(snapshots);
+            flb_free(snapshot->id);
+            flb_free(snapshot);
+            return NULL;
+        }
         snapshot->cpu = get_docker_cpu_snapshot(ctx, docker->id);
+        if (snapshot->cpu == NULL) {
+            free_snapshots(snapshots);
+            flb_free(snapshot->name);
+            flb_free(snapshot->id);
+            flb_free(snapshot);
+            return NULL;
+        }
         snapshot->mem = get_docker_mem_snapshot(ctx, docker->id);
+        if (snapshot->mem == NULL) {
+            free_snapshots(snapshots);
+            flb_free(snapshot->cpu);
+            flb_free(snapshot->name);
+            flb_free(snapshot->id);
+            flb_free(snapshot);
+            return NULL;
+        }
+
         mk_list_add(&snapshot->_head, snapshots);
     }
 
@@ -621,8 +647,6 @@ static int cb_docker_init(struct flb_input_instance *in,
 {
     int ret;
     struct flb_docker *ctx;
-    const char *pval = NULL;
-    (void) data;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_docker));
@@ -632,20 +656,23 @@ static int cb_docker_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
-    /* Collection time setting */
-    pval = flb_input_get_property("interval_sec", in);
-    if (pval != NULL && atoi(pval) > 0) {
-        ctx->interval_sec = atoi(pval);
-    }
-    else {
-        ctx->interval_sec = DEFAULT_INTERVAL_SEC;
-    }
-    ctx->interval_nsec = DEFAULT_INTERVAL_NSEC;
-
     init_filter_lists(in, ctx);
 
     /* Set the context */
     flb_input_set_context(in, ctx);
+    
+    /* Load the config map */
+    ret = flb_input_config_map_set(in, (void *)ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        flb_plg_error(in, "unable to load configuration.");
+        return -1;
+    }    
+    
+    if (ctx->interval_sec <= 0 && ctx->interval_nsec <= 0) {
+        ctx->interval_sec = atoi(DEFAULT_INTERVAL_SEC);
+        ctx->interval_nsec = atoi(DEFAULT_INTERVAL_NSEC);
+    }
 
     /* Set our collector based on time, CPU usage every 1 second */
     ret = flb_input_set_collector_time(in,
@@ -791,7 +818,12 @@ static int cb_docker_collect(struct flb_input_instance *ins,
     snaps = get_docker_stats(ctx, filtered);
     if (!snaps) {
         free_docker_list(active);
-        free_docker_list(filtered);
+        if (active != filtered) {
+            /* apply_filters can return the address of acive.
+             * In that case, filtered is already freed.
+             */
+            free_docker_list(filtered);
+        }
         return 0;
     }
 
@@ -832,6 +864,31 @@ static int cb_docker_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+      FLB_CONFIG_MAP_INT, "interval_sec", DEFAULT_INTERVAL_SEC,
+      0, FLB_TRUE, offsetof(struct flb_docker, interval_sec),
+      "Set the collector interval"
+    },
+    {
+      FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
+      0, FLB_TRUE, offsetof(struct flb_docker, interval_nsec),
+      "Set the collector interval (nanoseconds)"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "include", NULL,
+      0, FLB_FALSE, 0,
+      "A space-separated list of containers to include"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "exclude", NULL,
+      0, FLB_FALSE, 0,
+      "A space-separated list of containers to exclude"
+    },
+    /* EOF */
+    {0}
+};
+
 /* Plugin reference */
 struct flb_input_plugin in_docker_plugin = {
     .name         = "docker",
@@ -842,5 +899,6 @@ struct flb_input_plugin in_docker_plugin = {
     .cb_flush_buf  = NULL,
     .cb_pause     = cb_docker_pause,
     .cb_resume    = cb_docker_resume,
-    .cb_exit      = cb_docker_exit
+    .cb_exit      = cb_docker_exit,
+    .config_map   = config_map
 };

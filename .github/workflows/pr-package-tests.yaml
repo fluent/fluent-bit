@@ -1,0 +1,29 @@
+name: PR - packaging tests run on-demand via label
+on:
+  pull_request:
+    types:
+      - labeled
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  pr-package-test-build:
+    name: PR - packages build
+    # This is a long test to run so only on-demand for certain PRs
+    if: contains(github.event.pull_request.labels.*.name, 'ok-package-test')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Run build of all locally
+        run: ./local-build-all.sh
+        shell: bash
+        working-directory: packaging

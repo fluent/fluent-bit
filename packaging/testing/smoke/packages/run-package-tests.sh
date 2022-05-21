@@ -17,7 +17,9 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 PACKAGE_TEST=${PACKAGE_TEST:-centos7}
 RELEASE_URL=${RELEASE_URL:-https://packages.fluentbit.io}
-AWS_URL=${AWS_URL:-https://fluentbit-staging.s3.amazonaws.com}
+RELEASE_KEY=${RELEASE_KEY:-https://packages.fluentbit.io/fluentbit.key}
+STAGING_URL=${STAGING_URL:-https://fluentbit-staging.s3.amazonaws.com}
+STAGING_KEY=${STAGING_KEY:-https://fluentbit-staging.s3.amazonaws.com/fluentbit.key}
 
 if [[ ! -f "$SCRIPT_DIR/Dockerfile.$PACKAGE_TEST" ]]; then
     echo "No definition for $SCRIPT_DIR/Dockerfile.$PACKAGE_TEST"
@@ -41,7 +43,9 @@ do
     # We do want splitting for build args
     # shellcheck disable=SC2086
     docker build \
-                --build-arg AWS_URL=$AWS_URL \
+                --build-arg STAGING_KEY=$STAGING_KEY \
+                --build-arg STAGING_URL=$STAGING_URL \
+                --build-arg RELEASE_KEY=$RELEASE_KEY \
                 --build-arg RELEASE_URL=$RELEASE_URL $BUILD_ARGS \
                 --target "$TARGET" \
                 -t "$CONTAINER_NAME" \

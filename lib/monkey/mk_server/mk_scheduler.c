@@ -83,7 +83,8 @@ static inline int _next_target(struct mk_server *server)
      * If sched_ctx->workers[target] worker is full then the whole server too,
      * because it has the lowest load.
      */
-    if (mk_unlikely(cur >= server->server_capacity)) {
+    if (mk_unlikely(server->server_capacity > 0 &&
+                    server->server_capacity <= cur)) {
         MK_TRACE("Too many clients: %i", server->server_capacity);
 
         /* Instruct to close the connection anyways, we lie, it will die */
@@ -442,6 +443,7 @@ int mk_sched_launch_thread(struct mk_server *server, pthread_t *tout)
     if (pthread_create(&tid, &attr, mk_sched_launch_worker_loop,
                        (void *) thconf) != 0) {
         mk_libc_error("pthread_create");
+        pthread_mutex_unlock(&server->pth_mutex);
         return -1;
     }
 

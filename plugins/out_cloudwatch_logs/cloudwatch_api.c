@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -51,6 +50,8 @@
 
 #define ERR_CODE_ALREADY_EXISTS         "ResourceAlreadyExistsException"
 #define ERR_CODE_INVALID_SEQUENCE_TOKEN "InvalidSequenceTokenException"
+#define ERR_CODE_NOT_FOUND              "ResourceNotFoundException"
+#define ERR_CODE_DATA_ALREADY_ACCEPTED  "DataAlreadyAcceptedException"
 
 #define AMZN_REQUEST_ID_HEADER          "x-amzn-RequestId"
 
@@ -545,7 +546,7 @@ retry:
         return -1;
     }
 
-    flb_plg_debug(ctx->ins, "Sending %d events", i);
+    flb_plg_debug(ctx->ins, "cloudwatch:PutLogEvents: events=%d, payload=%d bytes", i, offset);
     ret = put_log_events(ctx, buf, stream, (size_t) offset);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send log events");
@@ -1041,7 +1042,7 @@ struct log_stream *get_dynamic_log_stream(struct flb_cloudwatch *ctx,
     }
     new_stream->name = name;
 
-    ret = create_log_stream(ctx, new_stream);
+    ret = create_log_stream(ctx, new_stream, FLB_TRUE);
     if (ret < 0) {
         log_stream_destroy(new_stream);
         return NULL;
@@ -1061,7 +1062,7 @@ struct log_stream *get_log_stream(struct flb_cloudwatch *ctx,
     if (ctx->log_stream_name) {
         stream = &ctx->stream;
         if (ctx->stream_created == FLB_FALSE) {
-            ret = create_log_stream(ctx, stream);
+            ret = create_log_stream(ctx, stream, FLB_TRUE);
             if (ret < 0) {
                 return NULL;
             }
@@ -1235,7 +1236,8 @@ int create_log_group(struct flb_cloudwatch *ctx)
     return -1;
 }
 
-int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream)
+int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream,
+                      int can_retry)
 {
 
     struct flb_http_client *c = NULL;
@@ -1243,6 +1245,7 @@ int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream)
     flb_sds_t body;
     flb_sds_t tmp;
     flb_sds_t error;
+    int ret;
 
     flb_plg_info(ctx->ins, "Creating log stream %s in log group %s",
                  stream->name, ctx->log_group);
@@ -1300,6 +1303,33 @@ int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream)
                     flb_sds_destroy(error);
                     flb_http_client_destroy(c);
                     return 0;
+                }
+
+                if (strcmp(error, ERR_CODE_NOT_FOUND) == 0) {
+                    flb_sds_destroy(body);
+                    flb_sds_destroy(error);
+                    flb_http_client_destroy(c);
+
+                    if (ctx->create_group == FLB_TRUE) {
+                        flb_plg_info(ctx->ins, "Log Group %s not found. Will attempt to create it.",
+                                 ctx->log_group);
+                        ret = create_log_group(ctx);
+                        if (ret < 0) {
+                            return -1;
+                        } else {
+                            if (can_retry == FLB_TRUE) {
+                                /* retry stream creation */
+                                return create_log_stream(ctx, stream, FLB_FALSE);
+                            } else {
+                                /* we failed to create the stream */
+                                return -1;
+                            }
+                        }
+                    } else {
+                        flb_plg_error(ctx->ins, "Log Group %s not found and `auto_create_group` disabled.",
+                                     ctx->log_group);
+                    }
+                    return -1;
                 }
                 /* some other error occurred; notify user */
                 flb_aws_print_error(c->resp.payload, c->resp.payload_size,
@@ -1440,6 +1470,13 @@ retry_request:
                         /* tell the caller to retry */
                         return 1;
                     }
+                } else if (strcmp(error, ERR_CODE_DATA_ALREADY_ACCEPTED) == 0) {
+                    /* not sure what causes this but it counts as success */
+                    flb_plg_info(ctx->ins, "Got %s, a previous retry must have succeeded asychronously", ERR_CODE_DATA_ALREADY_ACCEPTED);
+                    flb_sds_destroy(error);
+                    flb_http_client_destroy(c);
+                    /* success */
+                    return 0;
                 }
                 /* some other error occurred; notify user */
                 flb_aws_print_error(c->resp.payload, c->resp.payload_size,

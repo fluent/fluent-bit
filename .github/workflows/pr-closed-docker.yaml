@@ -6,17 +6,10 @@ on:
     types: [closed]
 jobs:
   cleanup:
+    name: PR - cleanup pr-${{ github.event.number }} images
     runs-on: ubuntu-latest
     steps:
       - uses: bots-house/ghcr-delete-image-action@v1.0.1
-        with:
-          owner: fluent
-          name: fluent-bit
-          token: ${{ secrets.GITHUB_TOKEN }}
-          tag: x86_64-master-pr-${{ github.event.number }}
-
-      - uses: bots-house/ghcr-delete-image-action@v1.0.1
-        if: always()
         with:
           owner: fluent
           name: fluent-bit/pr-${{ github.event.number }}

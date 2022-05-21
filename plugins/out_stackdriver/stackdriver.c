@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -26,6 +25,7 @@
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_regex.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <msgpack.h>
 
@@ -292,8 +292,8 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
-                                    "urn:ietf:params:oauth:"
-                                    "grant-type:jwt-bearer", -1);
+                                    "urn%3Aietf%3Aparams%3Aoauth%3A"
+                                    "grant-type%3Ajwt-bearer", -1);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error appending oauth2 params");
         flb_sds_destroy(sig_data);
@@ -912,12 +912,12 @@ static int process_local_resource_id(struct flb_stackdriver *ctx,
 }
 
 /*
- * parse_labels
+ * get_payload_labels
  * - Iterate throught the original payload (obj) and find out the entry that matches
  *   the labels_key
  * - Used to convert all labels under labels_key to root-level `labels` field
  */
-static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
+static msgpack_object *get_payload_labels(struct flb_stackdriver *ctx, msgpack_object *obj)
 {
     int i;
     int len;
@@ -939,6 +939,50 @@ static msgpack_object *parse_labels(struct flb_stackdriver *ctx, msgpack_object 
     //flb_plg_debug(ctx->ins, "labels_key [%s] not found in the payload",
     //              ctx->labels_key);
     return NULL;
+}
+
+static void pack_labels(struct flb_stackdriver *ctx,
+                        msgpack_packer *mp_pck,
+                        msgpack_object *payload_labels_ptr)
+{
+    int i;
+    int ret;
+    int labels_size = 0;
+    char *val;
+    struct mk_list *head;
+    struct flb_kv *list_kv;
+    msgpack_object_kv *obj_kv = NULL;
+
+    /* Determine size of labels map */
+    labels_size = mk_list_size(&ctx->config_labels);
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+        labels_size += payload_labels_ptr->via.map.size;
+    }
+
+    msgpack_pack_map(mp_pck, labels_size);
+
+    /* pack labels from the payload */
+    if (payload_labels_ptr != NULL &&
+        payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+
+        for (i = 0; i < payload_labels_ptr->via.map.size; i++) {
+            obj_kv = &payload_labels_ptr->via.map.ptr[i];
+            msgpack_pack_object(mp_pck, obj_kv->key);
+            msgpack_pack_object(mp_pck, obj_kv->val);
+        }
+    }
+
+    /* pack labels set in configuration */
+    /* in msgpack duplicate keys are overriden by the last set */
+    /* static label keys override payload labels */
+    mk_list_foreach(head, &ctx->config_labels){
+        list_kv = mk_list_entry(head, struct flb_kv, _head);
+        msgpack_pack_str(mp_pck, flb_sds_len(list_kv->key));
+        msgpack_pack_str_body(mp_pck, list_kv->key, flb_sds_len(list_kv->key));
+        msgpack_pack_str(mp_pck, flb_sds_len(list_kv->val));
+        msgpack_pack_str_body(mp_pck, list_kv->val, flb_sds_len(list_kv->val));
+    }
 }
 
 static void cb_results(const char *name, const char *value,
@@ -981,13 +1025,6 @@ static void cb_results(const char *name, const char *value,
 int flb_stackdriver_regex_init(struct flb_stackdriver *ctx)
 {
     /* If a custom regex is not set, use the defaults */
-    if (!ctx->custom_k8s_regex) {
-        ctx->custom_k8s_regex = flb_sds_create(DEFAULT_TAG_REGEX);
-        if (!ctx->custom_k8s_regex) {
-            return -1;
-        }
-    }
-
     ctx->regex = flb_regex_create(ctx->custom_k8s_regex);
     if (!ctx->regex) {
         return -1;
@@ -1094,7 +1131,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
     }
 
     if (!ctx->export_to_project_id) {
-        ctx->export_to_project_id = flb_sds_create(ctx->project_id);
+        ctx->export_to_project_id = ctx->project_id;
     }
 
     ret = flb_stackdriver_regex_init(ctx);
@@ -1454,6 +1491,7 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
     flb_sds_t out_buf;
+    struct flb_mp_map_header mh;
 
     /* Parameters for severity */
     int severity_extracted = FLB_FALSE;
@@ -1500,9 +1538,12 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
     struct tm tm;
     struct flb_time tms;
     timestamp_status tms_status;
-
     /* Count number of records */
     array_size = total_records;
+
+    /* Parameters for labels */
+    msgpack_object *payload_labels_ptr;
+    int labels_size = 0;
 
     /*
      * Search each entry and validate insertId.
@@ -1578,10 +1619,11 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                                   ctx->project_id, flb_sds_len(ctx->project_id));
         }
         else if (ctx->is_generic_resource_type) {
-            if (strcmp(ctx->resource, "generic_node") == 0) {
-                /* generic_node has fields project_id, location, namespace, node_id */
-                msgpack_pack_map(&mp_pck, 4);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
+            if (strcmp(ctx->resource, "generic_node") == 0 && ctx->node_id) {
+                /* generic_node has fields project_id, location, namespace, node_id */
+                flb_mp_map_header_append(&mh);
                 msgpack_pack_str(&mp_pck, 7);
                 msgpack_pack_str_body(&mp_pck, "node_id", 7);
                 msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_id));
@@ -1590,59 +1632,84 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             }
             else {
                  /* generic_task has fields project_id, location, namespace, job, task_id */
-                msgpack_pack_map(&mp_pck, 5);
+                if (ctx->job) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 3);
+                    msgpack_pack_str_body(&mp_pck, "job", 3);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->job));
+                    msgpack_pack_str_body(&mp_pck,
+                                          ctx->job, flb_sds_len(ctx->job));
+                }
 
-                msgpack_pack_str(&mp_pck, 3);
-                msgpack_pack_str_body(&mp_pck, "job", 3);
-                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->job));
-                msgpack_pack_str_body(&mp_pck,
-                                      ctx->job, flb_sds_len(ctx->job));
-
-                msgpack_pack_str(&mp_pck, 7);
-                msgpack_pack_str_body(&mp_pck, "task_id", 7);
-                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->task_id));
-                msgpack_pack_str_body(&mp_pck,
-                                      ctx->task_id, flb_sds_len(ctx->task_id));
+                if (ctx->task_id) {
+                    flb_mp_map_header_append(&mh);
+                    msgpack_pack_str(&mp_pck, 7);
+                    msgpack_pack_str_body(&mp_pck, "task_id", 7);
+                    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->task_id));
+                    msgpack_pack_str_body(&mp_pck,
+                                          ctx->task_id, flb_sds_len(ctx->task_id));
+                }
             }
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->location, flb_sds_len(ctx->location));
+            if (ctx->location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->location, flb_sds_len(ctx->location));
+            }
 
-            msgpack_pack_str(&mp_pck, 9);
-            msgpack_pack_str_body(&mp_pck, "namespace", 9);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->namespace_id, flb_sds_len(ctx->namespace_id));
+            if (ctx->namespace_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 9);
+                msgpack_pack_str_body(&mp_pck, "namespace", 9);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->namespace_id, flb_sds_len(ctx->namespace_id));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, "gce_instance") == 0) {
             /* gce_instance resource has fields project_id, zone, instance_id */
-            msgpack_pack_map(&mp_pck, 3);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 4);
-            msgpack_pack_str_body(&mp_pck, "zone", 4);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
-            msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+            if (ctx->zone) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 4);
+                msgpack_pack_str_body(&mp_pck, "zone", 4);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->zone));
+                msgpack_pack_str_body(&mp_pck, ctx->zone, flb_sds_len(ctx->zone));
+            }
 
-            msgpack_pack_str(&mp_pck, 11);
-            msgpack_pack_str_body(&mp_pck, "instance_id", 11);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->instance_id, flb_sds_len(ctx->instance_id));
+            if (ctx->instance_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 11);
+                msgpack_pack_str_body(&mp_pck, "instance_id", 11);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->instance_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->instance_id, flb_sds_len(ctx->instance_id));
+            }
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, K8S_CONTAINER) == 0) {
             /* k8s_container resource has fields project_id, location, cluster_name,
@@ -1660,43 +1727,66 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 return NULL;
             }
 
-            msgpack_pack_map(&mp_pck, 6);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+            if (ctx->cluster_location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_location,
+                                      flb_sds_len(ctx->cluster_location));
+            }
 
-            msgpack_pack_str(&mp_pck, 12);
-            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            if (ctx->cluster_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 12);
+                msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 14);
-            msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->namespace_name, flb_sds_len(ctx->namespace_name));
+            if (ctx->namespace_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 14);
+                msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->namespace_name,
+                                      flb_sds_len(ctx->namespace_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->pod_name, flb_sds_len(ctx->pod_name));
+            if (ctx->pod_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->pod_name, flb_sds_len(ctx->pod_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 14);
-            msgpack_pack_str_body(&mp_pck, "container_name", 14);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->container_name, flb_sds_len(ctx->container_name));
+            if (ctx->container_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 14);
+                msgpack_pack_str_body(&mp_pck, "container_name", 14);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->container_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->container_name,
+                                      flb_sds_len(ctx->container_name));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, K8S_NODE) == 0) {
             /* k8s_node resource has fields project_id, location, cluster_name, node_name
@@ -1713,31 +1803,46 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 return NULL;
             }
 
-            msgpack_pack_map(&mp_pck, 4);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+            if (ctx->cluster_location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_location,
+                                      flb_sds_len(ctx->cluster_location));
+            }
 
-            msgpack_pack_str(&mp_pck, 12);
-            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            if (ctx->cluster_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 12);
+                msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 9);
-            msgpack_pack_str_body(&mp_pck, "node_name", 9);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->node_name, flb_sds_len(ctx->node_name));
+            if (ctx->node_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 9);
+                msgpack_pack_str_body(&mp_pck, "node_name", 9);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->node_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->node_name, flb_sds_len(ctx->node_name));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else if (strcmp(ctx->resource, K8S_POD) == 0) {
             /* k8s_pod resource has fields project_id, location, cluster_name,
@@ -1755,37 +1860,56 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
                 return NULL;
             }
 
-            msgpack_pack_map(&mp_pck, 5);
+            flb_mp_map_header_init(&mh, &mp_pck);
 
-            msgpack_pack_str(&mp_pck, 10);
-            msgpack_pack_str_body(&mp_pck, "project_id", 10);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->project_id, flb_sds_len(ctx->project_id));
+            if (ctx->project_id) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 10);
+                msgpack_pack_str_body(&mp_pck, "project_id", 10);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->project_id));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->project_id, flb_sds_len(ctx->project_id));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "location", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_location, flb_sds_len(ctx->cluster_location));
+            if (ctx->cluster_location) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "location", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_location));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_location,
+                                      flb_sds_len(ctx->cluster_location));
+            }
 
-            msgpack_pack_str(&mp_pck, 12);
-            msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            if (ctx->cluster_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 12);
+                msgpack_pack_str_body(&mp_pck, "cluster_name", 12);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->cluster_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->cluster_name, flb_sds_len(ctx->cluster_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 14);
-            msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->namespace_name, flb_sds_len(ctx->namespace_name));
+            if (ctx->namespace_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 14);
+                msgpack_pack_str_body(&mp_pck, "namespace_name", 14);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->namespace_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->namespace_name,
+                                      flb_sds_len(ctx->namespace_name));
+            }
 
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "pod_name", 8);
-            msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
-            msgpack_pack_str_body(&mp_pck,
-                                  ctx->pod_name, flb_sds_len(ctx->pod_name));
+            if (ctx->pod_name) {
+                flb_mp_map_header_append(&mh);
+                msgpack_pack_str(&mp_pck, 8);
+                msgpack_pack_str_body(&mp_pck, "pod_name", 8);
+                msgpack_pack_str(&mp_pck, flb_sds_len(ctx->pod_name));
+                msgpack_pack_str_body(&mp_pck,
+                                      ctx->pod_name, flb_sds_len(ctx->pod_name));
+            }
+
+            flb_mp_map_header_end(&mh);
         }
         else {
             flb_plg_error(ctx->ins, "unsupported resource type '%s'",
@@ -1892,23 +2016,34 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         /* Extract httpRequest */
         init_http_request(&http_request);
         http_request_extra_size = 0;
-        http_request_extracted = extract_http_request(&http_request, obj,
-                                                      &http_request_extra_size);
+        http_request_extracted = extract_http_request(&http_request, 
+                                                      ctx->http_request_key,
+                                                      ctx->http_request_key_size,
+                                                      obj, &http_request_extra_size);
         if (http_request_extracted == FLB_TRUE) {
             entry_size += 1;
         }
 
-        /* Extract labels */
-        labels_ptr = parse_labels(ctx, obj);
-        if (labels_ptr != NULL) {
-            if (labels_ptr->type != MSGPACK_OBJECT_MAP) {
-                flb_plg_error(ctx->ins, "the type of labels should be map");
-                flb_sds_destroy(operation_id);
-                flb_sds_destroy(operation_producer);
-                msgpack_unpacked_destroy(&result);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return NULL;
-            }
+        /* Extract payload labels */
+        payload_labels_ptr = get_payload_labels(ctx, obj);
+        if (payload_labels_ptr != NULL &&
+            payload_labels_ptr->type != MSGPACK_OBJECT_MAP) {
+            flb_plg_error(ctx->ins, "the type of payload labels should be map");
+            flb_sds_destroy(operation_id);
+            flb_sds_destroy(operation_producer);
+            msgpack_unpacked_destroy(&result);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return -1;
+        }
+
+        /* Number of parsed labels */
+        labels_size = mk_list_size(&ctx->config_labels);
+        if (payload_labels_ptr != NULL &&
+            payload_labels_ptr->type == MSGPACK_OBJECT_MAP) {
+            labels_size += payload_labels_ptr->via.map.size;
+        }
+
+        if (labels_size > 0) {
             entry_size += 1;
         }
 
@@ -1966,10 +2101,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         }
 
         /* labels */
-        if (labels_ptr != NULL) {
+        if (labels_size > 0) {
             msgpack_pack_str(&mp_pck, 6);
             msgpack_pack_str_body(&mp_pck, "labels", 6);
-            msgpack_pack_object(&mp_pck, *labels_ptr);
+            pack_labels(ctx, &mp_pck, payload_labels_ptr);
         }
 
         /* Clean up id and producer if operation extracted */
@@ -2092,6 +2227,28 @@ static int stackdriver_format_test(struct flb_config *config,
 
 }
 
+#ifdef FLB_HAVE_METRICS
+static void update_http_metrics(struct flb_stackdriver *ctx,
+                                struct flb_event_chunk *event_chunk,
+                                uint64_t ts,
+                                int http_status)
+{
+    char tmp[32];
+
+    /* convert status to string format */
+    snprintf(tmp, sizeof(tmp) - 1, "%i", http_status);
+
+    /* processed records total */
+    cmt_counter_add(ctx->cmt_proc_records_total, ts, event_chunk->total_events,
+                    1, (char *[]) {tmp});
+
+    /* HTTP status */
+    if (http_status != STACKDRIVER_NET_ERROR) {
+        cmt_counter_inc(ctx->cmt_requests_total, ts, 1, (char *[]) {tmp});
+    }
+}
+#endif
+
 static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
                                  struct flb_output_flush *out_flush,
                                  struct flb_input_instance *i_ins,
@@ -2123,6 +2280,8 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
 
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
+
+        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
 #endif
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2186,6 +2345,9 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i", ret);
         ret_code = FLB_RETRY;
+#ifdef FLB_HAVE_METRICS
+        update_http_metrics(ctx, event_chunk, ts, STACKDRIVER_NET_ERROR);
+#endif
     }
     else {
         /* The request was issued successfully, validate the 'error' field */
@@ -2228,6 +2390,11 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
         /* OLD api */
         flb_metrics_sum(FLB_STACKDRIVER_FAILED_REQUESTS, 1, ctx->ins->metrics);
     }
+
+    /* Update metrics counter by using labels/http status code */
+    if (ret == 0) {
+        update_http_metrics(ctx, event_chunk, ts, c->resp.status);
+    }
 #endif
 
     /* Cleanup */
@@ -2252,12 +2419,136 @@ static int cb_stackdriver_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "google_service_credentials", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_stackdriver, credentials_file),
+     "Set the path for the google service credentials file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "metadata_server", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_stackdriver, metadata_server),
+     "Set the metadata server"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "service_account_email", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, client_email),
+      "Set the service account email"
+    },
+    // set in flb_bigquery_oauth_credentials
+    {
+      FLB_CONFIG_MAP_STR, "service_account_secret", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, private_key),
+      "Set the service account secret"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "export_to_project_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, export_to_project_id),
+      "Export to project id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "resource", FLB_SDS_RESOURCE_TYPE,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, resource),
+      "Set the resource"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "severity_key", DEFAULT_SEVERITY_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, severity_key),
+      "Set the severity key"
+    },
+    {
+      FLB_CONFIG_MAP_BOOL, "autoformat_stackdriver_trace", "false",
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, autoformat_stackdriver_trace),
+      "Autoformat the stacrdriver trace"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "trace_key", DEFAULT_TRACE_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, trace_key),
+      "Set the trace key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "log_name_key", DEFAULT_LOG_NAME_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, log_name_key),
+      "Set the logname key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "http_request_key", HTTPREQUEST_FIELD_IN_JSON,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, http_request_key),
+      "Set the http request key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "k8s_cluster_name", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, cluster_name),
+      "Set the kubernetes cluster name"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "k8s_cluster_location", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, cluster_location),
+      "Set the kubernetes cluster location"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "location", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, location),
+      "Set the resource location"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "namespace", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, namespace_id),
+      "Set the resource namespace"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "node_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, node_id),
+      "Set the resource node id"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "job", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, job),
+      "Set the resource job"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "task_id", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, task_id),
+      "Set the resource task id"
+    },
+    {
+      FLB_CONFIG_MAP_CLIST, "labels", NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, labels),
+      "Set the labels"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "labels_key", DEFAULT_LABELS_KEY,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, labels_key),
+      "Set the labels key"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "tag_prefix", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, tag_prefix),
+      "Set the tag prefix"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "stackdriver_agent", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, stackdriver_agent),
+      "Set the stackdriver agent"
+    },
+    /* Custom Regex */
+    {
+      FLB_CONFIG_MAP_STR, "custom_k8s_regex", DEFAULT_TAG_REGEX,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, custom_k8s_regex),
+      "Set a custom kubernetes regex filter"
+    },
+    /* EOF */
+    {0}
+};
+
 struct flb_output_plugin out_stackdriver_plugin = {
     .name         = "stackdriver",
     .description  = "Send events to Google Stackdriver Logging",
     .cb_init      = cb_stackdriver_init,
     .cb_flush     = cb_stackdriver_flush,
     .cb_exit      = cb_stackdriver_exit,
+    .workers      = 2,
+    .config_map   = config_map,
 
     /* Test */
     .test_formatter.callback = stackdriver_format_test,

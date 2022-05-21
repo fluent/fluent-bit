@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -264,7 +263,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         ctx->aws_provider = flb_sts_provider_create(config,
                                                     ctx->sts_tls,
                                                     ctx->base_aws_provider,
-                                                    NULL,
+                                                    (char *) ctx->external_id,
                                                     (char *) ctx->role_arn,
                                                     session_name,
                                                     (char *) ctx->region,
@@ -383,20 +382,12 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_config *config)
 {
     struct flb_cloudwatch *ctx = out_context;
-    int ret;
     int event_count;
     struct log_stream *stream = NULL;
     (void) i_ins;
     (void) config;
 
     ctx->buf->put_events_calls = 0;
-
-    if (ctx->create_group == FLB_TRUE && ctx->group_created == FLB_FALSE) {
-        ret = create_log_group(ctx);
-        if (ret < 0) {
-            FLB_OUTPUT_RETURN(FLB_RETRY);
-        }
-    }
 
     stream = get_log_stream(ctx,
                             event_chunk->tag, flb_sds_len(event_chunk->tag));
@@ -593,6 +584,13 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "external_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, external_id),
+    "Specify an external ID for the STS API, can be used with the role_arn parameter if your role "
+     "requires an external ID."
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "metric_namespace", NULL,
      0, FLB_FALSE, 0,
      "Metric namespace for CloudWatch EMF logs"
@@ -619,6 +617,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
     .flags        = 0,
+    .workers      = 1,
 
     /* Configuration */
     .config_map     = config_map,

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -43,6 +42,12 @@ struct record_modifier_ctx {
     int records_num;
     int remove_keys_num;
     int allowlist_keys_num;
+    /* config map */
+    struct mk_list *records_map;
+    struct mk_list *remove_keys_map;
+    struct mk_list *allowlist_keys_map;
+    struct mk_list *whitelist_keys_map;
+
     struct mk_list records;
     struct mk_list remove_keys;
     struct mk_list allowlist_keys;

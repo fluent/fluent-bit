@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -250,7 +249,7 @@ int flb_sosreport(struct flb_config *config)
         printf("    Name\t\t%s (%s, id=%i)\n", ins_in->name, ins_in->p->name,
                ins_in->id);
         printf("    Flags\t\t"); input_flags(ins_in->flags);
-        printf("    Threaded\t\t%s\n", ins_in->threaded ? "Yes": "No");
+        printf("    Coroutines\t\t%s\n", ins_in->runs_in_coroutine ? "Yes": "No");
         if (ins_in->tag) {
             printf("    Tag\t\t\t%s\n", ins_in->tag);
         }

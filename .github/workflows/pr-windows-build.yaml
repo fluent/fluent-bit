@@ -1,0 +1,27 @@
+name: PR - Windows checks
+on:
+  workflow_dispatch:
+
+  pull_request:
+    # Limit to just those changes that 'might' affect Windows for automated builds
+    # We can always do a manual build for a branch
+    paths:
+      - '**.h'
+      - '**.c'
+      - '**.windows'
+      - './conf/**'
+      - './cmake/**'
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  pr-windows-build:
+    uses: fluent/fluent-bit/.github/workflows/call-build-windows.yaml@master
+    with:
+      version: ${{ github.sha }}
+      ref: ${{ github.sha }}
+      environment: pr
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

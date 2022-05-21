@@ -9,34 +9,6 @@ ARG BASE_BUILDER
 # Multiarch support
 FROM multiarch/qemu-user-static:x86_64-aarch64 as multiarch-aarch64
 
-# debian/stretch base image
-FROM debian:stretch-slim as debian-stretch-base
-ENV DEBIAN_FRONTEND noninteractive
-
-# hadolint ignore=DL3008,DL3015
-RUN apt-get -qq update && \
-    apt-get install -y -qq curl ca-certificates build-essential \
-                           cmake make bash sudo wget unzip dh-make \
-                           libsystemd-dev zlib1g-dev flex bison \
-                           libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release
-
-# debian/stretch.arm64v8 base image
-FROM arm64v8/debian:stretch as debian-stretch.arm64v8-base
-ENV DEBIAN_FRONTEND noninteractive
-
-COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
-
-# hadolint ignore=DL3008,DL3015
-RUN apt-get -qq update && \
-    apt-get install -y -qq curl ca-certificates build-essential \
-                           cmake make bash sudo wget unzip dh-make \
-                           libsystemd-dev zlib1g-dev flex bison \
-                           libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
-    apt-get install -y -qq --reinstall lsb-base lsb-release
-
 # debian/buster base image
 FROM debian:buster-slim as debian-buster-base
 ENV DEBIAN_FRONTEND noninteractive
@@ -47,7 +19,7 @@ RUN apt-get -qq update && \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
+                           libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # debian/buster.arm64v8 base image
@@ -62,7 +34,7 @@ RUN apt-get -qq update && \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
+                           libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # debian/bullseye base image
@@ -75,7 +47,7 @@ RUN apt-get -qq update && \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
+                           libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # debian/bullseye.arm64v8 base image
@@ -90,27 +62,21 @@ RUN apt-get -qq update && \
                            cmake make bash sudo wget unzip dh-make \
                            libsystemd-dev zlib1g-dev flex bison \
                            libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-                           libsasl2-2 libsasl2-dev && \
+                           libsasl2-2 libsasl2-dev libyaml-dev && \
     apt-get install -y -qq --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
 # hadolint ignore=DL3006
 FROM $BASE_BUILDER as builder
 
-ARG FLB_PREFIX
-ARG FLB_VERSION
-ARG FLB_SRC
+ARG FLB_NIGHTLY_BUILD
+ENV FLB_NIGHTLY_BUILD=$FLB_NIGHTLY_BUILD
 
-ENV FLB_PREFIX=$FLB_PREFIX
-ENV FLB_VERSION=$FLB_VERSION
-ENV FLB_SRC=$FLB_SRC
+# Docker context must be the base of the repo
+WORKDIR /tmp/fluent-bit/
+COPY . ./
 
-ENV FLB_TARBALL http://github.com/fluent/fluent-bit/archive/$FLB_PREFIX$FLB_VERSION.zip
-COPY sources/$FLB_SRC /
-
-WORKDIR /tmp
-RUN if [ -z "$FLB_SRC" ] ; then wget -q -O "/tmp/fluent-bit-${FLB_VERSION}.zip" ${FLB_TARBALL} && unzip "fluent-bit-$FLB_VERSION.zip" ; else tar zxfv "/$FLB_SRC" ; fi
-
+WORKDIR /tmp/fluent-bit/build/
 # CMake configuration variables
 ARG CFLAGS="-std=gnu99"
 ARG CMAKE_INSTALL_PREFIX=/opt/td-agent-bit/
@@ -122,8 +88,8 @@ ARG FLB_SQLDB=On
 ARG FLB_HTTP_SERVER=On
 ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
+ARG FLB_JEMALLOC=On
 
-WORKDIR /tmp/fluent-bit-$FLB_VERSION/build/
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           -DCMAKE_INSTALL_SYSCONFDIR="$CMAKE_INSTALL_SYSCONFDIR" \
@@ -134,6 +100,8 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
           -DFLB_HTTP_SERVER="$FLB_HTTP_SERVER" \
           -DFLB_OUT_KAFKA="$FLB_OUT_KAFKA" \
           -DFLB_OUT_PGSQL="$FLB_OUT_PGSQL" \
+          -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
+          -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
           ../
 
 VOLUME [ "/output" ]

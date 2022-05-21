@@ -6,6 +6,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size){
     int out_size= 0;
     char *out_buf = NULL;
     struct flb_pack_state state;
+    flb_malloc_p = 0;
 
     /* Target json packer */
     flb_pack_state_init(&state);

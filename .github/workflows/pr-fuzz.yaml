@@ -1,12 +1,13 @@
 name: CIFuzz
-on: 
+on:
   pull_request:
     # Only fuzz when C source files change
     paths:
       - '**.c'
       - '**.h'
 jobs:
-  Fuzzing:
+  fuzzing:
+    name: PR - fuzzing test
     runs-on: ubuntu-latest
     steps:
     - name: Build Fuzzers
@@ -24,7 +25,7 @@ jobs:
         dry-run: false
         language: c
     - name: Upload Crash
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v3
       if: failure() && steps.build.outcome == 'success'
       with:
         name: artifacts

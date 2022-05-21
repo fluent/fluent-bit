@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -184,7 +183,9 @@ int flb_time_append_to_mpack(mpack_writer_t *writer, struct flb_time *tm, int fm
         memcpy(&ext_data, &tmp, 4);
         tmp = htonl((uint32_t)tm->tm.tv_nsec);/* nanosecond */
         memcpy(&ext_data[4], &tmp, 4);
-        mpack_write_ext(writer, 8/*fixext8*/, ext_data, sizeof(ext_data));
+
+        /* https://github.com/fluent/fluentd/wiki/Forward-Protocol-Specification-v1#eventtime-ext-format */
+        mpack_write_ext(writer, 0 /*ext type=0 */, ext_data, sizeof(ext_data));
         break;
 
     default:

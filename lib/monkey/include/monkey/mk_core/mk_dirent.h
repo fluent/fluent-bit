@@ -20,7 +20,7 @@
 #ifndef MK_DIRENT_H
 #define MK_DIRENT_H
 
-#include "mk_core_info.h"
+#include <mk_core/mk_core_info.h>
 
 #ifdef _WIN32
 #include "external/dirent.h"

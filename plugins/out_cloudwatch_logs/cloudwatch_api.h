@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -46,7 +45,7 @@ void cw_flush_destroy(struct cw_flush *buf);
 int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin, struct cw_flush *buf,
                      struct log_stream *stream,
                      const char *data, size_t bytes);
-int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream);
+int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream, int can_retry);
 struct log_stream *get_log_stream(struct flb_cloudwatch *ctx,
                                   const char *tag, int tag_len);
 int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,

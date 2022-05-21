@@ -370,8 +370,8 @@ static int gen_buf(msgpack_sbuffer *mp_sbuf, char *buf, size_t buf_size)
     return 0;
 }
 
-static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
-                  char *str)
+static void log_cb(void *data, int level, const char *file, int line,
+                   const char *str)
 {
     if (level == CIO_LOG_ERROR) {
         flb_error("[fstore] %s", str);
@@ -385,8 +385,6 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     else if (level == CIO_LOG_DEBUG) {
         flb_debug("[fstore] %s", str);
     }
-
-    return 0;
 }
 
 /* This tests uses the subsystems of the engine directly
@@ -407,13 +405,26 @@ void flb_test_input_chunk_fs_chunks_size_real()
     struct cio_ctx *cio;
     msgpack_sbuffer mp_sbuf;
     char buf[262144];
+    struct mk_event_loop *evl;
+    struct cio_options opts = {0};
 
     cfg = flb_config_init();
+    evl = mk_event_loop_create(256);
+
+    TEST_CHECK(evl != NULL);
+    cfg->evl = evl;
+
     flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
 
     i_ins = flb_input_new(cfg, "dummy", NULL, FLB_TRUE);
     i_ins->storage_type = CIO_STORE_FS;
-    cio = cio_create("/tmp/input-chunk-fs_chunks-size_real", log_cb, CIO_LOG_DEBUG, CIO_OPEN);
+
+    opts.root_path = "/tmp/input-chunk-fs_chunks-size_real";
+    opts.log_cb = log_cb;
+    opts.log_level = CIO_LOG_DEBUG;
+    opts.flags = CIO_OPEN;
+
+    cio = cio_create(&opts);
     flb_storage_input_create(cio, i_ins);
     flb_input_init_all(cfg);
 

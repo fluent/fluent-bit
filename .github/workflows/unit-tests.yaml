@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - 1.9
       - 1.8
   pull_request:
     paths-ignore:
@@ -11,10 +12,13 @@ on:
       - 'docker_compose/**'
       - 'packaging/**'
       - '.gitignore'
+      - 'appveyor.yml'
+      - '**.sh'
     branches:
       - master
+      - 1.9
       - 1.8
-    types: [opened, edited, synchronize]
+    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 jobs:
@@ -53,8 +57,8 @@ jobs:
           sudo apt install -yyq gcc-7 g++-7 clang-6.0 libsystemd-dev gcovr
           sudo ln -s /usr/bin/llvm-symbolizer-6.0 /usr/bin/llvm-symbolizer || true
 
-      - uses: actions/checkout@v2
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           repository: calyptia/fluent-bit-ci
           path: ci

@@ -2,8 +2,7 @@
 
 /*  Fluent Bit
  *  ==========
- *  Copyright (C) 2019-2021 The Fluent Bit Authors
- *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *  Copyright (C) 2015-2022 The Fluent Bit Authors
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -352,8 +351,10 @@ void flb_kube_prop_destroy(struct flb_kube_props *props)
 {
     if (props->stdout_parser) {
         flb_sds_destroy(props->stdout_parser);
+        props->stdout_parser = NULL;
     }
     if (props->stderr_parser) {
         flb_sds_destroy(props->stderr_parser);
+        props->stderr_parser = NULL;
     }
 }

@@ -67,7 +67,8 @@ struct cmt_gauge *cmt_gauge_create(struct cmt *cmt,
     }
 
     /* Create the map */
-    gauge->map = cmt_map_create(CMT_GAUGE, &gauge->opts, label_count, label_keys);
+    gauge->map = cmt_map_create(CMT_GAUGE, &gauge->opts, label_count, label_keys,
+                                (void *) gauge);
     if (!gauge->map) {
         cmt_log_error(cmt, "unable to allocate map for gauge");
         cmt_gauge_destroy(gauge);

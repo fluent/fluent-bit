@@ -11,6 +11,47 @@ void flb_test_filter_grep_regex(void);
 void flb_test_filter_grep_exclude(void);
 void flb_test_filter_grep_invalid(void);
 
+pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
+int  num_output = 0;
+
+static int cb_count_msgpack(void *record, size_t size, void *data)
+{
+    msgpack_unpacked result;
+    size_t off = 0;
+
+    if (!TEST_CHECK(data != NULL)) {
+        flb_error("data is NULL");
+    }
+
+    /* Iterate each item array and apply rules */
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, record, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        pthread_mutex_lock(&result_mutex);
+        num_output++;
+        pthread_mutex_unlock(&result_mutex);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    flb_free(record);
+    return 0;
+}
+
+static void clear_output_num()
+{
+    pthread_mutex_lock(&result_mutex);
+    num_output = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int get_output_num()
+{
+    int ret;
+    pthread_mutex_lock(&result_mutex);
+    ret = num_output;
+    pthread_mutex_unlock(&result_mutex);
+
+    return ret;
+}
 
 void flb_test_filter_grep_regex(void)
 {
@@ -144,10 +185,203 @@ void flb_test_filter_grep_invalid(void)
     flb_destroy(ctx);
 }
 
+/* filter_grep supports multiple 'Exclude's.
+ * If user sets multiple 'Exclude's, fluent-bit uses as OR conditions.
+ */
+void flb_test_filter_grep_multi_exclude(void)
+{
+    int i;
+    int ret;
+    int bytes;
+    char p[512];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    int got;
+    int n_loop = 256;
+    int not_used = 0;
+    struct flb_lib_out_cb cb_data;
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Exclude", "log deprecated",
+                         "Exclude", "log hoge",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    clear_output_num();
+
+    ret = flb_start(ctx);
+    if(!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Ingest 2 records per loop. One of them should be excluded. */
+    for (i = 0; i < n_loop; i++) {
+        memset(p, '\0', sizeof(p));
+        snprintf(p, sizeof(p), "[%d, {\"val\": \"%d\",\"log\": \"Using deprecated option\"}]", i, (i * i));
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+
+        /* Below record will be included */
+        memset(p, '\0', sizeof(p));
+        snprintf(p, sizeof(p), "[%d, {\"val\": \"%d\",\"log\": \"Using option\"}]", i, (i * i));
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    got = get_output_num();
+    if (!TEST_CHECK(got == n_loop)) {
+        TEST_MSG("expect: %d got: %d", n_loop, got);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_filter_grep_unknown_property(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    int not_used = 0;
+    struct flb_lib_out_cb cb_data;
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "UNKNOWN_PROPERTY", "aaaaaa", NULL);
+    TEST_CHECK(ret == 0);
+
+    clear_output_num();
+
+    ret = flb_start(ctx);
+    if(!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_start should be failed");
+        exit(EXIT_FAILURE);
+    }
+
+    flb_destroy(ctx);
+}
+
+/*
+ * https://github.com/fluent/fluent-bit/issues/5209 
+ * To support /REGEX/ style.
+ */
+void flb_test_issue_5209(void)
+{
+    int i;
+    int ret;
+    int bytes;
+    char p[512];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    int got;
+    int n_loop = 256;
+    int not_used = 0;
+    struct flb_lib_out_cb cb_data;
+
+    /* Prepare output callback with expected result */
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &not_used;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+
+    filter_ffd = flb_filter(ctx, (char *) "grep", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_filter_set(ctx, filter_ffd, "Exclude", "log /Using deprecated option/", NULL);
+    TEST_CHECK(ret == 0);
+
+    clear_output_num();
+
+    ret = flb_start(ctx);
+    if(!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_start failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Ingest 2 records per loop. One of them should be excluded. */
+    for (i = 0; i < n_loop; i++) {
+        memset(p, '\0', sizeof(p));
+        snprintf(p, sizeof(p), "[%d, {\"val\": \"%d\",\"END_KEY\": \"JSON_END\"}]", i, (i * i));
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+
+        /* Below record will be excluded */
+        memset(p, '\0', sizeof(p));
+        snprintf(p, sizeof(p), "[%d, {\"val\": \"%d\",\"log\": \"Using deprecated option\"}]", i, (i * i));
+        bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+        TEST_CHECK(bytes == strlen(p));
+    }
+
+    flb_time_msleep(1500); /* waiting flush */
+
+    got = get_output_num();
+    if (!TEST_CHECK(got == n_loop)) {
+        TEST_MSG("expect: %d got: %d", n_loop, got);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"regex",   flb_test_filter_grep_regex   },
     {"exclude", flb_test_filter_grep_exclude },
     {"invalid", flb_test_filter_grep_invalid },
+    {"multi_exclude", flb_test_filter_grep_multi_exclude },
+    {"unknown_property", flb_test_filter_grep_unknown_property },
+    {"issue_5209", flb_test_issue_5209 },
     {NULL, NULL}
 };

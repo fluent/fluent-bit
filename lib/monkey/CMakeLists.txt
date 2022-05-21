@@ -1,5 +1,5 @@
 # Let's have fun!
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(monkey C)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 set(CMAKE_INCLUDE_DIRECTORIES_BEFORE ON)
@@ -259,12 +259,12 @@ endif()
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/monkey/mk_info.h.in"
-  "${PROJECT_SOURCE_DIR}/include/monkey/mk_info.h"
+  "${PROJECT_BINARY_DIR}/include/monkey/mk_info.h"
   )
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/monkey/mk_env.h.in"
-  "${PROJECT_SOURCE_DIR}/include/monkey/mk_env.h"
+  "${PROJECT_BINARY_DIR}/include/monkey/mk_env.h"
   )
 
 
@@ -275,6 +275,7 @@ include_directories(deps/flb_libco)
 include_directories(deps/regex)
 include_directories(include)
 include_directories(include/monkey/)
+include_directories(${PROJECT_BINARY_DIR}/include/)
 
 if (CMAKE_SYSTEM_NAME MATCHES "Windows")
   include_directories(mk_core/deps/libevent/include)
