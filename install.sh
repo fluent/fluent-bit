@@ -34,7 +34,7 @@ sudo -k
 # Will require sudo
 case ${OS} in
     amzn|amazonlinux)
-        sudo sh <<'SCRIPT'
+        sudo sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
@@ -49,7 +49,7 @@ yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
-        sudo sh <<'SCRIPT'
+        sudo sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
