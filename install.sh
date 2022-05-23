@@ -34,32 +34,38 @@ sudo -k
 # Will require sudo
 case ${OS} in
     amzn|amazonlinux)
-        sudo sh <<'SCRIPT'
+        # We need variable expansion and non-expansion on the URL line to pick up the base URL.
+        # Therefore we combine things with sed to handle it.
+        sudo sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/amazonlinux/\$releasever/\$basearch/
+baseurl = $RELEASE_URL/amazonlinux/VERSION_ARCH_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
+sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
+cat /etc/yum.repos.d/fluent-bit.repo
 yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
     centos|centoslinux|rhel|redhatenterpriselinuxserver|fedora|rocky|almalinux)
-        sudo sh <<'SCRIPT'
+        sudo sh <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/centos/\$releasever/\$basearch/
+baseurl = $RELEASE_URL/centos/VERSION_ARCH_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
 enabled=1
 EOF
+sed -i 's|VERSION_ARCH_SUBSTR|\$releasever/\$basearch/|g' /etc/yum.repos.d/fluent-bit.repo
+cat /etc/yum.repos.d/fluent-bit.repo
 yum -y install fluent-bit || yum -y install td-agent-bit
 SCRIPT
     ;;
@@ -73,6 +79,7 @@ curl $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
 cat > /etc/apt/sources.list.d/fluent-bit.list <<EOF
 deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${CODENAME} ${CODENAME} main
 EOF
+cat /etc/apt/sources.list.d/fluent-bit.list
 apt-get -y update
 apt-get -y install fluent-bit || apt-get -y install td-agent-bit
 SCRIPT
