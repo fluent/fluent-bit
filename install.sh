@@ -58,7 +58,7 @@ rpm --import $RELEASE_KEY
 cat << EOF > /etc/yum.repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/centos/\$releasever/\$basearch/
+baseurl = $RELEASE_URL/centos/VERSION_ARCH_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
@@ -79,6 +79,7 @@ curl $RELEASE_KEY | gpg --dearmor > /usr/share/keyrings/fluentbit-keyring.gpg
 cat > /etc/apt/sources.list.d/fluent-bit.list <<EOF
 deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] $RELEASE_URL/${OS}/${CODENAME} ${CODENAME} main
 EOF
+cat /etc/apt/sources.list.d/fluent-bit.list
 apt-get -y update
 apt-get -y install fluent-bit || apt-get -y install td-agent-bit
 SCRIPT
