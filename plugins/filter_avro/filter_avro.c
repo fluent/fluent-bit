@@ -826,20 +826,29 @@ static int csv_to_avro(
 {
     int ret;
     char *bufptr;
-    char *bufptrstart;
     size_t buflen;
-    size_t buflenstart;
     size_t field_count;
+    size_t remaining_records;
+
+    if (ctx->max_records_per_request > 0) {
+        remaining_records = ctx->max_records_per_request;
+    }
 
     ctx->payloads_total_size = 0;
     bufptr = state->row_buffer;
     buflen = flb_sds_len(state->row_buffer);
+
+    if (!buflen) {
+        return FLB_CSV_EOF;
+    }
+
     /* parse all csv records */
     while (buflen) {
-        bufptrstart = bufptr;
-        buflenstart = buflen;
         ret = flb_csv_parse_record(&state->state, &bufptr, &buflen,
                 &field_count);
+        memmove(state->row_buffer, bufptr, buflen);
+        flb_sds_len_set(state->row_buffer, buflen);
+        bufptr = state->row_buffer;
         if (ret) {
             break;
         }
@@ -850,18 +859,15 @@ static int csv_to_avro(
 
         flb_plg_trace(state->ctx->ins, "=== csv record end ===");
         state->record_field_index = 0;
+        if (ctx->max_records_per_request > 0) {
+            remaining_records--;
+            if (!remaining_records) {
+                break;
+            }
+        }
     }
 
-    if (ret == FLB_CSV_EOF) {
-        /* move the incomplete csv record to the beginning of the buffer */
-        memmove(state->row_buffer, bufptrstart, buflenstart);
-        flb_sds_len_set(state->row_buffer, buflenstart);
-        return FLB_CSV_EOF;
-    }
-    else {
-        flb_sds_len_set(state->row_buffer, 0);
-        return 0;
-    }
+    return ret;
 }
 
 static int pack_avro(
@@ -1008,58 +1014,61 @@ static int cb_avro_filter(const void *data, size_t bytes,
             return FLB_FILTER_NOTOUCH;
         }
 
-        if (avro_generic_value_new(ctx->logev_class, &logev)) {
-            return -1;
-        }
+        while (true) {
+            if (avro_generic_value_new(ctx->logev_class, &logev)) {
+                return -1;
+            }
 
-        if (avro_value_get_by_name(&logev, "payload", &value, NULL)) {
-            flb_plg_error(ctx->ins, "failed to get avro payload array: %s", avro_strerror());
-            return -1;
-        }
+            if (avro_value_get_by_name(&logev, "payload", &value, NULL)) {
+                flb_plg_error(ctx->ins, "failed to get avro payload array: %s",
+                              avro_strerror());
+                return -1;
+            }
 
-        if (csv_to_avro(ctx, state, &value)) {
+            if (csv_to_avro(ctx, state, &value)) {
+                avro_value_decref(&logev);
+                break;
+            }
+
+            if (avro_value_get_by_name(&logev, "metadata", &value, NULL)) {
+                flb_plg_error(ctx->ins, "failed to get avro metadata: %s", avro_strerror());
+                return -1;
+            }
+
+            if (metadata_to_avro(ctx, state, &value)) {
+                avro_value_decref(&logev);
+                return ret;
+            }
+
+            if (avro_value_get_by_name(&logev, "max_size", &value, NULL)) {
+                flb_plg_error(ctx->ins, "failed to get max_size: %s", avro_strerror());
+                return -1;
+            }
+
+            if (avro_value_set_int(&value, ctx->payloads_total_size)) {
+                return -1;
+            }
+
+            if (avro_value_get_by_name(&logev, "avro_schema", &value, NULL)) {
+                flb_plg_error(ctx->ins, "failed to get avro schema: %s", avro_strerror());
+                return -1;
+            }
+
+            if (avro_value_set_string_len(&value, state->avro_schema_json,
+                        flb_sds_len(state->avro_schema_json) + 1)) {
+                flb_plg_error(ctx->ins, "failed to set avro schema: %s", avro_strerror());
+                return -1;
+            }
+
+            ret = pack_avro(ctx, state, &logev);
+
+            if (ret) {
+                avro_value_decref(&logev);
+                flb_plg_error(ctx->ins, "failed to pack logev avro object");
+                return FLB_FILTER_NOTOUCH;
+            }
             avro_value_decref(&logev);
-            return -1;
         }
-
-        if (avro_value_get_by_name(&logev, "metadata", &value, NULL)) {
-            flb_plg_error(ctx->ins, "failed to get avro metadata: %s", avro_strerror());
-            return -1;
-        }
-
-        if (metadata_to_avro(ctx, state, &value)) {
-            avro_value_decref(&logev);
-            return ret;
-        }
-
-        if (avro_value_get_by_name(&logev, "max_size", &value, NULL)) {
-            flb_plg_error(ctx->ins, "failed to get max_size: %s", avro_strerror());
-            return -1;
-        }
-
-        if (avro_value_set_int(&value, ctx->payloads_total_size)) {
-            return -1;
-        }
-
-        if (avro_value_get_by_name(&logev, "avro_schema", &value, NULL)) {
-            flb_plg_error(ctx->ins, "failed to get avro schema: %s", avro_strerror());
-            return -1;
-        }
-
-        if (avro_value_set_string_len(&value, state->avro_schema_json,
-                    flb_sds_len(state->avro_schema_json) + 1)) {
-            flb_plg_error(ctx->ins, "failed to set avro schema: %s", avro_strerror());
-            return -1;
-        }
-
-        ret = pack_avro(ctx, state, &logev);
-
-        if (ret) {
-            avro_value_decref(&logev);
-            flb_plg_error(ctx->ins, "failed to pack logev avro object");
-            return FLB_FILTER_NOTOUCH;
-        }
-        avro_value_decref(&logev);
     }
 
     /* allocate outbuf that contains the modified chunks */
@@ -1113,11 +1122,11 @@ static int cb_avro_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
-    // {
-    //  FLB_CONFIG_MAP_BOOL, "convert_to_avro", "false",
-    //  0, FLB_TRUE, offsetof(struct filter_avro, convert_to_avro),
-    //  "If enabled, convert CSV records into avro, using tag path to find schema "
-    // },
+    {
+     FLB_CONFIG_MAP_INT, "max_records_per_request", "-1",
+     0, FLB_TRUE, offsetof(struct filter_avro, max_records_per_request),
+     "The maximum number of csv records that will go into one HTTP request"
+    },
     {0}
 };
 

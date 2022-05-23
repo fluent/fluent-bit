@@ -74,6 +74,7 @@ struct filter_avro {
     flb_sds_t packbuf;
     size_t payloads_total_size;
     char hostname[256];
+    int max_records_per_request;
 };
 
 #endif
