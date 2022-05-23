@@ -9,6 +9,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-docker}
+INSTALL_SCRIPT=${INSTALL_SCRIPT:-https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh}
 
 APT_TARGETS=("ubuntu:18.04"
     "ubuntu:20.04"
@@ -26,7 +27,7 @@ do
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         "$IMAGE" \
-        sh -c "apt-get update && apt-get install -y sudo gpg curl;curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"
+        sh -c "apt-get update && apt-get install -y sudo gpg curl;curl $INSTALL_SCRIPT | sh"
 done
 
 for IMAGE in "${YUM_TARGETS[@]}"
@@ -36,5 +37,5 @@ do
         -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
         -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
         "$IMAGE" \
-        sh -c "yum install -y curl sudo;curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"
+        sh -c "yum install -y curl sudo;curl $INSTALL_SCRIPT | sh"
 done
