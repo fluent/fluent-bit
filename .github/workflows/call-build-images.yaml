@@ -319,7 +319,7 @@ jobs:
       - name: Generate schema
         run: |
           docker run --rm -t ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} -J > fluent-bit-schema-${{ inputs.version }}.json
-          cat fluent-bit-schema.json | jq -M > fluent-bit-schema-pretty-${{ inputs.version }}.json
+          cat fluent-bit-schema-${{ inputs.version }}.json | jq -M > fluent-bit-schema-pretty-${{ inputs.version }}.json
         shell: bash
 
       - name: Upload the schema
