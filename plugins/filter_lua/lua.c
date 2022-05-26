@@ -112,6 +112,45 @@ static void mpack_buffer_flush(mpack_writer_t* writer, const char* buffer, size_
     flb_sds_cat_safe(&ctx->packbuf, buffer, count);
 }
 
+static void pack_result_mpack(lua_State *l,
+                              mpack_writer_t *writer,
+                              struct flb_lua_l2c_config *l2cc,
+                              struct flb_time *t)
+{
+    int i;
+    int len;
+
+    if (lua_type(l, -1) != LUA_TTABLE) {
+        return;
+    }
+
+    len = flb_lua_arraylength(l);
+    if (len > 0) {
+        /* record split */
+        for (i = 1; i <= len; i++) {
+            /* write array tag */
+            mpack_write_tag(writer, mpack_tag_array(2));
+            /* write timestamp */
+            flb_time_append_to_mpack(writer, t, 0);
+            /* get the subrecord */
+            lua_rawgeti(l, -1, i);
+            /* convert */
+            flb_lua_tompack(l, writer, 0, l2cc);
+            lua_pop(l, 1);
+        }
+    }
+    else {
+        /* write array tag */
+        mpack_write_tag(writer, mpack_tag_array(2));
+        /* write timestamp */
+        flb_time_append_to_mpack(writer, t, 0);
+        /* convert */
+        flb_lua_tompack(l, writer, 0, l2cc);
+    }
+    /* pop */
+    lua_pop(l, 1);
+}
+
 static int cb_lua_filter_mpack(const void *data, size_t bytes,
                                const char *tag, int tag_len,
                                void **out_buf, size_t *out_bytes,
@@ -251,13 +290,8 @@ static int cb_lua_filter_mpack(const void *data, size_t bytes,
         mpack_writer_init(&writer, writebuf, sizeof(writebuf));
         mpack_writer_set_context(&writer, ctx);
         mpack_writer_set_flush(&writer, mpack_buffer_flush);
-        /* write array tag */
-        mpack_write_tag(&writer, mpack_tag_array(2));
-        /* write timestamp: convert from double to Fluent Bit format */
-        flb_time_append_to_mpack(&writer, &t, 0);
-        /* write the lua table */
-        flb_lua_tompack(ctx->lua->state, &writer, 0, &ctx->l2cc);
-        lua_pop(ctx->lua->state, 1);
+        /* write the result */
+        pack_result_mpack(ctx->lua->state, &writer, &ctx->l2cc, &t);
         /* flush the writer */
         mpack_writer_flush_message(&writer);
         mpack_writer_destroy(&writer);
