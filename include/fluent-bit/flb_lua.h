@@ -47,6 +47,7 @@ struct flb_lua_l2c_config {
     struct mk_list l2c_types;  /* data types (lua -> C) */
 };
 
+int flb_lua_arraylength(lua_State *l);
 void flb_lua_pushtimetable(lua_State *l, struct flb_time *tm);
 int flb_lua_is_valid_func(lua_State *l, flb_sds_t func);
 int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader);
