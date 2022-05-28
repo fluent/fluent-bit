@@ -109,6 +109,120 @@ static int fetch_metadata(struct flb_stackdriver *ctx,
     return ret_code;
 }
 
+/*
+ * Fetch an OAuth 2 token from the IAM Credentials API. 
+ * This function will use the current OAuth token on file to make the API call,
+ * thus it must be called after or as a final step of a function like
+ * gce_metadata_read_token.
+ */
+static int fetch_iamcredentials(struct flb_stackdriver *ctx,
+                                struct flb_upstream *upstream, char *uri,
+                                char *payload)
+{
+    int ret;
+    int ret_code;
+    size_t b_sent;
+    struct flb_upstream_conn *conn;
+    struct flb_http_client *c;
+    char body[4096];
+    size_t body_len = 0;
+
+    flb_sds_t bearer_header = flb_sds_create_size(FLB_STD_METADATA_TOKEN_SIZE_MAX + 7);
+
+    /* Get iamcredentials connection */
+    conn = flb_upstream_conn_get(upstream);
+    if (!conn) {
+        flb_plg_error(ctx->ins, "failed to create iamcredentials connection");
+        return -1;
+    }
+
+    body_len = snprintf(body, sizeof(body) - 1,
+            "{\"delegates\": %s,"
+            "\"scope\": [\"https://www.googleapis.com/auth/cloud-platform\"],"
+            "\"lifetime\": \"%s\"}",
+			ctx->delegation_chain,
+			ctx->token_lifetime);
+    if (body_len >= 4096) {
+        flb_plg_error(ctx->ins, "chain of delegates is too long");
+	return -1;
+    }
+
+    /* Compose HTTP Client request */
+    c = flb_http_client(conn, FLB_HTTP_POST, uri,
+                        body, body_len, NULL, 0, NULL, 0);
+
+    flb_http_buffer_size(c, FLB_STD_METADATA_TOKEN_SIZE_MAX);
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c, "Content-Type", 12, "application/json; charset=utf-8", 31);
+
+    bearer_header = flb_sds_cat(bearer_header, "Bearer ", 7);
+    bearer_header = flb_sds_cat(bearer_header, ctx->o->access_token, flb_sds_len(ctx->o->access_token));
+    flb_http_add_header(c, "Authorization", 13, bearer_header, flb_sds_len(bearer_header));
+
+    /* Send HTTP request */
+    ret = flb_http_do(c, &b_sent);
+
+    /* validate response */
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "http_do=%i", ret);
+        ret_code = -1;
+    }
+    else {
+        /* The request was issued successfully, validate the 'error' field */
+        flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
+        if (c->resp.status == 200) {
+            ret_code = 0;
+            flb_sds_copy(payload, c->resp.payload, c->resp.payload_size);
+        }
+        else {
+            if (c->resp.payload_size > 0) {
+                /* we got an error */
+                flb_plg_warn(ctx->ins, "error\n%s", c->resp.payload);
+            }
+            else {
+                flb_plg_debug(ctx->ins, "response\n%s", c->resp.payload);
+            }
+            ret_code = -1;
+        }
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(conn);
+    flb_sds_destroy(bearer_header);
+
+    return ret_code;
+}
+
+/*
+ * Fetch the OAuth2 token for an account that requies a delegated chain. The
+ * fetched token will replace the current token as the bearer token for all
+ * OAuth 2 calls.
+ */
+int gce_fetch_delegated_read_token(struct flb_stackdriver *ctx)
+{
+    int ret;
+    flb_sds_t uri = flb_sds_create(FLB_STD_IAMCREDS_SERVICE_ACCOUNT_URI);
+    flb_sds_t payload = flb_sds_create_size(FLB_STD_METADATA_TOKEN_SIZE_MAX);
+
+    uri = flb_sds_cat(uri, ctx->final_service_account_email, 
+			   flb_sds_len(ctx->final_service_account_email));
+    uri = flb_sds_cat(uri, ":generateAccessToken", 20);
+    ret = fetch_iamcredentials(ctx, ctx->iamcredentials_u, uri, payload);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "can't fetch token from the iamcredentials server");
+        flb_sds_destroy(payload);
+        flb_sds_destroy(uri);
+        return -1;
+    }
+
+    ret = flb_oauth2_parse_delegated_json_response(payload, flb_sds_len(payload), ctx->o);
+    flb_sds_destroy(payload);
+    flb_sds_destroy(uri);
+
+    return 0;
+}
+
 int gce_metadata_read_token(struct flb_stackdriver *ctx)
 {
     int ret;
@@ -134,6 +248,16 @@ int gce_metadata_read_token(struct flb_stackdriver *ctx)
         return -1;
     }
     ctx->o->expires = time(NULL) + ctx->o->expires_in;
+
+    // Fetch token for service account other than client_email.
+    if (ctx->use_delegates) {
+        ret = gce_fetch_delegated_read_token(ctx);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "can't fetch token for delegated service account");
+            return -1;
+        }
+    }
+
     return 0;
 }
 

@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_jsmn.h>
 
+#include <time.h>
+
 #define free_temporary_buffers()                 \
     if (prot) {                                 \
         flb_free(prot);                         \
@@ -129,6 +131,107 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     if (!ctx->access_token || !ctx->token_type || ctx->expires_in < 60) {
         flb_sds_destroy(ctx->access_token);
         flb_sds_destroy(ctx->token_type);
+        ctx->expires_in = 0;
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/*
+ * Responses from the IAM credentials API have a slightly different response
+ * format than responses from the metadata server.
+ */
+int flb_oauth2_parse_delegated_json_response(const char *json_data, size_t json_size,
+                                             struct flb_oauth2 *ctx)
+{
+    int i;
+    int ret;
+    int key_len;
+    int val_len;
+    int tokens_size = 32;
+    const char *key;
+    const char *val;
+    jsmn_parser parser;
+    jsmntok_t *t;
+    jsmntok_t *tokens;
+    struct tm tm;
+
+    jsmn_init(&parser);
+    tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
+    if (!tokens) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
+    if (ret <= 0) {
+        flb_error("[oauth2] cannot parse payload:\n%s", json_data);
+        flb_free(tokens);
+        return -1;
+    }
+
+    t = &tokens[0];
+    if (t->type != JSMN_OBJECT) {
+        flb_error("[oauth2] invalid JSON response:\n%s", json_data);
+        flb_free(tokens);
+        return -1;
+    }
+
+    /* Parse JSON tokens */
+    for (i = 1; i < ret; i++) {
+        t = &tokens[i];
+
+        if (t->type != JSMN_STRING) {
+            continue;
+        }
+
+        if (t->start == -1 || t->end == -1 || (t->start == 0 && t->end == 0)){
+            break;
+        }
+
+        /* Key */
+        key = json_data + t->start;
+        key_len = (t->end - t->start);
+
+        /* Value */
+        i++;
+        t = &tokens[i];
+        val = json_data + t->start;
+        val_len = (t->end - t->start);
+
+        if (key_cmp(key, key_len, "accessToken") == 0) {
+            // The access_token field is used by two paths;
+            // flb_oauth2_parse_delegated_json_response and
+            // flb_oauth2_parse_json_response. We release any existing access
+            // token prior to assign a new one to avoid memory leaks.
+            flb_sds_destroy(ctx->access_token);
+
+            ctx->access_token = flb_sds_create_len(val, val_len);
+        }
+        else if (key_cmp(key, key_len, "expireTime") == 0) {
+            if (strptime(val, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
+                flb_error("[oauth2] unable to parse time:\n%s", val);
+                flb_free(tokens);
+                return -1;
+            }
+	    tm.tm_isdst = -1;
+            ctx->expires_in = mktime(&tm) - time(NULL);
+
+            /*
+             * Our internal expiration time must be lower that the one set
+             * by the remote end-point, so we can use valid cached values
+             * if a token renewal is in place. So we decrease the expire
+             * interval -10%.
+             */
+            ctx->expires_in -= (ctx->expires_in * 0.10);
+        }
+    }
+
+    flb_free(tokens);
+    if (!ctx->access_token || !ctx->token_type || ctx->expires_in < 60) {
+        flb_sds_destroy(ctx->access_token);
         ctx->expires_in = 0;
         return -1;
     }

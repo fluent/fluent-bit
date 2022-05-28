@@ -25,6 +25,9 @@
 /* Metadata server URL */
 #define FLB_STD_METADATA_SERVER "http://metadata.google.internal"
 
+/* IAM Credential API URL */
+#define FLB_STD_IAMCREDS_SERVER "https://iamcredentials.googleapis.com"
+
 /* Project ID metadata URI */
 #define FLB_STD_METADATA_PROJECT_ID_URI "/computeMetadata/v1/project/project-id"
 
@@ -36,6 +39,9 @@
 
 /* Service account metadata URI */
 #define FLB_STD_METADATA_SERVICE_ACCOUNT_URI "/computeMetadata/v1/instance/service-accounts/"
+
+/* IAM Creds URI for delegated */
+#define FLB_STD_IAMCREDS_SERVICE_ACCOUNT_URI "/v1/projects/-/serviceAccounts/"
 
 /* Max size of token response from metadata server */
 #define FLB_STD_METADATA_TOKEN_SIZE_MAX 14336

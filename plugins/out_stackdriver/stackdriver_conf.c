@@ -369,6 +369,16 @@ struct flb_stackdriver *flb_stackdriver_conf_create(struct flb_output_instance *
         ctx->client_email = ctx->creds->client_email;
     }
 
+    flb_plg_debug(ctx->ins, "final_service_account_email set to %s", ctx->final_service_account_email);
+    flb_plg_debug(ctx->ins, "delegation_chain set to %s", ctx->delegation_chain);
+    ctx->use_delegates = NULL;
+    if ((ctx->final_service_account_email != NULL) && (ctx->delegation_chain != NULL)) {
+        ctx->use_delegates = true;
+    	flb_plg_info(ctx->ins, "using delegation chain to assume %s with renewals every %s", 
+		     ctx->final_service_account_email,
+		     ctx->token_lifetime);
+    }
+
     /*
      * If only client email has been provided, fetch token from
      * the GCE metadata server.
@@ -598,6 +608,10 @@ int flb_stackdriver_conf_destroy(struct flb_stackdriver *ctx)
 
     if (ctx->metadata_u) {
         flb_upstream_destroy(ctx->metadata_u);
+    }
+
+    if (ctx->iamcredentials_u) {
+        flb_upstream_destroy(ctx->iamcredentials_u);
     }
 
     if (ctx->u) {

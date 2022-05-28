@@ -1073,6 +1073,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
                                      io_flags, ins->tls);
     ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
                                               FLB_IO_TCP, NULL);
+    ctx->iamcredentials_u = flb_upstream_create_url(config, FLB_STD_IAMCREDS_SERVER,
+                                                    io_flags, ins->tls);
 
     /* Create oauth2 context */
     ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
@@ -1085,6 +1087,10 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "metadata upstream creation failed");
         return -1;
     }
+    if (!ctx->iamcredentials_u) {
+        flb_plg_error(ctx->ins, "iamcredentials upstream creation failed");
+        return -1;
+    }
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         return -1;
@@ -1093,6 +1099,8 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
 
     /* Metadata Upstream Sync flags */
     ctx->metadata_u->flags &= ~FLB_IO_ASYNC;
+    /* IAM Credentials Upstream Sync flags */
+    ctx->iamcredentials_u->flags &= ~FLB_IO_ASYNC;
 
     if (ins->test_mode == FLB_FALSE) {
         /* Retrieve oauth2 token */
@@ -2536,6 +2544,21 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "custom_k8s_regex", DEFAULT_TAG_REGEX,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, custom_k8s_regex),
       "Set a custom kubernetes regex filter"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "final_service_account_email", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, final_service_account_email),
+      "Service account that will be used to communicate with stackdriver"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "delegation_chain", (char *)NULL,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, delegation_chain),
+      "delegation chain array"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "token_lifetime", DEFAULT_TOKEN_LIFETIME,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, token_lifetime),
+      "lifetime of assumed token (default: 3600s)"
     },
     /* EOF */
     {0}
