@@ -97,6 +97,18 @@ int callback_test(void* data, size_t size, void* cb_data)
     return 0;
 }
 
+int callback_cat(void* data, size_t size, void* cb_data)
+{
+    flb_sds_t *outbuf = cb_data;
+    if (size > 0) {
+        flb_debug("[test_filter_lua] received message: %s", data);
+        pthread_mutex_lock(&result_mutex);
+        flb_sds_cat_safe(outbuf, data, size);
+        pthread_mutex_unlock(&result_mutex);
+    }
+    return 0;
+}
+
 void delete_script()
 {
     unlink(TMP_LUA_PATH);
@@ -621,6 +633,80 @@ void flb_test_drop_all_records(void)
     flb_destroy(ctx);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/5496 */
+void flb_test_split_record(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    struct flb_lib_out_cb cb_data;
+    char *output = NULL;
+    flb_sds_t outbuf = flb_sds_create("");
+    char *input = "[0, {\"x\": [ "
+        "{\"a1\":\"aa\"}, "
+        "{\"b1\":\"bb\"}, "
+        "{\"c1\":\"cc\"} ]}]";
+    const char *expected =
+        "[5.000000,{\"a1\":\"aa\"}]"
+        "[5.000000,{\"b1\":\"bb\"}]"
+        "[5.000000,{\"c1\":\"cc\"}]";
+    char *script_body = ""
+      "function lua_main(tag, timestamp, record)\n"
+      "    return 1, 5, record.x\n"
+      "end\n";
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Prepare output callback context*/
+    cb_data.cb = callback_cat;
+    cb_data.data = &outbuf;
+
+    ret = create_script(script_body, strlen(script_body));
+    TEST_CHECK(ret == 0);
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "*",
+                         "call", "lua_main",
+                         "script", TMP_LUA_PATH,
+                         NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Lib output */
+    out_ffd = flb_output(ctx, (char *) "lib", (void *)&cb_data);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "format", "json",
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret==0);
+
+    flb_lib_push(ctx, in_ffd, input, strlen(input));
+    sleep(1);
+    if (!TEST_CHECK(!strcmp(outbuf, expected))) {
+        TEST_MSG("expected:\n%s\ngot:\n%s\n", expected, outbuf);
+    }
+
+    /* clean up */
+    flb_lib_free(output);
+    delete_script();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_sds_destroy(outbuf);
+}
+
 TEST_LIST = {
     {"hello_world",  flb_test_helloworld},
     {"append_tag",   flb_test_append_tag},
@@ -629,5 +715,6 @@ TEST_LIST = {
     {"type_array_key", flb_test_type_array_key},
     {"array_contains_null", flb_test_array_contains_null},
     {"drop_all_records", flb_test_drop_all_records},
+    {"split_record", flb_test_split_record},
     {NULL, NULL}
 };
