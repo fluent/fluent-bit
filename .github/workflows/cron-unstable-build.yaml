@@ -13,8 +13,8 @@ on:
   # Run nightly build at this time, bit of trial and error but this seems good.
   schedule:
   - cron: "0 6 * * *"   # master build
-  - cron: "0 12 * * *"  # 1.9 build
   # Not available currently so will fail until it is
+  # - cron: "0 12 * * *"  # 1.9 build
   - cron: "0 18 * * *"  # 1.8 build
   # A 1.8 build requires merging all the changes from master to handle packaging from local
 
