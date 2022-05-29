@@ -309,9 +309,9 @@ cleanup:
     return out_ret;
 }
 
-static int http_gelf(struct flb_out_http *ctx,
-                     const char *data, uint64_t bytes,
-                     const char *tag, int tag_len)
+static int compose_payload_gelf(struct flb_out_http *ctx,
+                                const char *data, uint64_t bytes,
+                                void **out_body, size_t *out_size)
 {
     flb_sds_t s;
     flb_sds_t tmp = NULL;
@@ -322,13 +322,13 @@ static int http_gelf(struct flb_out_http *ctx,
     msgpack_object map;
     msgpack_object *obj;
     struct flb_time tm;
-    int ret;
 
     size = bytes * 1.5;
 
     /* Allocate buffer for our new payload */
     s = flb_sds_create_size(size);
     if (!s) {
+        flb_plg_error(ctx->ins, "flb_sds_create_size failed");
         return FLB_RETRY;
     }
 
@@ -366,12 +366,49 @@ static int http_gelf(struct flb_out_http *ctx,
         }
         s = tmp;
     }
+    *out_body = s;
+    *out_size = flb_sds_len(s);
 
-    ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len, NULL);
-    flb_sds_destroy(s);
     msgpack_unpacked_destroy(&result);
 
-    return ret;
+    return FLB_OK;
+}
+
+static int compose_payload(struct flb_out_http *ctx,
+                           const void *in_body, size_t in_size,
+                           void **out_body, size_t *out_size)
+{
+    flb_sds_t encoded;
+
+    *out_body = NULL;
+    *out_size = 0;
+
+    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
+        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
+
+        encoded = flb_pack_msgpack_to_json_format(in_body,
+                                                  in_size,
+                                                  ctx->out_format,
+                                                  ctx->json_date_format,
+                                                  ctx->date_key);
+        if (encoded == NULL) {
+            flb_plg_error(ctx->ins, "failed to convert json");
+            return FLB_ERROR;
+        }
+        *out_body = (void*)encoded;
+        *out_size = flb_sds_len(encoded);
+    }
+    else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
+        return compose_payload_gelf(ctx, in_body, in_size, out_body, out_size);
+    }
+    /*
+       Nothing to do, if the format is msgpack
+    else {
+    }
+    */
+
+    return FLB_OK;
 }
 
 static char **extract_headers(msgpack_object *obj) {
@@ -530,8 +567,9 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
                           struct flb_config *config)
 {
     int ret = FLB_ERROR;
-    flb_sds_t json;
     struct flb_out_http *ctx = out_context;
+    void *out_body;
+    size_t out_size;
     (void) i_ins;
 
     if (ctx->body_key) {
@@ -542,30 +580,27 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
                           "failed to post requests body key \"%s\"", ctx->body_key);
         }
     }
-    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
-        (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
-
-        json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                               event_chunk->size,
-                                               ctx->out_format,
-                                               ctx->json_date_format,
-                                               ctx->date_key);
-        if (json != NULL) {
-            ret = http_post(ctx, json, flb_sds_len(json),
-                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
-            flb_sds_destroy(json);
-        }
-    }
-    else if (ctx->out_format == FLB_HTTP_OUT_GELF) {
-        ret = http_gelf(ctx,
-                        event_chunk->data, event_chunk->size,
-                        event_chunk->tag, flb_sds_len(event_chunk->tag));
-    }
     else {
-        ret = http_post(ctx,
-                        event_chunk->data, event_chunk->size,
-                        event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+        ret = compose_payload(ctx, event_chunk->data, event_chunk->size,
+                              &out_body, &out_size);
+        if (ret != FLB_OK) {
+            FLB_OUTPUT_RETURN(ret);
+        }
+
+        if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+            (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
+            (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
+            (ctx->out_format == FLB_HTTP_OUT_GELF)) {
+            ret = http_post(ctx, out_body, out_size,
+                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+            flb_sds_destroy(out_body);
+        }
+        else {
+            /* msgpack */
+            ret = http_post(ctx,
+                            event_chunk->data, event_chunk->size,
+                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+        }
     }
 
     FLB_OUTPUT_RETURN(ret);
@@ -698,6 +733,25 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+static int cb_http_format_test(struct flb_config *config,
+                               struct flb_input_instance *ins,
+                               void *plugin_context,
+                               void *flush_ctx,
+                               const char *tag, int tag_len,
+                               const void *data, size_t bytes,
+                               void **out_data, size_t *out_size)
+{
+    struct flb_out_http *ctx = plugin_context;
+    int ret;
+
+    ret = compose_payload(ctx, data, bytes, out_data, out_size);
+    if (ret != FLB_OK) {
+        flb_error("ret=%d", ret);
+        return -1;
+    }
+    return 0;
+}
+
 /* Plugin reference */
 struct flb_output_plugin out_http_plugin = {
     .name        = "http",
@@ -707,6 +761,10 @@ struct flb_output_plugin out_http_plugin = {
     .cb_flush    = cb_http_flush,
     .cb_exit     = cb_http_exit,
     .config_map  = config_map,
+
+    /* for testing */
+    .test_formatter.callback = cb_http_format_test,
+
     .flags       = FLB_OUTPUT_NET | FLB_IO_OPT_TLS,
     .workers     = 2
 };
