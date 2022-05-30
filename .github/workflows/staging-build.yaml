@@ -96,7 +96,7 @@ jobs:
 
       - name: Display structure of downloaded files
         run: |
-          ls -R
+          ls -R artifacts/
         shell: bash
 
       - name: Push schema to S3 bucket

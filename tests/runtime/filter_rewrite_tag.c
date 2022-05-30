@@ -38,52 +38,6 @@ struct expect_str {
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int  num_output = 0;
 
-/* Callback to check expected results */
-static int cb_check_result(void *record, size_t size, void *data)
-{
-    char *p;
-    char *result;
-    struct expect_str *expected;
-
-    expected = (struct expect_str*)data;
-    result = (char *) record;
-
-    if (!TEST_CHECK(expected != NULL)) {
-        flb_error("expected is NULL");
-    }
-    if (!TEST_CHECK(result != NULL)) {
-        flb_error("result is NULL");
-    }
-
-    while(expected != NULL && expected->str != NULL) {
-        if (expected->found == FLB_TRUE) {
-            p = strstr(result, expected->str);
-            if(!TEST_CHECK(p != NULL)) {
-                flb_error("Expected to find: '%s' in result '%s'",
-                          expected->str, result);
-            }
-        }
-        else {
-            p = strstr(result, expected->str);
-            if(!TEST_CHECK(p == NULL)) {
-                flb_error("'%s' should be removed in result '%s'",
-                          expected->str, result);
-            }
-        }
-
-        /*
-         * If you want to debug your test
-         *
-         * printf("Expect: '%s' in result '%s'", expected, result);
-         */
-
-        expected++;
-    }
-
-    flb_free(record);
-    return 0;
-}
-
 static int cb_count_msgpack(void *record, size_t size, void *data)
 {
     msgpack_unpacked result;

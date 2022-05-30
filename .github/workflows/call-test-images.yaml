@@ -45,7 +45,7 @@ jobs:
         uses: sigstore/cosign-installer@main
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -87,7 +87,7 @@ jobs:
             expected: arm
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -136,7 +136,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -144,7 +144,7 @@ jobs:
 
       - name: Set up QEMU using standard action
         if: ${{ matrix.arch != 'linux/arm64' }}
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v2
 
       # Without this QEMU fails for ARM64
       - name: Set up binary emulation for QEMU

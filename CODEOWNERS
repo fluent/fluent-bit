@@ -23,6 +23,7 @@
 /dockerfiles/            @niedbalski @patrick-stephens
 /packaging/              @niedbalski @patrick-stephens
 /codebase-structure.svg  @niedbalski @patrick-stephens
+/install.sh              @niedbalski @patrick-stephens
 
 # Core: Signv4
 # ------------

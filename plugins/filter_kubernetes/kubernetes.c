@@ -854,6 +854,11 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, kubelet_port),
      "kubelet port to connect with when using kubelet"
     },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_token_ttl", "10m",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_token_ttl),
+     "kubernetes token ttl, until it is reread from the token file. Default: 10m"
+    },
     /*
      * Set TTL for K8s cached metadata 
      */
