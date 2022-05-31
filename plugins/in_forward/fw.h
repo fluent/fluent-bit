@@ -36,6 +36,8 @@ struct flb_in_fw_config {
 
     /* Unix Socket (TCP only) */
     char *unix_path;                /* Unix path for socket        */
+    unsigned int unix_perm;         /* Permission for socket       */
+    flb_sds_t unix_perm_str;        /* Permission (config map)     */
 
     int coll_fd;
     struct mk_list connections;     /* List of active connections */

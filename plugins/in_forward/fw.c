@@ -26,6 +26,7 @@
 #ifdef FLB_HAVE_UNIX_SOCKET
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 #endif
 
 #include "fw.h"
@@ -58,6 +59,16 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
         flb_errno();
         close(fd);
         return -1;
+    }
+
+    if (ctx->unix_perm_str) {
+        if (chmod(address.sun_path, ctx->unix_perm)) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
+                      address.sun_path, ctx->unix_perm);
+            close(fd);
+            return -1;
+        }
     }
 
     if (listen(fd, 5) != 0) {
@@ -216,6 +227,11 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_path),
     "The path to unix socket to receive a Forward message."
    },
+    {
+     FLB_CONFIG_MAP_STR, "unix_perm", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_in_fw_config, unix_perm_str),
+     "Set the permissions for the UNIX socket"
+    },
    {
     FLB_CONFIG_MAP_SIZE, "buffer_chunk_size", FLB_IN_FW_CHUNK_SIZE,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_chunk_size),
