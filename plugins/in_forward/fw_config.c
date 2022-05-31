@@ -53,6 +53,12 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         snprintf(tmp, sizeof(tmp) - 1, "%d", i_ins->host.port);
         config->tcp_port = flb_strdup(tmp);
     }
+    else {
+        /* Unix socket mode */
+        if (config->unix_perm_str) {
+            config->unix_perm = strtol(config->unix_perm_str, NULL, 8) & 07777;
+        }
+    }
 
     if (!config->unix_path) {
         flb_debug("[in_fw] Listen='%s' TCP_Port=%s",
