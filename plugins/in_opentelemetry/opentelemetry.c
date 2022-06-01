@@ -172,5 +172,5 @@ struct flb_input_plugin in_opentelemetry_plugin = {
     .cb_exit      = in_opentelemetry_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET,
-    .event_type   = FLB_INPUT_METRICS
+    .event_type   = FLB_INPUT_LOGS | FLB_INPUT_METRICS 
 };
