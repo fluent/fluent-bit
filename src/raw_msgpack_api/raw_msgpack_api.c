@@ -191,10 +191,12 @@ void prepare_socket_names(raw_msgpack_api_context_t* raw_ctx, const char* output
     bool is_host = strlen(host) > 0;
     bool is_port = strlen(port) > 0;
 
-    sprintf(postfix, "%s_%s_%s_%s", (is_prefix ? socket_prefix      : "-"),
-                                    (is_plugin ? output_plugin_name : "defPluguin"),
-                                    (is_host   ? host               : "defHost"),
-                                    (is_port   ? port               : "defPort"));
+    sprintf(postfix, "%s_%s_%s_%s_%p",
+            (is_prefix ? socket_prefix      : "-"),
+            (is_plugin ? output_plugin_name : "defPluguin"),
+            (is_host   ? host               : "defHost"),
+            (is_port   ? port               : "defPort"),
+            (void*) raw_ctx);
 
     get_socket_path(CLIENT_SOCK_PATH, postfix, raw_ctx->client_addr );
     get_socket_path(SERVER_SOCK_PATH, postfix, raw_ctx->server_addr);
