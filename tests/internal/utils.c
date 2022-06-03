@@ -375,6 +375,9 @@ struct proxy_url_check proxy_url_checks[] = {
      "http", "proxy.com", "80", NULL, NULL},
     {0, "http://proxy.com:8080",
      "http", "proxy.com", "8080", NULL, NULL},
+    /* issue #5530. Password contains @ */
+    {0, "http://example_user:example_pass_w_@_char@proxy.com:8080",
+     "http", "proxy.com", "8080", "example_user", "example_pass_w_@_char"},
     {-1, "https://proxy.com:8080",
      NULL, NULL, NULL, NULL, NULL}
 
