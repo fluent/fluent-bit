@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
 
 #ifdef FLB_HAVE_SIGNV4
@@ -38,6 +39,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <errno.h>
 
@@ -69,9 +71,43 @@ static int cb_http_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static void append_headers(struct flb_http_client *c,
+                           char **headers)
+{
+    int i;
+    char *header_key;
+    char *header_value;
+
+    i = 0;
+    header_key = NULL;
+    header_value = NULL;
+    while (*headers) {
+        if (i % 2 == 0) {
+            header_key = *headers;
+        }
+        else {
+            header_value = *headers;
+        }
+        if (header_key && header_value) {
+            flb_http_add_header(c,
+                                header_key,
+                                strlen(header_key),
+                                header_value,
+                                strlen(header_value));
+            flb_free(header_key);
+            flb_free(header_value);
+            header_key = NULL;
+            header_value = NULL;
+        }
+        headers++;
+        i++;
+    }
+}
+
 static int http_post(struct flb_out_http *ctx,
                      const void *body, size_t body_len,
-                     const char *tag, int tag_len)
+                     const char *tag, int tag_len,
+                     char **headers)
 {
     int ret;
     int out_ret = FLB_OK;
@@ -136,7 +172,10 @@ static int http_post(struct flb_out_http *ctx,
     c->cb_ctx = ctx->ins->callback;
 
     /* Append headers */
-    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+    if (headers) {
+        append_headers(c, headers);
+    }
+    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
         (ctx->out_format == FLB_HTTP_OUT_GELF)) {
@@ -328,10 +367,159 @@ static int http_gelf(struct flb_out_http *ctx,
         s = tmp;
     }
 
-    ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len);
+    ret = http_post(ctx, s, flb_sds_len(s), tag, tag_len, NULL);
     flb_sds_destroy(s);
     msgpack_unpacked_destroy(&result);
 
+    return ret;
+}
+
+static char **extract_headers(msgpack_object *obj) {
+    size_t i;
+    char **headers = NULL;
+    size_t str_count;
+    msgpack_object_map map;
+    msgpack_object_str k;
+    msgpack_object_str v;
+
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+        goto err;
+    }
+
+    map = obj->via.map;
+    str_count = map.size * 2 + 1;
+    headers = flb_calloc(str_count, sizeof *headers);
+
+    if (!headers) {
+        goto err;
+    }
+
+    for (i = 0; i < map.size; i++) {
+        if (map.ptr[i].key.type != MSGPACK_OBJECT_STR ||
+            map.ptr[i].val.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
+
+        k = map.ptr[i].key.via.str;
+        v = map.ptr[i].val.via.str;
+
+        headers[i * 2] = strndup(k.ptr, k.size);
+
+        if (!headers[i]) {
+            goto err;
+        }
+
+        headers[i * 2 + 1] = strndup(v.ptr, v.size);
+
+        if (!headers[i]) {
+            goto err;
+        }
+    }
+
+    return headers;
+
+err:
+    if (headers) {
+        for (i = 0; i < str_count; i++) {
+            if (headers[i]) {
+                flb_free(headers[i]);
+            }
+        }
+        flb_free(headers);
+    }
+    return NULL;
+}
+static int post_all_requests(struct flb_out_http *ctx,
+                             const char *data, size_t size,
+                             flb_sds_t body_key,
+                             flb_sds_t headers_key,
+                             struct flb_event_chunk *event_chunk)
+{
+    struct flb_time t;
+    msgpack_unpacked result;
+    msgpack_object root;
+    msgpack_object map;
+    msgpack_object *obj;
+    msgpack_object *k;
+    msgpack_object *v;
+    msgpack_object *start_key;
+    const char *body;
+    size_t body_size;
+    bool body_found;
+    bool headers_found;
+    char **headers;
+    size_t off = 0;
+    size_t record_count = 0;
+    int ret = 0;
+
+    msgpack_unpacked_init(&result);
+
+    while (msgpack_unpack_next(&result, data, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        headers = NULL;
+        body_found = false;
+        headers_found = false;
+        root = result.data;
+
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            ret = -1;
+            break;
+        }
+
+        if (root.via.array.size != 2) {
+            ret = -1;
+            break;
+        }
+
+        flb_time_pop_from_msgpack(&t, &result, &obj);
+
+        map = root.via.array.ptr[1];
+        if (map.type != MSGPACK_OBJECT_MAP) {
+            ret = -1;
+            break;
+        }
+
+        if (!flb_ra_get_kv_pair(ctx->body_ra, map, &start_key, &k, &v)) {
+            if (v->type == MSGPACK_OBJECT_STR || v->type == MSGPACK_OBJECT_BIN) {
+                body = v->via.str.ptr;
+                body_size = v->via.str.size;
+                body_found = true;
+            }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "failed to extract body using pattern \"%s\" "
+                             "(must be a msgpack string or bin)", ctx->body_key);
+            }
+        }
+
+        if (!flb_ra_get_kv_pair(ctx->headers_ra, map, &start_key, &k, &v)) {
+            headers = extract_headers(v);
+            if (headers) {
+                headers_found = true;
+            }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "error extracting headers using pattern \"%s\"",
+                             ctx->headers_key);
+            }
+        }
+
+        if (body_found && headers_found) {
+            flb_plg_trace(ctx->ins, "posting record %d", record_count++);
+            ret = http_post(ctx, body, body_size, event_chunk->tag,
+                    flb_sds_len(event_chunk->tag), headers);
+        }
+        else {
+            flb_plg_warn(ctx->ins,
+                         "failed to extract body/headers using patterns "
+                         "\"%s\" and \"%s\"", ctx->body_key, ctx->headers_key);
+            ret = -1;
+            continue;
+        }
+
+        flb_free(headers);
+    }
+
+    msgpack_unpacked_destroy(&result);
     return ret;
 }
 
@@ -346,7 +534,15 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     struct flb_out_http *ctx = out_context;
     (void) i_ins;
 
-    if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
+    if (ctx->body_key) {
+        ret = post_all_requests(ctx, event_chunk->data, event_chunk->size,
+                                ctx->body_key, ctx->headers_key, event_chunk);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins,
+                          "failed to post requests body key \"%s\"", ctx->body_key);
+        }
+    }
+    else if ((ctx->out_format == FLB_PACK_JSON_FORMAT_JSON) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
 
@@ -357,7 +553,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
                                                ctx->date_key);
         if (json != NULL) {
             ret = http_post(ctx, json, flb_sds_len(json),
-                            event_chunk->tag, flb_sds_len(event_chunk->tag));
+                            event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
             flb_sds_destroy(json);
         }
     }
@@ -369,7 +565,7 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
     else {
         ret = http_post(ctx,
                         event_chunk->data, event_chunk->size,
-                        event_chunk->tag, flb_sds_len(event_chunk->tag));
+                        event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
     }
 
     FLB_OUTPUT_RETURN(ret);
@@ -486,6 +682,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "gelf_level_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_out_http, gelf_fields.level_key),
      "Specify the key to use for the 'level' in gelf format"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "body_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, body_key),
+     "Specify the key which contains the body"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "headers_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_http, headers_key),
+     "Specify the key which contains the headers"
     },
 
     /* EOF */
