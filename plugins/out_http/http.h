@@ -71,8 +71,12 @@ struct flb_out_http {
     /* which record key to use as body */
     flb_sds_t body_key;
 
+    struct flb_record_accessor *body_ra;
+
     /* override headers with contents of the map in the key specified here */
     flb_sds_t headers_key;
+
+    struct flb_record_accessor *headers_ra;
 
     /* Include tag in header */
     flb_sds_t header_tag;

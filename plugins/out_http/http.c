@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
 
 #ifdef FLB_HAVE_SIGNV4
@@ -441,14 +442,12 @@ static int post_all_requests(struct flb_out_http *ctx,
     msgpack_object *obj;
     msgpack_object *k;
     msgpack_object *v;
+    msgpack_object *start_key;
     const char *body;
     size_t body_size;
     bool body_found;
     bool headers_found;
     char **headers;
-    size_t len;
-    size_t key_count;
-    size_t i;
     size_t off = 0;
     size_t record_count = 0;
     int ret = 0;
@@ -478,46 +477,43 @@ static int post_all_requests(struct flb_out_http *ctx,
             ret = -1;
             break;
         }
-        key_count = map.via.map.size;
 
-        for (i = 0; i < key_count; i++) {
-            k = &map.via.map.ptr[i].key;
-            v = &map.via.map.ptr[i].val;
-
-            if (k->type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-
-            len = k->via.str.size;
-            if (len == flb_sds_len(body_key) &&
-                !memcmp(k->via.str.ptr, body_key, len)) {
-                if (v->type != MSGPACK_OBJECT_STR && v->type != MSGPACK_OBJECT_BIN) {
-                    flb_plg_error(ctx->ins,
-                            "body must be a msgpack string");
-                    continue;
-                }
-
-                body_size = v->via.str.size;
+        if (!flb_ra_get_kv_pair(ctx->body_ra, map, &start_key, &k, &v)) {
+            if (v->type == MSGPACK_OBJECT_STR || v->type == MSGPACK_OBJECT_BIN) {
                 body = v->via.str.ptr;
+                body_size = v->via.str.size;
                 body_found = true;
             }
-            else if (len == flb_sds_len(headers_key) &&
-                !memcmp(k->via.str.ptr, headers_key, len)) {
-                headers = extract_headers(v);
-                if (!headers) {
-                    flb_plg_error(ctx->ins,
-                            "failed to extract headers from key \"%s\"",
-                            ctx->headers_key);
-                    continue;
-                }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "failed to extract body using pattern \"%s\" "
+                             "(must be a msgpack string or bin)", ctx->body_key);
+            }
+        }
+
+        if (!flb_ra_get_kv_pair(ctx->headers_ra, map, &start_key, &k, &v)) {
+            headers = extract_headers(v);
+            if (headers) {
                 headers_found = true;
+            }
+            else {
+                flb_plg_warn(ctx->ins,
+                             "error extracting headers using pattern \"%s\"",
+                             ctx->headers_key);
             }
         }
 
         if (body_found && headers_found) {
             flb_plg_trace(ctx->ins, "posting record %d", record_count++);
             ret = http_post(ctx, body, body_size, event_chunk->tag,
-                            flb_sds_len(event_chunk->tag), headers);
+                    flb_sds_len(event_chunk->tag), headers);
+        }
+        else {
+            flb_plg_warn(ctx->ins,
+                         "failed to extract body/headers using patterns "
+                         "\"%s\" and \"%s\"", ctx->body_key, ctx->headers_key);
+            ret = -1;
+            continue;
         }
 
         flb_free(headers);
