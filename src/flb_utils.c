@@ -1037,7 +1037,7 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
     proto_sep += 3;
 
     /* Seperate `username:password` and `host:port` */
-    at_sep = strchr(proto_sep, '@');
+    at_sep = strrchr(proto_sep, '@');
     if (at_sep) {
         /* Parse username:passwrod part. */
         tmp = strchr(proto_sep, ':');
