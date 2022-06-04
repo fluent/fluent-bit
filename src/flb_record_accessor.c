@@ -251,6 +251,7 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
     size_t hint = 0;
     char *p;
     flb_sds_t buf = NULL;
+    flb_sds_t prepend_buf = NULL;
     struct flb_env *env;
     struct mk_list *head;
     struct flb_ra_parser *rp;
@@ -277,6 +278,20 @@ struct flb_record_accessor *flb_ra_create(char *str, int translate_env)
             return NULL;
         }
         flb_env_destroy(env);
+        p = buf;
+    }
+
+    /* make initial dollar sign optional */
+    if (p[0] != '$') {
+        prepend_buf = flb_sds_create("$");
+        if (buf) {
+            prepend_buf = flb_sds_cat(prepend_buf, buf, flb_sds_len(buf));
+            flb_sds_destroy(buf);
+            buf = prepend_buf;
+        }
+        else {
+            buf = flb_sds_cat(prepend_buf, p, strlen(p));
+        }
         p = buf;
     }
 
