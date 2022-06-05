@@ -168,6 +168,15 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         ctx->cockroachdb = FLB_FALSE;
     }
 
+    /* Schema Support */
+    tmp = flb_output_get_property("schema", ins);
+    if (tmp) {
+        ctx->schema = flb_sds_create(tmp);
+    }
+    else {
+        ctx->schema = NULL
+    }
+
     ret = pgsql_start_connections(ctx);
     if (ret) {
         return -1;

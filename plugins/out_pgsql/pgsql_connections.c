@@ -73,6 +73,20 @@ void *pgsql_create_connection(struct flb_pgsql_config *ctx)
     flb_plg_info(ctx->ins, "switching postgresql connection "
                  "to non-blocking mode");
 
+    if (ctx->schema != NULL) {
+        escaped_schema = PQescapeLiteral(conn->conn, ctx->schema, flb_sds_len(ctx->schema));
+        res = PQexec(conn->conn, "SET search_path = %s", escaped_schema);
+        PQfreemem(escaped_schema);
+        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+            flb_plg_error(ctx->ins,
+                    "failed set search_path=%s with error: %s",
+                    ctx->schema, PQerrorMessage(conn->conn));
+            PQfinish(conn->conn);
+            flb_free(conn);
+            return NULL;
+        }
+    }
+
     if (PQsetnonblocking(conn->conn, 1) != 0) {
         flb_plg_error(ctx->ins, "non-blocking mode not set");
         PQfinish(conn->conn);

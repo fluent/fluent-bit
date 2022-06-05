@@ -35,6 +35,7 @@
 #define FLB_PGSQL_MIN_POOL_SIZE 1
 #define FLB_PGSQL_SYNC FLB_FALSE
 #define FLB_PGSQL_COCKROACH FLB_FALSE
+#define FLB_PGSQL_SCHEMA ""
 
 #define FLB_PGSQL_INSERT "INSERT INTO %s SELECT %s, "   \
     "to_timestamp(CAST(value->>'%s' as FLOAT)),"        \
@@ -81,6 +82,8 @@ struct flb_pgsql_config {
 
     /* cockroachdb */
     int cockroachdb;
+    /* schema */
+    char *schema;
 };
 
 void pgsql_conf_destroy(struct flb_pgsql_config *ctx);
