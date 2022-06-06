@@ -144,6 +144,9 @@ struct flb_input_instance {
     int flags;
 
     int id;                              /* instance id                  */
+#ifdef FLB_TRACE
+    int trace_count;                     /* trace count */
+#endif
     int log_level;                       /* log level for this plugin    */
     flb_pipefd_t channel[2];             /* pipe(2) channel              */
     int runs_in_coroutine;               /* instance runs in coroutine ? */

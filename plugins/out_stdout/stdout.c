@@ -138,6 +138,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
     (void) config;
     struct flb_time tmp;
     msgpack_object *p;
+    int i;
 
 #ifdef FLB_HAVE_METRICS
     /* Check if the event type is metrics, handle the payload differently */
@@ -178,6 +179,16 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
             printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
             msgpack_object_print(stdout, *p);
             printf("]\n");
+            for (i = 2; i < result.data.via.array.size; i++) {
+                switch (result.data.via.array.ptr[i].via.u64) {
+                case FLB_TRACE_TYPE_INPUT:
+                    printf("\t[TRACE:INPUT]\n");
+                    break;
+                case FLB_TRACE_TYPE_FILTER:
+                    printf("\t[TRACE]\n");
+                    break;
+                }
+            }
         }
         msgpack_unpacked_destroy(&result);
         flb_free(buf);

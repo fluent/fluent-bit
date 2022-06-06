@@ -231,6 +231,13 @@ if(FLB_STATIC_CONF)
     )
 endif()
 
+if(FLB_TRACE)
+  set(src
+    ${src}
+    "flb_trace.c"
+    )
+endif()
+
 include(CheckSymbolExists)
 check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 

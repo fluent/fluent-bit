@@ -286,6 +286,10 @@ if(FLB_DEV)
   set(FLB_TESTS_INTERNAL    On)
 endif()
 
+if(FLB_TRACE)
+  add_definitions(-DFLB_TRACE=1)
+endif()
+
 # SSL/TLS: add encryption support
 if(FLB_OUT_TD)
   set(FLB_TLS ON)
