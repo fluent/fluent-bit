@@ -1448,6 +1448,13 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         return -1;
     }
 
+#ifdef FLB_TRACE
+    if (flb_trace_input_write(ic, ic->in->trace_count++) == -1) {
+        return -1;
+    }
+    //buf_size = cio_chunk_get_content_size(ic->chunk);
+#endif // FLB_TRACE
+
     /* Update 'input' metrics */
 #ifdef FLB_HAVE_METRICS
     if (ret == CIO_OK) {
@@ -1578,7 +1585,6 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
     flb_input_chunk_protect(in);
-
     return 0;
 }
 
