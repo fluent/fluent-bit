@@ -21,7 +21,7 @@ static int record_resize(msgpack_packer *mp_pck, msgpack_sbuffer *mp_sbuf, void 
 
 	msgpack_unpacked_init(&result);
 	ret = msgpack_unpack_next(&result, buf, buf_size, &off);
-	if (ret != MSGPACK_UNPACK_SUCCESS) {
+	if (ret != MSGPACK_UNPACK_SUCCESS && ret != MSGPACK_UNPACK_CONTINUE) {
 		goto unpack_error;
 	}
 	
@@ -67,7 +67,7 @@ sbuffer_error:
 	return rc;
 }
 
-int flb_trace_filter_write(void *pfilter, void *pic)
+int flb_trace_filter_write(void *pfilter, void *pic, size_t offset)
 {
 	struct flb_filter_instance *filter = (struct flb_filter_instance *)pfilter;
 	struct flb_input_chunk *ic = (struct flb_input_chunk *)pic;
@@ -81,14 +81,13 @@ int flb_trace_filter_write(void *pfilter, void *pic)
 	msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 	
 	cio_chunk_get_content(ic->chunk, &buf, &buf_size);
-	record_resize(&mp_pck, &mp_sbuf, buf, buf_size, 2);
+	record_resize(&mp_pck, &mp_sbuf, &buf[offset], buf_size-offset, 4);
 
 	rc = msgpack_pack_int(&mp_pck, FLB_TRACE_TYPE_FILTER);
 	if (rc == -1) {
 		goto sbuffer_error;
 	}
 
-	rc = msgpack_pack_array(&mp_pck, 3);
 	flb_pack_time_now(&mp_pck);
 	rc = msgpack_pack_str_with_body(&mp_pck, filter->name, strlen(filter->name));
 	if (rc == -1) {
@@ -99,7 +98,7 @@ int flb_trace_filter_write(void *pfilter, void *pic)
 		goto sbuffer_error;
 	}
 
-	rc = flb_input_chunk_write_at(ic, 0, mp_sbuf.data, mp_sbuf.size);
+	rc = flb_input_chunk_write_at(ic, offset, mp_sbuf.data, mp_sbuf.size);
 sbuffer_error:
 	msgpack_sbuffer_destroy(&mp_sbuf);
 	return rc;
