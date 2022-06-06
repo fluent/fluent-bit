@@ -1,11 +1,13 @@
 #include <fcntl.h>
 
 #include <msgpack.h>
+#include <chunkio/chunkio.h>
 
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_trace.h>
+#include <fluent-bit/flb_pack.h>
 
 
 static int record_resize(msgpack_packer *mp_pck, msgpack_sbuffer *mp_sbuf, void *buf, size_t buf_size, int add_size)
@@ -38,7 +40,7 @@ int flb_trace_input_write(struct flb_input_chunk *ic, int trace_id)
 {
 	msgpack_sbuffer mp_sbuf;
 	msgpack_packer mp_pck;
-	void *buf;
+	char *buf;
 	size_t buf_size;
 	char trace_id_buf[256];
 	int slen;
@@ -71,14 +73,14 @@ int flb_trace_filter_write(void *pfilter, void *pic)
 	struct flb_input_chunk *ic = (struct flb_input_chunk *)pic;
 	msgpack_packer mp_pck;
 	msgpack_sbuffer mp_sbuf;
-	void *buf;
+	char *buf;
 	size_t buf_size;
 	int rc = -1;
 
 	msgpack_sbuffer_init(&mp_sbuf);
 	msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 	
-	cio_chunk_get_content(&buf, &buf_size);
+	cio_chunk_get_content(ic->chunk, &buf, &buf_size);
 	record_resize(&mp_pck, &mp_sbuf, buf, buf_size, 2);
 
 	rc = msgpack_pack_int(&mp_pck, FLB_TRACE_TYPE_FILTER);
@@ -87,7 +89,7 @@ int flb_trace_filter_write(void *pfilter, void *pic)
 	}
 
 	rc = msgpack_pack_array(&mp_pck, 3);
-	flb_pack_time_now(mp_pck);
+	flb_pack_time_now(&mp_pck);
 	rc = msgpack_pack_str_with_body(&mp_pck, filter->name, strlen(filter->name));
 	if (rc == -1) {
 		goto sbuffer_error;
