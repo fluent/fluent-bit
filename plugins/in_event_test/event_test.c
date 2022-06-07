@@ -31,7 +31,7 @@
 #define STATUS_ERROR     0
 #define STATUS_PENDING  -1
 
-#define UNIT_TESTS_SIZE  3
+#define UNIT_TESTS_SIZE  5
 #define CALLBACK_TIME    2 /* 2 seconds */
 
 #define SERVER_PORT      "9092"
@@ -48,6 +48,8 @@ struct unit_test tests[] = {
     {0, 0, STATUS_PENDING, "collector time"},
     {1, 0, STATUS_PENDING, "collector fd_event"},
     {2, 0, STATUS_PENDING, "collector fd_server | socket"},
+    {3, 0, STATUS_PENDING, "plugin paused from engine"},
+    {4, 0, STATUS_PENDING, "plugin resumed from engine"},
 };
 
 struct event_test {
@@ -184,19 +186,18 @@ static int cb_collector_server_socket(struct flb_input_instance *ins,
 
     flb_plg_info(ins, "[OK] collector_server_socket");
 
+    /* tell the engine to deliver a pause request */
+    flb_plg_info(ins, "test pause/resume in 5 seconds...");
+    flb_input_test_pause_resume(ins, 5);
+
     /* force an exit */
-    flb_engine_exit(config);
+    //flb_engine_exit(config);
     FLB_INPUT_RETURN(0);
 }
 
 static int cb_collector_server_client(struct flb_input_instance *ins,
                                       struct flb_config *config, void *in_context)
 {
-    int diff;
-    int ret;
-    uint64_t val;
-    time_t now;
-    struct unit_test *ut;
     struct flb_upstream_conn *u_conn;
     struct event_test *ctx = (struct event_test *) in_context;
 
@@ -240,7 +241,7 @@ static struct event_test *config_create(struct flb_input_instance *ins)
 }
 
 /* Initialize plugin */
-static int in_event_test_init(struct flb_input_instance *ins,
+static int cb_event_test_init(struct flb_input_instance *ins,
                               struct flb_config *config, void *data)
 {
     int fd;
@@ -288,7 +289,7 @@ static int in_event_test_init(struct flb_input_instance *ins,
         return -1;
     }
     flb_net_socket_nonblocking(fd);
-    ctx->server_fd = fd;
+        ctx->server_fd = fd;
 
     /* socket server */
     ret = flb_input_set_collector_socket(ins,
@@ -316,8 +317,34 @@ static int in_event_test_init(struct flb_input_instance *ins,
         return -1;
     }
     ctx->upstream = upstream;
+    flb_input_upstream_set(ctx->upstream, ins);
 
     return 0;
+}
+
+static int cb_event_test_pre_run(struct flb_input_instance *ins,
+                                 struct flb_config *config, void *in_context)
+{
+    flb_plg_info(ins, "pre run OK");
+    return -1;
+}
+
+static void cb_event_test_pause(void *data, struct flb_config *config)
+{
+    struct event_test *ctx = data;
+
+    set_unit_test_status(ctx, 3, STATUS_OK);
+    flb_plg_info(ctx->ins, "[OK] engine has paused the plugin");
+}
+
+static void cb_event_test_resume(void *data, struct flb_config *config)
+{
+    struct event_test *ctx = data;
+
+    set_unit_test_status(ctx, 4, STATUS_OK);
+    flb_plg_info(ctx->ins, "[OK] engine has resumed the plugin");
+
+    flb_engine_exit(config);
 }
 
 static int in_event_test_exit(void *data, struct flb_config *config)
@@ -331,14 +358,18 @@ static int in_event_test_exit(void *data, struct flb_config *config)
     for (i = 0; i < UNIT_TESTS_SIZE; i++) {
         ut = &ctx->tests[i];
         if (ut->status != STATUS_OK) {
-            flb_plg_error(ctx->ins, "unit test #%i failed", i);
-            exit(1);
+            flb_plg_error(ctx->ins, "unit test #%i '%s' failed",
+                          i, ut->desc);
+        }
+        else {
+            flb_plg_info(ctx->ins, "unit test #%i '%s' succeeded",
+                         i, ut->desc);
         }
     }
+
     config_destroy(ctx);
     return 0;
 }
-
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
@@ -349,11 +380,13 @@ static struct flb_config_map config_map[] = {
 struct flb_input_plugin in_event_test_plugin = {
     .name         = "event_test",
     .description  = "Event tests for input plugins",
-    .cb_init      = in_event_test_init,
-    .cb_pre_run   = NULL,
-    //.cb_collect   = in_event_test_collect,
+    .cb_init      = cb_event_test_init,
+    .cb_pre_run   = cb_event_test_pre_run,
+    .cb_collect   = NULL,
     .cb_flush_buf = NULL,
+    .cb_pause     = cb_event_test_pause,
+    .cb_resume    = cb_event_test_resume,
     .cb_exit      = in_event_test_exit,
     .config_map   = config_map,
-    .flags        = FLB_INPUT_CORO
+    .flags        = FLB_INPUT_CORO | FLB_INPUT_THREADED
 };
