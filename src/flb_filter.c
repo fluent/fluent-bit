@@ -143,7 +143,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_input_chunk_write_at(ic, write_at, "", 0);
 
 #ifdef FLB_TRACE
-                    flb_trace_filter_write(f_ins, ic, (size_t)0);
+                   // flb_trace_filter_write(f_ins, ic, ic->trace_version++, (size_t)0);
 #endif // FLB_TRACE
 
 
@@ -201,7 +201,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 }
 
 #ifdef FLB_TRACE
-                flb_trace_filter_write(f_ins, ic, write_at);
+                // out_size = flb_trace_filter_write(f_ins, ic, ic->trace_version++, write_at);
+                flb_trace_filter(ic->tracer, (void *)f_ins);
 #endif // FLB_TRACE
 
                 /* Point back the 'data' pointer to the new address */
@@ -219,6 +220,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
         }
     }
 
+    flb_trace_flush(ic->tracer, 0);
     flb_free(ntag);
 }
 

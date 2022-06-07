@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
+#include <fluent-bit/flb_trace.h>
 
 #include <msgpack.h>
 #include "stdout.h"
