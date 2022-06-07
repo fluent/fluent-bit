@@ -648,7 +648,6 @@ int flb_engine_start(struct flb_config *config)
     flb_sched_ctx_init();
     flb_sched_ctx_set(sched);
 
-
     /* Initialize input plugins */
     ret = flb_input_init_all(config);
     if (ret == -1) {
@@ -695,9 +694,6 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
-    /* Initialize collectors */
-    flb_input_collectors_start(config);
-
     /* Prepare routing paths */
     ret = flb_router_io_set(config);
     if (ret == -1) {
@@ -733,6 +729,9 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
+    /* Initialize collectors */
+    flb_input_collectors_start(config);
+
     /*
      * Sched a permanent callback triggered every 1.5 second to let other
      * Fluent Bit components run tasks at that interval.
@@ -766,6 +765,13 @@ int flb_engine_start(struct flb_config *config)
                         flb_warn("[engine] service will shutdown in max %u seconds",
                                  config->grace);
                     }
+
+                    /* mark the runtime as the ingestion is not active and that we are in shutting down mode */
+                    config->is_ingestion_active = FLB_FALSE;
+                    config->is_shutting_down = FLB_TRUE;
+
+                    /* pause all input plugin instances */
+                    flb_input_pause_all(config);
 
                     /*
                      * We are preparing to shutdown, we give a graceful time
@@ -939,12 +945,7 @@ int flb_engine_shutdown(struct flb_config *config)
 int flb_engine_exit(struct flb_config *config)
 {
     int ret;
-    uint64_t val = FLB_ENGINE_EV_STOP;
-
-    config->is_ingestion_active = FLB_FALSE;
-    config->is_shutting_down = FLB_TRUE;
-
-    flb_input_pause_all(config);
+    uint64_t val;
 
     val = FLB_ENGINE_EV_STOP;
     ret = flb_pipe_w(config->ch_manager[1], &val, sizeof(uint64_t));
