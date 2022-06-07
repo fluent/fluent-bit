@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_thread.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
@@ -34,6 +35,7 @@
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_scheduler.h>
 
 struct flb_libco_in_params libco_in_param;
 
@@ -224,6 +226,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         mk_list_init(&instance->collectors);
         mk_list_init(&instance->input_coro_list);
         mk_list_init(&instance->input_coro_list_destroy);
+        mk_list_init(&instance->upstreams);
 
         /* Initialize properties list */
         flb_kv_init(&instance->properties);
@@ -237,9 +240,14 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             }
         }
 
-        /* Plugin requires a Thread context */
+        /* Plugin requires a co-routine context ? */
         if (plugin->flags & FLB_INPUT_CORO) {
             instance->runs_in_coroutine = FLB_TRUE;
+        }
+
+        /* Plugin will run in a separate thread  ? */
+        if (plugin->flags & FLB_INPUT_THREADED) {
+            instance->is_threaded = FLB_TRUE;
         }
 
         instance->mp_total_buf_size = 0;
@@ -347,12 +355,25 @@ int flb_input_name_exists(const char *name, struct flb_config *config)
     return FLB_FALSE;
 }
 
+struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins)
+{
+    struct flb_input_thread_instance *thi;
+
+    if (flb_input_is_threaded(ins)) {
+        thi = ins->thi;
+        return thi->evl;
+    }
+
+    return ins->config->evl;
+}
+
 /* Override a configuration property for the given input_instance plugin */
 int flb_input_set_property(struct flb_input_instance *ins,
                            const char *k, const char *v)
 {
     int len;
     int ret;
+    int enabled;
     ssize_t limit;
     flb_sds_t tmp = NULL;
     struct flb_kv *kv;
@@ -424,6 +445,16 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
         flb_sds_destroy(tmp);
     }
+    else if (prop_key_check("threaded", k, len) == 0 && tmp) {
+        enabled = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+
+        if (enabled == -1) {
+            return -1;
+        }
+
+        ins->is_threaded = enabled;
+    }
     else if (prop_key_check("storage.pause_on_chunks_overlimit", k, len) == 0 && tmp) {
         if (ins->storage_type == CIO_STORE_FS) {
             ret = flb_utils_bool(tmp);
@@ -469,6 +500,10 @@ const char *flb_input_name(struct flb_input_instance *ins)
 
 void flb_input_instance_destroy(struct flb_input_instance *ins)
 {
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct flb_input_collector *collector;
+
     if (ins->alias) {
         flb_sds_destroy(ins->alias);
     }
@@ -534,6 +569,15 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
         mk_event_closesocket(ins->ch_events[1]);
     }
 
+    /* Collectors */
+    if (flb_input_is_threaded(ins)) {
+        mk_list_foreach_safe(head, tmp, &ins->collectors) {
+            collector = mk_list_entry(head, struct flb_input_collector, _head_ins);
+            mk_list_del(&collector->_head_ins);
+            flb_input_collector_destroy(collector);
+        }
+    }
+
     /* Unlink and release */
     mk_list_del(&ins->_head);
 
@@ -556,24 +600,15 @@ int flb_input_coro_id_get(struct flb_input_instance *ins)
     return id;
 }
 
-int flb_input_instance_init(struct flb_input_instance *ins,
-                            struct flb_config *config)
+static int input_instance_channel_events_init(struct flb_input_instance *ins)
 {
     int ret;
-    struct mk_list *config_map;
-    struct flb_input_plugin *p = ins->p;
+    struct mk_event_loop *evl;
 
-    if (ins->log_level == -1 && config->log != NULL) {
-        ins->log_level = config->log->level;
-    }
+    evl = flb_input_event_loop_get(ins);
 
-    /* Skip pseudo input plugins */
-    if (!p) {
-        return 0;
-    }
-
-    /* Input event channel */
-    ret = mk_event_channel_create(config->evl,
+    /* Input event channel: used for co-routines to report return status */
+    ret = mk_event_channel_create(evl,
                                   &ins->ch_events[0],
                                   &ins->ch_events[1],
                                   ins);
@@ -593,6 +628,26 @@ int flb_input_instance_init(struct flb_input_instance *ins,
      * into the Engine when the event is triggered.
      */
     ins->event.type = FLB_ENGINE_EV_INPUT;
+
+    return 0;
+}
+
+int flb_input_instance_init(struct flb_input_instance *ins,
+                            struct flb_config *config)
+{
+    int ret;
+    struct mk_list *config_map;
+    struct flb_input_plugin *p = ins->p;
+
+    if (ins->log_level == -1 && config->log != NULL) {
+        ins->log_level = config->log->level;
+    }
+
+    /* Skip pseudo input plugins */
+    if (!p) {
+        return 0;
+    }
+
 
 #ifdef FLB_HAVE_METRICS
     uint64_t ts;
@@ -668,18 +723,65 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             flb_input_set_property(ins, "tag", ins->name);
         }
 
-        ret = p->cb_init(ins, config, ins->data);
-        if (ret != 0) {
-            flb_error("Failed initialize input %s",
-                      ins->name);
-            flb_input_instance_destroy(ins);
-            return -1;
+        if (flb_input_is_threaded(ins)) {
+            /*
+             * Create a thread for a new instance. Now the plugin initialization callback will be invoked and report an early failure
+             * or an 'ok' status, we will wait for that return value on flb_input_thread_instance_get_status() below.
+             */
+            ret = flb_input_thread_instance_init(config, ins);
+            if (ret != 0) {
+                flb_error("failed initialize input %s",
+                          ins->name);
+                flb_input_instance_destroy(ins);
+                return -1;
+            }
+
+            /* initialize channel events */
+            ret = input_instance_channel_events_init(ins);
+            if (ret != 0) {
+                flb_error("failed initialize channel events on input %s",
+                          ins->name);
+                flb_input_instance_destroy(ins);
+                return -1;
+            }
+        }
+        else {
+            /* initialize channel events */
+            ret = input_instance_channel_events_init(ins);
+            if (ret != 0) {
+                flb_error("failed initialize channel events on input %s",
+                          ins->name);
+            }
+            ret = p->cb_init(ins, config, ins->data);
+            if (ret != 0) {
+                flb_error("failed initialize input %s",
+                          ins->name);
+                flb_input_instance_destroy(ins);
+                return -1;
+            }
         }
     }
 
     return 0;
 }
 
+int flb_input_instance_pre_run(struct flb_input_instance *ins, struct flb_config *config)
+{
+    int ret;
+
+    if (flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_pre_run(config, ins);
+    }
+    else if (ins->p->cb_pre_run) {
+            ret = ins->p->cb_pre_run(ins, config, ins->context);
+            if (ret == -1) {
+                return -1;
+            }
+            return 0;
+    }
+
+    return 0;
+}
 
 /* Initialize all inputs */
 int flb_input_init_all(struct flb_config *config)
@@ -728,9 +830,7 @@ void flb_input_pre_run_all(struct flb_config *config)
             continue;
         }
 
-        if (p->cb_pre_run) {
-            p->cb_pre_run(ins, config, ins->context);
-        }
+        flb_input_instance_pre_run(ins, config);
     }
 }
 
@@ -738,6 +838,12 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
                              struct flb_config *config)
 {
     struct flb_input_plugin *p;
+
+    /* if the instance runs in a separate thread, signal the thread */
+    if (flb_input_is_threaded(ins)) {
+        flb_input_thread_instance_exit(ins);
+        return;
+    }
 
     p = ins->p;
     if (p->cb_exit && ins->context) {
@@ -824,66 +930,117 @@ int flb_input_channel_init(struct flb_input_instance *in)
     return flb_pipe_create(in->channel);
 }
 
-int flb_input_set_collector_time(struct flb_input_instance *in,
+static struct flb_input_collector *collector_create(int type,
+                                                    struct flb_input_instance *ins,
+                                                            int (*cb) (
+                                                            struct flb_input_instance *,
+                                                            struct flb_config *, void *),
+                                                    struct flb_config *config)
+{
+    struct flb_input_collector *coll;
+    struct flb_input_thread_instance *thi;
+
+    coll = flb_calloc(1, sizeof(struct flb_input_collector));
+    if (!coll) {
+        flb_errno();
+        return NULL;
+    }
+
+    coll->id          = collector_id(ins);
+    coll->type        = type;
+    coll->running     = FLB_FALSE;
+    coll->fd_event    = -1;
+    coll->fd_timer    = -1;
+    coll->seconds     = -1;
+    coll->nanoseconds = -1;
+    coll->cb_collect  = cb;
+    coll->instance    = ins;
+    MK_EVENT_ZERO(&coll->event);
+
+    if (flb_input_is_threaded(ins)) {
+        thi = ins->thi;
+        coll->evl = thi->evl;
+    }
+    else {
+        coll->evl = config->evl;
+    }
+
+    /*
+     * Collectors created from a threaded input instance are only added to the
+     * instance `collectors` list. For instances in non-threaded mode, they are
+     * added to both lists, the global config collectors list and the instance
+     * list.
+     */
+    if (!flb_input_is_threaded(ins)) {
+        mk_list_add(&coll->_head, &config->collectors);
+    }
+    mk_list_add(&coll->_head_ins, &ins->collectors);
+
+    return coll;
+}
+
+
+int flb_input_set_collector_time(struct flb_input_instance *ins,
                                  int (*cb_collect) (struct flb_input_instance *,
                                                     struct flb_config *, void *),
                                  time_t seconds,
                                  long   nanoseconds,
                                  struct flb_config *config)
 {
-    struct flb_input_collector *collector;
+    struct flb_input_collector *coll;
 
-    collector = flb_malloc(sizeof(struct flb_input_collector));
-    if (!collector) {
-        flb_errno();
+    coll = collector_create(FLB_COLLECT_TIME, ins, cb_collect, config);
+    if (!coll) {
         return -1;
     }
 
-    collector->id          = collector_id(in);
-    collector->type        = FLB_COLLECT_TIME;
-    collector->cb_collect  = cb_collect;
-    collector->fd_event    = -1;
-    collector->fd_timer    = -1;
-    collector->seconds     = seconds;
-    collector->nanoseconds = nanoseconds;
-    collector->instance    = in;
-    collector->running     = FLB_FALSE;
-    MK_EVENT_ZERO(&collector->event);
-    mk_list_add(&collector->_head, &config->collectors);
-    mk_list_add(&collector->_head_ins, &in->collectors);
+    /* specific collector initialization */
+    coll->seconds     = seconds;
+    coll->nanoseconds = nanoseconds;
 
-    return collector->id;
+    return coll->id;
 }
 
-int flb_input_set_collector_event(struct flb_input_instance *in,
+int flb_input_set_collector_event(struct flb_input_instance *ins,
                                   int (*cb_collect) (struct flb_input_instance *,
                                                      struct flb_config *, void *),
                                   flb_pipefd_t fd,
                                   struct flb_config *config)
 {
-    struct flb_input_collector *collector;
+    struct flb_input_collector *coll;
 
-    collector = flb_malloc(sizeof(struct flb_input_collector));
-    if (!collector) {
-        flb_errno();
+    coll = collector_create(FLB_COLLECT_FD_EVENT, ins, cb_collect, config);
+    if (!coll) {
         return -1;
     }
 
-    collector->id          = collector_id(in);
-    collector->type        = FLB_COLLECT_FD_EVENT;
-    collector->cb_collect  = cb_collect;
-    collector->fd_event    = fd;
-    collector->fd_timer    = -1;
-    collector->seconds     = -1;
-    collector->nanoseconds = -1;
-    collector->instance    = in;
-    collector->running     = FLB_FALSE;
-    MK_EVENT_ZERO(&collector->event);
-    mk_list_add(&collector->_head, &config->collectors);
-    mk_list_add(&collector->_head_ins, &in->collectors);
+    /* specific collector initialization */
+    coll->fd_event = fd;
 
-    return collector->id;
+    return coll->id;
 }
+
+int flb_input_set_collector_socket(struct flb_input_instance *ins,
+                                   int (*cb_new_connection) (struct flb_input_instance *,
+                                                             struct flb_config *,
+                                                             void *),
+                                   flb_pipefd_t fd,
+                                   struct flb_config *config)
+{
+    struct flb_input_collector *coll;
+
+
+    coll = collector_create(FLB_COLLECT_FD_SERVER, ins, cb_new_connection, config);
+    if (!coll) {
+        return -1;
+    }
+
+    /* specific collector initialization */
+    coll->fd_event = fd;
+
+    return coll->id;
+}
+
 
 static int collector_start(struct flb_input_collector *coll,
                            struct flb_config *config)
@@ -891,19 +1048,17 @@ static int collector_start(struct flb_input_collector *coll,
     int fd;
     int ret;
     struct mk_event *event;
-    struct mk_event_loop *evl;
 
     if (coll->running == FLB_TRUE) {
         return 0;
     }
 
     event = &coll->event;
-    evl = config->evl;
+    event->mask = MK_EVENT_EMPTY;
+    event->status = MK_EVENT_NONE;
 
     if (coll->type == FLB_COLLECT_TIME) {
-        event->mask = MK_EVENT_EMPTY;
-        event->status = MK_EVENT_NONE;
-        fd = mk_event_timeout_create(evl, coll->seconds,
+        fd = mk_event_timeout_create(coll->evl, coll->seconds,
                                      coll->nanoseconds, event);
         if (fd == -1) {
             flb_error("[input collector] COLLECT_TIME registration failed");
@@ -913,11 +1068,8 @@ static int collector_start(struct flb_input_collector *coll,
         coll->fd_timer = fd;
     }
     else if (coll->type & (FLB_COLLECT_FD_EVENT | FLB_COLLECT_FD_SERVER)) {
-        event->fd     = coll->fd_event;
-        event->mask   = MK_EVENT_EMPTY;
-        event->status = MK_EVENT_NONE;
-
-        ret = mk_event_add(evl,
+        event->fd = coll->fd_event;
+        ret = mk_event_add(coll->evl,
                            coll->fd_event,
                            FLB_ENGINE_EV_CORE,
                            MK_EVENT_READ, event);
@@ -956,15 +1108,57 @@ int flb_input_collector_start(int coll_id, struct flb_input_instance *in)
     return -1;
 }
 
+/* start collectors for main thread, no threaded plugins */
+int flb_input_collectors_signal_start(struct flb_input_instance *ins)
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_collector *coll;
+
+    if (flb_input_is_threaded(ins)) {
+        flb_error("input plugin '%s' is threaded", flb_input_name(ins));
+        return -1;
+    }
+
+    mk_list_foreach(head, &ins->collectors) {
+        coll = mk_list_entry(head, struct flb_input_collector, _head_ins);
+        ret = flb_input_collector_start(coll->id, ins);
+        if (ret < 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Start all collectors: this function is invoked from the engine interface and aim
+ * to start the local collectors and also signal the threaded input plugins to start
+ * their own collectors.
+ */
 int flb_input_collectors_start(struct flb_config *config)
 {
+    int ret;
     struct mk_list *head;
-    struct flb_input_collector *collector;
+    struct flb_input_instance *ins;
 
-    /* For each Collector, register the event into the main loop */
-    mk_list_foreach(head, &config->collectors) {
-        collector = mk_list_entry(head, struct flb_input_collector, _head);
-        collector_start(collector, config);
+    /* Signal threaded input plugins to start their collectors */
+    mk_list_foreach(head, &config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (flb_input_is_threaded(ins)) {
+            ret = flb_input_thread_collectors_signal_start(ins);
+            if (ret != 0) {
+                flb_error("could not start collectors for threaded plugin '%s'",
+                          flb_input_name(ins));
+            }
+        }
+        else {
+            ret = flb_input_collectors_signal_start(ins);
+            if (ret != 0) {
+                flb_error("could not start collectors for plugin '%s'",
+                          flb_input_name(ins));
+            }
+        }
     }
 
     return 0;
@@ -998,33 +1192,108 @@ int flb_input_collector_running(int coll_id, struct flb_input_instance *in)
     return coll->running;
 }
 
+/*
+ * TEST: this is a test function that can be used by input plugins to check the
+ * 'pause' and 'resume' callback operations.
+ *
+ * After is invoked, it will schedule an internal event to wake up the instance
+ * after 'sleep_seconds'.
+ */
+int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_seconds)
+{
+    /*
+     * This is a fake pause/resume implementation since it's only used to test the plugin
+     * callbacks for such purposes.
+     */
+
+    /* pause the instance */
+    flb_input_pause(ins);
+
+    /* wait */
+    sleep(sleep_seconds);
+
+    /* resume again */
+    flb_input_resume(ins);
+
+    return 0;
+}
+
+int flb_input_pause(struct flb_input_instance *ins)
+{
+    /* if the instance is already paused, just return */
+    if (flb_input_buf_paused(ins)) {
+        return -1;
+    }
+
+    /* Pause only if a callback is set and a local context exists */
+    if (ins->p->cb_pause && ins->context) {
+        if (flb_input_is_threaded(ins)) {
+            /* signal the thread event loop about the 'pause' operation */
+            flb_input_thread_instance_pause(ins);
+        }
+        else {
+            flb_info("[input] pausing %s", flb_input_name(ins));
+            ins->p->cb_pause(ins->context, ins->config);
+        }
+    }
+
+    return 0;
+}
+
+int flb_input_resume(struct flb_input_instance *ins)
+{
+    if (ins->p->cb_resume) {
+        ins->p->cb_resume(ins->context, ins->config);
+    }
+
+    return 0;
+}
 
 int flb_input_pause_all(struct flb_config *config)
 {
+    int ret;
     int paused = 0;
     struct mk_list *head;
-    struct flb_input_instance *in;
+    struct flb_input_instance *ins;
 
     mk_list_foreach(head, &config->inputs) {
-        in = mk_list_entry(head, struct flb_input_instance, _head);
-        if (flb_input_buf_paused(in) == FLB_FALSE) {
-            if (in->p->cb_pause && in->context) {
-                flb_info("[input] pausing %s", flb_input_name(in));
-                in->p->cb_pause(in->context, in->config);
-            }
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        /*
+         * Inform the plugin that is being paused, the source type is set to 'FLB_INPUT_PAUSE_MEM_BUF', no real reason, we
+         * just need to get it paused.
+         */
+        ret = flb_input_pause(ins);
+        if (ret == 0) {
             paused++;
         }
-        in->mem_buf_status = FLB_INPUT_PAUSED;
     }
 
     return paused;
+}
+
+int flb_input_collector_destroy(struct flb_input_collector *coll)
+{
+    struct flb_config *config = coll->instance->config;
+
+    if (coll->type == FLB_COLLECT_TIME) {
+        if (coll->fd_timer > 0) {
+            mk_event_timeout_destroy(config->evl, &coll->event);
+            mk_event_closesocket(coll->fd_timer);
+        }
+    }
+    else {
+        mk_event_del(config->evl, &coll->event);
+    }
+
+    flb_free(coll);
+
+    return 0;
 }
 
 int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
 {
     int ret;
     flb_pipefd_t fd;
-    struct flb_config *config;
     struct flb_input_collector *coll;
 
     coll = get_collector(coll_id, in);
@@ -1036,7 +1305,6 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
         return 0;
     }
 
-    config = in->config;
     if (coll->type == FLB_COLLECT_TIME) {
         /*
          * For a collector time, it's better to just remove the file
@@ -1048,11 +1316,11 @@ int flb_input_collector_pause(int coll_id, struct flb_input_instance *in)
          */
         fd = coll->fd_timer;
         coll->fd_timer = -1;
-        mk_event_timeout_destroy(config->evl, &coll->event);
+        mk_event_timeout_destroy(coll->evl, &coll->event);
         mk_event_closesocket(fd);
     }
     else if (coll->type & (FLB_COLLECT_FD_SERVER | FLB_COLLECT_FD_EVENT)) {
-        ret = mk_event_del(config->evl, &coll->event);
+        ret = mk_event_del(coll->evl, &coll->event);
         if (ret != 0) {
             flb_warn("[input] cannot disable event for %s", in->name);
             return -1;
@@ -1076,8 +1344,12 @@ int flb_input_collector_delete(int coll_id, struct flb_input_instance *in)
         return -1;
     }
 
+
+    pthread_mutex_lock(&in->config->collectors_mutex);
     mk_list_del(&coll->_head);
     mk_list_del(&coll->_head_ins);
+    pthread_mutex_unlock(&in->config->collectors_mutex);
+
     flb_free(coll);
     return 0;
 }
@@ -1112,7 +1384,7 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
     if (coll->type == FLB_COLLECT_TIME) {
         event->mask = MK_EVENT_EMPTY;
         event->status = MK_EVENT_NONE;
-        fd = mk_event_timeout_create(config->evl, coll->seconds,
+        fd = mk_event_timeout_create(coll->evl, coll->seconds,
                                      coll->nanoseconds, event);
         if (fd == -1) {
             flb_error("[input collector] resume COLLECT_TIME failed");
@@ -1125,7 +1397,7 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
         event->mask   = MK_EVENT_EMPTY;
         event->status = MK_EVENT_NONE;
 
-        ret = mk_event_add(config->evl,
+        ret = mk_event_add(coll->evl,
                            coll->fd_event,
                            FLB_ENGINE_EV_CORE,
                            MK_EVENT_READ, event);
@@ -1138,37 +1410,6 @@ int flb_input_collector_resume(int coll_id, struct flb_input_instance *in)
     coll->running = FLB_TRUE;
 
     return 0;
-}
-
-int flb_input_set_collector_socket(struct flb_input_instance *in,
-                                   int (*cb_new_connection) (struct flb_input_instance *,
-                                                             struct flb_config *,
-                                                             void *),
-                                   flb_pipefd_t fd,
-                                   struct flb_config *config)
-{
-    struct flb_input_collector *collector;
-
-    collector = flb_malloc(sizeof(struct flb_input_collector));
-    if (!collector) {
-        flb_errno();
-        return -1;
-    }
-
-    collector->id          = collector_id(in);
-    collector->type        = FLB_COLLECT_FD_SERVER;
-    collector->cb_collect  = cb_new_connection;
-    collector->fd_event    = fd;
-    collector->fd_timer    = -1;
-    collector->seconds     = -1;
-    collector->nanoseconds = -1;
-    collector->instance    = in;
-    collector->running     = FLB_FALSE;
-    MK_EVENT_ZERO(&collector->event);
-    mk_list_add(&collector->_head, &config->collectors);
-    mk_list_add(&collector->_head_ins, &in->collectors);
-
-    return collector->id;
 }
 
 int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
@@ -1209,6 +1450,24 @@ int flb_input_collector_fd(flb_pipefd_t fd, struct flb_config *config)
     else {
         collector->cb_collect(collector->instance, config,
                               collector->instance->context);
+    }
+
+    return 0;
+}
+
+int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins)
+{
+    if (!u) {
+        return -1;
+    }
+
+    /*
+     * if the input instance runs in threaded mode, make sure to flag the
+     * upstream context so the lists operations are done in thread safe mode
+     */
+    if (flb_input_is_threaded(ins)) {
+        flb_upstream_thread_safe(u);
+        mk_list_add(&u->_head, &ins->upstreams);
     }
 
     return 0;
