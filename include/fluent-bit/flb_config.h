@@ -88,6 +88,7 @@ struct flb_config {
     struct mk_event event_thread_init;  /* event to initiate thread in engine */
 
     /* Collectors */
+    pthread_mutex_t collectors_mutex;
     struct mk_list collectors;
 
     /* Dynamic (dso) plugins context */
