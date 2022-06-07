@@ -47,7 +47,6 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
-#include <fluent-bit/flb_trace.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
