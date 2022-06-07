@@ -264,8 +264,11 @@ struct flb_config *flb_config_init()
         config->coro_stack_size = (unsigned int)getpagesize();
     }
 
-    /* Initialize linked lists */
+    /* collectors */
+    pthread_mutex_init(&config->collectors_mutex, NULL);
     mk_list_init(&config->collectors);
+
+    /* Initialize linked lists */
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->custom_plugins);
     mk_list_init(&config->in_plugins);
@@ -378,19 +381,8 @@ void flb_config_exit(struct flb_config *config)
     /* Collectors */
     mk_list_foreach_safe(head, tmp, &config->collectors) {
         collector = mk_list_entry(head, struct flb_input_collector, _head);
-
-        if (collector->type == FLB_COLLECT_TIME) {
-            if (collector->fd_timer > 0) {
-                mk_event_timeout_destroy(config->evl, &collector->event);
-                mk_event_closesocket(collector->fd_timer);
-            }
-        }
-        else {
-            mk_event_del(config->evl, &collector->event);
-        }
-
         mk_list_del(&collector->_head);
-        flb_free(collector);
+        flb_input_collector_destroy(collector);
     }
 
     flb_env_destroy(config->env);
