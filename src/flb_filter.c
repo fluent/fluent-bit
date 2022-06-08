@@ -140,7 +140,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 /* all records removed, no data to continue processing */
                 if (out_size == 0) {
                     /* reset data content length */
-                    flb_input_chunk_write_at(ic, write_at, "", 0);
+                    flb_trace_filter(ic->tracer, (void *)f_ins);
 
 #ifdef FLB_TRACE
                    // flb_trace_filter_write(f_ins, ic, ic->trace_version++, (size_t)0);
