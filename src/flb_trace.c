@@ -39,6 +39,7 @@ unpack_error:
 struct flb_tracer *flb_tracer_new(struct flb_input_chunk *chunk)
 {
 	struct flb_tracer *tracer;
+	struct flb_input_instance *f_ins = (struct flb_input_instance *)chunk->in;
 
 	tracer = flb_calloc(1, sizeof(struct flb_tracer));
 	if (tracer == NULL) {
@@ -46,6 +47,7 @@ struct flb_tracer *flb_tracer_new(struct flb_input_chunk *chunk)
 	}
 
 	tracer->ic = chunk;
+	tracer->trace_id = f_ins->trace_count++;
 
 	chunk->tracer = (void *)tracer;
 	return tracer;
