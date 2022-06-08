@@ -1449,11 +1449,13 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
 #ifdef FLB_TRACE
-    if (ic->tracer != NULL) {
-        flb_free(ic->tracer);
+    if (ic->in->trace_enabled == 1) {
+        if (ic->tracer != NULL) {
+            flb_free(ic->tracer);
+        }
+        flb_tracer_new(ic);
+        flb_trace_input(ic->tracer, (void *)ic->in);
     }
-    flb_tracer_new(ic);
-    flb_trace_input(ic->tracer, (void *)ic->in);
 #endif // FLB_TRACE
 
     /* Update 'input' metrics */

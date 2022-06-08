@@ -6,6 +6,7 @@ set(src
   plugins.c
   register.c
   health.c
+  trace.c
   )
 
 include_directories(${MONKEY_INCLUDE_DIR})
