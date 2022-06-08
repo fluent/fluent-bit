@@ -186,7 +186,9 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                     printf("\t[TRACE:INPUT]\n");
                     if ((i+1) < result.data.via.array.size) {
                         i++;
-                        printf("\t\t%s\n", result.data.via.array.ptr[i].via.str.ptr);
+                        printf("\t\t %.*s\n", 
+                               result.data.via.array.ptr[i].via.str.size,
+                               result.data.via.array.ptr[i].via.str.ptr);
                     }
                     break;
                 case FLB_TRACE_TYPE_FILTER:
@@ -198,7 +200,9 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                     }
                     if ((i+1) < result.data.via.array.size) {
                         i++;
-                        printf("\t\t%s\n", result.data.via.array.ptr[i].via.str.ptr);
+                        printf("\t\t%.*s\n", 
+                               result.data.via.array.ptr[i].via.str.size,
+                               result.data.via.array.ptr[i].via.str.ptr);
                     }
                     if ((i+1) < result.data.via.array.size) {
                         i++;
