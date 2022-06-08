@@ -12,6 +12,7 @@ struct flb_trace_input_record {
 	char *buf;
 	size_t buf_size;
 };
+
 struct flb_trace_filter_record {
 	struct flb_time t;
 	int trace_version;
@@ -19,6 +20,7 @@ struct flb_trace_filter_record {
 	char *buf;
 	size_t buf_size;
 };
+
 struct flb_tracer {
 	struct flb_input_chunk *ic;
 	int trace_id;
