@@ -71,7 +71,7 @@ struct flb_input_chunk {
     struct flb_input_instance *in;  /* reference to parent input instance */
     struct flb_task *task;          /* reference to the outgoing task */
 #ifdef FLB_TRACE
-    void *tracer;
+    void *chunk_trace;
 #endif
     uint64_t routes_mask
         [FLB_ROUTES_MASK_ELEMENTS]; /* track the output plugins the chunk routes to */
