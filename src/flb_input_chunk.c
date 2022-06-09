@@ -36,6 +36,11 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <chunkio/chunkio.h>
 
+#ifdef FLB_TRACE
+#include <fluent-bit/flb_chunk_trace.h>
+#endif // FLB_TRACE
+
+
 #define BLOCK_UNTIL_KEYPRESS() {char temp_keypress_buffer; read(0, &temp_keypress_buffer, 1);}
 
 #define FLB_INPUT_CHUNK_RELEASE_SCOPE_LOCAL  0
@@ -1449,12 +1454,12 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     }
 
 #ifdef FLB_TRACE
-    if (ic->in->trace_enabled == 1) {
-        if (ic->tracer != NULL) {
-            flb_free(ic->tracer);
+    if (ic->in->chunk_trace_enabled == 1) {
+        if (ic->chunk_trace != NULL) {
+            flb_chunk_trace_free(ic->chunk_trace);
         }
-        flb_tracer_new(ic);
-        flb_trace_input(ic->tracer, (void *)ic->in);
+        flb_chunk_trace_new(ic);
+        flb_chunk_trace_input(ic->chunk_trace, (void *)ic->in);
     }
 #endif // FLB_TRACE
 

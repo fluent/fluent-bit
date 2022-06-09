@@ -234,7 +234,7 @@ endif()
 if(FLB_TRACE)
   set(src
     ${src}
-    "flb_trace.c"
+    "flb_chunk_trace.c"
     )
 endif()
 
