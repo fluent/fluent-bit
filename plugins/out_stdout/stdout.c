@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
-#include <fluent-bit/flb_chunk_trace.h>
+#include <fluent-bit/flb_trace_chunk.h>
 
 #include <msgpack.h>
 #include "stdout.h"
@@ -182,7 +182,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
             printf("]\n");
             for (i = 2; i < result.data.via.array.size; i++) {
                 switch (result.data.via.array.ptr[i].via.u64) {
-                case FLB_CHUNK_TRACE_TYPE_INPUT:
+                case FLB_TRACE_CHUNK_TYPE_INPUT:
                     printf("\t[TRACE:INPUT]\n");
                     if ((i+1) < result.data.via.array.size) {
                         i++;
@@ -191,7 +191,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                                result.data.via.array.ptr[i].via.str.ptr);
                     }
                     break;
-                case FLB_CHUNK_TRACE_TYPE_FILTER:
+                case FLB_TRACE_CHUNK_TYPE_FILTER:
                     printf("\t[TRACE:FILTER]\n");
                     if ((i+1) < result.data.via.array.size) {
                         i++;

@@ -37,7 +37,7 @@
 #include <chunkio/chunkio.h>
 
 #ifdef FLB_TRACE
-#include <fluent-bit/flb_chunk_trace.h>
+#include <fluent-bit/flb_trace_chunk.h>
 #endif // FLB_TRACE
 
 
@@ -1456,10 +1456,10 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 #ifdef FLB_TRACE
     if (ic->in->chunk_trace_enabled == 1) {
         if (ic->chunk_trace != NULL) {
-            flb_chunk_trace_free(ic->chunk_trace);
+            flb_trace_chunk_free(ic->chunk_trace);
         }
-        flb_chunk_trace_new(ic);
-        flb_chunk_trace_input(ic->chunk_trace, (void *)ic->in);
+        flb_trace_chunk_new(ic);
+        flb_trace_chunk_input(ic->chunk_trace, (void *)ic->in);
     }
 #endif // FLB_TRACE
 
