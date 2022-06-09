@@ -350,11 +350,11 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
         (ctx->out_format == FLB_PACK_JSON_FORMAT_STREAM) ||
         (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES)) {
 
-        json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                               event_chunk->size,
-                                               ctx->out_format,
-                                               ctx->json_date_format,
-                                               ctx->date_key);
+        json = flb_pack_msgpack_to_json_format_with_trace(event_chunk->data,
+                                                          event_chunk->size,
+                                                          ctx->out_format,
+                                                          ctx->json_date_format,
+                                                          ctx->date_key);
         if (json != NULL) {
             ret = http_post(ctx, json, flb_sds_len(json),
                             event_chunk->tag, flb_sds_len(event_chunk->tag));
