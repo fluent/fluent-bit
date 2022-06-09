@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_metrics.h>
-#include <fluent-bit/flb_chunk_trace.h>
+#include <fluent-bit/flb_trace_chunk.h>
 
 #include <msgpack.h>
 #include "stdout.h"
@@ -175,7 +175,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
         while (msgpack_unpack_next(&result,
                                    event_chunk->data,
                                    event_chunk->size, &off) == MSGPACK_UNPACK_SUCCESS) {
-            if (flb_time_pop_from_msgpack(&tmp, &result, &p) != -1 ) {
+           if (flb_time_pop_from_msgpack(&tmp, &result, &p) != -1 ) {
                 printf("[%zd] %s: [", cnt++, event_chunk->tag);
                 printf("%"PRIu32".%09lu, ", (uint32_t)tmp.tm.tv_sec, tmp.tm.tv_nsec);
                 msgpack_object_print(stdout, *p);

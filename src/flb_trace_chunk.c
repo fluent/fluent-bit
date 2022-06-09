@@ -6,7 +6,7 @@
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
-#include <fluent-bit/flb_chunk_trace.h>
+#include <fluent-bit/flb_trace_chunk.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_base64.h>
 
@@ -37,12 +37,12 @@ unpack_error:
     return rc;
 }
 
-struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
+struct flb_trace_chunk *flb_trace_chunk_new(struct flb_input_chunk *chunk)
 {
-    struct flb_chunk_trace *trace;
+    struct flb_trace_chunk *trace;
     struct flb_input_instance *f_ins = (struct flb_input_instance *)chunk->in;
 
-    trace = flb_calloc(1, sizeof(struct flb_chunk_trace));
+    trace = flb_calloc(1, sizeof(struct flb_trace_chunk));
     if (trace == NULL) {
         return NULL;
     }
@@ -54,7 +54,7 @@ struct flb_chunk_trace *flb_chunk_trace_new(struct flb_input_chunk *chunk)
     return trace;
 }
 
-void flb_chunk_trace_free(struct flb_chunk_trace *trace)
+void flb_trace_chunk_free(struct flb_trace_chunk *trace)
 {
     if (trace->filters) {
         flb_free(trace->filters);
@@ -62,7 +62,7 @@ void flb_chunk_trace_free(struct flb_chunk_trace *trace)
     flb_free(trace);
 }
 
-int flb_chunk_trace_input(struct flb_chunk_trace *tracer, void *pinput)
+int flb_trace_chunk_input(struct flb_trace_chunk *tracer, void *pinput)
 {
     if (tracer == NULL) {
         return -1;
@@ -76,14 +76,14 @@ int flb_chunk_trace_input(struct flb_chunk_trace *tracer, void *pinput)
     return 0;
 }
 
-int flb_chunk_trace_filter(struct flb_chunk_trace *tracer, void *pfilter)
+int flb_trace_chunk_filter(struct flb_trace_chunk *tracer, void *pfilter)
 {
     if (tracer == NULL) {
         return -1;
     }
 
     tracer->filters = flb_realloc(tracer->filters,
-                      sizeof(struct flb_chunk_trace_filter_record) * (tracer->num_filters+1));
+                      sizeof(struct flb_trace_chunk_filter_record) * (tracer->num_filters+1));
     flb_time_get(&tracer->filters[tracer->num_filters].t);
     tracer->filters[tracer->num_filters].filter =  pfilter;
     cio_chunk_get_content(tracer->ic->chunk,
@@ -94,7 +94,7 @@ int flb_chunk_trace_filter(struct flb_chunk_trace *tracer, void *pfilter)
     return 0;
 }
 
-int flb_chunk_trace_flush(struct flb_chunk_trace *tracer, int offset)
+int flb_trace_chunk_flush(struct flb_trace_chunk *tracer, int offset)
 {
     if (tracer == NULL) {
         return -1;
@@ -128,7 +128,7 @@ int flb_chunk_trace_flush(struct flb_chunk_trace *tracer, int offset)
         goto sbuffer_error;
     }
 
-    msgpack_pack_int(&mp_pck, FLB_CHUNK_TRACE_TYPE_INPUT);
+    msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_INPUT);
     flb_time_append_to_msgpack(&tracer->input.t, &mp_pck, FLB_TIME_ETFMT_INT);
     msgpack_pack_str_with_body(&mp_pck, trace_id_buf, slen);
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
@@ -141,7 +141,7 @@ int flb_chunk_trace_flush(struct flb_chunk_trace *tracer, int offset)
     for (i = 0; i < tracer->num_filters; i++) {
         filter = (struct flb_filter_instance *)tracer->filters[i].filter;
 
-        rc = msgpack_pack_int(&mp_pck, FLB_CHUNK_TRACE_TYPE_FILTER);
+        rc = msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_FILTER);
         if (rc == -1) {
             goto sbuffer_error;
         }
