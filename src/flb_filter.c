@@ -29,7 +29,7 @@
 #include <chunkio/chunkio.h>
 
 #ifdef FLB_TRACE
-#include <fluent-bit/flb_chunk_trace.h>
+#include <fluent-bit/flb_trace_chunk.h>
 #endif // FLB_TRACE
 
 static inline int instance_id(struct flb_config *config)
@@ -146,7 +146,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     /* reset data content length */
 
 #ifdef FLB_TRACE
-                    if (ic->in->chunk_trace_enabled) flb_chunk_trace_filter(ic->chunk_trace, (void *)f_ins);
+                    if (ic->in->chunk_trace_enabled) flb_trace_chunk_filter(ic->chunk_trace, (void *)f_ins);
 #endif // FLB_TRACE
 
 
@@ -204,7 +204,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 }
 
 #ifdef FLB_TRACE
-                if (ic->in->chunk_trace_enabled) flb_chunk_trace_filter(ic->chunk_trace, (void *)f_ins);
+                if (ic->in->chunk_trace_enabled) flb_trace_chunk_filter(ic->chunk_trace, (void *)f_ins);
 #endif // FLB_TRACE
 
                 /* Point back the 'data' pointer to the new address */
@@ -222,7 +222,7 @@ void flb_filter_do(struct flb_input_chunk *ic,
         }
     }
 
-    if (ic->in->chunk_trace_enabled) flb_chunk_trace_flush(ic->chunk_trace, 0);
+    if (ic->in->chunk_trace_enabled) flb_trace_chunk_flush(ic->chunk_trace, 0);
     flb_free(ntag);
 }
 
