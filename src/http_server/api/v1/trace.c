@@ -58,12 +58,12 @@ static void cb_enable_trace(mk_request_t *request, void *data)
                 in = mk_list_entry(head, struct flb_input_instance, _head);
                 if (strncmp(result.data.via.str.ptr, in->name, result.data.via.str.size) == 0 &&
                     strlen(in->name) == result.data.via.str.size) {
-                        in->trace_enabled = !in->trace_enabled;
+                        in->chunk_trace_enabled = !in->chunk_trace_enabled;
                         msgpack_pack_map(&mp_pck, 2);
                         msgpack_pack_str_with_body(&mp_pck, "status", strlen("status"));
                         msgpack_pack_str_with_body(&mp_pck, "ok", strlen("ok"));
                         msgpack_pack_str_with_body(&mp_pck, "enabled", strlen("enabled"));
-                        if (in->trace_enabled) msgpack_pack_true(&mp_pck);
+                        if (in->chunk_trace_enabled) msgpack_pack_true(&mp_pck);
                         else msgpack_pack_false(&mp_pck);
 
                         out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
