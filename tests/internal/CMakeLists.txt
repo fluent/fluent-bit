@@ -28,6 +28,7 @@ set(UNIT_TESTS_FILES
   base64.c
   bucket_queue.c
   flb_event_loop.c
+  ring_buffer.c
   )
 
 # Config format
