@@ -120,7 +120,7 @@ int flb_trace_chunk_flush(struct flb_trace_chunk *tracer, int offset)
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
     cio_chunk_get_content(tracer->ic->chunk, &buf, &buf_size);
-    record_resize(&mp_pck, &mp_sbuf, buf, buf_size, 5 + (tracer->num_filters * 6));
+    record_resize(&mp_pck, &mp_sbuf, buf, buf_size, 1 + (tracer->num_filters));
 
     slen = snprintf(trace_id_buf, sizeof(trace_id_buf)-1, "%s.%d", 
            input->name, tracer->trace_id);
@@ -128,35 +128,58 @@ int flb_trace_chunk_flush(struct flb_trace_chunk *tracer, int offset)
         goto sbuffer_error;
     }
 
+    // pack input record
+    msgpack_pack_map(&mp_pck, 5);
+    
+    msgpack_pack_str_with_body(&mp_pck, "type", strlen("type"));
     msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_INPUT);
+    
+    msgpack_pack_str_with_body(&mp_pck, "time", strlen("time"));
     flb_time_append_to_msgpack(&tracer->input.t, &mp_pck, FLB_TIME_ETFMT_INT);
-    msgpack_pack_str_with_body(&mp_pck, trace_id_buf, slen);
+    
+    msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
+    msgpack_pack_str_with_body(&mp_pck, trace_id_buf, strlen(trace_id_buf));
+    
+    msgpack_pack_str_with_body(&mp_pck, "input_instance", strlen("input_instance"));
     msgpack_pack_str_with_body(&mp_pck, input->name, strlen(input->name));
 
     flb_base64_encode(b64enc, sizeof(b64enc)-1, &bc64enclen,
                     (unsigned char *)tracer->input.buf,
                     tracer->input.buf_size);
+    msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
     msgpack_pack_str_with_body(&mp_pck, b64enc, bc64enclen);
 
     for (i = 0; i < tracer->num_filters; i++) {
         filter = (struct flb_filter_instance *)tracer->filters[i].filter;
 
+        msgpack_pack_map(&mp_pck, 6);
+
+        msgpack_pack_str_with_body(&mp_pck, "type", strlen("type"));
         rc = msgpack_pack_int(&mp_pck, FLB_TRACE_CHUNK_TYPE_FILTER);
         if (rc == -1) {
             goto sbuffer_error;
         }
 
+        msgpack_pack_str_with_body(&mp_pck, "time", strlen("time"));
         flb_time_append_to_msgpack(&tracer->filters[i].t, &mp_pck, FLB_TIME_ETFMT_INT);
+
+
+        msgpack_pack_str_with_body(&mp_pck, "trace_id", strlen("trace_id"));
         msgpack_pack_str_with_body(&mp_pck, trace_id_buf, slen);
+
+        msgpack_pack_str_with_body(&mp_pck, "filter_instance", strlen("filter_instance"));
         rc = msgpack_pack_str_with_body(&mp_pck, filter->name, strlen(filter->name));
         if (rc == -1) {
             goto sbuffer_error;
         }
+
+        msgpack_pack_str_with_body(&mp_pck, "record_version", strlen("record_version"));
         rc = msgpack_pack_int(&mp_pck, tracer->filters[i].trace_version);
         if (rc == -1) {
             goto sbuffer_error;
         }
 
+        msgpack_pack_str_with_body(&mp_pck, "record", strlen("record"));
         flb_base64_encode(b64enc, sizeof(b64enc)-1, &bc64enclen,
                     (unsigned char *)tracer->filters[i].buf, 
                     tracer->filters[i].buf_size);
